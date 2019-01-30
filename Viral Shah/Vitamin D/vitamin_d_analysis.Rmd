@@ -1,0 +1,119 @@
+---
+title: "Shah Vitamin D Analysis"
+author: "Tim Vigers"
+date: "September 26, 2018"
+output:
+  pdf_document:
+    fig_width: 6
+    fig_height: 3.5
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=FALSE}
+# Load libraries
+library(ggplot2)
+library(jtools)
+library(knitr)
+library(qwraps2)
+```
+
+```{r echo=FALSE}
+# Read in the data
+qvitamind <- read.csv("\\\\ucdenver.pvt\\som\\PEDS\\RI Biostatistics Core\\Shared\\Laura Tim projects\\Viral Shah\\Vitamin D\\Data_Cleaned\\QVitamin D results summary.csv")
+```
+
+```{r echo=FALSE,eval=FALSE}
+# Check variable normality.
+hist(qvitamind$Free.VD)
+qqnorm(qvitamind$Free.VD)
+qqline(qvitamind$Free.VD)
+hist(qvitamind$Total.VD)
+qqnorm(qvitamind$Total.VD)
+qqline(qvitamind$Total.VD)
+hist(qvitamind$PTH)
+qqnorm(qvitamind$PTH)
+qqline(qvitamind$PTH)
+```
+
+```{r echo=FALSE,warning=FALSE}
+spearman.plot <- function(var1,var2,x.title,y.title,
+                          xloc,yloc,vert = 3) {
+  spear.corr <- 
+    cor.test(x = var1,y = var2,method = "spearman")
+  rho <- as.character(round(spear.corr$estimate,3))
+  pval <- as.character(format.pval(spear.corr$p.value,digits = 3,eps = 0.001))
+  plot <- ggplot(qvitamind,aes(x = var1,y = var2))+
+    geom_point()+
+    annotate("text",label = paste("rho =",rho),x = xloc , y = yloc)+
+    annotate("text",label = paste("p =",pval),x = xloc,y = (yloc - vert))+
+    xlab(x.title)+
+    ylab(y.title)+
+    ggtitle(paste("Spearman Correlation of",x.title,"and",y.title))+
+    theme(plot.title = element_text(hjust = 0.5))
+  return(plot)
+  }
+```
+
+```{r echo=FALSE,warning=FALSE}
+print(spearman.plot(qvitamind$Free.VD,qvitamind$Total.VD,"Free Vit D","Total Vit D",12,10))
+print(spearman.plot(qvitamind$PTH,qvitamind$Total.VD,"PTH","Total Vit D",22,30,2))
+```
+
+```{r echo=FALSE}
+# Group into high and low antibody level.
+qvitamind$ab.group <- NA
+qvitamind$ab.group[which(qvitamind$VDBP_Ab < median(qvitamind$VDBP_Ab))] <- "Low"
+qvitamind$ab.group[which(qvitamind$VDBP_Ab >= median(qvitamind$VDBP_Ab))] <- "High"
+# Add free to total Vit D ratio.
+qvitamind$ratio <- qvitamind$Free.VD / qvitamind$Total.VD
+```
+
+```{r echo=FALSE}
+fit <- lm(Total.VD ~ Free.VD * ab.group, data = qvitamind)
+interact_plot(fit,pred = "Free.VD",modx = "ab.group",plot.points = TRUE,
+              x.label = "Free Vit D", y.label = "Total Vit D",
+              legend.main = "Antibody Group", 
+              main.title = "Total Vit D vs. Free Vit D by Antibody Level")
+table <- as.data.frame(summary(fit)$coefficients)
+rownames(table) <- c("(Intercept)","Free Vit D",
+                     "Low Antibody Group",
+                     "Free Vit D:Low Antibody Group")
+kable(table, caption = "Interaction Effects By Antibody Group")
+```
+
+```{r echo=FALSE,warning=FALSE}
+# Compare ratios of free to total between groups
+# Higher antibodies = more free to total
+low.ratio <- qvitamind$ratio[which(qvitamind$ab.group == "Low")]
+high.ratio <- qvitamind$ratio[which(qvitamind$ab.group == "High")]
+ratio <- wilcox.test(low.ratio,high.ratio)
+# Compare free Vit D between groups
+low.free <- qvitamind$Free.VD[which(qvitamind$ab.group == "Low")]
+high.free <- qvitamind$Free.VD[which(qvitamind$ab.group == "High")]
+free <- wilcox.test(low.free,high.free)
+# Compare total Vit D between groups
+low.total <- qvitamind$Total.VD[which(qvitamind$ab.group == "Low")]
+high.total <- qvitamind$Total.VD[which(qvitamind$ab.group == "High")]
+total <- wilcox.test(low.total,high.total)
+# Wilcox results table.
+results <- data.frame(matrix(nrow = 3,ncol = 4))
+colnames(results) <- 
+  c("Variable","Median (IQR) Low Abx","Median (IQR) High Abx","P Value")
+results$Variable <- c("Free Vit D","Total Vit D","Free Vit D/Total Vit D")
+results$`Median (IQR) Low Abx`<- c(median_iqr(low.free),
+                                   median_iqr(low.total),
+                                   median_iqr(low.ratio))
+results$`Median (IQR) High Abx`<- c(median_iqr(high.free),
+                                   median_iqr(high.total),
+                                   median_iqr(high.ratio))
+results$`P Value` <- format.pval(c(free$p.value,
+                                   total$p.value,
+                                   ratio$p.value),eps = 0.001,digits = 3)
+```
+
+```{r echo=FALSE}
+kable(results, caption = "Mann-Whitney Test Between Antibody Groups")
+```

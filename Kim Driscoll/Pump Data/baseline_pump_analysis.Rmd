@@ -1,0 +1,199 @@
+---
+title: "Kim Driscoll Pump Analysis"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=FALSE, include=FALSE}
+# Load libraries and functions
+library(lubridate)
+library(plyr)
+library(dplyr)
+source('~/Documents/GitHub/Tim-and-Laura/tim_R_functions.R')
+pathstart <- os.check()
+```
+
+```{r echo=FALSE, include=FALSE}
+# Data notes:
+#   - manually added subject IDs for 129, 213, 319
+#   - deleted 213 blood glucose file
+```
+
+```{r echo=FALSE,eval=FALSE}
+# Data management
+indir <- paste(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Original",sep="")
+outdir <- paste(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Cleaned/",sep = "")
+# Split files into pump and BG data, store in separate folders.
+files <- list.files(indir,full.names = T)
+for (f in 1:length(files)) {
+  dat <- read.csv(files[f],stringsAsFactors = FALSE,header = TRUE,
+                  na.strings = "")
+  id <- dat$Patient.ID[1]
+# Check file format.  
+  if (id == "") {
+    stop("No ID")
+  } else if (ncol(dat) < 33) {
+    stop("Not enough columns",call. = F)
+  }
+# Get start and end date.  
+  start <- as.POSIXct(dat$Start.Date[1],tz = "UTC",format = "%m/%d/%y %H:%M")
+  end <- as.POSIXct(dat$End.Date[1],tz = "UTC",format = "%m/%d/%y %H:%M")
+# Delete nonessential rows. 
+  rowstart <- which(dat$Last.Name == "-------")[1]
+  pump <- dat[c((rowstart + 2):(nrow(dat)-3)),]
+  colnames(pump) <- dat[rowstart+1,]
+# Format timestamp, remove rows without datetime data.
+  pump$timestamp <- paste(pump$Date,pump$Time)
+  pump$timestamp <- mdy_hms(pump$timestamp)
+  pump <- pump[which(!is.na(pump$timestamp)),]
+# Remove rows with data outside study time range if there is any.
+  if (length(which(pump$timestamp < start | pump$timestamp > end)) > 0) {
+    pump <- pump[-c(which(pump$timestamp < start | pump$timestamp > end)),]
+  }
+# Classify BGs using Bergensthal White Paper Categories and Pump It Up! 
+# categories.
+  pump$piu <- cut(as.numeric(pump$`BG Reading (mg/dL)`),
+                       breaks = c(0,70,150,250,Inf),
+                       right = F,
+                       labels = c("<70","70-149","150-249","250+"))
+  pump$bwp <- cut(as.numeric(pump$`BG Reading (mg/dL)`),
+                       breaks = c(0,70,180,251,400,Inf),
+                       right = F,
+                       labels = c("<70","70-180","181-250","251-400","400+"))
+# Select and rename columns.
+  pump <- pump[,c("timestamp","Bolus Type",
+                  "Bolus Volume Selected (U)","Bolus Volume Delivered (U)",
+                  "BWZ Carb Input (grams)","BWZ BG Input (mg/dL)",
+                  "BG Reading (mg/dL)","piu","bwp")]
+  colnames(pump) <- c(c("timestamp","bolustype",
+                        "bolusvolselected","bolusvoldelivered","carbinput",
+                        "bginput","bgreading","piu","bwp"))
+# Order by timestamp.  
+  pump <- pump[order(pump$timestamp),]
+# Write to folder.
+  filename <- paste(outdir,id,".csv",sep = "")
+  write.csv(pump,file = filename,row.names = F)
+}
+```
+
+```{r echo=FALSE, include=FALSE}
+# Summary variables.
+# Import data
+indir <- paste(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Cleaned",sep="")
+outdir <- paste(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/",sep="")
+files <- list.files(indir,full.names = T)
+# Make a summary variables table.
+summary <- data.frame(matrix(nrow = length(files),ncol = 0))
+# Iterate through files and calculate variables.
+for (f in 1:length(files)) {
+  dat <- read.csv(files[f],header = T,stringsAsFactors = FALSE)
+  dat$timestamp <- ymd_hms(dat$timestamp)
+  id <- sub(".csv","",basename(files[f]))
+  summary[f,"subject_id"] <- id
+# Calculate number of days of data  
+  days <- as.numeric(difftime(max(dat$timestamp),min(dat$timestamp),
+                              units = "days"))
+  summary[f,"days_worn"] <- days
+# Carb inputs and BG readings
+  carbs <- length(which(dat$carbinput > 0))
+  summary[f,"total_carb_inputs"] <- carbs
+  summary[f,"carb_inputs_per_day"] <- carbs/days
+  summary[f,"total_piu<70"] <- length(which(dat$piu == "<70"))
+  summary[f,"total_piu_70-149"] <- length(which(dat$piu == "70-149"))
+  summary[f,"total_piu_150-249"] <- length(which(dat$piu == "150-249"))
+  summary[f,"total_piu_250+"] <- length(which(dat$piu == "250+"))
+  summary[f,"total_bwp<70"] <- length(which(dat$bwp == "<70"))
+  summary[f,"total_bwp_70-180"] <- length(which(dat$bwp == "70-180"))
+  summary[f,"total_bwp_181-250"] <- length(which(dat$bwp == "181-250"))
+  summary[f,"total_bwp_251-400"] <- length(which(dat$bwp == "251-400"))
+  summary[f,"total_bwp_400+"] <- length(which(dat$bwp == "400+"))
+  summary[f,"total_readings"] <- length(which(!is.na(dat$bgreading)))
+# Combine rows
+  dat$timestamp <- strftime(dat$timestamp,"%Y-%m-%d %H:%M", tz = "UTC")
+  dat <- aggregate(dat[,2:ncol(dat)],list(dat[,1]),
+                   function(x) ifelse(length(x[which(!is.na(x))]) > 0,x[which(!is.na(x))],NA))
+  dat <- dat[-c(which(rowSums(is.na(dat[,2:ncol(dat)])) >= (length(2:ncol(dat))-1))),]
+  colnames(dat)[1] <- "timestamp"
+  dat$timestamp <- ymd_hm(dat$timestamp)
+  reading.times <- dat$timestamp[which(dat$bgreading > 0)]
+  pius <- dat$piu[which(!is.na(dat$bgreading))]
+  bwps <- dat$bwp[which(!is.na(dat$bgreading))]
+# Boluses only  
+  dat <- dat[which(!is.na(dat$bolusvoldelivered)),]
+  dat$carbinput[which(is.na(dat$carbinput))] <- 0
+# Counting variables and placeholder
+  total.bolus <- 1
+  bolus.times <- dat$timestamp[1]
+  pius.within.15 <- character()
+  pius.within.30 <- character()
+  bwps.within.15 <- character()
+  bwps.within.30 <- character()
+# Iterate through data rows. Count total boluses
+  for (r in 2:nrow(dat)) {
+    bolus.time <- dat$timestamp[r]
+    prev.bolus.time <- dat$timestamp[r-1]
+    time.diff <- as.numeric(difftime(bolus.time,prev.bolus.time,units = "mins"))
+    time.range.15 <- (bolus.time - 900):(bolus.time-1)
+    time.range.20 <- (bolus.time - 1200):(bolus.time-1)
+    time.range.30 <- (bolus.time - 1800):(bolus.time-1)
+    if (time.diff > 20) {
+      total.bolus <- total.bolus + 1
+      bolus.times <- c(bolus.times,bolus.time)
+    } else if (dat$carbinput[r] > 0 & dat$carbinput[r-1] > 0) {
+      total.bolus <- total.bolus + 1
+      bolus.times <- c(bolus.times,bolus.time)
+    } else {
+      double.bolus <- 1
+    }
+  }
+  summary[f,"total_bolus"] <- total.bolus
+  summary[f,"boluses_per_day"] <- total.bolus/days
+# Iterate through boluses and check reading information
+  for (t in bolus.times) {
+    time.range.15 <- (t - 900):t
+    time.range.30 <- (t - 1800):t
+    piu15 <- pius[which(reading.times %in% time.range.15)]
+    piu30 <- pius[which(reading.times %in% time.range.30)]
+    bwp15 <- bwps[which(reading.times %in% time.range.15)]
+    bwp30 <- bwps[which(reading.times %in% time.range.30)]
+    if (length(piu15) > 0) {
+      pius.within.15 <- c(pius.within.15,piu15)
+      bwps.within.15 <- c(bwps.within.15,bwp15)
+    } 
+    if (length(piu30) > 0) {
+      pius.within.30 <- c(pius.within.30,piu30)
+      bwps.within.30 <- c(bwps.within.30,bwp30)
+    }
+  }
+  summary[f,"bolus_within_15_piu<70"] <- length(which(pius.within.15 == "<70"))
+  summary[f,"bolus_within_15_piu_70-149"] <- length(which(pius.within.15 == "70-149"))
+  summary[f,"bolus_within_15_piu_150-249"] <- length(which(pius.within.15 == "150-249"))
+  summary[f,"bolus_within_15_piu_250+"] <- length(which(pius.within.15 == "250+"))
+  summary[f,"bolus_within_15_bwp<70"] <- length(which(bwps.within.15 == "<70"))
+  summary[f,"bolus_within_15_bwp_70-180"] <- length(which(bwps.within.15 == "70-180"))
+  summary[f,"bolus_within_15_bwp_181-250"] <- length(which(bwps.within.15 == "181-250"))
+  summary[f,"bolus_within_15_bwp_251-400"] <- length(which(bwps.within.15 == "251-400"))
+  summary[f,"bolus_within_15_bwp_400+"] <- length(which(bwps.within.15 == "400+"))
+  
+  summary[f,"bolus_within_30_piu<70"] <- length(which(pius.within.30 == "<70"))
+  summary[f,"bolus_within_30_piu_70-149"] <- length(which(pius.within.30 == "70-149"))
+  summary[f,"bolus_within_30_piu_150-249"] <- length(which(pius.within.30 == "150-249"))
+  summary[f,"bolus_within_30_piu_250+"] <- length(which(pius.within.30 == "250+"))
+  summary[f,"bolus_within_30_bwp<70"] <- length(which(bwps.within.30 == "<70"))
+  summary[f,"bolus_within_30_bwp_70-180"] <- length(which(bwps.within.30 == "70-180"))
+  summary[f,"bolus_within_30_bwp_181-250"] <- length(which(bwps.within.30 == "181-250"))
+  summary[f,"bolus_within_30_bwp_251-400"] <- length(which(bwps.within.30 == "251-400"))
+  summary[f,"bolus_within_30_bwp_400+"] <- length(which(bwps.within.30 == "400+"))
+  }
+# Output
+filename <- paste0(outdir,"summary.csv")
+write.csv(summary,file = filename,row.names = F)
+filename <- paste0(outdir,"rounded_summary.csv")
+summary[,-1] <- round(summary[,-1],2)
+write.csv(summary,file = filename,row.names = F)
+```

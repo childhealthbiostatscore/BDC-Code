@@ -1,0 +1,187 @@
+---
+title: "QCT Pilot Analysis"
+author: "Tim Vigers"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=FALSE,include=FALSE}
+library(knitr)
+library(pander)
+library(psych)
+library(Hmisc)
+library(corrplot)
+source('~/Documents/GitHub/Tim-and-Laura/tim_R_functions.R')
+panderOptions("table.continues","")
+```
+
+```{r echo=FALSE}
+# Data management
+# Check OS.
+pathstart <- os.check()
+filename1 <- paste(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Viral Shah/QCT Pilot Analysis/Data_Cleaned/T1D Femoral Neck Structure.csv",sep="")
+filename2 <- paste(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Viral Shah/QCT Pilot Analysis/Data_Cleaned/T1D Pilot QCT Data.csv",sep="")
+# Read in.
+qct1 <- read.csv(filename1)
+qct2 <- read.csv(filename2)
+qct <- merge(qct1,qct2,by = "StudyID")
+# Read in pQCT data.
+filename <- paste(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Kaci projects/Bone studies/pQCT/DATA/QTable1_BaselineData_9.17.18.csv",sep="")
+# Read in.
+pqct <- read.csv(filename,na.strings = c("No record","Incomplete"))
+# Remove people without pQCT data and controls with A1c > 7%.
+pqct <- pqct[-c(which(pqct$Diabetic == "No" & pqct$HbA1c >= 7.0)),]
+pqct <- pqct[which(!is.na(pqct$LengthT) | !is.na(pqct$LengthR)),]
+# Set 0 values in Endo_C_r4 data to NA, per emails with Janet and Viral.
+pqct$Endo_C_r4[pqct$Endo_C_r4 == 0] <- NA
+# Merge left and right Neck, Hip, HRT, Parental fractures. Convert variables 
+# coded as 1 and 2 to TRUE/FALSE.
+pqct$BMDNeck <- pmin(pqct$BMDRNeck,pqct$BMDLNeck,na.rm = TRUE)
+pqct$BMDTotalHip <- pmin(pqct$BMDTotalLHip,pqct$BMDTotalRHip,na.rm = TRUE)
+pqct$HRT_ever <- pmin(pqct$HRT,pqct$HRT_Curr,na.rm = TRUE)
+pqct$HRT_ever[which(pqct$HRT_ever == 2)] <- 0
+pqct$HRT_ever <- as.logical(pqct$HRT_ever)
+pqct$HTN[which(pqct$HTN == 2)] <- 0
+pqct$HTN <- as.logical(pqct$HTN)
+pqct$Nephropathy[which(pqct$Nephropathy == 2)] <- 0
+pqct$Nephropathy <- as.logical(pqct$Nephropathy)
+pqct$Neuropathy[which(pqct$Neuropathy == 2)] <- 0
+pqct$Neuropathy <- as.logical(pqct$Neuropathy)
+pqct$Retinopathy[which(pqct$Retinopathy == 2)] <- 0
+pqct$Retinopathy <- as.logical(pqct$Retinopathy)
+pqct$Statin[which(pqct$Statin == 2)] <- 0
+pqct$Statin <- as.logical(pqct$Statin)
+pqct$HipParent <- as.logical(pmax(pqct$HipMother,pqct$HipFather))
+pqct$FractureBone[which(pqct$FractureBone == 2)] <- 0
+pqct$FractureBone <- as.logical(pqct$FractureBone)
+# Add age at T1D diagnosis variable.
+pqct$age.dx.group <- NA
+pqct$age.dx.group[which(pqct$Age-pqct$T1DDuration >= 20)] <- "Greater than 20"
+pqct$age.dx.group[which(pqct$Age-pqct$T1DDuration < 20)] <- "Less than 20"
+# Remove _F from study IDs
+pqct$StudyID <- sub("_F","",pqct$StudyID)
+# Merge pQCT and QCT data.
+dat <- merge(qct,pqct,by = "StudyID")
+dat$avglumbarvBMD <- rowMeans(dat[,c("L1BMD","L2BMD")])
+colnames(dat) <- tolower(colnames(dat))
+```
+
+```{r echo=FALSE}
+# Define pQCT thickness variables (adjust case for easier matching)
+r <- c("crt_thk_r33","Crt_thk_T38","CRT_THK_T66",
+       "Crt_A_R4","Crt_A_R33","CRT_A_t4","CRT_A_T38","CRT_A_T66")
+r <- tolower(r)
+# Define QCT variables.
+c <- c("average.cortical.thickness","cortical.area")
+c <- tolower(c)
+# Correlate.
+thick.area <- as.matrix(cbind(dat[,r],dat[,c]))
+thick.area.corr <- corr.test(thick.area[,c],thick.area[,r],
+                             adjust = "none")
+
+# Define pQCT density variables (adjust case for easier matching)
+r <- c("crt_den_t4","CRT_den_R33","Crt_Den_T38")
+r <- tolower(r)
+# Define QCT variables.
+c <- c("average.cortical.BMD","Neck.cortical.bmd","Troch.cortical.BMD",
+       "Intertroch.cortical.bmd","Total.hip.Cortical.BMD")
+c <- tolower(c)
+# Correlate.
+dense.vbmd <- as.matrix(cbind(dat[,r],dat[,c]))
+dense.vbmd.corr <- corr.test(dense.vbmd[,c],dense.vbmd[,r],
+                             adjust = "none")
+
+# Define pQCT density variables (adjust case for easier matching)
+r <- c("tot_den_R4","Tot_Den_T4")
+r <- tolower(r)
+# Define QCT variables.
+c <- c("Total.BMD","l1bmd","l2bmd","neck.integral.bmd","avglumbarvbmd",
+       "troch.integral.bmd","intertroch.integral.bmd",
+       "total.hip.Integral.bmd")
+c <- tolower(c)
+# Correlate.
+total.dense.vbmd <- as.matrix(cbind(dat[,r],dat[,c]))
+total.dense.vbmd.corr <- corr.test(total.dense.vbmd[,c],total.dense.vbmd[,r],
+                                   adjust = "none")
+```
+
+Table 1a: Pearson correlations of pQCT and QCT measures with cortical area and thickness.
+```{r echo=FALSE}
+# Bold r values with significant p values. Round to two digits.
+bold <- which(thick.area.corr$p < 0.05,arr.ind = T)
+thick.area.print.r <- round(thick.area.corr$r,2)
+thick.area.print.r[bold] <- paste("**",thick.area.print.r[bold],"**",sep = "")
+kable(thick.area.print.r)
+```
+\pagebreak
+
+Table 1b: Unadjusted P-values for correlations of pQCT and QCT measures with cortical area and thickness.
+```{r echo=FALSE}
+# Bold r values with significant p values. Round to two digits.
+thick.area.print.p <- round(thick.area.corr$p,2)
+thick.area.print.p[bold] <- paste("**",thick.area.print.p[bold],"**",sep = "")
+kable(thick.area.print.p)
+```
+\pagebreak
+
+Table 2a: Pearson correlations of pQCT and QCT measures cortical vBMD.
+```{r echo=FALSE}
+# Bold r values with significant p values. Round to two digits.
+bold <- which(dense.vbmd.corr$p < 0.05,arr.ind = T)
+dense.vbmd.print.r <- round(dense.vbmd.corr$r,2)
+dense.vbmd.print.r[bold] <- paste("**",dense.vbmd.print.r[bold],"**",sep = "")
+kable(dense.vbmd.print.r)
+```
+\pagebreak
+
+Table 2b: Unadjusted P-values for correlations of pQCT and QCT measures cortical vBMD
+```{r echo=FALSE}
+# Bold r values with significant p values. Round to two digits.
+dense.vbmd.print.p <- round(dense.vbmd.corr$p,2)
+dense.vbmd.print.p[bold] <- paste("**",dense.vbmd.print.p[bold],"**",sep = "")
+kable(dense.vbmd.print.p)
+```
+\pagebreak
+
+Table 3a: Pearson correlations of total density (vBMD) measures for pQCT and QCT.
+```{r echo=FALSE}
+# Bold r values with significant p values. Round to two digits.
+bold <- which(total.dense.vbmd.corr$p < 0.05,arr.ind = T)
+total.dense.vbmd.print.r <- round(total.dense.vbmd.corr$r,2)
+total.dense.vbmd.print.r[bold] <- paste("**",total.dense.vbmd.print.r[bold],"**",sep = "")
+kable(total.dense.vbmd.print.r)
+```
+\pagebreak
+
+Table 3b: Unadjusted P-values for correlations of total density (vBMD) measures for pQCT and QCT
+```{r echo=FALSE}
+# Bold r values with significant p values. Round to two digits.
+total.dense.vbmd.print.p <- round(total.dense.vbmd.corr$p,2)
+total.dense.vbmd.print.p[bold] <- paste("**",total.dense.vbmd.print.p[bold],"**",sep = "")
+kable(total.dense.vbmd.print.p)
+```
+\pagebreak
+
+Figure 1: Correlogram of pQCT and QCT measures with cortical area and thickness.
+
+```{r echo=FALSE}
+corrplot(thick.area.corr$r,cl.ratio = 0.5,cl.pos = "b")
+```
+\pagebreak
+
+Figure 2: Correlogram of pQCT and QCT measures cortical vBMD.
+
+```{r echo=FALSE}
+corrplot(dense.vbmd.corr$r,cl.ratio = 0.3)
+```
+\pagebreak
+
+Figure 3: Correlogram of total density (vBMD) measures for pQCT and QCT.
+
+```{r echo=FALSE}
+corrplot(total.dense.vbmd.corr$r,cl.ratio = 0.8)
+```

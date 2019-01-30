@@ -1,0 +1,892 @@
+---
+title: "Bromocriptine Safety Report - Blinded"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=FALSE,include=FALSE}
+library(pracma)
+library(lubridate)
+library(tools)
+library(qwraps2)
+library(tableone)
+library(knitr)
+library(nortest)
+library(plyr)
+library(dplyr)
+source('~/Documents/GitHub/Tim-and-Laura/tim_R_functions.R')
+pathstart <- os.check()
+load(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Bromocriptine/R_Workspace/bromocriptine_analysis.RData"))
+```
+
+# 1. Study description
+This is a double-blind, random-order, cross-over design study of bromocriptine QR in type 1 diabetes funded by the JDRF (NCT02544321). Two cohorts, adult (age 22-50) and adolescent (age 12-21) are planned with a goal to complete 40 subjects in each cohort. The adult cohort was required to precede the adolescent cohort for safety reasons. An IND exemption was obtained for the adult cohort and an IND is in place for the adolescent cohort (sponsored by the study coPI, Kristen Nadeau). Primary outcomes include measures of glycemic control. Secondary measures include hypoglycemia, hypoglycemia awareness, sleep, vascular function and stiffness, and cardiac autonomic function.  
+
+# 2. Safety Officer Responsibilities
+The responsibilities of the safety officers are as follows:
+
+* Review unblinded safety data annually and report to the PI of the safety of the study
+* Protect unblinding information from the PI and study team at all times prior to completion of the relevant cohort
+* Work with the PI to protect the safety of the study participants
+* Follow the below process annually:
+  + Review unblinded data reports sent by study-independent biostatistician
+    - Hypoglycemia: number of events, severity, % time hypoglycemic	
+    - Symptom reports and adverse events
+  + Assess for future potential safety concerns
+  + Engage in conference call with study PI and team to discuss conduct, progress, and concerns of the study
+  + Write a formal letter with decision for recommendation of continuation of study, discussed safety concerns, suggestions for improvement, and plans of action, if applicable
+
+# 3. Data management
+First, all the data was gathered into a single folder for adults and a single folder for pediatric participants. Timestamp formats were inconsistent from file to file, so they were manually edited in order to be correctly read into R. Some of the files were also re-named to include subject ID, as this was how participants' data were identified. Excel files were saved as CSV, to make importing them into R easier and faster. 
+
+Some pediatric participants' data included summary tables that were not standard across the cohort. These were manually removed to help with formatting data in R. For the adults, BCQR-31's second med start date was incorrectly listed in the enrollment log as 1/19/16, so it was manually changed to 1/19/17. When cleaning the CGM data, gaps <= 20 min were interpolated, and larger gaps were left in the data. "Low" sensor readings were converted to 40, and "High" to 400.
+
+The cleaning function reads in everything in the respective input directories, and combines it into one big table. Then the table is first split by subject ID, then further split by pre/post med start, and unblinded drug phase. Cleaned files are written in the appropriate directories. This function is performed seperately for pediatric and adult participants.
+
+After all of the CGM data was sorted, CGM summary variables were generated using modified code from the "cgmanalysis" package. Summary variables were compared between phases using a paired Wilcoxon test, so only participants with BCQR and placbo data were included.
+
+```{r echo=FALSE}
+# Get medication start dates and unblinding information.
+enrollment <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Bromocriptine/Data_Cleaned/Peds Enrollment Log.csv"),na.strings = "")
+meddates <- enrollment[2:length(enrollment$X.3),c("SUBJECT.ID","X.3","X.4")]
+colnames(meddates) <- c("subjectid","start_p1","start_p2")
+# Format datetimes.
+meddates$start_p1 <- as.POSIXct(meddates$start_p1,format = "%m/%d/%Y",tz = "UTC")
+meddates$start_p2 <- as.POSIXct(meddates$start_p2,format = "%m/%d/%Y",tz = "UTC")
+# Remove rows with 2 NAs.
+meddates <- meddates[rowSums(is.na(meddates[2:3])) < 2,]
+
+unblinded <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Bromocriptine/Data_Cleaned/Unblinding Data/peds med log.csv"))
+unblinded$subjectid <- nchar(unblinded$X)
+for (r in 1:nrow(unblinded)) {
+  if (unblinded$subjectid[r] == 1) {
+    unblinded$subjectid[r] <- paste(unblinded$ID[r],"0",unblinded$X[r],sep = "")
+  } else if (unblinded$subjectid[r] == 2) {
+    unblinded$subjectid[r] <- paste(unblinded$ID[r],unblinded$X[r],sep = "")
+  }
+}
+unblinded <- unblinded[,c("subjectid","Drug.A","Drug.B")]
+# Manually enter peds withdrawal information from Susan Gross.
+peds.withdraw <- c("PBCQR-06","PBCQR-11","PBCQR-22","PBCQR-24")
+peds.withdraw.phase <- c(1,2,2,1)
+```
+
+```{r echo=FALSE}
+# Make a table for which treatment pediatrics withdrew from.
+peds.withdraw <- unblinded[which(unblinded$subjectid %in% peds.withdraw),]
+peds.withdraw$phase <- peds.withdraw.phase
+peds.withdraw <- peds.withdraw[,c("subjectid","phase")]
+colnames(peds.withdraw) <- c("Subject ID","Withdrawal Phase")
+```
+
+```{r echo=FALSE, eval=FALSE}
+# Peds cleaning function (this code only needs to be run after new data is received, not every time the report is edited/re-knit).
+inputdirectory = "\\\\ucdenver.pvt\\som\\PEDS\\RI Biostatistics Core\\Shared\\Laura Tim projects\\Bromocriptine\\Data_Cleaned\\Peds Files"
+outputdirectory = "\\\\ucdenver.pvt\\som\\PEDS\\RI Biostatistics Core\\Shared\\Laura Tim projects\\Bromocriptine\\Data_Cleaned\\Cleaned Peds Files"
+
+maximumgap = 20
+# Read in .txt files, create output directory.  
+files <- base::list.files(path = inputdirectory,full.names = TRUE)
+dateparseorder <- c("mdy HM","mdy HMS","mdY HM","mdY HMS","dmy HM","dmy HMS",
+                    "dmY HM","dmY HMS","Ymd HM","Ymd HMS","ymd HM","ymd HMS",
+                    "Ydm HM","Ydm HMS","ydm HM","ydm HMS")
+# Make a table for storing everything.
+fulltable <- data.frame(matrix(ncol = 3,nrow = 0))
+colnames(fulltable) <- c("subjectid","timestamp","sensorglucose")
+# Check encoding before reading.   
+for (f in 1:base::length(files)) {
+  ext <- file_ext(files[f])
+  enc <- base::as.character(readr::guess_encoding(files[f])[1,1])
+  if (ext == "csv") {
+    table <- read.csv(files[f],
+                      stringsAsFactors = FALSE,
+                      na.strings = "")
+  } else if (ext == "txt") {
+    table <- utils::read.table(files[f],
+                               sep = "\t",
+                               skipNul = TRUE,
+                               header = TRUE,
+                               stringsAsFactors = FALSE,
+                               fileEncoding = enc,
+                               fill = TRUE,
+                               na.strings = "")
+  }
+# Get ID from file name, remove unnecessary columns, format timestamp. Some columns
+# are named differently for different subjects.
+  id <- paste("PBCQR-",gsub("\\..*","",basename(files[f])),sep = "")
+  id <- substr(id,1,8)
+  numeric.id <- as.numeric(substr(id,7,8))
+  if ('GlucoseDisplayTime' %in% colnames(table)){
+    table <- table[,c('GlucoseDisplayTime','GlucoseValue')]
+  }  else if ('Timestamp..YYYY.MM.DDThh.mm.ss.' %in% colnames(table)){
+    table <- table[,c('Timestamp..YYYY.MM.DDThh.mm.ss.','Glucose.Value..mg.dL.')]
+  }
+  base::colnames(table) <- c('timestamp','sensorglucose')
+# Convert low and high readings.  
+  table$sensorglucose[table$sensorglucose == "Low"] <- 40
+  table$sensorglucose[table$sensorglucose == "High"] <- 400
+# Remove values with no timestamp.  
+  table <- table[!is.na(table$timestamp),]
+  table$timestamp <- base::sub("T"," ",table$timestamp)
+# Make sensor glucose numeric and remove duplicate rows and rows with no data.    
+  if (NA %in% table$timestamp) {
+    table <- table[-c(base::which(is.na(table$timestamp))),]
+  }
+  table$timestamp <- 
+    base::as.POSIXct(table$timestamp, format = "%m/%d/%Y %H:%M",tz = "UTC")
+  table$sensorglucose <- 
+    base::suppressWarnings(base::as.numeric(table$sensorglucose))
+  table <- table[base::order(table$timestamp),]
+# Set interval based on mode of timestamp diff.
+  interval <- pracma::Mode(base::diff(base::as.numeric(table$timestamp)))
+# Fill in gaps <= 20 minutes.    
+  table$sensorglucose <- zoo::na.approx(table$sensorglucose,
+                                        na.rm = FALSE,
+                                        maxgap = (maximumgap*60)/interval)
+# Add subject ID to table.    
+  table$subjectid <- id
+  table <-table[,c("subjectid","timestamp","sensorglucose")]
+# Add to full table.
+  fulltable <- rbind(fulltable,table)
+}
+# Merge the med dates and full table.
+fulltable <- merge(fulltable,meddates,by = "subjectid")
+fulltable <- merge(fulltable,unblinded,by = "subjectid")
+fulltable$subjectid <- factor(fulltable$subjectid)
+# Split the full table by subject id and then split again by phase. Write to the correct directory (if the data exists).
+tablelist <- split.data.frame(fulltable,fulltable$subjectid)
+for (i in 1:length(tablelist)){
+  table <- as.data.frame(tablelist[i])
+  table <- table[order(table[,2]),]
+  table$phase[table[,2] < table[,4]] <- "PP1"
+  table$phase[table[,2] >= table[,4] & table[,2] < (table[,5] - 259200)] <- "P1"
+  table$phase[table[,2] >= (table[,5] - 259200) & table[,2] < table[,5]] <-
+    "Washout"
+  table$phase[table[,2] >= table[,5]] <- "P2"
+  phaselist <- split.data.frame(table,table$phase)
+  
+  premed <- as.data.frame(rbind(phaselist$PP1,phaselist$Washout))
+  if (length(premed) > 1) {
+    premed <- premed[,1:3]
+    colnames(premed) <- c("subjectid","timestamp","sensorglucose")
+    write.csv(premed,
+              file = paste(outputdirectory,
+                           "\\Pre-Med\\",
+                           as.character(premed$subjectid[1]),
+                           "_premed.csv",sep = ""),row.names = FALSE)
+  }
+  
+  postmed <- as.data.frame(rbind(phaselist$P1,phaselist$P2))
+  if (length(postmed) > 1) {
+    postmed <- postmed[,1:3]
+    colnames(postmed) <- c("subjectid","timestamp","sensorglucose")
+    write.csv(postmed,
+              file = paste(outputdirectory,
+                           "\\Post-Med\\",
+                           as.character(postmed$subjectid[1]),
+                           "_postmed.csv",sep = ""),row.names = FALSE)
+  }
+  
+  P1 <- as.data.frame(phaselist$P1)
+  if (length(P1) > 0) {
+    drug1 <- as.character(P1[1,6])
+    P1 <- P1[,1:3]
+    colnames(P1) <- c("subjectid","timestamp","sensorglucose")
+    write.csv(P1,
+              file = paste(outputdirectory,"\\",
+                           drug1,"\\",
+                           as.character(P1$subjectid[1]),
+                           "_P1.csv",sep = ""),row.names = FALSE)
+  }
+  
+  P2 <- as.data.frame(phaselist$P2)
+  if (length(P2) > 0) {
+    drug2 <- as.character(P2[1,7])
+    P2 <- P2[,1:3]
+    colnames(P2) <- c("subjectid","timestamp","sensorglucose")
+    write.csv(P2,
+              file = paste(outputdirectory,"\\",
+                           drug2,"\\",
+                           as.character(P2$subjectid[1]),
+                           "_P2.csv",sep = ""),row.names = FALSE)
+    }
+}
+```
+
+```{r echo=FALSE, eval=FALSE}
+# Adults data cleaning function (this code only needs to be run after new data is received, not every time the report is edited/re-knit).
+enrollment <- read.csv("\\\\ucdenver.pvt\\som\\PEDS\\RI Biostatistics Core\\Shared\\Laura Tim projects\\Bromocriptine\\Data_Cleaned\\Adult Enrollment Log.csv",na.strings = "",skip =2)
+meddates <- enrollment[,c("X","Med.Start","Med.Start.1")]
+colnames(meddates) <- c("subjectid","start_p1","start_p2")
+meddates$start_p1 <- as.POSIXct(meddates$start_p1,format = "%m/%d/%Y",tz = "UTC")
+meddates$start_p2 <- as.POSIXct(meddates$start_p2,format = "%m/%d/%Y",tz = "UTC")
+meddates$subjectid <- as.character(meddates$subjectid)
+# Remove rows with 2 NAs.
+meddates <- meddates[rowSums(is.na(meddates[2:3])) < 2,]
+
+for (r in 1:nrow(meddates)) {
+  if (nchar(meddates$subjectid[r]) == 1) {
+    meddates$subjectid[r] <- paste("BCQR-","0",meddates$subjectid[r],sep = "")
+  } else if (nchar(meddates$subjectid[r]) == 2) {
+    meddates$subjectid[r] <- paste("BCQR-",meddates$subjectid[r],sep = "")
+  }
+}
+
+unblinded <- read.csv("\\\\ucdenver.pvt\\som\\PEDS\\RI Biostatistics Core\\Shared\\Laura Tim projects\\Bromocriptine\\Data_Cleaned\\Unblinding Data\\adult med log.csv")
+unblinded$subjectid <- nchar(unblinded$X)
+for (r in 1:nrow(unblinded)) {
+  if (unblinded$subjectid[r] == 1) {
+    unblinded$subjectid[r] <- paste(unblinded$ID[r],"0",unblinded$X[r],sep = "")
+  } else if (unblinded$subjectid[r] == 2) {
+    unblinded$subjectid[r] <- paste(unblinded$ID[r],unblinded$X[r],sep = "")
+  }
+}
+unblinded <- unblinded[,c("subjectid","Drug.A","Drug.B")]
+
+inputdirectory = "\\\\ucdenver.pvt\\som\\PEDS\\RI Biostatistics Core\\Shared\\Laura Tim projects\\Bromocriptine\\Data_Cleaned\\Adult Files"
+outputdirectory = "\\\\ucdenver.pvt\\som\\PEDS\\RI Biostatistics Core\\Shared\\Laura Tim projects\\Bromocriptine\\Data_Cleaned\\Cleaned Adult Files"
+
+maximumgap = 20
+# Read in files, create output directory.  
+files <- base::list.files(path = inputdirectory,full.names = TRUE)
+dateparseorder <- c("mdy HM","mdy HMS","mdY HM","mdY HMS","dmy HM","dmy HMS",
+                    "dmY HM","dmY HMS","Ymd HM","Ymd HMS","ymd HM","ymd HMS",
+                    "Ydm HM","Ydm HMS","ydm HM","ydm HMS")
+# Make a table for storing everything.
+fulltable <- data.frame(matrix(ncol = 3,nrow = 0))
+colnames(fulltable) <- c("subjectid","timestamp","sensorglucose")
+# Iterate through directory and combine into one table. 
+for (f in 1:base::length(files)) {
+  ext <- file_ext(files[f])
+  enc <- base::as.character(readr::guess_encoding(files[f])[1,1])
+  if (ext == "csv") {
+    table <- read.csv(files[f],
+                      stringsAsFactors = FALSE,
+                      na.strings = "")
+  } else if (ext == "txt") {
+    table <- utils::read.table(files[f],
+                               sep = "\t",
+                               skipNul = TRUE,
+                               header = TRUE,
+                               stringsAsFactors = FALSE,
+                               fileEncoding = enc,
+                               fill = TRUE,
+                               na.strings = "")
+  }
+  
+# Get ID from file name, remove unnecessary columns, format timestamp. Some columns
+# are named differently for different subjects.
+  id <- gsub("\\..*","",basename(files[f]))
+  if (grepl("BCQR-",id) == FALSE) {
+    id <- paste("BCQR-",id,sep = "")
+  }
+  id <- substr(id,1,7)
+  numeric.id <- as.numeric(substr(id,6,7))
+  if ('GlucoseDisplayTime' %in% colnames(table)){
+    table <- table[,c('GlucoseDisplayTime','GlucoseValue')]
+  }  else if ('Timestamp..YYYY.MM.DDThh.mm.ss.' %in% colnames(table)){
+    table <- table[,c('Timestamp..YYYY.MM.DDThh.mm.ss.','Glucose.Value..mg.dL.')]
+  }
+  base::colnames(table) <- c('timestamp','sensorglucose')
+  table$sensorglucose[table$sensorglucose == "Low"] <- 40
+  table$sensorglucose[table$sensorglucose == "High"] <- 400
+  table <- table[!is.na(table$timestamp),]
+  table$timestamp <- base::sub("T"," ",table$timestamp)
+# Make sensor glucose numeric and remove duplicate rows and rows with no data.    
+  if (NA %in% table$timestamp) {
+    table <- table[-c(base::which(is.na(table$timestamp))),]
+  }
+  table$timestamp <- base::as.POSIXct(table$timestamp, 
+                                        format = "%m/%d/%Y %H:%M",tz = "UTC")
+  table$sensorglucose <- 
+    base::suppressWarnings(base::as.numeric(table$sensorglucose))
+  table <- table[base::order(table$timestamp),]
+# Set interval based on mode of timestamp diff.
+  interval <- pracma::Mode(base::diff(base::as.numeric(table$timestamp)))
+# Fill in gaps <= 20 minutes.    
+  table$sensorglucose <- zoo::na.approx(table$sensorglucose,
+                                        na.rm = FALSE,
+                                        maxgap = (maximumgap*60)/interval)
+# Add subject ID to table.    
+  table$subjectid <- id
+  table <-table[,c("subjectid","timestamp","sensorglucose")]
+# Add to full table.
+  fulltable <- rbind(fulltable,table)
+}
+# Merge the med dates and full table.
+fulltable <- merge(fulltable,meddates,by = "subjectid")
+fulltable <- merge(fulltable,unblinded,by = "subjectid")
+fulltable$subjectid <- factor(fulltable$subjectid)
+# Split the full table by subject id and then split again by phase. Write to the correct directory (if the data exists).
+tablelist <- split.data.frame(fulltable,fulltable$subjectid)
+for (i in 1:length(tablelist)){
+  table <- as.data.frame(tablelist[i])
+  table <- table[order(table[,2]),]
+  table$phase[table[,2] < table[,4]] <- "PP1"
+  if (NA %in% table[,5]) {
+    table$phase[table[,2] >= table[,4]] <- "P1"
+  } else {
+    table$phase[table[,2] >= table[,4] & table[,2] < (table[,5] - 259200)] <- "P1"
+  }
+  table$phase[table[,2] >= (table[,5] - 259200) & table[,2] < table[,5]] <-
+    "Washout"
+  table$phase[table[,2] >= table[,5]] <- "P2"
+  phaselist <- split.data.frame(table,table$phase)
+  
+  premed <- as.data.frame(rbind(phaselist$PP1,phaselist$Washout))
+  if (length(premed) > 1) {
+    premed <- premed[,1:3]
+    colnames(premed) <- c("subjectid","timestamp","sensorglucose")
+    write.csv(premed,file = paste(outputdirectory,
+                                  "\\Pre-Med\\",
+                                  as.character(premed$subjectid[1]),
+                                  "_premed.csv",sep = ""),row.names = FALSE)
+  }
+  
+  postmed <- as.data.frame(rbind(phaselist$P1,phaselist$P2))
+  if (length(postmed) > 1) {
+    postmed <- postmed[,1:3]
+    colnames(postmed) <- c("subjectid","timestamp","sensorglucose")
+    write.csv(postmed,file = paste(outputdirectory,
+                                   "\\Post-Med\\",
+                                   as.character(postmed$subjectid[1]),
+                                   "_postmed.csv",sep = ""),row.names = FALSE)
+  }
+
+  P1 <- as.data.frame(phaselist$P1)
+  if (length(P1) > 0) {
+    drug1 <- as.character(P1[1,6])
+    P1 <- P1[,1:3]
+    colnames(P1) <- c("subjectid","timestamp","sensorglucose")
+    write.csv(P1,
+              file = paste(outputdirectory,"\\",
+                           drug1,"\\",
+                           as.character(P1$subjectid[1]),
+                           "_P1.csv",sep = ""),row.names = FALSE)
+  }
+  
+  P2 <- as.data.frame(phaselist$P2)
+  if (length(P2) > 0) {
+    drug2 <- as.character(P2[1,7])
+    P2 <- P2[,1:3]
+    colnames(P2) <- c("subjectid","timestamp","sensorglucose")
+    write.csv(P2,file = paste(outputdirectory,"\\",
+                              drug2,"\\",
+                              as.character(P2$subjectid[1]),
+                              "_P2.csv",sep = ""),row.names = FALSE)
+  }
+} 
+```
+ 
+```{r echo=FALSE, eval=FALSE}
+# Source modified analysis code (this code only needs to be run after new data is received, not every time the report is edited/re-knit).
+cgmvariables <- function(inputdirectory,
+                         outputdirectory = tempdir(),
+                         outputname = "REDCap Upload",
+                         aboveexcursionlength = 35,
+                         belowexcursionlength = 10
+                         ) {
+
+# Read in data, create results dataframe. The dataframe has one column for each 
+# file in the input directory, and is desgined to be uploaded to REDCap. 
+  files <- base::list.files(path = inputdirectory,full.names = TRUE)
+  cgmupload <- 
+    base::data.frame(base::matrix(nrow = 0,ncol = base::length(files)))
+  base::colnames(cgmupload) <- base::rep("Record",base::length(files))
+# Define the order in which lubridate parses dates.  
+  dateparseorder <- c("mdy HM","mdy HMS","mdY HM","mdY HMS","dmy HM","dmy HMS",
+                      "dmY HM","dmY HMS","Ymd HM","Ymd HMS","ymd HM","ymd HMS",
+                      "Ydm HM","Ydm HMS","ydm HM","ydm HMS")
+  allhours <- 0:23
+# Iterate through the input directory and calculate CGM variables for each file.
+  for (f in 1:base::length(files)) {    
+# Basic variables
+    table <- utils::read.csv(files[f],stringsAsFactors = FALSE)
+    cgmupload["subject_id",f] <- table$subjectid[1]
+# Format columns.    
+    table$timestamp <- 
+      base::as.POSIXct(lubridate::parse_date_time(table$timestamp,
+                                                  dateparseorder,tz = "UTC"))
+    table$sensorglucose <- base::as.numeric(table$sensorglucose)
+    table <- unique(table[,1:3])
+    interval <- pracma::Mode(base::diff(base::as.numeric(table$timestamp)))
+    table <- table[,-c(1)]
+    table <- table[stats::complete.cases(table),]
+    table <- table[base::order(table$timestamp),]
+    numgood <- base::length(table$sensorglucose)/(86400/interval)
+    cgmupload["num_days_good_data",f] <- numgood
+    
+# Under 50.
+    BGunder50 <- 
+      base::as.numeric(table$sensorglucose[base::which(!is.na(
+        table$sensorglucose))],length = 1)
+    BGunder50[BGunder50 <= 50] <- 1
+    BGunder50[BGunder50 > 50] <- 0
+    BG50.rle <- base::rle(BGunder50)
+    excursions50 <- 
+      base::as.numeric(BG50.rle$lengths[base::which(BG50.rle$values == 1)])
+    under50 <- 
+      base::length(base::which(excursions50 > 
+                                 ((belowexcursionlength * 60)/interval)))
+    if (numgood > 1) {
+      cgmupload["excursions_under_50_per_day",f] <- under50 / numgood
+    } else if (numgood <= 1) {
+      cgmupload["excursions_under_50_per_day",f] <- under50
+    }
+    cgmupload["percent_time_under_50",f] <- 
+      ((base::sum(BGunder50) * (interval/60))/
+         (base::length(table$sensorglucose) * (interval/60))) * 100
+    
+# Under 70.
+    BGunder70 <- 
+      base::as.numeric(table$sensorglucose[base::which(!is.na(
+        table$sensorglucose))],
+                 length = 1)
+    BGunder70[BGunder70 <= 70] <- 1
+    BGunder70[BGunder70 > 70] <- 0
+    BG70.rle <- base::rle(BGunder70)
+    excursions70 <- 
+      base::as.numeric(BG70.rle$lengths[base::which(BG70.rle$values == 1)])
+    under70 <- 
+      base::length(base::which(excursions70 > 
+                                 ((belowexcursionlength * 60)/interval)))
+    if (numgood > 1) {
+      cgmupload["excursions_under_70_per_day",f] <- under70 / numgood
+    } else if (numgood <= 1) {
+      cgmupload["excursions_under_70_per_day",f] <- under70
+    }
+    cgmupload["percent_time_under_70",f] <- 
+      ((base::sum(BGunder70) * (interval/60))/
+         (base::length(table$sensorglucose) * (interval/60))) * 100
+  }
+  
+# Write file.
+  cgmupload <- 
+    base::cbind("Variable / Field Name" = rownames(cgmupload),cgmupload)
+  filename <- base::paste(outputdirectory,"/",outputname,".csv",sep = "")
+  utils::write.csv(cgmupload, file = filename,row.names = FALSE)
+}
+```
+
+```{r echo=FALSE, eval=FALSE}
+# Adult blinded CGM variables (this code only needs to be run after new data is received, not every time the report is edited/re-knit).
+outputdirectory <- "\\\\ucdenver.pvt\\som\\PEDS\\RI Biostatistics Core\\Shared\\Laura Tim projects\\Bromocriptine\\Data_Cleaned\\Blinded Variables"
+inputpre <- "\\\\ucdenver.pvt\\som\\PEDS\\RI Biostatistics Core\\Shared\\Laura Tim projects\\Bromocriptine\\Data_Cleaned\\Cleaned Adult Files\\Pre-Med"
+inputpost <- "\\\\ucdenver.pvt\\som\\PEDS\\RI Biostatistics Core\\Shared\\Laura Tim projects\\Bromocriptine\\Data_Cleaned\\Cleaned Adult Files\\Post-Med"
+cgmvariables(inputpre,outputdirectory,outputname = "Adult Blinded Variables Pre")
+cgmvariables(inputpost,outputdirectory,outputname = "Adult Blinded Variables Post")
+```
+
+```{r echo=FALSE, eval=FALSE}
+# Peds blinded CGM variables (this code only needs to be run after new data is received, not every time the report is edited/re-knit).
+outputdirectory <- "\\\\ucdenver.pvt\\som\\PEDS\\RI Biostatistics Core\\Shared\\Laura Tim projects\\Bromocriptine\\Data_Cleaned\\Blinded Variables"
+inputpre <- "\\\\ucdenver.pvt\\som\\PEDS\\RI Biostatistics Core\\Shared\\Laura Tim projects\\Bromocriptine\\Data_Cleaned\\Cleaned Peds Files\\Pre-Med"
+inputpost <- "\\\\ucdenver.pvt\\som\\PEDS\\RI Biostatistics Core\\Shared\\Laura Tim projects\\Bromocriptine\\Data_Cleaned\\Cleaned Peds Files\\Post-Med"
+cgmvariables(inputpre,outputdirectory,outputname = "Peds Blinded Variables Pre")
+cgmvariables(inputpost,outputdirectory,outputname = "Peds Blinded Variables Post")
+```
+
+```{r echo=FALSE}
+# Adult blinded analysis.
+# Read in and organize data.
+pre.data <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Bromocriptine/Data_Cleaned/Blinded Variables/Adult Blinded Variables Pre.csv"),row.names = 1,stringsAsFactors = FALSE)
+pre.data <- as.data.frame(t(pre.data),stringsAsFactors = FALSE)
+pre.data[,2:ncol(pre.data)] <- lapply(pre.data[,2:ncol(pre.data)], as.numeric)
+pre.data <- pre.data[order(pre.data$subject_id),]
+
+post.data <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Bromocriptine/Data_Cleaned/Blinded Variables/Adult Blinded Variables Post.csv"),row.names = 1,stringsAsFactors = FALSE)
+post.data <- as.data.frame(t(post.data),stringsAsFactors = FALSE)
+post.data[,2:ncol(post.data)] <- lapply(post.data[,2:ncol(post.data)], as.numeric)
+shared.subj <- post.data$subject_id[which(post.data$subject_id %in% pre.data$subject_id)]
+
+post.data <- post.data[which(post.data$subject_id %in% shared.subj),]
+post.data <- post.data[order(post.data$subject_id),]
+pre.data <- pre.data[which(pre.data$subject_id %in% shared.subj),]
+pre.data <- pre.data[order(pre.data$subject_id),]
+
+adult.blinded.results <- data.frame(matrix(nrow = ncol(pre.data)-1,ncol = 4))
+colnames(adult.blinded.results) <- c("Variable","Pre-Med Start, Median (IQR)","Post-Med Start, Median (IQR)","P-Value")
+adult.blinded.results$Variable <- colnames(pre.data[2:ncol(pre.data)])
+for (c in 2:ncol(pre.data)) {
+  adult.blinded.results[c-1,2] <- median_iqr(pre.data[,c])
+  adult.blinded.results[c-1,3] <- median_iqr(post.data[,c])
+  p <- as.numeric(suppressWarnings(wilcox.test(pre.data[,c],post.data[,c],paired = TRUE)[3]))
+  adult.blinded.results[c-1,4] <- format.pval(p,digits = 3,eps = 0.001)
+}
+adult.blinded.results$Variable <- c("Number of days of CGM wear","Mean excursions <50 mg/dL per day","% time <50 mg/dL","Mean excursions <70 mg/dL per day","% time <70 mg/dL")
+```
+
+```{r echo=FALSE}
+enrollment <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Bromocriptine/Data_Cleaned/Adult Enrollment Log.csv"),na.strings = "",skip =2)
+unblinded.adult <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Bromocriptine/Data_Cleaned/Unblinding Data/adult med log.csv"))
+unblinded.adult$subjectid <- nchar(unblinded.adult$X)
+for (r in 1:nrow(unblinded.adult)) {
+  if (unblinded.adult$subjectid[r] == 1) {
+    unblinded.adult$subjectid[r] <- paste(unblinded.adult$ID[r],"0",unblinded.adult$X[r],sep = "")
+  } else if (unblinded.adult$subjectid[r] == 2) {
+    unblinded.adult$subjectid[r] <- paste(unblinded.adult$ID[r],unblinded.adult$X[r],sep = "")
+  }
+}
+unblinded.adult <- unblinded.adult[,c("subjectid","Drug.A","Drug.B")]
+# Get adult withdrawals, calculate final visit and withdrawal phase.
+enrollment$subjectid <- NA
+enrollment$subjectid[1:9] <- paste0(enrollment$ID[1:9],"0",enrollment$X[1:9])
+enrollment$subjectid[10:nrow(enrollment)] <- paste0(enrollment$ID[1:9],enrollment$X[10:nrow(enrollment)])
+visits <- paste0("Visit.",1:7)
+adult.withdraw <- select(enrollment,c("subjectid","Status","Reason",visits))
+adult.withdraw <- adult.withdraw[complete.cases(adult.withdraw),]
+adult.withdraw <- adult.withdraw[adult.withdraw$Status == "Withdrawn",]
+adult.withdraw[adult.withdraw == "NA"] <- NA
+adult.withdraw$lastvisit <- apply(adult.withdraw, 1, function(x) 7 - sum(is.na(x)))
+adult.withdraw$phase <- NA
+adult.withdraw$phase[which(adult.withdraw$lastvisit >= 4)] <- 2
+adult.withdraw$phase[which(adult.withdraw$lastvisit < 4)] <- 1
+# Get drug information
+adult.withdraw <- adult.withdraw[,c("subjectid","phase","Reason")]
+adult.withdraw <- left_join(adult.withdraw,unblinded.adult,by = "subjectid")
+adult.withdraw$final <- ifelse(adult.withdraw$Drug.B == "" | is.na(adult.withdraw$Drug.B),
+                               as.character(adult.withdraw$Drug.A),
+                               as.character(adult.withdraw$Drug.B))
+adult.withdraw <- select(adult.withdraw,c("subjectid","phase","Reason"))
+colnames(adult.withdraw) <- c("Subject ID","Withdrawal Phase","Comments")
+adult.withdraw[is.na(adult.withdraw)] <- ""
+```
+
+```{r echo=FALSE}
+# Peds blinded analysis.
+# Read in and organize data.
+pre.data <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Bromocriptine/Data_Cleaned/Blinded Variables/Peds Blinded Variables Pre.csv"),row.names = 1,stringsAsFactors = FALSE)
+pre.data <- as.data.frame(t(pre.data),stringsAsFactors = FALSE)
+pre.data[,2:ncol(pre.data)] <- lapply(pre.data[,2:ncol(pre.data)], as.numeric)
+
+post.data <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Bromocriptine/Data_Cleaned/Blinded Variables/Peds Blinded Variables Post.csv"),row.names = 1,stringsAsFactors = FALSE)
+post.data <- as.data.frame(t(post.data),stringsAsFactors = FALSE)
+post.data[,2:ncol(post.data)] <- lapply(post.data[,2:ncol(post.data)], as.numeric)
+shared.subj <- post.data$subject_id[which(post.data$subject_id %in% pre.data$subject_id)]
+
+post.data <- post.data[which(post.data$subject_id %in% shared.subj),]
+post.data <- post.data[order(post.data$subject_id),]
+pre.data <- pre.data[which(pre.data$subject_id %in% shared.subj),]
+pre.data <- pre.data[order(pre.data$subject_id),]
+
+peds.blinded.results <- data.frame(matrix(nrow = ncol(pre.data)-1,ncol = 4))
+colnames(peds.blinded.results) <- c("Variable","Pre-Med Start, Median (IQR)","Post-Med Start, Median (IQR)","P-Value")
+peds.blinded.results$Variable <- colnames(pre.data[2:ncol(pre.data)])
+for (c in 2:ncol(pre.data)) {
+  peds.blinded.results[c-1,2] <- median_iqr(pre.data[,c])
+  peds.blinded.results[c-1,3] <- median_iqr(post.data[,c])
+  p <- as.numeric(suppressWarnings(wilcox.test(pre.data[,c],post.data[,c],paired = TRUE)[3]))
+  peds.blinded.results[c-1,4] <- format.pval(p,digits = 3,eps = 0.001)
+}
+peds.blinded.results$Variable <- c("Number of days of CGM wear","Mean excursions <50 mg/dL per day","% time <50 mg/dL","Mean excursions <70 mg/dL per day","% time <70 mg/dL")
+```
+
+```{r echo=FALSE, include=FALSE}
+# Read in BP data. Manually removed several asterixes and a note about an AE.
+filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Bromocriptine/Data_Cleaned/Adult BP.csv")
+adult.bp <- read.csv(filename, na.strings = c("-",""))
+adult.bp.1 <- adult.bp[,1:5]
+adult.bp.2 <- adult.bp[,c(1,6:9)]
+colnames(adult.bp.1) <- c("subject.id","supine.systolic","standing.systolic","end.systolic","end.diastolic")
+colnames(adult.bp.2) <- c("subject.id","supine.systolic","standing.systolic","end.systolic","end.diastolic")
+adult.bp <- paired.table.one(adult.bp.1,adult.bp.2,grouping = c("Visit 4","Visit 7"))
+
+filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Bromocriptine/Data_Cleaned/Peds BP.csv")
+peds.bp <- read.csv(filename)
+peds.bp.1 <- peds.bp[,1:3]
+peds.bp.2 <- peds.bp[,c(1,6,7)]
+colnames(peds.bp.1) <- c("subject.id","supine.systolic","standing.systolic")
+colnames(peds.bp.2) <- c("subject.id","supine.systolic","standing.systolic")
+data1 <- peds.bp.1
+data2 <- peds.bp.2
+peds.bp <- paired.table.one(peds.bp.1,peds.bp.2,grouping = c("Visit 4","Visit 7"))
+```
+
+# 4. Enrollment Log
+Table 1 provides a count of the number of participants screened, enrolled, completed and withdrawn in the pediatric and adult cohorts.
+
+Table 1.  Count of participants by enrollment status.
+```{r echo=FALSE}
+nroll <- data.frame(matrix(nrow = 2,ncol = 7))
+colnames(nroll) <- c("Cohort","Screened","Enrolled","Completed",
+                     "Withdrawn","Screen Failed","Active")
+nroll[1,] <- c("Adult",65,65,41,17,7,0)
+nroll[2,] <- c("Pediatric",32,32,23,4,0,5)
+kable(nroll)
+```
+
+```{r echo=FALSE}
+adult.aes <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Bromocriptine/Data_Cleaned/Adult AE Log.csv"),stringsAsFactors = FALSE)
+
+sideeffects <- c("Gastrointestinal","Orthostasis","Fatigue","Headache","Other","None")
+
+for (r in 1: nrow(adult.aes)) {
+  if (length(which(adult.aes[r,2:7] == "Checked")) > 0) {
+    adult.aes$p1SE[r] <- 
+      paste(sideeffects[which(adult.aes[r,2:7] == "Checked")],collapse = ", ")
+  } else {
+    adult.aes$p1SE[r] <- NA
+  }
+  if (length(which(adult.aes[r,9:14] == "Checked")) > 0) {
+    adult.aes$p2SE[r] <- 
+      paste(sideeffects[which(adult.aes[r,9:14] == "Checked")],collapse = ", ")
+  } else {
+    adult.aes$p2SE[r] <- NA
+  }
+}
+
+adult.aes <- adult.aes[,c(1,16,8,17,15)]
+
+colnames(adult.aes) <- c("Subject ID", "Phase 1 Side Effects", "Phase 1 Notes","Phase 2 Side Effects", "Phase 2 Notes")
+```
+
+```{r echo=FALSE}
+# Adult AE summary table.
+adult.aes.summary <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Bromocriptine/Data_Cleaned/Adult AE Log.csv"),stringsAsFactors = FALSE)
+
+adult.aes.summary <- mapvalues(as.matrix(adult.aes.summary),
+                               from = c("Unchecked","Checked"),to = c(0,1))
+adult.aes.summary <- select(as.data.frame(adult.aes.summary),
+                            c("Subject.ID",
+                              "Side.Effects..choice.Gastrointestinal.",
+                              "Side.Effects..choice.Orthostasis.",
+                              "Side.Effects..choice.Gastrointestinal..1",
+                              "Side.Effects..choice.Orthostasis..1"))
+colnames(adult.aes.summary) <- c("id","gi.p1","ortho.p1","gi.p2","ortho.p2")
+adult.aes.summary[,c(2:5)] <- lapply(adult.aes.summary[,c(2:5)],
+                                     function(x) as.numeric(as.character(x)))
+# GI contingency
+gi.contingency <- c(sum(adult.aes.summary$gi.p2),
+                    length(which(adult.aes.summary$gi.p2 == 0)),
+                    sum(adult.aes.summary$gi.p1),
+                    length(which(adult.aes.summary$gi.p1 == 0)))
+gi.contingency <- as.table(matrix(gi.contingency,ncol = 2,byrow=T))
+dimnames(gi.contingency) <- list(Phase=c(2,1),GI.Symptoms=c("Yes", "No"))
+gi.paired <- table(adult.aes.summary[,c("gi.p1","gi.p2")])
+# Ortho contingency
+ortho.contingency <- c(sum(adult.aes.summary$ortho.p2),
+                    length(which(adult.aes.summary$ortho.p2 == 0)),
+                    sum(adult.aes.summary$ortho.p1),
+                    length(which(adult.aes.summary$ortho.p1 == 0)))
+ortho.contingency <- as.table(matrix(ortho.contingency,ncol = 2,byrow=T))
+dimnames(ortho.contingency) <- list(Phase=c(2,1),Ortho.Symptoms=c("Yes", "No"))
+ortho.paired <- table(adult.aes.summary[,c("ortho.p1","ortho.p2")])
+```
+
+```{r echo=FALSE}
+# Peds AE summary table.
+peds.aes.summary <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Bromocriptine/Data_Cleaned/Peds AE Log.csv"),stringsAsFactors = FALSE)
+
+peds.aes.summary <- mapvalues(as.matrix(peds.aes.summary),
+                               from = c("Unchecked","Checked"),to = c(0,1))
+peds.aes.summary <- select(as.data.frame(peds.aes.summary),
+                            c("Subject.ID",
+                              "Side.Effects..choice.Gastrointestinal.",
+                              "Side.Effects..choice.Orthostasis.",
+                              "Side.Effects..choice.Gastrointestinal..1",
+                              "Side.Effects..choice.Orthostasis..1"))
+colnames(peds.aes.summary) <- c("id","gi.p1","ortho.p1","gi.p2","ortho.p2")
+peds.aes.summary[,c(2:5)] <- lapply(peds.aes.summary[,c(2:5)],
+                                     function(x) as.numeric(as.character(x)))
+# GI contingency
+peds.gi.contingency <- c(sum(peds.aes.summary$gi.p2),
+                    length(which(peds.aes.summary$gi.p2 == 0)),
+                    sum(peds.aes.summary$gi.p1),
+                    length(which(peds.aes.summary$gi.p1 == 0)))
+peds.gi.contingency <- as.table(matrix(peds.gi.contingency,ncol = 2,byrow=T))
+dimnames(peds.gi.contingency) <- list(Phase=c(2,1),GI.Symptoms=c("Yes", "No"))
+peds.gi.paired <- table(peds.aes.summary[,c("gi.p1","gi.p2")])
+# Ortho contingency
+peds.ortho.contingency <- c(sum(peds.aes.summary$ortho.p2),
+                    length(which(peds.aes.summary$ortho.p2 == 0)),
+                    sum(peds.aes.summary$ortho.p1),
+                    length(which(peds.aes.summary$ortho.p1 == 0)))
+peds.ortho.contingency <- as.table(matrix(peds.ortho.contingency,ncol = 2,byrow=T))
+dimnames(peds.ortho.contingency) <- list(Phase=c(2,1),Ortho.Symptoms=c("Yes", "No"))
+peds.ortho.paired <- table(peds.aes.summary[,c("ortho.p1","ortho.p2")])
+```
+
+# Adverse Events
+
+## Table 2
+Symptoms reported in adult study participants.
+
+```{r echo=FALSE}
+kable(adult.aes)
+```
+
+## Table 3.
+Symptoms reported in pediatric study participants.
+
+```{r echo=FALSE}
+peds.aes <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Bromocriptine/Data_Cleaned/Peds AE Log.csv"),stringsAsFactors = FALSE)
+
+sideeffects <- c("Gastrointestinal","Orthostasis","Fatigue","Headache","Other","None")
+
+for (r in 1: nrow(peds.aes)) {
+  if (length(which(peds.aes[r,2:7] == "Checked")) > 0) {
+    peds.aes$p1SE[r] <- 
+      paste(sideeffects[which(peds.aes[r,2:7] == "Checked")],collapse = ", ")
+  } else {
+    peds.aes$p1SE[r] <- NA
+  }
+  if (length(which(peds.aes[r,9:14] == "Checked")) > 0) {
+    peds.aes$p2SE[r] <- 
+      paste(sideeffects[which(peds.aes[r,9:14] == "Checked")],collapse = ", ")
+  } else {
+    peds.aes$p2SE[r] <- NA
+  }
+}
+
+peds.aes <- peds.aes[,c(1,16,8,17,15)]
+
+colnames(peds.aes) <- c("Subject ID", "Phase 1 Side Effects", "Phase 1 Notes","Phase 2 Side Effects", "Phase 2 Notes")
+```
+
+```{r echo=FALSE}
+kable(peds.aes)
+```
+
+# 6. Hypoglycemia data
+Participants were asked to wear a CGM for 3 days prior to starting medication and 4 weeks after starting medication, in each phase of the study.  For this study, hypoglycemia-related safety outcomes are defined as the number of glycemic excursions <50 mg/dL and <70 mg/dL per day, and the percent of time spent <50 mg/dL and <70 mg/dL.  These outcomes are expressed as excursions per day or percent of time to account for the different length of time the CGM was worn by each participant in each phase.  Tables 4 and 5 provide descriptive statistics for these outcomes for the adult and pediatric cohort, respectively.  For the blinded version of the report, data from phases 1 and 2 are combined, so each participant has up to 2 sets of CGM data in each column of tables 4 and 5.
+
+## Table 4.  
+Summary of hypoglycemia by CGM in adult cohort, phases 1 and 2 combined.
+
+```{r echo=FALSE}
+kable(adult.blinded.results)
+```
+
+## Table 5.  
+Summary of hypoglycemia by CGM in pediatric cohort, phases 1 and 2 combined.
+
+```{r echo=FALSE}
+kable(peds.blinded.results)
+```
+
+# Clarification Questions
+##1. Enrolled numbers don't = completed + withdrawn or active
+
+The peds total enrollment should equal 32, which has been updated in the report. For the adult cohort, screen fails and withdrawals are separate categories, so in fact a total of 24 participants dropped out of the study, of which 7 were screen fails (as opposed to 17 total). 
+
+##2. Screening numbers = enrolled numbers
+
+Once the consent form is signed, they are considered "enrolled," and screening labs cannot be drawn until the consent has been signed. Per Susan Gross: "If they signed a consent and then their screening labs came back ineligible or they withdrew after the screen then they would be a withdrawal or screen fail.  They would still be counted in the enrolled #, but they would also be listed as a screen fail/withdrawn."
+
+##3. Number withdrawn during therapy by treatment.
+
+### Table 6.
+Pediatric participants withdrawn during therapy by phase.
+
+```{r echo=FALSE}
+kable(peds.withdraw,row.names = F)
+```
+
+### Table 7.
+Adult participants withdrawn during therapy by treatment.
+
+```{r echo=FALSE}
+kable(adult.withdraw,row.names = F)
+```
+
+##4. Tables for GI side effects and orthostasis symptoms
+
+### Table 8a.
+Adult cohort GI side effects by phase.
+```{r echo=FALSE}
+test <- mcnemar.test(gi.paired)
+gi.contingency[c(2,1),]
+print(paste("McNemar's P Value =",round(test$p.value,2)))
+```
+
+### Table 8b.
+Adult cohort orthostasis side effects by phase.
+```{r echo=FALSE}
+test <- mcnemar.test(ortho.paired)
+ortho.contingency[c(2,1),]
+print(paste("McNemar's P Value =",round(test$p.value,2)))
+```
+
+### Table 9a.
+Pediatric cohort GI side effects by phase.
+```{r echo=FALSE}
+test <- mcnemar.test(peds.gi.paired)
+peds.gi.contingency[c(2,1),]
+print(paste("McNemar's P Value =",round(test$p.value,2)))
+```
+
+### Table 9b.
+Pediatric cohort orthostasis side effects by phase.
+```{r echo=FALSE}
+test <- mcnemar.test(peds.ortho.paired)
+peds.ortho.contingency[c(2,1),]
+print(paste("McNemar's P Value =",round(test$p.value,2)))
+```
+
+##5. BP measures
+### Table 10.
+Adult BP comparisons at visits 4 and 7. Mean (SD) or median [IQR]. P Values adjusted using the Bonferroni method.
+```{r echo=FALSE}
+kable(adult.bp)
+```
+
+*BCQR-16 became hypotensive at visit 7 but did not have a BP measurement.
+
+### Table 11.
+Pediatric BP comparisons at visits 4 and 7. Mean (SD) or median [IQR]. P Values adjusted using the Bonferroni method.
+```{r echo=FALSE}
+kable(peds.bp)
+```
+
+*Only two participants had end of visit BP readings, so the variables were excluded from this table.
+
+##6. Scale of symptoms
+
+The scale of symptoms was not recorded, but all were mild except for those participants who withdrew as a result. In the pediatric cohort, only one participant withdrew due to symptoms. Per Susan Gross: "There was really just the one subject that withdrew due to symptoms (PBCQR-22).  She did pass out and was very nauseous at the full dose 4 pills.  This was resolved when she went back down to the 2 pills, but again, her parents would not allow her to continue." This was the same for the adult cohort as well. Per Irene Schauer: "If they didn’t withdraw, the symptoms were always mild OR very transient (ie first dose or two and then gone)." See Table 7 for withdrawal reasons in the adult cohort.
+
+##7. Further BP clarification
+
+```{r echo=FALSE,include=FALSE}
+# Subject IDs manually edited for easier import and analysis. Some visit numbers also manually corrected.
+filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Bromocriptine/Data_Cleaned/Adult BCQR BP.csv")
+adult.bp <- read.csv(filename)
+adult.bp <- adult.bp[,c("Id","Visit","SystolicPressure","DiastolicPressure")]
+# Remove participants with only one visit (for paired test).
+adult.bp <- adult.bp[adult.bp$Id %in% adult.bp$Id[duplicated(adult.bp$Id)],]
+adult.bp <- adult.bp[!duplicated(adult.bp),]
+vars <- c("SystolicPressure","DiastolicPressure")
+bp.table <- CreateTableOne(vars = vars,strata = "Visit",data = adult.bp,testNonNormal = wilcox.test,argsNonNormal = list(paired = TRUE))
+bp.table <- as.data.frame(print(bp.table,nonnormal = vars))
+# Same thing for pediatric.
+filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Bromocriptine/Data_Cleaned/Peds BCQR BP.csv")
+peds.bp <- read.csv(filename)
+peds.bp <- peds.bp[,c("Id","Visit","SystolicPressure","DiastolicPressure")]
+peds.bp$Visit <- ifelse(peds.bp$Visit == 1,4,7)
+# Remove participants with only one visit (for paired test).
+peds.bp <- peds.bp[peds.bp$Id %in% peds.bp$Id[duplicated(peds.bp$Id)],]
+peds.bp <- peds.bp[!duplicated(peds.bp),]
+vars <- c("SystolicPressure","DiastolicPressure")
+peds.bp.table <- CreateTableOne(vars = vars,strata = "Visit",data = peds.bp,testNonNormal = wilcox.test,argsNonNormal = list(paired = TRUE))
+peds.bp.table <- as.data.frame(print(peds.bp.table,nonnormal = vars))
+```
+
+### Table 11.
+Adult Endopat BP comparisons at visits 4 (phase 1) and 7 (phase 2), median [IQR].
+```{r echo=FALSE}
+kable(bp.table[,1:3])
+```
+
+### Table 12.
+Pediatric Endopat BP comparisons at visits 4 (phase 1) and 7 (phase 2), median [IQR].
+```{r echo=FALSE}
+kable(peds.bp.table[,1:3])
+```
+
+```{r include=FALSE,echo=FALSE}
+save.image(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Bromocriptine/R_Workspace/bromocriptine_analysis.RData"))
+```

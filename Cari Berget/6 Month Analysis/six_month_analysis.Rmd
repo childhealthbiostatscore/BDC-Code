@@ -1,0 +1,193 @@
+---
+title: ""
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=FALSE, include=FALSE}
+# Load libraries and functions
+library(tableone)
+library(knitr)
+library(reshape2)
+library(tidyr)
+library(lubridate)
+library(dplyr)
+library(ggplot2)
+library(tableone)
+source('~/Documents/GitHub/Tim-and-Laura/tim_R_functions.R')
+pathstart <- os.check()
+```
+
+```{r echo=FALSE,warning=FALSE}
+# Read in glycemic data
+filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura Tim projects/Cari Berget/6 Month Manuscript/Data_Cleaned/670GChild_GlycemicDATA_2019-01-07_.csv")
+glycemicdata <- read.csv(filename,na.strings = "",stringsAsFactors = F)
+# Format dates
+datecols <- c("demographics_consent","demographics_dob","demographics_diabetesdx","automode_start",
+              "hba1c_date_b","hba1c_date_m1","t1_date_m1","hba1c_date_t1","t1_date","hba1c_date_t2",
+              "t2_date")
+glycemicdata[,datecols] <- lapply(glycemicdata[,datecols], function(x) mdy(x,tz = "MST"))
+```
+
+```{r echo=FALSE}
+# Re-assign visit dates based on Cari's decisions. CSV file manually edited for easier import.
+# Notes:
+# 1. Cari is double checking #14 dates, others in CSV file are correct. 
+# 2. Baseline A1c can be 2 weeks after AM start.
+# 3. "Date Questions.csv" manually edited for easier R import.
+filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura Tim projects/Cari Berget/6 Month Manuscript/Data_Cleaned/Date Questions.csv")
+correct.dates <- read.csv(filename,stringsAsFactors = F,na.strings = c("","none"))
+correct.dates[,2:5] <- lapply(correct.dates[,2:5],function(x) mdy(x,tz = "MST"))
+# Split into separate data frames, rename columns.
+m1cols <- c(grep("m1_",colnames(glycemicdata)),grep("_m1",colnames(glycemicdata)))
+original.m1 <- glycemicdata[,c(1,m1cols)]
+colnames(original.m1) <- sub("_m1","",colnames(original.m1))
+colnames(original.m1) <- sub("t1_","",colnames(original.m1))
+# T1
+t1cols <- c(grep("t1_",colnames(glycemicdata)),grep("_t1",colnames(glycemicdata)))
+original.t1 <- glycemicdata[,c(1,t1cols)]
+colnames(original.t1) <- sub("t1_","",colnames(original.t1))
+colnames(original.t1) <- sub("_t1","",colnames(original.t1))
+# T2
+t2cols <- c(grep("t2_",colnames(glycemicdata)),grep("_t2",colnames(glycemicdata)))
+original.t2 <- glycemicdata[,c(1,t2cols)]
+colnames(original.t2) <- sub("t2_","",colnames(original.t2))
+colnames(original.t2) <- sub("_t2","",colnames(original.t2))
+# Define variables of interest
+vars <- c("hba1c","am_time","mm_time","sensor_wear","sensor_u54","sensor_55_69",
+          "sensor_70_180","sensor_181_250","sensor_g250","mean_sg","sd",
+          "bg_checks","calibrations","tdd","basal","bolus","amexit",
+          "amexit_day","amexit_hyper","amexit_hypo","amexit_manual","amexit_other")
+# Combine, remove duplicates and melt
+allcols <- c("record_id","date",vars)
+alldat <- rbind(original.m1[,allcols],original.t1[,allcols],original.t2[,allcols])
+alldat <- alldat[which(duplicated(alldat[,c("record_id","date")])==F),]
+alldat <- melt(alldat,id.vars = c("record_id","date"))
+# Spread
+alldat <- spread(alldat,key = variable,value = value)
+# Get corrected M1 data
+m1 <- correct.dates[,c("record_id","correct.m1.date")]
+colnames(m1) <- c("record_id","date")
+m1 <- left_join(m1,alldat,by = c("record_id","date"))
+m1$tpoint <- "M1"
+# Get corrected T1 data
+t1 <- correct.dates[,c("record_id","correct.t1.date")]
+colnames(t1) <- c("record_id","date")
+t1 <- left_join(t1,alldat,by = c("record_id","date"))
+t1$tpoint <- "T1"
+# Get corrected T2 data
+t2 <- correct.dates[,c("record_id","correct.t2.date")]
+colnames(t2) <- c("record_id","date")
+t2 <- left_join(t2,alldat,by = c("record_id","date"))
+t2$tpoint <- "T2"
+# Merge M1, T1, and T2
+alldat <- bind_rows(m1,t1,t2)
+alldat <- alldat[order(alldat$record_id),]
+# Add autmode start and calculate days
+alldat <- merge(alldat,glycemicdata[,c("record_id","automode_start")])
+alldat$days <- as.numeric(difftime(alldat$date, alldat$automode_start,units = "days"))
+# Import baseline data
+filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura Tim projects/Cari Berget/6 Month Manuscript/Data_Cleaned/670GChild_BaselineGlycemicData_14JAN2019.csv")
+baseline <- read.csv(filename)
+colnames(baseline) <- sub("_b","",colnames(baseline))
+baseline$tpoint <- "B"
+# Merge everything, sort
+alldat <- bind_rows(alldat,baseline)
+alldat <- alldat[order(alldat$record_id),]
+# Make record ID and timepoint factor
+alldat$record_id <- as.factor(alldat$record_id)
+alldat$tpoint <- as.factor(alldat$tpoint)
+# Get baseline A1c
+alldat$hba1c[alldat$tpoint == "B"] <- glycemicdata$hba1c_baseline
+
+# Notes
+
+# List of manual data changes
+# Renames columns:
+# sensor_54_69_m1 to sensor_55_69_m1
+# baseline data sensor_54_69 to sensor_55_69
+# all "amexits" to "amexit"
+
+# Additional data notes
+# Using a strict 3 month +/- 45 days window would have resulted in the loss of quite a bit of data, so visit dates were manually re-classified by Cari Berget. 
+```
+
+```{r echo=FALSE,warning=FALSE}
+# Plots
+for (v in vars) {
+  plot <- ggplot(data = alldat, aes_string(x = "tpoint", y = v, group = "record_id")) +
+    geom_line(aes_string(color = "record_id")) + 
+    scale_color_discrete(guide=FALSE)
+  print(plot)
+}
+```
+
+
+
+
+```{r echo=FALSE, eval=FALSE}
+# Read in survey data
+filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Cari Berget/6 Month Manuscript/Data_Cleaned/670GChildSurvey_DATA_2019-01-07_.csv")
+childsurvey <- read.csv(filename,na.strings = "",stringsAsFactors = F)
+colnames(childsurvey) <- tolower(colnames(childsurvey))
+filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Cari Berget/6 Month Manuscript/Data_Cleaned/670GYoungAdult_SurveyDATA_2019-01-07_.csv")
+yasurvey <- read.csv(filename,na.strings = "",stringsAsFactors = F)
+colnames(yasurvey) <- tolower(colnames(yasurvey))
+# Format columns
+cdatecols <- c("baseline_surveys_timestamp","date","survey_1_timestamp",
+               "date_t1","survey_2_timestamp","c_date_t2","survey_3_timestamp",
+               "c_date_t3","survey_4_timestamp","c_date_t4")
+childsurvey[,cdatecols] <- lapply(childsurvey[,cdatecols],function(x) parse_date_time(x,c("mdyHM","mdy"),tz = "MST"))
+# "1 failed to parse" warning above refers to survey_1_timestamp "[not completed]"
+yadatecols <- c("baseline_surveys_timestamp","ya_hfs_date_b",
+                "survey_1_timestamp","ya_hfs_date_t1","survey_2_timestamp","ya_hfs_date_t2",
+                "survey_3_timestamp","ya_hfs_date_t3","survey_4_timestamp","ya_hfs_date_t4")
+yasurvey[,yadatecols] <- lapply(yasurvey[,yadatecols],function(x) parse_date_time(x,c("mdyHM","mdy"),tz = "MST"))
+# Split by timepoint and survey type - children
+baseline.chfs.c <- select(childsurvey,record_id,baseline_surveys_timestamp,date,
+                        c_hfs_behave1:c_hfs_worry25)
+baseline.paid.c <- select(childsurvey,record_id,baseline_surveys_timestamp,date,
+                        c_paid1:c_paid20)
+t1.chfs.c <- select(childsurvey,record_id,survey_1_timestamp,date_t1,
+                        c_hfs_behave1_t1:c_hfs_worry25_t1)
+t1.paid.c <- select(childsurvey,record_id,survey_1_timestamp,date_t1,
+                        c_paid1_t1:c_paid20_t1)
+t2.chfs.c <- select(childsurvey,record_id,survey_2_timestamp,c_date_t2,
+                        c_hfs_behave1_t2:c_hfs_worry25_t2)
+t2.paid.c <- select(childsurvey,record_id,survey_2_timestamp,c_date_t2,
+                        c_paid1_t2:c_paid20_t2)
+# Split by timepoint and survey type - young adult
+baseline.hfs.ya <- select(yasurvey,record_id,ya_hfs_date_b:ya_hypo_mild_upset_b)
+baseline.paid.ya <- select(yasurvey,record_id,ya_paid1_base:ya_paid20_base)
+t1.hfs.ya <- select(yasurvey,record_id,ya_hfs_date_t1:ya_hypo_mild_upset_t1)
+t1.paid.ya <- select(yasurvey,record_id,ya_paid1_t1:ya_paid20_t1)
+t2.hfs.ya <- select(yasurvey,record_id,ya_hfs_date_t2:ya_hypo_mild_upset_t2)
+t2.paid.ya <- select(yasurvey,record_id,ya_paid1_t2:ya_paid20_t2)
+```
+
+```{r echo=FALSE,eval=FALSE}
+# Results table
+timetable <- as.data.frame(matrix(nrow = 3,ncol = 8))
+colnames(timetable) <- c("Timepoint","Min.","1st Qu.","Median","Mean","3rd Qu.","Max.","Missing")
+timetable[,1] <- c("1 Month","T1","T2")
+# Calculate differences
+m1 <- as.numeric(difftime(dates$t1_date_m1,dates$automode_start,units = "days"))
+t1 <- as.numeric(difftime(dates$t1_date,dates$automode_start,units = "days"))
+t2 <- as.numeric(difftime(dates$t2_date,dates$automode_start,units = "days"))
+# Put results in table
+timetable[1,2:8] <- as.numeric(summary(m1))
+timetable[2,2:8] <- as.numeric(summary(t1))
+timetable[3,2:8] <- as.numeric(summary(t2))
+# Print
+kable(timetable)
+# Table with all values
+tempdates <- dates[,c("record_id","automode_start","t1_date_m1","t1_date","t2_date")]
+tempdates$m1_days <- as.numeric(difftime(tempdates$t1_date_m1,tempdates$automode_start,units = "days"))
+tempdates$t1_days <- as.numeric(difftime(tempdates$t1_date,tempdates$automode_start,units = "days"))
+tempdates$t2_days <- as.numeric(difftime(tempdates$t2_date,tempdates$automode_start,units = "days"))
+```

@@ -1,0 +1,782 @@
+---
+title: "Analysis for Bone Health Manuscript"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=FALSE, include=FALSE}
+# Load necessary libraries.
+library(tableone)
+library(nortest)
+library(emmeans)
+library(knitr)
+source('~/Documents/GitHub/Tim-and-Laura/tim_R_functions.R')
+```
+
+```{r echo=FALSE, include=FALSE}
+# Define all the variables that don't require radius or tibia length adjustment.
+no.adjust <- c("BMD1.3",
+               "BMDLumbarTotal",
+               "BMDNeck",
+               "BMDTotalHip",
+               "LengthR",
+               "LengthT",
+               "TBS.L1L4",
+               "BSI_Crt_R4",
+               "BSI_R4",
+               "BSI_SubCrt_R4",
+               "BSI_Trab_R4",
+               "SSI_R33",
+               "Imax_RADIUS",
+               "Imin_RADIUS",
+               "Imax_Imin_RADIUS",
+               "Tot_A_R4",
+               "Tot_Den_R4",
+               "TRAB_A_R4",
+               "Trab_den_R4",
+               "CRT_A_R4",
+               "CrtDen_R4",
+               "CRT_Den_R33",
+               "CRT_THK_R33",
+               "EndoC_R33",
+               "PeriC_R33",
+               "BSI_Crt_T4",
+               "BSI_SubCrt_T4",
+               "BSI_T4",
+               "BSI_Trab_T4",
+               "SSI_T38",
+               "SSI_T66",
+               "Imax_TIB_38",
+               "Imax_TIB_66",
+               "Imin_TIB_38",
+               "Imin_TIB_66",
+               "Imax_Imin_TIB_38",
+               "Imax_Imin_TIB_66",
+               "Trab_A_T4",
+               "Trab_Den_T4",
+               "Crt_A_T4",
+               "Crt_A_T38",
+               "Crt_A_T66",
+               "Crt_Den_T4",
+               "Crt_Den_T38",
+               "Crt_Den_T66",
+               "Crt_thk_T38",
+               "Crt_thk_T66",
+               "EndoC_T38",
+               "EndoC_T66",
+               "PeriC_t38",
+               "PeriC_t66",
+               "Tot_A_T4",
+               "Tot_Den_T4")
+no.adjust <- no.adjust[order(no.adjust)]
+# Define radius variables that need to be adjusted by length.
+radius.adjust <- c("BSI_Crt_R4",
+                   "BSI_R4",
+                   "BSI_SubCrt_R4",
+                   "BSI_Trab_R4",
+                   "SSI_R33",
+                   "Imax_RADIUS",
+                   "Imin_RADIUS",
+                   "Imax_Imin_RADIUS",
+                   "Tot_A_R4",
+                   "Tot_Den_R4",
+                   "TRAB_A_R4",
+                   "Trab_den_R4",
+                   "CRT_A_R4",
+                   "CrtDen_R4",
+                   "CRT_Den_R33",
+                   "CRT_THK_R33",
+                   "EndoC_R33",
+                   "PeriC_R33")
+radius.adjust <- radius.adjust[order(radius.adjust)]
+# Define tibia variables that need to be adjusted by length.
+tibia.adjust <- c("BSI_Crt_T4",
+                  "BSI_SubCrt_T4",
+                  "BSI_T4",
+                  "BSI_Trab_T4",
+                  "SSI_T38",
+                  "SSI_T66",
+                  "Imax_TIB_38",
+                  "Imax_TIB_66",
+                  "Imin_TIB_38",
+                  "Imin_TIB_66",
+                  "Imax_Imin_TIB_38",
+                  "Imax_Imin_TIB_66",
+                  "Trab_A_T4",
+                  "Trab_Den_T4",
+                  "Crt_A_T4",
+                  "Crt_A_T38",
+                  "Crt_A_T66",
+                  "Crt_Den_T4",
+                  "Crt_Den_T38",
+                  "Crt_Den_T66",
+                  "Crt_thk_T38",
+                  "Crt_thk_T66",
+                  "EndoC_T38",
+                  "EndoC_T66",
+                  "PeriC_t38",
+                  "PeriC_t66",
+                  "Tot_A_T4",
+                  "Tot_Den_T4")
+tibia.adjust <- tibia.adjust[order(tibia.adjust)]
+# Define all the variables of interest.
+all.variables <- c(no.adjust,radius.adjust,tibia.adjust)
+all.variables <- all.variables[order(all.variables)]
+```
+    
+```{r echo=FALSE}
+# Data management
+# Check OS.
+pathstart <- os.check()
+filename <- paste(pathstart,"som/RI Biostatistics Core/Shared/Laura Kaci projects/Bone studies/pQCT/DATA/QTable1_BaselineData_9.17.18.csv",sep="")
+# Read in.
+pqct <- read.csv(filename,na.strings = c("No record","Incomplete"))
+# Remove people without pQCT data and controls with A1c > 7%.
+pqct <- pqct[-c(which(pqct$Diabetic == "No" & pqct$HbA1c >= 7.0)),]
+pqct <- pqct[which(!is.na(pqct$LengthT) | !is.na(pqct$LengthR)),]
+# Set 0 values in Endo_C_r4 data to NA, per emails with Janet and Viral.
+pqct$Endo_C_r4[pqct$Endo_C_r4 == 0] <- NA
+# Merge left and right Neck, Hip, HRT, Parental fractures. Convert variables 
+# coded as 1 and 2 to TRUE/FALSE.
+pqct$BMDNeck <- pmin(pqct$BMDRNeck,pqct$BMDLNeck,na.rm = TRUE)
+pqct$BMDTotalHip <- pmin(pqct$BMDTotalLHip,pqct$BMDTotalRHip,na.rm = TRUE)
+pqct$HRT_ever <- pmin(pqct$HRT,pqct$HRT_Curr,na.rm = TRUE)
+pqct$HRT_ever[which(pqct$HRT_ever == 2)] <- 0
+pqct$HRT_ever <- as.logical(pqct$HRT_ever)
+pqct$HTN[which(pqct$HTN == 2)] <- 0
+pqct$HTN <- as.logical(pqct$HTN)
+pqct$Nephropathy[which(pqct$Nephropathy == 2)] <- 0
+pqct$Nephropathy <- as.logical(pqct$Nephropathy)
+pqct$Neuropathy[which(pqct$Neuropathy == 2)] <- 0
+pqct$Neuropathy <- as.logical(pqct$Neuropathy)
+pqct$Retinopathy[which(pqct$Retinopathy == 2)] <- 0
+pqct$Retinopathy <- as.logical(pqct$Retinopathy)
+pqct$Statin[which(pqct$Statin == 2)] <- 0
+pqct$Statin <- as.logical(pqct$Statin)
+pqct$HipParent <- as.logical(pmax(pqct$HipMother,pqct$HipFather))
+pqct$FractureBone[which(pqct$FractureBone == 2)] <- 0
+pqct$FractureBone <- as.logical(pqct$FractureBone)
+# Add age at T1D diagnosis variable.
+pqct$age.dx.group <- NA
+pqct$age.dx.group[which(pqct$Age-pqct$T1DDuration >= 20)] <- "Greater than 20"
+pqct$age.dx.group[which(pqct$Age-pqct$T1DDuration < 20)] <- "Less than 20"
+```
+
+```{r echo=FALSE,include=FALSE}
+table.one.vars <- c("ACR","Age","BMI","calc","CalciumCorrected","CTX1","eGFR",
+                    "FractureQty","HbA1c","IGF1","InsulinDose","LengthR",
+                    "LengthT","Muscle_A","IMAT","Menopause_yrs",
+                    "Osteocalcin.1","P1NP","PhosphorusSerum","PTH",
+                    "T1DDuration","TtlFatMass","TtlFatPerc","TtlLeanMass",
+                    "UCa_Cr","VitD","FractureBone","HipNeither","HipParent",
+                    "HRT_ever","HTN","Statin","Nephropathy","Neuropathy",
+                    "Retinopathy")
+# Table 1 by T1D status.
+# Test continuous variables for normality and find variables that require an exact 
+# test.
+nonnormal.vars <- NULL
+exact.vars <- NULL
+for (var in 1:length(table.one.vars)) {
+  if (typeof(pqct[,table.one.vars[var]]) == "logical"){
+    group1count <- sum(pqct[which(pqct$Diabetic == "Yes"),table.one.vars[var]],
+                       na.rm = TRUE)
+    group2count <- sum(pqct[which(pqct$Diabetic == "No"),table.one.vars[var]],
+                       na.rm = TRUE)
+    if (group1count < 5 | group2count < 5) {
+      exact.vars <- c(exact.vars,table.one.vars[var])
+    } else {
+      exact.vars <- exact.vars
+    }
+  } else {
+    ks <- lillie.test(pqct[,table.one.vars[var]])
+    if (ks$p.value <= 0.05) {
+      nonnormal.vars <- c(nonnormal.vars,table.one.vars[var])
+    }
+  }
+}
+
+table.one.t1d <- CreateTableOne(table.one.vars,strata = "Diabetic",pqct,
+                            includeNA = FALSE)
+table.one.t1d <- print(table.one.t1d,exact = exact.vars,
+                       nonnormal = nonnormal.vars)
+table.one.t1d <- as.data.frame(table.one.t1d)
+# Table 1 by age at T1D diagnosis.
+# Test continuous variables for normality and find variables that require an exact 
+# test.
+nonnormal.vars <- NULL
+exact.vars <- NULL
+for (var in 1:length(table.one.vars)) {
+  if (typeof(pqct[,table.one.vars[var]]) == "logical"){
+    group1count <- 
+      sum(pqct[which(pqct$age.dx.group == "Greater than 20"),table.one.vars[var]],
+          na.rm = TRUE)
+    group2count <- 
+      sum(pqct[which(pqct$age.dx.group == "Less than 20"),table.one.vars[var]],
+          na.rm = TRUE)
+    if (group1count < 5 | group2count < 5) {
+      exact.vars <- c(exact.vars,table.one.vars[var])
+    } else {
+      exact.vars <- exact.vars
+    }
+  } else {
+    ks <- lillie.test(pqct[,table.one.vars[var]])
+    if (ks$p.value <= 0.05) {
+      nonnormal.vars <- c(nonnormal.vars,table.one.vars[var])
+    }
+  }
+}
+table.one.age.group <- CreateTableOne(table.one.vars,strata = "age.dx.group",pqct,
+                            includeNA = FALSE)
+table.one.age.group <- print(table.one.age.group,nonnormal = nonnormal.vars,
+                             exact = exact.vars)
+table.one.age.group <- as.data.frame(table.one.age.group)
+```
+
+## Table 1a
+Descriptive statistics by diabetic status. Normal variables were compared using an unpaired t-test, and non-normal variables were compared using the Kruskal-Wallis Rank Sum Test (test = "nonnorm"). Categorical variables were compared using a chi-squared test, and low-count variables were compared using Fisher's Exact Test (test = "exact").
+
+```{r echo=FALSE}
+kable(table.one.t1d)
+```
+
+## Table 1b
+Descriptive statistics by age at diagnosis. Normal variables were compared using an unpaired t-test, and non-normal variables were compared using the Kruskal-Wallis Rank Sum Test (test = "nonnorm"). Categorical variables were compared using a chi-squared test, and low-count variables were compared using Fisher's Exact Test (test = "exact").
+
+```{r echo=FALSE}
+kable(table.one.age.group)
+```
+
+# Primary Aim: Differences by T1D Status
+```{r echo=FALSE}
+# Make a function for running lm by diabetic status, with alterable adjustment variables and dataset.
+lm.by.t1d <- function(var, adj, dataframe) {
+  adj <- paste(adj,collapse = " + ")
+  formula <- paste(var,"~","Diabetic+",adj,sep = "")
+  fit <- lm(as.formula(formula),dataframe)
+  ls.means <- as.data.frame(emmeans(fit,"Diabetic"))
+  ls.means <- ls.means[,1:3]
+  ls.means$pval <- format.pval(summary(fit)$coef[2,4],eps = 0.001,digits = 3)
+  return(ls.means)
+}
+```
+
+```{r echo=FALSE}
+# Run all variables that don't need to be length-adjusted.
+t1d.age.results <- data.frame(matrix(nrow = (length(no.adjust)),ncol = 6))
+colnames(t1d.age.results) <- c("Variable","Mean (T1D+)","SE (T1D+)",
+                           "Mean (T1D-)","SE (T1D-)","P Value")
+for(v in 1:length(no.adjust)) {
+  table <- lm.by.t1d(no.adjust[v],"Age",pqct)
+  t1d.age.results[v,1] <- no.adjust[v]
+  t1d.age.results[v,2] <- round(table$emmean[which(table$Diabetic == "Yes")],3)
+  t1d.age.results[v,3] <- round(table$SE[which(table$Diabetic == "Yes")],3)
+  t1d.age.results[v,4] <- round(table$emmean[which(table$Diabetic == "No")],3)
+  t1d.age.results[v,5] <- round(table$SE[which(table$Diabetic == "No")],3)
+  t1d.age.results[v,6] <- table$pval[1]
+}
+```
+
+## Table 2a
+Results for Least Square means +/- standard error for variables by diabetic status adjusting for age.
+```{r echo=FALSE}
+kable(t1d.age.results)
+```
+
+```{r echo=FALSE}
+# Run all radius variables.
+t1d.age.radius.results <- data.frame(matrix(nrow = (length(radius.adjust)),ncol = 6))
+colnames(t1d.age.radius.results) <- c("Variable","Mean (T1D+)","SE (T1D+)",
+                           "Mean (T1D-)","SE (T1D-)","P Value")
+for(v in 1:length(radius.adjust)) {
+  table <- lm.by.t1d(radius.adjust[v],c("Age","LengthR"),pqct)
+  t1d.age.radius.results[v,1] <- 
+    radius.adjust[v]
+  t1d.age.radius.results[v,2] <- 
+    round(table$emmean[which(table$Diabetic == "Yes")],3)
+  t1d.age.radius.results[v,3] <- 
+    round(table$SE[which(table$Diabetic == "Yes")],3)
+  t1d.age.radius.results[v,4] <- 
+    round(table$emmean[which(table$Diabetic == "No")],3)
+  t1d.age.radius.results[v,5] <- 
+    round(table$SE[which(table$Diabetic == "No")],3)
+  t1d.age.radius.results[v,6] <- 
+    table$pval[1]
+}
+```
+
+## Table 2b
+Results for Least Square means +/- standard error for variables by diabetic status adjusting for age and radius length.
+```{r echo=FALSE}
+kable(t1d.age.radius.results)
+```
+
+```{r echo=FALSE}
+# Run all tibia variables.
+t1d.age.tibia.results <- data.frame(matrix(nrow = (length(tibia.adjust)),ncol = 6))
+colnames(t1d.age.tibia.results) <- c("Variable","Mean (T1D+)","SE (T1D+)",
+                           "Mean (T1D-)","SE (T1D-)","P Value")
+for(v in 1:length(tibia.adjust)) {
+  table <- lm.by.t1d(tibia.adjust[v],c("Age","LengthT"),pqct)
+  t1d.age.tibia.results[v,1] <- 
+    tibia.adjust[v]
+  t1d.age.tibia.results[v,2] <- 
+    round(table$emmean[which(table$Diabetic == "Yes")],3)
+  t1d.age.tibia.results[v,3] <- 
+    round(table$SE[which(table$Diabetic == "Yes")],3)
+  t1d.age.tibia.results[v,4] <- 
+    round(table$emmean[which(table$Diabetic == "No")],3)
+  t1d.age.tibia.results[v,5] <- 
+    round(table$SE[which(table$Diabetic == "No")],3)
+  t1d.age.tibia.results[v,6] <- 
+    table$pval[1]
+}
+```
+
+## Table 2c
+Results for Least Square means +/- standard error for variables by diabetic status adjusting for age and tibia length.
+```{r echo=FALSE}
+kable(t1d.age.tibia.results)
+```
+
+
+```{r echo=FALSE}
+# Run all variables that don't need to be length-adjusted.
+t1d.age.men.results <- data.frame(matrix(nrow = (length(no.adjust)),ncol = 6))
+colnames(t1d.age.men.results) <- c("Variable","Mean (T1D+)","SE (T1D+)",
+                           "Mean (T1D-)","SE (T1D-)","P Value")
+for(v in 1:length(no.adjust)) {
+  table <- lm.by.t1d(no.adjust[v],c("Age","Menopause_yrs"),pqct)
+  t1d.age.men.results[v,1] <- no.adjust[v]
+  t1d.age.men.results[v,2] <- round(table$emmean[which(table$Diabetic == "Yes")],3)
+  t1d.age.men.results[v,3] <- round(table$SE[which(table$Diabetic == "Yes")],3)
+  t1d.age.men.results[v,4] <- round(table$emmean[which(table$Diabetic == "No")],3)
+  t1d.age.men.results[v,5] <- round(table$SE[which(table$Diabetic == "No")],3)
+  t1d.age.men.results[v,6] <- table$pval[1]
+}
+```
+
+## Table 3a
+Results for Least Square means +/- standard error for variables by diabetic status adjusting for age and years of menopause.
+```{r echo=FALSE}
+kable(t1d.age.men.results)
+```
+
+```{r echo=FALSE}
+# Run all radius variables.
+t1d.age.men.radius.results <- data.frame(matrix(nrow = (length(radius.adjust)),ncol = 6))
+colnames(t1d.age.men.radius.results) <- c("Variable","Mean (T1D+)","SE (T1D+)",
+                           "Mean (T1D-)","SE (T1D-)","P Value")
+for(v in 1:length(radius.adjust)) {
+  table <- lm.by.t1d(radius.adjust[v],c("Age","Menopause_yrs","LengthR"),pqct)
+  t1d.age.men.radius.results[v,1] <- 
+    radius.adjust[v]
+  t1d.age.men.radius.results[v,2] <- 
+    round(table$emmean[which(table$Diabetic == "Yes")],3)
+  t1d.age.men.radius.results[v,3] <- 
+    round(table$SE[which(table$Diabetic == "Yes")],3)
+  t1d.age.men.radius.results[v,4] <- 
+    round(table$emmean[which(table$Diabetic == "No")],3)
+  t1d.age.men.radius.results[v,5] <- 
+    round(table$SE[which(table$Diabetic == "No")],3)
+  t1d.age.men.radius.results[v,6] <- 
+    table$pval[1]
+}
+```
+
+## Table 3b
+Results for Least Square means +/- standard error for variables by diabetic status adjusting for age, years of menopause, and radius length.
+```{r echo=FALSE}
+kable(t1d.age.men.radius.results)
+```
+
+```{r echo=FALSE}
+# Run all tibia variables.
+t1d.age.men.tibia.results <- 
+  data.frame(matrix(nrow = (length(tibia.adjust)),ncol = 6))
+colnames(t1d.age.men.tibia.results) <- c("Variable","Mean (T1D+)","SE (T1D+)",
+                           "Mean (T1D-)","SE (T1D-)","P Value")
+for(v in 1:length(tibia.adjust)) {
+  table <- lm.by.t1d(tibia.adjust[v],c("Age","Menopause_yrs","LengthT"),pqct)
+  t1d.age.men.tibia.results[v,1] <- 
+    tibia.adjust[v]
+  t1d.age.men.tibia.results[v,2] <- 
+    round(table$emmean[which(table$Diabetic == "Yes")],3)
+  t1d.age.men.tibia.results[v,3] <- 
+    round(table$SE[which(table$Diabetic == "Yes")],3)
+  t1d.age.men.tibia.results[v,4] <- 
+    round(table$emmean[which(table$Diabetic == "No")],3)
+  t1d.age.men.tibia.results[v,5] <- 
+    round(table$SE[which(table$Diabetic == "No")],3)
+  t1d.age.men.tibia.results[v,6] <- 
+    table$pval[1]
+}
+```
+
+## Table 3c
+Results for Least Square means +/- standard error for variables by diabetic status adjusting for age, years of menopause, and tibia length.
+```{r echo=FALSE}
+kable(t1d.age.men.tibia.results)
+```
+
+```{r echo=FALSE}
+# Run all variables that don't need to be length-adjusted, add BMI and remove 
+# menopause years.
+t1d.age.bmi.results <- data.frame(matrix(nrow = (length(no.adjust)),ncol = 6))
+colnames(t1d.age.bmi.results) <- c("Variable","Mean (T1D+)","SE (T1D+)",
+                           "Mean (T1D-)","SE (T1D-)","P Value")
+for(v in 1:length(no.adjust)) {
+  table <- lm.by.t1d(no.adjust[v],c("Age","BMI"),pqct)
+  t1d.age.bmi.results[v,1] <- no.adjust[v]
+  t1d.age.bmi.results[v,2] <- round(table$emmean[which(table$Diabetic == "Yes")],3)
+  t1d.age.bmi.results[v,3] <- round(table$SE[which(table$Diabetic == "Yes")],3)
+  t1d.age.bmi.results[v,4] <- round(table$emmean[which(table$Diabetic == "No")],3)
+  t1d.age.bmi.results[v,5] <- round(table$SE[which(table$Diabetic == "No")],3)
+  t1d.age.bmi.results[v,6] <- table$pval[1]
+}
+```
+
+## Table 4a
+Results for Least Square means +/- standard error for variables by diabetic status adjusting for age and BMI.
+```{r echo=FALSE}
+kable(t1d.age.bmi.results)
+```
+
+```{r echo=FALSE}
+# Run all radius variables, add BMI and remove menopause years.
+t1d.age.bmi.radius.results <- data.frame(matrix(nrow = (length(radius.adjust)),ncol = 6))
+colnames(t1d.age.bmi.radius.results) <- c("Variable","Mean (T1D+)","SE (T1D+)",
+                           "Mean (T1D-)","SE (T1D-)","P Value")
+for(v in 1:length(radius.adjust)) {
+  table <- lm.by.t1d(radius.adjust[v],c("Age","BMI","LengthR"),pqct)
+  t1d.age.bmi.radius.results[v,1] <- 
+    radius.adjust[v]
+  t1d.age.bmi.radius.results[v,2] <- 
+    round(table$emmean[which(table$Diabetic == "Yes")],3)
+  t1d.age.bmi.radius.results[v,3] <- 
+    round(table$SE[which(table$Diabetic == "Yes")],3)
+  t1d.age.bmi.radius.results[v,4] <- 
+    round(table$emmean[which(table$Diabetic == "No")],3)
+  t1d.age.bmi.radius.results[v,5] <- 
+    round(table$SE[which(table$Diabetic == "No")],3)
+  t1d.age.bmi.radius.results[v,6] <- 
+    table$pval[1]
+}
+```
+
+## Table 4b
+Results for Least Square means +/- standard error for variables by diabetic status adjusting for age, BMI, and radius length.
+```{r echo=FALSE}
+kable(t1d.age.bmi.radius.results)
+```
+
+```{r echo=FALSE}
+# Run all tibia variables, add BMI and remove menopause years.
+t1d.age.bmi.tibia.results <- data.frame(matrix(nrow = (length(tibia.adjust)),ncol = 6))
+colnames(t1d.age.bmi.tibia.results) <- c("Variable","Mean (T1D+)","SE (T1D+)",
+                           "Mean (T1D-)","SE (T1D-)","P Value")
+for(v in 1:length(tibia.adjust)) {
+  table <- lm.by.t1d(tibia.adjust[v],c("Age","BMI","LengthT"),pqct)
+  t1d.age.bmi.tibia.results[v,1] <- 
+    tibia.adjust[v]
+  t1d.age.bmi.tibia.results[v,2] <- 
+    round(table$emmean[which(table$Diabetic == "Yes")],3)
+  t1d.age.bmi.tibia.results[v,3] <- 
+    round(table$SE[which(table$Diabetic == "Yes")],3)
+  t1d.age.bmi.tibia.results[v,4] <- 
+    round(table$emmean[which(table$Diabetic == "No")],3)
+  t1d.age.bmi.tibia.results[v,5] <- 
+    round(table$SE[which(table$Diabetic == "No")],3)
+  t1d.age.bmi.tibia.results[v,6] <- 
+    table$pval[1]
+}
+```
+
+## Table 4c
+Results for Least Square means +/- standard error for variables by diabetic status adjusting for age, BMI, and tibia length.
+```{r echo=FALSE}
+kable(t1d.age.bmi.tibia.results)
+```
+
+# Secondary Aim: Differences by Age at T1D Diagnosis 
+```{r echo=FALSE}
+# Make a new function for running lm by diabetic status, with alterable 
+# adjustment variables and dataset.
+lm.by.age.dx <- function(var, adj, dataframe) {
+  adj <- paste(adj,collapse = " + ")
+  formula <- paste(var,"~","age.dx.group +",adj,sep = "")
+  fit <- lm(as.formula(formula),dataframe)
+  ls.means <- as.data.frame(emmeans(fit,"age.dx.group"))
+  ls.means <- ls.means[,1:3]
+  ls.means$pval <- format.pval(summary(fit)$coef[2,4],eps = 0.001,digits = 3)
+  return(ls.means)
+}
+```
+
+```{r echo=FALSE}
+# Run all variables that don't need to be length-adjusted.
+age.group.results <- data.frame(matrix(nrow = (length(no.adjust)),ncol = 6))
+colnames(age.group.results) <- c("Variable","Mean (> 20 yrs)","SE (> 20 yrs)",
+                           "Mean (< 20 yrs)","SE (< 20 yrs)","P Value")
+for(v in 1:length(no.adjust)) {
+  table <- lm.by.age.dx(no.adjust[v],"Age",pqct)
+  age.group.results[v,1] <- 
+    no.adjust[v]
+  age.group.results[v,2] <- 
+    round(table$emmean[which(table$age.dx.group == "Greater than 20")],3)
+  age.group.results[v,3] <- 
+    round(table$SE[which(table$age.dx.group == "Greater than 20")],3)
+  age.group.results[v,4] <- 
+    round(table$emmean[which(table$age.dx.group == "Less than 20")],3)
+  age.group.results[v,5] <- 
+    round(table$SE[which(table$age.dx.group == "Less than 20")],3)
+  age.group.results[v,6] <- 
+    table$pval[1]
+}
+```
+
+## Table 5a
+Results for Least Square means +/- standard error for variables by age at diagnosis adjusting for age.
+```{r echo=FALSE}
+kable(age.group.results)
+```
+
+```{r echo=FALSE}
+# Run all radius variables.
+age.group.radius.results <- 
+  data.frame(matrix(nrow = (length(radius.adjust)),ncol = 6))
+colnames(age.group.radius.results) <- c("Variable","Mean (> 20 yrs)",
+                                        "SE (> 20 yrs)","Mean (< 20 yrs)",
+                                        "SE (< 20 yrs)","P Value")
+for(v in 1:length(radius.adjust)) {
+  table <- lm.by.age.dx(radius.adjust[v],c("Age","LengthR"),pqct)
+  age.group.radius.results[v,1] <- 
+    radius.adjust[v]
+  age.group.radius.results[v,2] <- 
+    round(table$emmean[which(table$age.dx.group == "Greater than 20")],3)
+  age.group.radius.results[v,3] <- 
+    round(table$SE[which(table$age.dx.group == "Greater than 20")],3)
+  age.group.radius.results[v,4] <- 
+    round(table$emmean[which(table$age.dx.group == "Less than 20")],3)
+  age.group.radius.results[v,5] <- 
+    round(table$SE[which(table$age.dx.group == "Less than 20")],3)
+  age.group.radius.results[v,6] <- 
+    table$pval[1]
+}
+```
+
+## Table 5b
+Results for Least Square means +/- standard error for variables by age at diagnosis adjusting for age and radius length.
+```{r echo=FALSE}
+kable(age.group.radius.results)
+```
+
+```{r echo=FALSE,include=FALSE}
+# Run all tibia variables.
+age.group.tibia.results <- 
+  data.frame(matrix(nrow = (length(tibia.adjust)),ncol = 6))
+colnames(age.group.tibia.results) <- c("Variable","Mean (> 20 yrs)",
+                                        "SE (> 20 yrs)","Mean (< 20 yrs)",
+                                        "SE (< 20 yrs)","P Value")
+for(v in 1:length(tibia.adjust)) {
+  table <- lm.by.age.dx(tibia.adjust[v],c("Age","LengthT"),pqct)
+  age.group.tibia.results[v,1] <- 
+    tibia.adjust[v]
+  age.group.tibia.results[v,2] <- 
+    round(table$emmean[which(table$age.dx.group == "Greater than 20")],3)
+  age.group.tibia.results[v,3] <- 
+    round(table$SE[which(table$age.dx.group == "Greater than 20")],3)
+  age.group.tibia.results[v,4] <- 
+    round(table$emmean[which(table$age.dx.group == "Less than 20")],3)
+  age.group.tibia.results[v,5] <- 
+    round(table$SE[which(table$age.dx.group == "Less than 20")],3)
+  age.group.tibia.results[v,6] <- 
+    table$pval[1]
+}
+```
+
+## Table 5c
+Results for Least Square means +/- standard error for variables by age at diagnosis adjusting for age and tibia length.
+```{r echo=FALSE}
+kable(age.group.tibia.results)
+```
+
+```{r echo=FALSE}
+# Run all variables that don't need to be length-adjusted.
+age.group.results <- data.frame(matrix(nrow = (length(no.adjust)),ncol = 6))
+colnames(age.group.results) <- c("Variable","Mean (> 20 yrs)","SE (> 20 yrs)",
+                           "Mean (< 20 yrs)","SE (< 20 yrs)","P Value")
+for(v in 1:length(no.adjust)) {
+  table <- lm.by.age.dx(no.adjust[v],c("Age","Menopause_yrs"),pqct)
+  age.group.results[v,1] <- 
+    no.adjust[v]
+  age.group.results[v,2] <- 
+    round(table$emmean[which(table$age.dx.group == "Greater than 20")],3)
+  age.group.results[v,3] <- 
+    round(table$SE[which(table$age.dx.group == "Greater than 20")],3)
+  age.group.results[v,4] <- 
+    round(table$emmean[which(table$age.dx.group == "Less than 20")],3)
+  age.group.results[v,5] <- 
+    round(table$SE[which(table$age.dx.group == "Less than 20")],3)
+  age.group.results[v,6] <- 
+    table$pval[1]
+}
+```
+
+## Table 6a
+Results for Least Square means +/- standard error for variables by age at diagnosis adjusting for age and years of menopause.
+```{r echo=FALSE}
+kable(age.group.results)
+```
+
+```{r echo=FALSE}
+# Run all radius variables.
+age.group.radius.results <- 
+  data.frame(matrix(nrow = (length(radius.adjust)),ncol = 6))
+colnames(age.group.radius.results) <- c("Variable","Mean (> 20 yrs)",
+                                        "SE (> 20 yrs)","Mean (< 20 yrs)",
+                                        "SE (< 20 yrs)","P Value")
+for(v in 1:length(radius.adjust)) {
+  table <- lm.by.age.dx(radius.adjust[v],c("Age","Menopause_yrs","LengthR"),pqct)
+  age.group.radius.results[v,1] <- 
+    radius.adjust[v]
+  age.group.radius.results[v,2] <- 
+    round(table$emmean[which(table$age.dx.group == "Greater than 20")],3)
+  age.group.radius.results[v,3] <- 
+    round(table$SE[which(table$age.dx.group == "Greater than 20")],3)
+  age.group.radius.results[v,4] <- 
+    round(table$emmean[which(table$age.dx.group == "Less than 20")],3)
+  age.group.radius.results[v,5] <- 
+    round(table$SE[which(table$age.dx.group == "Less than 20")],3)
+  age.group.radius.results[v,6] <- 
+    table$pval[1]
+}
+```
+
+## Table 6b
+Results for Least Square means +/- standard error for variables by age at diagnosis adjusting for age, years of menopause, and radius length.
+```{r echo=FALSE}
+kable(age.group.radius.results)
+```
+
+```{r echo=FALSE,include=FALSE}
+# Run all tibia variables.
+age.group.tibia.results <- 
+  data.frame(matrix(nrow = (length(tibia.adjust)),ncol = 6))
+colnames(age.group.tibia.results) <- c("Variable","Mean (> 20 yrs)",
+                                        "SE (> 20 yrs)","Mean (< 20 yrs)",
+                                        "SE (< 20 yrs)","P Value")
+for(v in 1:length(tibia.adjust)) {
+  table <- lm.by.age.dx(tibia.adjust[v],c("Age","Menopause_yrs","LengthT"),pqct)
+  age.group.tibia.results[v,1] <- 
+    tibia.adjust[v]
+  age.group.tibia.results[v,2] <- 
+    round(table$emmean[which(table$age.dx.group == "Greater than 20")],3)
+  age.group.tibia.results[v,3] <- 
+    round(table$SE[which(table$age.dx.group == "Greater than 20")],3)
+  age.group.tibia.results[v,4] <- 
+    round(table$emmean[which(table$age.dx.group == "Less than 20")],3)
+  age.group.tibia.results[v,5] <- 
+    round(table$SE[which(table$age.dx.group == "Less than 20")],3)
+  age.group.tibia.results[v,6] <- 
+    table$pval[1]
+}
+```
+
+## Table 6c
+Results for Least Square means +/- standard error for variables by age at diagnosis adjusting for age, years of menopause, and tibia length.
+```{r echo=FALSE}
+kable(age.group.tibia.results)
+```
+
+```{r echo=FALSE}
+# Run all variables that don't need to be length-adjusted.
+age.group.bmi.results <- data.frame(matrix(nrow = (length(no.adjust)),ncol = 6))
+colnames(age.group.bmi.results) <- c("Variable","Mean (> 20 yrs)","SE (> 20 yrs)",
+                           "Mean (< 20 yrs)","SE (< 20 yrs)","P Value")
+for(v in 1:length(no.adjust)) {
+  table <- lm.by.age.dx(no.adjust[v],c("Age","BMI"),pqct)
+  age.group.bmi.results[v,1] <- 
+    no.adjust[v]
+  age.group.bmi.results[v,2] <- 
+    round(table$emmean[which(table$age.dx.group == "Greater than 20")],3)
+  age.group.bmi.results[v,3] <- 
+    round(table$SE[which(table$age.dx.group == "Greater than 20")],3)
+  age.group.bmi.results[v,4] <- 
+    round(table$emmean[which(table$age.dx.group == "Less than 20")],3)
+  age.group.bmi.results[v,5] <- 
+    round(table$SE[which(table$age.dx.group == "Less than 20")],3)
+  age.group.bmi.results[v,6] <- 
+    table$pval[1]
+}
+```
+
+## Table 7a
+Results for Least Square means +/- standard error for variables by age at diagnosis adjusting for age and BMI.
+```{r echo=FALSE}
+kable(age.group.bmi.results)
+```
+
+```{r echo=FALSE}
+# Run all radius variables.
+age.group.bmi.radius.results <- 
+  data.frame(matrix(nrow = (length(radius.adjust)),ncol = 6))
+colnames(age.group.bmi.radius.results) <- c("Variable","Mean (> 20 yrs)",
+                                        "SE (> 20 yrs)","Mean (< 20 yrs)",
+                                        "SE (< 20 yrs)","P Value")
+for(v in 1:length(radius.adjust)) {
+  table <- lm.by.age.dx(radius.adjust[v],c("Age","BMI","LengthR"),pqct)
+  age.group.bmi.radius.results[v,1] <- 
+    radius.adjust[v]
+  age.group.bmi.radius.results[v,2] <- 
+    round(table$emmean[which(table$age.dx.group == "Greater than 20")],3)
+  age.group.bmi.radius.results[v,3] <- 
+    round(table$SE[which(table$age.dx.group == "Greater than 20")],3)
+  age.group.bmi.radius.results[v,4] <- 
+    round(table$emmean[which(table$age.dx.group == "Less than 20")],3)
+  age.group.bmi.radius.results[v,5] <- 
+    round(table$SE[which(table$age.dx.group == "Less than 20")],3)
+  age.group.bmi.radius.results[v,6] <- 
+    table$pval[1]
+}
+```
+
+## Table 7b
+Results for Least Square means +/- standard error for variables by age at diagnosis adjusting for age, BMI, and radius length.
+```{r echo=FALSE}
+kable(age.group.bmi.radius.results)
+```
+
+```{r echo=FALSE}
+# Run all tibia variables.
+age.group.bmi.tibia.results <- 
+  data.frame(matrix(nrow = (length(tibia.adjust)),ncol = 6))
+colnames(age.group.bmi.tibia.results) <- c("Variable","Mean (> 20 yrs)",
+                                        "SE (> 20 yrs)","Mean (< 20 yrs)",
+                                        "SE (< 20 yrs)","P Value")
+for(v in 1:length(tibia.adjust)) {
+  table <- lm.by.age.dx(tibia.adjust[v],c("Age","BMI","LengthT"),pqct)
+  age.group.bmi.tibia.results[v,1] <- 
+    tibia.adjust[v]
+  age.group.bmi.tibia.results[v,2] <- 
+    round(table$emmean[which(table$age.dx.group == "Greater than 20")],3)
+  age.group.bmi.tibia.results[v,3] <- 
+    round(table$SE[which(table$age.dx.group == "Greater than 20")],3)
+  age.group.bmi.tibia.results[v,4] <- 
+    round(table$emmean[which(table$age.dx.group == "Less than 20")],3)
+  age.group.bmi.tibia.results[v,5] <- 
+    round(table$SE[which(table$age.dx.group == "Less than 20")],3)
+  age.group.bmi.tibia.results[v,6] <- 
+    table$pval[1]
+}
+```
+
+## Table 7c
+Results for Least Square means +/- standard error for variables by age at diagnosis adjusting for age, BMI, and tibia length.
+```{r echo=FALSE}
+kable(age.group.bmi.tibia.results)
+```

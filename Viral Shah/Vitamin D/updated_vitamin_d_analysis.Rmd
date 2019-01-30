@@ -1,0 +1,99 @@
+---
+title: "Updated Vitamin D Analysis"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  word_document:
+    fig_width: 6
+    fig_height: 3.5
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=FALSE, include=FALSE}
+# Load libraries and functions
+library(tableone)
+library(knitr)
+library(ggplot2)
+library(jtools)
+source('~/Documents/GitHub/Tim-and-Laura/tim_R_functions.R')
+pathstart <- os.check()
+```
+
+```{r echo=FALSE,warning=FALSE}
+# Read in data, format column names
+valuesname <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura Tim projects/Viral Shah/Vitamin D/Data_Cleaned/Values 1-2-2019.csv")
+values <- read.csv(valuesname,na.strings = "")
+colnames(values) <- tolower(colnames(values))
+infoname <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura Tim projects/Viral Shah/Vitamin D/Data_Cleaned/Patient information 1-2-2019.csv")
+info <- read.csv(infoname,na.strings = "")
+colnames(info) <- tolower(colnames(info))
+# Merge into one dataframe
+dat <- merge(values,info,by = "labid")
+# Add high vs. low antibody
+dat$abgroup <- ifelse(dat$vdbp >= 0.02, "High","Low")
+# Convert race to NHW and other
+dat$race <- as.factor(ifelse(dat$race == "Non-Hispanic White","Non-Hispanic White","Other"))
+# Convert a1c to numeric
+dat$a1c <- as.numeric(as.character(dat$a1c))
+```
+
+```{r echo=FALSE, include=FALSE}
+# Make table 1
+t1vars <- c("sex","race","free.vd","total.vd","pth","age","dm_week","a1c","bmi")
+# All
+t1a <- CreateTableOne(vars = c(t1vars,"vdbp"),data = dat)
+t1a.print <- as.data.frame(print(t1a,exact = "race",nonnormal = c("free.vd","total.vd","pth","vdbp","age","dm_week","bmi","a1c")))
+# By group
+t1b <- CreateTableOne(vars = t1vars,strata = "abgroup",data = dat)
+t1b.print <- as.data.frame(print(t1b,exact = "race",nonnormal = c("free.vd","total.vd","pth","vdbp","age","dm_week","bmi","a1c")))
+```
+
+```{r echo=FALSE}
+# Print table 1
+kable(t1a.print,caption = "Table 1a: Descriptive statistics for full cohort.")
+kable(t1b.print,caption = "Table 1: Descriptive statistics by antibody group. High Ab defined as >= 0.02 units.")
+```
+
+Figure 1: Spearman correlations between PTH and vitamin D (free and total)
+
+```{r echo=FALSE,warning=FALSE,dpi=600}
+# Correlations
+spearman.plot("pth","total.vd","PTH","Total Vit D",dat,25,10)
+spearman.plot("pth","free.vd","PTH","Free Vit D",dat,25,10,vert = 1)
+```
+
+Figure 2: Spearman correlations between AB concentration and vitamin D (free and total)
+
+```{r echo=FALSE,warning=FALSE,dpi=600}
+# Correlations
+spearman.plot("vdbp","total.vd","VDBP","Total Vit D",dat,0.1,10)
+spearman.plot("vdbp","free.vd","VDBP","Free Vit D",dat,0.1,10,vert = 1)
+```
+
+Figure 3: Interaction effects by antibody group
+
+```{r echo=FALSE,dpi=600}
+fit <- lm(total.vd ~ free.vd * abgroup, data = dat)
+interact_plot(fit,pred = "free.vd",modx = "abgroup",plot.points = TRUE,
+              x.label = "Free Vit D", y.label = "Total Vit D",
+              legend.main = "Antibody Group", 
+              main.title = "Total Vit D vs. Free Vit D by Antibody Level")
+table <- as.data.frame(summary(fit)$coefficients)
+rownames(table) <- c("(Intercept)","Free Vit D",
+                     "Low Antibody Group",
+                     "Free Vit D:Low Antibody Group")
+kable(table, caption = "Table 2: Interaction Effects by Antibody Group")
+```
+
+```{r echo=FALSE,dpi=600}
+fit <- lm(total.vd ~ free.vd * abgroup + age + bmi + race, data = dat)
+table <- as.data.frame(summary(fit)$coefficients)
+rownames(table) <- c("(Intercept)","Free Vit D","Low Antibody Group",
+                     "Age","BMI",
+                     "Race (Other)",
+                     "Free Vit D:Low Antibody Group")
+kable(table, caption = "Table 3: Interaction Effects by Antibody Group, adjusted for age, BMI, and race")
+```

@@ -1,0 +1,225 @@
+---
+title: "Berget ATTD Abstract"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=FALSE,include=FALSE}
+library(knitr)
+library(dplyr)
+library(nortest)
+library(tableone)
+```
+
+```{r echo=FALSE,include=FALSE}
+# Read in and split the data by time point. A couple of columns were 
+# renamed manually so T1 matches T2. Subject 4 baseline A1c date changed to 
+# 12/6/17. Subjects 71 and 92 manually fixed per Cari's email. 
+
+auto.mode <- read.csv("\\\\ucdenver.pvt\\som\\PEDS\\RI Biostatistics Core\\Shared\\Laura Tim projects\\Cari Berget\\ATTD Abstract\\Data_Cleaned\\670GChild.csv", na.strings = c(NA,""))
+# Select correct columns, convert dates and factors.
+auto.mode <- select(auto.mode,record_id:time_2_glycemic_data_complete)
+datecols <- c("demographics_dob","demographics_diabetesdx","automode_start",
+              "hba1c_date_b","hba1c_date_t1","t1_date","hba1c_date_t2",
+              "t2_date")
+factorcols <- c("demographics_ethnicity","demographics_race","demographics_sex",
+                "demographics_insurance","demographics_pumphx",
+                "demographics_cgmhx")
+auto.mode[datecols] <- 
+  lapply(auto.mode[datecols],
+         function(x){as.POSIXct(x,format = "%m/%d/%Y",tz="UTC")})
+auto.mode[factorcols] <- lapply(auto.mode[factorcols], as.factor)
+# Make a table for just t1, add time differences.
+t1 <- select(auto.mode,c(record_id:time_1_glycemic_data_complete,t2_date))
+t1$grp <- "t1"
+t1$base.to.am.start <- 
+  as.numeric(abs(difftime(t1$hba1c_date_b,t1$automode_start,units = "days")))
+t1$am.to.t1 <- 
+  as.numeric(abs(difftime(t1$t1_date,t1$automode_start,units = "days")))
+t1$t1.to.t2 <- as.numeric(abs(difftime(t1$t1_date,t1$t2_date,units = "days")))
+t1$am.to.t2 <- 
+  as.numeric(abs(difftime(t1$t2_date,t1$automode_start,units = "days")))
+t1 <- filter(t1,time_1_glycemic_data_complete != 0)
+# Make a table for T2.
+t2 <- select(auto.mode,c(record_id:demographics_t1d_duration,
+                         hba1c_baseline,t1_date,t2_date,automode_start,
+                         hba1c_t2:time_2_glycemic_data_complete))
+t2$grp <- "t2"
+t2$am.to.t1 <- 
+  as.numeric(abs(difftime(t2$t1_date,t2$automode_start,units = "days")))
+t2$t1.to.t2 <- as.numeric(abs(difftime(t2$t1_date,t2$t2_date,units = "days")))
+t2$am.to.t2 <- 
+  as.numeric(abs(difftime(t2$t2_date,t2$automode_start,units = "days")))
+t2 <- filter(t2,time_2_glycemic_data_complete != 0)
+# Remove T1 and T2 from variable names so they're the same.
+colnames(t1) <- gsub("t1_|_t1","",colnames(t1))
+colnames(t2) <- gsub("t2_|_t2","",colnames(t2))
+colnames(t2) <- gsub("t1_|_t1","",colnames(t2))
+datecols <- gsub("t1_|_t1|t2_|_t2","",datecols)
+```
+
+```{r echo=FALSE,include=FALSE}
+# Create a table 1 for everyone with T1 data.
+vars <- colnames(t1)[-c(which(colnames(t1) %in% datecols),
+                        which(colnames(t1)=="time_1_glycemic_data_complete"),
+                        which(colnames(t1)=="demographics_complete"),
+                        which(colnames(t1)=="record_id"),
+                        which(colnames(t1)=="grp"),
+                        which(colnames(t1)=="t2_date"))]
+t1.all.table1 <- CreateTableOne(vars,data = t1)
+# Check variables for normality
+nonnormal.vars <- NULL
+normal.vars <- NULL
+for (v in 1:length(vars)) {
+  if (is.null(levels(t1[,vars[v]]))) {
+    test <- lillie.test(t1[,vars[v]])
+    if (as.numeric(test$p.value) < 0.05) {
+      nonnormal.vars <- c(nonnormal.vars,vars[v])
+    } else {
+      normal.vars <- c(normal.vars,vars[v])
+    }
+  } else {
+    next()
+  }
+}
+t1.all.table1 <- print(t1.all.table1,nonnormal = nonnormal.vars)
+```
+
+```{r echo=FALSE,include=FALSE}
+# Create a table with everyone who has data at T1 and T2.
+t1t2 <- semi_join(t1,t2,by="record_id")
+t1t2$t1.to.t2 <- t2$t1.to.t2
+common_cols <- intersect(colnames(t1t2), colnames(t2))
+t1t2 <- rbind(t1t2[,common_cols],t2[,common_cols])
+vars <- colnames(t1t2)[-c(which(colnames(t1t2) %in% datecols),
+                        which(colnames(t1t2)=="time_1_glycemic_data_complete"),
+                        which(colnames(t1t2)=="demographics_complete"),
+                        which(colnames(t1t2)=="record_id"),
+                        which(colnames(t1t2)=="grp"))]
+# Make a table 1.
+t1t2.table.1 <- CreateTableOne(vars[c(1:9,32,33,34)],data = t2)
+t1t2.table.1 <- print(t1t2.table.1,nonnormal = nonnormal.vars)
+```
+
+```{r echo=FALSE,include=FALSE}
+# Combine the T1 and T2 data to compare them.
+t1t2.comp.table <- CreateTableOne(vars[10:(length(vars)-3)],
+                                  data = t1t2,strata = "grp")
+# Create a table 1.
+t1t2.comp.table <- 
+  as.data.frame(print(t1t2.comp.table,nonnormal = nonnormal.vars))
+t1t2.comp.table$p <- as.character(t1t2.comp.table$p)
+# Recalculate p-values with a paired test.
+for (r in 2:(nrow(t1t2.comp.table))) {
+  x <- t1t2[which(t1t2$grp == "t1"),which(colnames(t1t2)==vars[r+7])]
+  y <- t2[,which(colnames(t2)==vars[r+7])]
+  if (t1t2.comp.table$test[r] == "nonnorm") {
+    test <- wilcox.test(x,y,paired = TRUE)
+  } else {
+    test <- t.test(x,y,paired = TRUE)
+  }
+  t1t2.comp.table$p[r] <- format.pval(test$p.value,eps = 0.001,digits = 3)
+}
+```
+
+```{r echo=FALSE,include=FALSE}
+# Split T1 and T2 into those with AM time >= 10 and <10
+t1.cont <- t1[which(t1$am_time>=10),]
+t2.cont <- t2[which(t2$am_time>=10),]
+# Join T1 and T2 continuers. 
+t1t2.cont <- semi_join(t1.cont,t2.cont,by="record_id")
+t2.cont <- t2.cont[which(t2.cont$record_id %in% t1t2.cont$record_id),]
+common_cols <- intersect(colnames(t1.cont), colnames(t2.cont))
+t1t2.cont <- rbind(t1t2.cont[,common_cols],t2.cont[,common_cols])
+# Get variable names.
+vars <- colnames(t1t2.cont)[-c(which(colnames(t1t2.cont) %in% datecols),
+                               which(colnames(t1t2.cont)==
+                                       "time_1_glycemic_data_complete"),
+                               which(colnames(t1t2.cont)==
+                                       "demographics_complete"),
+                               which(colnames(t1t2.cont)=="record_id"),
+                               which(colnames(t1t2.cont)=="grp"))]
+# Create a table 1.
+t1t2.cont.table.1 <- CreateTableOne(vars[c(1:9,32:34)],data = t2.cont)
+t1t2.cont.table.1 <- print(t1t2.cont.table.1,nonnormal = nonnormal.vars)
+```
+
+```{r echo=FALSE,include=FALSE}
+# Create a comparison table.
+t1t2.cont.comp.table <- CreateTableOne(vars[10:(length(vars)-3)],
+                                  data = t1t2.cont,strata = "grp")
+
+t1t2.cont.comp.table <- 
+  as.data.frame(print(t1t2.cont.comp.table,nonnormal = nonnormal.vars))
+t1t2.cont.comp.table$p <- as.character(t1t2.cont.comp.table$p)
+# Recalculate p-values.
+for (r in 2:(nrow(t1t2.cont.comp.table))) {
+  x <- 
+    t1t2.cont[which(t1t2.cont$grp == "t1"),which(colnames(t1t2.cont)==vars[r+7])]
+  y <- 
+    t2.cont[,which(colnames(t2.cont)==vars[r+7])]
+  if (t1t2.cont.comp.table$test[r] == "nonnorm") {
+    test <- wilcox.test(x,y,paired = TRUE)
+  } else {
+    test <- t.test(x,y,paired = TRUE)
+  }
+  t1t2.cont.comp.table$p[r] <- format.pval(test$p.value,eps = 0.001,digits = 3)
+}
+```
+
+```{r echo=FALSE, include=FALSE}
+# Find discontinued participants (those with <10 AM time at T2).
+t2.discont <- t2[which(t2$am_time<10),]
+t2.discont$am.group <- NA
+t2.discont$am.group[t2.discont$am_time == 0] <- "0% AM"
+t2.discont$am.group[t2.discont$am_time > 0] <- "AM > 0 and < 10"
+# Get variables.
+vars <- colnames(t2.discont)[-c(which(colnames(t2.discont) %in% datecols),
+                               which(colnames(t2.discont)==
+                                       "time_2_glycemic_data_complete"),
+                               which(colnames(t2.discont)==
+                                       "demographics_complete"),
+                               which(colnames(t2.discont)=="record_id"),
+                               which(colnames(t2.discont)=="grp"))]
+# Make a demographics table.
+t2.discont.dems <- CreateTableOne(vars[c(1:9,32:35)],data = t2.discont)
+t2.discont.dems <- print(t2.discont.dems,nonnormal = nonnormal.vars,
+                         showAllLevels = TRUE)
+```
+
+Table 1a: Descriptive statistics for all participants with T1 data.
+```{r echo=FALSE}
+kable(t1.all.table1)
+```
+
+Table 1b: Descriptive statistics at T2 for all participants with T1 and T2 data.
+```{r echo=FALSE}
+kable(t1t2.table.1)
+```
+
+Table 1c: Descriptive statistics at T2 for participants with AM time >= 10 at both T1 and T2.
+```{r echo=FALSE}
+kable(t1t2.cont.table.1)
+```
+
+Table 1d: Descriptive statistics for participants with AM time < 10 at T2.
+```{r echo=FALSE}
+kable(t2.discont.dems)
+```
+
+Table 2a: Comparisons between all participants with T1 and T2 data. 
+Normality was evaluated using the Lilliefors test. Normally distributed variables were compared using a paired t-test, and non-normally distributed variables were compared using a Wilcoxon signed rank test with continuity correction.
+```{r echo=FALSE}
+kable(t1t2.comp.table)
+```
+
+Table 2b: Comparisons between all participants with AM time >= 10 at both T1 and T2.
+Normality was evaluated using the Lilliefors test. Normally distributed variables were compared using a paired t-test, and non-normally distributed variables were compared using a Wilcoxon signed rank test with continuity correction.
+```{r echo=FALSE}
+kable(t1t2.cont.comp.table)
+```
