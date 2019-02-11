@@ -1,0 +1,59 @@
+---
+title: ""
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(lubridate)
+source('~/Documents/GitHub/Tim-and-Laura/tim_R_functions.R')
+pathstart <- os.check()
+```
+
+```{r echo=FALSE}
+filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/670g CGM/Separate By Date/Data_Cleaned/670g dates.csv")
+dates <- read.csv(filename,na.strings = "")
+dates$Month.3.670.start.date <- mdy(dates$Month.3.670.start.date)
+dates$Month.3.670.end.date <- mdy(dates$Month.3.670.end.date)
+# Read in CGM files
+files <- list.files(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/670g CGM/Separate By Date/Data_Raw/CGM"),full.names = T)
+for (f in 1:length(files)) {
+  # Read in
+  dat <- read.csv(files[f],na.strings =c("NA",""),stringsAsFactors = F)
+  # Get ID
+  id <- dat$Patient.ID[1]
+  # Get dates
+  start <- dates$Month.3.670.start.date[which(dates$Patient.ID == id)]
+  end <- dates$Month.3.670.end.date[which(dates$Patient.ID == id)]
+  # Check whether data is precleaned, if not delete preceding pump data
+  if(ncol(dat) > 10){
+    sens_start <- which(dat$Patient.ID == "Sensor")[1]+1
+    colnames(dat) <- as.character(dat[sens_start,])
+    dat <- dat[-c(1:sens_start),]
+  } else {
+    sens_start <- 1
+    colnames(dat) <- as.character(dat[sens_start,])
+    dat <- dat[-c(1:sens_start),]
+  }
+  # Remove all but necessary columns
+  dat <- dat[,c("Date","Time","Sensor Glucose (mg/dL)")]
+  colnames(dat) <- c("date","time","sensorglucose")
+  # Concatenate and format timestamp
+  dat$timestamp <- paste(dat$date,dat$time)
+  dat$timestamp <- mdy_hms(dat$timestamp)
+  # Delete readings not in date range
+  dat <- dat[which(dat$timestamp>=start & dat$timestamp <= end),]
+  # Three column format
+  dat$subjectid[1] <- id
+  dat <- dat[,c("subjectid","timestamp","sensorglucose")]
+  # Add to large DF, remove duplicates
+  if(f == 1) {
+    dat1 <- dat
+  } else {
+    dat1 <- rbind(dat1,dat)
+    dat1 <- dat1[-(which(duplicated(dat1)==T)),]
+  }
+}
+```
