@@ -1,5 +1,5 @@
 *libname data '\\ucdenver.pvt\som\peds\RI Biostatistics Core\Laura Tim projects\Cari Berget\ATTD Abstract\Data_Cleaned';
-libname data 'S:\Laura Tim projects\Cari Berget\ATTD Abstract\Data_Cleaned';
+libname data 'S:\Shared Projects\Laura\BDC\Projects\Cari Berget\ATTD Abstract\Data_Cleaned';
 
 
 /**********************************************************************
@@ -12,7 +12,7 @@ libname data 'S:\Laura Tim projects\Cari Berget\ATTD Abstract\Data_Cleaned';
  ***********************************************************************/
     data WORK.alldata    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'S:\Laura Tim projects\Cari Berget\ATTD Abstract\Data_Cleaned\670GChild.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'S:\Shared Projects\Laura\BDC\Projects\Cari Berget\ATTD Abstract\Data_Cleaned\670GChild.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat record_id best32. ;
        informat demographics_dob mmddyy10. ;
        informat demographics_age best32. ;
@@ -500,5 +500,23 @@ model hba1c = visit hba1c_baseline / s;
 repeated visit / subject=record_id type=ar(1);
 lsmeans visit / pdiff;
 where visit ne 'B';
+run;
+ods rtf close;
+
+/* Cari wants models with all visits included in the models */
+ods rtf file="C:\temp\output.rtf";
+proc mixed data=long;
+class visit record_id;
+model hba1c = visit / s;
+repeated visit / subject=record_id type=un;
+lsmeans visit / pdiff;
+title "All participants";
+run;
+proc mixed data=cont;
+class visit record_id;
+model hba1c = visit / s;
+repeated visit / subject=record_id type=un;
+lsmeans visit / pdiff;
+title "Participants with at least 10% AM at all visits";
 run;
 ods rtf close;
