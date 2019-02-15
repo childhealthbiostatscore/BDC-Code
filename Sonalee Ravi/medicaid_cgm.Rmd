@@ -7,6 +7,7 @@ output: word_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
 library(tableone)
 library(knitr)
 library(lubridate)
@@ -15,11 +16,43 @@ pathstart <- os.check()
 ```
 
 ```{r echo=FALSE}
-# Read in and format data
+# Read in demographic data
 filename <- paste0(pathstart,"/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sonalee Ravi/Medicaid CGM/Data_Cleaned/Demographics.csv")
-demographics <- read.csv(filename,stringsAsFactors = F)
+demographics <- read.csv(filename,na.strings = c("","NA","NULL"))
+# Read in CGM data
+filename <- paste0(pathstart,"/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sonalee Ravi/Medicaid CGM/Data_Cleaned/30 day CGM data missing studio.csv")
+dat <- read.csv(filename,na.strings = c("","NA","NULL"))
+# Remove participants with no A1c data
+dat <- dat[which(!is.na(dat$HbA1c)),]
+# If CGM data missing, set CGM use to 0
+dat$CGMUse[is.na(dat$CGMUse)] <- "No"
+
+# Remove demographics participants not in CGM data
+demographics <- demographics[which(demographics$EPICMRN %in% unique(dat$EPICMRN)),]
+# Format demographic data
 demo_datecols <- c("DOB","DateOfDiabetesDiagnosis","FirstVisitDate") 
 demographics[,demo_datecols] <- lapply(demographics[,demo_datecols], mdy)
-demo_factorcols <- c("Gender","Race.Ethnicity")
-demographics[,demo_factorcols] <- lapply(demographics[,demo_factorcols], as.factor) 
+# Age at first visit and diabetes duration
+demographics$AgeFirstVisit <- as.numeric(round(difftime(demographics$FirstVisitDate,
+                                             demographics$DOB,units = "days")/365.25,2))
+demographics$DiabetesDuration <- as.numeric(round(difftime(demographics$DateOfDiabetesDiagnosis,
+                                             demographics$DOB,units = "days")/365.25,2))
+# Format CGM data
+dat$EncounterDate <- mdy(as.character(dat$EncounterDate))
+```
+
+```{r echo=FALSE}
+# Table 1 for full cohort
+vars <- c("AgeFirstVisit","DiabetesDuration","Gender","Race.Ethnicity")
+nonnormal <- norm.check(demographics[,c("AgeFirstVisit","DiabetesDuration")])
+t1_full <- CreateTableOne(vars,data = demographics)
+t1_full <- as.data.frame(print(t1_full))
+```
+
+```{r echo=FALSE}
+cgm_pump_use <- select(dat,EPICMRN,CGMUse,PumpUse)
+cgm_pump_use %>% 
+  group_by(EPICMRN) %>%
+  summarise(CGMEver = ifelse("Yes" %in% CGMUse,"Yes","No"),
+            PumpEver = ifelse("Yes" %in% CGMUse,"Yes","No"))
 ```
