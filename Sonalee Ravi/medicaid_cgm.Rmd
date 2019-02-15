@@ -37,22 +37,25 @@ dat$CGMUse[is.na(dat$CGMUse)] <- "No"
 no <- dat[dat$CGMUse == "No",] %>%
   group_by(EPICMRN) %>%
   filter(row_number()==n())
-no <- rbind(no,dat[dat$CGMUse == "Yes",]) %>%
-  arrange(EPICMRN)
-# Check which is the first "Yes" > 75 days from "No"
-
-
-
 yes <- dat[dat$CGMUse == "Yes",] %>%
+  arrange(EPICMRN)
+# Merge dataframes so that timediff between "No" and "Yes" can be calculated. Remove "Yes" < 75 days after "No"
+difftimes <- left_join(yes,no,by = "EPICMRN")
+difftimes$diff <- as.numeric(difftime(difftimes$EncounterDate.x,difftimes$EncounterDate.y,units = "days"))
+difftimes <- difftimes[difftimes$diff >= 75,]
+# Get first "Yes" by subject
+yes <- difftimes[!is.na(difftimes$EPICMRN),] %>% 
+  select(EPICMRN:Medtronic.CGM.Days.x) %>%
   group_by(EPICMRN) %>%
-  filter(row_number()==n())
-# Remove those without CGM = "Yes"
+  filter(row_number()==1)
+colnames(yes) <- colnames(no)
+# Remove "No" subjects without corresponding "Yes" data
 no <- no[no$EPICMRN %in% yes$EPICMRN,]
-# Remove those with only CGMUse = "Yes"
-yes <- yes[yes$EPICMRN %in% no$EPICMRN,]
-# Join them
-temp <- rbind(yes,no)
-temp <- temp[order(temp$EPICMRN),]
+# In the darkness bind them
+a1c <- rbind(yes,no) %>% arrange(EPICMRN,EncounterDate)
+```
+
+```{r echo=FALSE}
 # Remove demographics participants not in CGM data
 demographics <- demographics[which(demographics$EPICMRN %in% unique(dat$EPICMRN)),]
 # Format demographic data
