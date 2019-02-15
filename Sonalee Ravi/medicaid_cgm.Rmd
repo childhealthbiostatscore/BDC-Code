@@ -7,7 +7,7 @@ output: word_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-library(dplyr)
+library(tidyverse)
 library(tableone)
 library(knitr)
 library(lubridate)
@@ -17,15 +17,42 @@ pathstart <- os.check()
 
 ```{r echo=FALSE}
 # Read in demographic data
-filename <- paste0(pathstart,"/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sonalee Ravi/Medicaid CGM/Data_Cleaned/Demographics.csv")
-demographics <- read.csv(filename,na.strings = c("","NA","NULL"))
+filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sonalee Ravi/Medicaid CGM/Data_Cleaned/Demographics.csv")
+demographics <- read.csv(filename)
 # Read in CGM data
-filename <- paste0(pathstart,"/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sonalee Ravi/Medicaid CGM/Data_Cleaned/30 day CGM data missing studio.csv")
-dat <- read.csv(filename,na.strings = c("","NA","NULL"))
+filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sonalee Ravi/Medicaid CGM/Data_Cleaned/30 day CGM data missing studio.csv")
+dat <- read.csv(filename,na.strings = c("","NULL"))
+# Format CGM data
+dat$EncounterDate <- mdy(as.character(dat$EncounterDate))
 # Remove rows with no A1c data
 dat <- dat[which(!is.na(dat$HbA1c)),]
-# If CGM data missing, set CGM use to 0
+# Replace CGMUse = "No" with NA, fill down "Yes" values (by subject), set NAs back to "No"
+# This ensures everything prior to a "Yes" is a "No" and every visit after the first "Yes" is also "Yes"
+dat$CGMUse[dat$CGMUse=="No"] <- NA
+dat <- dat %>% arrange(EPICMRN,EncounterDate) %>%
+  group_by(EPICMRN) %>%
+  fill(CGMUse)
 dat$CGMUse[is.na(dat$CGMUse)] <- "No"
+# Find the last "No" and all "Yes" for each subject
+no <- dat[dat$CGMUse == "No",] %>%
+  group_by(EPICMRN) %>%
+  filter(row_number()==n())
+no <- rbind(no,dat[dat$CGMUse == "Yes",]) %>%
+  arrange(EPICMRN)
+# Check which is the first "Yes" > 75 days from "No"
+
+
+
+yes <- dat[dat$CGMUse == "Yes",] %>%
+  group_by(EPICMRN) %>%
+  filter(row_number()==n())
+# Remove those without CGM = "Yes"
+no <- no[no$EPICMRN %in% yes$EPICMRN,]
+# Remove those with only CGMUse = "Yes"
+yes <- yes[yes$EPICMRN %in% no$EPICMRN,]
+# Join them
+temp <- rbind(yes,no)
+temp <- temp[order(temp$EPICMRN),]
 # Remove demographics participants not in CGM data
 demographics <- demographics[which(demographics$EPICMRN %in% unique(dat$EPICMRN)),]
 # Format demographic data
@@ -36,8 +63,6 @@ demographics$AgeFirstVisit <- as.numeric(round(difftime(demographics$FirstVisitD
                                              demographics$DOB,units = "days")/365.25,2))
 demographics$DiabetesDuration <- as.numeric(round(difftime(demographics$DateOfDiabetesDiagnosis,
                                              demographics$DOB,units = "days")/365.25,2))
-# Format CGM data
-dat$EncounterDate <- mdy(as.character(dat$EncounterDate))
 ```
 
 ```{r echo=FALSE}
@@ -49,21 +74,5 @@ t1_full <- as.data.frame(print(t1_full,nonnormal = nonnormal))
 ```
 
 ```{r echo=FALSE}
-# Question 1 - average A1c on and off CGM 
-# Find MRNs of participants who have both on and off data
-yes_ids <- unique(dat$EPICMRN[dat$CGMUse == "Yes"]) 
-no_ids <- unique(dat$EPICMRN[dat$CGMUse == "No"])
-yes_no_ids <- intersect(yes_ids,no_ids)
-# Make a new dataframe
-on_off <- dat[dat$EPICMRN %in% yes_no_ids,]
-# Sort by MRN then date, filter to get first and last by CGMUse
-on_off <- on_off %>%
-  group_by(EPICMRN,CGMUse) %>%
-  arrange(EPICMRN,EncounterDate) %>%
-  filter(row_number() %in% c(1, n()))
-  
-last_yes <- on_off %>%
-  group_by(EPICMRN) %>%
-  transmute(first_yes_a1c = EncounterDate[max(which(CGMUse == "Yes"))]) %>%
-  distinct()
+
 ```
