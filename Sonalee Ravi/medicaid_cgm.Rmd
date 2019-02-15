@@ -2,13 +2,14 @@
 title: "Medicaid CGM"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: word_document
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(tableone)
+library(nortest)
 library(knitr)
 library(lubridate)
 source('~/Documents/GitHub/Tim-and-Laura/tim_R_functions.R')
@@ -53,7 +54,7 @@ colnames(yes) <- colnames(no)
 no <- no[no$EPICMRN %in% yes$EPICMRN,]
 # In the darkness bind them
 delta <- rbind(yes,no) %>% arrange(EPICMRN,EncounterDate)
-
+delta <- as.data.frame(delta)
 ```
 
 ```{r echo=FALSE}
@@ -69,7 +70,7 @@ demographics$DiabetesDuration <- as.numeric(round(difftime(demographics$DateOfDi
                                              demographics$DOB,units = "days")/365.25,2))
 ```
 
-```{r echo=FALSE}
+```{r echo=FALSE,include=FALSE}
 # Table 1 for full cohort
 vars <- c("AgeFirstVisit","DiabetesDuration","Gender","Race.Ethnicity")
 nonnormal <- norm.check(demographics[,c("AgeFirstVisit","DiabetesDuration")])
@@ -78,12 +79,29 @@ t1_full <- as.data.frame(print(t1_full,nonnormal = nonnormal))
 ```
 
 ```{r echo=FALSE}
-# Check A1c at limit of detection
-length(which(delta$HbA1c > 14))
-# Only 15, probably okay?
+kable(t1_full,caption = "Descriptive Statistics for Full Cohort")
+```
+
+```{r echo=FALSE,include=FALSE}
 # Table 1 by CGM = "Yes" vs CGM = "No"
-vars <- c("HbA1c","PumpUse")
-nonnormal <- norm.check(delta,c("HbA1c","Age_AtEncounterDate"))
-f2l_comps <- CreateTableOne(vars,strata = "CGMUse",delta,testNonNormal = wilcox.test,argsNonNormal = list(paired = T))
-print(f2l_comps,nonnormal = nonnormal)
+f2l_comps <- CreateTableOne("HbA1c",strata = c("CGMUse","PumpUse"),delta)
+f2l_comps <- print(f2l_comps,nonnormal = "HbA1c")
+```
+
+```{r echo=FALSE}
+kable(f2l_comps,caption ="HbA1c Comparisons by Group (Kruskal-Wallis Rank Sum Test)")
+```
+
+```{r echo=FALSE,include=FALSE}
+delta$cgm_pump[delta$CGMUse == "No" & delta$PumpUse == "No"] <- "No CGM:No Pump"
+delta$cgm_pump[delta$CGMUse == "No" & delta$PumpUse == "Yes"] <- "No CGM:Yes Pump"
+delta$cgm_pump[delta$CGMUse == "Yes" & delta$PumpUse == "No"] <- "Yes CGM:No Pump"
+delta$cgm_pump[delta$CGMUse == "Yes" & delta$PumpUse == "Yes"] <- "Yes CGM:Yes Pump"
+delta$cgm_pump <- as.factor(delta$cgm_pump)
+pwt <- pairwise.wilcox.test(delta$HbA1c,delta$cgm_pump,p.adjust.method = "none")
+pwt <- as.data.frame(pwt$p.value)
+```
+
+```{r echo=FALSE}
+kable(pwt,caption = "Pairwise comparison p values (Wilcoxon rank sum test)")
 ```
