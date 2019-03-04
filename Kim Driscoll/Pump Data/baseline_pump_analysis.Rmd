@@ -84,8 +84,8 @@ for (f in 1:length(files)) {
 ```{r echo=FALSE, include=FALSE}
 # Summary variables.
 # Import data
-indir <- paste(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Cleaned",sep="")
-outdir <- paste(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/",sep="")
+indir <- paste(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Cleaned",sep="")
+outdir <- paste(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/",sep="")
 files <- list.files(indir,full.names = T)
 # Make a summary variables table.
 summary <- data.frame(matrix(nrow = length(files),ncol = 0))
@@ -101,8 +101,6 @@ for (f in 1:length(files)) {
   summary[f,"days_worn"] <- days
 # Carb inputs and BG readings
   carbs <- length(which(dat$carbinput > 0))
-  summary[f,"total_carb_inputs"] <- carbs
-  summary[f,"carb_inputs_per_day"] <- carbs/days
   summary[f,"total_piu<70"] <- length(which(dat$piu == "<70"))
   summary[f,"total_piu_70-149"] <- length(which(dat$piu == "70-149"))
   summary[f,"total_piu_150-249"] <- length(which(dat$piu == "150-249"))
@@ -112,7 +110,6 @@ for (f in 1:length(files)) {
   summary[f,"total_bwp_181-250"] <- length(which(dat$bwp == "181-250"))
   summary[f,"total_bwp_251-400"] <- length(which(dat$bwp == "251-400"))
   summary[f,"total_bwp_400+"] <- length(which(dat$bwp == "400+"))
-  summary[f,"total_readings"] <- length(which(!is.na(dat$bgreading)))
 # Combine rows
   dat$timestamp <- strftime(dat$timestamp,"%Y-%m-%d %H:%M", tz = "UTC")
   dat <- aggregate(dat[,2:ncol(dat)],list(dat[,1]),
@@ -123,11 +120,40 @@ for (f in 1:length(files)) {
   reading.times <- dat$timestamp[which(dat$bgreading > 0)]
   pius <- dat$piu[which(!is.na(dat$bgreading))]
   bwps <- dat$bwp[which(!is.na(dat$bgreading))]
+# Average number of BG checks and carb inputs on weekdays
+  dat$date <- date(dat$timestamp)
+  dat$weekday <- wday(dat$timestamp)
+  weekdat <- dat[dat$weekday %in% 2:6,]
+  weekdays <- length(unique(weekdat$date))
+# On weekends
+  weekend <- dat[dat$weekday %in% c(1,7),]
+  weekends <- length(unique(weekend$date))
+# BG checks
+  summary[f,"total_readings"] <- length(which(!is.na(dat$bgreading)))
+  summary[f,"readings_per_day"] <- length(which(!is.na(dat$bgreading)))/days
+  summary[f,"readings_per_weekday"] <- 
+    length(which(weekdat$bgreading > 0)) / weekdays
+  summary[f,"readings_per_weekend"] <- 
+    length(which(weekend$bgreading > 0)) / weekends
+# Carbs
+  summary[f,"total_carb_inputs"] <- carbs
+  summary[f,"carb_inputs_per_day"] <- carbs/days
+  summary[f,"carb_inputs_per_weekday"] <- 
+    length(which(weekdat$carbinput > 0)) / weekdays
+  summary[f,"carb_inputs_per_weekend"] <- 
+    length(which(weekend$carbinput > 0)) / weekends
 # Boluses only  
   dat <- dat[which(!is.na(dat$bolusvoldelivered)),]
   dat$carbinput[which(is.na(dat$carbinput))] <- 0
 # Counting variables and placeholder
   total.bolus <- 1
+  if (dat$weekday[1] %in% 2:6) {
+    weekday.total.bolus <- 1
+    weekend.total.bolus <- 0
+  } else {
+      weekday.total.bolus <- 0
+      weekend.total.bolus <- 1
+      }
   bolus.times <- dat$timestamp[1]
   pius.within.15 <- character()
   pius.within.30 <- character()
@@ -144,15 +170,27 @@ for (f in 1:length(files)) {
     if (time.diff > 20) {
       total.bolus <- total.bolus + 1
       bolus.times <- c(bolus.times,bolus.time)
+      if (dat$weekday[r] %in% 2:6) {
+        weekday.total.bolus <- weekday.total.bolus + 1
+      } else {
+        weekend.total.bolus <- weekend.total.bolus + 1
+      }
     } else if (dat$carbinput[r] > 0 & dat$carbinput[r-1] > 0) {
       total.bolus <- total.bolus + 1
       bolus.times <- c(bolus.times,bolus.time)
+      if (dat$weekday[r] %in% 2:6) {
+        weekday.total.bolus <- weekday.total.bolus + 1
+      } else {
+        weekend.total.bolus <- weekend.total.bolus + 1
+      }
     } else {
       double.bolus <- 1
     }
   }
   summary[f,"total_bolus"] <- total.bolus
   summary[f,"boluses_per_day"] <- total.bolus/days
+  summary[f,"boluses_per_weekday"] <- weekday.total.bolus/weekdays
+  summary[f,"boluses_per_weekend"] <- weekend.total.bolus/weekends
 # Iterate through boluses and check reading information
   for (t in bolus.times) {
     time.range.15 <- (t - 900):t
