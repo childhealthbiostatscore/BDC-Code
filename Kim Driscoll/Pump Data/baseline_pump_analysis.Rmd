@@ -28,8 +28,8 @@ pathstart <- os.check()
 
 ```{r echo=FALSE,eval=FALSE}
 # Data management
-indir <- paste(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Original",sep="")
-outdir <- paste(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Cleaned/",sep = "")
+indir <- paste(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Original",sep="")
+outdir <- paste(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Cleaned/",sep = "")
 # Split files into pump and BG data, store in separate folders.
 files <- list.files(indir,full.names = T)
 for (f in 1:length(files)) {
@@ -64,7 +64,7 @@ for (f in 1:length(files)) {
                        right = F,
                        labels = c("<70","70-149","150-249","250+"))
   pump$bwp <- cut(as.numeric(pump$`BG Reading (mg/dL)`),
-                       breaks = c(0,70,180,251,400,Inf),
+                       breaks = c(0,70,181,251,400,Inf),
                        right = F,
                        labels = c("<70","70-180","181-250","251-400","400+"))
 # Select and rename columns.
@@ -112,13 +112,15 @@ for (f in 1:length(files)) {
   summary[f,"total_bwp_181-250"] <- length(which(dat$bwp == "181-250"))
   summary[f,"total_bwp_251-400"] <- length(which(dat$bwp == "251-400"))
   summary[f,"total_bwp_400+"] <- length(which(dat$bwp == "400+"))
-# Combine rows
+# Combine rows, remove rows with all NA.
   dat$timestamp <- strftime(dat$timestamp,"%Y-%m-%d %H:%M", tz = "UTC")
   dat <- aggregate(dat[,2:ncol(dat)],list(dat[,1]),
                    function(x) ifelse(length(x[which(!is.na(x))]) > 0,x[which(!is.na(x))],NA))
   dat <- dat[-c(which(rowSums(is.na(dat[,2:ncol(dat)])) >= (length(2:ncol(dat))-1))),]
+# Format timestamp
   colnames(dat)[1] <- "timestamp"
   dat$timestamp <- ymd_hm(dat$timestamp)
+# Get BG readings by PIU and BWP categories  
   reading.times <- dat$timestamp[which(dat$bgreading > 0)]
   pius <- dat$piu[which(!is.na(dat$bgreading))]
   bwps <- dat$bwp[which(!is.na(dat$bgreading))]
@@ -246,8 +248,22 @@ for (f in 1:length(files)) {
   summary[f,"bolus_within_30_bwp_400+"] <- length(which(bwps.within.30 == "400+"))
   
   summary[f,"days_bolus>=6_hours"] <- sum(six_hour_bolus$n > 0)
-  
 # BG as the anchor.
+# BGs only  
+  BG_dat <- dat[which(dat$bgreading > 0),]
+# Check for days with >= 6 hours without a BG.
+# Add a midnight row to calculate last BG before midnight
+  six_hour_BG <- setDT(BG_dat)[, indx := date][, .SD[1:(.N+1)], indx][,indx := NULL][!.N]
+  six_hour_BG$hour[which(is.na(six_hour_BG$hour))] <- 24
+# Count time between 6am, BGs, and midnight by date  
+  six_hour_BG <- six_hour_BG %>% 
+    fill(date) %>%
+    group_by(date) %>%
+    mutate(time_diff = hour - lag(hour, default = 6))
+# Summarize
+  six_hour_BG <- six_hour_BG %>% group_by(date) %>% 
+    summarise(n = sum(time_diff >= 6)) %>% as.data.frame()
+  summary[f,"days_reading>=6_hours"] <- sum(six_hour_BG$n > 0)
 # Make a list of times when BG readings occur. Add 15 minutes to each element so
 # it's a list of time ranges. Collapse the list and keep unique times. 
   lowBGs <- unique(unlist(lapply((as.list(dat$timestamp[which(dat$bgreading < 70)])),function(x) x:(x+900))))
