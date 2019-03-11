@@ -29,32 +29,23 @@ dat$EncounterDate <- mdy(as.character(dat$EncounterDate))
 dat <- dat[which(!is.na(dat$HbA1c)),]
 # Replace CGMUse = "No" with NA, fill down "Yes" values (by subject), set NAs back to "No"
 # This ensures everything prior to a "Yes" is a "No" and every visit after the first "Yes" is also "Yes"
-dat$CGMUse[dat$CGMUse=="No"] <- NA
-dat <- dat %>% arrange(EPICMRN,EncounterDate) %>%
+# Remove CGMUse column (not a good indicator because it's just a field in Epic)
+# and Dexcom/Medtronic-specific columns.
+dat$CGMUse <- NULL
+dat$Dexcom.CGM.Days <- NULL
+dat$Medtronic.CGM.Days <- NULL
+# Get the first CGM use >0 for each participant. Set this CGMUse == "Yes"
+temp <- dat %>% arrange(EPICMRN,EncounterDate) %>% 
   group_by(EPICMRN) %>%
+  filter(X30.day.CGM.use > 0) %>%
+  filter(row_number() == 1)
+temp$CGMUse <- "Yes"
+# Merge the yes dataframe back into the full data set. 
+dat <- left_join(dat,temp,by = colnames(dat))
+# Fill down CGM use == Yes by ID, replace remaining NAs with No
+dat <- dat %>% group_by(EPICMRN) %>%
   fill(CGMUse)
 dat$CGMUse[is.na(dat$CGMUse)] <- "No"
-# Get the last "No" and all "Yes" for each subject
-no <- dat[dat$CGMUse == "No",] %>%
-  group_by(EPICMRN) %>%
-  filter(row_number()==n())
-yes <- dat[dat$CGMUse == "Yes",] %>%
-  arrange(EPICMRN)
-# Merge dataframes so that timediff between "No" and "Yes" can be calculated. Remove all rows with "Yes" < 75 days after "No"
-difftimes <- left_join(yes,no,by = "EPICMRN")
-difftimes$diff <- as.numeric(difftime(difftimes$EncounterDate.x,difftimes$EncounterDate.y,units = "days"))
-difftimes <- difftimes[difftimes$diff >= 75,]
-# Get first "Yes" by subject
-yes <- difftimes[!is.na(difftimes$EPICMRN),] %>% 
-  select(EPICMRN:Medtronic.CGM.Days.x) %>%
-  group_by(EPICMRN) %>%
-  filter(row_number()==1)
-colnames(yes) <- colnames(no)
-# Remove "No" subjects without corresponding "Yes" data
-no <- no[no$EPICMRN %in% yes$EPICMRN,]
-# In the darkness bind them
-delta <- rbind(yes,no) %>% arrange(EPICMRN,EncounterDate)
-delta <- as.data.frame(delta)
 ```
 
 ```{r echo=FALSE}
