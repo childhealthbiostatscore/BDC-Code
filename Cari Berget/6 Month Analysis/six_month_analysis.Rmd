@@ -2,7 +2,7 @@
 title: "6 Month Analysis"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: pdf_document
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
@@ -96,9 +96,6 @@ alldat$record_id <- as.factor(alldat$record_id)
 alldat$tpoint <- as.factor(alldat$tpoint)
 # Get baseline A1c
 alldat$hba1c[alldat$tpoint == "B"] <- glycemicdata$hba1c_baseline
-# Format/sort
-alldat <- alldat %>% arrange(record_id,tpoint)
-
 # Notes
 
 # List of manual data changes
@@ -253,9 +250,12 @@ vars <- c("hba1c","am_time","mm_time","sensor_wear","sensor_u54","sensor_55_69",
           "sensor_70_180","sensor_181_250","sensor_g250","mean_sg","sd",
           "bg_checks","calibrations","tdd","basal","bolus","amexit",
           "amexit_day","amexit_hyper","amexit_hypo","amexit_manual","amexit_other")
-# Order
+# Order, add baseline A1c, remove AM time < 10% (at T1 or T2)
 alldata <- alldata %>%
-  arrange(record_id,tpoint)
+  arrange(record_id,tpoint) %>%
+  group_by(record_id) %>%
+  mutate(baseline_a1c = hba1c[1]) %>%
+  filter(!((tpoint == "T1" | tpoint == "T2") & am_time < 10))
 alldata$tpoint <- as.factor(alldata$tpoint)
 alldata$record_id <- as.factor(alldata$record_id)
 # Import cleaned, scored survey data
@@ -267,14 +267,35 @@ filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Proje
 ya_survey <- read.csv(filename,na.strings = "",stringsAsFactors = F)
 ```
 
-```{r echo=FALSE,warning=FALSE,eval=FALSE}
-# Plots for checking data.
+```{r echo=FALSE}
+# Plots
 # A1c by timepoint and subject
 a1c_plot <- ggplot(alldata,aes_string(x = "tpoint",y = "hba1c",group = "record_id")) + 
   geom_line(size = 0.2) +
-  ggtitle("HbA1c by Timepoint") +
-  theme(plot.title = element_text(hjust = 0.5)) +
   xlab("Timepoint") + 
   ylab("HbA1c (%)")
+```
+
+```{r echo=FALSE}
+# Mixed models
+# A1c
+a1c_mod_reduced <- lme(hba1c ~ tpoint,random=~1|record_id,data = alldata,na.action = na.omit)
+a1c_mod_adj <- lme(hba1c ~ tpoint + baseline_a1c,random=~1|record_id,data = alldata,na.action = na.omit) # Best model by AIC - try adding random slope
+# Continous time
+a1c_mod_reduced_cont <- lme(hba1c ~ as.numeric(tpoint),random=~1|record_id,data = alldata,na.action = na.omit)
+a1c_mod_adj_cont <- lme(hba1c ~ as.numeric(tpoint) + baseline_a1c,random=~1|record_id,data = alldata,na.action = na.omit)
+# Random slope
+a1c_mod_adj_rs <- lme(hba1c ~ tpoint + baseline_a1c,random=~1|record_id/tpoint,data = alldata,na.action = na.omit) #AIC up slightly, report random intercept
+```
+
+## Figure 1: HbA1c by Timepoint
+```{r echo=FALSE,warning=FALSE}
 a1c_plot
+```
+
+```{r echo=FALSE}
+kable(summary(a1c_mod_adj)$tTable,caption = "Fixed Effects")
+kable(anova.lme(a1c_mod_adj),caption = "Type 3 Tests of Fixed Effects")
+plot(a1c_mod_adj)
+qqnorm(a1c_mod_adj)
 ```
