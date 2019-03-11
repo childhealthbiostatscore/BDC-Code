@@ -43,57 +43,50 @@ temp$CGMUse <- "Yes"
 # Merge the yes dataframe back into the full data set. 
 dat <- left_join(dat,temp,by = colnames(dat))
 # Fill down CGM use == Yes by ID, replace remaining NAs with No
-dat <- dat %>% group_by(EPICMRN) %>%
+dat <- dat %>% arrange(EPICMRN,EncounterDate) %>%
+  group_by(EPICMRN) %>%
   fill(CGMUse)
 dat$CGMUse[is.na(dat$CGMUse)] <- "No"
 # Get the last "No" and all "Yes" for each subject
 no <- dat[dat$CGMUse == "No",] %>%
+  arrange(EPICMRN,EncounterDate) %>%
   group_by(EPICMRN) %>%
   filter(row_number()==n())
 yes <- dat[dat$CGMUse == "Yes",] %>%
   arrange(EPICMRN,EncounterDate)
-# Combine into one dataframe
-delta <- rbind(yes,no)
-# Calculate time difference in days between no and yes
-delta <- delta %>% arrange(EPICMRN,EncounterDate) %>%
-  group_by(EPICMRN) %>%
-  mutate(diff = ifelse(CGMUse[1] == "No",difftime(EncounterDate,EncounterDate[1],units = "days"),NA))
-
-# Merge dataframes so that timediff between "No" and "Yes" can be calculated. Remove all rows with "Yes" < 75 days after "No"
-difftimes <- left_join(yes,no,by = "EPICMRN")
-difftimes$diff <- as.numeric(difftime(difftimes$EncounterDate.x,difftimes$EncounterDate.y,units = "days"))
-difftimes <- difftimes[difftimes$diff >= 75,]
-# Get first "Yes" by subject
-yes <- difftimes[!is.na(difftimes$EPICMRN),] %>% 
-  select(EPICMRN:CGMUse.x) %>%
+# Filter out those without on/off data (all yes or all no)
+no <- no[no$EPICMRN %in% yes$EPICMRN,]
+yes <- yes[yes$EPICMRN %in% no$EPICMRN,]
+# Bind together, calculate time difference, filter out all but last no and first yes > 75 days.
+delta <- rbind(yes,no) %>%
+  arrange(EPICMRN,EncounterDate) %>%
+  mutate(diff = difftime(EncounterDate,EncounterDate[1],units = "days"))
+yes <- delta %>% filter(CGMUse == "Yes",diff > 75) %>%
   group_by(EPICMRN) %>%
   filter(row_number()==1)
-colnames(yes) <- colnames(no)
-# Remove "No" subjects without corresponding "Yes" data
 no <- no[no$EPICMRN %in% yes$EPICMRN,]
-# In the darkness bind them
-delta <- rbind(yes,no) %>% arrange(EPICMRN,EncounterDate)
-delta <- as.data.frame(delta)
+# Bind yes and no
+delta <- rbind(yes, no) %>% arrange(EPICMRN,EncounterDate)
 ```
 
 ```{r echo=FALSE}
 # Remove demographics participants who don't have with and without CGM data
-demographics <- demographics[which(demographics$EPICMRN %in% unique(delta$EPICMRN)),]
+demographicsyn <- demographics[which(demographics$EPICMRN %in% unique(delta$EPICMRN)),]
 # Format demographic data
 demo_datecols <- c("DOB","DateOfDiabetesDiagnosis","FirstVisitDate") 
-demographics[,demo_datecols] <- lapply(demographics[,demo_datecols], mdy)
+demographicsyn[,demo_datecols] <- lapply(demographicsyn[,demo_datecols], mdy)
 # Age at first visit and diabetes duration
-demographics$AgeFirstVisit <- as.numeric(round(difftime(demographics$FirstVisitDate,
-                                             demographics$DOB,units = "days")/365.25,2))
-demographics$DiabetesDuration <- as.numeric(round(difftime(demographics$DateOfDiabetesDiagnosis,
-                                             demographics$DOB,units = "days")/365.25,2))
+demographicsyn$AgeFirstVisit <- as.numeric(round(difftime(demographicsyn$FirstVisitDate,
+                                             demographicsyn$DOB,units = "days")/365.25,2))
+demographicsyn$DiabetesDuration <- as.numeric(round(difftime(demographicsyn$DateOfDiabetesDiagnosis,
+                                             demographicsyn$DOB,units = "days")/365.25,2))
 ```
 
 ```{r echo=FALSE,include=FALSE}
 # Table 1 for cohort of 200
 vars <- c("AgeFirstVisit","DiabetesDuration","Gender","Race.Ethnicity")
-nonnormal <- norm.check(demographics[,c("AgeFirstVisit","DiabetesDuration")])
-t1_full <- CreateTableOne(vars,data = demographics)
+nonnormal <- norm.check(demographicsyn[,c("AgeFirstVisit","DiabetesDuration")])
+t1_full <- CreateTableOne(vars,data = demographicsyn)
 t1_full <- as.data.frame(print(t1_full,nonnormal = nonnormal))
 ```
 
