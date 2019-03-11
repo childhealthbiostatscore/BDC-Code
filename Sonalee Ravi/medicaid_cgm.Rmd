@@ -46,6 +46,34 @@ dat <- left_join(dat,temp,by = colnames(dat))
 dat <- dat %>% group_by(EPICMRN) %>%
   fill(CGMUse)
 dat$CGMUse[is.na(dat$CGMUse)] <- "No"
+# Get the last "No" and all "Yes" for each subject
+no <- dat[dat$CGMUse == "No",] %>%
+  group_by(EPICMRN) %>%
+  filter(row_number()==n())
+yes <- dat[dat$CGMUse == "Yes",] %>%
+  arrange(EPICMRN,EncounterDate)
+# Combine into one dataframe
+delta <- rbind(yes,no)
+# Calculate time difference in days between no and yes
+delta <- delta %>% arrange(EPICMRN,EncounterDate) %>%
+  group_by(EPICMRN) %>%
+  mutate(diff = ifelse(CGMUse[1] == "No",difftime(EncounterDate,EncounterDate[1],units = "days"),NA))
+
+# Merge dataframes so that timediff between "No" and "Yes" can be calculated. Remove all rows with "Yes" < 75 days after "No"
+difftimes <- left_join(yes,no,by = "EPICMRN")
+difftimes$diff <- as.numeric(difftime(difftimes$EncounterDate.x,difftimes$EncounterDate.y,units = "days"))
+difftimes <- difftimes[difftimes$diff >= 75,]
+# Get first "Yes" by subject
+yes <- difftimes[!is.na(difftimes$EPICMRN),] %>% 
+  select(EPICMRN:CGMUse.x) %>%
+  group_by(EPICMRN) %>%
+  filter(row_number()==1)
+colnames(yes) <- colnames(no)
+# Remove "No" subjects without corresponding "Yes" data
+no <- no[no$EPICMRN %in% yes$EPICMRN,]
+# In the darkness bind them
+delta <- rbind(yes,no) %>% arrange(EPICMRN,EncounterDate)
+delta <- as.data.frame(delta)
 ```
 
 ```{r echo=FALSE}
