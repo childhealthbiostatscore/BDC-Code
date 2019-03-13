@@ -258,27 +258,31 @@ alldata <- alldata %>%
   filter(!((tpoint == "T1" | tpoint == "T2") & am_time < 10))
 alldata$tpoint <- as.factor(alldata$tpoint)
 alldata$record_id <- as.factor(alldata$record_id)
-# Import cleaned, scored survey data
+# Import cleaned, scored survey data. Add baseline scores.
 filename <- paste0(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/clean_parent_survey.csv")
 parent_survey <- read.csv(filename,na.strings = "",stringsAsFactors = F)
 filename <- paste0(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/clean_child_survey.csv")
 child_survey <- read.csv(filename,na.strings = "",stringsAsFactors = F)
+child_survey <- child_survey %>%
+  arrange(record_id,tpoint) %>%
+  group_by(record_id) %>%
+  mutate(baseline_paid = paid_score[1]) %>%
+  filter(!((tpoint == "T1" | tpoint == "T2") & am_time < 10))
 filename <- paste0(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/clean_ya_survey.csv")
 ya_survey <- read.csv(filename,na.strings = "",stringsAsFactors = F)
 ```
 
-```{r echo=FALSE}
-# Plots
-# A1c by timepoint and subject
+## Figure 1: HbA1c by Timepoint
+```{r echo=FALSE,warning=FALSE}
 a1c_plot <- ggplot(alldata,aes_string(x = "tpoint",y = "hba1c",group = "record_id")) + 
   geom_line(size = 0.2) +
   xlab("Timepoint") + 
   ylab("HbA1c (%)")
+a1c_plot
 ```
 
 ```{r echo=FALSE}
-# Mixed models
-# A1c
+# A1c mixed models
 a1c_mod_reduced <- lme(hba1c ~ tpoint,random=~1|record_id,data = alldata,na.action = na.omit)
 a1c_mod_adj <- lme(hba1c ~ tpoint + baseline_a1c,random=~1|record_id,data = alldata,na.action = na.omit) # Best model by AIC - try adding random slope
 # Continous time
@@ -288,14 +292,27 @@ a1c_mod_adj_cont <- lme(hba1c ~ as.numeric(tpoint) + baseline_a1c,random=~1|reco
 a1c_mod_adj_rs <- lme(hba1c ~ tpoint + baseline_a1c,random=~1|record_id/tpoint,data = alldata,na.action = na.omit) #AIC up slightly, report random intercept
 ```
 
-## Figure 1: HbA1c by Timepoint
-```{r echo=FALSE,warning=FALSE}
-a1c_plot
-```
-
+## Table 2: A1c Mixed Models
 ```{r echo=FALSE}
 kable(summary(a1c_mod_adj)$tTable,caption = "Fixed Effects")
 kable(anova.lme(a1c_mod_adj),caption = "Type 3 Tests of Fixed Effects")
 plot(a1c_mod_adj)
 qqnorm(a1c_mod_adj)
+```
+
+## Figure 2: PAID-PEDS by Timepoint
+```{r echo=FALSE,warning=FALSE}
+paid_peds_plot <- 
+  ggplot(child_survey,aes_string(x = "tpoint",y = "paid_score",group = "record_id")) + 
+  geom_line(size = 0.2) +
+  xlab("Timepoint") + 
+  ylab("PAID-PEDS Score")
+paid_peds_plot
+```
+
+```{r echo=FALSE}
+# PAID-PEDS mixed models
+paidc_mod_reduced <- lme(paid_score ~ tpoint,
+                       random=~1|record_id,
+                       data = child_survey,na.action = na.omit)
 ```
