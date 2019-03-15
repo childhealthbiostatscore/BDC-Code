@@ -146,10 +146,11 @@ child$B <- apply(child[,b_cols_worry],1,function(x) sum((x - 1)))
 child$T1 <- apply(child[,t1_cols_worry],1,function(x) sum((x - 1)))
 child$T2 <- apply(child[,t2_cols_worry],1,function(x) sum((x - 1)))
 worry <- gather(child[,c("record_id","B","T1","T2")],tpoint, worry_score, B:T2)
-# Gather, merge, and order all surveys, replace NaN with NA
+# Gather, merge, and order all surveys, replace NaN with NA, rename columns.
 child_surveys <- plyr::join_all(list(paid,maintain,helpless,worry), by = c("record_id","tpoint"))
 child_surveys <- child_surveys[order(child_surveys$record_id),]
 child_surveys$paid_score[is.nan(child_surveys$paid_score)] <- NA
+colnames(child_surveys) <- c("record_id","tpoint","cpaid_score","cmaintain_score","chelpless_score","cworry_score")
 # Write CSV
 filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/clean_child_survey.csv")
 write.csv(child_surveys,file = filename,row.names = F,na = "")
@@ -186,10 +187,11 @@ ya$B <- apply(ya[,b_cols_worry],1,function(x) sum((x - 1),na.rm = T))
 ya$T1 <- apply(ya[,t1_cols_worry],1,function(x) sum((x - 1),na.rm = T))
 ya$T2 <- apply(ya[,t2_cols_worry],1,function(x) sum((x - 1),na.rm = T))
 worry <- gather(ya[,c("record_id","B","T1","T2")],tpoint, worry_score, B:T2)
-# Gather, merge, and order all surveys. Calculate total HFS
+# Gather, merge, and order all surveys. Calculate total HFS. Rename columns.
 ya_surveys <- plyr::join_all(list(paid,behavior,worry), by = c("record_id","tpoint"))
 ya_surveys <- ya_surveys[order(ya_surveys$record_id),]
 ya_surveys$total_hfs <- ya_surveys$behavior_score + ya_surveys$worry_score
+colnames(ya_surveys) <- c("record_id","tpoint","yapaid_score","yabehavior_score","yaworry_score","yatotal_hfs")
 # Write CSV
 filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/clean_ya_survey.csv")
 write.csv(ya_surveys,file = filename,row.names = F,na = "")
@@ -232,10 +234,11 @@ parent$B <- apply(parent[,b_cols_worry],1,function(x) sum((x - 1)))
 parent$T1 <- apply(parent[,t1_cols_worry],1,function(x) sum((x - 1)))
 parent$T2 <- apply(parent[,t2_cols_worry],1,function(x) sum((x - 1)))
 worry <- gather(parent[,c("record_id","B","T1","T2")],tpoint, worry_score, B:T2)
-# Gather, merge, and order all surveys, replace NaN with NA
+# Gather, merge, and order all surveys, replace NaN with NA. Rename columns.
 parent_surveys <- plyr::join_all(list(paid,maintain,helpless,worry), by = c("record_id","tpoint"))
 parent_surveys <- parent_surveys[order(parent_surveys$record_id),]
 parent_surveys$paid_score[is.nan(parent_surveys$paid_score)] <- NA
+colnames(parent_surveys) <- c("record_id","tpoint","ppaid_score","pmaintain_score","phelpless_score","pworry_score")
 # Write CSV
 filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/clean_parent_survey.csv")
 write.csv(parent_surveys,file = filename,row.names = F,na = "")
@@ -243,33 +246,33 @@ write.csv(parent_surveys,file = filename,row.names = F,na = "")
 
 ```{r echo=FALSE}
 # Import Cari's cleaned data
-filename <- paste0(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/clean_glycemic_data.csv")
+filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/clean_glycemic_data.csv")
 alldata <- read.csv(filename,na.strings = "",stringsAsFactors = F)
 # Define variables of interest.
 vars <- c("hba1c","am_time","mm_time","sensor_wear","sensor_u54","sensor_55_69",
           "sensor_70_180","sensor_181_250","sensor_g250","mean_sg","sd",
           "bg_checks","calibrations","tdd","basal","bolus","amexit",
           "amexit_day","amexit_hyper","amexit_hypo","amexit_manual","amexit_other")
+# Import cleaned, scored survey data.
+filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/clean_parent_survey.csv")
+parent_survey <- read.csv(filename,na.strings = "",stringsAsFactors = F)
+filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/clean_child_survey.csv")
+child_survey <- read.csv(filename,na.strings = "",stringsAsFactors = F)
+filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/clean_ya_survey.csv")
+ya_survey <- read.csv(filename,na.strings = "",stringsAsFactors = F)
+# Add survey scores to full data.
+alldata <- left_join(alldata,child_survey,by = c("record_id","tpoint"))
+alldata <- left_join(alldata,ya_survey,by = c("record_id","tpoint"))
 # Order, add baseline A1c, remove AM time < 10% (at T1 or T2)
 alldata <- alldata %>%
   arrange(record_id,tpoint) %>%
   group_by(record_id) %>%
   mutate(baseline_a1c = hba1c[1]) %>%
+  mutate(baseline_cpaid = cpaid_score[1]) %>%
+  mutate(baseline_yapaid = yapaid_score[1]) %>%
   filter(!((tpoint == "T1" | tpoint == "T2") & am_time < 10))
 alldata$tpoint <- as.factor(alldata$tpoint)
 alldata$record_id <- as.factor(alldata$record_id)
-# Import cleaned, scored survey data. Add baseline scores.
-filename <- paste0(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/clean_parent_survey.csv")
-parent_survey <- read.csv(filename,na.strings = "",stringsAsFactors = F)
-filename <- paste0(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/clean_child_survey.csv")
-child_survey <- read.csv(filename,na.strings = "",stringsAsFactors = F)
-child_survey <- child_survey %>%
-  arrange(record_id,tpoint) %>%
-  group_by(record_id) %>%
-  mutate(baseline_paid = paid_score[1]) %>%
-  filter(!((tpoint == "T1" | tpoint == "T2") & am_time < 10))
-filename <- paste0(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/clean_ya_survey.csv")
-ya_survey <- read.csv(filename,na.strings = "",stringsAsFactors = F)
 ```
 
 ## Figure 1: HbA1c by Timepoint
@@ -302,7 +305,7 @@ qqnorm(a1c_mod_adj)
 
 ## Figure 2: PAID-PEDS by Timepoint
 ```{r echo=FALSE,warning=FALSE}
-paid_peds_plot <- 
+paid_plot <- 
   ggplot(child_survey,aes_string(x = "tpoint",y = "paid_score",group = "record_id")) + 
   geom_line(size = 0.2) +
   xlab("Timepoint") + 
