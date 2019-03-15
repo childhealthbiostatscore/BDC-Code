@@ -7,6 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(nlme)
 library(tableone)
 library(nortest)
 library(knitr)
@@ -34,6 +35,11 @@ dat <- dat[which(!is.na(dat$HbA1c)),]
 dat$CGMUse <- NULL
 dat$Dexcom.CGM.Days <- NULL
 dat$Medtronic.CGM.Days <- NULL
+# Fill pump use up (Use last encounter when adjusting for pump use)
+dat <- dat %>%
+  arrange(EPICMRN,EncounterDate) %>%
+  group_by(EPICMRN) %>%
+  mutate(PumpUse = PumpUse[n()])
 # Get the first CGM use >0 for each participant. Set this CGMUse == "Yes"
 temp <- dat %>% arrange(EPICMRN,EncounterDate) %>% 
   group_by(EPICMRN) %>%
@@ -92,8 +98,9 @@ t1_full <- CreateTableOne(vars,data = demographicsyn)
 t1_full <- as.data.frame(print(t1_full,nonnormal = nonnormal))
 ```
 
+### Table 1: Descriptive statistics for full cohort with both on and off CGM data
 ```{r echo=FALSE}
-kable(t1_full,caption = "Table 1: Descriptive Statistics for Full Cohort")
+kable(t1_full)
 ```
 
 ```{r echo=FALSE,include=FALSE}
@@ -102,12 +109,26 @@ f2l_comps <- CreateTableOne("HbA1c",strata = c("CGMUse","PumpUse"),delta)
 f2l_comps <- print(f2l_comps,nonnormal = "HbA1c")
 ```
 
-```{r echo=FALSE}
-kable(f2l_comps[,1:4],caption ="HbA1c Comparisons Stratified by CGMUse:PumpUse (Kruskal-Wallis Rank Sum Test)")
-```
-
 ```{r echo=FALSE,include=FALSE}
 delta <- delta %>% 
   unite(cgm_pump,CGMUse,PumpUse,remove = F)
-# Use mixed model to test this
+# Mixed model testing last no/first yes
+# Random intercept
+mod_int <- lme(HbA1c ~ cgm_pump,random=~1|EPICMRN,data = delta,na.action = na.omit)
+on_off_results <- as.data.frame(summary(mod_int)$tTable)
+rownames(on_off_results) <- c("Intercept","cgmNo:pumpNo","cgmNo:pumpYes","cgmYes:pumpNA","cgmYes:pumpNo","cgmYes:pumpYes")
+```
+
+### Table 2: Mixed model comparing last HbA1c not on CGM to first HbA1c on CGM, by CGM and pump status
+```{r echo=FALSE}
+kable(on_off_results, caption = "Fixed Effects")
+kable(anova.lme(mod_int), caption = "Type 3 Tests of Fixed Effects")
+```
+
+```{r echo=FALSE}
+# For each person, average HbA1c on CGM and off
+avg_on_off <- dat %>%
+  group_by(EPICMRN,CGMUse) %>%
+  summarise(mean(HbA1c))
+
 ```
