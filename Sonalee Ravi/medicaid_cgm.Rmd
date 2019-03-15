@@ -7,13 +7,13 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-library(tidyverse)
 library(tableone)
 library(nortest)
 library(knitr)
-library(lubridate)
+library(tidyverse)
+# Check OS and alter file path accordingly.
+if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.Platform$OS.type == "unix"){pathstart <- "/Volumes/"}
 source('~/Documents/GitHub/Tim-and-Laura/tim_R_functions.R')
-pathstart <- os.check()
 ```
 
 ```{r echo=FALSE}
@@ -24,7 +24,7 @@ demographics <- read.csv(filename)
 filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sonalee Ravi/Medicaid CGM/Data_Cleaned/30 day CGM data missing studio.csv")
 dat <- read.csv(filename,na.strings = c("","NULL"))
 # Format CGM data
-dat$EncounterDate <- mdy(as.character(dat$EncounterDate))
+dat$EncounterDate <- lubridate::mdy(as.character(dat$EncounterDate))
 # Remove rows with no A1c
 dat <- dat[which(!is.na(dat$HbA1c)),]
 # Replace CGMUse = "No" with NA, fill down "Yes" values (by subject), set NAs back to "No"
@@ -76,7 +76,7 @@ delta <- rbind(yes, no) %>% arrange(EPICMRN,EncounterDate)
 demographicsyn <- demographics[which(demographics$EPICMRN %in% unique(delta$EPICMRN)),]
 # Format demographic data
 demo_datecols <- c("DOB","DateOfDiabetesDiagnosis","FirstVisitDate") 
-demographicsyn[,demo_datecols] <- lapply(demographicsyn[,demo_datecols], mdy)
+demographicsyn[,demo_datecols] <- lapply(demographicsyn[,demo_datecols], lubridate::mdy)
 # Age at first visit and diabetes duration
 demographicsyn$AgeFirstVisit <- as.numeric(round(difftime(demographicsyn$FirstVisitDate,
                                              demographicsyn$DOB,units = "days")/365.25,2))
@@ -85,7 +85,7 @@ demographicsyn$DiabetesDuration <- as.numeric(round(difftime(demographicsyn$Date
 ```
 
 ```{r echo=FALSE,include=FALSE}
-# Table 1 for cohort of 200
+# Table 1 for cohort of 134
 vars <- c("AgeFirstVisit","DiabetesDuration","Gender","Race.Ethnicity")
 nonnormal <- norm.check(demographicsyn[,c("AgeFirstVisit","DiabetesDuration")])
 t1_full <- CreateTableOne(vars,data = demographicsyn)
@@ -93,7 +93,7 @@ t1_full <- as.data.frame(print(t1_full,nonnormal = nonnormal))
 ```
 
 ```{r echo=FALSE}
-kable(t1_full,caption = "Descriptive Statistics for Full Cohort")
+kable(t1_full,caption = "Table 1: Descriptive Statistics for Full Cohort")
 ```
 
 ```{r echo=FALSE,include=FALSE}
@@ -103,19 +103,11 @@ f2l_comps <- print(f2l_comps,nonnormal = "HbA1c")
 ```
 
 ```{r echo=FALSE}
-kable(f2l_comps,caption ="HbA1c Comparisons Stratified by CGMUse:PumpUse (Kruskal-Wallis Rank Sum Test)")
+kable(f2l_comps[,1:4],caption ="HbA1c Comparisons Stratified by CGMUse:PumpUse (Kruskal-Wallis Rank Sum Test)")
 ```
 
 ```{r echo=FALSE,include=FALSE}
-delta$cgm_pump[delta$CGMUse == "No" & delta$PumpUse == "No"] <- "No CGM:No Pump"
-delta$cgm_pump[delta$CGMUse == "No" & delta$PumpUse == "Yes"] <- "No CGM:Yes Pump"
-delta$cgm_pump[delta$CGMUse == "Yes" & delta$PumpUse == "No"] <- "Yes CGM:No Pump"
-delta$cgm_pump[delta$CGMUse == "Yes" & delta$PumpUse == "Yes"] <- "Yes CGM:Yes Pump"
-delta$cgm_pump <- as.factor(delta$cgm_pump)
-pwt <- pairwise.wilcox.test(delta$HbA1c,delta$cgm_pump,p.adjust.method = "none")
-pwt <- as.data.frame(pwt$p.value)
-```
-
-```{r echo=FALSE}
-kable(pwt,caption = "Pairwise comparison p values (Wilcoxon rank sum test)")
+delta <- delta %>% 
+  unite(cgm_pump,CGMUse,PumpUse,remove = F)
+# Use mixed model to test this
 ```
