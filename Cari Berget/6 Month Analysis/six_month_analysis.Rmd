@@ -256,6 +256,10 @@ vars <- c("hba1c","am_time","mm_time","sensor_wear","sensor_u54","sensor_55_69",
 # Import cleaned, scored survey data.
 filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/clean_parent_survey.csv")
 parent_survey <- read.csv(filename,na.strings = "",stringsAsFactors = F)
+parent_survey <- parent_survey %>% 
+  arrange(record_id,tpoint) %>%
+  group_by(record_id) %>%
+  mutate(baseline_ppaid = ppaid_score[1])
 filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/clean_child_survey.csv")
 child_survey <- read.csv(filename,na.strings = "",stringsAsFactors = F)
 filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/clean_ya_survey.csv")
@@ -284,7 +288,7 @@ a1c_plot <- ggplot(alldata,aes_string(x = "tpoint",y = "hba1c",group = "record_i
 a1c_plot
 ```
 
-```{r echo=FALSE}
+```{r echo=FALSE,include=FALSE}
 # A1c mixed models
 a1c_mod_reduced <- lme(hba1c ~ tpoint,random=~1|record_id,data = alldata,na.action = na.omit)
 a1c_mod_adj <- lme(hba1c ~ tpoint + baseline_a1c,random=~1|record_id,data = alldata,na.action = na.omit) # Best model by AIC - try adding random slope
@@ -292,7 +296,9 @@ a1c_mod_adj <- lme(hba1c ~ tpoint + baseline_a1c,random=~1|record_id,data = alld
 a1c_mod_reduced_cont <- lme(hba1c ~ as.numeric(tpoint),random=~1|record_id,data = alldata,na.action = na.omit)
 a1c_mod_adj_cont <- lme(hba1c ~ as.numeric(tpoint) + baseline_a1c,random=~1|record_id,data = alldata,na.action = na.omit)
 # Random slope
-a1c_mod_adj_rs <- lme(hba1c ~ tpoint + baseline_a1c,random=~1|record_id/tpoint,data = alldata,na.action = na.omit) #AIC up slightly, report random intercept
+a1c_mod_adj_rs <- lme(hba1c ~ as.numeric(tpoint) + baseline_a1c,random=~1|record_id/tpoint,data = alldata,na.action = na.omit) #AIC up slightly, report random intercept
+AIC(a1c_mod_adj)
+AIC(a1c_mod_adj_rs)
 ```
 
 ## Table 2: A1c Mixed Models
@@ -305,17 +311,90 @@ qqnorm(a1c_mod_adj)
 
 ## Figure 2: PAID-PEDS by Timepoint
 ```{r echo=FALSE,warning=FALSE}
-paid_plot <- 
-  ggplot(child_survey,aes_string(x = "tpoint",y = "paid_score",group = "record_id")) + 
+paid_peds_plot <- 
+  ggplot(child_survey,aes_string(x = "tpoint",y = "cpaid_score",group = "record_id")) + 
   geom_line(size = 0.2) +
   xlab("Timepoint") + 
   ylab("PAID-PEDS Score")
 paid_peds_plot
 ```
 
-```{r echo=FALSE}
+```{r echo=FALSE,include=FALSE}
 # PAID-PEDS mixed models
-paidc_mod_reduced <- lme(paid_score ~ tpoint,
+paidc_mod_reduced <- lme(cpaid_score ~ tpoint,
                        random=~1|record_id,
-                       data = child_survey,na.action = na.omit)
+                       data = alldata,na.action = na.omit)
+
+paidc_mod_adj <- lme(cpaid_score ~ tpoint + baseline_cpaid,
+                       random=~1|record_id,
+                       data = alldata,na.action = na.omit)
+
+AIC(paidc_mod_reduced)
+AIC(paidc_mod_adj) # adjusted is better by AIC
+# Continous time
+paidc_reduced_cont <- lme(cpaid_score ~ as.numeric(tpoint),random=~1|record_id,data = alldata,na.action = na.omit)
+paidc_adj_cont <- lme(cpaid_score ~ as.numeric(tpoint) + baseline_cpaid,random=~1|record_id,data = alldata,na.action = na.omit)
+AIC(paidc_reduced_cont)
+AIC(paidc_adj_cont) # Adjusted model with categorical time still the best.
+# Random slope
+paidc_mod_adj_rs <- lme(cpaid_score ~ as.numeric(tpoint) + baseline_cpaid,random=~1|record_id/tpoint,data = alldata,na.action = na.omit)
+AIC(paidc_mod_adj_rs) # Adjusted with random intercept still the best, report that.
+```
+
+## Table 3: PAID-PEDS Mixed Models
+```{r echo=FALSE}
+kable(summary(paidc_mod_adj)$tTable,caption = "Fixed Effects")
+kable(anova.lme(paidc_mod_adj),caption = "Type 3 Tests of Fixed Effects")
+plot(paidc_mod_adj)
+qqnorm(paidc_mod_adj)
+```
+
+## Figure 3: PAID-YA by Timepoint
+```{r echo=FALSE,warning=FALSE}
+paid_ya_plot <- 
+  ggplot(ya_survey,aes_string(x = "tpoint",y = "yapaid_score",group = "record_id")) + 
+  geom_line(size = 0.2) +
+  xlab("Timepoint") + 
+  ylab("PAID-YA Score")
+paid_ya_plot
+```
+
+```{r echo=FALSE,include=FALSE}
+# PAID-YA mixed model (same as peds model)
+paidya_mod_adj <- lme(yapaid_score ~ tpoint + baseline_yapaid,
+                       random=~1|record_id,
+                       data = alldata,na.action = na.omit)
+```
+
+## Table 4: PAID-YA Mixed Models
+```{r echo=FALSE}
+kable(summary(paidya_mod_adj)$tTable,caption = "Fixed Effects")
+kable(anova.lme(paidya_mod_adj),caption = "Type 3 Tests of Fixed Effects")
+plot(paidya_mod_adj)
+qqnorm(paidya_mod_adj)
+```
+
+## Figure 4: PAID-PR by Timepoint
+```{r echo=FALSE,warning=FALSE}
+paid_p_plot <- 
+  ggplot(parent_survey,aes_string(x = "tpoint",y = "ppaid_score",group = "record_id")) + 
+  geom_line(size = 0.2) +
+  xlab("Timepoint") + 
+  ylab("PAID-PR Score")
+paid_p_plot
+```
+
+```{r echo=FALSE,include=FALSE}
+# PAID-YA mixed model (same as peds model)
+paidpr_mod_adj <- lme(ppaid_score ~ tpoint + baseline_ppaid,
+                       random=~1|record_id,
+                       data = parent_survey,na.action = na.omit)
+```
+
+## Table 4: PAID-YA Mixed Models
+```{r echo=FALSE}
+kable(summary(paidpr_mod_adj)$tTable,caption = "Fixed Effects")
+kable(anova.lme(paidpr_mod_adj),caption = "Type 3 Tests of Fixed Effects")
+plot(paidpr_mod_adj)
+qqnorm(paidpr_mod_adj)
 ```
