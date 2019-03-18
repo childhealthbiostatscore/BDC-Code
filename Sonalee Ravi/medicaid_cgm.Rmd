@@ -78,35 +78,24 @@ delta <- rbind(yes, no) %>% arrange(EPICMRN,EncounterDate)
 ```
 
 ```{r echo=FALSE}
-# Remove demographics participants who don't have with and without CGM data
-demographicsyn <- demographics[which(demographics$EPICMRN %in% unique(delta$EPICMRN)),]
 # Format demographic data
 demo_datecols <- c("DOB","DateOfDiabetesDiagnosis","FirstVisitDate") 
-demographicsyn[,demo_datecols] <- lapply(demographicsyn[,demo_datecols], lubridate::mdy)
-# Age at first visit and diabetes duration
-demographicsyn$AgeFirstVisit <- as.numeric(round(difftime(demographicsyn$FirstVisitDate,
-                                             demographicsyn$DOB,units = "days")/365.25,2))
-demographicsyn$DiabetesDuration <- as.numeric(round(difftime(demographicsyn$DateOfDiabetesDiagnosis,
-                                             demographicsyn$DOB,units = "days")/365.25,2))
+demographics[,demo_datecols] <- lapply(demographics[,demo_datecols], lubridate::mdy)
+# New variables
+demographics$AgeFirstVisit <- as.numeric(round(difftime(demographics$FirstVisitDate,
+                                             demographics$DOB,units = "days")/365.25,2))
+demographics$DiabetesDuration <- as.numeric(round(difftime(demographics$DateOfDiabetesDiagnosis,
+                                             demographics$DOB,units = "days")/365.25,2))
+# Remove demographics participants who don't have with and without CGM data
+demographicsyn <- demographics[which(demographics$EPICMRN %in% unique(delta$EPICMRN)),]
 ```
 
 ```{r echo=FALSE,include=FALSE}
 # Table 1 for cohort of 134
 vars <- c("AgeFirstVisit","DiabetesDuration","Gender","Race.Ethnicity")
 nonnormal <- norm.check(demographicsyn[,c("AgeFirstVisit","DiabetesDuration")])
-t1_full <- CreateTableOne(vars,data = demographicsyn)
-t1_full <- as.data.frame(print(t1_full,nonnormal = nonnormal))
-```
-
-### Table 1: Descriptive statistics for full cohort with both on and off CGM data
-```{r echo=FALSE}
-kable(t1_full)
-```
-
-```{r echo=FALSE,include=FALSE}
-# Table 1 by CGM = "Yes" vs CGM = "No"
-f2l_comps <- CreateTableOne("HbA1c",strata = c("CGMUse","PumpUse"),delta)
-f2l_comps <- print(f2l_comps,nonnormal = "HbA1c")
+t1_last_first <- CreateTableOne(vars,data = demographicsyn)
+t1_last_first <- as.data.frame(print(t1_last_first,nonnormal = nonnormal))
 ```
 
 ```{r echo=FALSE,include=FALSE}
@@ -119,12 +108,6 @@ mod_int <- lme(HbA1c ~ cgm_pump,random=~1|EPICMRN,data = delta,na.action = na.om
 on_off_results <- as.data.frame(summary(mod_int)$tTable)
 rownames(on_off_results) <- c("Intercept","cgmNo:pumpYes","cgmYes:pumpNo","cgmYes:pumpYes","cgmNo:pumpNA","cgmYes:pumpNA")
 # cgmNo:pumpNo is the reference group
-```
-
-### Table 2: Mixed model comparing last HbA1c not on CGM to first HbA1c on CGM, by CGM and pump status
-```{r echo=FALSE}
-kable(on_off_results, caption = "Fixed Effects")
-kable(anova.lme(mod_int), caption = "Type 3 Tests of Fixed Effects")
 ```
 
 ```{r echo=FALSE,include=FALSE}
@@ -143,9 +126,55 @@ p <- wilcox.test(formula = `mean(HbA1c)` ~ CGMUse, data = avg_on_off,paired = T)
 rownames(on_off_avg_results)[2] <- "Mean HbA1c"
 on_off_avg_results$p <- as.character(on_off_avg_results$p)
 on_off_avg_results$p[2] <- round(p,5)
+# Demographics
+demographicsoo <- demographics[which(demographics$EPICMRN %in% unique(avg_on_off$EPICMRN)),]
+vars <- c("AgeFirstVisit","DiabetesDuration","Gender","Race.Ethnicity")
+nonnormal <- norm.check(demographicsoo[,c("AgeFirstVisit","DiabetesDuration")])
+t1_on_off <- CreateTableOne(vars,data = demographicsoo)
+t1_on_off <- as.data.frame(print(t1_on_off,nonnormal = nonnormal))
 ```
 
-### Table 3: Mean HbA1c on CGM and off CGM
+### Table 1: Descriptive statistics for full cohort with on and off CGM data
+```{r echo=FALSE}
+kable(t1_on_off)
+```
+
+### Table 2: Mean HbA1c on CGM and off CGM
 ```{r echo=FALSE}
 kable(on_off_avg_results[,1:4])
+```
+
+### Table 3: Descriptive statistics for full cohort (last off CGM vs. first on CGM)
+```{r echo=FALSE}
+kable(t1_last_first)
+```
+
+### Table 4: Mixed model comparing last HbA1c not on CGM to first HbA1c on CGM, by CGM and pump status
+```{r echo=FALSE}
+kable(on_off_results, caption = "Fixed Effects")
+kable(anova.lme(mod_int), caption = "Type 3 Tests of Fixed Effects")
+```
+
+```{r echo=FALSE,include=FALSE}
+# Add demographic info to main data
+dat <- left_join(dat,demographics,by = "EPICMRN")
+dat$DiabetesDuration <- difftime(dat$EncounterDate,dat$DateOfDiabetesDiagnosis,units = "weeks")
+dat$EPICMRN <- as.factor(dat$EPICMRN)
+# Model A1c continuously vs. CGM percentage, adjusting for pump, age, diabetes duration
+mod_adj_int <- lme(HbA1c ~ CGM_Perc + Age_AtEncounterDate + DiabetesDuration + PumpUse,
+               random=~1|EPICMRN,data = dat, na.action = na.omit)
+mod_adj_int_slp <- lme(HbA1c ~ CGM_Perc + Age_AtEncounterDate + DiabetesDuration + PumpUse,
+               random=~1|EPICMRN/CGM_Perc,data = dat, na.action = na.omit)
+# Model selection
+summary(mod_adj_int)
+summary(mod_adj_int_slp) # Best by AIC
+```
+
+```{r echo=FALSE}
+# Plot
+mm_plot <- ggplot(data = dat, aes(x = CGM_Perc, y = HbA1c,group = EPICMRN)) +
+  geom_line(size = 0.2, aes(color = EPICMRN)) +
+  xlab("CGM % Use") + 
+  ylab("HbA1c (%)")
+mm_plot
 ```
