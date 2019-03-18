@@ -111,12 +111,14 @@ f2l_comps <- print(f2l_comps,nonnormal = "HbA1c")
 
 ```{r echo=FALSE,include=FALSE}
 delta <- delta %>% 
-  unite(cgm_pump,CGMUse,PumpUse,remove = F)
+  unite(cgm_pump,CGMUse,PumpUse,remove = F) %>%
+  mutate(cgm_pump = factor(cgm_pump, levels = c("No_No","No_Yes","Yes_No","Yes_Yes","No_NA","Yes_NA")))
 # Mixed model testing last no/first yes
 # Random intercept
 mod_int <- lme(HbA1c ~ cgm_pump,random=~1|EPICMRN,data = delta,na.action = na.omit)
 on_off_results <- as.data.frame(summary(mod_int)$tTable)
-rownames(on_off_results) <- c("Intercept","cgmNo:pumpNo","cgmNo:pumpYes","cgmYes:pumpNA","cgmYes:pumpNo","cgmYes:pumpYes")
+rownames(on_off_results) <- c("Intercept","cgmNo:pumpYes","cgmYes:pumpNo","cgmYes:pumpYes","cgmNo:pumpNA","cgmYes:pumpNA")
+# cgmNo:pumpNo is the reference group
 ```
 
 ### Table 2: Mixed model comparing last HbA1c not on CGM to first HbA1c on CGM, by CGM and pump status
@@ -125,10 +127,25 @@ kable(on_off_results, caption = "Fixed Effects")
 kable(anova.lme(mod_int), caption = "Type 3 Tests of Fixed Effects")
 ```
 
-```{r echo=FALSE}
-# For each person, average HbA1c on CGM and off
+```{r echo=FALSE,include=FALSE}
+# For each person, average HbA1c on CGM and off, remove those without both
 avg_on_off <- dat %>%
   group_by(EPICMRN,CGMUse) %>%
-  summarise(mean(HbA1c))
+  summarise(mean(HbA1c)) %>%
+  group_by(EPICMRN) %>% 
+  filter(n() > 1) %>% 
+  arrange(EPICMRN,CGMUse)
+# Compare
+on_off_avg_results <- CreateTableOne("mean(HbA1c)",strata = "CGMUse",data = avg_on_off,
+                                     testNonNormal = wilcox.test,argsNonNormal = list(paired = T))
+on_off_avg_results <- as.data.frame(print(on_off_avg_results, nonnormal = "mean(HbA1c)"))
+p <- wilcox.test(formula = `mean(HbA1c)` ~ CGMUse, data = avg_on_off,paired = T)$p.value
+rownames(on_off_avg_results)[2] <- "Mean HbA1c"
+on_off_avg_results$p <- as.character(on_off_avg_results$p)
+on_off_avg_results$p[2] <- round(p,5)
+```
 
+### Table 3: Mean HbA1c on CGM and off CGM
+```{r echo=FALSE}
+kable(on_off_avg_results[,1:4])
 ```
