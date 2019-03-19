@@ -16,8 +16,8 @@ library(lubridate)
 library(plyr)
 library(tidyr)
 library(dplyr)
-source('~/Documents/GitHub/Tim-and-Laura/tim_R_functions.R')
-pathstart <- os.check()
+# Check OS and alter file path accordingly.
+if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.Platform$OS.type == "unix"){pathstart <- "/Volumes/"}
 ```
 
 ```{r echo=FALSE, include=FALSE}
@@ -264,46 +264,70 @@ for (f in 1:length(files)) {
   six_hour_BG <- six_hour_BG %>% group_by(date) %>% 
     summarise(n = sum(time_diff >= 6)) %>% as.data.frame()
   summary[f,"days_reading>=6_hours"] <- sum(six_hour_BG$n > 0)
-# Make a list of times when BG readings occur. Add 15 minutes to each element so
-# it's a list of time ranges. Collapse the list and keep unique times. 
-  lowBGs <- unique(unlist(lapply((as.list(dat$timestamp[which(dat$bgreading < 70)])),function(x) x:(x+900))))
-  intargetBGs <- unique(unlist(lapply((as.list(dat$timestamp[which(dat$bgreading %in% 70:180)])),function(x) x:(x+900))))
-  highBGs <- unique(unlist(lapply((as.list(dat$timestamp[which(dat$bgreading %in% 181:250)])),function(x) x:(x+900))))
-  veryhighBGs <- unique(unlist(lapply((as.list(dat$timestamp[which(dat$bgreading %in% 251:400)])),function(x) x:(x+900))))
-  extremeBGs <- unique(unlist(lapply((as.list(dat$timestamp[which(dat$bgreading > 400)])),function(x) x:(x+900))))
-# Count BG readings
-  lowBGcount <- length(which(dat$bgreading < 70)) 
-  intargetBGcount <- length(which(dat$bgreading %in% 70:180)) 
-  highBGcount <- length(which(dat$bgreading %in% 181:250)) 
-  veryhighBGcount <- length(which(dat$bgreading %in% 250:400))
+# Total BGs in ranges
+  lowBGcount <- length(which(dat$bgreading < 70))
+  intargetBGcount <- length(which(dat$bgreading %in% 70:180))
+  highBGcount <- length(which(dat$bgreading %in% 181:250))
+  veryhighBGcount <- length(which(dat$bgreading %in% 251:400))
   extremeBGcount <- length(which(dat$bgreading > 400))
-# Carb times
+# BG count variables
+  lowBG_followed_by_bolus <- 0
+  lowBG_followed_by_carb_bolus <- 0
+  intargetBG_followed_by_bolus <- 0
+  intargetBG_followed_by_carb_bolus <- 0
+  highBG_followed_by_bolus <- 0
+  highBG_followed_by_carb_bolus <- 0
+  veryhighBG_followed_by_bolus <- 0
+  veryhighBG_followed_by_carb_bolus <- 0
+  extremeBG_followed_by_bolus <- 0
+  extremeBG_followed_by_carb_bolus <- 0
   carbtimes <- dat$timestamp[which(dat$carbinput > 0)]
-# Percentages 
+# Iterate through each BG reading
+  bgreadings <- which(dat$bgreading > 0)
+  for (r in bgreadings) {
+    bg <- dat$bgreading[r]
+    time.range.15 <- (dat$timestamp[r]:(dat$timestamp[r]+900))
+    if ((TRUE %in% (bolus.times %in% time.range.15)) & 
+        (TRUE %in% (carbtimes %in% time.range.15))) {
+      if (bg < 70) {lowBG_followed_by_carb_bolus <- lowBG_followed_by_carb_bolus + 1}
+      else if (bg %in% 70:180) {intargetBG_followed_by_carb_bolus <- intargetBG_followed_by_carb_bolus + 1}
+      else if (bg %in% 181:250) {highBG_followed_by_carb_bolus <- highBG_followed_by_carb_bolus + 1}
+      else if (bg %in% 250:400) {veryhighBG_followed_by_carb_bolus <- veryhighBG_followed_by_carb_bolus + 1}
+      else if (bg > 400) {extremeBG_followed_by_carb_bolus <- extremeBG_followed_by_carb_bolus + 1}
+    } else if (TRUE %in% (bolus.times %in% time.range.15)){
+      if (bg < 70) {lowBG_followed_by_bolus <- lowBG_followed_by_bolus + 1}
+      else if (bg %in% 70:180) {intargetBG_followed_by_bolus <- intargetBG_followed_by_bolus + 1}
+      else if (bg %in% 181:250) {highBG_followed_by_bolus <- highBG_followed_by_bolus + 1}
+      else if (bg %in% 250:400) {veryhighBG_followed_by_bolus <- veryhighBG_followed_by_bolus + 1}
+      else if (bg > 400) {extremeBG_followed_by_bolus <- extremeBG_followed_by_bolus + 1}
+    }
+  }
+# As percentages in summary table
   summary[f,"perc_lowBG_followed_by_carb_bolus"] <- 
-    (min(c(sum(carbtimes %in% lowBGs)),sum(bolus.times %in% lowBGs))/lowBGcount)*100
+    (lowBG_followed_by_carb_bolus/lowBGcount)*100
   summary[f,"perc_lowBG_followed_by_bolus"] <- 
-    (sum(bolus.times %in% lowBGs)/lowBGcount)*100
+    ((lowBG_followed_by_carb_bolus + lowBG_followed_by_bolus)/lowBGcount)*100
   
-  summary[f,"perc_intBG_followed_by_carb_bolus"] <- 
-    (min(c(sum(carbtimes %in% intargetBGs)),sum(bolus.times %in% intargetBGs))/intargetBGcount)*100
-  summary[f,"perc_intBG_followed_by_bolus"] <- 
-    (sum(bolus.times %in% intargetBGs)/intargetBGcount)*100
+  summary[f,"perc_intargetBG_followed_by_carb_bolus"] <- 
+    (intargetBG_followed_by_carb_bolus/intargetBGcount)*100
+  summary[f,"perc_intargetBG_followed_by_bolus"] <- 
+    ((intargetBG_followed_by_carb_bolus + intargetBG_followed_by_bolus)/intargetBGcount)*100
   
   summary[f,"perc_highBG_followed_by_carb_bolus"] <- 
-    (min(c(sum(carbtimes %in% highBGs)),sum(bolus.times %in% highBGs))/highBGcount)*100
+    (highBG_followed_by_carb_bolus/highBGcount)*100
   summary[f,"perc_highBG_followed_by_bolus"] <- 
-    (sum(bolus.times %in% highBGs)/highBGcount)*100
+    ((highBG_followed_by_carb_bolus + highBG_followed_by_bolus)/highBGcount)*100
   
   summary[f,"perc_veryhighBG_followed_by_carb_bolus"] <- 
-    (min(c(sum(carbtimes %in% veryhighBGs)),sum(bolus.times %in% veryhighBGs))/veryhighBGcount)*100
+    (veryhighBG_followed_by_carb_bolus/veryhighBGcount)*100
   summary[f,"perc_veryhighBG_followed_by_bolus"] <- 
-    (sum(bolus.times %in% veryhighBGs)/veryhighBGcount)*100
+    ((veryhighBG_followed_by_carb_bolus + veryhighBG_followed_by_bolus)/veryhighBGcount)*100
   
   summary[f,"perc_extremeBG_followed_by_carb_bolus"] <- 
-    (min(c(sum(carbtimes %in% extremeBGs)),sum(bolus.times %in% extremeBGs))/extremeBGcount)*100
+    (extremeBG_followed_by_carb_bolus/extremeBGcount)*100
   summary[f,"perc_extremeBG_followed_by_bolus"] <- 
-    (sum(bolus.times %in% extremeBGs)/extremeBGcount)*100
+    ((extremeBG_followed_by_carb_bolus + extremeBG_followed_by_bolus)/extremeBGcount)*100
+  
 # Rebound BGs. Same as above for low BGs, but 24 hour range. Check how many 
 # >300 BGs occur within 24 hour ranges.
   lowBGs <- unique(unlist(lapply((as.list(dat$timestamp[which(dat$bgreading < 70)])),function(x) x:(x+86400))))
