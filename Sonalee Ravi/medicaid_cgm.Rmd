@@ -77,7 +77,7 @@ no <- no[no$EPICMRN %in% yes$EPICMRN,]
 delta <- rbind(yes, no) %>% arrange(EPICMRN,EncounterDate)
 ```
 
-```{r echo=FALSE}
+```{r echo=FALSE,include=FALSE}
 # Format demographic data
 demo_datecols <- c("DOB","DateOfDiabetesDiagnosis","FirstVisitDate") 
 demographics[,demo_datecols] <- lapply(demographics[,demo_datecols], lubridate::mdy)
@@ -134,6 +134,38 @@ t1_on_off <- CreateTableOne(vars,data = demographicsoo)
 t1_on_off <- as.data.frame(print(t1_on_off,nonnormal = nonnormal))
 ```
 
+```{r echo=FALSE,include=FALSE}
+# Compare A1c in those who never went on CGM to those on CGM
+some_cgm <- dat[which(dat$CGMUse == "Yes"),] %>%
+  group_by(EPICMRN) %>%
+  summarise(mean(HbA1c)) %>%
+  mutate(CGMUse = "Some")
+never_cgm_ids <- unique(dat$EPICMRN[which(!(dat$EPICMRN %in% some_cgm$EPICMRN))])
+never_cgm <- dat[which(dat$EPICMRN %in% never_cgm_ids),] %>%
+  group_by(EPICMRN) %>%
+  summarise(mean(HbA1c)) %>%
+  mutate(CGMUse = "Never")
+never_some <- rbind(never_cgm,some_cgm)
+never_some <- left_join(never_some,demographics,by = "EPICMRN")
+never_some_comp <- CreateTableOne(c("mean(HbA1c)",vars),strata = "CGMUse",never_some)
+never_some_comp <- print(never_some_comp,nonnormal = c("mean(HbA1c)",nonnormal))
+```
+
+```{r echo=FALSE,include=FALSE}
+# Add demographic info to main data
+dat <- left_join(dat,demographics,by = "EPICMRN")
+dat$DiabetesDuration <- difftime(dat$EncounterDate,dat$DateOfDiabetesDiagnosis,units = "weeks")
+dat$EPICMRN <- as.factor(dat$EPICMRN)
+# Model A1c continuously vs. CGM percentage, adjusting for pump, age, diabetes duration
+mod_adj_int <- lme(HbA1c ~ CGM_Perc + Age_AtEncounterDate + DiabetesDuration + PumpUse + Race.Ethnicity,
+               random=~1|EPICMRN,data = dat, na.action = na.omit)
+mod_adj_int_slp <- lme(HbA1c ~ CGM_Perc + Age_AtEncounterDate + DiabetesDuration + PumpUse + Race.Ethnicity,
+               random=~1|EPICMRN/CGM_Perc,data = dat, na.action = na.omit)
+# Model selection
+summary(mod_adj_int)
+summary(mod_adj_int_slp) # Best by AIC
+```
+
 ### Table 1: Descriptive statistics for full cohort with on and off CGM data
 ```{r echo=FALSE}
 kable(t1_on_off)
@@ -157,19 +189,9 @@ kable(anova.lme(mod_int), caption = "Type 3 Tests of Fixed Effects")
 
 The above model effectively treats CGM and pump status as a treatment group, and examines the effect on HbA1c. The reference group is no pump and no CGM. So, on average those on a pump without CGM (cgmNo:pumpYes) had an HbA1c 1.528 percentage points lower than those on neither pump or CGM (p=0.0001298). 
 
+### Table 5: Mean HbA1c some CGM time vs. never on CGM
 ```{r echo=FALSE}
-# Add demographic info to main data
-dat <- left_join(dat,demographics,by = "EPICMRN")
-dat$DiabetesDuration <- difftime(dat$EncounterDate,dat$DateOfDiabetesDiagnosis,units = "weeks")
-dat$EPICMRN <- as.factor(dat$EPICMRN)
-# Model A1c continuously vs. CGM percentage, adjusting for pump, age, diabetes duration
-mod_adj_int <- lme(HbA1c ~ CGM_Perc + Age_AtEncounterDate + DiabetesDuration + PumpUse + Race.Ethnicity,
-               random=~1|EPICMRN,data = dat, na.action = na.omit)
-mod_adj_int_slp <- lme(HbA1c ~ CGM_Perc + Age_AtEncounterDate + DiabetesDuration + PumpUse + Race.Ethnicity,
-               random=~1|EPICMRN/CGM_Perc,data = dat, na.action = na.omit)
-# Model selection
-summary(mod_adj_int)
-summary(mod_adj_int_slp) # Best by AIC
+kable(never_some_comp[,1:4])
 ```
 
 ### Figure 1: HbA1c by % CGM Use
@@ -183,7 +205,7 @@ mm_plot <- ggplot(data = dat, aes(x = CGM_Perc, y = HbA1c,group = EPICMRN)) +
 mm_plot
 ```
 
-### Table 5: Mixed model HbA1c by % CGM Use, adjusted for age, race, diabetes duration, and pump use
+### Table 6: Mixed model HbA1c by % CGM Use, adjusted for age, race, diabetes duration, and pump use
 ```{r echo=FALSE}
 kable(summary(mod_adj_int_slp)$tTable,caption = "Fixed Effects")
 ```
