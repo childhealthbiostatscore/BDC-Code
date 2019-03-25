@@ -7,68 +7,44 @@ output: word_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(MatchIt)
+library(redcapAPI)
+# Check OS and alter file path accordingly.
+if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.Platform$OS.type == "unix"){pathstart <- "/Volumes/"}
 ```
 
-```{r echo=FALSE, include=FALSE}
-# Load libraries and functions
-#source('/Users/timvigers/Documents/GitHub/Tim-and-Laura/tim_R_functions.R')
-source('C:/Users/pylell/Documents/GitHub/Tim-and-Laura/tim_R_functions.R')
-pathstart <- os.check()
-source(paste0(pathstart,'som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Shideh Majidi/High Risk Program/Data_Cleaned/HighRiskProgramClean_R_2018-11-20_1104.r'))
+```{r echo=FALSE, include=FALSE, eval=FALSE}
+# REDCap R file
+source(paste0(pathstart,'som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Shideh Majidi/High Risk Program/Data_Cleaned/HighRiskProgramClean_R_2018-11-20_1104.r'))
 data$pt_status <- NULL
-library(lubridate)
-library(zoo)
-library(data.table)
-library(dplyr)
-library(ggplot2)
-library(tableone)
-library(survival)
-library(prodlim)
-library(nortest)
-library(knitr)
 set.seed(1017)
 ```
 
+```{r echo=FALSE,eval=FALSE}
+# REDCap API data import
+source("/Users/timvigers/Documents/GitHub/BDC-Code/api_tokens.R")
+rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
+                         token = majidi_high_risk)
+data_full <- exportRecords(rcon)
+```
+
 ```{r echo=FALSE,include=FALSE}
-# import start and end dates.
-dates <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Shideh Majidi/High Risk Program/Data_Cleaned/StartEndDates.csv"))
-dates <- dates[,c("record_id","program_start_date","program_end_date","Gender")]
-data <- merge(data,dates,all.x = T,by = "record_id")
-# Fill down ID columns
-idcols <- c("record_id","name","mrn","control","case_id","dob")
-data[,idcols] <- na.locf(data[,idcols])
-# Re-format columns
-data$Gender <- as.factor(data$Gender)
-data$a1c <- as.numeric(data$a1c)
-data$visitdate <- ymd(as.character(data$visitdate))
-data$dob <- ymd(as.character(data$dob))
-data$program_start_date <- mdy(as.character(data$program_start_date))
-data$program_end_date <- mdy(as.character(data$program_end_date))
-data$case_id <- as.factor(data$case_id)
-data$control <- as.factor(data$control)
-data$sw.factor <- as.character(data$sw.factor)
-data$lowbg <- as.numeric(data$lowbg)
-data$targetbg <- as.numeric(data$targetbg)
-data$highbg <- as.numeric(data$highbg)
-data$hospitalbefore <- as.numeric(data$hospitalbefore)
-data$hosp_dur <- as.numeric(data$hosp_dur)
-data$hospitalpost <- as.numeric(data$hospitalpost)
-data$nsbefore <- as.numeric(data$nsbefore)
-data$ns_dur <- as.numeric(data$ns_dur)
-data$nspost <- as.numeric(data$nspost)
-data$cancelbefore <- as.numeric(data$cancelbefore)
-data$cancel_dur <- as.numeric(data$cancel_dur)
-data$cancelpost <- as.numeric(data$cancelpost)
+data <- data_full
+# import start and end dates, merge with data, fill down id columns
+dates <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Shideh Majidi/High Risk Program/Data_Cleaned/StartEndDates.csv"))
+dates <- dates %>% select(record_id,program_start_date,program_end_date,Gender)
+dates$record_id <- as.character(dates$record_id)
+data <- left_join(data,dates,by = "record_id") %>%
+  fill(record_id,name,mrn,control,case_id,dob)
 # Fix incorrect visit date and BG check value.
 data$visitdate[which(data$visitdate == "2006-04-01")] <- "2016-04-01"
 data$bgchecks[which(data$bgchecks == 47)] <- 7
-# Set incorrect TIR values to missing.
-incorrect.bgs <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Shideh Majidi/High Risk Program/Data_Cleaned/RoundingBGs.csv"))
-incorrect.bgs <- semi_join(data,incorrect.bgs,by = c("record_id","redcap_event_name"))
-rows <- which(!is.na(row.match(data,incorrect.bgs)))
-data$highbg[rows] <- NA
-data$targetbg[rows] <- NA
-data$lowbg[rows] <- NA
+# Remove participants with unverifiable BGs
+incorrect.bgs <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Shideh Majidi/High Risk Program/Data_Cleaned/NotVerifiedBG.csv"))
+incorrect.bgs$Record.ID <- as.character(incorrect.bgs$Record.ID)
+data <- data %>%
+  filter(!(record_id %in% incorrect.bgs$Record.ID))
 # Calculate days between visits, age, t1d duration.
 data$days <- c(NA,as.numeric(diff(data$visitdate)))
 data$Age <- as.numeric(difftime(data$visitdate,data$dob,units = "days")/365.2425)
