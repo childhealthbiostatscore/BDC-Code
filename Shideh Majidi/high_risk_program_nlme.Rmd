@@ -40,15 +40,51 @@ data <- left_join(data,dates,by = "record_id") %>%
 # Fix incorrect visit date and BG check value.
 data$visitdate[which(data$visitdate == "2006-04-01")] <- "2016-04-01"
 data$bgchecks[which(data$bgchecks == 47)] <- 7
+# Re-format columns
+data$Gender <- as.factor(data$Gender)
+data$a1c <- as.numeric(data$a1c)
+data$visitdate <- lubridate::ymd(as.character(data$visitdate))
+data$dob <- lubridate::ymd(as.character(data$dob))
+data$program_start_date <- lubridate::mdy(as.character(data$program_start_date))
+data$program_end_date <- lubridate::mdy(as.character(data$program_end_date))
+data$case_id <- as.factor(data$case_id)
+data$control <- as.factor(data$control)
+data$sw <- as.character(data$sw)
+data$lowbg <- as.numeric(data$lowbg)
+data$targetbg <- as.numeric(data$targetbg)
+data$highbg <- as.numeric(data$highbg)
+data$hospitalbefore <- as.numeric(data$hospitalbefore)
+data$hosp_dur <- as.numeric(data$hosp_dur)
+data$hospitalpost <- as.numeric(data$hospitalpost)
+data$nsbefore <- as.numeric(data$nsbefore)
+data$ns_dur <- as.numeric(data$ns_dur)
+data$nspost <- as.numeric(data$nspost)
+data$cancelbefore <- as.numeric(data$cancelbefore)
+data$cancel_dur <- as.numeric(data$cancel_dur)
+data$cancelpost <- as.numeric(data$cancelpost)
 # Remove participants with unverifiable BGs
 incorrect.bgs <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Shideh Majidi/High Risk Program/Data_Cleaned/NotVerifiedBG.csv"))
 incorrect.bgs$Record.ID <- as.character(incorrect.bgs$Record.ID)
 data <- data %>%
   filter(!(record_id %in% incorrect.bgs$Record.ID))
 # Calculate days between visits, age, t1d duration.
-data$days <- c(NA,as.numeric(diff(data$visitdate)))
-data$Age <- as.numeric(difftime(data$visitdate,data$dob,units = "days")/365.2425)
-data$T1Dyears <- as.numeric(difftime(data$dx,data$dob,units = "days")/365.2425)
+data <- data %>% 
+  arrange(record_id) %>%
+  group_by(record_id) %>%
+  mutate(days = visitdate - lag(visitdate)) %>%
+  mutate(Age = round(difftime(visitdate,dob,units = "days")/365.2425,3)) %>%
+  mutate(T1Dyears = round(difftime(dx,dob,units = "days")/365.2425,3)) %>%
+  mutate(base_a1c = a1c[2])
+```
+
+```{r echo=FALSE}
+# Match each case to closest control (out of 3)
+match <- data %>%
+  group_by(record_id) %>%
+  filter(row_number()==1) %>%
+  arrange(case_id)
+match$treat <- ifelse(match$control == "No",1,0)
+matched <- matchit(treat ~ T1Dyears,match,ratio =1)
 ```
 
 ```{r echo=FALSE,include=FALSE}
