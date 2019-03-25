@@ -7,11 +7,14 @@ output: word_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tableone)
 library(tidyverse)
 library(nlme)
 library(redcapAPI)
+library(knitr)
 # Check OS and alter file path accordingly.
 if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.Platform$OS.type == "unix"){pathstart <- "/Volumes/"}
+source("/Users/timvigers/Documents/GitHub/Tim-and-Laura/tim_R_functions.R")
 ```
 
 ```{r echo=FALSE, include=FALSE, eval=FALSE}
@@ -21,7 +24,7 @@ data$pt_status <- NULL
 set.seed(1017)
 ```
 
-```{r echo=FALSE,eval=FALSE}
+```{r echo=FALSE,cache=TRUE}
 # REDCap API data import
 source("/Users/timvigers/Documents/GitHub/BDC-Code/api_tokens.R")
 rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
@@ -72,8 +75,8 @@ data <- data %>%
   arrange(record_id) %>%
   group_by(record_id) %>%
   mutate(days = visitdate - lag(visitdate)) %>%
-  mutate(Age = round(difftime(visitdate,dob,units = "days")/365.2425,3)) %>%
-  mutate(T1Dyears = round(difftime(dx,dob,units = "days")/365.2425,3)) %>%
+  mutate(Age = round(as.numeric(difftime(visitdate,dob,units = "days")/365.2425),3)) %>%
+  mutate(T1Dyears = round(as.numeric(difftime(dx,dob,units = "days")/365.2425),3)) %>%
   mutate(base_a1c = a1c[2]) %>%
   mutate(complete = length(which(!is.na(visitdate))))
 ```
@@ -107,45 +110,25 @@ data <- data %>%
 
 ```{r echo=FALSE,include=FALSE}
 # Format data table
-t1vars <- c("Gender","Age","T1Dyears","a1c","race_ethnicity.factor",
-            "insurance.factor","hospitalbefore","hosp_dur","hospitalpost",
+t1vars <- c("Age","T1Dyears","a1c","hospitalbefore","hosp_dur","hospitalpost",
             "nsbefore","ns_dur","nspost","cancelbefore","cancel_dur",
-            "cancelpost","treatment___1","treatment___2","treatment___3")
+            "cancelpost","Gender","race_ethnicity","insurance","treatment___1",
+            "treatment___2","treatment___3")
 demos1 <- filter(data, redcap_event_name == "event_1_arm_1") %>% 
-  select("record_id","treatment___1","treatment___2","treatment___3",t1vars[-c(2,4)])
+  select("record_id","treatment___1","treatment___2","treatment___3",t1vars[-c(1,3)])
 demos2 <- filter(data, redcap_event_name == "event_2_arm_1") %>%
   select("record_id","control","case_id","a1c","Age")
-demos <- merge(demos1,demos2, by = "record_id")
+demos <- merge(demos1,demos2, by = "record_id") %>%
+  arrange(case_id,control)
 # Make table 1
-t1 <- CreateTableOne(t1vars,strata = "control",data = demos)
-# Format
-t1 <- as.data.frame(print(t1))
-t1 <- t1[,1:3]
-t1$p <- as.character(t1$p)
-# Conditional logistic regression with group as outcome.
-# Convert factors to numeric.
-demos$control <- as.numeric(demos$control)
-demos$Gender <- as.numeric(demos$Gender)
-demos$insurance.factor <- as.numeric(droplevels(demos$insurance.factor))
-demos$race_ethnicity.factor <- as.numeric(demos$race_ethnicity.factor)
-demos$treatment___1 <- as.numeric(demos$treatment___1)
-demos$treatment___2 <- as.numeric(demos$treatment___2)
-demos$treatment___3 <- as.numeric(demos$treatment___3)
-# Create formula.
-strata <- "strata(case_id)"
-form <- paste(t1vars,collapse = " + ")
-form <- paste0("control~",form,"+",strata)
-form <- as.formula(form)
-# Regression.
-clogr <- clogit(form, data = demos)
-# Get p-values.
-t1ps <- summary(clogr)
-t1ps <- as.data.frame(t1ps$coefficients)
-t1ps <- t1ps$`Pr(>|z|)`
-# Add p-values to table 1. 
-t1$p[which(t1$p != "")] <- t1ps
-t1$p[which(is.na(t1$p))] <- 1
-t1$p <- format.pval(as.numeric(t1$p), eps = 0.001,digits = 3,na.form = "")
+t1 <- CreateTableOne(t1vars,strata = "control",data = demos,
+                     testNonNormal = wilcox.test,
+                     argsNonNormal = list(paired = TRUE),
+                     testNormal = t.test,
+                     argsNormal = list(paired = TRUE))
+
+t1 <- print(t1,exact = c("insurance","race_ethnicity","treatment___3"),
+            nonnormal = norm.check(demos,t1vars[1:12]))
 ```
 
 # Background
@@ -186,10 +169,16 @@ After the tables summarizing each of the interrupted time series models, there a
 
 Table 1: Descriptive Statistics at Baseline Stratified by Control
 ```{r echo=FALSE}
-kable(t1)
+kable(t1[,1:3])
 ```
 
+
 ```{r echo=FALSE}
+
+```
+
+
+```{r echo=FALSE,eval=FALSE}
 # Variables to be collapsed.
 vars <- c("a1c","lowbg","targetbg","highbg","bgchecks","days","sw.factor")
 # Split by date
@@ -240,7 +229,7 @@ after$cancelpost <- data$cancelpost[demo.rows]
 after$providersnumpost <- data$providersnumpost[demo.rows]
 ```
 
-```{r echo=FALSE}
+```{r echo=FALSE,eval=FALSE}
 # Mixed effects function.
 mixed.effects <- function(vars, group = "control", random = "case_id", data) {
   results <- as.data.frame(matrix(nrow = length(vars),ncol = 4))
@@ -263,7 +252,7 @@ mixed.effects <- function(vars, group = "control", random = "case_id", data) {
 ```
 
 Table 2a. Results of linear mixed effects models for cases vs. controls before starting the program. Mean (SD), unadjusted p values. 
-```{r echo=FALSE}
+```{r echo=FALSE,eval=FALSE}
 results <- mixed.effects(c(vars,"visits","nsbefore","cancelbefore",
                            "providersnum"),data = before)
 results$`P Value` <- format.pval(results$`P Value`,digits = 4,eps = 0.001)
@@ -271,7 +260,7 @@ kable(results)
 ```
 
 Table 2b. Results of linear mixed effects models for cases vs. controls during the program. Mean (SD), unadjusted p values. 
-```{r echo=FALSE}
+```{r echo=FALSE,eval=FALSE}
 results <- mixed.effects(c(vars,"visits","ns_dur","cancel_dur",
                            "providersnumdur"),data = during)
 results$`P Value` <- format.pval(results$`P Value`,digits = 4,eps = 0.001)
@@ -279,7 +268,7 @@ kable(results)
 ```
 
 Table 2c. Results of linear mixed effects models for cases vs. controls after the program. Mean (SD), unadjusted p values. 
-```{r echo=FALSE}
+```{r echo=FALSE,eval=FALSE}
 results <- mixed.effects(c(vars,"visits","nspost","cancelpost",
                            "providersnumpost"),data = after)
 results$`P Value` <- format.pval(results$`P Value`,digits = 4,eps = 0.001)
@@ -287,7 +276,7 @@ kable(results)
 ```
 \pagebreak
 
-```{r echo=FALSE}
+```{r echo=FALSE,eval=FALSE}
 # Format data for interrupted time series (done in SAS).
 # Before vs. during.
 bd <- data[which(data$visitdate <= data$program_end_date),
@@ -334,7 +323,7 @@ write.csv(da,file = paste0(out.dir,"during_after.csv"),row.names = F,na = "")
 write.csv(ba,file = paste0(out.dir,"before_after.csv"),row.names = F,na = "")
 ```
 
-```{r echo=FALSE,warning=FALSE,dpi=600}
+```{r echo=FALSE,warning=FALSE,dpi=600,eval=FALSE}
 # Plots for before vs. during.
 for (var in head(vars,-1)) {
   plot <- 
