@@ -5,6 +5,7 @@ source('01_data.R')
 controls<-dat$subject_id[dat$Group=="Control"]
 gas<-dat$subject_id[dat$Group=="Gastroparesis"]
 
+###A1c, by patient
 par(mfrow=c(1,1))
 plot(c(0,2),c(6.4,8.5),type="n",main="Figure 1: Change in A1C",ylab="A1C",
      xaxt="n",xlab="Period")
@@ -22,7 +23,6 @@ for (i in gas){
                  dat$A1C_6mo_post[dat$subject_id==i]),col="red")
   }
 legend(0.4,6.7,c('Gastro','Control'),pch=c(17,19),col=c("Red","Blue"),lty=c(1,1),horiz=T,bty="n")
-
 
 
 

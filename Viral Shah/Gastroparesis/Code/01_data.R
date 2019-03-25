@@ -43,39 +43,35 @@ label(dat$a1c_mean)<-"Mean A1C over Pre and Post2"
 dat$a1c_change<-dat$A1C_3mo_pre-dat$A1C_6mo_post
 label(dat$a1c_change)<-"Change in A1c (pre-post2)"
 
-dat$weight_mean<-rowMeans(dat[,c("Weight_3mo_pre","Weight_6mo_post")])
-label(dat$weight_mean)<-"Mean Weight over Pre and Post2"
+label(dat$Weight_3mo_pre)<-"Weight, pre"
 
 dat$weight_change<-dat$Weight_3mo_pre-dat$Weight_6mo_post
 label(dat$weight_change)<-"Change in Weight (Pre-Post-2)"
 
-dat$basal_mean<-rowMeans(dat[,c("Avg.daily.Basal_3mo_pre","Avg.daily.Basal_6mo_post")])
-label(dat$basal_mean)<-"Mean Basal over Pre and Post2"
+label(dat$Avg.daily.Basal_3mo_pre)<-"Average Daily Basal, pre"
 
 dat$basal_change<-dat$Avg.daily.Basal_3mo_pre-dat$Avg.daily.Basal_6mo_post
 label(dat$basal_change)<-"Change in Daily Basal (pre minus post)"
 
-dat$bolus_mean<-rowMeans(dat[,c("Avg.daily.Bolus_3mo_pre","Avg.daily.Bolus_6mo_post")])
-label(dat$bolus_mean)<-"Mean Daily Bolus over Pre and Post2"
+label(dat$Avg.daily.Bolus_3mo_pre)<-"Average Daily Bolus, Pre"
 
 dat$bolus_change<-dat$Avg.daily.Bolus_3mo_pre-dat$Avg.daily.Bolus_6mo_post
 label(dat$bolus_change)<-"Change in Daily Bolus (pre minus post)"
 
-dat$carb_ratio_mean<-rowMeans(dat[,c("Carb.Ratio_3mo_pre","Carb.Ratio_6mo_post")])
-label(dat$carb_ratio_mean)<-"Mean Carb Ratio"
+label(dat$Carb.Ratio_3mo_pre)<-"Carb Ratio, pre"
 
 dat$carb_ratio_change<-dat$Carb.Ratio_3mo_pre-dat$Carb.Ratio_6mo_post
 label(dat$carb_ratio_change)<-"Change in Carb Ratio"
 
 dat$Active.Time_3mo_pre_hours<-as.numeric(substr(dat$Active.Time_3mo_pre,1,1))*60
 dat$Active.Time_3mo_pre_mins<-as.numeric(substr(dat$Active.Time_3mo_pre,3,4))
-dat$active.time_3mo_use<-dat$Active.Time_3mo_pre_hours+dat$Active.Time_3mo_pre_mins
+dat$active.time_3mo_use<-(dat$Active.Time_3mo_pre_hours+dat$Active.Time_3mo_pre_mins)/60
 
 dat$Active.Time_6mo_post_hours<-as.numeric(substr(dat$Active.Time_6mo_post,1,1))*60
 dat$Active.Time_6mo_post_mins<-as.numeric(substr(dat$Active.Time_6mo_post,3,4))
-dat$active.time_6mo_use<-dat$Active.Time_6mo_post_hours+dat$Active.Time_6mo_post_mins
-dat$active_mean<-rowMeans(dat[,c("active.time_3mo_use","active.time_6mo_use")])/60
-label(dat$active_mean)<-"Mean Active Insulin Hours over Pre and Post2"
+dat$active.time_6mo_use<-(dat$Active.Time_6mo_post_hours+dat$Active.Time_6mo_post_mins)/60
+
+label(dat$active.time_3mo_use)<-"Mean Active Insulin Hours Pre"
 
 dat$active_mean_change<-dat$active.time_3mo_use-dat$active.time_6mo_use
 label(dat$active_mean_change)<-"Change in Active Insulin Time"
