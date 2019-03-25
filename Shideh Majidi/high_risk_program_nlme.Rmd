@@ -2,7 +2,7 @@
 title: "High Risk Program"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: word_document
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
@@ -103,9 +103,10 @@ match <- match %>%
 # 4 cases were excluded based on unverifiable BG values, 
 # so should be 31 cases and 31 controls.
 
-# Remove all unnecessary controls
+# Remove all unnecessary controls and blank rows
 data <- data %>%
-  filter(record_id %in% match$record_id)
+  filter(record_id %in% match$record_id) %>%
+  filter(!is.na(visitdate) | redcap_event_name == "event_1_arm_1")
 ```
 
 ```{r echo=FALSE,include=FALSE}
@@ -167,218 +168,34 @@ Each interrupted time series model (corresponding to one outcome and comparison 
 After the tables summarizing each of the interrupted time series models, there are figures which show the longitudinal trajectories of the outcomes over time, with regression lines for participants and controls superimposed.
 
 
-Table 1: Descriptive Statistics at Baseline Stratified by Control
+### Table 1: Descriptive Statistics at Baseline Stratified by Control
+
 ```{r echo=FALSE}
 kable(t1[,1:3])
 ```
 
 
 ```{r echo=FALSE}
-
+# Add timepoint based on visit date, remove unnecessary rows.
+data$timepoint <- ifelse(data$visitdate <= data$program_start_date,"before",
+                         ifelse(data$visitdate > data$program_start_date & data$visitdate <= data$program_end_date,"during","after"))
+data$timepoint <- factor(data$timepoint,levels = c("before","during","after"))
+mixed <- data %>% filter(!is.na(visitdate))
+plot_mixed <- mixed %>%
+  group_by(record_id,timepoint) %>%
+  summarise(a1c = mean(a1c,na.rm = T),case_id = case_id[1],control = control[1])
+# plot A1c by timepoint
+plot <- ggplot(plot_mixed, aes(x=timepoint,y = a1c,group = record_id))+
+  geom_line(aes(color = control)) +
+  ylab("Average A1c") +
+  xlab("Timepoint")
+# Mixed model selection for A1c by timepoint
+a1c_mod <- lme(a1c ~ timepoint * control,random=~1|record_id,data = mixed,na.action = na.omit)
+a1c_mod_rs <- lme(a1c ~ timepoint * control,random=~1|record_id/timepoint,data = mixed,na.action = na.omit)
 ```
 
-
-```{r echo=FALSE,eval=FALSE}
-# Variables to be collapsed.
-vars <- c("a1c","lowbg","targetbg","highbg","bgchecks","days","sw.factor")
-# Split by date
-before <- data.table(data[which(data$visitdate <= data$program_start_date),
-                         c("record_id","control","case_id",vars)])
-during <- data.table(data[which(data$visitdate > data$program_start_date & 
-                                 data$visitdate <= data$program_end_date),
-                          c("record_id","control","case_id",vars)])
-after <- data.table(data[which(data$visitdate > data$program_end_date),
-                        c("record_id","control","case_id",vars)])
-# Format
-# Find rows with demographic information.
-demo.rows <- which(!is.na(data$cancelbefore) & 
-                     data$record_id %in% before$record_id)
-# Before
-before$visits <- "Yes"
-before <- before[,lapply(.SD,function(x) if(typeof(x) == "character") {length(which(x == "Yes"))} else {mean(x,na.rm = T)}),by = list(record_id,control,case_id)]
-before <- as.data.frame(before)
-before[is.na(before)] <- NA
-before$case_id <- as.factor(before$case_id)
-before$sw.factor <- as.numeric(before$sw.factor)
-before$nsbefore <- data$nsbefore[demo.rows]
-before$cancelbefore <- data$cancelbefore[demo.rows]
-before$providersnum <- data$providersnum[demo.rows]
-# During
-demo.rows <- which(!is.na(data$cancel_dur) & 
-                     data$record_id %in% during$record_id)
-during$visits <- "Yes"
-during <- during[,lapply(.SD,function(x) if(typeof(x) == "character") {length(which(x == "Yes"))} else {mean(x,na.rm = T)}),by = list(record_id,control,case_id)]
-during <- as.data.frame(during)
-during[is.na(during)] <- NA
-during$case_id <- as.factor(during$case_id)
-during$sw.factor <- as.numeric(during$sw.factor)
-during$ns_dur <- data$ns_dur[demo.rows]
-during$cancel_dur <- data$cancel_dur[demo.rows]
-during$providersnumdur <- data$providersnumdur[demo.rows]
-# After
-demo.rows <- which(!is.na(data$cancelpost) & 
-                     data$record_id %in% after$record_id)
-after$visits <- "Yes"
-after <- after[,lapply(.SD,function(x) if(typeof(x) == "character") {length(which(x == "Yes"))} else {mean(x,na.rm = T)}),by = list(record_id,control,case_id)]
-after <- as.data.frame(after)
-after[is.na(after)] <- NA
-after$case_id <- as.factor(after$case_id)
-after$sw.factor <- as.numeric(after$sw.factor)
-after$nspost <- data$nspost[demo.rows]
-after$cancelpost <- data$cancelpost[demo.rows]
-after$providersnumpost <- data$providersnumpost[demo.rows]
-```
-
-```{r echo=FALSE,eval=FALSE}
-# Mixed effects function.
-mixed.effects <- function(vars, group = "control", random = "case_id", data) {
-  results <- as.data.frame(matrix(nrow = length(vars),ncol = 4))
-  colnames(results) <- c("Variable","Cases","Controls","P Value")
-  for (v in 1:length(vars)) {
-    form <- as.formula(paste0(vars[v]," ~ ", group))
-    rand <- as.formula(paste0("~1|",random))
-    LME <- lme(form, random = rand, data = data,na.action = na.omit)
-    summarized <- summary(LME)
-    fixed <- as.data.frame(summarized$tTable)
-    results$Variable[v] <- vars[v]
-    results$Cases[v] <- 
-      paste0(round(fixed$Value[1],2)," (",round(fixed$Std.Error[1],2),")")
-    results$Controls[v] <- 
-      paste0(round(sum(fixed$Value),2)," (",round(fixed$Std.Error[2],2),")")
-    results$`P Value`[v] <- fixed$`p-value`[2]
-  }
-  return(results)
-}
-```
-
-Table 2a. Results of linear mixed effects models for cases vs. controls before starting the program. Mean (SD), unadjusted p values. 
-```{r echo=FALSE,eval=FALSE}
-results <- mixed.effects(c(vars,"visits","nsbefore","cancelbefore",
-                           "providersnum"),data = before)
-results$`P Value` <- format.pval(results$`P Value`,digits = 4,eps = 0.001)
-kable(results)
-```
-
-Table 2b. Results of linear mixed effects models for cases vs. controls during the program. Mean (SD), unadjusted p values. 
-```{r echo=FALSE,eval=FALSE}
-results <- mixed.effects(c(vars,"visits","ns_dur","cancel_dur",
-                           "providersnumdur"),data = during)
-results$`P Value` <- format.pval(results$`P Value`,digits = 4,eps = 0.001)
-kable(results)
-```
-
-Table 2c. Results of linear mixed effects models for cases vs. controls after the program. Mean (SD), unadjusted p values. 
-```{r echo=FALSE,eval=FALSE}
-results <- mixed.effects(c(vars,"visits","nspost","cancelpost",
-                           "providersnumpost"),data = after)
-results$`P Value` <- format.pval(results$`P Value`,digits = 4,eps = 0.001)
-kable(results)
-```
-\pagebreak
-
-```{r echo=FALSE,eval=FALSE}
-# Format data for interrupted time series (done in SAS).
-# Before vs. during.
-bd <- data[which(data$visitdate <= data$program_end_date),
-           c("record_id","control","case_id","visitdate",
-             "program_start_date",vars)]
-bd$time_to_start <- as.numeric(difftime(bd$visitdate,bd$program_start_date,
-                                   units = "days"))
-bd$k <- 0
-bd$timespl1 <- ifelse(bd$time_to_start <= 0,0,bd$time_to_start)
-bd$sw.factor <- ifelse(bd$sw.factor == "Yes",1,0)
-colnames(bd)[which(colnames(bd)=="control")] <- "case_control"
-# During vs. after.
-da <- data[which(data$visitdate > data$program_start_date),
-           c("record_id","control","case_id","visitdate",
-             "program_end_date",vars)]
-da$time_to_start <- as.numeric(difftime(da$visitdate,da$program_end_date,
-                                   units = "days"))
-da$k <- 0
-da$timespl1 <- ifelse(da$time_to_start <= 0,0,da$time_to_start)
-da$sw.factor <- ifelse(da$sw.factor == "Yes",1,0)
-colnames(da)[which(colnames(da)=="control")] <- "case_control"
-# Before vs. after.
-ba <- data[c(which(data$visitdate <= data$program_start_date),
-             which(data$visitdate > data$program_end_date)),
-           c("record_id","control","case_id",vars,"visitdate",
-             "program_start_date","program_end_date")]
-ba <- ba[order(ba$record_id),]
-ba$time_to_start <- as.numeric(difftime(ba$visitdate,ba$program_start_date,
-                                   units = "days"))
-ba$time_from_end <- as.numeric(difftime(ba$visitdate,ba$program_end_date,
-                                   units = "days"))
-ba$k <- 0
-ba$timespl1 <- ifelse(ba$time_to_start <= 0,0,ba$time_from_end)
-ba$sw.factor <- ifelse(ba$sw.factor == "Yes",1,0)
-colnames(ba)[which(colnames(ba)=="control")] <- "case_control"
-ba$plotx <- ifelse(ba$time_to_start <= 0,ba$time_to_start,ba$time_from_end)
-```
-
-```{r echo=FALSE,eval=FALSE}
-# Write CSV files.
-out.dir <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Shideh Majidi/High Risk Program/Data_Cleaned/")
-write.csv(bd,file = paste0(out.dir,"before_during.csv"),row.names = F,na = "")
-write.csv(da,file = paste0(out.dir,"during_after.csv"),row.names = F,na = "")
-write.csv(ba,file = paste0(out.dir,"before_after.csv"),row.names = F,na = "")
-```
-
-```{r echo=FALSE,warning=FALSE,dpi=600,eval=FALSE}
-# Plots for before vs. during.
-for (var in head(vars,-1)) {
-  plot <- 
-    ggplot(bd,aes_string(x = "time_to_start",y=var)) +
-    geom_line(aes_string(group = "record_id", alpha = 0.1)) +
-    xlab("Days from Program Start") +
-    ylab(var) +
-    ggtitle("Before and During Intervention") +
-    stat_smooth(data=subset(bd,time_to_start <= 0),
-                aes(color = case_control == 0),
-                method = "lm",se = F) +
-    stat_smooth(data=subset(bd,time_to_start > 0),
-                aes(color = case_control == 0),
-                method = "lm",se = F) +
-    theme(legend.title = element_blank()) +
-    scale_color_discrete(labels = c("Controls","Cases")) +
-    scale_alpha(guide = "none")
-  print(plot)
-}
-# Plots for during vs. after.
-for (var in head(vars,-1)) {
-  plot <- 
-    ggplot(da,aes_string(x = "time_to_start",y=var)) +
-    geom_line(aes_string(group = "record_id")) +
-    xlab("Days from Program End") +
-    ylab(var) +
-    ggtitle("During and After Intervention") +
-    stat_smooth(data=subset(da,time_to_start <= 0),
-                aes(color = case_control == 0),
-                method = "lm",se = F) +
-    stat_smooth(data=subset(da,time_to_start > 0),
-                aes(color = case_control == 0),
-                method = "lm",se = F) +
-    theme(legend.title = element_blank()) +
-    scale_color_discrete(labels = c("Controls","Cases")) +
-    scale_alpha(guide = "none")
-  print(plot)
-}
-# Plots for before vs. after.
-for (var in head(vars,-1)) {
-  plot <- 
-    ggplot(ba,aes_string(x = "plotx",y=var)) +
-    geom_line(aes_string(group = "record_id")) +
-    xlab("Days from Program Start and End") +
-    ylab(var) +
-    ggtitle("Before and After Intervention") +
-    stat_smooth(data=subset(ba,plotx <= 0),
-                aes(color = case_control == 0),
-                method = "lm",se = F) +
-    stat_smooth(data=subset(ba,plotx > 0),
-                aes(color = case_control == 0),
-                method = "lm",se = F) +
-    theme(legend.title = element_blank()) +
-    scale_color_discrete(labels = c("Controls","Cases")) +
-    scale_alpha(guide = "none")
-  print(plot)
-}
+```{r echo=FALSE}
+plot
+summary(a1c_mod)
+summary(a1c_mod_rs)
 ```
