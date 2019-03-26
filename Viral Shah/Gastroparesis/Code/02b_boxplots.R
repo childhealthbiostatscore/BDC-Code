@@ -1,5 +1,5 @@
 ###boxplots: 
-setwd("S:/Shared Projects/Laura/BDC/Projects/Viral Shah/Gastroparesis/Code")
+setwd("C:/Users/campbkri/Documents/GitHub/BDC-Code/Viral Shah/Gastroparesis/Code")
 source('01_data.R')
 ###A1c, boxplots
 boxplot(dat$A1C_3mo_pre[dat$Group=="Gastroparesis"],dat$A1C_3mo_pre[dat$Group=="Control"],

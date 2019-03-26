@@ -1,4 +1,4 @@
-setwd("S:/Shared Projects/Laura/BDC/Projects/Viral Shah/Gastroparesis/Code")
+setwd("C:/Users/campbkri/Documents/GitHub/BDC-Code/Viral Shah/Gastroparesis/Code")
 source('01_data.R')
 
 ####plots:
