@@ -47,3 +47,42 @@ axis(1,at=c(1.5,4.5,7.5),labels=c("Pre","Post-1","Post-2"),tick=F,cex.axis=1.5)
 
 legend(3,220,c("Gastroparesis","Control"),
        col=c("grey90","grey50"),fill=c("grey90","grey50"))
+
+##supplemental materials: CV plot
+par(mfrow=c(1,1))
+plot(c(0,9),c(0.20,0.45),type="n",main="Coefficient of Variation of Glucose",ylab="Coefficient of Variation of Glucose",
+     xaxt="n",xlab="Period")
+boxplot(dat$cv_1[dat$Group=="Gastroparesis"],dat$cv_1[dat$Group=="Control"],
+        dat$cv_2[dat$Group=="Gastroparesis"],dat$cv_2[dat$Group=="Control"],
+        dat$cv_3[dat$Group=="Gastroparesis"],dat$cv_3[dat$Group=="Control"],
+        at=c(1,2,4,5,7,8),xaxt='n',
+        col=c("grey90","grey50"),
+        add=T)
+axis(1,at=c(1.5,4.5,7.5),labels=c("Pre","Post-1","Post-2"),tick=F,cex.axis=1.5)
+
+legend(3,220,c("Gastroparesis","Control"),
+       col=c("grey90","grey50"),fill=c("grey90","grey50"))
+
+##hyper/hypo plot:
+par(mfrow=c(1,2))
+plot(c(0,9),c(0,10),type="n",main="Percent of Time in Hypo (<70)",ylab="% of Time in Hypo (<70)",
+     xaxt="n",xlab="Period")
+boxplot(dat$percent_time_under_70_1[dat$Group=="Gastroparesis"],dat$percent_time_under_70_1[dat$Group=="Control"],
+        dat$percent_time_under_70_2[dat$Group=="Gastroparesis"],dat$percent_time_under_70_2[dat$Group=="Control"],
+        dat$percent_time_under_70_3[dat$Group=="Gastroparesis"],dat$percent_time_under_70_3[dat$Group=="Control"],
+        at=c(1,2,4,5,7,8),xaxt='n',
+        col=c("grey90","grey50"),
+        add=T)
+axis(1,at=c(1.5,4.5,7.5),labels=c("Pre","Post-1","Post-2"),tick=F,cex.axis=1.5)
+
+plot(c(0,9),c(10,70),type="n",main="Percent of time in hyper (>180)",ylab="% of time in hyper (>180)",
+     xaxt="n",xlab="Period")
+boxplot(dat$percent_time_over_180_1[dat$Group=="Gastroparesis"],dat$percent_time_over_180_1[dat$Group=="Control"],
+        dat$percent_time_over_180_2[dat$Group=="Gastroparesis"],dat$percent_time_over_180_2[dat$Group=="Control"],
+        dat$percent_time_over_180_3[dat$Group=="Gastroparesis"],dat$percent_time_over_180_3[dat$Group=="Control"],
+        at=c(1,2,4,5,7,8),xaxt='n',
+        col=c("grey90","grey50"),
+        add=T)
+axis(1,at=c(1.5,4.5,7.5),labels=c("Pre","Post-1","Post-2"),tick=F,cex.axis=1.5)
+legend(5,65,c("Gastroparesis","Control"),
+       col=c("grey90","grey50"),fill=c("grey90","grey50"))
