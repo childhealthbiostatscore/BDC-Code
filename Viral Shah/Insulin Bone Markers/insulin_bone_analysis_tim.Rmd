@@ -2,79 +2,71 @@
 title: "Insulin Bone Markers"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output:
-  word_document:
-    fig_width: 6
-    fig_height: 3.5
+output: word_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tableone)
+library(nortest)
 library(knitr)
-library(ggplot2)
 library(psych)
-source('~/Documents/GitHub/Tim-and-Laura/tim_R_functions.R')
-pathstart <- os.check()
+library(sas7bdat)
+library(reshape2)
+library(tidyverse)
+# Check OS and alter file path accordingly.
+if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.Platform$OS.type == "unix"){pathstart <- "/Volumes/"}
+source("/Users/timvigers/Documents/GitHub/Tim-and-Laura/tim_R_functions.R")
 ```
 
-```{r echo=FALSE}
-filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Cleaned/Bet cell study_Visit3Clamp.csv")
-clamp <- read.csv(filename,na.strings = "NULL")
-filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Cleaned/updated_full_data_bone_turnover.csv")
-alldata <- read.csv(filename,na.strings = "NULL")
-# Weight and basal insulin per kilo
-filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Cleaned/KPhysExamRecHealth.csv")
-phys <- read.csv(filename)
-phys <- phys[which(phys$Visit == "Visit 0"),]
-phys <- phys[,c("PtID","Weight")]
-alldata <- merge(alldata,phys)
-alldata$insulin_kilo <- alldata$UnitsInsTotal / alldata$Weight
-# ON and SOST data formatting
-filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Cleaned/bone_injury.csv")
-boneinj <- read.csv(filename,skip = 1)
-boneinj <- boneinj[-c(which(boneinj$Row.Labels == "Grand Total")),]
-boneinj$timepoint <- as.numeric(sub(".* ","",boneinj$Row.Labels))
-boneinj$Row.Labels <- sub(" .*","",boneinj$Row.Labels)
-boneinj <- reshape(boneinj,idvar = "Row.Labels",timevar = "timepoint",direction = "wide")
-colnames(boneinj)[colnames(boneinj) == "Row.Labels"] <- "PtID"
-# Change medium cpep to high
-levels(alldata$cpep_group) <- c("high","low","high","negative")
-# GIR AUC
-isoremvars <- c("Tmpoint0D20IsoRem","Tmpoint30D20IsoRem","Tmpoint60D20IsoRem",
-             "Tmpoint90D20IsoRem","Tmpoint105D20IsoRem","Tmpoint120D20IsoRem")
-girvars <- c("gir0","gir30","gir60","gir90","gir105","gir120")
-clamp[,girvars] <- 1000 - clamp[,isoremvars]
-alldata <- merge(alldata,clamp[,c("PtID",girvars)])
-aucnonmissing <- which(rowSums(!is.na(alldata[,girvars])) >= 2)
-times <- c(0,30,60,90,105,120)
-alldata$girAUC <- NA
-alldata$girAUC[aucnonmissing] <- apply(alldata[aucnonmissing,girvars],1,
-                                       function(x) MESS::auc(times,x))
-alldata$gir_diff <- alldata$gir120 - alldata$gir0
-# Add ON and SOST data and differences
-alldata <- merge(alldata,boneinj[,c("PtID","ON.0","ON.120","SOST.0","SOST.120")])
-alldata$ON_diff <- alldata$ON.120 - alldata$ON.0
-alldata$SOST_diff <- alldata$SOST.120 - alldata$SOST.0
-# Percent changes
-diffvars <- colnames(alldata)[grep("diff",colnames(alldata))]
-diffvars <- diffvars[-c(which(diffvars == "OPN_diff" | diffvars == "OPG_diff"))]
-basevars <- c("ins0","P1NP0","CTX0","osteocalcin0","glucagon0","IGF0","VitD0",
-              "cpep0","ON.0","SOST.0","gir0")
-percvars <- sub("0","_perc_change",basevars)
-alldata[,percvars] <- (alldata[,diffvars] / alldata[,basevars]) * 100
+```{r echo=FALSE,message=FALSE,warning=FALSE}
+# Read in data 
+phys <- read.sas7bdat(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Raw/Second_Analysis/kphysexamrechealth_subset.sas7bdat"))
+sample <- read.sas7bdat(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Raw/Second_Analysis/ksampleresults_subset.sas7bdat"))
+screen <- read.sas7bdat(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Raw/Second_Analysis/kvisit0screening_subset.sas7bdat"))
+visit <- read.sas7bdat(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Raw/Second_Analysis/kvisitinfo_subset.sas7bdat"))
+bone <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Cleaned/bone_injury.csv"),skip = 1)
+bone$TimePoint <- sapply(strsplit(as.character(bone$Row.Labels)," "),`[`,2)
+bone$Row.Labels <- sub(" 0","",bone$Row.Labels)
+bone$Row.Labels <- sub(" 120","",bone$Row.Labels)
+colnames(bone) <- c("PtID","ALP","ON","OPG","OPN","Osteocalcin","SOST","Grand.Total","TimePoint")
+# Long to wide
+bone <- reshape(bone[-c(which(bone$PtID == "Grand Total")),c("PtID","ALP","ON","OPG","OPN","Osteocalcin","SOST","TimePoint")],
+              idvar = "PtID",timevar = "TimePoint",direction = "wide",sep = "_")
+previous <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Cleaned/full_data_bone_turnover.csv"))
+age <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Cleaned/age at consent.csv"))
+# Combine
+alldata <- dcast(sample[,c("PtID","TimePoint","Analyte","Value_Update_n")],PtID ~ Analyte + TimePoint,value.var = "Value_Update_n")
+alldata <- left_join(alldata,phys[,c("PtID","Weight_kg","Height_cm")])
+alldata <- 
+  left_join(alldata,screen[,c("PtID","Gender","Ethnicity","Race","DiagT1DAge","HbA1c","CurrUseCGM","InsDeliveryMethod","UnitsInsTotal")])
+alldata <- left_join(alldata,bone)
+alldata <- left_join(alldata,previous[,c("PtID","IGF0","CTX0","P1NP0","VitD0","IGF120","CTX120","P1NP120","VitD120",
+                                           "calcium","po4")])
+alldata <- left_join(alldata,age)
+# New variables
+alldata$Height_cm <- as.numeric(as.character(alldata$Height_cm))
+alldata$HbA1c <- as.numeric(as.character(alldata$HbA1c))
+alldata$UnitsInsPerKg <- alldata$UnitsInsTotal/alldata$Weight_kg
+alldata$BMI <- alldata$Weight_kg / ((alldata$Height_cm / 100)^2)
+alldata$T1DDuration <- alldata$AgeAtConsent - alldata$DiagT1DAge
 ```
+
+
+################################################################################
+
 
 ```{r echo=FALSE,include=FALSE}
-contvars <- c("AgeAtConsent","t1dduration","insulin_kilo","hba1c","bmi","ins0",
-              "calcium","po4","cpep0","girAUC")
+contvars <- c("AgeAtConsent","T1DDuration","UnitsInsPerKg","HbA1c","BMI","INS_TOSOH_0",
+              "calcium","po4","CPEP_0")
 nonnormvars <- norm.check(alldata,contvars)
 catvars <- c("Gender","InsDeliveryMethod","CurrUseCGM")
 t1vars <- c(catvars,contvars)
 t1a <- CreateTableOne(t1vars,data = alldata)
 t1a <- as.data.frame(print(t1a,nonnormal = nonnormvars,exact = catvars))
-t1b <- CreateTableOne(t1vars,strata = "cpep_group",data = alldata)
-t1b <- as.data.frame(print(t1b,nonnormal = nonnormvars,exact = catvars))
+# Need c-peptide groups
+# t1b <- CreateTableOne(t1vars,strata = "cpep_group",data = alldata)
+# t1b <- as.data.frame(print(t1b,nonnormal = nonnormvars,exact = catvars))
 ```
 
 ```{r echo=FALSE}
@@ -82,14 +74,14 @@ kable(t1a, caption = "Descriptive statistics of full cohort at baseline")
 ```
 
 ```{r echo=FALSE}
-kable(t1b, caption = "Descriptive statistics by c-peptide concentration at baseline. There was only one 'medium' c-peptide participant, so they were included in the high c-peptide group.")
+# kable(t1b, caption = "Descriptive statistics by c-peptide concentration at baseline. There was only one 'medium' c-peptide participant, so they were included in the high c-peptide group.")
 ```
 
 # Correlations
 
 ```{r echo=FALSE,include=FALSE}
 # Correlation matrix at time 0
-corrvars0 <- c("ins0","P1NP0","CTX0","osteocalcin0","IGF0","cpep0","ON.0","SOST.0","calcium","po4")
+corrvars0 <- c("INS_TOSOH_0","P1NP0","CTX0","Osteocalcin_0","IGF0","CPEP_0","ON_0","SOST_0","calcium","po4")
 corrall <- alldata[,corrvars0]
 corrlow <- alldata[alldata$cpep_group == "low",corrvars0]
 corrhigh <- alldata[alldata$cpep_group == "high",corrvars0]
@@ -121,7 +113,7 @@ kable(negcorrs[,c(2,4)],caption = "Baseline insulin correlated with bone markers
 
 ```{r echo=FALSE,include=FALSE}
 # Correlation matrix at time 120
-corrvars120 <- c("ins120","P1NP120","CTX120","osteocalcin120","IGF120","cpep120","ON.120","SOST.120")
+corrvars120 <- c("INS_TOSOH_120","P1NP120","CTX120","Osteocalcin_120","IGF120","CPEP_120","ON_120","SOST_120")
 corrall <- alldata[,corrvars120]
 corrlow <- alldata[alldata$cpep_group == "low",corrvars120]
 corrhigh <- alldata[alldata$cpep_group == "high",corrvars120]
@@ -255,14 +247,12 @@ kable(negcorrs[,c(2,4)],caption = "GIR-AUC correlated with percent change in bon
 
 ```{r echo=FALSE,dpi=600}
 # New data frame for plotting
-plot(alldata$cpep_group,alldata$ins0,
+plot(alldata$cpep_group,alldata$INS_TOSOH_0,
      main = "Baseline Insulin Concentration by C-Peptide Group",
      ylab = "Insulin units")
-
 plot(alldata$cpep_group,alldata$ins120,
      main = "120 Minute Insulin Concentration by C-Peptide Group",
      ylab = "Insulin units")
-
 plot(alldata$cpep_group,alldata$ins_diff,
      main = "Percent Change in Insulin Concentration by C-Peptide Group",
      ylab = "Percent Change in Insulin")
@@ -272,18 +262,16 @@ plot(alldata$cpep_group,alldata$ins_diff,
 # New data frame for spaghetti plots of bone markers.
 plotvars0 <- c("PtID","cpep_group",corrvars0)
 plotvars0 <- 
-  plotvars0[-c(which(plotvars0 == "calcium"|plotvars0 == "po4"|plotvars0 == "ins0"))]
+  plotvars0[-c(which(plotvars0 == "calcium"|plotvars0 == "po4"|plotvars0 == "INS_TOSOH_0"))]
 df1 <- alldata[,plotvars0]
 colnames(df1) <- sub("0","",colnames(df1))
 colnames(df1) <- sub("\\.","",colnames(df1))
 df1$Timepoint <- 0
-
 plotvars120 <- c("PtID","cpep_group",corrvars120[-c(which(corrvars120 == "ins120"))])
 df2 <- alldata[,plotvars120]
 colnames(df2) <- sub("120","",colnames(df2))
 colnames(df2) <- sub("\\.","",colnames(df2))
 df2$Timepoint <- 120
-
 plot <- rbind(df1,df2)
 plot$Timepoint <- as.factor(plot$Timepoint)
 ```
