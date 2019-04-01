@@ -12,14 +12,21 @@ plot(c(0,2),c(6.4,8.5),type="n",main="Figure 1: Change in A1C",ylab="A1C",
 axis(1,at=c(0,2),labels=c("Pre","Post-2"))
 for (i in controls){
   points(0,dat$A1C_3mo_pre[dat$subject_id==i],col="blue",pch=19)
+  points(1,dat$A1C_3mo_after[dat$subject_id==i],col="blue",pch=19)
   points(2,dat$A1C_6mo_post[dat$subject_id==i],col="blue",pch=19)
-  lines(c(0,2),c(dat$A1C_3mo_pre[dat$subject_id==i],
+  lines(c(0,1),c(dat$A1C_3mo_pre[dat$subject_id==i],
+                 dat$A1C_3mo_after[dat$subject_id==i]),col="blue")
+  lines(c(1,2),c(dat$A1C_3mo_after[dat$subject_id==i],
                  dat$A1C_6mo_post[dat$subject_id==i]),col="blue")
   }
 for (i in gas){
   points(0,dat$A1C_3mo_pre[dat$subject_id==i],col="red",pch=17)
-   points(2,dat$A1C_6mo_post[dat$subject_id==i],col="red",pch=17)
-  lines(c(0,2),c(dat$A1C_3mo_pre[dat$subject_id==i],
+  points(1,dat$A1C_3mo_after[dat$subject_id==i],col="red",pch=17)
+     points(2,dat$A1C_6mo_post[dat$subject_id==i],col="red",pch=17)
+   
+  lines(c(0,1),c(dat$A1C_3mo_pre[dat$subject_id==i],
+                 dat$A1C_3mo_after[dat$subject_id==i]),col="red")
+  lines(c(1,2),c(dat$A1C_3mo_after[dat$subject_id==i],
                  dat$A1C_6mo_post[dat$subject_id==i]),col="red")
   }
 legend(0.4,6.7,c('Gastro','Control'),pch=c(17,19),col=c("Red","Blue"),lty=c(1,1),horiz=T,bty="n")

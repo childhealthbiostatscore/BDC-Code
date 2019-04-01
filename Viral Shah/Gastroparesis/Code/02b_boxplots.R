@@ -2,13 +2,18 @@
 setwd("C:/Users/campbkri/Documents/GitHub/BDC-Code/Viral Shah/Gastroparesis/Code")
 source('01_data.R')
 ###A1c, boxplots
+plot(c(0,9),c(6.2,8.4),type="n",main="A1C",ylab="A1C",
+     xaxt="n",xlab="")
 boxplot(dat$A1C_3mo_pre[dat$Group=="Gastroparesis"],dat$A1C_3mo_pre[dat$Group=="Control"],
+        dat$A1C_3mo_after[dat$Group=="Gastroparesis"],dat$A1C_3mo_after[dat$Group=="Control"],
         dat$A1C_6mo_post[dat$Group=="Gastroparesis"],dat$A1C_6mo_post[dat$Group=="Control"],
-        at=c(1,2,4,5),names=c("Gastro","Control","Gastro","Control"),
-        col=c("grey90","grey50"),main="Figure 1: Change in A1C by Group",
-        ylab="A1C")
-mtext("Pre",1,3,adj=0.20,cex=1.5)
-mtext("Post",1,3,adj=0.80,cex=1.5)
+        at=c(1,2,4,5,7,8), xaxt="n",
+        col=c("grey90","grey50"),
+        add = T)
+axis(1,at=c(1.5,4.5,7.5),labels=c("Pre","Post-1","Post-2"),tick=F,cex.axis=1.5)
+legend(1,6.5,c("Gastroparesis","Control"),
+       col=c("grey90","grey50"),fill=c("grey90","grey50"))
+
 
 
 #cgm: 
