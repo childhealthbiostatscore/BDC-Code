@@ -3,7 +3,7 @@ library(robustbase)
 source("S:/Shared Material/Shared Code/R/temp_table1.R")
 setwd("S:/Shared Projects/Laura/BDC/Projects/Viral Shah/Gastroparesis/Data")
 dat_cgm<-read.csv("./Final CGM/cgm_final.csv")
-dat_demo<-read.csv("Mastersheet Template 2_22_19.csv")
+dat_demo<-read.csv("Data Collection Table 4_1_19.csv")
 
 ###data processing:
 dat_demo$subject_id<-paste0(dat_demo$Group,dat_demo$ID)
@@ -35,6 +35,7 @@ dat$gci_post<-rowMedians(as.matrix(dat[,c(which(colnames(dat)=="GCSI_Q1_post"):w
 label(dat$gci_post)<-"Median GCI Score: Post2"
 
 label(dat$A1C_3mo_pre)<-"A1C, Pre"
+label(dat$A1C_3mo_after)<-"A1C, Post1"
 label(dat$A1C_6mo_post)<-"A1C, Post2"
 
 dat$a1c_mean<-rowMeans(dat[,c("A1C_3mo_pre","A1C_6mo_post")])
