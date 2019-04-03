@@ -19,7 +19,7 @@ library(reshape2)
 library(tidyverse)
 # Check OS and alter file path accordingly.
 if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.Platform$OS.type == "unix"){pathstart <- "/Volumes/"}
-source("/Users/timvigers/Documents/GitHub/Tim-and-Laura/tim_R_functions.R")
+source("C:\\Users\\vigerst\\Documents\\GitHub\\Tim-and-Laura\\tim_R_functions.R")
 ```
 
 ```{r echo=FALSE,message=FALSE,warning=FALSE}
@@ -46,7 +46,17 @@ alldata <-
 alldata <- left_join(alldata,bone)
 alldata <- left_join(alldata,previous[,c("PtID","IGF0","CTX0","P1NP0","VitD0","IGF120","CTX120","P1NP120","VitD120",
                                            "calcium","po4")])
-alldata <- left_join(alldata,age[,c("PtID","AgeAtConsent","cpep_group")])
+alldata <- left_join(alldata,age[,c("PtID","AgeAtConsent")])
+# Fix c-peptide group
+cpep <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Cleaned/KSampleResults.csv"),na.strings = "NULL")
+cpep$Value <- as.numeric(as.character(cpep$Value))
+cpep <- cpep %>%
+  filter(Analyte == "CPEP",Visit=="Visit 2") %>%
+  arrange(PtID,Visit,TimePoint)%>%
+  select(PtID,Visit,TimePoint,Analyte,Value) %>%
+  group_by(PtID) %>%
+  summarise(peak_cpep = max(Value,na.rm = T))
+
 # New variables
 alldata$Height_cm <- as.numeric(as.character(alldata$Height_cm))
 alldata$HbA1c <- as.numeric(as.character(alldata$HbA1c))
@@ -62,6 +72,9 @@ alldata$IGF_perc_change <- (alldata$IGF120 / alldata$IGF0) * 100
 alldata$cpep_perc_change <- (alldata$CPEP_120 / alldata$CPEP_0) * 100
 alldata$ON_perc_change <- (alldata$ON_120 / alldata$ON_0) * 100
 alldata$SOST_perc_change <- (alldata$SOST_120 / alldata$SOST_0) * 100
+# Convert osteocalcin units
+alldata$Osteocalcin_0 <- alldata$Osteocalcin_0 / 1000
+alldata$Osteocalcin_120 <- alldata$Osteocalcin_120 / 1000
 # Change medium cpep to high
 alldata$cpep_group <- as.factor(ifelse(alldata$cpep_group == "medium","high",as.character(alldata$cpep_group)))
 # Remove missing
@@ -69,8 +82,8 @@ alldata <- alldata[which(alldata$PtID != "K068-0003"),]
 ```
 
 ```{r echo=FALSE,include=FALSE}
-contvars <- c("AgeAtConsent","T1DDuration","UnitsInsPerKg","HbA1c","BMI","INS_TOSOH_0",
-              "calcium","po4","CPEP_0")
+contvars <- c("AgeAtConsent","T1DDuration","UnitsInsPerKg","HbA1c","BMI","VitD0",
+              "calcium","po4")
 nonnormvars <- norm.check(alldata,contvars)
 catvars <- c("Gender","InsDeliveryMethod","CurrUseCGM")
 t1vars <- c(catvars,contvars)
@@ -78,6 +91,9 @@ t1a <- CreateTableOne(t1vars,data = alldata)
 t1a <- as.data.frame(print(t1a,nonnormal = nonnormvars,exact = catvars))
 t1b <- CreateTableOne(t1vars,strata = "cpep_group",data = alldata)
 t1b <- as.data.frame(print(t1b,nonnormal = nonnormvars,exact = catvars))
+# Nicer rownames
+rownames(t1a) <- c("n","Gender = M (%)","InsDeliveryMethod = Pump (%)","CurrUseCGM = Yes (%)","AgeAtConsent Years (median [IQR])","T1DDuration Years (median [IQR])","UnitsInsPerKg (mean (SD))","HbA1c % (mean (SD))","BMI kg/(cm^2) (mean (SD))","Vitamin D ng/mL (mean (SD))","calcium mg/dL (median [IQR])","ALPO4 (median [IQR])")
+rownames(t1b) <- rownames(t1a)
 ```
 
 ```{r echo=FALSE}
@@ -90,7 +106,7 @@ kable(t1b, caption = "Descriptive statistics by c-peptide concentration at basel
 
 # Correlations
 
-```{r echo=FALSE,include=FALSE}
+```{r echo=FALSE,include=FALSE, eval=FALSE}
 # Correlation matrix at time 0
 corrvars0 <- c("INS_TOSOH_0","P1NP0","CTX0","Osteocalcin_0","IGF0","CPEP_0","ON_0","SOST_0","calcium","po4")
 corrall <- alldata[,corrvars0]
@@ -115,14 +131,14 @@ rownames(negcorrs) <- corrvars0[2:length(corrvars0)]
 colnames(negcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj")
 ```
 
-```{r echo=FALSE}
+```{r echo=FALSE,eval=FALSE}
 kable(allcorrs[,c(2,4)],caption = "Baseline insulin correlated with bone markers, full cohort")
 kable(lowcorrs[,c(2,4)],caption = "Baseline insulin correlated with bone markers, low c-peptide group")
 kable(highcorrs[,c(2,4)],caption = "Baseline insulin correlated with bone markers, high c-peptide group")
 kable(negcorrs[,c(2,4)],caption = "Baseline insulin correlated with bone markers, negative c-peptide group")
 ```
 
-```{r echo=FALSE,include=FALSE}
+```{r echo=FALSE,include=FALSE,eval=FALSE}
 # Correlation matrix at time 120
 corrvars120 <- c("INS_TOSOH_120","P1NP120","CTX120","Osteocalcin_120","IGF120","CPEP_120","ON_120","SOST_120")
 corrall <- alldata[,corrvars120]
@@ -147,14 +163,14 @@ rownames(negcorrs) <- corrvars120[2:length(corrvars120)]
 colnames(negcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj")
 ```
 
-```{r echo=FALSE}
+```{r echo=FALSE, eval=FALSE}
 kable(allcorrs[,c(2,4)],caption = "120 min insulin correlated with bone markers, full cohort")
 kable(lowcorrs[,c(2,4)],caption = "120 min insulin correlated with bone markers, low c-peptide group")
 kable(highcorrs[,c(2,4)],caption = "120 min insulin correlated with bone markers, high c-peptide group")
 kable(negcorrs[,c(2,4)],caption = "120 min insulin correlated with bone markers, negative c-peptide group")
 ```
 
-```{r echo=FALSE,include=FALSE}
+```{r echo=FALSE,include=FALSE,eval=FALSE}
 # Correlation matrix percent change
 corrvarsperc <- c("ins_perc_change","P1NP_perc_change","CTX_perc_change",
               "osteocalcin_perc_change","IGF_perc_change","cpep_perc_change",
@@ -181,7 +197,7 @@ rownames(negcorrs) <- corrvarsperc[2:length(corrvarsperc)]
 colnames(negcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj")
 ```
 
-```{r echo=FALSE}
+```{r echo=FALSE,eval=FALSE}
 kable(allcorrs[,c(2,4)],caption = "Percent change in insulin correlated with bone markers, full cohort")
 kable(lowcorrs[,c(2,4)],caption = "Percent change in insulin correlated with bone markers, low c-peptide group")
 kable(highcorrs[,c(2,4)],
@@ -190,7 +206,7 @@ kable(negcorrs[,c(2,4)],
       caption = "Percent change in insulin correlated with bone markers, negative c-peptide group")
 ```
 
-```{r echo=FALSE,dpi=600}
+```{r echo=FALSE,dpi=600,eval=FALSE}
 # New data frame for plotting
 plot(alldata$cpep_group,alldata$INS_TOSOH_0,
      main = "Baseline Insulin Concentration by C-Peptide Group",
