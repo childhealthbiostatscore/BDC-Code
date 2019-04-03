@@ -134,7 +134,7 @@ legend("bottomleft",c('Gastro','Control'),pch=c(17,19),col=c("darkgrey","black")
 par(mfrow=c(1,2))
 par(mar=c(3,3,2,2))
 
-plot(c(0,2),c(0,90),type="n",main="% of Time Spent in Hypo (<70) by Period",ylab="% of Time Spent in Hypo",
+plot(c(0,2),c(0,10),type="n",main="% of Time Spent in Hypo",ylab="% of Time Spent in Hypo",
      xaxt="n",xlab="Period")
 axis(1,at=c(0,1,2),labels=c("Pre-","Post-1","Post-2"))
 for (i in controls){
@@ -176,7 +176,7 @@ for (i in gas){
 # }
 #legend(0.5,120,c('Gastro','Control'),pch=c(17,19),col=c("darkgrey","black"),lty=c(1,1),horiz=T,bty="n")
 
-plot(c(0,2),c(0,90),type="n",main="% of Time Spent in Hyper (>180) by Period",ylab="% of Time Spent in Hyper (>180)",
+plot(c(0,2),c(10,70),type="n",main="% of Time Spent in Hyper",ylab="% of Time Spent in Hyper (>180)",
      xaxt="n",xlab="Period")
 axis(1,at=c(0,1,2),labels=c("Pre-","Post-1","Post-2"))
 for (i in controls){
@@ -197,5 +197,5 @@ for (i in gas){
   lines(c(1,2),c(dat$percent_time_over_180_2[dat$subject_id==i],
                  dat$percent_time_over_180_3[dat$subject_id==i]),col="darkgrey")
 }
-#legend(0.5,120,c('Gastro','Control'),pch=c(17,19),col=c("darkgrey","black"),lty=c(1,1),horiz=T,bty="n")
+legend("topright",c('Gastro','Control'),pch=c(17,19),col=c("darkgrey","black"),lty=c(1,1),horiz=T,bty="n")
 
