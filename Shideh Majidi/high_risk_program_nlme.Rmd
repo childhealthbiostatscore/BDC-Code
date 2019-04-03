@@ -45,7 +45,6 @@ dat$program_start_date <- lubridate::mdy(as.character(dat$program_start_date))
 dat$program_end_date <- lubridate::mdy(as.character(dat$program_end_date))
 dat$case_id <- as.factor(dat$case_id)
 dat$control <- as.factor(dat$control)
-dat$sw <- as.character(dat$sw)
 dat$lowbg <- as.numeric(dat$lowbg)
 dat$targetbg <- as.numeric(dat$targetbg)
 dat$highbg <- as.numeric(dat$highbg)
@@ -187,7 +186,50 @@ plot <- ggplot(plot_mixed, aes(x=timepoint,y = a1c,group = record_id))+
   ylab("Average HbA1c") +
   xlab("Timepoint")
 # Mixed model selection for A1c by timepoint
-a1c_mod <- lme(a1c ~ timepoint * control,random=~1+record_id|case_id,dat = mixed,na.action = na.omit) # Not enough observations
+# a1c_mod <- lme(a1c ~ timepoint * control,random=~1+record_id|case_id,dat = mixed,na.action = na.omit) 
+
+# Mixed model of change in average A1c before vs. during and during vs. after
+# Average at each timepoint
+avgs <- mixed %>%
+  group_by(record_id,timepoint) %>%
+  summarise(case_id = case_id[1],
+            control = control[1],
+            mean_a1c = mean(a1c,na.rm=T),
+            mean_bgchecks = mean(bgchecks,na.rm=T),
+            mean_low_bg = mean(lowbg,na.rm=T),
+            mean_target_bg = mean(targetbg,na.rm=T),
+            mean_high_bg = mean(highbg,na.rm=T),
+            mean_days = mean(days,na.rm=T),
+            sw = sum(sw == "Yes"))
+# Differences before vs. during
+bef_dur <- avgs %>%
+  filter(timepoint %in% c("Before","During")) %>%
+  arrange(record_id,timepoint) %>%
+  group_by(record_id) %>%
+  summarise(case_id = case_id[1],
+            control = control[1],
+            a1c = mean_a1c[2] - mean_a1c[1],
+            bgchecks = mean_bgchecks[2]-mean_bgchecks[1],
+            low_bg = mean_low_bg[2]-mean_low_bg[1],
+            targetbg = mean_target_bg[2] - mean_target_bg[1],
+            highbg = mean_high_bg[2]-mean_high_bg[1],
+            days = mean_days[2] - mean_days[1],
+            sw = sw[2] - sw[1])
+bef_dur[bef_dur == "NaN"] <- NA
+# Differences during vs. after
+dur_aft <- avgs %>%
+  filter(timepoint %in% c("During","After")) %>%
+  arrange(record_id,timepoint) %>%
+  group_by(record_id) %>%
+  summarise(case_id = case_id[1],
+            control = control[1],
+            a1c = mean_a1c[2] - mean_a1c[1],
+            bgchecks = mean_bgchecks[2]-mean_bgchecks[1],
+            low_bg = mean_low_bg[2]-mean_low_bg[1],
+            targetbg = mean_target_bg[2] - mean_target_bg[1],
+            highbg = mean_high_bg[2]-mean_high_bg[1],
+            days = mean_days[2] - mean_days[1],
+            sw = sw[2] - sw[1])
 ```
 
 ### Figure 1: Average HbA1c by Timepoint
@@ -195,8 +237,8 @@ a1c_mod <- lme(a1c ~ timepoint * control,random=~1+record_id|case_id,dat = mixed
 plot
 ```
 
-### Table 2: Mixed Model with Random Intercep for Subject and Random Slope for Case ID
+### Before vs. During
 ```{r echo=FALSE}
-summary(a1c_mod)
-summary(a1c_mod_2)
+a1c <- lme(a1c ~ control,random = ~1|case_id,data = bef_dur,na.action = na.omit)
+summary(a1c)
 ```
