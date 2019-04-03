@@ -2,7 +2,7 @@
 setwd("C:/Users/campbkri/Documents/GitHub/BDC-Code/Viral Shah/Gastroparesis/Code")
 source('01_data.R')
 ###A1c, boxplots
-plot(c(0,9),c(6.2,8.4),type="n",main="A1C",ylab="A1C",
+plot(c(0,9),c(6.2,8.4),type="n",main="Figure 1: Change in A1C",ylab="A1C",
      xaxt="n",xlab="")
 boxplot(dat$A1C_3mo_pre[dat$Group=="Gastroparesis"],dat$A1C_3mo_pre[dat$Group=="Control"],
         dat$A1C_3mo_after[dat$Group=="Gastroparesis"],dat$A1C_3mo_after[dat$Group=="Control"],
@@ -11,8 +11,8 @@ boxplot(dat$A1C_3mo_pre[dat$Group=="Gastroparesis"],dat$A1C_3mo_pre[dat$Group=="
         col=c("grey90","grey50"),
         add = T)
 axis(1,at=c(1.5,4.5,7.5),labels=c("Pre","Post-1","Post-2"),tick=F,cex.axis=1.5)
-legend(1,6.5,c("Gastroparesis","Control"),
-       col=c("grey90","grey50"),fill=c("grey90","grey50"))
+legend("bottomleft",c("Gastroparesis","Control"),
+       col=c("grey90","grey50"),fill=c("grey90","grey50"),bty="n")
 
 
 
@@ -50,8 +50,8 @@ boxplot(dat$nighttime_avg_sens_glucose_1[dat$Group=="Gastroparesis"],dat$nightti
         add=T)
 axis(1,at=c(1.5,4.5,7.5),labels=c("Pre","Post-1","Post-2"),tick=F,cex.axis=1.5)
 
-legend(3,220,c("Gastroparesis","Control"),
-       col=c("grey90","grey50"),fill=c("grey90","grey50"))
+legend("topright",c("Gastroparesis","Control"),
+       col=c("grey90","grey50"),fill=c("grey90","grey50"),bty="n")
 
 ##supplemental materials: CV plot
 par(mfrow=c(1,1))
@@ -65,8 +65,8 @@ boxplot(dat$cv_1[dat$Group=="Gastroparesis"],dat$cv_1[dat$Group=="Control"],
         add=T)
 axis(1,at=c(1.5,4.5,7.5),labels=c("Pre","Post-1","Post-2"),tick=F,cex.axis=1.5)
 
-legend(3,220,c("Gastroparesis","Control"),
-       col=c("grey90","grey50"),fill=c("grey90","grey50"))
+legend("bottomleft",c("Gastroparesis","Control"),
+       col=c("grey90","grey50"),fill=c("grey90","grey50"),bty="n")
 
 ##hyper/hypo plot:
 par(mfrow=c(1,2))
