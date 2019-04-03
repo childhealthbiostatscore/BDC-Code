@@ -2,10 +2,7 @@
 title: "Insulin Bone Markers"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output:
-  word_document:
-    fig_width: 6
-    fig_height: 3.5
+output: word_document
 ---
 
 ```{r setup, include=FALSE}
@@ -53,10 +50,11 @@ cpep$Value <- as.numeric(as.character(cpep$Value))
 cpep <- cpep %>%
   filter(Analyte == "CPEP",Visit=="Visit 2") %>%
   arrange(PtID,Visit,TimePoint)%>%
-  select(PtID,Visit,TimePoint,Analyte,Value) %>%
   group_by(PtID) %>%
   summarise(peak_cpep = max(Value,na.rm = T))
-
+alldata <- left_join(cpep,alldata) %>%
+  filter(!is.na(CPEP_0))
+alldata[alldata == "NaN"] <- NA
 # New variables
 alldata$Height_cm <- as.numeric(as.character(alldata$Height_cm))
 alldata$HbA1c <- as.numeric(as.character(alldata$HbA1c))
@@ -75,8 +73,8 @@ alldata$SOST_perc_change <- (alldata$SOST_120 / alldata$SOST_0) * 100
 # Convert osteocalcin units
 alldata$Osteocalcin_0 <- alldata$Osteocalcin_0 / 1000
 alldata$Osteocalcin_120 <- alldata$Osteocalcin_120 / 1000
-# Change medium cpep to high
-alldata$cpep_group <- as.factor(ifelse(alldata$cpep_group == "medium","high",as.character(alldata$cpep_group)))
+# C-pep group
+alldata$cpep_group <- ifelse(alldata$peak_cpep >= 0.2,"Detecable","Not Detectable")
 # Remove missing
 alldata <- alldata[which(alldata$PtID != "K068-0003"),]
 ```
@@ -92,7 +90,7 @@ t1a <- as.data.frame(print(t1a,nonnormal = nonnormvars,exact = catvars))
 t1b <- CreateTableOne(t1vars,strata = "cpep_group",data = alldata)
 t1b <- as.data.frame(print(t1b,nonnormal = nonnormvars,exact = catvars))
 # Nicer rownames
-rownames(t1a) <- c("n","Gender = M (%)","InsDeliveryMethod = Pump (%)","CurrUseCGM = Yes (%)","AgeAtConsent Years (median [IQR])","T1DDuration Years (median [IQR])","UnitsInsPerKg (mean (SD))","HbA1c % (mean (SD))","BMI kg/(cm^2) (mean (SD))","Vitamin D ng/mL (mean (SD))","calcium mg/dL (median [IQR])","ALPO4 (median [IQR])")
+rownames(t1a) <- c("n","Gender = M (%)","InsDeliveryMethod = Pump (%)","CurrUseCGM = Yes (%)","AgeAtConsent Years (median [IQR])","T1DDuration Years (median [IQR])","UnitsInsPerKg (mean (SD))","HbA1c % (mean (SD))","BMI kg/(cm^2) (mean (SD))","Vitamin D ng/mL (mean (SD))","calcium mg/dL (median [IQR])","ALP IU/L (median [IQR])")
 rownames(t1b) <- rownames(t1a)
 ```
 
@@ -104,131 +102,129 @@ kable(t1a, caption = "Descriptive statistics of full cohort at baseline")
 kable(t1b, caption = "Descriptive statistics by c-peptide concentration at baseline. There was only one 'medium' c-peptide participant, so they were included in the high c-peptide group.")
 ```
 
-# Correlations
+<!-- # Correlations -->
 
-```{r echo=FALSE,include=FALSE, eval=FALSE}
-# Correlation matrix at time 0
-corrvars0 <- c("INS_TOSOH_0","P1NP0","CTX0","Osteocalcin_0","IGF0","CPEP_0","ON_0","SOST_0","calcium","po4")
-corrall <- alldata[,corrvars0]
-corrlow <- alldata[alldata$cpep_group == "low",corrvars0]
-corrhigh <- alldata[alldata$cpep_group == "high",corrvars0]
-corrneg <- alldata[alldata$cpep_group == "negative",corrvars0]
-allcorrs <- corr.test(corrall)
-allcorrs <- data.frame(print(allcorrs,short = F))[1:(length(corrvars0)-1),]
-rownames(allcorrs) <- corrvars0[2:length(corrvars0)]
-colnames(allcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj")
-lowcorrs <- corr.test(corrlow)
-lowcorrs <- data.frame(print(lowcorrs,short = F))[1:(length(corrvars0)-1),]
-rownames(lowcorrs) <- corrvars0[2:length(corrvars0)]
-colnames(lowcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj")
-highcorrs <- corr.test(corrhigh)
-highcorrs <- data.frame(print(highcorrs,short = F))[1:(length(corrvars0)-1),]
-rownames(highcorrs) <- corrvars0[2:length(corrvars0)]
-colnames(highcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj")
-negcorrs <- corr.test(corrneg)
-negcorrs <- data.frame(print(negcorrs,short = F))[1:(length(corrvars0)-1),]
-rownames(negcorrs) <- corrvars0[2:length(corrvars0)]
-colnames(negcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj")
-```
+<!-- ```{r echo=FALSE,include=FALSE} -->
+<!-- # Correlation matrix at time 0 -->
+<!-- corrvars0 <- c("INS_TOSOH_0","P1NP0","CTX0","Osteocalcin_0","IGF0","CPEP_0","ON_0","SOST_0","calcium","po4") -->
+<!-- corrall <- alldata[,corrvars0] -->
+<!-- corrlow <- alldata[alldata$cpep_group == "Low",corrvars0] -->
+<!-- corrhigh <- alldata[alldata$cpep_group == "High",corrvars0] -->
+<!-- corrneg <- alldata[alldata$cpep_group == "Negative",corrvars0] -->
+<!-- allcorrs <- corr.test(corrall) -->
+<!-- allcorrs <- data.frame(print(allcorrs,short = F))[1:(length(corrvars0)-1),] -->
+<!-- rownames(allcorrs) <- corrvars0[2:length(corrvars0)] -->
+<!-- colnames(allcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj") -->
+<!-- lowcorrs <- corr.test(corrlow) -->
+<!-- lowcorrs <- data.frame(print(lowcorrs,short = F))[1:(length(corrvars0)-1),] -->
+<!-- rownames(lowcorrs) <- corrvars0[2:length(corrvars0)] -->
+<!-- colnames(lowcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj") -->
+<!-- highcorrs <- corr.test(corrhigh) -->
+<!-- highcorrs <- data.frame(print(highcorrs,short = F))[1:(length(corrvars0)-1),] -->
+<!-- rownames(highcorrs) <- corrvars0[2:length(corrvars0)] -->
+<!-- colnames(highcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj") -->
+<!-- negcorrs <- corr.test(corrneg) -->
+<!-- negcorrs <- data.frame(print(negcorrs,short = F))[1:(length(corrvars0)-1),] -->
+<!-- rownames(negcorrs) <- corrvars0[2:length(corrvars0)] -->
+<!-- colnames(negcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj") -->
+<!-- ``` -->
 
-```{r echo=FALSE,eval=FALSE}
-kable(allcorrs[,c(2,4)],caption = "Baseline insulin correlated with bone markers, full cohort")
-kable(lowcorrs[,c(2,4)],caption = "Baseline insulin correlated with bone markers, low c-peptide group")
-kable(highcorrs[,c(2,4)],caption = "Baseline insulin correlated with bone markers, high c-peptide group")
-kable(negcorrs[,c(2,4)],caption = "Baseline insulin correlated with bone markers, negative c-peptide group")
-```
+<!-- ```{r echo=FALSE} -->
+<!-- kable(allcorrs[,c(2,4)],caption = "Baseline insulin correlated with bone markers, full cohort") -->
+<!-- kable(lowcorrs[,c(2,4)],caption = "Baseline insulin correlated with bone markers, low c-peptide group") -->
+<!-- kable(highcorrs[,c(2,4)],caption = "Baseline insulin correlated with bone markers, high c-peptide group") -->
+<!-- kable(negcorrs[,c(2,4)],caption = "Baseline insulin correlated with bone markers, negative c-peptide group") -->
+<!-- ``` -->
 
-```{r echo=FALSE,include=FALSE,eval=FALSE}
-# Correlation matrix at time 120
-corrvars120 <- c("INS_TOSOH_120","P1NP120","CTX120","Osteocalcin_120","IGF120","CPEP_120","ON_120","SOST_120")
-corrall <- alldata[,corrvars120]
-corrlow <- alldata[alldata$cpep_group == "low",corrvars120]
-corrhigh <- alldata[alldata$cpep_group == "high",corrvars120]
-corrneg <- alldata[alldata$cpep_group == "negative",corrvars120]
-allcorrs <- corr.test(corrall)
-allcorrs <- data.frame(print(allcorrs,short = F))[1:(length(corrvars120)-1),]
-rownames(allcorrs) <- corrvars120[2:length(corrvars120)]
-colnames(allcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj")
-lowcorrs <- corr.test(corrlow)
-lowcorrs <- data.frame(print(lowcorrs,short = F))[1:(length(corrvars120)-1),]
-rownames(lowcorrs) <- corrvars120[2:length(corrvars120)]
-colnames(lowcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj")
-highcorrs <- corr.test(corrhigh)
-highcorrs <- data.frame(print(highcorrs,short = F))[1:(length(corrvars120)-1),]
-rownames(highcorrs) <- corrvars120[2:length(corrvars120)]
-colnames(highcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj")
-negcorrs <- corr.test(corrneg)
-negcorrs <- data.frame(print(negcorrs,short = F))[1:(length(corrvars120)-1),]
-rownames(negcorrs) <- corrvars120[2:length(corrvars120)]
-colnames(negcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj")
-```
+<!-- ```{r echo=FALSE,include=FALSE} -->
+<!-- # Correlation matrix at time 120 -->
+<!-- corrvars120 <- c("INS_TOSOH_120","P1NP120","CTX120","Osteocalcin_120","IGF120","CPEP_120","ON_120","SOST_120") -->
+<!-- corrall <- alldata[,corrvars120] -->
+<!-- corrlow <- alldata[alldata$cpep_group == "Low",corrvars120] -->
+<!-- corrhigh <- alldata[alldata$cpep_group == "High",corrvars120] -->
+<!-- corrneg <- alldata[alldata$cpep_group == "Negative",corrvars120] -->
+<!-- allcorrs <- corr.test(corrall) -->
+<!-- allcorrs <- data.frame(print(allcorrs,short = F))[1:(length(corrvars120)-1),] -->
+<!-- rownames(allcorrs) <- corrvars120[2:length(corrvars120)] -->
+<!-- colnames(allcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj") -->
+<!-- lowcorrs <- corr.test(corrlow) -->
+<!-- lowcorrs <- data.frame(print(lowcorrs,short = F))[1:(length(corrvars120)-1),] -->
+<!-- rownames(lowcorrs) <- corrvars120[2:length(corrvars120)] -->
+<!-- colnames(lowcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj") -->
+<!-- highcorrs <- corr.test(corrhigh) -->
+<!-- highcorrs <- data.frame(print(highcorrs,short = F))[1:(length(corrvars120)-1),] -->
+<!-- rownames(highcorrs) <- corrvars120[2:length(corrvars120)] -->
+<!-- colnames(highcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj") -->
+<!-- negcorrs <- corr.test(corrneg) -->
+<!-- negcorrs <- data.frame(print(negcorrs,short = F))[1:(length(corrvars120)-1),] -->
+<!-- rownames(negcorrs) <- corrvars120[2:length(corrvars120)] -->
+<!-- colnames(negcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj") -->
+<!-- ``` -->
 
-```{r echo=FALSE, eval=FALSE}
-kable(allcorrs[,c(2,4)],caption = "120 min insulin correlated with bone markers, full cohort")
-kable(lowcorrs[,c(2,4)],caption = "120 min insulin correlated with bone markers, low c-peptide group")
-kable(highcorrs[,c(2,4)],caption = "120 min insulin correlated with bone markers, high c-peptide group")
-kable(negcorrs[,c(2,4)],caption = "120 min insulin correlated with bone markers, negative c-peptide group")
-```
+<!-- ```{r echo=FALSE} -->
+<!-- kable(allcorrs[,c(2,4)],caption = "120 min insulin correlated with bone markers, full cohort") -->
+<!-- kable(lowcorrs[,c(2,4)],caption = "120 min insulin correlated with bone markers, low c-peptide group") -->
+<!-- kable(highcorrs[,c(2,4)],caption = "120 min insulin correlated with bone markers, high c-peptide group") -->
+<!-- kable(negcorrs[,c(2,4)],caption = "120 min insulin correlated with bone markers, negative c-peptide group") -->
+<!-- ``` -->
 
-```{r echo=FALSE,include=FALSE,eval=FALSE}
-# Correlation matrix percent change
-corrvarsperc <- c("ins_perc_change","P1NP_perc_change","CTX_perc_change",
-              "osteocalcin_perc_change","IGF_perc_change","cpep_perc_change",
-              "ON_perc_change","SOST_perc_change")
-corrall <- alldata[,corrvarsperc]
-corrlow <- alldata[alldata$cpep_group == "low",corrvarsperc]
-corrhigh <- alldata[alldata$cpep_group == "high",corrvarsperc]
-corrneg <- alldata[alldata$cpep_group == "negative",corrvarsperc]
-allcorrs <- corr.test(corrall)
-allcorrs <- data.frame(print(allcorrs,short = F))[1:(length(corrvarsperc)-1),]
-rownames(allcorrs) <- corrvarsperc[2:length(corrvarsperc)]
-colnames(allcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj")
-lowcorrs <- corr.test(corrlow)
-lowcorrs <- data.frame(print(lowcorrs,short = F))[1:(length(corrvarsperc)-1),]
-rownames(lowcorrs) <- corrvarsperc[2:length(corrvarsperc)]
-colnames(lowcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj")
-highcorrs <- corr.test(corrhigh)
-highcorrs <- data.frame(print(highcorrs,short = F))[1:(length(corrvarsperc)-1),]
-rownames(highcorrs) <- corrvarsperc[2:length(corrvarsperc)]
-colnames(highcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj")
-negcorrs <- corr.test(corrneg)
-negcorrs <- data.frame(print(negcorrs,short = F))[1:(length(corrvarsperc)-1),]
-rownames(negcorrs) <- corrvarsperc[2:length(corrvarsperc)]
-colnames(negcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj")
-```
+<!-- ```{r echo=FALSE,include=FALSE} -->
+<!-- # Correlation matrix percent change -->
+<!-- corrvarsperc <- c("ins_perc_change","P1NP_perc_change","CTX_perc_change", -->
+<!--               "osteocalcin_perc_change","IGF_perc_change","cpep_perc_change", -->
+<!--               "ON_perc_change","SOST_perc_change") -->
+<!-- corrall <- alldata[,corrvarsperc] -->
+<!-- corrlow <- alldata[alldata$cpep_group == "Low",corrvarsperc] -->
+<!-- corrhigh <- alldata[alldata$cpep_group == "High",corrvarsperc] -->
+<!-- corrneg <- alldata[alldata$cpep_group == "Negative",corrvarsperc] -->
+<!-- allcorrs <- corr.test(corrall) -->
+<!-- allcorrs <- data.frame(print(allcorrs,short = F))[1:(length(corrvarsperc)-1),] -->
+<!-- rownames(allcorrs) <- corrvarsperc[2:length(corrvarsperc)] -->
+<!-- colnames(allcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj") -->
+<!-- lowcorrs <- corr.test(corrlow) -->
+<!-- lowcorrs <- data.frame(print(lowcorrs,short = F))[1:(length(corrvarsperc)-1),] -->
+<!-- rownames(lowcorrs) <- corrvarsperc[2:length(corrvarsperc)] -->
+<!-- colnames(lowcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj") -->
+<!-- highcorrs <- corr.test(corrhigh) -->
+<!-- highcorrs <- data.frame(print(highcorrs,short = F))[1:(length(corrvarsperc)-1),] -->
+<!-- rownames(highcorrs) <- corrvarsperc[2:length(corrvarsperc)] -->
+<!-- colnames(highcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj") -->
+<!-- negcorrs <- corr.test(corrneg) -->
+<!-- negcorrs <- data.frame(print(negcorrs,short = F))[1:(length(corrvarsperc)-1),] -->
+<!-- rownames(negcorrs) <- corrvarsperc[2:length(corrvarsperc)] -->
+<!-- colnames(negcorrs) <- c("raw.l","R","raw.u","P-Value","lower.adj","upper.adj") -->
+<!-- ``` -->
 
-```{r echo=FALSE,eval=FALSE}
-kable(allcorrs[,c(2,4)],caption = "Percent change in insulin correlated with bone markers, full cohort")
-kable(lowcorrs[,c(2,4)],caption = "Percent change in insulin correlated with bone markers, low c-peptide group")
-kable(highcorrs[,c(2,4)],
-      caption = "Percent change in insulin correlated with bone markers, high c-peptide group")
-kable(negcorrs[,c(2,4)],
-      caption = "Percent change in insulin correlated with bone markers, negative c-peptide group")
-```
+<!-- ```{r echo=FALSE} -->
+<!-- kable(allcorrs[,c(2,4)],caption = "Percent change in insulin correlated with bone markers, full cohort") -->
+<!-- kable(lowcorrs[,c(2,4)],caption = "Percent change in insulin correlated with bone markers, low c-peptide group") -->
+<!-- kable(highcorrs[,c(2,4)], -->
+<!--       caption = "Percent change in insulin correlated with bone markers, high c-peptide group") -->
+<!-- kable(negcorrs[,c(2,4)], -->
+<!--       caption = "Percent change in insulin correlated with bone markers, negative c-peptide group") -->
+<!-- ``` -->
 
-```{r echo=FALSE,dpi=600,eval=FALSE}
-# New data frame for plotting
-plot(alldata$cpep_group,alldata$INS_TOSOH_0,
-     main = "Baseline Insulin Concentration by C-Peptide Group",
-     ylab = "Insulin units")
-plot(alldata$cpep_group,alldata$INS_TOSOH_120,
-     main = "120 Minute Insulin Concentration by C-Peptide Group",
-     ylab = "Insulin units")
-plot(alldata$cpep_group,alldata$ins_perc_change,
-     main = "Percent Change in Insulin Concentration by C-Peptide Group",
-     ylab = "Percent Change in Insulin")
-```
+<!-- ```{r echo=FALSE,dpi=600} -->
+<!-- # New data frame for plotting -->
+<!-- plot(alldata$cpep_group,alldata$INS_TOSOH_0, -->
+<!--      main = "Baseline Insulin Concentration by C-Peptide Group", -->
+<!--      ylab = "Insulin units") -->
+<!-- plot(alldata$cpep_group,alldata$INS_TOSOH_120, -->
+<!--      main = "120 Minute Insulin Concentration by C-Peptide Group", -->
+<!--      ylab = "Insulin units") -->
+<!-- plot(alldata$cpep_group,alldata$ins_perc_change, -->
+<!--      main = "Percent Change in Insulin Concentration by C-Peptide Group", -->
+<!--      ylab = "Percent Change in Insulin") -->
+<!-- ``` -->
 
 ```{r echo=FALSE}
 # New data frame for spaghetti plots of bone markers.
-plotvars0 <- c("PtID","cpep_group",corrvars0)
-plotvars0 <- 
-  plotvars0[-c(which(plotvars0 == "calcium"|plotvars0 == "po4"|plotvars0 == "INS_TOSOH_0"))]
+plotvars0 <- c("PtID","cpep_group","P1NP0","CTX0","Osteocalcin_0")
 df1 <- alldata[,plotvars0]
 colnames(df1) <- sub("0","",colnames(df1))
 colnames(df1) <- sub("\\.","",colnames(df1))
 df1$Timepoint <- 0
-plotvars120 <- c("PtID","cpep_group",corrvars120[-c(which(corrvars120 == "INS_TOSOH_120"))])
+plotvars120 <- c("PtID","cpep_group","P1NP120","CTX120","Osteocalcin_120")
 df2 <- alldata[,plotvars120]
 colnames(df2) <- sub("120","",colnames(df2))
 colnames(df2) <- sub("\\.","",colnames(df2))
@@ -240,101 +236,137 @@ plot$Timepoint <- as.factor(plot$Timepoint)
 # Plots of bone marker change 0 minute to 120 minute, by c-peptide group.
 
 ```{r echo=FALSE, dpi=600, warning=FALSE}
-for (c in colnames(plot)[3:(ncol(plot)-1)]) {
-  markerplot <- 
-    ggplot(data = plot,aes_string(x = "Timepoint", y = c, group = "PtID")) +
-    geom_point() + 
-    geom_line() + 
-    scale_color_discrete(guide=FALSE) +
-    facet_grid(. ~ cpep_group)
-  print(markerplot)
-}
+p1np_plot <- 
+  ggplot(data = plot,aes_string(x = "Timepoint", y = "P1NP", group = "PtID")) +
+  geom_point() + 
+  geom_line() + 
+  ylab("P1NP (μg/L)") +
+  scale_color_discrete(guide=FALSE) +
+  facet_grid(. ~ cpep_group) +
+  theme_bw()
+print(p1np_plot)
+
+ctx_plot <- 
+  ggplot(data = plot,aes_string(x = "Timepoint", y = "CTX", group = "PtID")) +
+  geom_point() + 
+  geom_line() + 
+  ylab("CTX (ng/L)") +
+  scale_color_discrete(guide=FALSE) +
+  facet_grid(. ~ cpep_group) +
+  theme_bw()
+print(ctx_plot)
+
+ost_plot <- 
+  ggplot(data = plot,aes_string(x = "Timepoint", y = "Osteocalcin_", group = "PtID")) +
+  geom_point() + 
+  geom_line() + 
+  ylab("Osteocalcin (μg/L)") +
+  scale_color_discrete(guide=FALSE) +
+  facet_grid(. ~ cpep_group) +
+  theme_bw()
+print(ost_plot)
 ```
 
-# Linear models of percent change in bone markers and percent change in insulin, adjusted for c-peptide group 
+# Linear models of percent change in bone markers and percent change in insulin 
 
 ### P1NP
 ```{r echo=FALSE,results='asis'}
-p1np <- lm(P1NP_perc_change ~ ins_perc_change + cpep_group, data = alldata)
+p1np <- lm(P1NP_perc_change ~ ins_perc_change, data = alldata)
 kable(round(summary(p1np)$coefficients,3))
 cat(paste("Adjusted R Squared:",round(summary(p1np)$adj.r.squared,4)))
 ```
 
 ### CTX
 ```{r echo=FALSE,results='asis'}
-ctx <- lm(CTX_perc_change ~ ins_perc_change + cpep_group, data = alldata)
+ctx <- lm(CTX_perc_change ~ ins_perc_change, data = alldata)
 kable(round(summary(ctx)$coefficients,3))
 cat(paste("Adjusted R Squared:",round(summary(ctx)$adj.r.squared,4)))
 ```
 
 ### Osteocalcin
 ```{r echo=FALSE,results='asis'}
-ost <- lm(osteocalcin_perc_change ~ ins_perc_change + cpep_group, data = alldata)
+ost <- lm(osteocalcin_perc_change ~ ins_perc_change, data = alldata)
 kable(round(summary(ost)$coefficients,3))
 cat(paste("Adjusted R Squared:",round(summary(ost)$adj.r.squared,4)))
 ```
 
-### IGF
-```{r echo=FALSE,results='asis'}
-igf <- lm(IGF_perc_change ~ ins_perc_change + cpep_group, data = alldata)
-kable(round(summary(igf)$coefficients,3))
-cat(paste("Adjusted R Squared:",round(summary(igf)$adj.r.squared,4)))
+<!-- ### IGF -->
+<!-- ```{r echo=FALSE,results='asis'} -->
+<!-- igf <- lm(IGF_perc_change ~ ins_perc_change + cpep_group, data = alldata) -->
+<!-- kable(round(summary(igf)$coefficients,3)) -->
+<!-- cat(paste("Adjusted R Squared:",round(summary(igf)$adj.r.squared,4))) -->
+<!-- ``` -->
+
+<!-- ### ON -->
+<!-- ```{r echo=FALSE,results='asis'} -->
+<!-- on <- lm(ON_perc_change ~ ins_perc_change + cpep_group, data = alldata) -->
+<!-- kable(round(summary(on)$coefficients,3)) -->
+<!-- cat(paste("Adjusted R Squared:",round(summary(on)$adj.r.squared,4))) -->
+<!-- ``` -->
+
+<!-- ### SOST -->
+<!-- ```{r echo=FALSE,results='asis'} -->
+<!-- sost <- lm(SOST_perc_change ~ ins_perc_change + cpep_group, data = alldata) -->
+<!-- kable(round(summary(sost)$coefficients,3)) -->
+<!-- cat(paste("Adjusted R Squared:",round(summary(sost)$adj.r.squared,4))) -->
+<!-- ``` -->
+
+<!-- # Linear models of percent change in bone markers and percent change in insulin, adjusted for baseline c-peptide -->
+
+<!-- ### P1NP -->
+<!-- ```{r echo=FALSE,results='asis'} -->
+<!-- p1np <- lm(P1NP_perc_change ~ ins_perc_change + CPEP_0, data = alldata) -->
+<!-- kable(round(summary(p1np)$coefficients,3)) -->
+<!-- cat(paste("Adjusted R Squared:",round(summary(p1np)$adj.r.squared,4))) -->
+<!-- ``` -->
+
+<!-- ### CTX -->
+<!-- ```{r echo=FALSE,results='asis'} -->
+<!-- ctx <- lm(CTX_perc_change ~ ins_perc_change + CPEP_0, data = alldata) -->
+<!-- kable(round(summary(ctx)$coefficients,3)) -->
+<!-- cat(paste("Adjusted R Squared:",round(summary(ctx)$adj.r.squared,4))) -->
+<!-- ``` -->
+
+<!-- ### Osteocalcin -->
+<!-- ```{r echo=FALSE,results='asis'} -->
+<!-- ost <- lm(osteocalcin_perc_change ~ ins_perc_change + CPEP_0, data = alldata) -->
+<!-- kable(round(summary(ost)$coefficients,3)) -->
+<!-- cat(paste("Adjusted R Squared:",round(summary(ost)$adj.r.squared,4))) -->
+<!-- ``` -->
+
+<!-- <!-- ### IGF -->
+<!-- ```{r echo=FALSE,results='asis'} -->
+<!-- igf <- lm(IGF_perc_change ~ ins_perc_change + CPEP_0, data = alldata) -->
+<!-- kable(round(summary(igf)$coefficients,3)) -->
+<!-- cat(paste("Adjusted R Squared:",round(summary(igf)$adj.r.squared,4))) -->
+<!-- ``` -->
+
+<!-- ### ON -->
+<!-- ```{r echo=FALSE,results='asis'} -->
+<!-- on <- lm(ON_perc_change ~ ins_perc_change + CPEP_0, data = alldata) -->
+<!-- kable(round(summary(on)$coefficients,3)) -->
+<!-- cat(paste("Adjusted R Squared:",round(summary(on)$adj.r.squared,4))) -->
+<!-- ``` -->
+
+<!-- ### SOST -->
+<!-- ```{r echo=FALSE,results='asis'} -->
+<!-- sost <- lm(SOST_perc_change ~ ins_perc_change + CPEP_0, data = alldata) -->
+<!-- kable(round(summary(sost)$coefficients,3)) -->
+<!-- cat(paste("Adjusted R Squared:",round(summary(sost)$adj.r.squared,4))) -->
+<!-- ``` -->
+
+# Average insulin by time point, visit 3
+```{r echo=FALSE,include=FALSE}
+vars <- c("INS_TOSOH_0","INS_TOSOH_120")
+means <- CreateTableOne(vars,data = alldata)
+means <- as.data.frame(print(means))
+means_group <- CreateTableOne(vars,"cpep_group",alldata)
+means_group <- as.data.frame(print(means_group))
+rownames(means) <- sub("NS_TOSOH_","nsulin Time ",rownames(means))
+rownames(means_group) <- rownames(means)
 ```
 
-### ON
-```{r echo=FALSE,results='asis'}
-on <- lm(ON_perc_change ~ ins_perc_change + cpep_group, data = alldata)
-kable(round(summary(on)$coefficients,3))
-cat(paste("Adjusted R Squared:",round(summary(on)$adj.r.squared,4)))
-```
-
-### SOST
-```{r echo=FALSE,results='asis'}
-sost <- lm(SOST_perc_change ~ ins_perc_change + cpep_group, data = alldata)
-kable(round(summary(sost)$coefficients,3))
-cat(paste("Adjusted R Squared:",round(summary(sost)$adj.r.squared,4)))
-```
-
-# Linear models of percent change in bone markers and percent change in insulin, adjusted for baseline c-peptide concentration
-
-### P1NP
-```{r echo=FALSE,results='asis'}
-p1np <- lm(P1NP_perc_change ~ ins_perc_change + CPEP_0, data = alldata)
-kable(round(summary(p1np)$coefficients,3))
-cat(paste("Adjusted R Squared:",round(summary(p1np)$adj.r.squared,4)))
-```
-
-### CTX
-```{r echo=FALSE,results='asis'}
-ctx <- lm(CTX_perc_change ~ ins_perc_change + CPEP_0, data = alldata)
-kable(round(summary(ctx)$coefficients,3))
-cat(paste("Adjusted R Squared:",round(summary(ctx)$adj.r.squared,4)))
-```
-
-### Osteocalcin
-```{r echo=FALSE,results='asis'}
-ost <- lm(osteocalcin_perc_change ~ ins_perc_change + CPEP_0, data = alldata)
-kable(round(summary(ost)$coefficients,3))
-cat(paste("Adjusted R Squared:",round(summary(ost)$adj.r.squared,4)))
-```
-
-### IGF
-```{r echo=FALSE,results='asis'}
-igf <- lm(IGF_perc_change ~ ins_perc_change + CPEP_0, data = alldata)
-kable(round(summary(igf)$coefficients,3))
-cat(paste("Adjusted R Squared:",round(summary(igf)$adj.r.squared,4)))
-```
-
-### ON
-```{r echo=FALSE,results='asis'}
-on <- lm(ON_perc_change ~ ins_perc_change + CPEP_0, data = alldata)
-kable(round(summary(on)$coefficients,3))
-cat(paste("Adjusted R Squared:",round(summary(on)$adj.r.squared,4)))
-```
-
-### SOST
-```{r echo=FALSE,results='asis'}
-sost <- lm(SOST_perc_change ~ ins_perc_change + CPEP_0, data = alldata)
-kable(round(summary(sost)$coefficients,3))
-cat(paste("Adjusted R Squared:",round(summary(sost)$adj.r.squared,4)))
+```{r echo=FALSE}
+kable(means)
+kable(means_group[,1:2])
 ```
