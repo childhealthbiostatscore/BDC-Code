@@ -101,45 +101,17 @@ dat <- dat %>%
   filter(!is.na(visitdate) | redcap_event_name == "event_1_arm_1")
 # Record ID as factor
 dat$record_id <- as.factor(as.numeric(dat$record_id))
+# Add timepoint based on visit date, remove unnecessary rows.
+dat$timepoint <- ifelse(dat$visitdate <= dat$program_start_date,"Before",
+                         ifelse(dat$visitdate > dat$program_start_date & 
+                                  dat$visitdate <= dat$program_end_date,"During","After"))
+dat$timepoint <- factor(dat$timepoint,levels = c("Before","During","After"))
+dat$record_id <- as.factor(dat$record_id)
+dat$case_id <- as.factor(dat$case_id)
 ```
 
-<!-- # Background -->
-
-<!-- The purpose of this analysis is to test whether the high risk program was successful in improving diabetes outcomes.  Outcomes of interest include frequency of visits, rates of no shows and cancellations, and measurements of glycemia. -->
-
-<!-- # Methods -->
-
-<!-- Participants who completed at least 5 visits were matched to controls.  Length of participation in the program varied, so for each participant, the same amount of time before and after the program was included in the analysis.   -->
-
-<!-- For each outcome, the means before, during, and after the program were compared in participants and controls using linear mixed effects models.   -->
-
-<!-- The rate of change (slopes) of each outcome was compared in participants and controls using interrupted time series models.  These models estimated the slopes during two time periods, and then compared the slopes between participants and controls.  Therefore, separate models were run for each of the three pairwise comparisons of time periods (before vs. during, during vs. after, and before vs. after).   -->
-
-<!-- # Results -->
-
-<!-- Table 1 shows descriptive statistics at baseline in participants and controls. -->
-
-<!-- Comparisons of mean outcomes in participants and controls during the period before the intervention are shown in Table 2a.  Comparisons during the program are shown in Table 2b, and after the program are shown in Table 2c. -->
-
-<!-- Each interrupted time series model (corresponding to one outcome and comparison of two time periods) is summarized in a separate table.  The estimates in the tables can be interpreted as in the following example: -->
-
-<!-- - "Intercept: control" - this is the estimated value of the outcome in the controls at the earliest time period included in the model -->
-<!-- - "Intercept: case" - this is the estimated value of the outcome in the participants at the earliest time period included in the model -->
-<!-- - "Intercept: case-control" - this is the difference in the intercepts in the cases and participants -->
-<!-- - "Slope(time) before k: control" - this is the estimate of the slope in the controls before the intervention -->
-<!-- - "Slope(time) before k: case" - this is the estimate of the slope in the participants before the intervention -->
-<!-- - "Slope(time) before k: case-con" - this is the difference in the slopes in the participants and controls before the intervention -->
-<!-- - "Slope(time) after k: control" - this is the estimate of the slope in the controls after the intervention -->
-<!-- - "Slope(time) after k: case" - this is the estimate of the slope in the participants after the intervention -->
-<!-- - "Slope(time) after k: case-con" - this is the difference in the slopes in the participants and controls after the intervention -->
-<!-- - "Slope(time) change k: control" - this is the estimate of the change in the slope (during-before) in controls -->
-<!-- - "Slope(time) change k: case" - this is the estimate of the change in the slope (during-before) in participants -->
-<!-- - "Slope(time) change k: case-con" - this is the estimate of the difference in the change in slopes between participants and controls -->
-
-<!-- After the tables summarizing each of the interrupted time series models, there are figures which show the longitudinal trajectories of the outcomes over time, with regression lines for participants and controls superimposed. -->
-
 ```{r echo=FALSE,include=FALSE}
-# Format data table
+# Table 1
 t1vars <- c("Age","T1Dyears","a1c","hospitalbefore","hosp_dur","hospitalpost",
             "nsbefore","ns_dur","nspost","cancelbefore","cancel_dur",
             "cancelpost","Gender","race_ethnicity","insurance","treatment___1",
@@ -168,27 +140,10 @@ kable(t1[,1:3])
 ```
 
 ```{r echo=FALSE}
-# Add timepoint based on visit date, remove unnecessary rows.
-dat$timepoint <- ifelse(dat$visitdate <= dat$program_start_date,"Before",
-                         ifelse(dat$visitdate > dat$program_start_date & 
-                                  dat$visitdate <= dat$program_end_date,"During","After"))
-dat$timepoint <- factor(dat$timepoint,levels = c("Before","During","After"))
-dat$record_id <- as.factor(dat$record_id)
-dat$case_id <- as.factor(dat$case_id)
 # Filter out rows with just demographic information
 mixed <- dat %>% filter(!is.na(visitdate))
-plot_mixed <- mixed %>%
-  group_by(record_id,timepoint) %>%
-  summarise(a1c = mean(a1c,na.rm = T),case_id = case_id[1],control = control[1])
-# plot A1c by timepoint
-plot <- ggplot(plot_mixed, aes(x=timepoint,y = a1c,group = record_id))+
-  geom_line(aes(color = control)) +
-  ylab("Average HbA1c") +
-  xlab("Timepoint")
-# Mixed model selection for A1c by timepoint
-# a1c_mod <- lme(a1c ~ timepoint * control,random=~1+record_id|case_id,dat = mixed,na.action = na.omit) 
 
-# Mixed model of change in average A1c before vs. during and during vs. after
+# Mixed models of change in average before vs. during and during vs. after
 # Average at each timepoint
 avgs <- mixed %>%
   group_by(record_id,timepoint) %>%
@@ -230,15 +185,57 @@ dur_aft <- avgs %>%
             highbg = mean_high_bg[2]-mean_high_bg[1],
             days = mean_days[2] - mean_days[1],
             sw = sw[2] - sw[1])
+dur_aft[dur_aft == "NaN"] <- NA
 ```
 
-### Figure 1: Average HbA1c by Timepoint
+### Mixed Models
+
 ```{r echo=FALSE}
+# A1c
+# plot by timepoint
+plot <- ggplot(avgs, aes(x=timepoint,y = mean_a1c,group = record_id))+
+  geom_line(aes(color = control)) +
+  ylab("Average HbA1c") +
+  xlab("Timepoint") + 
+  ggtitle("Figure 1: Average HbA1c by Timepoint")
 plot
+# Models
+# Before vs. during
+a1c <- lme(a1c ~ control,random = ~1|case_id,data = bef_dur,na.action = na.omit)
+fixed <- summary(a1c)$tTable
+
+kable(fixed, caption = "Average HbA1c: Change from Before to During")
+# During vs. after
+a1c <- lme(a1c ~ control,random = ~1|case_id,data = dur_aft,na.action = na.omit)
+fixed <- summary(a1c)$tTable
+
+kable(fixed, caption = "Average HbA1c: Change from During to After")
 ```
 
-### Before vs. During
-```{r echo=FALSE}
-a1c <- lme(a1c ~ control,random = ~1|case_id,data = bef_dur,na.action = na.omit)
-summary(a1c)
+Each participant's HbA1c values were averaged for each time point (before, during, and after the intervention). The tables above represent the average change between time points for cases and controls. So on average HbA1c for cases decreased by 0.741 (although this wasn't statistically significant at the 0.05 level) and increased by 0.544 (1.285 + (-0.741) = 0.544) for controls (p = 0.019) when comparing during the intervention to before. 
+
+Comparing after the intervention to during the intervention, on average HbA1c increased by 0.087 for cases, and increased by 0.041 (0.087 + (-0.046)) for controls, although neither change was statistically significant (p = 0.793,p = 0.920 respectively).
+
+The interpretation for the following tables is the same. 
+
+```{r echo=FALSE,warning=FALSE}
+# bg checks
+# plot by timepoint
+plot <- ggplot(avgs, aes(x=timepoint,y = mean_bgchecks,group = record_id))+
+  geom_line(aes(color = control)) +
+  ylab("Average BG Checks") +
+  xlab("Timepoint") + 
+  ggtitle("Figure 2: Average BG Checks by Timepoint")
+plot
+# Models
+# Before vs. during
+bgchecks <- lme(bgchecks ~ control,random = ~1|case_id,data = bef_dur,na.action = na.omit)
+fixed <- summary(bgchecks)$tTable
+rownames(fixed) <- c("Cases","Controls")
+kable(fixed, caption = "Average BG Checks: Change from Before to During")
+# During vs. after
+bgchecks <- lme(bgchecks ~ control,random = ~1|case_id,data = dur_aft,na.action = na.omit)
+fixed <- summary(bgchecks)$tTable
+rownames(fixed) <- c("Cases","Controls")
+kable(fixed, caption = "Average BG Checks: Change from During to After")
 ```
