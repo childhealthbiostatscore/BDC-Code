@@ -21,11 +21,11 @@ source("/Users/timvigers/Documents/GitHub/Tim-and-Laura/tim_R_functions.R")
 
 ```{r echo=FALSE,message=FALSE,warning=FALSE}
 # Read in data 
-phys <- read.sas7bdat(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Raw/Second_Analysis/kphysexamrechealth_subset.sas7bdat"))
-sample <- read.sas7bdat(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Raw/Second_Analysis/ksampleresults_subset.sas7bdat"))
-screen <- read.sas7bdat(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Raw/Second_Analysis/kvisit0screening_subset.sas7bdat"))
-visit <- read.sas7bdat(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Raw/Second_Analysis/kvisitinfo_subset.sas7bdat"))
-bone <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Cleaned/bone_injury.csv"),skip = 1)
+phys <- read.sas7bdat(paste0(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Raw/Second_Analysis/kphysexamrechealth_subset.sas7bdat"))
+sample <- read.sas7bdat(paste0(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Raw/Second_Analysis/ksampleresults_subset.sas7bdat"))
+screen <- read.sas7bdat(paste0(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Raw/Second_Analysis/kvisit0screening_subset.sas7bdat"))
+visit <- read.sas7bdat(paste0(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Raw/Second_Analysis/kvisitinfo_subset.sas7bdat"))
+bone <- read.csv(paste0(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Cleaned/bone_injury.csv"),skip = 1)
 bone$TimePoint <- sapply(strsplit(as.character(bone$Row.Labels)," "),`[`,2)
 bone$Row.Labels <- sub(" 0","",bone$Row.Labels)
 bone$Row.Labels <- sub(" 120","",bone$Row.Labels)
@@ -33,8 +33,8 @@ colnames(bone) <- c("PtID","ALP","ON","OPG","OPN","Osteocalcin","SOST","Grand.To
 # Long to wide
 bone <- reshape(bone[-c(which(bone$PtID == "Grand Total")),c("PtID","ALP","ON","OPG","OPN","Osteocalcin","SOST","TimePoint")],
               idvar = "PtID",timevar = "TimePoint",direction = "wide",sep = "_")
-previous <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Cleaned/full_data_bone_turnover.csv"))
-age <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Cleaned/updated_full_data_bone_turnover.csv"))
+previous <- read.csv(paste0(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Cleaned/full_data_bone_turnover.csv"))
+age <- read.csv(paste0(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Cleaned/updated_full_data_bone_turnover.csv"))
 # Combine
 alldata <- dcast(sample[,c("PtID","TimePoint","Analyte","Value_Update_n")],PtID ~ Analyte + TimePoint,value.var = "Value_Update_n")
 alldata <- left_join(alldata,phys[,c("PtID","Weight_kg","Height_cm")])
@@ -45,13 +45,15 @@ alldata <- left_join(alldata,previous[,c("PtID","IGF0","CTX0","P1NP0","VitD0","I
                                            "calcium","po4")])
 alldata <- left_join(alldata,age[,c("PtID","AgeAtConsent")])
 # Fix c-peptide group
-cpep <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Cleaned/KSampleResults.csv"),na.strings = "NULL")
+cpep <- read.csv(paste0(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Cleaned/KSampleResults.csv"),na.strings = "NULL")
 cpep$Value <- as.numeric(as.character(cpep$Value))
 cpep <- cpep %>%
-  filter(Analyte == "CPEP",Visit=="Visit 2") %>%
-  arrange(PtID,Visit,TimePoint)%>%
+  filter(Analyte == "CPEP",Visit=="Visit 1") %>%
+  arrange(PtID,Visit,TimePoint) %>%
   group_by(PtID) %>%
   summarise(peak_cpep = max(Value,na.rm = T))
+cpep[cpep == "-Inf"] <- NA
+cpep <- cpep[complete.cases(cpep),]
 alldata <- left_join(cpep,alldata) %>%
   filter(!is.na(CPEP_0))
 alldata[alldata == "NaN"] <- NA
@@ -92,9 +94,6 @@ t1b <- as.data.frame(print(t1b,nonnormal = nonnormvars,exact = catvars))
 # Nicer rownames
 rownames(t1a) <- c("n","Gender = M (%)","InsDeliveryMethod = Pump (%)","CurrUseCGM = Yes (%)","AgeAtConsent Years (median [IQR])","T1DDuration Years (median [IQR])","UnitsInsPerKg (mean (SD))","HbA1c % (mean (SD))","BMI kg/(cm^2) (mean (SD))","Vitamin D ng/mL (mean (SD))","calcium mg/dL (median [IQR])","ALP IU/L (median [IQR])")
 rownames(t1b) <- rownames(t1a)
-# By gender
-t1c <- CreateTableOne(t1vars[-c(which(t1vars == "Gender"))],strata = "Gender",data = alldata)
-t1c <- as.data.frame(print(t1c,nonnormal = nonnormvars,exact = catvars))
 ```
 
 ```{r echo=FALSE}
@@ -105,8 +104,20 @@ kable(t1a, caption = "Descriptive statistics at baseline of full cohort")
 kable(t1b, caption = "Descriptive statistics at baseline by c-peptide group")
 ```
 
+### Average insulin by time point, visit 3
+```{r echo=FALSE,include=FALSE}
+vars <- c("INS_TOSOH_0","INS_TOSOH_120")
+means <- CreateTableOne(vars,data = alldata)
+means <- as.data.frame(print(means))
+means_group <- CreateTableOne(vars,"cpep_group",alldata)
+means_group <- as.data.frame(print(means_group))
+rownames(means) <- sub("NS_TOSOH_","nsulin Time ",rownames(means))
+rownames(means_group) <- rownames(means)
+```
+
 ```{r echo=FALSE}
-kable(t1c, caption = "Descriptive statistics at baseline by gender")
+kable(means)
+kable(means_group[,1:2])
 ```
 
 <!-- # Correlations -->
@@ -362,19 +373,3 @@ cat(paste("Adjusted R Squared:",round(summary(ost)$adj.r.squared,4)))
 <!-- kable(round(summary(sost)$coefficients,3)) -->
 <!-- cat(paste("Adjusted R Squared:",round(summary(sost)$adj.r.squared,4))) -->
 <!-- ``` -->
-
-# Average insulin by time point, visit 3
-```{r echo=FALSE,include=FALSE}
-vars <- c("INS_TOSOH_0","INS_TOSOH_120")
-means <- CreateTableOne(vars,data = alldata)
-means <- as.data.frame(print(means))
-means_group <- CreateTableOne(vars,"cpep_group",alldata)
-means_group <- as.data.frame(print(means_group))
-rownames(means) <- sub("NS_TOSOH_","nsulin Time ",rownames(means))
-rownames(means_group) <- rownames(means)
-```
-
-```{r echo=FALSE}
-kable(means)
-kable(means_group[,1:2])
-```
