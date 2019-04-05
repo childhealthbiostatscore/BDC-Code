@@ -12,10 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r echo=FALSE, include=FALSE}
 # Load libraries and functions
 library(data.table)
-library(lubridate)
-library(plyr)
-library(tidyr)
-library(dplyr)
+library(tidyverse)
 # Check OS and alter file path accordingly.
 if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.Platform$OS.type == "unix"){pathstart <- "/Volumes/"}
 ```
@@ -28,50 +25,59 @@ if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.P
 
 ```{r echo=FALSE,eval=FALSE}
 # Data management
-indir <- paste(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Original",sep="")
-outdir <- paste(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Cleaned/",sep = "")
+indir <- paste(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Original",sep="")
+outdir <- paste(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Cleaned/",sep = "")
 # Split files into pump and BG data, store in separate folders.
 files <- list.files(indir,full.names = T)
 for (f in 1:length(files)) {
   dat <- read.csv(files[f],stringsAsFactors = FALSE,header = TRUE,
                   na.strings = "")
-  id <- dat$Patient.ID[1]
+  id <- sub("_pump.csv","",basename(files[f]))
 # Check file format.  
   if (id == "") {
     stop("No ID")
   } else if (ncol(dat) < 33) {
     stop("Not enough columns",call. = F)
   }
-# Get start and end date.  
-  start <- as.POSIXct(dat$Start.Date[1],tz = "UTC",format = "%m/%d/%y %H:%M")
-  end <- as.POSIXct(dat$End.Date[1],tz = "UTC",format = "%m/%d/%y %H:%M")
-# Delete nonessential rows. 
-  rowstart <- which(dat$Last.Name == "-------")[1]
-  pump <- dat[c((rowstart + 2):(nrow(dat)-3)),]
-  colnames(pump) <- dat[rowstart+1,]
+  if (grepl("T1",id) == T) {
+# Get start and end date.
+    start <- as.POSIXct(dat$Start.Date[1],tz = "UTC",format = "%m/%d/%y %H:%M")
+    end <- as.POSIXct(dat$End.Date[1],tz = "UTC",format = "%m/%d/%y %H:%M")
+# Delete nonessential rows.
+    rowstart <- which(dat$Last.Name == "-------")[1]
+    pump <- dat[c((rowstart + 2):(nrow(dat)-3)),]
+    colnames(pump) <- dat[rowstart+1,]
+  } else {
+    pump <- dat
+  }
 # Format timestamp, remove rows without datetime data.
   pump$timestamp <- paste(pump$Date,pump$Time)
-  pump$timestamp <- mdy_hms(pump$timestamp)
+  pump$timestamp <- lubridate::mdy_hms(pump$timestamp)
   pump <- pump[which(!is.na(pump$timestamp)),]
 # Remove rows with data outside study time range if there is any.
-  if (length(which(pump$timestamp < start | pump$timestamp > end)) > 0) {
-    pump <- pump[-c(which(pump$timestamp < start | pump$timestamp > end)),]
+  if (grepl("T1",id) == T) {
+    if (length(which(pump$timestamp < start | pump$timestamp > end)) > 0) {
+      pump <- pump[-c(which(pump$timestamp < start | pump$timestamp > end)),]
+    }
   }
+# Standardize column names
+  colnames(pump) <- tolower(gsub(c("[[:punct:]]"),"",colnames(pump)))
+  colnames(pump) <- gsub(c(" "),"",colnames(pump))
 # Classify BGs using Bergensthal White Paper Categories and Pump It Up! 
 # categories.
-  pump$piu <- cut(as.numeric(pump$`BG Reading (mg/dL)`),
+  pump$piu <- cut(as.numeric(pump$bgreadingmgdl),
                        breaks = c(0,70,150,250,Inf),
                        right = F,
                        labels = c("<70","70-149","150-249","250+"))
-  pump$bwp <- cut(as.numeric(pump$`BG Reading (mg/dL)`),
+  pump$bwp <- cut(as.numeric(pump$bgreadingmgdl),
                        breaks = c(0,70,181,251,400,Inf),
                        right = F,
                        labels = c("<70","70-180","181-250","251-400","400+"))
 # Select and rename columns.
-  pump <- pump[,c("timestamp","Bolus Type",
-                  "Bolus Volume Selected (U)","Bolus Volume Delivered (U)",
-                  "BWZ Carb Input (grams)","BWZ BG Input (mg/dL)",
-                  "BG Reading (mg/dL)","piu","bwp")]
+  pump <- pump[,c("timestamp","bolustype",
+                  "bolusvolumeselectedu","bolusvolumedeliveredu",
+                  "bwzcarbinputgrams","bwzbginputmgdl",
+                  "bgreadingmgdl","piu","bwp")]
   colnames(pump) <- c(c("timestamp","bolustype",
                         "bolusvolselected","bolusvoldelivered","carbinput",
                         "bginput","bgreading","piu","bwp"))
@@ -86,15 +92,15 @@ for (f in 1:length(files)) {
 ```{r echo=FALSE, include=FALSE}
 # Summary variables.
 # Import data
-indir <- paste(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Cleaned",sep="")
-outdir <- paste(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/",sep="")
+indir <- paste(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Cleaned",sep="")
+outdir <- paste(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/",sep="")
 files <- list.files(indir,full.names = T)
 # Make a summary variables table.
 summary <- data.frame(matrix(nrow = length(files),ncol = 0))
 # Iterate through files and calculate variables.
 for (f in 1:length(files)) {
   dat <- read.csv(files[f],header = T,stringsAsFactors = FALSE)
-  dat$timestamp <- ymd_hms(dat$timestamp)
+  dat$timestamp <- lubridate::ymd_hms(dat$timestamp)
   id <- sub(".csv","",basename(files[f]))
   summary[f,"subject_id"] <- id
 # Calculate number of days of data  
@@ -119,15 +125,15 @@ for (f in 1:length(files)) {
   dat <- dat[-c(which(rowSums(is.na(dat[,2:ncol(dat)])) >= (length(2:ncol(dat))-1))),]
 # Format timestamp
   colnames(dat)[1] <- "timestamp"
-  dat$timestamp <- ymd_hm(dat$timestamp)
+  dat$timestamp <- lubridate::ymd_hm(dat$timestamp)
 # Get BG readings by PIU and BWP categories  
   reading.times <- dat$timestamp[which(dat$bgreading > 0)]
   pius <- dat$piu[which(!is.na(dat$bgreading))]
   bwps <- dat$bwp[which(!is.na(dat$bgreading))]
 # Find date, weekday, hour of the day
-  dat$date <- date(dat$timestamp)
-  dat$weekday <- wday(dat$timestamp)
-  dat$hour <- hour(dat$timestamp)
+  dat$date <- lubridate::date(dat$timestamp)
+  dat$weekday <- lubridate::wday(dat$timestamp)
+  dat$hour <- lubridate::hour(dat$timestamp)
 # Average number of BG checks and carb inputs on weekdays and weekends
   weekdat <- dat[dat$weekday %in% 2:6,]
   weekdays <- length(unique(weekdat$date))
@@ -154,7 +160,7 @@ for (f in 1:length(files)) {
   bolus_dat$carbinput[which(is.na(bolus_dat$carbinput))] <- 0
 # Check for days with >= 6 hours without a bolus.
 # Add a midnight row to calculate last bolus before midnight
-  six_hour_bolus <- setDT(bolus_dat)[, indx := date][, .SD[1:(.N+1)], indx][,indx := NULL][!.N]
+  six_hour_bolus <- data.table::setDT(bolus_dat)[, indx := date][, .SD[1:(.N+1)], indx][,indx := NULL][!.N]
   six_hour_bolus$hour[which(is.na(six_hour_bolus$hour))] <- 24
 # Count time between 6am, boluses, and midnight by date  
   six_hour_bolus <- six_hour_bolus %>% 
