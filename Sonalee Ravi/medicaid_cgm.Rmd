@@ -22,10 +22,11 @@ source('~/Documents/GitHub/Tim-and-Laura/tim_R_functions.R')
 filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sonalee Ravi/Medicaid CGM/Data_Cleaned/Demographics.csv")
 demographics <- read.csv(filename)
 # Read in CGM data
-filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sonalee Ravi/Medicaid CGM/Data_Cleaned/30 day CGM data missing studio.csv")
+filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sonalee Ravi/Medicaid CGM/Data_Cleaned/30 day cgm metrics.csv")
 dat <- read.csv(filename,na.strings = c("","NULL"))
 # Format CGM data
 dat$EncounterDate <- lubridate::mdy(as.character(dat$EncounterDate))
+dat$EPICMRN <- as.factor(dat$EPICMRN)
 # Remove rows with no A1c
 dat <- dat[which(!is.na(dat$HbA1c)),]
 # Replace CGMUse = "No" with NA, fill down "Yes" values (by subject), set NAs back to "No"
@@ -81,6 +82,7 @@ no <- no[no$EPICMRN %in% yes$EPICMRN,]
 delta <- rbind(yes, no) %>% arrange(EPICMRN,EncounterDate)
 
 # Format demographic data
+demographics$EPICMRN <- as.factor(demographics$EPICMRN)
 demo_datecols <- c("DOB","DateOfDiabetesDiagnosis","FirstVisitDate") 
 demographics[,demo_datecols] <- lapply(demographics[,demo_datecols], lubridate::mdy)
 # New variables
@@ -194,7 +196,6 @@ For this comparison we included those without any time on CGM and those with at 
 # Add demographic info to main data
 dat <- left_join(dat,demographics,by = "EPICMRN")
 dat$DiabetesDuration <- difftime(dat$EncounterDate,dat$DateOfDiabetesDiagnosis,units = "weeks")
-dat$EPICMRN <- as.factor(dat$EPICMRN)
 # Model A1c continuously vs. CGM percentage, adjusting for pump, age, diabetes duration
 mod_adj_int <- lme(HbA1c ~ CGM_Perc + Age_AtEncounterDate + DiabetesDuration + PumpUse + Race.Ethnicity-1,
                random=~1|EPICMRN,data = dat, na.action = na.omit)
@@ -206,7 +207,6 @@ summary(mod_adj_int_slp) # Best by AIC
 ```
 
 ```{r echo=FALSE,warning=FALSE,dpi=600}
-dat$EPICMRN <- as.factor(dat$EPICMRN)
 # Plot
 mm_plot <- ggplot(data = dat, aes(x = CGM_Perc, y = HbA1c,group = EPICMRN)) +
   geom_line(size = 0.2,aes(color = EPICMRN)) +
@@ -250,9 +250,55 @@ use_plot
 
 ```{r echo=FALSE}
 # Model
-use_mod <- lme(CGM_Perc ~ Days-1,random = ~1|EPICMRN,data = dat,na.action = na.omit)
+use_mod <- lme(CGM_Perc ~ Days,random = ~1|EPICMRN,data = dat,na.action = na.omit)
 ```
 
 ```{r echo=FALSE}
 kable(summary(use_mod)$tTable,caption = "Fixed Effects")
+```
+
+### Table 8: Descriptive statistics for all individuals with TIR
+
+```{r echo=FALSE,include=FALSE}
+# Average TIR
+tir <- dat %>%
+  filter(CGM_Perc > 0)
+tir_dem <- tir %>%
+  group_by(EPICMRN) %>%
+  summarise(Mean_CGM_Low = mean(CGMLowPercent,na.rm = T),
+            Mean_CGM_OK = mean(CGMOKPercent,na.rm = T),
+            Mean_CGM_High = mean(CGMHighPercent,na.rm = T),
+            Mean_HbA1c = mean(HbA1c,na.rm = T))
+tir_dem[tir_dem == "NaN"] <- NA
+tir_dem <- left_join(tir_dem,demographics,by = "EPICMRN")
+vars <- c("AgeFirstVisit","DiabetesDuration","Mean_HbA1c","Mean_CGM_Low","Mean_CGM_OK","Mean_CGM_High","Gender","Race.Ethnicity")
+nonnormal <- norm.check(tir_dem,c("AgeFirstVisit","DiabetesDuration","Mean_HbA1c","Mean_CGM_Low","Mean_CGM_OK","Mean_CGM_High"))
+tir_t1 <- CreateTableOne(vars,data = tir_dem)
+tir_t1 <- print(tir_t1,nonnormal = nonnormal)
+```
+
+```{r echo=FALSE}
+kable(tir_t1)
+```
+
+### Figure 3: Correlation between TIR and HbA1c
+
+```{r echo=FALSE,warning=FALSE}
+tir_plot <- ggplot(data = tir, aes(x = CGMOKPercent, y = HbA1c,group = EPICMRN)) +
+  geom_line(size = 0.2,aes(color = EPICMRN)) +
+  xlab("% Time in Range") + 
+  ylab("HbA1c (%)") + 
+  theme(legend.position = "none")
+tir_plot
+```
+
+### Table 9: Mixed model HbA1c by % Time in Range
+
+```{r echo=FALSE}
+# Model
+tir_mod <- lme(HbA1c ~ CGMOKPercent-1,random = ~1|EPICMRN,data = tir,na.action = na.omit)
+```
+
+```{r echo=FALSE}
+kable(summary(tir_mod)$tTable,caption = "Fixed Effects")
 ```
