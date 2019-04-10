@@ -5,7 +5,7 @@ date: "`r format(Sys.time(), '%d %B %Y')`"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
+```{r setup,include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(nlme)
 library(tableone)
@@ -17,7 +17,7 @@ if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.P
 source('~/Documents/GitHub/Tim-and-Laura/tim_R_functions.R')
 ```
 
-```{r echo=FALSE}
+```{r echo=FALSE,cache=TRUE,include=FALSE}
 # Read in demographic data
 filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sonalee Ravi/Medicaid CGM/Data_Cleaned/Demographics.csv")
 demographics <- read.csv(filename)
@@ -35,11 +35,14 @@ dat <- dat[which(!is.na(dat$HbA1c)),]
 dat$CGMUse <- NULL
 dat$Dexcom.CGM.Days <- NULL
 dat$Medtronic.CGM.Days <- NULL
-# Fill pump use up (Use last encounter when adjusting for pump use)
+# Fill down PumpUse "Yes", then change all NAs to no. So after first PumpUse "Yes"
+# assume they were always on a pump, but not on pump before then.
+dat$PumpUse[dat$PumpUse == "No"] <- NA
 dat <- dat %>%
   arrange(EPICMRN,EncounterDate) %>%
   group_by(EPICMRN) %>%
-  mutate(PumpUse = PumpUse[n()])
+  fill(PumpUse)
+dat$PumpUse[is.na(dat$PumpUse)] <- "No"
 # Get the first CGM use > 0 for each participant. Set this CGMUse == "Yes"
 temp <- dat %>% arrange(EPICMRN,EncounterDate) %>% 
   group_by(EPICMRN) %>%
@@ -55,10 +58,6 @@ dat <- dat %>% arrange(EPICMRN,EncounterDate) %>%
 dat$CGMUse[is.na(dat$CGMUse)] <- "No"
 # Make CMG usage a percentage
 dat$CGM_Perc <- (dat$X30.day.CGM.use / 30)*100
-# Replace pump use NA with "No" as it's unlikely they would have a pump and not 
-# have data in this field (per Sonalee)
-dat$PumpUse[which(is.na(dat$PumpUse))] <- "No"
-
 # Last off CGM to first on
 # Get the last "No" and all "Yes" for each subject
 no <- dat[dat$CGMUse == "No",] %>%
@@ -109,10 +108,9 @@ delta <- delta %>%
   mutate(cgm_pump = factor(cgm_pump, levels = c("No_No","No_Yes","Yes_No","Yes_Yes")))
 # Mixed model testing last no/first yes
 # Random intercept
-mod_int <- lme(HbA1c ~ cgm_pump,random=~1|EPICMRN,data = delta,na.action = na.omit)
+mod_int <- lme(HbA1c ~ cgm_pump-1,random=~1|EPICMRN,data = delta,na.action = na.omit)
 on_off_results <- as.data.frame(summary(mod_int)$tTable)
-rownames(on_off_results) <- c("Intercept","cgmNo:pumpYes","cgmYes:pumpNo","cgmYes:pumpYes")
-# cgmNo:pumpNo is the reference group
+rownames(on_off_results) <- c("cgmNo:pumpNo","cgmNo:pumpYes","cgmYes:pumpNo","cgmYes:pumpYes")
 ```
 
 ```{r echo=FALSE,include=FALSE}
@@ -141,19 +139,15 @@ t1_on_off <- as.data.frame(print(t1_on_off,nonnormal = nonnormal))
 
 ```{r echo=FALSE,include=FALSE}
 # Compare A1c in those who never went on CGM to those on CGM
-some_cgm <- dat[which(dat$CGMUse == "Yes"),] %>%
-  group_by(EPICMRN) %>%
-  summarise(mean(HbA1c)) %>%
-  mutate(CGMUse = "Some")
-never_cgm_ids <- unique(dat$EPICMRN[which(!(dat$EPICMRN %in% some_cgm$EPICMRN))])
-never_cgm <- dat[which(dat$EPICMRN %in% never_cgm_ids),] %>%
-  group_by(EPICMRN) %>%
-  summarise(mean(HbA1c)) %>%
-  mutate(CGMUse = "Never")
-never_some <- rbind(never_cgm,some_cgm)
-never_some <- left_join(never_some,demographics,by = "EPICMRN")
-never_some_comp <- CreateTableOne(c("mean(HbA1c)",vars),strata = "CGMUse",never_some)
-never_some_comp <- print(never_some_comp,nonnormal = c("mean(HbA1c)",nonnormal))
+some_cgm_ids <- unique(dat$EPICMRN[which(dat$CGMUse == "Yes")])
+dat$CGMUseSomeNever <- ifelse(dat$EPICMRN %in% some_cgm_ids,"Some","Never")
+# Group into never CGM yes pump, etc.
+dat <- dat %>% 
+  unite(cgm_ever_pump,CGMUseSomeNever,PumpUse,remove = F)
+# Mixed model with random intercept
+mod_cgm_ever <- lme(HbA1c ~ cgm_ever_pump-1,random=~1|EPICMRN,data = dat,na.action = na.omit)
+cgm_ever_results <- as.data.frame(summary(mod_cgm_ever)$tTable)
+rownames(cgm_ever_results) <- c("cgmNever:pumpNo","cgmNever:pumpYes","cgmSome:pumpNo","cgmSome:pumpYes")
 ```
 
 ```{r echo=FALSE,include=FALSE}
@@ -169,6 +163,23 @@ mod_adj_int_slp <- lme(HbA1c ~ CGM_Perc + Age_AtEncounterDate + DiabetesDuration
 # Model selection
 summary(mod_adj_int)
 summary(mod_adj_int_slp) # Best by AIC
+```
+
+```{r echo=FALSE}
+# Average CGM use change over time
+dat <- dat %>%
+  arrange(EPICMRN,EncounterDate) %>%
+  group_by(EPICMRN) %>%
+  mutate(Days = as.numeric(difftime(EncounterDate,EncounterDate[1],units = "days")))
+dat$EPICMRN <- as.factor(dat$EPICMRN)
+# Plot
+use_plot <- ggplot(data = dat, aes(x = Days, y = CGM_Perc,group = as.factor(EPICMRN))) +
+  geom_line(size = 0.2,aes(color = EPICMRN)) +
+  ylab("% CGM Use") + 
+  xlab("Days from First Visit") + 
+  theme(legend.position = "none")
+# Model
+
 ```
 
 ### Table 1: Descriptive statistics for all individuals with HbA1c readings both on and off CGM
@@ -196,11 +207,11 @@ kable(on_off_results, caption = "Fixed Effects")
 kable(anova.lme(mod_int), caption = "Type 3 Tests of Fixed Effects")
 ```
 
-The above model effectively treats CGM and pump status as a treatment group, and examines the effect on HbA1c. The reference group is no pump and no CGM. So, on average those on a pump without CGM (cgmNo:pumpYes) had an HbA1c 1.528 percentage points lower than those on neither pump or CGM (p=0.0001298). The type 3 test of fixed effects indicates that combined CGM and pump status was significant overall.
+The above model effectively treats CGM and pump status as a treatment group, and examines the effect on HbA1c. "Value" refers to the average HbA1c for each group.  The type 3 test of fixed effects indicates that combined CGM and pump status was significant overall.
 
 ### Table 5: Mean HbA1c and descriptive statistics for individuals with some CGM time vs. those never on CGM
 ```{r echo=FALSE}
-kable(never_some_comp[,1:3])
+kable(cgm_ever_results)
 ```
 
 CGM uptake = $\frac{177}{892}=19.84\text{ %}$
@@ -226,3 +237,4 @@ kable(summary(mod_adj_int_slp)$tTable,caption = "Fixed Effects")
 The interpretation of this mixed effects model is similar to a simple linear model. For example, on average each 1 point increase in % CGM use resulted in a decrease in HbA1c of 0.006 after adjusting for age, race, diabetes duration, and pump use. 
 
 A mixed model using random intercept and random slope was compared to one only using random intercept. The model with random slope was chosen based on AIC. 
+
