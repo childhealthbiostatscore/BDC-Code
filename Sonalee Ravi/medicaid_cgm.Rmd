@@ -79,9 +79,7 @@ yes <- delta %>% filter(CGMUse == "Yes",diff > 75) %>%
 no <- no[no$EPICMRN %in% yes$EPICMRN,]
 # Bind yes and no
 delta <- rbind(yes, no) %>% arrange(EPICMRN,EncounterDate)
-```
 
-```{r echo=FALSE,include=FALSE}
 # Format demographic data
 demo_datecols <- c("DOB","DateOfDiabetesDiagnosis","FirstVisitDate") 
 demographics[,demo_datecols] <- lapply(demographics[,demo_datecols], lubridate::mdy)
@@ -94,24 +92,7 @@ demographics$DiabetesDuration <- as.numeric(round(difftime(demographics$DateOfDi
 demographicsyn <- demographics[which(demographics$EPICMRN %in% unique(delta$EPICMRN)),]
 ```
 
-```{r echo=FALSE,include=FALSE}
-# Table 1 for cohort of 134
-vars <- c("AgeFirstVisit","DiabetesDuration","Gender","Race.Ethnicity")
-nonnormal <- norm.check(demographicsyn[,c("AgeFirstVisit","DiabetesDuration")])
-t1_last_first <- CreateTableOne(vars,data = demographicsyn)
-t1_last_first <- as.data.frame(print(t1_last_first,nonnormal = nonnormal))
-```
-
-```{r echo=FALSE,include=FALSE}
-delta <- delta %>% 
-  unite(cgm_pump,CGMUse,PumpUse,remove = F) %>%
-  mutate(cgm_pump = factor(cgm_pump, levels = c("No_No","No_Yes","Yes_No","Yes_Yes")))
-# Mixed model testing last no/first yes
-# Random intercept
-mod_int <- lme(HbA1c ~ cgm_pump-1,random=~1|EPICMRN,data = delta,na.action = na.omit)
-on_off_results <- as.data.frame(summary(mod_int)$tTable)
-rownames(on_off_results) <- c("cgmNo:pumpNo","cgmNo:pumpYes","cgmYes:pumpNo","cgmYes:pumpYes")
-```
+### Table 1: Descriptive statistics for all individuals with HbA1c readings both on and off CGM
 
 ```{r echo=FALSE,include=FALSE}
 # For each person, average HbA1c on CGM and off, remove those without both
@@ -137,6 +118,55 @@ t1_on_off <- CreateTableOne(vars,data = demographicsoo)
 t1_on_off <- as.data.frame(print(t1_on_off,nonnormal = nonnormal))
 ```
 
+```{r echo=FALSE}
+kable(t1_on_off)
+```
+
+### Table 2: Mean HbA1c on CGM and off CGM (CGM Use "Yes" or "No")
+```{r echo=FALSE}
+kable(on_off_avg_results[,1:3])
+```
+
+For this comparison we excluded participants who were never on CGM, and those who only had data while on CGM. HbA1c values while on and off CGM were averaged for each remaining participant. These average HbA1c values were compared using a Wilcoxon signed rank test with continuity correction. 
+
+### Table 3: Descriptive statistics for all individuals with HbA1c reading on CGM >75 days after last HbA1c off CGM 
+
+```{r echo=FALSE,include=FALSE}
+# Table 1 for cohort of 134
+vars <- c("AgeFirstVisit","DiabetesDuration","Gender","Race.Ethnicity")
+nonnormal <- norm.check(demographicsyn[,c("AgeFirstVisit","DiabetesDuration")])
+t1_last_first <- CreateTableOne(vars,data = demographicsyn)
+t1_last_first <- as.data.frame(print(t1_last_first,nonnormal = nonnormal))
+```
+
+```{r echo=FALSE}
+kable(t1_last_first)
+```
+
+This cohort is similar to the comparison above, but instead of using the average HbA1c on and off CGM, we compared each participant's last HbA1c off CGM to their first HbA1c on CGM (requiring at least 75 days between the two measurements). A total of 6 participants were excluded because they did not have an HbA1c measure more than 75 days after their last off CGM reading.  
+
+### Table 4: Mixed model comparing last HbA1c not on CGM to first HbA1c on CGM, by CGM and pump status
+
+```{r echo=FALSE,include=FALSE}
+delta <- delta %>% 
+  unite(cgm_pump,CGMUse,PumpUse,remove = F) %>%
+  mutate(cgm_pump = factor(cgm_pump, levels = c("No_No","No_Yes","Yes_No","Yes_Yes")))
+# Mixed model testing last no/first yes
+# Random intercept
+mod_int <- lme(HbA1c ~ cgm_pump-1,random=~1|EPICMRN,data = delta,na.action = na.omit)
+on_off_results <- as.data.frame(summary(mod_int)$tTable)
+rownames(on_off_results) <- c("cgmNo:pumpNo","cgmNo:pumpYes","cgmYes:pumpNo","cgmYes:pumpYes")
+```
+
+```{r echo=FALSE}
+kable(on_off_results, caption = "Fixed Effects")
+kable(anova.lme(mod_int), caption = "Type 3 Tests of Fixed Effects")
+```
+
+The above model effectively treats CGM and pump status as a treatment group, and examines the effect on HbA1c. "Value" refers to the average HbA1c for each group.  The type 3 test of fixed effects indicates that combined CGM and pump status was significant overall.
+
+### Table 5: Mean HbA1c and descriptive statistics for individuals with some CGM time vs. those never on CGM
+
 ```{r echo=FALSE,include=FALSE}
 # Compare A1c in those who never went on CGM to those on CGM
 some_cgm_ids <- unique(dat$EPICMRN[which(dat$CGMUse == "Yes")])
@@ -149,6 +179,28 @@ mod_cgm_ever <- lme(HbA1c ~ cgm_ever_pump-1,random=~1|EPICMRN,data = dat,na.acti
 cgm_ever_results <- as.data.frame(summary(mod_cgm_ever)$tTable)
 rownames(cgm_ever_results) <- c("cgmNever:pumpNo","cgmNever:pumpYes","cgmSome:pumpNo","cgmSome:pumpYes")
 ```
+
+```{r echo=FALSE}
+kable(cgm_ever_results)
+```
+
+CGM uptake = $\frac{177}{892}=19.84\text{ %}$
+
+For this comparison we included those without any time on CGM and those with at least some time on CGM. We calculated average HbA1c for each participant never on CGM, and average HbA1c while on CGM for all those with CGM time. These average HbA1c values were compared using the Kruskal-Wallis Rank Sum Test.
+
+### Figure 1: HbA1c by % CGM Use
+```{r echo=FALSE,warning=FALSE,dpi=600}
+dat$EPICMRN <- as.factor(dat$EPICMRN)
+# Plot
+mm_plot <- ggplot(data = dat, aes(x = CGM_Perc, y = HbA1c,group = EPICMRN)) +
+  geom_line(size = 0.2,aes(color = EPICMRN)) +
+  xlab("% CGM Use") + 
+  ylab("HbA1c (%)") + 
+  theme(legend.position = "none")
+mm_plot
+```
+
+### Table 6: Mixed model HbA1c by % CGM Use, adjusted for age, race, diabetes duration, and pump use
 
 ```{r echo=FALSE,include=FALSE}
 # Add demographic info to main data
@@ -166,71 +218,6 @@ summary(mod_adj_int_slp) # Best by AIC
 ```
 
 ```{r echo=FALSE}
-# Average CGM use change over time
-dat <- dat %>%
-  arrange(EPICMRN,EncounterDate) %>%
-  group_by(EPICMRN) %>%
-  mutate(Days = as.numeric(difftime(EncounterDate,EncounterDate[1],units = "days")))
-dat$EPICMRN <- as.factor(dat$EPICMRN)
-# Plot
-use_plot <- ggplot(data = dat, aes(x = Days, y = CGM_Perc,group = as.factor(EPICMRN))) +
-  geom_line(size = 0.2,aes(color = EPICMRN)) +
-  ylab("% CGM Use") + 
-  xlab("Days from First Visit") + 
-  theme(legend.position = "none")
-# Model
-
-```
-
-### Table 1: Descriptive statistics for all individuals with HbA1c readings both on and off CGM
-```{r echo=FALSE}
-kable(t1_on_off)
-```
-
-### Table 2: Mean HbA1c on CGM and off CGM (CGM Use "Yes" or "No")
-```{r echo=FALSE}
-kable(on_off_avg_results[,1:3])
-```
-
-For this comparison we excluded participants who were never on CGM, and those who only had data while on CGM. HbA1c values while on and off CGM were averaged for each remaining participant. These average HbA1c values were compared using a Wilcoxon signed rank test with continuity correction. 
-
-### Table 3: Descriptive statistics for all individuals with HbA1c reading on CGM >75 days after last HbA1c off CGM 
-```{r echo=FALSE}
-kable(t1_last_first)
-```
-
-This cohort is similar to the comparison above, but instead of using the average HbA1c on and off CGM, we compared each participant's last HbA1c off CGM to their first HbA1c on CGM (requiring at least 75 days between the two measurements). A total of 6 participants were excluded because they did not have an HbA1c measure more than 75 days after their last off CGM reading.  
-
-### Table 4: Mixed model comparing last HbA1c not on CGM to first HbA1c on CGM, by CGM and pump status
-```{r echo=FALSE}
-kable(on_off_results, caption = "Fixed Effects")
-kable(anova.lme(mod_int), caption = "Type 3 Tests of Fixed Effects")
-```
-
-The above model effectively treats CGM and pump status as a treatment group, and examines the effect on HbA1c. "Value" refers to the average HbA1c for each group.  The type 3 test of fixed effects indicates that combined CGM and pump status was significant overall.
-
-### Table 5: Mean HbA1c and descriptive statistics for individuals with some CGM time vs. those never on CGM
-```{r echo=FALSE}
-kable(cgm_ever_results)
-```
-
-CGM uptake = $\frac{177}{892}=19.84\text{ %}$
-
-For this comparison we included those without any time on CGM and those with at least some time on CGM. We calculated average HbA1c for each participant never on CGM, and average HbA1c while on CGM for all those with CGM time. These average HbA1c values were compared using the Kruskal-Wallis Rank Sum Test.
-
-### Figure 1: HbA1c by % CGM Use
-```{r echo=FALSE,warning=FALSE,dpi=600}
-# Plot
-mm_plot <- ggplot(data = dat, aes(x = CGM_Perc, y = HbA1c,group = EPICMRN)) +
-  geom_line(size = 0.2,aes(color = EPICMRN)) +
-  xlab("% CGM Use") + 
-  ylab("HbA1c (%)") + 
-  theme(legend.position = "none")
-mm_plot
-```
-
-### Table 6: Mixed model HbA1c by % CGM Use, adjusted for age, race, diabetes duration, and pump use
-```{r echo=FALSE}
 kable(summary(mod_adj_int_slp)$tTable,caption = "Fixed Effects")
 ```
 
@@ -238,3 +225,33 @@ The interpretation of this mixed effects model is similar to a simple linear mod
 
 A mixed model using random intercept and random slope was compared to one only using random intercept. The model with random slope was chosen based on AIC. 
 
+### Figure 2: % CGM Use Over Time
+
+```{r echo=FALSE}
+# Average CGM use change over time
+dat <- dat %>%
+  arrange(EPICMRN,EncounterDate) %>%
+  group_by(EPICMRN) %>%
+  mutate(Days = as.numeric(difftime(EncounterDate,EncounterDate[1],units = "days")))
+# Plot
+use_plot <- ggplot(data = dat, aes(x = Days, y = CGM_Perc,group = as.factor(EPICMRN))) +
+  geom_line(size = 0.2,aes(color = EPICMRN)) +
+  ylab("% CGM Use") + 
+  xlab("Days from First Visit") + 
+  theme(legend.position = "none")
+```
+
+```{r echo=FALSE,warning=FALSE,dpi=600}
+use_plot
+```
+
+### Table 7: Mixed model % CGM Use by Days from First Visit
+
+```{r echo=FALSE}
+# Model
+use_mod <- lme(CGM_Perc ~ Days,random = ~1|EPICMRN,data = dat,na.action = na.omit)
+```
+
+```{r echo=FALSE}
+kable(summary(use_mod)$tTable,caption = "Fixed Effects")
+```
