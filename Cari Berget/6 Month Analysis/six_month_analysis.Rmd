@@ -2,7 +2,7 @@
 title: "6 Month Analysis"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: html_document
+output: word_document
 ---
 
 ```{r setup, include=FALSE}
@@ -247,21 +247,17 @@ write.csv(parent_surveys,file = filename,row.names = F,na = "")
 
 # Methods
 
-Linear mixed effects models were used to examine change in HbA1c, problem areas in diabetes (PAID) survey scores, and hypoglycemia fear survey scores over time. Participants without at least 10% automode (AM) use at their first and second visits (T1 and T2) were excluded. 
-
-For HbA1c and PAID pediatric (PAID-PEDS) scores, three models were compared using Aikaike’s Information Criterion to select the best model:
+Linear mixed effects models were used to examine change in HbA1c over time. Three models were compared using Aikaike’s Information Criterion to select the best model:
 
 1.	A random intercept model with visit number (baseline, T1, T2) as a categorical time variable.  No adjustment for the baseline value of HbA1c or baseline PAID score.
 2.	A random intercept model with visit number as a continuous time variable, without adjustment for baseline.
 3.	A random intercept and random slope model, without adjustment for baseline.
 
-For HbA1c , the random intercept model with time treated as a categorical variable was the best model. Originally the models were adjusted for baseline value (as we did for the abstract), but it was decided that this adjustment does not make sense given the question this study wants to answer, in addition to making the model results difficult to interpret.
+The random intercept model with time treated as a categorical variable was the best model. Originally the models were adjusted for baseline value (as we did for the abstract), but it was decided that this adjustment does not make sense given the question this study wants to answer, in addition to making the model results difficult to interpret.
+
+Discontinuation was defined as AM time < 10 at either the 3 month or 6 month visit. Figure 1 and table 2 were generated using data from only those who continued 670G use. 
 
 # Results
-
-```{r echo=FALSE}
-
-```
 
 ```{r echo=FALSE}
 # Import Cari's cleaned data
@@ -299,10 +295,45 @@ alldata <- alldata %>%
   mutate(baseline_ppaid = ppaid_score[1]) %>%
   mutate(baseline_pmaintain = pmaintain_score[1]) %>%
   mutate(baseline_phelpless = phelpless_score[1]) %>%
-  mutate(baseline_pworry = pworry_score[1]) %>%
-  filter(!((tpoint == "T1" | tpoint == "T2") & am_time < 10))
+  mutate(baseline_pworry = pworry_score[1])
 alldata$tpoint <- as.factor(alldata$tpoint)
 alldata$record_id <- as.factor(alldata$record_id)
+# Discontinuers
+t1_discont <- unique(as.character(alldata$record_id[which(alldata$tpoint == "T1" & alldata$am_time < 10)]))
+t2_discont <- unique(as.character(alldata$record_id[which(alldata$tpoint == "T2" & alldata$am_time < 10)]))
+all_discont <- unique(c(t1_discont,t2_discont))
+```
+
+```{r echo=FALSE,include=FALSE}
+# Demographics
+dem_vars <- c("hba1c_baseline","demographics_age","demographics_t1d_duration","demographics_ethnicity","demographics_race","demographics_sex","demographics_insurance","demographics_pumphx","demographics_cgmhx")
+demographics <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/670GChild_GlycemicDATA_2019-01-07_.csv"))
+demographics <- demographics %>%
+  select(record_id,dem_vars,hba1c_baseline)
+demographics[,5:ncol(demographics)] <- lapply(demographics[,5:ncol(demographics)],as.factor)
+demographics$Discontinued <- ifelse(demographics$record_id %in% all_discont,"Yes","No")
+demographics$age_group <- cut(demographics$demographics_age, 
+                              breaks = c(0,14,19,Inf),
+                              labels = c("< 14","14 - 18","19 +"),right = F)
+dem_vars <- c(dem_vars,"age_group")
+# Full cohort T1 (age and T1D duration normally dist.)
+t1_full <- CreateTableOne(dem_vars,data = demographics)
+t1_full <- print(t1_full,nonnormal = "hba1c_baseline")
+# By continuation status
+t1_groups <- CreateTableOne(dem_vars,strata = "Discontinued",data = demographics)
+t1_groups <- print(t1_groups,nonnormal = "hba1c_baseline",exact = c("demographics_ethnicity",
+                                       "demographics_race","demographics_insurance",
+                                       "demographics_pumphx","demographics_cgmhx"))
+```
+
+## Table 1a: Descriptive Statistics, Full Cohort
+```{r echo=FALSE}
+kable(t1_full)
+```
+
+## Table 1b: Descriptive Statistics, by Discontinued = Yes or No
+```{r echo=FALSE}
+kable(t1_groups)
 ```
 
 ## Figure 1a: HbA1c by Timepoint, Grouped by Clinical HbA1c Cutoffs at Baseline
@@ -310,7 +341,7 @@ alldata$record_id <- as.factor(alldata$record_id)
 # Remove M1, group by clinical A1c cutoffs and tertiles at baseline
 tertiles <- as.numeric(quantile(as.numeric(alldata$hba1c[which(alldata$tpoint == "B")]),na.rm = T,probs = seq(0, 1, (1/3))))
 data_no_m1 <- alldata %>%
-  filter(tpoint != "M1") %>%
+  filter(tpoint != "M1",!(record_id %in% all_discont)) %>%
   mutate(hba1c_tertiles = cut(baseline_a1c,breaks = tertiles)) %>%
   mutate(hba1c_clinical = cut(baseline_a1c,breaks = c(0,7.5,9.0,Inf)))
 # By clinical groups
@@ -319,7 +350,8 @@ a1c_plot_clin <-
   geom_line(size = 0.2,aes(color = hba1c_clinical)) +
   xlab("Timepoint") + 
   ylab("HbA1c (%)") + 
-  theme(legend.title=element_blank())
+  theme(legend.title=element_blank()) +
+  scale_color_discrete(limits = c("(9,Inf]","(7.5,9]","(0,7.5]"))
 a1c_plot_clin
 ```
 
@@ -331,7 +363,8 @@ a1c_plot_tert <-
   geom_line(size = 0.2,aes(color = hba1c_tertiles)) +
   xlab("Timepoint") + 
   ylab("HbA1c (%)") +
-  theme(legend.title=element_blank())
+  theme(legend.title=element_blank()) +
+  scale_color_discrete(limits = c("(9.27,15]","(7.93,9.27]","(6.3,7.93]"))
 a1c_plot_tert
 ```
 
@@ -343,7 +376,7 @@ a1c_mod_cont <- lme(hba1c ~ as.numeric(tpoint),random=~1|record_id,data = data_n
 a1c_mod_means <- lme(hba1c ~ tpoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
 ```
 
-In the above figures, a square bracket indicates that the number is included in the range. So (0,7.5] means that baseline HbA1c was less than or equal to 7.5.
+In the above figures, a square bracket indicates that the number is included in the range. For example, (0,7.5] means that baseline HbA1c was less than or equal to 7.5, while (0,7.5) would indicate that baseline HbA1c was strictly less than 7.5.
 
 ## Table 2: A1c Mixed Models
 ```{r echo=FALSE}
