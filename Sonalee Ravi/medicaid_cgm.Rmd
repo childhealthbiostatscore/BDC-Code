@@ -2,7 +2,7 @@
 title: "Medicaid CGM"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: html_document
+output: word_document
 ---
 
 ```{r setup,include=FALSE}
@@ -147,7 +147,7 @@ kable(t1_last_first)
 
 This cohort is similar to the comparison above, but instead of using the average HbA1c on and off CGM, we compared each participant's last HbA1c off CGM to their first HbA1c on CGM (requiring at least 75 days between the two measurements). A total of 6 participants were excluded because they did not have an HbA1c measure more than 75 days after their last off CGM reading.  
 
-### Table 4: Mixed model comparing last HbA1c not on CGM to first HbA1c on CGM, by CGM and pump status
+### Table 4: Mixed model comparing last HbA1c not on CGM to first HbA1c on CGM, adjusting for pump status
 
 ```{r echo=FALSE,include=FALSE}
 delta <- delta %>% 
@@ -159,14 +159,21 @@ delta <- delta %>%
 mod_int <- lme(HbA1c ~ cgm_pump,random=~1|EPICMRN,data = delta,na.action = na.omit)
 on_off_results <- as.data.frame(summary(mod_int)$tTable)
 rownames(on_off_results) <- c("cgmNo:pumpNo","cgmNo:pumpYes","cgmYes:pumpNo","cgmYes:pumpYes")
+# Means model
+mod_int_mean <- lme(HbA1c ~ cgm_pump-1,random=~1|EPICMRN,data = delta,na.action = na.omit)
+on_off_means <- as.data.frame(summary(mod_int_mean)$tTable)
+rownames(on_off_means) <- c("cgmNo:pumpNo","cgmNo:pumpYes","cgmYes:pumpNo","cgmYes:pumpYes")
 ```
 
 ```{r echo=FALSE}
 kable(on_off_results, caption = "Fixed Effects")
 kable(anova.lme(mod_int), caption = "Type 3 Tests of Fixed Effects")
+kable(on_off_means, caption = "Group Means")
 ```
 
-The above model effectively treats CGM and pump status as a treatment group, and examines the effect on HbA1c. "Value" refers to the average HbA1c for each group.  The type 3 test of fixed effects indicates that combined CGM and pump status was significant overall.
+The above model effectively uses CGM and pump status as a treatment group, and examines the effect on HbA1c. The fixed effects table indicates the differences between the no CGM and no pump group and each other group respectively (so only the cgm and pump group was significantly different). The type 3 test of fixed effects indicates that combined CGM and pump status was significant overall. The group means table shows the average HbA1c for each group. The p values in the group means table indicate whether or not the average HbA1c is close to 0. 
+
+The interpretation is similar for the following model.
 
 ### Table 5: Mean HbA1c and descriptive statistics for individuals with some CGM time vs. those never on CGM
 
@@ -178,18 +185,22 @@ dat$CGMUseSomeNever <- ifelse(dat$EPICMRN %in% some_cgm_ids,"Some","Never")
 dat <- dat %>% 
   unite(cgm_ever_pump,CGMUseSomeNever,PumpUse,remove = F)
 # Mixed model with random intercept
-mod_cgm_ever <- lme(HbA1c ~ cgm_ever_pump-1,random=~1|EPICMRN,data = dat,na.action = na.omit)
+mod_cgm_ever <- lme(HbA1c ~ cgm_ever_pump,random=~1|EPICMRN,data = dat,na.action = na.omit)
 cgm_ever_results <- as.data.frame(summary(mod_cgm_ever)$tTable)
 rownames(cgm_ever_results) <- c("cgmNever:pumpNo","cgmNever:pumpYes","cgmSome:pumpNo","cgmSome:pumpYes")
+# Means
+mod_cgm_ever_mean <- lme(HbA1c ~ cgm_ever_pump-1,random=~1|EPICMRN,data = dat,na.action = na.omit)
+cgm_ever_results_mean <- as.data.frame(summary(mod_cgm_ever_mean)$tTable)
+rownames(cgm_ever_results_mean) <- c("cgmNever:pumpNo","cgmNever:pumpYes","cgmSome:pumpNo","cgmSome:pumpYes")
 ```
 
 ```{r echo=FALSE}
 kable(cgm_ever_results)
+kable(anova.lme(mod_cgm_ever), caption = "Type 3 Tests of Fixed Effects")
+kable(cgm_ever_results_mean)
 ```
 
 CGM uptake = $\frac{177}{892}=19.84\text{ %}$
-
-For this comparison we included those without any time on CGM and those with at least some time on CGM. We calculated average HbA1c for each participant never on CGM, and average HbA1c while on CGM for all those with CGM time. These average HbA1c values were compared using the Kruskal-Wallis Rank Sum Test.
 
 ### Figure 1: HbA1c by % CGM Use
 
@@ -200,11 +211,8 @@ dat$DiabetesDuration <- difftime(dat$EncounterDate,dat$DateOfDiabetesDiagnosis,u
 # Model A1c continuously vs. CGM percentage, adjusting for pump, age, diabetes duration
 mod_adj_int <- lme(HbA1c ~ CGM_Perc + Age_AtEncounterDate + DiabetesDuration + PumpUse + Race.Ethnicity-1,
                random=~1|EPICMRN,data = dat, na.action = na.omit)
-mod_adj_int_slp <- lme(HbA1c ~ CGM_Perc + Age_AtEncounterDate + DiabetesDuration + PumpUse + Race.Ethnicity-1,
-               random=~1|EPICMRN/CGM_Perc,data = dat, na.action = na.omit)
 # Model selection
 summary(mod_adj_int)
-summary(mod_adj_int_slp) # Best by AIC
 ```
 
 ```{r echo=FALSE,warning=FALSE,dpi=600}
@@ -220,12 +228,10 @@ mm_plot
 ### Table 6: Mixed model HbA1c by % CGM Use, adjusted for age, race, diabetes duration, and pump use
 
 ```{r echo=FALSE}
-kable(summary(mod_adj_int_slp)$tTable,caption = "Fixed Effects")
+kable(summary(mod_adj_int)$tTable,caption = "Fixed Effects")
 ```
 
-The interpretation of this mixed effects model is similar to a simple linear model. For example, on average each 1 point increase in % CGM use resulted in a decrease in HbA1c of 0.006 after adjusting for age, race, diabetes duration, and pump use. 
-
-A mixed model using random intercept and random slope was compared to one only using random intercept. The model with random slope was chosen based on AIC. 
+The interpretation of this mixed effects model is similar to a simple linear model. For example, on average each 1 point increase in % CGM use resulted in a decrease in HbA1c of 0.005 after adjusting for age, race, diabetes duration, and pump use. 
 
 ### Figure 2: % CGM Use Over Time
 
@@ -307,6 +313,4 @@ tir_mod <- lme(HbA1c ~ CGMOKPercent,random = ~1|EPICMRN,data = tir,na.action = n
 kable(summary(tir_mod)$tTable,caption = "Fixed Effects")
 ```
 
-<!-- # To Do -->
-<!-- 1. CHECK RANDOM SLOPE IN LME4 -->
-<!-- 2. Tobit's regression for censured values -->
+Here the intercept refers to the average HbA1c for participants with 0 % TIR. For each 1 percentage point increase in TIR, HbA1c decreases by 0.04 on average. 
