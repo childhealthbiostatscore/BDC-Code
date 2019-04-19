@@ -13,6 +13,7 @@ library(nlme)
 library(knitr)
 library(reshape2)
 library(tidyverse)
+source("/Users/timvigers/Documents/GitHub/Tim-and-Laura/tim_R_functions.R")
 # Check OS and alter file path accordingly.
 if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.Platform$OS.type == "unix"){pathstart <- "/Volumes/"}
 ```
@@ -319,9 +320,28 @@ demographics$age_group <- cut(demographics$demographics_age,
                               breaks = c(0,14,19,Inf),
                               labels = c("< 14","14 - 18","19 +"),right = F)
 dem_vars <- c(dem_vars,"age_group")
+# Add days between visits
+dates <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/670GChild_GlycemicDATA_2019-01-07_.csv"),na.strings = "") 
+dates <- dates %>%
+  select(record_id,hba1c_date_b,automode_start,t1_date_m1,t1_date,t2_date)
+dates[,2:ncol(dates)] <- lapply(dates[,2:ncol(dates)],lubridate::mdy)
+dates$baseline_a1c_to_am <- as.numeric(difftime(dates$automode_start,dates$hba1c_date_b),"days")
+dates$am_to_m1 <- as.numeric(difftime(dates$t1_date_m1,dates$automode_start),"days")
+dates$am_to_t1 <- as.numeric(difftime(dates$t1_date,dates$automode_start),"days")
+dates$am_to_t2 <- as.numeric(difftime(dates$t2_date,dates$automode_start),"days")
+dates <- dates %>%
+  select(record_id,baseline_a1c_to_am,am_to_m1,am_to_t1,am_to_t2)
+# Merge
+demographics <- left_join(demographics,dates)
+# Variables
+dem_vars <- c("baseline_a1c_to_am","am_to_m1","am_to_t1","am_to_t2",dem_vars)
+# Normality check
+nonnormal <- norm.check(demographics,c("hba1c_baseline","baseline_a1c_to_am",
+                                       "am_to_m1","am_to_t1","am_to_t2",
+                                       "demographics_age","demographics_t1d_duration"))
 # Full cohort T1 (age and T1D duration normally dist.)
 t1_full <- CreateTableOne(dem_vars,data = demographics)
-t1_full <- print(t1_full,nonnormal = "hba1c_baseline")
+t1_full <- print(t1_full,nonnormal = nonnormal)
 # Add age range
 t1_full["demographics_age (mean (SD))",] <- 
   paste0(t1_full["demographics_age (mean (SD))",]," [",
@@ -331,7 +351,7 @@ rownames(t1_full)[which(rownames(t1_full) == "demographics_age (mean (SD))")] <-
   "demographics_age (mean (SD) [range])"
 # By continuation status
 t1_groups <- CreateTableOne(dem_vars,strata = "Discontinued",data = demographics)
-t1_groups <- print(t1_groups,nonnormal = "hba1c_baseline",exact = c("demographics_ethnicity",
+t1_groups <- print(t1_groups,nonnormal = nonnormal,exact = c("demographics_ethnicity",
                                        "demographics_race","demographics_insurance",
                                        "demographics_pumphx","demographics_cgmhx"))
 # Add age range
