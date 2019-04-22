@@ -2,7 +2,7 @@
 title: "Medicaid CGM"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: html_document
+output: word_document
 ---
 
 ```{r setup,include=FALSE}
@@ -187,7 +187,41 @@ Pump use for first A1c on CGM:
 kable(yes %>% ungroup(yes) %>% count(PumpUse))
 ```
 
-### Table 5: Mean HbA1c and descriptive statistics for individuals with some CGM time vs. those never on CGM
+### Table 5a: Mean HbA1c and descriptive statistics for individuals with some CGM time vs. those never on CGM
+
+```{r echo=FALSE,include=FALSE}
+# Compare A1c in those who never went on CGM to those on CGM
+some_cgm <- dat[which(dat$CGMUse == "Yes"),] %>%
+  group_by(EPICMRN) %>%
+  summarise(mean(HbA1c)) %>%
+  mutate(CGMUse = "Some")
+never_cgm_ids <- unique(dat$EPICMRN[which(!(dat$EPICMRN %in% some_cgm$EPICMRN))])
+never_cgm <- dat[which(dat$EPICMRN %in% never_cgm_ids),] %>%
+  group_by(EPICMRN) %>%
+  summarise(mean(HbA1c)) %>%
+  mutate(CGMUse = "Never")
+never_some <- rbind(never_cgm,some_cgm)
+never_some <- left_join(never_some,demographics,by = "EPICMRN")
+# Race ethnicity indicator variables
+never_some$AI_AN <- as.factor(ifelse(never_some$Race.Ethnicity == "American Indian/Alaska Native","Yes","No"))
+never_some$Asian <- as.factor(ifelse(never_some$Race.Ethnicity == "Asian","Yes","No"))
+never_some$Hispanic <- as.factor(ifelse(never_some$Race.Ethnicity == "Hispanic","Yes","No"))
+never_some$more_than_one <- as.factor(ifelse(never_some$Race.Ethnicity == "More than one Race","Yes","No"))
+never_some$NativeH_OPI <- as.factor(ifelse(never_some$Race.Ethnicity == "Native Hawaiian/Other Pacific Islander","Yes","No"))
+never_some$NH_Black <- as.factor(ifelse(never_some$Race.Ethnicity == "Non-Hispanic Black","Yes","No"))
+never_some$NH_White <- as.factor(ifelse(never_some$Race.Ethnicity == "Non-Hispanic White","Yes","No"))
+never_some$Other <- as.factor(ifelse(never_some$Race.Ethnicity == "Other","Yes","No"))
+never_some$Unknown <- as.factor(ifelse(never_some$Race.Ethnicity == "Unknown","Yes","No"))
+# Tableone
+never_some_comp <- CreateTableOne(c("mean(HbA1c)",vars,"AI_AN","Asian","Hispanic","more_than_one","NativeH_OPI","NH_Black","NH_White","Other","Unknown"),strata = "CGMUse",never_some)
+never_some_comp <- print(never_some_comp,nonnormal = c("mean(HbA1c)",nonnormal),exact = c("AI_AN","Asian","Hispanic","more_than_one","NativeH_OPI","NH_Black","NH_White","Other","Unknown"))
+```
+
+```{r echo=FALSE}
+kable(never_some_comp)
+```
+
+### Table 5b: Mixed model comparing HbA1c never on CGM to HbA1c off CGM, adjusting for pump status
 
 ```{r echo=FALSE,include=FALSE}
 # Compare A1c in those who never went on CGM to those on CGM
@@ -244,6 +278,12 @@ kable(summary(mod_adj_int)$tTable,caption = "Fixed Effects")
 ```
 
 The interpretation of this mixed effects model is similar to a simple linear model. For example, on average each 1 point increase in % CGM use resulted in a decrease in HbA1c of 0.005 after adjusting for age, race, diabetes duration, and pump use. 
+
+Mean (SD) CGM use in days across all subjects and all visits (excluding missing values):
+```{r echo=FALSE}
+print(paste0(round(mean(dat$X30.day.CGM.use,na.rm = T),3)," (",
+       round(sd(dat$X30.day.CGM.use,na.rm = T),3),")"))
+```
 
 ### Figure 2: % CGM Use Over Time
 
