@@ -304,8 +304,6 @@ alldata$record_id <- as.factor(alldata$record_id)
 t1_discont <- unique(as.character(alldata$record_id[which(alldata$tpoint == "T1" & alldata$am_time < 10)]))
 t2_discont <- unique(as.character(alldata$record_id[which(alldata$tpoint == "T2" & alldata$am_time < 10)]))
 all_discont <- unique(c(t1_discont,t2_discont))
-# Remove participant 10 from discontinuers, because she had AM > 10 at T2
-all_discont <- all_discont[-c(which(all_discont == "10"))]
 ```
 
 ```{r echo=FALSE,include=FALSE}
@@ -322,6 +320,11 @@ demographics$age_group <- cut(demographics$demographics_age,
 dem_vars <- c(dem_vars,"age_group")
 # Add days between visits
 dates <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/670GChild_GlycemicDATA_2019-01-07_.csv"),na.strings = "") 
+# Never trained on AM
+never_trained <- dates$record_id[which(is.na(dates$automode_start))]
+# Remove participant 10 from discontinuers, because she had AM > 10 at T2. Also remove those never trained on AM from discontinuers
+all_discont <- all_discont[-c(which(all_discont %in% c("10")))] # add never_trained to this vector
+# Format
 dates <- dates %>%
   select(record_id,hba1c_date_b,automode_start,t1_date_m1,t1_date,t2_date)
 dates[,2:ncol(dates)] <- lapply(dates[,2:ncol(dates)],lubridate::mdy)
@@ -434,16 +437,16 @@ a1c_overall
 
 ```{r echo=FALSE, include=FALSE}
 # A1c mixed models
-a1c_mod <- lme(hba1c ~ tpoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
-a1c_mod_cont <- lme(hba1c ~ as.numeric(tpoint),random=~1|record_id,data = data_no_m1,na.action = na.omit) # Categorical is better
+a1c_mod <- lme(hba1c ~ tpoint*age_group*hba1c_clinical,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+a1c_mod_cont <- lme(hba1c ~ as.numeric(tpoint)*age_group*hba1c_clinical,random=~1|record_id,data = data_no_m1,na.action = na.omit) 
+# Categorical is better
 # Means model
-a1c_mod_means <- lme(hba1c ~ tpoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+a1c_mod_means <- lme(hba1c ~ tpoint*age_group*hba1c_clinical-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
 ```
 
 ```{r echo=FALSE}
 kable(summary(a1c_mod)$tTable,caption = "Fixed Effects")
 kable(anova.lme(a1c_mod),caption = "Type 3 Tests of Fixed Effects")
-kable(summary(a1c_mod_means)$tTable,caption = "Timepoint Means")
 ```
 
 ### Mixed model interpretation
