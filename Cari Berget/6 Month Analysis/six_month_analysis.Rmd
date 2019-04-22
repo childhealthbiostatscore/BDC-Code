@@ -317,8 +317,8 @@ demographics <- demographics %>%
 demographics[,5:ncol(demographics)] <- lapply(demographics[,5:ncol(demographics)],as.factor)
 demographics$Discontinued <- ifelse(demographics$record_id %in% all_discont,"Yes","No")
 demographics$age_group <- cut(demographics$demographics_age, 
-                              breaks = c(0,14,19,Inf),
-                              labels = c("< 14","14 - 18","19 +"),right = F)
+                              breaks = c(0,14,18,Inf),
+                              labels = c("< 14","14 - 17","18 +"),right = F)
 dem_vars <- c(dem_vars,"age_group")
 # Add days between visits
 dates <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/670GChild_GlycemicDATA_2019-01-07_.csv"),na.strings = "") 
@@ -379,11 +379,14 @@ kable(t1_groups)
 
 ## Figure 1a: HbA1c by Timepoint, Grouped by Clinical HbA1c Cutoffs at Baseline
 ```{r echo=FALSE,warning=FALSE,dpi=600}
-# Remove M1, group by clinical A1c cutoffs and tertiles at baseline
-tertiles <- as.numeric(quantile(as.numeric(alldata$hba1c[which(alldata$tpoint == "B")]),na.rm = T,probs = seq(0, 1, (1/3))))
+# Add baseline age to all data.
+alldata$record_id <- as.character(alldata$record_id)
+demographics$record_id <- as.character(demographics$record_id)
+alldata <- left_join(alldata,demographics[,c("record_id","age_group")],by = "record_id")
+alldata$record_id <- as.factor(alldata$record_id)
+# Remove M1, group by clinical A1c cutoffs at baseline
 data_no_m1 <- alldata %>%
   filter(tpoint != "M1",!(record_id %in% all_discont)) %>%
-  mutate(hba1c_tertiles = cut(baseline_a1c,breaks = tertiles)) %>%
   mutate(hba1c_clinical = cut(baseline_a1c,breaks = c(0,7.5,9.0,Inf)))
 # Remove B (e.g. for % time AM models etc.)
 data_no_b <- alldata %>%
@@ -399,20 +402,20 @@ a1c_plot_clin <-
 a1c_plot_clin
 ```
 
-## Figure 1b: HbA1c by Timepoint, Grouped by HbA1c Tertiles at Baseline
+In the above figure, a square bracket indicates that the number is included in the range. For example, (0,7.5] means that baseline HbA1c was less than or equal to 7.5, while (0,7.5) would indicate that baseline HbA1c was strictly less than 7.5.
+
+## Figure 1b: HbA1c by Timepoint, Grouped by Age at Baseline
 ```{r echo=FALSE,warning=FALSE,dpi=600}
-# By tertiles
-a1c_plot_tert <- 
+# By age group
+a1c_plot_age <- 
   ggplot(data_no_m1,aes_string(x = "tpoint",y = "hba1c",group = "record_id")) + 
-  geom_line(size = 0.2,aes(color = hba1c_tertiles)) +
+  geom_line(size = 0.2,aes(color = age_group)) +
   xlab("Timepoint") + 
   ylab("HbA1c (%)") +
   theme(legend.title=element_blank()) +
-  scale_color_discrete(limits = c("(9.27,15]","(7.93,9.27]","(6.3,7.93]"))
-a1c_plot_tert
+  scale_color_discrete(limits = c("< 14","14 - 17","18 +"))
+a1c_plot_age
 ```
-
-In the above figures, a square bracket indicates that the number is included in the range. For example, (0,7.5] means that baseline HbA1c was less than or equal to 7.5, while (0,7.5) would indicate that baseline HbA1c was strictly less than 7.5.
 
 ## Figure 1c: Mean HbA1c by Timepoint
 ```{r echo=FALSE,warning=FALSE,dpi=600}
