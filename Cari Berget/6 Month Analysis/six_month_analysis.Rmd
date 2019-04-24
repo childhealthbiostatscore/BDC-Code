@@ -8,6 +8,7 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tools)
+library(readxl)
 library(tableone)
 library(nlme)
 library(knitr)
@@ -229,11 +230,13 @@ write.csv(parent_surveys,file = filename,row.names = F,na = "")
 
 Linear mixed effects models were used to examine change in HbA1c over time. Three models were compared using Aikaike’s Information Criterion to select the best model:
 
-1.	A random intercept model with visit number (baseline, T1, T2) as a categorical time variable.  No adjustment for the baseline value of HbA1c or baseline PAID score.
+1.	A random intercept model with visit number (baseline, T1, T2) as a categorical time variable.  No adjustment for baseline.
 2.	A random intercept model with visit number as a continuous time variable, without adjustment for baseline.
 3.	A random intercept and random slope model, without adjustment for baseline.
 
 The random intercept model with time treated as a categorical variable was the best model. Originally the models were adjusted for baseline value (as we did for the abstract), but it was decided that this adjustment does not make sense given the question this study wants to answer, in addition to making the model results difficult to interpret.
+
+The HbA1c model included an interaction term for baseline HbA1c group, but the CGM variable models did not. We examined the interaction effect of age and timepoint on HbA1c, but it was not significant.
 
 Discontinuation was defined as AM time < 10 at either the 3 month or 6 month visit. Only continuers were included in this analysis. 
 
@@ -386,241 +389,145 @@ a1c_overall <-
 a1c_overall
 ```
 
-## Table 2: A1c Mixed Models
+## Table 2: A1c Mixed Models by Baseline HbA1c Group
 
 ```{r echo=FALSE, include=FALSE}
 # A1c mixed models
-a1c_mod <- lme(hba1c ~ tpoint*age_group*hba1c_clinical,random=~1|record_id,data = data_no_m1,na.action = na.omit)
-a1c_mod_cont <- lme(hba1c ~ as.numeric(tpoint)*age_group*hba1c_clinical,random=~1|record_id,data = data_no_m1,na.action = na.omit) 
-# Categorical is better
+a1c_age_mod <- lme(hba1c ~ tpoint*age_group,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+a1c_age_mod_cont <- lme(hba1c ~ as.numeric(tpoint)*age_group,random=~1|record_id,data = data_no_m1,na.action = na.omit) # Categorical is better
+a1c_glyc_control_mod <- lme(hba1c ~ tpoint*hba1c_clinical,random=~1|record_id,data = data_no_m1,na.action = na.omit)
 # Means models
-a1c_mod_means <- lme(hba1c ~ tpoint*age_group*hba1c_clinical-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
-interaction_only <- lme(hba1c ~ tpoint:age_group:hba1c_clinical-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
-```
-
-```{r echo=FALSE,warning=FALSE}
-# Plotting data
-triple_mod_plot <- as.data.frame(summary(interaction_only)$tTable)
-triple_mod_plot$tpoint <- NA
-triple_mod_plot$age_group <- NA
-triple_mod_plot$hba1c <- NA
-triple_mod_plot[,c("tpoint","age_group","hba1c")] <- t(as.data.frame(strsplit(rownames(triple_mod_plot),":")))
-# Plot
-tm_plot <- ggplot(triple_mod_plot,aes(x=tpoint,y=Value,group=interaction(age_group,hba1c))) +
-  geom_line(aes(color = interaction(age_group,hba1c)))
-tm_plot
-# Counts
-data_no_m1 %>% filter(tpoint == "B") %>% group_by(age_group) %>% count(hba1c_clinical)
+a1c_age_mod_means <- lme(hba1c ~ tpoint:age_group-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+a1c_glyc_control_mod_means <- lme(hba1c ~ tpoint:hba1c_clinical-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
 ```
 
 ```{r echo=FALSE}
-kable(summary(a1c_mod)$tTable,caption = "Fixed Effects")
-kable(summary(interaction_only)$tTable,caption = "Fixed Effects: Interaction Means")
-kable(anova.lme(a1c_mod),caption = "Type 3 Tests of Fixed Effects")
+# Import results from contrasts in SAS.
+estimates <- read_excel(paste0(pathstart,"som-1/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Reports/estimates.xlsx"))
+means <- read_excel(paste0(pathstart,"som-1/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Reports/means.xlsx"))
 ```
 
-### Mixed model interpretation
-<!-- The interpretation of fixed effects for a mixed model is the same as the interpretation for a simple linear model. The first table above shows the difference between baseline and T1 and baseline and T2. The intercept is the mean at baseline, and the values for each timepoint are the average difference from baseline. So, on average HbA1c decreased by 0.38 from baseline to T1 and by 0.22 from baseline to T2. Both of these differences were statistically significant at the 0.05 level. -->
+```{r echo=FALSE}
+kable(means[,c("tpoint","hba1c_clinical","Estimate","StdErr","Probt")],caption = "Group Means by Time Point")
+kable(anova.lme(a1c_glyc_control_mod),caption = "Type 3 Tests of Fixed Effects")
+kable(estimates[,c("Label","Estimate","StdErr","Probt")],caption = "Timepoint Differences by HbA1c Group")
+```
 
-<!-- The type 3 tests of fixed effects show that timepoint overall was significant. -->
+### HbA1c mixed model interpretation
+The "Group Means by Timepoint" table shows the average HbA1c at each timepoint, for each baseline HbA1c group. The p values in this table ("Probt") refer to whether the mean HbA1c is close to 0, so they can be ignored for now. 
 
-<!-- The third table simply shows the mean HbA1c at each timepoint. The p values in this table indicate whether the mean HbA1c was significantly different from 0, so are probably not worth reporting.   -->
+The type 3 tests of fixed effects show that timepoint, HbA1c group, and the interaction between timepoint and HbA1c group were each significant overall.
 
-<!-- The interpretation is the same for the following tables. -->
-
-## Table 3: TIR
+"Timepoint Differences by HbA1c Group" shows whether time 1 or time 2 were significantly different from baseline, by HbA1c group (Low = (0,7.5], Medium=(7.5,9], High = (9,Inf]). So on average, the low A1c group decreased by 0.036 from baseline to visit 1, but it was not statistically sifnificant. On average the high A1c group decreased by 0.789 from baseline to visit 1, which was statistically significant (p < 0.0001).
 
 ```{r echo=FALSE}
+# CGM data models
+# TIR
 tir_mod <- lme(sensor_70_180 ~ tpoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
-# Means model
 tir_mod_means <- lme(sensor_70_180 ~ tpoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
-```
-
-```{r echo=FALSE}
-kable(summary(tir_mod)$tTable,caption = "Fixed Effects")
-kable(anova.lme(tir_mod),caption = "Type 3 Tests of Fixed Effects")
-kable(summary(tir_mod_means)$tTable,caption = "Timepoint Means")
-```
-
-## Table 4: AM Time
-
-```{r echo=FALSE}
+# AM time
 am_mod <- lme(am_time ~ tpoint,random=~1|record_id,data = data_no_b,na.action = na.omit)
-# Means model
 am_mod_means <- lme(am_time ~ tpoint-1,random=~1|record_id,data = data_no_b,na.action = na.omit)
-```
-
-```{r echo=FALSE}
-kable(summary(am_mod)$tTable,caption = "Fixed Effects")
-kable(anova.lme(am_mod),caption = "Type 3 Tests of Fixed Effects")
-kable(summary(am_mod_means)$tTable,caption = "Timepoint Means")
-```
-
-## Table 5: Sensor Wear
-
-```{r echo=FALSE}
+# Sensor wear
 sensor_wear_mod <- lme(sensor_wear ~ tpoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
-# Means model
 sensor_wear_mod_means <- lme(sensor_wear ~ tpoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
-```
-
-```{r echo=FALSE}
-kable(summary(sensor_wear_mod)$tTable,caption = "Fixed Effects")
-kable(anova.lme(sensor_wear_mod),caption = "Type 3 Tests of Fixed Effects")
-kable(summary(sensor_wear_mod_means)$tTable,caption = "Timepoint Means")
-```
-
-## Table 6: AM Exits Per Day
-
-```{r echo=FALSE}
+# AM exits
 amexit_day_mod <- lme(amexit_day ~ tpoint,random=~1|record_id,data = data_no_b,na.action = na.omit)
-# Means model
 amexit_day_mod_means <- lme(amexit_day ~ tpoint-1,random=~1|record_id,data = data_no_b,na.action = na.omit)
-```
-
-```{r echo=FALSE}
-kable(summary(amexit_day_mod)$tTable,caption = "Fixed Effects")
-kable(anova.lme(amexit_day_mod),caption = "Type 3 Tests of Fixed Effects")
-kable(summary(amexit_day_mod_means)$tTable,caption = "Timepoint Means")
-```
-
-## Table 7: BG Checks
-
-```{r echo=FALSE}
+# BG Checks
 bg_checks_mod <- lme(bg_checks ~ tpoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
-# Means model
 bg_checks_mod_means <- lme(bg_checks ~ tpoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
-```
-
-```{r echo=FALSE}
-kable(summary(bg_checks_mod)$tTable,caption = "Fixed Effects")
-kable(anova.lme(bg_checks_mod),caption = "Type 3 Tests of Fixed Effects")
-kable(summary(bg_checks_mod_means)$tTable,caption = "Timepoint Means")
-```
-
-## Table 8: Calibrations
-
-```{r echo=FALSE}
+# Calibrations
 calibrations_mod <- lme(calibrations ~ tpoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
-# Means model
 calibrations_mod_means <- lme(calibrations ~ tpoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
-```
-
-```{r echo=FALSE}
-kable(summary(calibrations_mod)$tTable,caption = "Fixed Effects")
-kable(anova.lme(calibrations_mod),caption = "Type 3 Tests of Fixed Effects")
-kable(summary(calibrations_mod_means)$tTable,caption = "Timepoint Means")
-```
-
-## Table 9: TDD
-
-```{r echo=FALSE}
+# TDD
 tdd_mod <- lme(tdd ~ tpoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
-# Means model
 tdd_mod_means <- lme(tdd ~ tpoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
-```
-
-```{r echo=FALSE}
-kable(summary(tdd_mod)$tTable,caption = "Fixed Effects")
-kable(anova.lme(tdd_mod),caption = "Type 3 Tests of Fixed Effects")
-kable(summary(tdd_mod_means)$tTable,caption = "Timepoint Means")
-```
-
-## Table 9: Basal
-
-```{r echo=FALSE}
+# Basal
 basal_mod <- lme(basal ~ tpoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
-# Means model
 basal_mod_means <- lme(basal ~ tpoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
-```
-
-```{r echo=FALSE}
-kable(summary(basal_mod)$tTable,caption = "Fixed Effects")
-kable(anova.lme(basal_mod),caption = "Type 3 Tests of Fixed Effects")
-kable(summary(basal_mod_means)$tTable,caption = "Timepoint Means")
-```
-
-## Table 10: Bolus
-
-```{r echo=FALSE}
+# Bolus
 bolus_mod <- lme(bolus ~ tpoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
-# Means model
 bolus_mod_means <- lme(bolus ~ tpoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
 ```
 
-```{r echo=FALSE}
-kable(summary(bolus_mod)$tTable,caption = "Fixed Effects")
-kable(anova.lme(bolus_mod),caption = "Type 3 Tests of Fixed Effects")
-kable(summary(bolus_mod_means)$tTable,caption = "Timepoint Means")
-```
-
-## Table 11: Model Summary
+## Table 3: CGM Variable Mixed Models Summary
 
 ```{r echo=FALSE}
 # Make table
-mod_summary <- as.data.frame(matrix(nrow = 10,ncol = 4))
+mod_summary <- as.data.frame(matrix(nrow = 9,ncol = 4))
 colnames(mod_summary) <- c("Baseline","Month 1","Time 1","Time 2")
-rownames(mod_summary) <- c("HbA1c","TIR","AM Time","Sensor Wear",
+rownames(mod_summary) <- c("TIR","AM Time","Sensor Wear",
                            "AM Exits Per Day","BG Checks","Calibrations","TDD",
                            "Basal","Bolus")
-# A1c
-a1c <- round(summary(a1c_mod_means)$tTable[,1],3)
-mod_summary["HbA1c","Baseline"] <- a1c[1]
-mod_summary["HbA1c",c("Time 1","Time 2")] <-
-  paste0(a1c[2:3]," (",format.pval(summary(a1c_mod)$tTable[2:3,5],eps = 0.001,digits = 2),")")
 # TIR
-tir <- round(summary(tir_mod_means)$tTable[,1],3)
+tir <- paste0(round(summary(tir_mod_means)$tTable[,1],3)," (",
+              round(summary(tir_mod_means)$tTable[,2],3),")")
 mod_summary["TIR","Baseline"] <- tir[1]
 mod_summary["TIR",c("Time 1","Time 2")] <-
-  paste0(tir[2:3]," (",format.pval(summary(tir_mod)$tTable[2:3,5],eps = 0.001,digits = 2),")")
+  paste0(tir[2:3]," [",format.pval(summary(tir_mod)$tTable[2:3,5],eps = 0.001,digits = 2),"]")
 # AM time
-am <- round(summary(am_mod_means)$tTable[,1],3)
+am <- paste0(round(summary(am_mod_means)$tTable[,1],3)," (",
+             round(summary(am_mod_means)$tTable[,2],3),")")
 mod_summary["AM Time","Month 1"] <- am[1]
 mod_summary["AM Time",c("Time 1","Time 2")] <-
-  paste0(am[2:3]," (",format.pval(summary(am_mod)$tTable[2:3,5],eps = 0.001,digits = 2),")")
+  paste0(am[2:3]," [",format.pval(summary(am_mod)$tTable[2:3,5],eps = 0.001,digits = 2),"]")
 # Sensor
-sensor_wear <- round(summary(sensor_wear_mod_means)$tTable[,1],3)
+sensor_wear <- paste0(round(summary(sensor_wear_mod_means)$tTable[,1],3)," (",
+                      round(summary(sensor_wear_mod_means)$tTable[,2],3),")")
 mod_summary["Sensor Wear","Baseline"] <- sensor_wear[1]
 mod_summary["Sensor Wear",c("Time 1","Time 2")] <-
-  paste0(sensor_wear[2:3]," (",format.pval(summary(sensor_wear_mod)$tTable[2:3,5],eps = 0.001,digits = 2),")")
+  paste0(sensor_wear[2:3]," [",format.pval(summary(sensor_wear_mod)$tTable[2:3,5],eps = 0.001,digits = 2),"]")
 # AM Exits Per Day
-amexit_day <- round(summary(amexit_day_mod_means)$tTable[,1],3)
+amexit_day <- paste0(round(summary(amexit_day_mod_means)$tTable[,1],3)," (",
+                     round(summary(amexit_day_mod_means)$tTable[,2],3),")")
 mod_summary["AM Exits Per Day","Month 1"] <- amexit_day[1]
 mod_summary["AM Exits Per Day",c("Time 1","Time 2")] <-
-  paste0(amexit_day[2:3]," (",format.pval(summary(amexit_day_mod)$tTable[2:3,5],eps = 0.001,digits = 2),")")
+  paste0(amexit_day[2:3]," [",format.pval(summary(amexit_day_mod)$tTable[2:3,5],eps = 0.001,digits = 2),"]")
 # BG Checks
-bg_checks <- round(summary(bg_checks_mod_means)$tTable[,1],3)
+bg_checks <- paste0(round(summary(bg_checks_mod_means)$tTable[,1],3)," (",
+              round(summary(bg_checks_mod_means)$tTable[,2],3),")")
 mod_summary["BG Checks","Baseline"] <- bg_checks[1]
 mod_summary["BG Checks",c("Time 1","Time 2")] <-
-  paste0(bg_checks[2:3]," (",format.pval(summary(bg_checks_mod)$tTable[2:3,5],eps = 0.001,digits = 2),")")
+  paste0(bg_checks[2:3]," [",format.pval(summary(bg_checks_mod)$tTable[2:3,5],eps = 0.001,digits = 2),"]")
 # Calibrations
-calibrations <- round(summary(calibrations_mod_means)$tTable[,1],3)
+calibrations <- paste0(round(summary(calibrations_mod_means)$tTable[,1],3)," (",
+              round(summary(calibrations_mod_means)$tTable[,2],3),")")
 mod_summary["Calibrations","Baseline"] <- calibrations[1]
 mod_summary["Calibrations",c("Time 1","Time 2")] <-
   paste0(calibrations[2:3]," (",format.pval(summary(calibrations_mod)$tTable[2:3,5],eps = 0.001,digits = 2),")")
 # TDD
-tdd <- round(summary(tdd_mod_means)$tTable[,1],3)
+tdd <- paste0(round(summary(tdd_mod_means)$tTable[,1],3)," (",
+              round(summary(tdd_mod_means)$tTable[,2],3),")")
 mod_summary["TDD","Baseline"] <- tdd[1]
 mod_summary["TDD",c("Time 1","Time 2")] <-
-  paste0(tdd[2:3]," (",format.pval(summary(tdd_mod)$tTable[2:3,5],eps = 0.001,digits = 2),")")
+  paste0(tdd[2:3]," [",format.pval(summary(tdd_mod)$tTable[2:3,5],eps = 0.001,digits = 2),"]")
 # Basal
-basal <- round(summary(basal_mod_means)$tTable[,1],3)
+basal <- paste0(round(summary(basal_mod_means)$tTable[,1],3)," (",
+              round(summary(basal_mod_means)$tTable[,2],3),")")
 mod_summary["Basal","Baseline"] <- basal[1]
 mod_summary["Basal",c("Time 1","Time 2")] <-
-  paste0(basal[2:3]," (",format.pval(summary(basal_mod)$tTable[2:3,5],eps = 0.001,digits = 2),")")
+  paste0(basal[2:3]," [",format.pval(summary(basal_mod)$tTable[2:3,5],eps = 0.001,digits = 2),"]")
 # Bolus
-bolus <- round(summary(bolus_mod_means)$tTable[,1],3)
+bolus <- paste0(round(summary(bolus_mod_means)$tTable[,1],3)," (",
+              round(summary(bolus_mod_means)$tTable[,2],3),")")
 mod_summary["Bolus","Baseline"] <- bolus[1]
 mod_summary["Bolus",c("Time 1","Time 2")] <-
-  paste0(bolus[2:3]," (",format.pval(summary(bolus_mod)$tTable[2:3,5],eps = 0.001,digits = 2),")")
+  paste0(bolus[2:3]," [",format.pval(summary(bolus_mod)$tTable[2:3,5],eps = 0.001,digits = 2),"]")
 # Print
 options(knitr.kable.NA = '')
 kable(mod_summary)
 ```
 
-Reported as mean (p value indicating difference from baseline or month 1)
+Reported as mean (standard error) [p value indicating difference from baseline or month 1]. All continuers, no interaction by HbA1c group included in the models.
 
-## Figure 2: PAID by Timepoint
+## Figure 2: Survey Scores by Timepoint
+
+```{r echo=FALSE}
+
+```
+
+
 ```{r echo=FALSE,warning=FALSE,dpi=600}
 # Make a new dataframe
 paid_plot_data <- data_no_m1 %>%
