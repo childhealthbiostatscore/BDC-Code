@@ -99,17 +99,6 @@ alldat$record_id <- as.factor(alldat$record_id)
 alldat$tpoint <- as.factor(alldat$tpoint)
 # Get baseline A1c
 alldat$hba1c[alldat$tpoint == "B"] <- glycemicdata$hba1c_baseline
-# Notes
-
-# List of manual data changes
-# Renames columns:
-# sensor_54_69_m1 to sensor_55_69_m1
-# baseline data sensor_54_69 to sensor_55_69
-# all "amexits" to "amexit"
-
-# Additional data notes
-# Using a strict 3 month +/- 45 days window would have resulted in the loss of quite a bit of data, so visit dates were manually re-classified by Cari Berget. 
-# The cleaned data was sent to Cari Berget due to several concerning outliers. She corrected the data and sent it back, so this chunk of code no longer needs to run. The cleaned data from Cari is just imported instead.  
 ```
 
 ```{r echo=FALSE,eval=FALSE}
@@ -246,7 +235,7 @@ Linear mixed effects models were used to examine change in HbA1c over time. Thre
 
 The random intercept model with time treated as a categorical variable was the best model. Originally the models were adjusted for baseline value (as we did for the abstract), but it was decided that this adjustment does not make sense given the question this study wants to answer, in addition to making the model results difficult to interpret.
 
-Discontinuation was defined as AM time < 10 at either the 3 month or 6 month visit. Figure 1 and table 2 were generated using data from only those who continued 670G use. 
+Discontinuation was defined as AM time < 10 at either the 3 month or 6 month visit. Only continuers were included in this analysis. 
 
 # Results
 
@@ -281,6 +270,9 @@ alldata$record_id <- as.factor(alldata$record_id)
 t1_discont <- unique(as.character(alldata$record_id[which(alldata$tpoint == "T1" & alldata$am_time < 10)]))
 t2_discont <- unique(as.character(alldata$record_id[which(alldata$tpoint == "T2" & alldata$am_time < 10)]))
 all_discont <- unique(c(t1_discont,t2_discont))
+# Remove participant 10 from discontinuers, because she had AM > 10 at T2.
+all_discont <- all_discont[-c(which(all_discont %in% c("10")))]
+all_cont <- unique(as.character(alldata$record_id[which(!(as.character(alldata$record_id) %in% c(all_discont,"1a","74a")))]))
 ```
 
 ```{r echo=FALSE,include=FALSE}
@@ -310,8 +302,6 @@ dates$automode_start[dates$record_id == "27"] <- lubridate::mdy("10/27/17")
 dates$automode_start[dates$record_id == "103"] <- NA
 # Never trained on AM
 never_trained <- dates$record_id[which(is.na(dates$automode_start))]
-# Remove participant 10 from discontinuers, because she had AM > 10 at T2. Also remove those never trained on AM from discontinuers
-all_discont <- all_discont[-c(which(all_discont %in% c("10")))]
 # Select columns
 dates <- dates %>%
   select(record_id,baseline_a1c_to_am,am_to_m1,am_to_t1,am_to_t2)
@@ -323,45 +313,24 @@ dem_vars <- c("baseline_a1c_to_am","am_to_m1","am_to_t1","am_to_t2",dem_vars)
 nonnormal <- norm.check(demographics,c("hba1c_baseline","baseline_a1c_to_am",
                                        "am_to_m1","am_to_t1","am_to_t2",
                                        "demographics_age","demographics_t1d_duration"))
-# Full cohort T1 (age and T1D duration normally dist.)
-t1_full <- CreateTableOne(dem_vars,data = demographics)
-t1_full <- print(t1_full,nonnormal = nonnormal)
+# Continuers
+t1_cont <- CreateTableOne(dem_vars,data = demographics[which(demographics$record_id %in% all_cont),])
+t1_cont <- print(t1_cont,nonnormal = nonnormal)
 # Add age range
-t1_full["demographics_age (mean (SD))",] <- 
-  paste0(t1_full["demographics_age (mean (SD))",]," [",
+t1_cont["demographics_age (mean (SD))",] <- 
+  paste0(t1_cont["demographics_age (mean (SD))",]," [",
          min(demographics$demographics_age,na.rm = T),", ",
          max(demographics$demographics_age,na.rm = T),"]")
-rownames(t1_full)[which(rownames(t1_full) == "demographics_age (mean (SD))")] <-
+rownames(t1_cont)[which(rownames(t1_cont) == "demographics_age (mean (SD))")] <-
   "demographics_age (mean (SD) [range])"
-# By continuation status
-t1_groups <- CreateTableOne(dem_vars,strata = "Discontinued",data = demographics)
-t1_groups <- print(t1_groups,nonnormal = nonnormal,exact = c("demographics_ethnicity",
-                                       "demographics_race","demographics_insurance",
-                                       "demographics_pumphx","demographics_cgmhx"))
-# Add age range
-t1_groups["demographics_age (mean (SD))","No"] <- 
-  paste0(t1_groups["demographics_age (mean (SD))","No"]," [",
-         min(demographics$demographics_age[demographics$Discontinued == "No"],na.rm = T),", ",
-         max(demographics$demographics_age[demographics$Discontinued == "No"],na.rm = T),"]")
-t1_groups["demographics_age (mean (SD))","Yes"] <- 
-  paste0(t1_groups["demographics_age (mean (SD))","Yes"]," [",
-         min(demographics$demographics_age[demographics$Discontinued == "Yes"],na.rm = T),", ",
-         max(demographics$demographics_age[demographics$Discontinued == "Yes"],na.rm = T),"]")
-rownames(t1_groups)[which(rownames(t1_groups) == "demographics_age (mean (SD))")] <-
-  "demographics_age (mean (SD) [range])"
-# Remove discontinuers from alldata
+# Continuers only in alldata
 alldata <- alldata %>%
-  filter(!(record_id %in% all_discont))
+  filter(as.character(record_id) %in% all_cont)
 ```
 
-## Table 1a: Descriptive Statistics, Full Cohort
+## Table 1a: Descriptive Statistics,
 ```{r echo=FALSE}
-kable(t1_full)
-```
-
-## Table 1b: Descriptive Statistics, by Discontinued = Yes or No
-```{r echo=FALSE}
-kable(t1_groups)
+kable(t1_cont)
 ```
 
 ## Figure 1a: HbA1c by Timepoint, Grouped by Clinical HbA1c Cutoffs at Baseline
@@ -424,23 +393,25 @@ a1c_overall
 a1c_mod <- lme(hba1c ~ tpoint*age_group*hba1c_clinical,random=~1|record_id,data = data_no_m1,na.action = na.omit)
 a1c_mod_cont <- lme(hba1c ~ as.numeric(tpoint)*age_group*hba1c_clinical,random=~1|record_id,data = data_no_m1,na.action = na.omit) 
 # Categorical is better
-# Means model
+# Means models
 a1c_mod_means <- lme(hba1c ~ tpoint*age_group*hba1c_clinical-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+interaction_only <- lme(hba1c ~ tpoint:age_group:hba1c_clinical-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
 ```
 
 ```{r echo=FALSE}
 kable(summary(a1c_mod)$tTable,caption = "Fixed Effects")
+kable(summary(interaction_only)$tTable,caption = "Fixed Effects: Interaction Means")
 kable(anova.lme(a1c_mod),caption = "Type 3 Tests of Fixed Effects")
 ```
 
 ### Mixed model interpretation
-The interpretation of fixed effects for a mixed model is the same as the interpretation for a simple linear model. The first table above shows the difference between baseline and T1 and baseline and T2. The intercept is the mean at baseline, and the values for each timepoint are the average difference from baseline. So, on average HbA1c decreased by 0.38 from baseline to T1 and by 0.22 from baseline to T2. Both of these differences were statistically significant at the 0.05 level.
+<!-- The interpretation of fixed effects for a mixed model is the same as the interpretation for a simple linear model. The first table above shows the difference between baseline and T1 and baseline and T2. The intercept is the mean at baseline, and the values for each timepoint are the average difference from baseline. So, on average HbA1c decreased by 0.38 from baseline to T1 and by 0.22 from baseline to T2. Both of these differences were statistically significant at the 0.05 level. -->
 
-The type 3 tests of fixed effects show that timepoint overall was significant.
+<!-- The type 3 tests of fixed effects show that timepoint overall was significant. -->
 
-The third table simply shows the mean HbA1c at each timepoint. The p values in this table indicate whether the mean HbA1c was significantly different from 0, so are probably not worth reporting.  
+<!-- The third table simply shows the mean HbA1c at each timepoint. The p values in this table indicate whether the mean HbA1c was significantly different from 0, so are probably not worth reporting.   -->
 
-The interpretation is the same for the following tables.
+<!-- The interpretation is the same for the following tables. -->
 
 ## Table 3: TIR
 
@@ -580,52 +551,52 @@ rownames(mod_summary) <- c("HbA1c","TIR","AM Time","Sensor Wear",
 # A1c
 a1c <- round(summary(a1c_mod_means)$tTable[,1],3)
 mod_summary["HbA1c","Baseline"] <- a1c[1]
-mod_summary["HbA1c",c("Time 1","Time 2")] <- 
+mod_summary["HbA1c",c("Time 1","Time 2")] <-
   paste0(a1c[2:3]," (",format.pval(summary(a1c_mod)$tTable[2:3,5],eps = 0.001,digits = 2),")")
 # TIR
 tir <- round(summary(tir_mod_means)$tTable[,1],3)
 mod_summary["TIR","Baseline"] <- tir[1]
-mod_summary["TIR",c("Time 1","Time 2")] <- 
+mod_summary["TIR",c("Time 1","Time 2")] <-
   paste0(tir[2:3]," (",format.pval(summary(tir_mod)$tTable[2:3,5],eps = 0.001,digits = 2),")")
 # AM time
 am <- round(summary(am_mod_means)$tTable[,1],3)
 mod_summary["AM Time","Month 1"] <- am[1]
-mod_summary["AM Time",c("Time 1","Time 2")] <- 
+mod_summary["AM Time",c("Time 1","Time 2")] <-
   paste0(am[2:3]," (",format.pval(summary(am_mod)$tTable[2:3,5],eps = 0.001,digits = 2),")")
 # Sensor
 sensor_wear <- round(summary(sensor_wear_mod_means)$tTable[,1],3)
 mod_summary["Sensor Wear","Baseline"] <- sensor_wear[1]
-mod_summary["Sensor Wear",c("Time 1","Time 2")] <- 
+mod_summary["Sensor Wear",c("Time 1","Time 2")] <-
   paste0(sensor_wear[2:3]," (",format.pval(summary(sensor_wear_mod)$tTable[2:3,5],eps = 0.001,digits = 2),")")
 # AM Exits Per Day
 amexit_day <- round(summary(amexit_day_mod_means)$tTable[,1],3)
 mod_summary["AM Exits Per Day","Month 1"] <- amexit_day[1]
-mod_summary["AM Exits Per Day",c("Time 1","Time 2")] <- 
+mod_summary["AM Exits Per Day",c("Time 1","Time 2")] <-
   paste0(amexit_day[2:3]," (",format.pval(summary(amexit_day_mod)$tTable[2:3,5],eps = 0.001,digits = 2),")")
 # BG Checks
 bg_checks <- round(summary(bg_checks_mod_means)$tTable[,1],3)
 mod_summary["BG Checks","Baseline"] <- bg_checks[1]
-mod_summary["BG Checks",c("Time 1","Time 2")] <- 
+mod_summary["BG Checks",c("Time 1","Time 2")] <-
   paste0(bg_checks[2:3]," (",format.pval(summary(bg_checks_mod)$tTable[2:3,5],eps = 0.001,digits = 2),")")
 # Calibrations
 calibrations <- round(summary(calibrations_mod_means)$tTable[,1],3)
 mod_summary["Calibrations","Baseline"] <- calibrations[1]
-mod_summary["Calibrations",c("Time 1","Time 2")] <- 
+mod_summary["Calibrations",c("Time 1","Time 2")] <-
   paste0(calibrations[2:3]," (",format.pval(summary(calibrations_mod)$tTable[2:3,5],eps = 0.001,digits = 2),")")
 # TDD
 tdd <- round(summary(tdd_mod_means)$tTable[,1],3)
 mod_summary["TDD","Baseline"] <- tdd[1]
-mod_summary["TDD",c("Time 1","Time 2")] <- 
+mod_summary["TDD",c("Time 1","Time 2")] <-
   paste0(tdd[2:3]," (",format.pval(summary(tdd_mod)$tTable[2:3,5],eps = 0.001,digits = 2),")")
 # Basal
 basal <- round(summary(basal_mod_means)$tTable[,1],3)
 mod_summary["Basal","Baseline"] <- basal[1]
-mod_summary["Basal",c("Time 1","Time 2")] <- 
+mod_summary["Basal",c("Time 1","Time 2")] <-
   paste0(basal[2:3]," (",format.pval(summary(basal_mod)$tTable[2:3,5],eps = 0.001,digits = 2),")")
 # Bolus
 bolus <- round(summary(bolus_mod_means)$tTable[,1],3)
 mod_summary["Bolus","Baseline"] <- bolus[1]
-mod_summary["Bolus",c("Time 1","Time 2")] <- 
+mod_summary["Bolus",c("Time 1","Time 2")] <-
   paste0(bolus[2:3]," (",format.pval(summary(bolus_mod)$tTable[2:3,5],eps = 0.001,digits = 2),")")
 # Print
 options(knitr.kable.NA = '')
@@ -651,11 +622,11 @@ parent_paid$group <- "Parents"
 
 paid_plot_data <- rbind(paid_plot_data,parent_paid)
 
-paid_plot <- 
-  ggplot(paid_plot_data,aes(x = tpoint,y = score,group = record_id)) + 
+paid_plot <-
+  ggplot(paid_plot_data,aes(x = tpoint,y = score,group = record_id)) +
   geom_point(size = 0.2,aes(color = group)) +
   stat_summary(fun.y=mean, geom="line", aes(group = group,color = group)) +
-  xlab("Timepoint") + 
+  xlab("Timepoint") +
   ylab("PAID Score") +
   theme(legend.title=element_blank()) +
   scale_color_discrete(limits = c("Parents","YA","Kids"))
@@ -666,11 +637,11 @@ paid_plot
 ```{r echo=FALSE,warning=FALSE,dpi=600,eval=FALSE}
 # Make a new dataframes for each age group
 foh_p_data <- data_no_m1 %>%
-  select(record_id,tpoint,pmaintain_score,phelpless_score,pworry_score)
+  select(record_id,tpoint,pbehavior_score,pworry_score)
 foh_p_data <- melt(foh_p_data,id.vars = c("record_id","tpoint"))
 
 foh_c_data <- data_no_m1 %>%
-  select(record_id,tpoint,cmaintain_score,chelpless_score,cworry_score)
+  select(record_id,tpoint,cbehavior_score,cworry_score)
 foh_c_data <- melt(foh_c_data,id.vars = c("record_id","tpoint"))
 
 foh_ya_data <- data_no_m1 %>%
@@ -680,37 +651,37 @@ foh_ya_data <- melt(foh_ya_data,id.vars = c("record_id","tpoint"))
 foh_p_plot <- ggplot(foh_p_data,aes(x=tpoint,y=value,color = variable,group=interaction(record_id,variable))) +
   geom_line() +
   ggtitle("Parents") +
-  xlab("Timepoint") + 
+  xlab("Timepoint") +
   ylab("FOH Score") +
   labs(color='FOH Subscale')  +
   scale_color_discrete(labels = c("Maintain","Helpless","Worry"))
 foh_p_plot
 # Points and means
-foh_p_plot <- ggplot(foh_p_data,aes(x=tpoint,y=value,color = variable)) + 
+foh_p_plot <- ggplot(foh_p_data,aes(x=tpoint,y=value,color = variable)) +
   geom_point(size = 0.2) +
   stat_summary(fun.y=mean, geom="line", aes(group = variable)) +
   ggtitle("Parents") +
-  xlab("Timepoint") + 
+  xlab("Timepoint") +
   ylab("FOH Score") +
   labs(color='FOH Subscale') +
   scale_color_discrete(labels = c("Maintain","Helpless","Worry"))
 foh_p_plot # this looks better, so will do this for other plots.
 # Kids
-foh_c_plot <- ggplot(foh_c_data,aes(x=tpoint,y=value,color = variable)) + 
+foh_c_plot <- ggplot(foh_c_data,aes(x=tpoint,y=value,color = variable)) +
   geom_point(size = 0.2) +
   stat_summary(fun.y=mean, geom="line", aes(group = variable)) +
   ggtitle("Kids") +
-  xlab("Timepoint") + 
+  xlab("Timepoint") +
   ylab("FOH Score") +
   labs(color='FOH Subscale') +
   scale_color_discrete(labels = c("Maintain","Helpless","Worry"))
 foh_c_plot
 # YA
-foh_ya_plot <- ggplot(foh_ya_data,aes(x=tpoint,y=value,color = variable)) + 
+foh_ya_plot <- ggplot(foh_ya_data,aes(x=tpoint,y=value,color = variable)) +
   geom_point(size = 0.2) +
   stat_summary(fun.y=mean, geom="line", aes(group = variable)) +
   ggtitle("YA") +
-  xlab("Timepoint") + 
+  xlab("Timepoint") +
   ylab("FOH Score") +
   labs(color='FOH Subscale') +
   scale_color_discrete(labels = c("Behavior","Worry"))
@@ -719,6 +690,16 @@ foh_ya_plot
 
 ```{r eval=FALSE,include=FALSE}
 # General notes
+# List of manual data changes
+# Renames columns:
+# sensor_54_69_m1 to sensor_55_69_m1
+# baseline data sensor_54_69 to sensor_55_69
+# all "amexits" to "amexit"
+
+# Additional data notes
+# Using a strict 3 month +/- 45 days window would have resulted in the loss of quite a bit of data, so visit dates were manually re-classified by Cari Berget. 
+# The cleaned data was sent to Cari Berget due to several concerning outliers. She corrected the data and sent it back, so this chunk of code no longer needs to run. The cleaned data from Cari is just imported instead.  
+
 # During 4/12/19 meeting we decided that adjusting the models for baseline value
 # doesn't really answer the scientific question. Also Cari would like to compare
 # baseline to 3 month and 6 month. Month 1 A1c overlaps too much with baseline. 
@@ -728,5 +709,5 @@ foh_ya_plot
 # Tried to plot three FOH subscales for parents and kids together, but the plot 
 # was really messy, so split the plots by age group.
 
-# Exclude extra parents
+# Exclude extra parents (1a and 74a)
 ```
