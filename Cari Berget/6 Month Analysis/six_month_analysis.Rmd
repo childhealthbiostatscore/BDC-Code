@@ -8,6 +8,7 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tools)
+library(gridExtra)
 library(readxl)
 library(tableone)
 library(nlme)
@@ -336,7 +337,7 @@ alldata <- alldata %>%
 kable(t1_cont)
 ```
 
-## Figure 1a: HbA1c by Timepoint, Grouped by Clinical HbA1c Cutoffs at Baseline
+## Figure 1: Mean HbA1c by Timepoint
 ```{r echo=FALSE,warning=FALSE,dpi=600}
 # Add baseline age to all data.
 alldata$record_id <- as.character(alldata$record_id)
@@ -350,34 +351,7 @@ data_no_m1 <- alldata %>%
 # Remove B (e.g. for % time AM models etc.)
 data_no_b <- alldata %>%
   filter(tpoint != "B",!(record_id %in% all_discont))
-# By clinical groups
-a1c_plot_clin <- 
-  ggplot(data_no_m1,aes_string(x = "tpoint",y = "hba1c",group = "record_id")) + 
-  geom_line(size = 0.2,aes(color = hba1c_clinical)) +
-  xlab("Timepoint") + 
-  ylab("HbA1c (%)") + 
-  theme(legend.title=element_blank()) +
-  scale_color_discrete(limits = c("(9,Inf]","(7.5,9]","(0,7.5]"))
-a1c_plot_clin
-```
-
-In the above figure, a square bracket indicates that the number is included in the range. For example, (0,7.5] means that baseline HbA1c was less than or equal to 7.5, while (0,7.5) would indicate that baseline HbA1c was strictly less than 7.5.
-
-## Figure 1b: HbA1c by Timepoint, Grouped by Age at Baseline
-```{r echo=FALSE,warning=FALSE,dpi=600}
-# By age group
-a1c_plot_age <- 
-  ggplot(data_no_m1,aes_string(x = "tpoint",y = "hba1c",group = "record_id")) + 
-  geom_line(size = 0.2,aes(color = age_group)) +
-  xlab("Timepoint") + 
-  ylab("HbA1c (%)") +
-  theme(legend.title=element_blank()) +
-  scale_color_discrete(limits = c("< 14","14 - 17","18 +"))
-a1c_plot_age
-```
-
-## Figure 1c: Mean HbA1c by Timepoint
-```{r echo=FALSE,warning=FALSE,dpi=600}
+# A1c plot
 a1c_overall <- 
   ggplot(data_no_m1,aes_string(x = "tpoint",y = "hba1c")) + 
   geom_point(size = 0.2) +
@@ -523,27 +497,22 @@ Reported as mean (standard error) [p value indicating difference from baseline o
 
 ## Figure 2: Survey Scores by Timepoint
 
-```{r echo=FALSE}
-
-```
-
-
 ```{r echo=FALSE,warning=FALSE,dpi=600}
-# Make a new dataframe
+# Make a new dataframe for PAID
 paid_plot_data <- data_no_m1 %>%
   select(record_id,tpoint,cpaid_score,yapaid_score)
 paid_plot_data$score <- pmax(paid_plot_data$cpaid_score,paid_plot_data$yapaid_score,na.rm = T)
 paid_plot_data$group <- ifelse(!is.na(paid_plot_data$cpaid_score),"Kids",ifelse(!is.na(paid_plot_data$yapaid_score),"YA",NA))
 paid_plot_data <- paid_plot_data[,c("record_id","tpoint","score","group")]
-
+# Parents
 parent_paid <- data_no_m1 %>%
   select(record_id,tpoint,ppaid_score)
 parent_paid$record_id <- paste0(parent_paid$record_id,"p")
 colnames(parent_paid) <- c("record_id","tpoint","score")
 parent_paid$group <- "Parents"
-
+# Bind
 paid_plot_data <- rbind(paid_plot_data,parent_paid)
-
+# PAID plot
 paid_plot <-
   ggplot(paid_plot_data,aes(x = tpoint,y = score,group = record_id)) +
   geom_point(size = 0.2,aes(color = group)) +
@@ -552,62 +521,42 @@ paid_plot <-
   ylab("PAID Score") +
   theme(legend.title=element_blank()) +
   scale_color_discrete(limits = c("Parents","YA","Kids"))
-paid_plot
-```
-
-## Figure 3: FOH by Timepoint
-```{r echo=FALSE,warning=FALSE,dpi=600,eval=FALSE}
+# FOH plots
 # Make a new dataframes for each age group
 foh_p_data <- data_no_m1 %>%
-  select(record_id,tpoint,pbehavior_score,pworry_score)
+  select(record_id,tpoint,pworry_score)
 foh_p_data <- melt(foh_p_data,id.vars = c("record_id","tpoint"))
 
 foh_c_data <- data_no_m1 %>%
-  select(record_id,tpoint,cbehavior_score,cworry_score)
+  select(record_id,tpoint,cworry_score)
 foh_c_data <- melt(foh_c_data,id.vars = c("record_id","tpoint"))
 
 foh_ya_data <- data_no_m1 %>%
-  select(record_id,tpoint,yabehavior_score,yaworry_score)
+  select(record_id,tpoint,yaworry_score)
 foh_ya_data <- melt(foh_ya_data,id.vars = c("record_id","tpoint"))
-# Plot parents, lines for each individual
-foh_p_plot <- ggplot(foh_p_data,aes(x=tpoint,y=value,color = variable,group=interaction(record_id,variable))) +
-  geom_line() +
-  ggtitle("Parents") +
-  xlab("Timepoint") +
-  ylab("FOH Score") +
-  labs(color='FOH Subscale')  +
-  scale_color_discrete(labels = c("Maintain","Helpless","Worry"))
-foh_p_plot
 # Points and means
-foh_p_plot <- ggplot(foh_p_data,aes(x=tpoint,y=value,color = variable)) +
+foh_p_plot <- ggplot(foh_p_data,aes(x=tpoint,y=value)) +
   geom_point(size = 0.2) +
   stat_summary(fun.y=mean, geom="line", aes(group = variable)) +
   ggtitle("Parents") +
   xlab("Timepoint") +
-  ylab("FOH Score") +
-  labs(color='FOH Subscale') +
-  scale_color_discrete(labels = c("Maintain","Helpless","Worry"))
-foh_p_plot # this looks better, so will do this for other plots.
+  ylab("FOH Worry")
 # Kids
-foh_c_plot <- ggplot(foh_c_data,aes(x=tpoint,y=value,color = variable)) +
+foh_c_plot <- ggplot(foh_c_data,aes(x=tpoint,y=value)) +
   geom_point(size = 0.2) +
   stat_summary(fun.y=mean, geom="line", aes(group = variable)) +
   ggtitle("Kids") +
   xlab("Timepoint") +
-  ylab("FOH Score") +
-  labs(color='FOH Subscale') +
-  scale_color_discrete(labels = c("Maintain","Helpless","Worry"))
-foh_c_plot
+  ylab("FOH Worry")
 # YA
-foh_ya_plot <- ggplot(foh_ya_data,aes(x=tpoint,y=value,color = variable)) +
+foh_ya_plot <- ggplot(foh_ya_data,aes(x=tpoint,y=value)) +
   geom_point(size = 0.2) +
   stat_summary(fun.y=mean, geom="line", aes(group = variable)) +
   ggtitle("YA") +
   xlab("Timepoint") +
-  ylab("FOH Score") +
-  labs(color='FOH Subscale') +
-  scale_color_discrete(labels = c("Behavior","Worry"))
-foh_ya_plot
+  ylab("FOH Worry")
+# Panels
+grid.arrange(paid_plot,foh_p_plot,foh_c_plot,foh_ya_plot,nrow = 2)
 ```
 
 ```{r eval=FALSE,include=FALSE}
