@@ -243,7 +243,7 @@ Discontinuation was defined as AM time < 10 at either the 3 month or 6 month vis
 
 # Results
 
-```{r echo=FALSE}
+```{r echo=FALSE,eval=FALSE}
 # Import Cari's cleaned data
 filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/clean_glycemic_data.csv")
 alldata <- read.csv(filename,na.strings = "",stringsAsFactors = F,colClasses = c("record_id"="character"))
@@ -270,13 +270,29 @@ alldata <- alldata %>%
   mutate(baseline_a1c = hba1c[1])
 alldata$tpoint <- as.factor(alldata$tpoint)
 alldata$record_id <- as.factor(alldata$record_id)
+```
+
+```{r echo=FALSE}
+# Read in Cari's corrected data from 4/26/19
+alldata <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/visits 670G obs_CBupdate_25APR2019.csv"),na.strings = "")
+alldata <- alldata %>% arrange(record_id,tpoint)
+no_am <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/no_am_start.csv"),na.strings = "")
+never_trained <- no_am$never.started.AM[!is.na(no_am$never.started.AM)]
 # Discontinuers
-t1_discont <- unique(as.character(alldata$record_id[which(alldata$tpoint == "T1" & alldata$am_time < 10)]))
-t2_discont <- unique(as.character(alldata$record_id[which(alldata$tpoint == "T2" & alldata$am_time < 10)]))
-all_discont <- unique(c(t1_discont,t2_discont))
+t1_discont <- unique(alldata$record_id[which(alldata$tpoint == "T1" & alldata$am_time < 10)])
 # Remove participant 10 from discontinuers, because she had AM > 10 at T2.
-all_discont <- all_discont[-c(which(all_discont %in% c("10")))]
-all_cont <- unique(as.character(alldata$record_id[which(!(as.character(alldata$record_id) %in% c(all_discont,"1a","74a")))]))
+t1_discont <- t1_discont[-c(which(t1_discont == "10"))]
+t2_discont <- unique(alldata$record_id[which(alldata$tpoint == "T2" & alldata$am_time < 10)])
+t2_discont <- t2_discont[!(t2_discont %in% t1_discont)]
+# Remove those never trained from discontinuers
+t1_discont <- t1_discont[-c(which(t1_discont %in% never_trained))]
+t2_discont <- t2_discont[-c(which(t2_discont %in% never_trained))]
+all_discont <- unique(c(t1_discont,t2_discont))
+# If participant discontinued at T1, remove T1 and T2, if dicontinued at T2, remove just T2. Also remove those never trained.
+alldata <- alldata %>% 
+  filter(!(record_id %in% never_trained)) %>%
+  filter(!(record_id %in% t1_discont & (tpoint == "T1" | tpoint == "T2"))) %>%
+  filter(!(record_id %in% t2_discont & tpoint == "T2"))
 ```
 
 ```{r echo=FALSE,include=FALSE}
@@ -311,6 +327,9 @@ dates <- dates %>%
   select(record_id,baseline_a1c_to_am,am_to_m1,am_to_t1,am_to_t2)
 # Merge
 demographics <- left_join(demographics,dates,by = "record_id")
+# Group by continued, discontinued T1, and discontinued T2
+demographics$continuation <- ifelse(demographics$record_id %in% t1_discont,"Discontinued T1",
+                               ifelse(demographics$record_id %in% t2_discont,"Discontinued T2","Continued"))
 # Variables
 dem_vars <- c("baseline_a1c_to_am","am_to_m1","am_to_t1","am_to_t2",dem_vars)
 # Normality check
@@ -318,36 +337,40 @@ nonnormal <- norm.check(demographics,c("hba1c_baseline","baseline_a1c_to_am",
                                        "am_to_m1","am_to_t1","am_to_t2",
                                        "demographics_age","demographics_t1d_duration"))
 # Continuers
-t1_cont <- CreateTableOne(dem_vars,data = demographics[which(demographics$record_id %in% all_cont),])
-t1_cont <- print(t1_cont,nonnormal = nonnormal)
+t1 <- CreateTableOne(dem_vars,data = demographics,strata = "continuation")
+t1 <- print(t1,nonnormal = nonnormal)
 # Add age range
-t1_cont["demographics_age (mean (SD))",] <- 
-  paste0(t1_cont["demographics_age (mean (SD))",]," [",
-         min(demographics$demographics_age,na.rm = T),", ",
-         max(demographics$demographics_age,na.rm = T),"]")
-rownames(t1_cont)[which(rownames(t1_cont) == "demographics_age (mean (SD))")] <-
-  "demographics_age (mean (SD) [range])"
-# Continuers only in alldata
-alldata <- alldata %>%
-  filter(as.character(record_id) %in% all_cont)
+t1["demographics_age (mean (SD))","Continued"] <- 
+  paste0(t1["demographics_age (mean (SD))","Continued"]," [",
+         min(demographics$demographics_age[demographics$continuation == "Continued"],na.rm = T),", ",
+         max(demographics$demographics_age[demographics$continuation == "Continued"],na.rm = T),"]")
+t1["demographics_age (mean (SD))","Discontinued T1"] <- 
+  paste0(t1["demographics_age (mean (SD))","Discontinued T1"]," [",
+         min(demographics$demographics_age[demographics$continuation == "Discontinued T1"],na.rm = T),", ",
+         max(demographics$demographics_age[demographics$continuation == "Discontinued T1"],na.rm = T),"]")
+t1["demographics_age (mean (SD))","Discontinued T2"] <- 
+  paste0(t1["demographics_age (mean (SD))","Discontinued T2"]," [",
+         min(demographics$demographics_age[demographics$continuation == "Discontinued T2"],na.rm = T),", ",
+         max(demographics$demographics_age[demographics$continuation == "Discontinued T2"],na.rm = T),"]")
 ```
 
 ## Table 1a: Descriptive Statistics,
 ```{r echo=FALSE}
-kable(t1_cont)
+kable(t1)
 ```
 
 ## Figure 1: Mean HbA1c by Timepoint
 ```{r echo=FALSE,warning=FALSE,dpi=600}
 # Add baseline age to all data.
-alldata$record_id <- as.character(alldata$record_id)
-demographics$record_id <- as.character(demographics$record_id)
-alldata <- left_join(alldata,demographics[,c("record_id","age_group")],by = "record_id")
+alldata <- left_join(alldata,demographics[,c("record_id","age_group","hba1c_baseline")],by = "record_id")
 alldata$record_id <- as.factor(alldata$record_id)
 # Remove M1, group by clinical A1c cutoffs at baseline
 data_no_m1 <- alldata %>%
   filter(tpoint != "M1",!(record_id %in% all_discont)) %>%
-  mutate(hba1c_clinical = cut(baseline_a1c,breaks = c(0,7.5,9.0,Inf)))
+  mutate(hba1c_clinical = cut(hba1c_baseline,breaks = c(0,7.5,9.0,Inf)))
+# Write file for SAS contrasts
+write.csv(data_no_m1,file = "/Users/timvigers/Desktop/cari.csv",
+          row.names = F,na="")
 # Remove B (e.g. for % time AM models etc.)
 data_no_b <- alldata %>%
   filter(tpoint != "B",!(record_id %in% all_discont))
@@ -377,8 +400,8 @@ a1c_glyc_control_mod_means <- lme(hba1c ~ tpoint:hba1c_clinical-1,random=~1|reco
 
 ```{r echo=FALSE}
 # Import results from contrasts in SAS.
-estimates <- read_excel(paste0(pathstart,"som-1/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Reports/estimates.xlsx"))
-means <- read_excel(paste0(pathstart,"som-1/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Reports/means.xlsx"))
+estimates <- read_excel(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Reports/estimates.xlsx"))
+means <- read_excel(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Reports/means.xlsx"))
 ```
 
 ```{r echo=FALSE}
@@ -388,11 +411,11 @@ kable(estimates[,c("Label","Estimate","StdErr","Probt")],caption = "Timepoint Di
 ```
 
 ### HbA1c mixed model interpretation
-The "Group Means by Timepoint" table shows the average HbA1c at each timepoint, for each baseline HbA1c group. The p values in this table ("Probt") refer to whether the mean HbA1c is close to 0, so they can be ignored for now. 
+The "Group Means by Timepoint" table shows the average HbA1c at each timepoint, for each HbA1c group. The p values in this table ("Probt") refer to whether the mean HbA1c is close to 0, so they can be ignored for now. 
 
 The type 3 tests of fixed effects show that timepoint, HbA1c group, and the interaction between timepoint and HbA1c group were each significant overall.
 
-"Timepoint Differences by HbA1c Group" shows whether time 1 or time 2 were significantly different from baseline, by HbA1c group (Low = (0,7.5], Medium=(7.5,9], High = (9,Inf]). So on average, the low A1c group decreased by 0.036 from baseline to visit 1, but it was not statistically sifnificant. On average the high A1c group decreased by 0.789 from baseline to visit 1, which was statistically significant (p < 0.0001).
+"Timepoint Differences by HbA1c Group" shows whether time 1 or time 2 were significantly different from baseline, by HbA1c group (Low = (0,7.5], Medium = (7.5,9], High = (9,Inf]). So on average, the low A1c group decreased by 0.041 from baseline to visit 1, but it was not statistically significant. On average the high A1c group decreased by 1.11 from baseline to visit 1, which was statistically significant (p < 0.0001).
 
 ```{r echo=FALSE}
 # CGM data models
@@ -495,9 +518,9 @@ kable(mod_summary)
 
 Reported as mean (standard error) [p value indicating difference from baseline or month 1]. All continuers, no interaction by HbA1c group included in the models.
 
-## Figure 2: Survey Scores by Timepoint
+<!-- ## Figure 2: Survey Scores by Timepoint -->
 
-```{r echo=FALSE,warning=FALSE,dpi=600}
+```{r echo=FALSE,warning=FALSE,dpi=600,eval=FALSE}
 # Make a new dataframe for PAID
 paid_plot_data <- data_no_m1 %>%
   select(record_id,tpoint,cpaid_score,yapaid_score)
@@ -583,9 +606,9 @@ grid.arrange(paid_plot,foh_p_plot,foh_c_plot,foh_ya_plot,nrow = 2)
 # Exclude extra parents (1a and 74a)
 
 # Per meeting with Cari 4/26/19: 
-# 32's T1 survey scores are incorrect, exclude them
+# 32's T1 survey scores are incorrect, exclude them - done in data CSV for now. 1a and 74a also deleted manually from CSV file.
 # Check survey timepoints to make sure the first survey taken was T1 (e.g. some people don't follow up for a long time and survey 1 might be closer to T4)
-# Some survey scores are actually 0, not missing so make sure they're treated that way
+# Some survey scores are actually 0, not missing so make sure they're treated that way. Maybe if their other scores are nonzero at that timepoint, don't convert 0  to NA?
 # Split discontinuers into at T1 and at T2
 # Cari found a few other participants who were never trained on AM, add to code
 ```
