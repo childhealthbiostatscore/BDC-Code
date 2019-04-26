@@ -237,9 +237,9 @@ Linear mixed effects models were used to examine change in HbA1c over time. Thre
 
 The random intercept model with time treated as a categorical variable was the best model. Originally the models were adjusted for baseline value (as we did for the abstract), but it was decided that this adjustment does not make sense given the question this study wants to answer, in addition to making the model results difficult to interpret.
 
-The HbA1c model included an interaction term for baseline HbA1c group, but the CGM variable models did not. We examined the interaction effect of age and timepoint on HbA1c, but it was not significant.
+The HbA1c model included an interaction term for baseline HbA1c group with timepoint, but the CGM variable models did not. We examined the interaction effect of age and timepoint on HbA1c, but it was not significant. Differences between timepoints for each baseline HbA1c group were compared using linear contrasts.
 
-Discontinuation was defined as AM time < 10 at either the 3 month or 6 month visit. Only continuers were included in this analysis. 
+Discontinuation was defined as AM time < 10 at either T1 or T2. This analysis excluded those never trained on automode, and all timepoints with < 10 AM time.
 
 # Results
 
@@ -301,8 +301,6 @@ dem_vars <- c("hba1c_baseline","demographics_age","demographics_t1d_duration","d
 demographics <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/670GChild_GlycemicDATA_2019-01-07_.csv"))
 demographics <- demographics %>%
   select(record_id,dem_vars,hba1c_baseline)
-demographics[,5:ncol(demographics)] <- lapply(demographics[,5:ncol(demographics)],as.factor)
-demographics$Discontinued <- ifelse(demographics$record_id %in% all_discont,"Yes","No")
 demographics$age_group <- cut(demographics$demographics_age, 
                               breaks = c(0,14,18,Inf),
                               labels = c("< 14","14 - 17","18 +"),right = F)
@@ -313,15 +311,11 @@ dates <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared
 dates <- dates %>%
   select(record_id,hba1c_date_b,automode_start,t1_date_m1,t1_date,t2_date)
 dates[,2:ncol(dates)] <- lapply(dates[,2:ncol(dates)],lubridate::mdy)
+dates$automode_start[which(dates$record_id %in% never_trained)] <- NA
 dates$baseline_a1c_to_am <- as.numeric(difftime(dates$automode_start,dates$hba1c_date_b),"days")
 dates$am_to_m1 <- as.numeric(difftime(dates$t1_date_m1,dates$automode_start),"days")
 dates$am_to_t1 <- as.numeric(difftime(dates$t1_date,dates$automode_start),"days")
 dates$am_to_t2 <- as.numeric(difftime(dates$t2_date,dates$automode_start),"days")
-# Fix AM start dates per Cari's 4/22/19 email
-dates$automode_start[dates$record_id == "27"] <- lubridate::mdy("10/27/17")
-dates$automode_start[dates$record_id == "103"] <- NA
-# Never trained on AM
-never_trained <- dates$record_id[which(is.na(dates$automode_start))]
 # Select columns
 dates <- dates %>%
   select(record_id,baseline_a1c_to_am,am_to_m1,am_to_t1,am_to_t2)
@@ -329,7 +323,8 @@ dates <- dates %>%
 demographics <- left_join(demographics,dates,by = "record_id")
 # Group by continued, discontinued T1, and discontinued T2
 demographics$continuation <- ifelse(demographics$record_id %in% t1_discont,"Discontinued T1",
-                               ifelse(demographics$record_id %in% t2_discont,"Discontinued T2","Continued"))
+                               ifelse(demographics$record_id %in% t2_discont,"Discontinued T2",
+                                      ifelse(demographics$record_id %in% never_trained,"Never Trained","Continued")))
 # Variables
 dem_vars <- c("baseline_a1c_to_am","am_to_m1","am_to_t1","am_to_t2",dem_vars)
 # Normality check
@@ -352,6 +347,10 @@ t1["demographics_age (mean (SD))","Discontinued T2"] <-
   paste0(t1["demographics_age (mean (SD))","Discontinued T2"]," [",
          min(demographics$demographics_age[demographics$continuation == "Discontinued T2"],na.rm = T),", ",
          max(demographics$demographics_age[demographics$continuation == "Discontinued T2"],na.rm = T),"]")
+t1["demographics_age (mean (SD))","Never Trained"] <- 
+  paste0(t1["demographics_age (mean (SD))","Never Trained"]," [",
+         min(demographics$demographics_age[demographics$continuation == "Never Trained"],na.rm = T),", ",
+         max(demographics$demographics_age[demographics$continuation == "Never Trained"],na.rm = T),"]")
 ```
 
 ## Table 1a: Descriptive Statistics,
@@ -363,10 +362,9 @@ kable(t1)
 ```{r echo=FALSE,warning=FALSE,dpi=600}
 # Add baseline age to all data.
 alldata <- left_join(alldata,demographics[,c("record_id","age_group","hba1c_baseline")],by = "record_id")
-alldata$record_id <- as.factor(alldata$record_id)
 # Remove M1, group by clinical A1c cutoffs at baseline
 data_no_m1 <- alldata %>%
-  filter(tpoint != "M1",!(record_id %in% all_discont)) %>%
+  filter(tpoint != "M1") %>%
   mutate(hba1c_clinical = cut(hba1c_baseline,breaks = c(0,7.5,9.0,Inf)))
 # Write file for SAS contrasts
 write.csv(data_no_m1,file = "/Users/timvigers/Desktop/cari.csv",
@@ -375,6 +373,7 @@ write.csv(data_no_m1,file = "/Users/timvigers/Desktop/cari.csv",
 data_no_b <- alldata %>%
   filter(tpoint != "B",!(record_id %in% all_discont))
 # A1c plot
+alldata$record_id <- as.factor(alldata$record_id)
 a1c_overall <- 
   ggplot(data_no_m1,aes_string(x = "tpoint",y = "hba1c")) + 
   geom_point(size = 0.2) +
