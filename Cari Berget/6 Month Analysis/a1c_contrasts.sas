@@ -1,144 +1,108 @@
-/**********************************************************************
-*   PRODUCT:   SAS
-*   VERSION:   9.4
-*   CREATOR:   External File Interface
-*   DATE:      24APR19
-*   DESC:      Generated SAS Datastep Code
-*   TEMPLATE SOURCE:  (None Specified.)
-***********************************************************************/
-   data WORK.DATA_NO_M1    ;
-   %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-   infile '\\Mac\Home\Desktop\cari.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2;
-      informat record_id $5. ;
-      informat date $10. ;
-      informat days best32. ;
-      informat tpoint $4. ;
-      informat hba1c best32. ;
-      informat am_time best32. ;
-      informat mm_time best32. ;
-      informat sensor_wear best32. ;
-      informat sensor_u54 best32. ;
-      informat sensor_55_69 best32. ;
-      informat sensor_70_180 best32. ;
-      informat sensor_181_250 best32. ;
-      informat sensor_g250 best32. ;
-      informat mean_sg best32. ;
-      informat sd best32. ;
-      informat bg_checks best32. ;
-      informat calibrations best32. ;
-      informat tdd best32. ;
-      informat basal best32. ;
-      informat bolus best32. ;
-      informat amexit best32. ;
-      informat amexit_day best32. ;
-      informat amexit_hyper best32. ;
-      informat amexit_hypo best32. ;
-      informat amexit_manual best32. ;
-      informat amexit_other best32. ;
-      informat automode_start $9. ;
-      informat cpaid_score best32. ;
-      informat cbehavior_score best32. ;
-      informat cworry_score best32. ;
-      informat ctotal_score best32. ;
-      informat yapaid_score best32. ;
-      informat yabehavior_score best32. ;
-      informat yaworry_score best32. ;
-      informat yatotal_score best32. ;
-      informat ppaid_score best32. ;
-      informat pbehavior_score best32. ;
-      informat pworry_score best32. ;
-      informat ptotal_score best32. ;
-      informat baseline_a1c best32. ;
-      informat age_group $6. ;
-      informat hba1c_clinical $9. ;
-      format record_id $5. ;
-      format date $10. ;
-      format days best12. ;
-      format tpoint $4. ;
-      format hba1c best12. ;
-      format am_time best12. ;
-      format mm_time best12. ;
-      format sensor_wear best12. ;
-      format sensor_u54 best12. ;
-      format sensor_55_69 best12. ;
-      format sensor_70_180 best12. ;
-      format sensor_181_250 best12. ;
-      format sensor_g250 best12. ;
-      format mean_sg best12. ;
-      format sd best12. ;
-      format bg_checks best12. ;
-      format calibrations best12. ;
-      format tdd best12. ;
-      format basal best12. ;
-      format bolus best12. ;
-      format amexit best12. ;
-      format amexit_day best12. ;
-      format amexit_hyper best12. ;
-      format amexit_hypo best12. ;
-      format amexit_manual best12. ;
-      format amexit_other best12. ;
-      format automode_start $9. ;
-      format cpaid_score best12. ;
-      format cbehavior_score best12. ;
-      format cworry_score best12. ;
-      format ctotal_score best12. ;
-      format yapaid_score best12. ;
-      format yabehavior_score best12. ;
-      format yaworry_score best12. ;
-      format yatotal_score best12. ;
-      format ppaid_score best12. ;
-      format pbehavior_score best12. ;
-      format pworry_score best12. ;
-      format ptotal_score best12. ;
-      format baseline_a1c best12. ;
-      format age_group $6. ;
-      format hba1c_clinical $9. ;
-   input
-               record_id  $
-               date  $
-               days
-               tpoint  $
-               hba1c
-               am_time
-               mm_time
-               sensor_wear
-               sensor_u54
-               sensor_55_69
-               sensor_70_180
-               sensor_181_250
-               sensor_g250
-               mean_sg
-               sd
-               bg_checks
-               calibrations
-               tdd
-               basal
-               bolus
-               amexit
-               amexit_day
-               amexit_hyper
-               amexit_hypo
-               amexit_manual
-               amexit_other
-               automode_start  $
-               cpaid_score
-               cbehavior_score
-               cworry_score
-               ctotal_score
-               yapaid_score
-               yabehavior_score
-               yaworry_score
-               yatotal_score
-               ppaid_score
-               pbehavior_score
-               pworry_score
-               ptotal_score
-               baseline_a1c
-               age_group  $
-               hba1c_clinical  $
-   ;
-   if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
-   run;
+173   /**********************************************************************
+174   *   PRODUCT:   SAS
+175   *   VERSION:   9.4
+176   *   CREATOR:   External File Interface
+177   *   DATE:      26APR19
+178   *   DESC:      Generated SAS Datastep Code
+179   *   TEMPLATE SOURCE:  (None Specified.)
+180   ***********************************************************************/
+181      data WORK.DATA_NO_M1    ;
+182      %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+183      infile '\\Mac\Home\Desktop\cari.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2;
+184         informat record_id $3. ;
+185         informat date $10. ;
+186         informat days best32. ;
+187         informat tpoint $4. ;
+188         informat hba1c best32. ;
+189         informat am_time best32. ;
+190         informat mm_time best32. ;
+191         informat sensor_wear best32. ;
+192         informat sensor_u54 best32. ;
+193         informat sensor_55_69 best32. ;
+194         informat sensor_70_180 best32. ;
+195         informat sensor_181_250 best32. ;
+196         informat sensor_g250 best32. ;
+197         informat mean_sg best32. ;
+198         informat sd best32. ;
+199         informat bg_checks best32. ;
+200         informat calibrations best32. ;
+201         informat tdd best32. ;
+202         informat basal best32. ;
+203         informat bolus best32. ;
+204         informat amexit best32. ;
+205         informat amexit_day best32. ;
+206         informat amexit_hyper best32. ;
+207         informat amexit_hypo best32. ;
+208         informat amexit_manual best32. ;
+209         informat amexit_other best32. ;
+210         informat automode_start $9. ;
+211         informat age_group $9. ;
+212         informat hba1c_baseline best32. ;
+213         informat hba1c_clinical $9. ;
+214         format record_id $3. ;
+215         format date $10. ;
+216         format days best12. ;
+217         format tpoint $4. ;
+218         format hba1c best12. ;
+219         format am_time best12. ;
+220         format mm_time best12. ;
+221         format sensor_wear best12. ;
+222         format sensor_u54 best12. ;
+223         format sensor_55_69 best12. ;
+224         format sensor_70_180 best12. ;
+225         format sensor_181_250 best12. ;
+226         format sensor_g250 best12. ;
+227         format mean_sg best12. ;
+228         format sd best12. ;
+229         format bg_checks best12. ;
+230         format calibrations best12. ;
+231         format tdd best12. ;
+232         format basal best12. ;
+233         format bolus best12. ;
+234         format amexit best12. ;
+235         format amexit_day best12. ;
+236         format amexit_hyper best12. ;
+237         format amexit_hypo best12. ;
+238         format amexit_manual best12. ;
+239         format amexit_other best12. ;
+240         format automode_start $9. ;
+241         format age_group $9. ;
+242         format hba1c_baseline best12. ;
+243         format hba1c_clinical $9. ;
+244      input
+245                  record_id  $
+246                  date  $
+247                  days
+248                  tpoint  $
+249                  hba1c
+250                  am_time
+251                  mm_time
+252                  sensor_wear
+253                  sensor_u54
+254                  sensor_55_69
+255                  sensor_70_180
+256                  sensor_181_250
+257                  sensor_g250
+258                  mean_sg
+259                  sd
+260                  bg_checks
+261                  calibrations
+262                  tdd
+263                  basal
+264                  bolus
+265                  amexit
+266                  amexit_day
+267                  amexit_hyper
+268                  amexit_hypo
+269                  amexit_manual
+270                  amexit_other
+271                  automode_start  $
+272                  age_group  $
+273                  hba1c_baseline
+274                  hba1c_clinical  $
+275      ;
+276      if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+277      run;
 
 proc mixed data=data_no_m1;
 class record_id tpoint(ref="B") hba1c_clinical(ref="(0,7.5]");
