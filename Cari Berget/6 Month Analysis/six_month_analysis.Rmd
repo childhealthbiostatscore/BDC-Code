@@ -108,34 +108,104 @@ alldat$hba1c[alldat$tpoint == "B"] <- glycemicdata$hba1c_baseline
 # Read in survey data
 filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/670GChild_SurveyDATA_2019-04-26_.csv")
 child <- read.csv(filename,na.strings = "",stringsAsFactors = F)
-# Separate by timepoint and survey/subscale
-child_baseline_behave <- child %>%
-  select(record_id,date,c_hfs_behave1)
+# Check time from AM start
+am_start <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/670GChild_GlycemicDATA_2019-01-07_.csv"))
+am_start <- am_start[,c("record_id","automode_start")]
+child <- left_join(child,am_start,by="record_id")
+child[,c("date","date_t1","c_date_t2","automode_start")] <- 
+  lapply(child[,c("date","date_t1","c_date_t2","automode_start")], lubridate::mdy)
+# Separate by timepoint,melt
+child_baseline <- child %>%
+  select(record_id,date,automode_start,c_hfs_behave1:c_paid20) %>%
+  filter(!is.na(date),!is.na(automode_start)) %>%
+  mutate(days_from_am = difftime(date,automode_start,units = "days"))
+colnames(child_baseline) <- sub("c_","",colnames(child_baseline))
 
+child_t1 <- child %>%
+  select(record_id,date_t1,automode_start,c_hfs_behave1_t1:c_paid20_t1) %>%
+  filter(!is.na(date_t1),!is.na(automode_start)) %>%
+  mutate(days_from_am = difftime(date_t1,automode_start,units = "days"))
+colnames(child_t1) <- gsub("c_|_t1","",colnames(child_t1))
 
-child$T1 <- apply(child[,t1_cols_paid],1,function(x) mean((4 - (x - 1)),na.rm = T) * 25)
-child$T2 <- apply(child[,t2_cols_paid],1,function(x) mean((4 - (x - 1)),na.rm = T) * 25)
-paid <- gather(child[,c("record_id","B","T1","T2")],tpoint, paid_score, B:T2)
+child_t2 <- child %>%
+  select(record_id,c_date_t2,automode_start,c_hfs_behave1_t2:c_paid20_t2) %>%
+  filter(!is.na(c_date_t2),!is.na(automode_start)) %>%
+  mutate(days_from_am = difftime(c_date_t2,automode_start,units = "days"))
+colnames(child_t2) <- gsub("c_|_t2","",colnames(child_t2))
 
-child$B <- apply(child[,b_cols_behavior],1,function(x) sum((x - 1),na.rm = T))
-child$T1 <- apply(child[,t1_cols_behavior],1,function(x) sum((x - 1),na.rm = T))
-child$T2 <- apply(child[,t2_cols_behavior],1,function(x) sum((x - 1),na.rm = T))
-behavior <- gather(child[,c("record_id","B","T1","T2")],tpoint, behavior_score, B:T2)
+child_long <- rbind(child_baseline,child_t1,child_t2) %>%
+  arrange(record_id,date)
+child_long$days_from_am <- as.numeric(child_long$days_from_am)
+child_long$tpoint <- cut(child_long$days_from_am,breaks = c(-Inf,0,45,135,225,Inf),
+                         right = T,labels = c("B","M1","T1","T2","After T2"))
+# YA
+filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/670GYoungAdult_SurveyDATA_2019-04-26_.csv")
+ya <- read.csv(filename,na.strings = "",stringsAsFactors = F)
 
-child$B <- apply(child[,b_cols_worry],1,function(x) sum((x - 1),na.rm = T))
-child$T1 <- apply(child[,t1_cols_worry],1,function(x) sum((x - 1),na.rm = T))
-child$T2 <- apply(child[,t2_cols_worry],1,function(x) sum((x - 1),na.rm = T))
-worry <- gather(child[,c("record_id","B","T1","T2")],tpoint, worry_score, B:T2)
-# Gather, merge, and order all surveys, replace NaN with NA, rename columns.
-child_surveys <- plyr::join_all(list(paid,behavior,worry), by = c("record_id","tpoint"))
-child_surveys <- child_surveys[order(child_surveys$record_id),]
-child_surveys$paid_score[is.nan(child_surveys$paid_score)] <- NA
-child_surveys[child_surveys == 0] <- NA
-child_surveys$total_hfs <- child_surveys$behavior_score + child_surveys$worry_score
-colnames(child_surveys) <- c("record_id","tpoint","cpaid_score","cbehavior_score","cworry_score","ctotal_score")
-# Write CSV
-filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/clean_child_survey.csv")
-write.csv(child_surveys,file = filename,row.names = F,na = "")
+ya <- left_join(ya,am_start,by="record_id")
+ya[,c("ya_hfs_date","ya_hfs_date_t1","ya_hfs_date_t2","automode_start")] <- 
+  lapply(ya[,c("ya_hfs_date","ya_hfs_date_t1","ya_hfs_date_t2","automode_start")], lubridate::mdy)
+# Separate by timepoint,melt
+ya_baseline <- ya %>%
+  select(record_id,ya_hfs_date,automode_start,ya_hfs_behave1:ya_hfs_worry18,ya_paid1_base:ya_paid20_base) %>%
+  filter(!is.na(ya_hfs_date),!is.na(automode_start)) %>%
+  mutate(days_from_am = difftime(ya_hfs_date,automode_start,units = "days"))
+colnames(ya_baseline) <- gsub("ya_|_base","",colnames(ya_baseline))
+
+ya_t1 <- ya %>%
+  select(record_id,ya_hfs_date_t1,automode_start,ya_hfs_behave1_t1:ya_hfs_worry18_t1,ya_paid1_t1:ya_paid20_t1) %>%
+  filter(!is.na(ya_hfs_date_t1),!is.na(automode_start)) %>%
+  mutate(days_from_am = difftime(ya_hfs_date_t1,automode_start,units = "days"))
+colnames(ya_t1) <- gsub("ya_|_t1","",colnames(ya_t1))
+
+ya_t2 <- ya %>%
+  select(record_id,ya_hfs_date_t2,automode_start,ya_hfs_behave1_t2:ya_hfs_worry18_t2,ya_paid1_t2:ya_paid20_t2) %>%
+  filter(!is.na(ya_hfs_date_t2),!is.na(automode_start)) %>%
+  mutate(days_from_am = difftime(ya_hfs_date_t2,automode_start,units = "days"))
+colnames(ya_t2) <- gsub("ya_|_t2","",colnames(ya_t2))
+
+ya_long <- rbind(ya_baseline,ya_t1,ya_t2) %>%
+  arrange(record_id,hfs_date)
+ya_long$days_from_am <- as.numeric(ya_long$days_from_am)
+ya_long$tpoint <- cut(ya_long$days_from_am,breaks = c(-Inf,0,45,135,225,Inf),
+                         right = T,labels = c("B","M1","T1","T2","After T2"))
+# Parents
+filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/670GParent_SurveyDATA_2019-04-26.csv")
+parent <- read.csv(filename,na.strings = "",stringsAsFactors = F)
+
+parent <- left_join(parent,am_start,by="record_id")
+parent[,c("p_date","p_date_t1","p_date_t2","automode_start")] <- 
+  lapply(parent[,c("p_date","p_date_t1","p_date_t2","automode_start")], lubridate::mdy)
+
+parent_baseline <- parent %>%
+  select(record_id,p_date,automode_start,p_hfs_behave1:p_hfs_worry18,p_paid1:p_paid18) %>%
+  filter(!is.na(p_date),!is.na(automode_start)) %>%
+  mutate(days_from_am = difftime(p_date,automode_start,units = "days"))
+colnames(parent_baseline) <- sub("p_","",colnames(parent_baseline))
+
+parent_t1 <- parent %>%
+  select(record_id,p_date_t1,automode_start,p_hfs_behave1_t1:p_hfs_worry18_t1,p_paid1_t1:p_paid18_t1) %>%
+  filter(!is.na(p_date_t1),!is.na(automode_start)) %>%
+  mutate(days_from_am = difftime(p_date_t1,automode_start,units = "days"))
+colnames(parent_t1) <- gsub("p_|_t1","",colnames(parent_t1))
+
+parent_t2 <- parent %>%
+  select(record_id,p_date_t2,automode_start,p_hfs_behave1_t2:p_hfs_worry18_t2,p_paid1_t2:p_paid18_t2) %>%
+  filter(!is.na(p_date_t2),!is.na(automode_start)) %>%
+  mutate(days_from_am = difftime(p_date_t2,automode_start,units = "days"))
+colnames(parent_t2) <- gsub("p_|_t2","",colnames(parent_t2))
+
+parent_long <- rbind(parent_baseline,parent_t1,parent_t2) %>%
+  arrange(record_id,date)
+parent_long$days_from_am <- as.numeric(parent_long$days_from_am)
+parent_long$tpoint <- cut(parent_long$days_from_am,breaks = c(-Inf,0,45,135,225,Inf),
+                         right = T,labels = c("B","M1","T1","T2","After T2"))
+# Write CSVs
+printvars <- c("record_id","date","automode_start","days_from_am","tpoint")
+write.csv(child_long[,printvars],file = "/Users/timvigers/Desktop/child_survey_dates.csv",row.names = F,na = "")
+write.csv(ya_long[,c("record_id","hfs_date","automode_start","days_from_am","tpoint")],
+          file = "/Users/timvigers/Desktop/ya_survey_dates.csv",row.names = F,na = "")
+write.csv(parent_long[,printvars],file = "/Users/timvigers/Desktop/parent_survey_dates.csv",row.names = F,na = "")
 ```
 
 ```{r echo=FALSE,eval=FALSE}
