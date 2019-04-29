@@ -1,0 +1,45 @@
+---
+title: "Insulin Bone Marker Manuscript"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tableone)
+library(knitr)
+library(sas7bdat)
+library(tidyverse)
+source("/Users/timvigers/Documents/GitHub/Tim-and-Laura/tim_R_functions.R")
+# Check OS and alter file path accordingly.
+if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.Platform$OS.type == "unix"){pathstart <- "/Volumes/"}
+```
+
+```{r echo=FALSE,warning=FALSE}
+# Read in and format data sets
+cpep <- read.sas7bdat(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Raw/cpeptide_mmtt_and_gpa.sas7bdat"))
+height_weight <- read.sas7bdat(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Raw/Second_Analysis/kphysexamrechealth_subset.sas7bdat"))
+cpep_ins_gluc <- read.sas7bdat(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Raw/Second_Analysis/ksampleresults_subset.sas7bdat"))
+demographics <- read.sas7bdat(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Raw/Second_Analysis/kvisit0screening_subset.sas7bdat"))
+demographics$HbA1c <- as.numeric(as.character(demographics$HbA1c))
+visit_dates <- read.sas7bdat(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Raw/Second_Analysis/kvisitinfo_subset.sas7bdat"))
+```
+
+```{r echo=FALSE,warning=FALSE,include=FALSE}
+# Group by peak c-peptide at visit 1
+v1 <- cpep %>% filter(Visit == "Visit 1",Analyte == "CPEP")
+peak <- v1 %>% group_by(PtID) %>% summarise(PeakCPEP = max(Value_Update_n,na.rm = T))
+peak$group <- cut(peak$PeakCPEP,breaks = c(0.007,0.017,0.2,0.4,Inf),right = F,labels = c("Negative","Low","Medium","High"))
+# Demographics for those with V1 data
+peak <- left_join(peak,demographics,by = "PtID")
+# Table 1
+vars = c("Gender","Ethnicity","Race","CurrUseCGM","InsDeliveryMethod","HbA1c")
+nonnormal <- norm.check(peak,"HbA1c")
+t1 <- CreateTableOne(vars,strata = "group",data = peak)
+t1 <- print(t1,nonnormal = nonnormal,exact = c("Ethnicity","Race"))
+```
+
+```{r echo=FALSE}
+kable(t1)
+```
