@@ -106,20 +106,13 @@ alldat$hba1c[alldat$tpoint == "B"] <- glycemicdata$hba1c_baseline
 
 ```{r echo=FALSE,eval=FALSE}
 # Read in survey data
-filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/670GChildSurvey_DATA_2019-01-07_.csv")
+filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/670GChild_SurveyDATA_2019-04-26_.csv")
 child <- read.csv(filename,na.strings = "",stringsAsFactors = F)
-# Column names for each survey
-b_cols_paid <- paste0("c_paid",seq(1:20))
-t1_cols_paid <- paste0(b_cols_paid,"_t1")
-t2_cols_paid <- paste0(b_cols_paid,"_t2")
-b_cols_behavior <- paste0("c_hfs_behave",c(1:10))
-t1_cols_behavior <- paste0(b_cols_behavior,"_t1")
-t2_cols_behavior <- paste0(b_cols_behavior,"_t2")
-b_cols_worry <- paste0("c_hfs_worry",c(11:25))
-t1_cols_worry <- paste0(b_cols_worry,"_t1")
-t2_cols_worry <- paste0(b_cols_worry,"_t2")
-# Score by timepoint, gather into separate frame
-child$B <- apply(child[,b_cols_paid],1,function(x) mean((4 - (x - 1)),na.rm = T) * 25)
+# Separate by timepoint and survey/subscale
+child_baseline_behave <- child %>%
+  select(record_id,date,c_hfs_behave1)
+
+
 child$T1 <- apply(child[,t1_cols_paid],1,function(x) mean((4 - (x - 1)),na.rm = T) * 25)
 child$T2 <- apply(child[,t2_cols_paid],1,function(x) mean((4 - (x - 1)),na.rm = T) * 25)
 paid <- gather(child[,c("record_id","B","T1","T2")],tpoint, paid_score, B:T2)
@@ -147,7 +140,7 @@ write.csv(child_surveys,file = filename,row.names = F,na = "")
 
 ```{r echo=FALSE,eval=FALSE}
 # YA survey scores
-filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/670GYoungAdult_SurveyDATA_2019-01-07_.csv")
+filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/670GYoungAdult_SurveyDATA_2019-04-26_.csv")
 ya <- read.csv(filename,na.strings = "",stringsAsFactors = F)
 # Change column names
 b_cols_paid <- paste0("ya_paid",seq(1:20),"_base")
@@ -189,7 +182,7 @@ write.csv(ya_surveys,file = filename,row.names = F,na = "")
 
 ```{r echo=FALSE,eval=FALSE}
 # Parent survey scores
-filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/670GParentSurvey_DATA_2019-01-07_.csv")
+filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/670GParent_SurveyDATA_2019-04-26.csv")
 parent <- read.csv(filename,na.strings = "",stringsAsFactors = F)
 # Column names for each survey
 b_cols_paid <- paste0("p_paid",seq(1:18))
@@ -277,6 +270,7 @@ alldata$record_id <- as.factor(alldata$record_id)
 # Read in Cari's corrected data from 4/26/19
 alldata <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/visits 670G obs_CBupdate_25APR2019.csv"),na.strings = "")
 alldata <- alldata %>% arrange(record_id,tpoint)
+# Never trained
 no_am <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/no_am_start.csv"),na.strings = "")
 never_trained <- no_am$never.started.AM[!is.na(no_am$never.started.AM)]
 # Discontinuers
@@ -299,7 +293,10 @@ alldata <- alldata %>%
 ```{r echo=FALSE,include=FALSE}
 # Demographics
 dem_vars <- c("hba1c_baseline","demographics_age","demographics_t1d_duration","demographics_ethnicity","demographics_race","demographics_sex","demographics_insurance","demographics_pumphx","demographics_cgmhx")
+# Categorical variables
+catvars <- c("demographics_ethnicity","demographics_race","demographics_sex","demographics_insurance","demographics_pumphx","demographics_cgmhx")
 demographics <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/670GChild_GlycemicDATA_2019-01-07_.csv"))
+demographics[,catvars] <- lapply(demographics[,catvars],as.factor)
 demographics <- demographics %>%
   select(record_id,dem_vars,hba1c_baseline)
 demographics$age_group <- cut(demographics$demographics_age, 
@@ -397,14 +394,14 @@ a1c_glyc_control_mod <- lme(hba1c ~ tpoint*hba1c_clinical,random=~1|record_id,da
 a1c_age_mod_means <- lme(hba1c ~ tpoint:age_group-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
 a1c_glyc_control_mod_means <- lme(hba1c ~ tpoint:hba1c_clinical-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
 # Contrasts
-cmat.emmc <- rbind(c(0, 0, 1, 0, 0, 0, 0, 0, -1),
-              c(1, 0, 0, 0, 0, 0, -1, 0, 0),
-              c(0, 1, 0, 0, 0, 0, 0, -1, 0),
-              c(0, 0, 0, 0, 0, 1, 0, 0, -1),
-              c(0, 0, 0, 1, 0, 0, -1, 0, 0),
-              c(0, 0, 0, 0, 1, 0, 0, -1, 0))
-a1c_glyc_emm <- emmeans(a1c_glyc_control_mod,~tpoint:hba1c_clinical)
-contrast(a1c_glyc_emm,"cmat")
+# cmat.emmc <- rbind(c(0, 0, 1, 0, 0, 0, 0, 0, -1),
+#               c(1, 0, 0, 0, 0, 0, -1, 0, 0),
+#               c(0, 1, 0, 0, 0, 0, 0, -1, 0),
+#               c(0, 0, 0, 0, 0, 1, 0, 0, -1),
+#               c(0, 0, 0, 1, 0, 0, -1, 0, 0),
+#               c(0, 0, 0, 0, 1, 0, 0, -1, 0))
+# a1c_glyc_emm <- emmeans(a1c_glyc_control_mod,~tpoint:hba1c_clinical)
+# contrast(a1c_glyc_emm,"cmat")
 ```
 
 ```{r echo=FALSE}
@@ -424,13 +421,25 @@ The "Group Means by Timepoint" table shows the average HbA1c at each timepoint, 
 
 The type 3 tests of fixed effects show that timepoint, HbA1c group, and the interaction between timepoint and HbA1c group were each significant overall.
 
-"Timepoint Differences by HbA1c Group" shows whether time 1 or time 2 were significantly different from baseline, by HbA1c group (Low = (0,7.5], Medium = (7.5,9], High = (9,Inf]). So on average, the low A1c group decreased by 0.041 from baseline to visit 1, but it was not statistically significant. On average the high A1c group decreased by 1.11 from baseline to visit 1, which was statistically significant (p < 0.0001).
+"Timepoint Differences by HbA1c Group" shows whether time 1 or time 2 were significantly different from baseline, by HbA1c group (Low = (0,7.5], Medium = (7.5,9], High = (9,Inf]). So on average, the low A1c group decreased by 0.03 from baseline to visit 1, but it was not statistically significant. On average the high A1c group decreased by 1.054 from baseline to visit 1, which was statistically significant (p < 0.0001).
 
 ```{r echo=FALSE}
 # CGM data models
 # TIR
-tir_mod <- lme(sensor_70_180 ~ tpoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
-tir_mod_means <- lme(sensor_70_180 ~ tpoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+tir_u54_mod <- lme(sensor_u54 ~ tpoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+tir_u54_mod_means <- lme(sensor_u54 ~ tpoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+
+tir_55_69_mod <- lme(sensor_55_69 ~ tpoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+tir_55_69_mod_means <- lme(sensor_55_69 ~ tpoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+
+tir_70_180_mod <- lme(sensor_70_180 ~ tpoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+tir_70_180_mod_means <- lme(sensor_70_180 ~ tpoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+
+tir_181_250_mod <- lme(sensor_181_250 ~ tpoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+tir_181_250_mod_means <- lme(sensor_181_250 ~ tpoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+
+tir_g250_mod <- lme(sensor_g250 ~ tpoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+tir_g250_mod_means <- lme(sensor_g250 ~ tpoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
 # AM time
 am_mod <- lme(am_time ~ tpoint,random=~1|record_id,data = data_no_b,na.action = na.omit)
 am_mod_means <- lme(am_time ~ tpoint-1,random=~1|record_id,data = data_no_b,na.action = na.omit)
@@ -461,75 +470,144 @@ bolus_mod_means <- lme(bolus ~ tpoint-1,random=~1|record_id,data = data_no_m1,na
 
 ```{r echo=FALSE}
 # Make table
-mod_summary <- as.data.frame(matrix(nrow = 9,ncol = 4))
-colnames(mod_summary) <- c("Baseline","Month 1","Time 1","Time 2")
-rownames(mod_summary) <- c("TIR","AM Time","Sensor Wear",
+mod_summary <- as.data.frame(matrix(nrow = 13,ncol = 6))
+colnames(mod_summary) <- c("Baseline","Month 1","Time 1","T1 P value","Time 2","T2 P value")
+rownames(mod_summary) <- c("TIR Under 54","TIR 55-69","TIR 70-180",
+                           "TIR 181-250","TIR >250","AM Time","Sensor Wear",
                            "AM Exits Per Day","BG Checks","Calibrations","TDD",
                            "Basal","Bolus")
 # TIR
-tir <- paste0(round(summary(tir_mod_means)$tTable[,1],3)," (",
-              round(summary(tir_mod_means)$tTable[,2],3),")")
-mod_summary["TIR","Baseline"] <- tir[1]
-mod_summary["TIR",c("Time 1","Time 2")] <-
-  paste0(tir[2:3]," [",format.pval(summary(tir_mod)$tTable[2:3,5],eps = 0.001,digits = 2),"]")
+tir_u54 <- paste0(round(summary(tir_u54_mod_means)$tTable[,1],3)," (",
+              round(summary(tir_u54_mod_means)$tTable[,2],3),")")
+mod_summary["TIR Under 54","Baseline"] <- tir_u54[1]
+mod_summary["TIR Under 54","Time 1"] <- tir_u54[2]
+mod_summary["TIR Under 54","T1 P value"] <- summary(tir_u54_mod)$tTable[2,5]
+mod_summary["TIR Under 54","Time 2"] <- tir_u54[3]
+mod_summary["TIR Under 54","T2 P value"] <- summary(tir_u54_mod)$tTable[3,5]
+
+tir_55_69 <- paste0(round(summary(tir_55_69_mod_means)$tTable[,1],3)," (",
+              round(summary(tir_55_69_mod_means)$tTable[,2],3),")")
+mod_summary["TIR 55-69","Baseline"] <- tir_55_69[1]
+mod_summary["TIR 55-69","Time 1"] <- tir_55_69[2]
+mod_summary["TIR 55-69","T1 P value"] <- summary(tir_55_69_mod)$tTable[2,5]
+mod_summary["TIR 55-69","Time 2"] <- tir_55_69[3]
+mod_summary["TIR 55-69","T2 P value"] <- summary(tir_55_69_mod)$tTable[3,5]
+
+tir_70_180 <- paste0(round(summary(tir_70_180_mod_means)$tTable[,1],3)," (",
+              round(summary(tir_70_180_mod_means)$tTable[,2],3),")")
+mod_summary["TIR 70-180","Baseline"] <- tir_70_180[1]
+mod_summary["TIR 70-180","Time 1"] <- tir_70_180[2]
+mod_summary["TIR 70-180","T1 P value"] <- summary(tir_70_180_mod)$tTable[2,5]
+mod_summary["TIR 70-180","Time 2"] <- tir_70_180[3]
+mod_summary["TIR 70-180","T2 P value"] <- summary(tir_70_180_mod)$tTable[3,5]
+
+tir_181_250 <- paste0(round(summary(tir_181_250_mod_means)$tTable[,1],3)," (",
+              round(summary(tir_181_250_mod_means)$tTable[,2],3),")")
+mod_summary["TIR 181-250","Baseline"] <- tir_181_250[1]
+mod_summary["TIR 181-250","Time 1"] <- tir_181_250[2]
+mod_summary["TIR 181-250","T1 P value"] <- summary(tir_181_250_mod)$tTable[2,5]
+mod_summary["TIR 181-250","Time 2"] <- tir_181_250[3]
+mod_summary["TIR 181-250","T2 P value"] <- summary(tir_181_250_mod)$tTable[3,5]
+
+tir_g250 <- paste0(round(summary(tir_g250_mod_means)$tTable[,1],3)," (",
+              round(summary(tir_g250_mod_means)$tTable[,2],3),")")
+mod_summary["TIR >250","Baseline"] <- tir_g250[1]
+mod_summary["TIR >250","Time 1"] <- tir_g250[2]
+mod_summary["TIR >250","T1 P value"] <- summary(tir_g250_mod)$tTable[2,5]
+mod_summary["TIR >250","Time 2"] <- tir_g250[3]
+mod_summary["TIR >250","T2 P value"] <- summary(tir_g250_mod)$tTable[3,5]
+
 # AM time
 am <- paste0(round(summary(am_mod_means)$tTable[,1],3)," (",
              round(summary(am_mod_means)$tTable[,2],3),")")
 mod_summary["AM Time","Month 1"] <- am[1]
-mod_summary["AM Time",c("Time 1","Time 2")] <-
-  paste0(am[2:3]," [",format.pval(summary(am_mod)$tTable[2:3,5],eps = 0.001,digits = 2),"]")
+mod_summary["AM Time","Time 1"] <- am[2]
+mod_summary["AM Time","T1 P value"] <- summary(am_mod)$tTable[2,5]
+mod_summary["AM Time","Time 2"] <- am[3]
+mod_summary["AM Time","T2 P value"] <- summary(am_mod)$tTable[3,5]
+
 # Sensor
 sensor_wear <- paste0(round(summary(sensor_wear_mod_means)$tTable[,1],3)," (",
                       round(summary(sensor_wear_mod_means)$tTable[,2],3),")")
 mod_summary["Sensor Wear","Baseline"] <- sensor_wear[1]
-mod_summary["Sensor Wear",c("Time 1","Time 2")] <-
-  paste0(sensor_wear[2:3]," [",format.pval(summary(sensor_wear_mod)$tTable[2:3,5],eps = 0.001,digits = 2),"]")
+mod_summary["Sensor Wear","Time 1"] <- sensor_wear[2]
+mod_summary["Sensor Wear","T1 P value"] <- summary(sensor_wear_mod)$tTable[2,5]
+mod_summary["Sensor Wear","Time 2"] <- sensor_wear[3]
+mod_summary["Sensor Wear","T2 P value"] <- summary(sensor_wear_mod)$tTable[3,5]
+
 # AM Exits Per Day
 amexit_day <- paste0(round(summary(amexit_day_mod_means)$tTable[,1],3)," (",
                      round(summary(amexit_day_mod_means)$tTable[,2],3),")")
 mod_summary["AM Exits Per Day","Month 1"] <- amexit_day[1]
-mod_summary["AM Exits Per Day",c("Time 1","Time 2")] <-
-  paste0(amexit_day[2:3]," [",format.pval(summary(amexit_day_mod)$tTable[2:3,5],eps = 0.001,digits = 2),"]")
+mod_summary["AM Exits Per Day","Time 1"] <- amexit_day[2]
+mod_summary["AM Exits Per Day","T1 P value"] <- summary(amexit_day_mod)$tTable[2,5]
+mod_summary["AM Exits Per Day","Time 2"] <- amexit_day[3]
+mod_summary["AM Exits Per Day","T2 P value"] <- summary(amexit_day_mod)$tTable[3,5]
+
 # BG Checks
 bg_checks <- paste0(round(summary(bg_checks_mod_means)$tTable[,1],3)," (",
               round(summary(bg_checks_mod_means)$tTable[,2],3),")")
 mod_summary["BG Checks","Baseline"] <- bg_checks[1]
-mod_summary["BG Checks",c("Time 1","Time 2")] <-
-  paste0(bg_checks[2:3]," [",format.pval(summary(bg_checks_mod)$tTable[2:3,5],eps = 0.001,digits = 2),"]")
+mod_summary["BG Checks","Time 1"] <- bg_checks[2]
+mod_summary["BG Checks","T1 P value"] <- summary(bg_checks_mod)$tTable[2,5]
+mod_summary["BG Checks","Time 2"] <- bg_checks[3]
+mod_summary["BG Checks","T2 P value"] <- summary(bg_checks_mod)$tTable[3,5]
 # Calibrations
 calibrations <- paste0(round(summary(calibrations_mod_means)$tTable[,1],3)," (",
               round(summary(calibrations_mod_means)$tTable[,2],3),")")
 mod_summary["Calibrations","Baseline"] <- calibrations[1]
-mod_summary["Calibrations",c("Time 1","Time 2")] <-
-  paste0(calibrations[2:3]," (",format.pval(summary(calibrations_mod)$tTable[2:3,5],eps = 0.001,digits = 2),")")
+mod_summary["Calibrations","Time 1"] <- calibrations[2]
+mod_summary["Calibrations","T1 P value"] <- summary(calibrations_mod)$tTable[2,5]
+mod_summary["Calibrations","Time 2"] <- calibrations[3]
+mod_summary["Calibrations","T2 P value"] <- summary(calibrations_mod)$tTable[3,5]
 # TDD
 tdd <- paste0(round(summary(tdd_mod_means)$tTable[,1],3)," (",
               round(summary(tdd_mod_means)$tTable[,2],3),")")
 mod_summary["TDD","Baseline"] <- tdd[1]
-mod_summary["TDD",c("Time 1","Time 2")] <-
-  paste0(tdd[2:3]," [",format.pval(summary(tdd_mod)$tTable[2:3,5],eps = 0.001,digits = 2),"]")
+mod_summary["TDD","Time 1"] <- tdd[2]
+mod_summary["TDD","T1 P value"] <- summary(tdd_mod)$tTable[2,5]
+mod_summary["TDD","Time 2"] <- tdd[3]
+mod_summary["TDD","T2 P value"] <- summary(tdd_mod)$tTable[3,5]
 # Basal
 basal <- paste0(round(summary(basal_mod_means)$tTable[,1],3)," (",
               round(summary(basal_mod_means)$tTable[,2],3),")")
 mod_summary["Basal","Baseline"] <- basal[1]
-mod_summary["Basal",c("Time 1","Time 2")] <-
-  paste0(basal[2:3]," [",format.pval(summary(basal_mod)$tTable[2:3,5],eps = 0.001,digits = 2),"]")
+mod_summary["Basal","Time 1"] <- basal[2]
+mod_summary["Basal","T1 P value"] <- summary(basal_mod)$tTable[2,5]
+mod_summary["Basal","Time 2"] <- basal[3]
+mod_summary["Basal","T2 P value"] <- summary(basal_mod)$tTable[3,5]
 # Bolus
 bolus <- paste0(round(summary(bolus_mod_means)$tTable[,1],3)," (",
               round(summary(bolus_mod_means)$tTable[,2],3),")")
 mod_summary["Bolus","Baseline"] <- bolus[1]
-mod_summary["Bolus",c("Time 1","Time 2")] <-
-  paste0(bolus[2:3]," [",format.pval(summary(bolus_mod)$tTable[2:3,5],eps = 0.001,digits = 2),"]")
+mod_summary["Bolus","Time 1"] <- bolus[2]
+mod_summary["Bolus","T1 P value"] <- summary(bolus_mod)$tTable[2,5]
+mod_summary["Bolus","Time 2"] <- bolus[3]
+mod_summary["Bolus","T2 P value"] <- summary(bolus_mod)$tTable[3,5]
+# Adjust p values, format
+mod_summary$`T1 P value` <- format.pval(p.adjust(mod_summary$`T1 P value`,"fdr"),
+                                        eps = 0.001,digits = 2)
+mod_summary$`T2 P value` <- format.pval(p.adjust(mod_summary$`T2 P value`,"fdr"),
+                                        eps = 0.001,digits = 2)
 # Print
 options(knitr.kable.NA = '')
 kable(mod_summary)
 ```
 
-Reported as mean (standard error) [p value indicating difference from baseline or month 1]. All continuers, no interaction by HbA1c group included in the models.
+Reported as mean (standard error). All continuers, no interaction by HbA1c group included in these models. P values adjusted for multiple comparisons using the false discovery rate (FDR) method. 
 
-<!-- ## Figure 2: Survey Scores by Timepoint -->
+## Figure 2: Survey Scores by Timepoint
 
 ```{r echo=FALSE,warning=FALSE,dpi=600,eval=FALSE}
+# Import cleaned, scored survey data.
+filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/clean_parent_survey.csv")
+parent_survey <- read.csv(filename,na.strings = "",stringsAsFactors = F)
+filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/clean_child_survey.csv")
+child_survey <- read.csv(filename,na.strings = "",stringsAsFactors = F,colClasses = c("record_id"="character"))
+filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/clean_ya_survey.csv")
+ya_survey <- read.csv(filename,na.strings = "",stringsAsFactors = F,colClasses = c("record_id"="character"))
+# Remove incorrect scores
+
 # Make a new dataframe for PAID
 paid_plot_data <- data_no_m1 %>%
   select(record_id,tpoint,cpaid_score,yapaid_score)
