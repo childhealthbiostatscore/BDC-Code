@@ -52,34 +52,36 @@ v1 <- cpep %>% filter(Visit == "Visit 1",Analyte == "CPEP")
 peak <- v1 %>% group_by(PtID) %>% summarise(PeakCPEP = max(Value_Update_n,na.rm = T))
 peak$group <- cut(peak$PeakCPEP,breaks = c(0.007,0.017,0.2,0.4,Inf),right = F,labels = c("Negative","Low","Medium","High"))
 # Demographics for those with V1 data
-demographics <- left_join(peak,demographics,by = "PtID")
+full_data <- left_join(peak,demographics,by = "PtID")
 # Visit 0 date, merge
 visit_dates$VisitDt <- lubridate::dmy(sub(":00:00:00","",visit_dates$VisitDt))
-demographics$T1DDiagYrMon <- lubridate::ymd(demographics$T1DDiagYrMon, truncated = 1)
-demographics <- left_join(demographics,visit_dates[,c("PtID","VisitDt")],by="PtID")
+full_data$T1DDiagYrMon <- lubridate::ymd(full_data$T1DDiagYrMon, truncated = 1)
+full_data <- left_join(full_data,visit_dates[,c("PtID","VisitDt")],by="PtID")
 # Calculate age at visit 0: visit date - T1d diagnosis date + age at diagnosis
-demographics$AgeAtVisit0 <- 
-  round(as.numeric(difftime(demographics$VisitDt,
-                      demographics$T1DDiagYrMon,
-                      units="days")) / 365.25 + demographics$DiagT1DAge,0)
+full_data$AgeAtVisit0 <- 
+  round(as.numeric(difftime(full_data$VisitDt,
+                      full_data$T1DDiagYrMon,
+                      units="days")) / 365.25 + full_data$DiagT1DAge,0)
 # Diabetes duration
-demographics$T1DDuration <- demographics$AgeAtVisit0 - demographics$DiagT1DAge
+full_data$T1DDuration <- full_data$AgeAtVisit0 - full_data$DiagT1DAge
 # Add height and weight
-demographics <- 
-  left_join(demographics,height_weight[,c("PtID","Height_cm","Weight_kg")],by = "PtID")
+full_data <- 
+  left_join(full_data,height_weight[,c("PtID","Height_cm","Weight_kg")],by = "PtID")
 # BMI
-demographics$BMI <- demographics$Weight_kg / (demographics$Height_cm/100)^2
+full_data$BMI <- full_data$Weight_kg / (full_data$Height_cm/100)^2
 # Insulin per kilo
-demographics$UnitsInsPerKg <- demographics$UnitsInsTotal / demographics$Weight_kg
-# BTM at visit 0
-demographics <- left_join(btm[which(btm$Timepoint == "0"),],demographics,by = "PtID")
+full_data$UnitsInsPerKg <- full_data$UnitsInsTotal / full_data$Weight_kg
+# BTM
+wide_btm <- reshape(btm, timevar = "Timepoint", direction = "wide", idvar = "PtID")
+full_data <- left_join(wide_btm,full_data,by = "PtID")
+# 
 # Table 1
 vars = c("AgeAtVisit0","Gender","Ethnicity","Race","T1DDuration","BMI",
          "UnitsInsPerKg","HbA1c","InsDeliveryMethod","CurrUseCGM","Vitamin D")
-nonnormal <- norm.check(demographics,c("AgeAtVisit0","T1DDuration","BMI",
+nonnormal <- norm.check(full_data,c("AgeAtVisit0","T1DDuration","BMI",
                                        "UnitsInsPerKg","HbA1c","Vitamin D"))
-t1 <- CreateTableOne(vars,strata = "group",data = demographics)
-t1 <- print(t1,nonnormal = nonnormal,exact = c("Ethnicity","Race"))
+t1 <- CreateTableOne(vars,strata = "group",data = full_data)
+t1 <- print(t1,nonnormal = nonnormal,exact = c("Ethnicity","Race"),printToggle = F)
 ```
 
 ```{r echo=FALSE}
