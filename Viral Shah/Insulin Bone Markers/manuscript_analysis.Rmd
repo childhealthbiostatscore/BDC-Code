@@ -24,6 +24,8 @@ cpep_ins_gluc <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Share
 demographics <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Manuscript/Data_Cleaned/kvisit0screening_subset.csv"))
 demographics$HbA1c <- as.numeric(as.character(demographics$HbA1c))
 visit_dates <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Manuscript/Data_Cleaned/kvisitinfo_subset.csv"))
+# Old data
+old <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Abstract/Data_Cleaned/updated_full_data_bone_turnover.csv"))
 # Viral's data
 btm <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Manuscript/Data_Cleaned/MSD BTM.csv"))
 btm <- btm[-c(which(btm$Row.Labels == "Grand Total")),]
@@ -52,7 +54,7 @@ v1 <- cpep %>% filter(Visit == "Visit 1",Analyte == "CPEP")
 peak <- v1 %>% group_by(PtID) %>% summarise(PeakCPEP = max(Value_Update_n,na.rm = T))
 peak$group <- cut(peak$PeakCPEP,breaks = c(0.007,0.017,0.2,0.4,Inf),right = F,labels = c("Negative","Low","Medium","High"))
 # Demographics for those with V1 data
-full_data <- left_join(peak,demographics,by = "PtID")
+full_data <- left_join(peak[,c("PtID","group")],demographics,by = "PtID")
 # Visit 0 date, merge
 visit_dates$VisitDt <- lubridate::dmy(sub(":00:00:00","",visit_dates$VisitDt))
 full_data$T1DDiagYrMon <- lubridate::ymd(full_data$T1DDiagYrMon, truncated = 1)
@@ -74,7 +76,18 @@ full_data$UnitsInsPerKg <- full_data$UnitsInsTotal / full_data$Weight_kg
 # BTM
 wide_btm <- reshape(btm, timevar = "Timepoint", direction = "wide", idvar = "PtID")
 full_data <- left_join(wide_btm,full_data,by = "PtID")
-# 
+# C-pep, insulin, glucagon
+cpep_0 <- reshape(cpep_ins_gluc[which(cpep_ins_gluc$TimePoint == "0"),],
+                  idvar = "PtID",timevar = "Analyte",direction = "wide") %>%
+  select(PtID,Value_Update_n.CPEP,Value_Update_n.GLUCAGON,Value_Update_n.INS_TOSOH)
+colnames(cpep_0) <- c("PtID","CPEP.0","Glucagon.0","Insulin.0")
+cpep_120 <- reshape(cpep_ins_gluc[which(cpep_ins_gluc$TimePoint == "120"),],
+                  idvar = "PtID",timevar = "Analyte",direction = "wide") %>%
+  select(PtID,Value_Update_n.CPEP,Value_Update_n.GLUCAGON,Value_Update_n.INS_TOSOH)
+colnames(cpep_120) <- c("PtID","CPEP.120","Glucagon.120","Insulin.120")
+full_data <- plyr::join_all(list(full_data,cpep_0,cpep_120),by="PtID",type="left")
+# Calcium, etc.
+
 # Table 1
 vars = c("AgeAtVisit0","Gender","Ethnicity","Race","T1DDuration","BMI",
          "UnitsInsPerKg","HbA1c","InsDeliveryMethod","CurrUseCGM","Vitamin D")
