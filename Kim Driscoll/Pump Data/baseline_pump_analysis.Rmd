@@ -11,8 +11,8 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r echo=FALSE, include=FALSE}
 # Load libraries and functions
-library(data.table)
 library(tidyverse)
+library(data.table)
 # Check OS and alter file path accordingly.
 if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.Platform$OS.type == "unix"){pathstart <- "/Volumes/"}
 ```
@@ -23,28 +23,31 @@ if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.P
 #   - deleted 213 blood glucose file
 #   - manually deleted top rows for T2_302, T2_308 through T2_327, and T3_300 through T3_327
 #   - manually deleted "Timestamp" column for T3_325
+#   - manually combined T2_148 into a single file
 ```
 
 ```{r echo=FALSE,eval=FALSE}
 # Data management
-indir <- paste(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Original",sep="")
-outdir <- paste(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Cleaned/",sep = "")
+# Study dates
+dates <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/PumpItUp_Appt Times.csv"))
+# Format 
+dates[,2:ncol(dates)] <- lapply(dates[,2:ncol(dates)],lubridate::mdy)
+indir <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Original")
+outdir <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Cleaned/")
 # Split files into pump and BG data, store in separate folders.
 files <- list.files(indir,full.names = T)
 for (f in 1:length(files)) {
   dat <- read.csv(files[f],stringsAsFactors = FALSE,header = TRUE,
                   na.strings = "")
   id <- sub("_pump.csv","",basename(files[f]))
+  id_no_timepoint <- sub(".*_","",id)
 # Check file format.  
   if (id == "") {
     stop("No ID")
   } else if (ncol(dat) < 33) {
     stop("Not enough columns",call. = F)
   }
-  if (grepl("T1",id) == T) {
-# Get start and end date.
-    start <- as.POSIXct(dat$Start.Date[1],tz = "UTC",format = "%m/%d/%y %H:%M")
-    end <- as.POSIXct(dat$End.Date[1],tz = "UTC",format = "%m/%d/%y %H:%M")
+  if (colnames(dat)[1] != "Index") {
 # Delete nonessential rows.
     rowstart <- which(dat$Last.Name == "-------")[1]
     pump <- dat[c((rowstart + 2):(nrow(dat)-3)),]
@@ -52,16 +55,23 @@ for (f in 1:length(files)) {
   } else {
     pump <- dat
   }
+# Get dates
+  if (grepl("T1",id) == T) {
+    start <- lubridate::mdy("12/31/2011")
+    end <- dates$T1_Date[which(dates$ID == id_no_timepoint)]
+  } else if (grepl("T2",id) == T) {
+    start <- dates$T1_Date[which(dates$ID == id_no_timepoint)]
+    end <- dates$T2_Date[which(dates$ID == id_no_timepoint)]
+  } else if (grepl("T3",id) == T) {
+    start <- dates$T2_Date[which(dates$ID == id_no_timepoint)]
+    end <- dates$T3_Date[which(dates$ID == id_no_timepoint)]
+  }
 # Format timestamp, remove rows without datetime data.
   pump$timestamp <- paste(pump$Date,pump$Time)
   pump$timestamp <- lubridate::mdy_hms(pump$timestamp)
   pump <- pump[which(!is.na(pump$timestamp)),]
 # Remove rows with data outside study time range if there is any.
-  if (grepl("T1",id) == T) {
-    if (length(which(pump$timestamp < start | pump$timestamp > end)) > 0) {
-      pump <- pump[-c(which(pump$timestamp < start | pump$timestamp > end)),]
-    }
-  }
+  pump <- pump %>% filter(timestamp > start & timestamp < end)
 # Standardize column names
   colnames(pump) <- tolower(gsub(c("[[:punct:]]"),"",colnames(pump)))
   colnames(pump) <- gsub(c(" "),"",colnames(pump))
