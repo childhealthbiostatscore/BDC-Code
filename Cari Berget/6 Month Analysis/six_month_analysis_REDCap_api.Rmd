@@ -53,6 +53,13 @@ withdrawn <- c("41","50") # Per Cari
 never_trained <- demographics$record_id[which(is.na(demographics$automode_start))]
 never_trained <- never_trained[which(!(never_trained %in% withdrawn))]
 # Format glycemic data
+glycemic_colnames <- c("record_id","days","hba1c","am_time","mm_time",
+                       "sensor_wear","sensor_u54","sensor_55_69",
+                       "sensor_70_180","sensor_181_250","sensor_g250",
+                       "mean_sg","sd","bg_checks","calibrations",
+                       "tdd","basal","bolus","amexits",
+                       "amexit_day","amexit_hyper","amexit_hypo",
+                       "amexit_manual","amexit_other")
 # Baseline
 baseline_hba1c <- child_full %>%
   select(record_id,hba1c_baseline)
@@ -60,25 +67,82 @@ baseline_hba1c$record_id <- as.integer(baseline_hba1c$record_id)
 baseline_glycemic <- left_join(baseline_glycemic_csv,baseline_hba1c, by = "record_id")
 colnames(baseline_glycemic) <- sub("_b","",colnames(baseline_glycemic))
 colnames(baseline_glycemic)[ncol(baseline_glycemic)] <- "hba1c"
+baseline_glycemic[,c(glycemic_colnames[which(!(glycemic_colnames %in% colnames(baseline_glycemic)))])] <- NA
+baseline_glycemic <- baseline_glycemic[glycemic_colnames]
+baseline_glycemic <- as.data.frame(lapply(baseline_glycemic, as.numeric))
+baseline_glycemic$Timepoint <- "B"
 # M1
 m1_glycemic_child <- child_full %>%
-  select(record_id,hba1c_m1,am_time_m1:amexits_other_m1) %>%
+  select(record_id,c_t1_date_m1,hba1c_m1,am_time_m1:amexits_other_m1) %>%
   filter(record_id %in% child)
-colnames(m1_glycemic_child)[which(colnames(m1_glycemic_child) == "sensor_54_69_m1")] <- "sensor_55_69_m1"
-colnames(m1_glycemic_child)[which(colnames(m1_glycemic_child) == "sensor_70_180_m1")] <- "sensor_71_180_m1"
+m1_glycemic_child <- left_join(m1_glycemic_child,
+                               demographics[,c("record_id","automode_start")],
+                               by = "record_id")
+m1_glycemic_child$days <- as.numeric(difftime(m1_glycemic_child$c_t1_date_m1,m1_glycemic_child$automode_start))
+m1_glycemic_child <- m1_glycemic_child %>% select(record_id,days,hba1c_m1:amexits_other_m1)
+colnames(m1_glycemic_child) <- glycemic_colnames
 m1_glycemic_ya <- ya_full %>% 
-  select(record_id,ya_hba1c_date_t1_m1,ya_t1_am_time_m1:ya_t1_amexit_other_m1) %>%
+  select(record_id,ya_t1_date_m1,ya_hba1c_t1_m1,ya_t1_am_time_m1:ya_t1_amexit_other_m1) %>%
   filter(record_id %in% ya)
-colnames(m1_glycemic_ya) <- sub("ya_t1_","",colnames(m1_glycemic_ya))
-colnames(m1_glycemic_ya)[2] <- "hba1c_m1"
-colnames(m1_glycemic_ya)[which(colnames(m1_glycemic_ya)=="amexit_other_m1")] <- "amexits_other_m1"
-colnames(m1_glycemic_ya)[which(colnames(m1_glycemic_ya)=="amexit_day_m1")] <- "amexits_day_m1"
-m1_glycemic <- rbind(m1_glycemic_child,m1_glycemic_ya) %>%
-  arrange(as.numeric(record_id))
+m1_glycemic_ya <- left_join(m1_glycemic_ya,
+                               demographics[,c("record_id","automode_start")],
+                               by = "record_id")
+m1_glycemic_ya$days <- as.numeric(difftime(m1_glycemic_ya$ya_t1_date_m1,m1_glycemic_ya$automode_start))
+m1_glycemic_ya <- m1_glycemic_ya %>% select(record_id,days,ya_hba1c_t1_m1:ya_t1_amexit_other_m1)
+colnames(m1_glycemic_ya) <- glycemic_colnames
+m1_glycemic <- rbind(m1_glycemic_child,m1_glycemic_ya)
+m1_glycemic <- as.data.frame(lapply(m1_glycemic, as.numeric))
 m1_glycemic$Timepoint <- "M1"
 # T1
 t1_glycemic_child <- child_full %>%
-  select(record_id)
+  select(record_id,date_t1,c_hba1c_baseline_t1,c_t1_am_time:c_t2_amexits_other) %>%
+  filter(record_id %in% child)
+t1_glycemic_child <- left_join(t1_glycemic_child,
+                               demographics[,c("record_id","automode_start")],
+                               by = "record_id")
+t1_glycemic_child$days <- as.numeric(difftime(t1_glycemic_child$date_t1,t1_glycemic_child$automode_start))
+t1_glycemic_child <- t1_glycemic_child %>% select(record_id,days,c_hba1c_baseline_t1:c_t2_amexits_other)
+colnames(t1_glycemic_child) <- glycemic_colnames
+t1_glycemic_ya <- ya_full %>% 
+  select(record_id,ya_t1_date,ya_hba1c_t1,ya_t1_am_time:ya_t1_amexit_other) %>%
+  filter(record_id %in% ya)
+t1_glycemic_ya <- left_join(t1_glycemic_ya,
+                               demographics[,c("record_id","automode_start")],
+                               by = "record_id")
+t1_glycemic_ya$days <- as.numeric(difftime(t1_glycemic_ya$ya_t1_date,t1_glycemic_ya$automode_start))
+t1_glycemic_ya <- t1_glycemic_ya %>% select(record_id,days,ya_hba1c_t1:ya_t1_amexit_other)
+colnames(t1_glycemic_ya) <- glycemic_colnames
+t1_glycemic <- rbind(t1_glycemic_child,t1_glycemic_ya) %>%
+  arrange(as.numeric(record_id))
+t1_glycemic <- as.data.frame(lapply(t1_glycemic, as.numeric))
+t1_glycemic$Timepoint <- "T1"
+# T2
+t2_glycemic_child <- child_full %>%
+  select(record_id,c_date_t2,c_hba1c_baseline_t2,c_t2_am_time:c_t2_amexit_other) %>%
+  filter(record_id %in% child)
+t2_glycemic_child <- left_join(t2_glycemic_child,
+                               demographics[,c("record_id","automode_start")],
+                               by = "record_id")
+t2_glycemic_child$days <- as.numeric(difftime(t2_glycemic_child$c_date_t2,t2_glycemic_child$automode_start))
+t2_glycemic_child <- t2_glycemic_child %>% select(record_id,days,c_hba1c_baseline_t2:c_t2_amexit_other)
+colnames(t2_glycemic_child) <- glycemic_colnames
+t2_glycemic_ya <- ya_full %>% 
+  select(record_id,ya_t2_date,ya_hba1c_t2,ya_t2_am_time:ya_t2_amexit_other) %>%
+  filter(record_id %in% ya)
+t2_glycemic_ya <- left_join(t2_glycemic_ya,
+                               demographics[,c("record_id","automode_start")],
+                               by = "record_id")
+t2_glycemic_ya$days <- as.numeric(difftime(t2_glycemic_ya$ya_t2_date,t2_glycemic_ya$automode_start))
+t2_glycemic_ya <- t2_glycemic_ya %>% select(record_id,days,ya_hba1c_t2:ya_t2_amexit_other)
+colnames(t2_glycemic_ya) <- glycemic_colnames
+t2_glycemic <- rbind(t2_glycemic_child,t2_glycemic_ya) %>%
+  arrange(as.numeric(record_id))
+t2_glycemic <- as.data.frame(lapply(t2_glycemic, as.numeric))
+t2_glycemic$Timepoint <- "T2"
+# Bind timepoints
+glycemic_data <- bind_rows(baseline_glycemic,m1_glycemic,t1_glycemic,t2_glycemic) %>%
+  arrange(record_id,Timepoint) %>%
+  select(record_id,Timepoint,days,hba1c:amexit_other)
 ```
 
 ```{r echo=FALSE,include=FALSE,cache=TRUE}
@@ -201,29 +265,37 @@ m1_not1_parent <- parent_surveys %>%
   filter(Timepoints == "baseline, month 1, Time 2")
 ```
 
-```{r echo=FALSE}
+```{r echo=FALSE,cache=TRUE}
 # Per Cari Berget 5/1/19:
 # "Subjects 4,8,16,17,21 completed the child survey versions in the baseline survey form and adult surveys for the rest of the time points.  The young adult surveys are the correct ones"
 ya_surveys_correct <- as.character(c(4,8,16,17,21))
 # Survey scoring
 # Subtract 1 to code from 0-4
 child_surveys[,3:ncol(child_surveys)] <- lapply(child_surveys[,3:ncol(child_surveys)],function(x){as.numeric(x)-1})
+ya_surveys[,3:ncol(ya_surveys)] <- lapply(ya_surveys[,3:ncol(ya_surveys)],function(x){as.numeric(x)-1})
+parent_surveys[,3:ncol(parent_surveys)] <- lapply(parent_surveys[,3:ncol(parent_surveys)],function(x){as.numeric(x)-1})
 # Split into PAID and HFS subscales
+# Child
 child_surveys_paid <- child_surveys %>%
   select(record_id,Timepoint,paid1:paid20)
 child_surveys_behave <- child_surveys %>%
   select(record_id,Timepoint,behave1:behave10)
 child_surveys_worry <- child_surveys %>%
   select(record_id,Timepoint,worry11:worry25)
-
-
-ya_surveys[,3:ncol(ya_surveys)] <- lapply(ya_surveys[,3:ncol(ya_surveys)],function(x){as.numeric(x)-1})
+# YA
 ya_surveys_paid <- ya_surveys %>%
   select(record_id,Timepoint,paid1:paid20)
 ya_surveys_behave <- ya_surveys %>%
   select(record_id,Timepoint,behave1:behave15)
 ya_surveys_worry <- ya_surveys %>%
   select(record_id,Timepoint,worry1:worry18)
+# Parent
+parent_surveys_paid <- parent_surveys %>%
+  select(record_id,Timepoint,paid1:paid18)
+parent_surveys_behave <- parent_surveys %>%
+  select(record_id,Timepoint,behave1:behave11)
+parent_surveys_worry <- parent_surveys %>%
+  select(record_id,Timepoint,worry12:worry26)
 # Replace missing data with means if > 75% answered
 # Children
 # PAID
@@ -305,4 +377,93 @@ for (r in 1:nrow(ya_surveys_worry)) { # Couldn't get apply to work for some reas
     }
   ya_surveys_worry[r,3:ncol(ya_surveys_worry)] <- x
 }
+# Parents
+# PAID
+missing_threshold <- ceiling(length(3:ncol(parent_surveys_paid)) * 0.25)
+for (r in 1:nrow(parent_surveys_paid)) { # Couldn't get apply to work for some reason
+  x <- parent_surveys_paid[r,3:ncol(parent_surveys_paid)]
+  replacement <- mean(as.numeric(x),na.rm = T)
+  num_missing <- length(which(is.na(x)))
+  if (num_missing<=missing_threshold && num_missing>0) {
+    x[which(is.na(x))] <- replacement
+    } else if (num_missing > missing_threshold) {
+      x <- rep(NA,length(x))
+    }
+  parent_surveys_paid[r,3:ncol(parent_surveys_paid)] <- x
+}
+# Behave
+missing_threshold <- ceiling(length(3:ncol(parent_surveys_behave)) * 0.25)
+for (r in 1:nrow(parent_surveys_behave)) { # Couldn't get apply to work for some reason
+  x <- parent_surveys_behave[r,3:ncol(parent_surveys_behave)]
+  replacement <- mean(as.numeric(x),na.rm = T)
+  num_missing <- length(which(is.na(x)))
+  if (num_missing<=missing_threshold && num_missing>0) {
+    x[which(is.na(x))] <- replacement
+    } else if (num_missing > missing_threshold) {
+      x <- rep(NA,length(x))
+    }
+  parent_surveys_behave[r,3:ncol(parent_surveys_behave)] <- x
+}
+# Worry
+missing_threshold <- ceiling(length(3:ncol(parent_surveys_worry)) * 0.25)
+for (r in 1:nrow(parent_surveys_worry)) { # Couldn't get apply to work for some reason
+  x <- parent_surveys_worry[r,3:ncol(parent_surveys_worry)]
+  replacement <- mean(as.numeric(x),na.rm = T)
+  num_missing <- length(which(is.na(x)))
+  if (num_missing<=missing_threshold && num_missing>0) {
+    x[which(is.na(x))] <- replacement
+    } else if (num_missing > missing_threshold) {
+      x <- rep(NA,length(x))
+    }
+  parent_surveys_worry[r,3:ncol(parent_surveys_worry)] <- x
+}
+# Score children
+# PAID
+child_surveys_paid$paid_score <- 
+  apply(child_surveys_paid[3:ncol(child_surveys_paid)],1,
+        function(x) (mean(4-x))*25)
+# Behave
+child_surveys_behave$behave_score <- 
+  apply(child_surveys_behave[3:ncol(child_surveys_behave)],1,sum)
+# Worry
+child_surveys_worry$worry_score <- 
+  apply(child_surveys_worry[3:ncol(child_surveys_worry)],1,sum)
+
+# Score YA
+# PAID
+ya_surveys_paid$paid_score <- 
+  apply(ya_surveys_paid[3:ncol(ya_surveys_paid)],1,
+        function(x) (sum(x))*1.25)
+# Behave
+ya_surveys_behave$behave_score <- 
+  apply(ya_surveys_behave[3:ncol(ya_surveys_behave)],1,sum)
+# Worry
+ya_surveys_worry$worry_score <- 
+  apply(ya_surveys_worry[3:ncol(ya_surveys_worry)],1,sum)
+
+# Score parents
+# PAID
+parent_surveys_paid$paid_score <- 
+  apply(parent_surveys_paid[3:ncol(parent_surveys_paid)],1,
+        function(x) (mean(4-x))*25)
+# Behave
+parent_surveys_behave$behave_score <- 
+  apply(parent_surveys_behave[3:ncol(parent_surveys_behave)],1,sum)
+# Worry
+parent_surveys_worry$worry_score <- 
+  apply(parent_surveys_worry[3:ncol(parent_surveys_worry)],1,sum)
+```
+
+```{r echo=FALSE}
+# 6 month survey analysis
+child_surveys_6_month <- child_surveys_paid %>%
+  select(record_id,Timepoint,paid_score) %>%
+  left_join(child_surveys_behave[,c("record_id","Timepoint","behave_score")],
+            by=c("record_id", "Timepoint")) %>%
+  left_join(child_surveys_worry[,c("record_id","Timepoint","worry_score")],
+            by=c("record_id", "Timepoint")) %>%
+  mutate(total_hfs_score = worry_score + behave_score) %>%
+  filter(Timepoint %in% c("baseline","Time 1", "Time 2"))
+# Plot
+
 ```
