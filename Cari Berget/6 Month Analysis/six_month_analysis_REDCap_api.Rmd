@@ -139,10 +139,22 @@ t2_glycemic <- rbind(t2_glycemic_child,t2_glycemic_ya) %>%
   arrange(as.numeric(record_id))
 t2_glycemic <- as.data.frame(lapply(t2_glycemic, as.numeric))
 t2_glycemic$Timepoint <- "T2"
-# Bind timepoints
+# Bind timepoints, remove withdrawals and never trained
 glycemic_data <- bind_rows(baseline_glycemic,m1_glycemic,t1_glycemic,t2_glycemic) %>%
   arrange(record_id,Timepoint) %>%
-  select(record_id,Timepoint,days,hba1c:amexit_other)
+  select(record_id,Timepoint,days,hba1c:amexit_other) %>%
+  filter(!(record_id %in% never_trained) & !(record_id %in% withdrawn))
+# Discontinuers
+t1_discont <- glycemic_data %>%
+  filter(Timepoint == "T1", am_time < 10) %>%
+  .$record_id
+# Remove participant 10 from discontinuers, because she had AM > 10 at T2.
+t1_discont <- t1_discont[-c(which(t1_discont == "10"))]
+# T2 discontinuers
+t2_discont <- glycemic_data %>%
+  filter(Timepoint == "T2", am_time < 10) %>%
+  .$record_id
+t2_discont <- t2_discont[which(!(t2_discont %in% t1_discont))]
 ```
 
 ```{r echo=FALSE,include=FALSE,cache=TRUE}
@@ -266,9 +278,6 @@ m1_not1_parent <- parent_surveys %>%
 ```
 
 ```{r echo=FALSE,cache=TRUE}
-# Per Cari Berget 5/1/19:
-# "Subjects 4,8,16,17,21 completed the child survey versions in the baseline survey form and adult surveys for the rest of the time points.  The young adult surveys are the correct ones"
-ya_surveys_correct <- as.character(c(4,8,16,17,21))
 # Survey scoring
 # Subtract 1 to code from 0-4
 child_surveys[,3:ncol(child_surveys)] <- lapply(child_surveys[,3:ncol(child_surveys)],function(x){as.numeric(x)-1})
@@ -455,6 +464,9 @@ parent_surveys_worry$worry_score <-
 ```
 
 ```{r echo=FALSE}
+# Per Cari Berget 5/1/19:
+# "Subjects 4,8,16,17,21 completed the child survey versions in the baseline survey form and adult surveys for the rest of the time points.  The young adult surveys are the correct ones"
+ya_surveys_correct <- as.character(c(4,8,16,17,21))
 # 6 month survey analysis
 child_surveys_6_month <- child_surveys_paid %>%
   select(record_id,Timepoint,paid_score) %>%
