@@ -9,6 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(redcapAPI)
 library(tidyverse)
+library(knitr)
 # Check OS and alter file path accordingly.
 if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.Platform$OS.type == "unix"){pathstart <- "/Volumes/"}
 ```
@@ -34,14 +35,6 @@ baseline_glycemic_csv <- read.csv("/Volumes/som-1/RI Biostatistics Core/Shared/S
 
 ```{r echo=FALSE}
 # Read in 
-# Format glycemic data
-# Baseline
-baseline_hba1c <- child_full %>%
-  select(record_id,hba1c_baseline,)
-baseline_hba1c$record_id <- as.integer(baseline_hba1c$record_id)
-baseline_glycemic <- left_join(baseline_glycemic_csv,baseline_hba1c, by = "record_id")
-colnames(baseline_glycemic) <- sub("_b","",colnames(baseline_glycemic))
-colnames(baseline_glycemic)[ncol(baseline_glycemic)] <- "hba1c"
 # Demographics
 demographics_child <- child_full %>%
   select(record_id,automode_start,demographics_age:demographics_cgmhx)
@@ -52,33 +45,143 @@ colnames(demographics_ya)[2] <- "automode_start"
 # Filter YA out of child data
 ya <- as.character(demographics_ya$record_id)
 demographics_child <- demographics_child[-c(which(demographics_child$record_id %in% ya)),]
+child <- as.character(demographics_child$record_id)
 demographics <- rbind(demographics_child,demographics_ya) %>%
   arrange(as.numeric(record_id))
 # Never trained and withdrawn
 withdrawn <- c("41","50") # Per Cari
 never_trained <- demographics$record_id[which(is.na(demographics$automode_start))]
+never_trained <- never_trained[which(!(never_trained %in% withdrawn))]
+# Format glycemic data
+# Baseline
+baseline_hba1c <- child_full %>%
+  select(record_id,hba1c_baseline)
+baseline_hba1c$record_id <- as.integer(baseline_hba1c$record_id)
+baseline_glycemic <- left_join(baseline_glycemic_csv,baseline_hba1c, by = "record_id")
+colnames(baseline_glycemic) <- sub("_b","",colnames(baseline_glycemic))
+colnames(baseline_glycemic)[ncol(baseline_glycemic)] <- "hba1c"
+# M1
+m1_glycemic_child <- child_full %>%
+  select(record_id,hba1c_m1,am_time_m1:amexits_other_m1) %>%
+  filter(record_id %in% child)
+colnames(m1_glycemic_child)[which(colnames(m1_glycemic_child) == "sensor_54_69_m1")] <- "sensor_55_69_m1"
+colnames(m1_glycemic_child)[which(colnames(m1_glycemic_child) == "sensor_70_180_m1")] <- "sensor_71_180_m1"
+m1_glycemic_ya <- ya_full %>% 
+  select(record_id,ya_hba1c_date_t1_m1,ya_t1_am_time_m1:ya_t1_amexit_other_m1) %>%
+  filter(record_id %in% ya)
+colnames(m1_glycemic_ya) <- sub("ya_t1_","",colnames(m1_glycemic_ya))
+colnames(m1_glycemic_ya)[2] <- "hba1c_m1"
+colnames(m1_glycemic_ya)[which(colnames(m1_glycemic_ya)=="amexit_other_m1")] <- "amexits_other_m1"
+colnames(m1_glycemic_ya)[which(colnames(m1_glycemic_ya)=="amexit_day_m1")] <- "amexits_day_m1"
+m1_glycemic <- rbind(m1_glycemic_child,m1_glycemic_ya) %>%
+  arrange(as.numeric(record_id))
+m1_glycemic$Timepoint <- "M1"
+# T1
+t1_glycemic_child <- child_full %>%
+  select(record_id)
 ```
 
 ```{r echo=FALSE,include=FALSE}
 # Format survey data
 # Child
-child_surveys_1 <- child_full %>%
+child_surveys_b <- child_full %>%
   select(record_id,timepoint_baselinesurvey:c_paid20)
+colnames(child_surveys_b)[2] <- "Timepoint"
+child_surveys_1 <- child_full %>%
+  select(record_id,timepoint_survey1:c_paid20_t1)
+colnames(child_surveys_1) <- sub("_t1","",colnames(child_surveys_1))
 colnames(child_surveys_1)[2] <- "Timepoint"
 child_surveys_2 <- child_full %>%
-  select(record_id,timepoint_survey1:c_paid20_t1)
-colnames(child_surveys_2) <- sub("_t1","",colnames(child_surveys_2))
+  select(record_id,timepoint_survey2:c_paid20_t2)
+colnames(child_surveys_2) <- sub("_t2","",colnames(child_surveys_2))
 colnames(child_surveys_2)[2] <- "Timepoint"
 child_surveys_3 <- child_full %>%
-  select(record_id,timepoint_survey2:c_paid20_t2)
-colnames(child_surveys_3) <- sub("_t2","",colnames(child_surveys_3))
+  select(record_id,timepoint_survey3:c_paid20_t3)
+colnames(child_surveys_3) <- sub("_t3","",colnames(child_surveys_3))
 colnames(child_surveys_3)[2] <- "Timepoint"
-child_surveys_long <- bind_rows(child_surveys_1,child_surveys_2,child_surveys_3) %>%
-  arrange(record_id,Timepoint)
+child_surveys_4 <- child_full %>%
+  select(record_id,timepoint_survey4:c_paid20_t4)
+colnames(child_surveys_4) <- sub("_t4","",colnames(child_surveys_4))
+colnames(child_surveys_4)[2] <- "Timepoint"
+child_surveys <- bind_rows(child_surveys_b,child_surveys_1,child_surveys_2,
+                           child_surveys_3,child_surveys_4)
+child_surveys <- child_surveys %>%
+  arrange(record_id,Timepoint) %>%
+  filter(Timepoint %in% c("baseline","month 1","Time 1","Time 2"))
+colnames(child_surveys) <- sub("c_","",colnames(child_surveys))
+# YA
+ya_surveys_b <- ya_full %>%
+  select(record_id,timepoint_baselinesurvey,ya_hfs_behave1_b:ya_hfs_worry18_b,
+         ya_paid1_base:ya_paid20_base)
+colnames(ya_surveys_b)[2] <- "Timepoint"
+colnames(ya_surveys_b)[3:ncol(ya_surveys_b)] <- 
+  substr(colnames(ya_surveys_b)[3:ncol(ya_surveys_b)],1,
+         nchar(colnames(ya_surveys_b)[3:ncol(ya_surveys_b)])-2)
+colnames(ya_surveys_b) <- sub("_ba","",colnames(ya_surveys_b))
+colnames(ya_surveys_b) <- sub("ya_","",colnames(ya_surveys_b))
+colnames(ya_surveys_b) <- sub("hfs_","",colnames(ya_surveys_b))
+
+ya_surveys_1 <- ya_full %>%
+  select(record_id,timepoint_survey1,ya_hfs_behave1_t1:ya_hfs_worry18_t1,
+         ya_paid1_t1:ya_paid20_t1)
+colnames(ya_surveys_1) <- sub("_t1","",colnames(ya_surveys_1))
+colnames(ya_surveys_1) <- sub("ya_","",colnames(ya_surveys_1))
+colnames(ya_surveys_1) <- sub("hfs_","",colnames(ya_surveys_1))
+colnames(ya_surveys_1) <- sub("_b","",colnames(ya_surveys_1))
+colnames(ya_surveys_1)[2] <- "Timepoint"
+
+ya_surveys_2 <- ya_full %>%
+  select(record_id,timepoint_survey2,ya_hfs_behave1_t2:ya_hfs_worry18_t2,
+         ya_paid1_t2:ya_paid20_t2)
+colnames(ya_surveys_2) <- sub("_t2","",colnames(ya_surveys_2))
+colnames(ya_surveys_2) <- sub("ya_","",colnames(ya_surveys_2))
+colnames(ya_surveys_2) <- sub("hfs_","",colnames(ya_surveys_2))
+colnames(ya_surveys_2) <- sub("_b_t1","",colnames(ya_surveys_2))
+colnames(ya_surveys_2)[2] <- "Timepoint"
+
+ya_surveys_3 <- ya_full %>%
+  select(record_id,timepoint_survey3,ya_hfs_behave1_t3:ya_hfs_worry18_t3,
+         ya_paid1_t3:ya_paid20_t3)
+colnames(ya_surveys_3) <- sub("_t3","",colnames(ya_surveys_3))
+colnames(ya_surveys_3) <- sub("ya_","",colnames(ya_surveys_3))
+colnames(ya_surveys_3) <- sub("hfs_","",colnames(ya_surveys_3))
+colnames(ya_surveys_3) <- sub("_3","",colnames(ya_surveys_3))
+colnames(ya_surveys_3)[2] <- "Timepoint"
+
+ya_surveys_4 <- ya_full %>%
+  select(record_id,timepoint_survey4,ya_hfs_behave1_t4:ya_hfs_worry18_t4,
+         ya_paid1_t4:ya_paid20_t4)
+colnames(ya_surveys_4) <- sub("_t4","",colnames(ya_surveys_4))
+colnames(ya_surveys_4) <- sub("ya_","",colnames(ya_surveys_4))
+colnames(ya_surveys_4) <- sub("hfs_","",colnames(ya_surveys_4))
+colnames(ya_surveys_4)[2] <- "Timepoint"
+
+ya_surveys <- bind_rows(ya_surveys_b,ya_surveys_1,ya_surveys_2,
+                           ya_surveys_3,ya_surveys_4)
+ya_surveys <- ya_surveys %>%
+  arrange(record_id,Timepoint) %>%
+  filter(Timepoint %in% c("baseline","Month 1","Time 1","Time 2"))
 ```
 
+### Count of survey timepoints
 
-```{r eval=FALSE}
+```{r echo=FALSE}
+kable(child_surveys %>% count(Timepoint),caption = "Total")
+kable(child_surveys %>%
+  group_by(record_id) %>%
+  filter(any(Timepoint  == "month 1")) %>%
+  summarise(Timepoints = paste(Timepoint, collapse = ", ")) %>%
+  count(Timepoints),caption = "By visit pattern for those with M1 surveys")
+```
+
+The first table above is simply the number of surveys at each timepoint. The second table shows that of those who had month 1 surveys, 5 had just baseline and M1, 4 had baseline, M1, T1, etc.
+
+```{r echo=FALSE}
 # Per Cari Berget 5/1/19:
 # "Subjects 4,8,16,17,21 completed the child survey versions in the baseline survey form and adult surveys for the rest of the time points.  The young adult surveys are the correct ones"
+ya_surveys_correct <- as.character(c(4,8,16,17,21))
+# Survey scoring
+paid_vars <- paste0()
+# Replace missing data
+
 ```
