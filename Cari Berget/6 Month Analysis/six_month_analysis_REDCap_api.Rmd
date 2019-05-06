@@ -8,6 +8,7 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(redcapAPI)
+library(tidyverse)
 # Check OS and alter file path accordingly.
 if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.Platform$OS.type == "unix"){pathstart <- "/Volumes/"}
 ```
@@ -27,7 +28,55 @@ parent_full <- exportRecords(rcon)
 rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
                          token = Child670g)
 child_full <- exportRecords(rcon)
+# Read in baseline glycemic data
+baseline_glycemic_csv <- read.csv("/Volumes/som-1/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/670GChild_BaselineGlycemicData_14JAN2019.csv")
 ```
+
+```{r echo=FALSE}
+# Read in 
+# Format glycemic data
+# Baseline
+baseline_hba1c <- child_full %>%
+  select(record_id,hba1c_baseline,)
+baseline_hba1c$record_id <- as.integer(baseline_hba1c$record_id)
+baseline_glycemic <- left_join(baseline_glycemic_csv,baseline_hba1c, by = "record_id")
+colnames(baseline_glycemic) <- sub("_b","",colnames(baseline_glycemic))
+colnames(baseline_glycemic)[ncol(baseline_glycemic)] <- "hba1c"
+# Demographics
+demographics_child <- child_full %>%
+  select(record_id,automode_start,demographics_age:demographics_cgmhx)
+demographics_ya <- ya_full %>%
+  select(record_id,ya_automoste_start,ya_demographics_age:ya_demographics_cgmhx)
+colnames(demographics_ya) <- sub("ya_","",colnames(demographics_ya))
+colnames(demographics_ya)[2] <- "automode_start"
+# Filter YA out of child data
+ya <- as.character(demographics_ya$record_id)
+demographics_child <- demographics_child[-c(which(demographics_child$record_id %in% ya)),]
+demographics <- rbind(demographics_child,demographics_ya) %>%
+  arrange(as.numeric(record_id))
+# Never trained and withdrawn
+withdrawn <- c("41","50") # Per Cari
+never_trained <- demographics$record_id[which(is.na(demographics$automode_start))]
+```
+
+```{r echo=FALSE,include=FALSE}
+# Format survey data
+# Child
+child_surveys_1 <- child_full %>%
+  select(record_id,timepoint_baselinesurvey:c_paid20)
+colnames(child_surveys_1)[2] <- "Timepoint"
+child_surveys_2 <- child_full %>%
+  select(record_id,timepoint_survey1:c_paid20_t1)
+colnames(child_surveys_2) <- sub("_t1","",colnames(child_surveys_2))
+colnames(child_surveys_2)[2] <- "Timepoint"
+child_surveys_3 <- child_full %>%
+  select(record_id,timepoint_survey2:c_paid20_t2)
+colnames(child_surveys_3) <- sub("_t2","",colnames(child_surveys_3))
+colnames(child_surveys_3)[2] <- "Timepoint"
+child_surveys_long <- bind_rows(child_surveys_1,child_surveys_2,child_surveys_3) %>%
+  arrange(record_id,Timepoint)
+```
+
 
 ```{r eval=FALSE}
 # Per Cari Berget 5/1/19:
