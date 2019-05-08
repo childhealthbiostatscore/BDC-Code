@@ -105,8 +105,8 @@
 277      run;
 
 proc mixed data=data_no_m1;
-class record_id tpoint(ref="B") hba1c_clinical(ref="(0,7.5]");
-model hba1c = tpoint hba1c_clinical tpoint*hba1c_clinical / s;
+class record_id timepoint(ref="B") hba1c_clinical(ref="Low Baseline HbA1c");
+model hba1c = timepoint hba1c_clinical timepoint*hba1c_clinical / s;
 random intercept / subject = record_id;
 run;
 
@@ -114,15 +114,15 @@ ods output SolutionF = GroupMeans Estimates = Estimates;
 
 
 proc mixed data=data_no_m1;
-class record_id tpoint(ref="B") hba1c_clinical(ref="(0,7.5]");
-model hba1c = tpoint*hba1c_clinical / s noint;
+class record_id timepoint(ref="B") hba1c_clinical(ref="Low Baseline HbA1c");
+model hba1c = timepoint*hba1c_clinical / s noint;
 random intercept / subject = record_id;
-ESTIMATE "B. vs T1, Low A1c" tpoint*hba1c_clinical 0 0 1 0 0 0 0 0 -1/E;
-ESTIMATE "B. vs T1, Medium A1c" tpoint*hba1c_clinical 1 0 0 0 0 0 -1 0 0/E;
-ESTIMATE "B. vs T1, High A1c" tpoint*hba1c_clinical 0 1 0 0 0 0 0 -1 0/E;
-ESTIMATE "B. vs T2, Low A1c" tpoint*hba1c_clinical 0 0 0 0 0 1 0 0 -1/E;
-ESTIMATE "B. vs T2, Medium A1c" tpoint*hba1c_clinical 0 0 0 1 0 0 -1 0 0/E;
-ESTIMATE "B. vs T2, High A1c" tpoint*hba1c_clinical 0 0 0 0 1 0 0 -1 0/E;
+ESTIMATE "B. vs T1, Low A1c" timepoint*hba1c_clinical 0 0 1 0 0 0 0 0 -1/E;
+ESTIMATE "B. vs T1, Medium A1c" timepoint*hba1c_clinical 0 1 0 0 0 0 0 -1 0/E;
+ESTIMATE "B. vs T1, High A1c" timepoint*hba1c_clinical 1 0 0 0 0 0 -1 0 0/E;
+ESTIMATE "B. vs T2, Low A1c" timepoint*hba1c_clinical 0 0 0 0 0 1 0 0 -1/E;
+ESTIMATE "B. vs T2, Medium A1c" timepoint*hba1c_clinical 0 0 0 0 1 0 0 -1 0/E;
+ESTIMATE "B. vs T2, High A1c" timepoint*hba1c_clinical 0 0 0 1 0 0 -1 0 0/E;
 run;
 
 ods excel file="\\Mac\Home\Desktop\means.xlsx";
