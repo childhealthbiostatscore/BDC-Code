@@ -13,6 +13,7 @@ library(knitr)
 library(tableone)
 library(readxl)
 library(nlme)
+library(gridExtra)
 source("/Users/timvigers/Documents/GitHub/Tim-and-Laura/tim_R_functions.R")
 # Check OS and alter file path accordingly.
 if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.Platform$OS.type == "unix"){pathstart <- "/Volumes/"}
@@ -631,6 +632,64 @@ The type 3 tests of fixed effects show that timepoint, HbA1c group, and the inte
 
 "Timepoint Differences by HbA1c Group" shows whether time 1 or time 2 were significantly different from baseline, by HbA1c group (Low = (0,7.5], Medium = (7.5,9], High = (9,Inf]). So on average, the low A1c group increased by 0.098 from baseline to visit 1, but it was not statistically significant. On average the high A1c group decreased by 0.994 from baseline to visit 1, which was statistically significant (p < 0.0001).
 
+```{r echo=FALSE,include=FALSE,cache=TRUE}
+# Per Cari Berget 5/1/19:
+# "Subjects 4,8,16,17,21 completed the child survey versions in the baseline survey form and adult surveys for the rest of the time points.  The young adult surveys are the correct ones"
+# These are all included in the defined YA group anyway.
+
+# 6 month survey analysis
+child_surveys_6_month <- child_surveys_paid %>%
+  select(record_id,Timepoint,paid_score) %>%
+  left_join(child_surveys_behave[,c("record_id","Timepoint","behave_score")],
+            by=c("record_id", "Timepoint")) %>%
+  left_join(child_surveys_worry[,c("record_id","Timepoint","worry_score")],
+            by=c("record_id", "Timepoint")) %>%
+  mutate(total_hfs_score = worry_score + behave_score) %>%
+  filter(Timepoint %in% c(0,2,3))
+child_surveys_6_month$Timepoint <- as.factor(child_surveys_6_month$Timepoint)
+levels(child_surveys_6_month$Timepoint) <- list("B"=0,"T1"=2,"T2"=3)
+child_surveys_6_month$Group <- "Child"
+# Z scores
+child_surveys_6_month$worry_score_z <- (child_surveys_6_month$worry_score - mean(child_surveys_6_month$worry_score, na.rm = T)) / sd(child_surveys_6_month$worry_score, na.rm = T)
+child_surveys_6_month$behave_score_z <- (child_surveys_6_month$behave_score - mean(child_surveys_6_month$behave_score, na.rm = T)) / sd(child_surveys_6_month$behave_score, na.rm = T)
+
+ya_surveys_6_month <- ya_surveys_paid %>%
+  select(record_id,Timepoint,paid_score) %>%
+  left_join(ya_surveys_behave[,c("record_id","Timepoint","behave_score")],
+            by=c("record_id", "Timepoint")) %>%
+  left_join(ya_surveys_worry[,c("record_id","Timepoint","worry_score")],
+            by=c("record_id", "Timepoint")) %>%
+  mutate(total_hfs_score = worry_score + behave_score) %>%
+  filter(Timepoint %in% c("baseline","Time 1","Time 2"))
+ya_surveys_6_month$Timepoint <- ifelse(ya_surveys_6_month$Timepoint == "baseline",0,
+                                       ifelse(ya_surveys_6_month$Timepoint == "Time 1",2,3))
+ya_surveys_6_month$Timepoint <- as.factor(ya_surveys_6_month$Timepoint)
+levels(ya_surveys_6_month$Timepoint) <- list("B"=0,"T1"=2,"T2"=3)
+ya_surveys_6_month$Group <- "YA"
+# Z scores
+ya_surveys_6_month$worry_score_z <- (ya_surveys_6_month$worry_score - mean(ya_surveys_6_month$worry_score, na.rm = T)) / sd(ya_surveys_6_month$worry_score, na.rm = T)
+ya_surveys_6_month$behave_score_z <- (ya_surveys_6_month$behave_score - mean(ya_surveys_6_month$behave_score, na.rm = T)) / sd(ya_surveys_6_month$behave_score, na.rm = T)
+
+parent_surveys_6_month <- parent_surveys_paid %>%
+  select(record_id,Timepoint,paid_score) %>%
+  left_join(parent_surveys_behave[,c("record_id","Timepoint","behave_score")],
+            by=c("record_id", "Timepoint")) %>%
+  left_join(parent_surveys_worry[,c("record_id","Timepoint","worry_score")],
+            by=c("record_id", "Timepoint")) %>%
+  mutate(total_hfs_score = worry_score + behave_score) %>%
+  filter(Timepoint %in% c("baseline","Time 1","Time 2"))
+parent_surveys_6_month$Timepoint <- as.numeric(parent_surveys_6_month$Timepoint) -1
+parent_surveys_6_month$Group <- "Parents"
+parent_surveys_6_month$Timepoint <- as.factor(parent_surveys_6_month$Timepoint)
+levels(parent_surveys_6_month$Timepoint) <- list("B"=0,"T1"=2,"T2"=3)
+parent_surveys_6_month$record_id <- paste0(parent_surveys_6_month$record_id,"p")
+# Z scores
+parent_surveys_6_month$worry_score_z <- (parent_surveys_6_month$worry_score - mean(parent_surveys_6_month$worry_score, na.rm = T)) / sd(parent_surveys_6_month$worry_score, na.rm = T)
+parent_surveys_6_month$behave_score_z <- (parent_surveys_6_month$behave_score - mean(parent_surveys_6_month$behave_score, na.rm = T)) / sd(parent_surveys_6_month$behave_score, na.rm = T)
+# Combine all survey data
+all_surveys_6_month <- bind_rows(child_surveys_6_month,ya_surveys_6_month,parent_surveys_6_month)
+```
+
 ```{r echo=FALSE}
 # CGM data models
 # TIR
@@ -657,6 +716,7 @@ sensor_wear_mod_means <- lme(sensor_wear ~ Timepoint-1,random=~1|record_id,data 
 # AM exits
 amexit_day_mod <- lme(amexit_day ~ Timepoint,random=~1|record_id,data = data_no_b,na.action = na.omit)
 amexit_day_mod_means <- lme(amexit_day ~ Timepoint-1,random=~1|record_id,data = data_no_b,na.action = na.omit)
+
 # BG Checks
 bg_checks_mod <- lme(bg_checks ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
 bg_checks_mod_means <- lme(bg_checks ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
@@ -672,18 +732,25 @@ basal_mod_means <- lme(basal ~ Timepoint-1,random=~1|record_id,data = data_no_m1
 # Bolus
 bolus_mod <- lme(bolus ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
 bolus_mod_means <- lme(bolus ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+# Survey scores
+paid_mod <- lme(paid_score ~ Timepoint,random=~1|record_id,data = all_surveys_6_month,na.action = na.omit)
+paid_mod_means <- lme(paid_score ~ Timepoint-1,random=~1|record_id,data = all_surveys_6_month,na.action = na.omit) # Slopes for family?
+behave_mod <- lme(behave_score_z ~ Timepoint,random=~1|record_id,data = all_surveys_6_month,na.action = na.omit)
+behave_mod_means <- lme(behave_score_z ~ Timepoint-1,random=~1|record_id,data = all_surveys_6_month,na.action = na.omit)
+worry_mod <- lme(worry_score_z ~ Timepoint,random=~1|record_id,data = all_surveys_6_month,na.action = na.omit)
+worry_mod_means <- lme(worry_score_z ~ Timepoint-1,random=~1|record_id,data = all_surveys_6_month,na.action = na.omit)
 ```
 
 ## Table 3: CGM Variable Mixed Models Summary
 
 ```{r echo=FALSE}
 # Make table
-mod_summary <- as.data.frame(matrix(nrow = 13,ncol = 6))
+mod_summary <- as.data.frame(matrix(nrow = 16,ncol = 6))
 colnames(mod_summary) <- c("Baseline","Month 1","Time 1","T1 P value","Time 2","T2 P value")
 rownames(mod_summary) <- c("TIR Under 54","TIR 55-69","TIR 70-180",
                            "TIR 181-250","TIR >250","AM Time","Sensor Wear",
                            "AM Exits Per Day","BG Checks","Calibrations","TDD",
-                           "Basal","Bolus")
+                           "Basal","Bolus","PAID","HFS Behave Z Score","HFS Worry Z Score")
 # TIR
 tir_u54 <- paste0(round(summary(tir_u54_mod_means)$tTable[,1],3)," (",
               round(summary(tir_u54_mod_means)$tTable[,2],3),")")
@@ -792,6 +859,30 @@ mod_summary["Bolus","Time 1"] <- bolus[2]
 mod_summary["Bolus","T1 P value"] <- summary(bolus_mod)$tTable[2,5]
 mod_summary["Bolus","Time 2"] <- bolus[3]
 mod_summary["Bolus","T2 P value"] <- summary(bolus_mod)$tTable[3,5]
+# PAID
+paid <- paste0(round(summary(paid_mod_means)$tTable[,1],3)," (",
+              round(summary(paid_mod_means)$tTable[,2],3),")")
+mod_summary["PAID","Baseline"] <- paid[1]
+mod_summary["PAID","Time 1"] <- paid[2]
+mod_summary["PAID","T1 P value"] <- summary(paid_mod)$tTable[2,5]
+mod_summary["PAID","Time 2"] <- paid[3]
+mod_summary["PAID","T2 P value"] <- summary(paid_mod)$tTable[3,5]
+# HFS Behave
+behave <- paste0(round(summary(behave_mod_means)$tTable[,1],3)," (",
+              round(summary(behave_mod_means)$tTable[,2],3),")")
+mod_summary["HFS Behave Z Score","Baseline"] <- behave[1]
+mod_summary["HFS Behave Z Score","Time 1"] <- behave[2]
+mod_summary["HFS Behave Z Score","T1 P value"] <- summary(behave_mod)$tTable[2,5]
+mod_summary["HFS Behave Z Score","Time 2"] <- behave[3]
+mod_summary["HFS Behave Z Score","T2 P value"] <- summary(behave_mod)$tTable[3,5]
+# PAID
+worry <- paste0(round(summary(worry_mod_means)$tTable[,1],3)," (",
+              round(summary(worry_mod_means)$tTable[,2],3),")")
+mod_summary["HFS Worry Z Score","Baseline"] <- worry[1]
+mod_summary["HFS Worry Z Score","Time 1"] <- worry[2]
+mod_summary["HFS Worry Z Score","T1 P value"] <- summary(worry_mod)$tTable[2,5]
+mod_summary["HFS Worry Z Score","Time 2"] <- worry[3]
+mod_summary["HFS Worry Z Score","T2 P value"] <- summary(worry_mod)$tTable[3,5]
 # Adjust p values, format
 mod_summary$`T1 P value` <- format.pval(p.adjust(mod_summary$`T1 P value`,"fdr"),
                                         eps = 0.001,digits = 2)
@@ -804,54 +895,7 @@ kable(mod_summary)
 
 Reported as mean (standard error). All continuers, no interaction by HbA1c group included in these models. P values adjusted for multiple comparisons using the false discovery rate (FDR) method. 
 
-```{r echo=FALSE,include=FALSE,cache=TRUE}
-# Per Cari Berget 5/1/19:
-# "Subjects 4,8,16,17,21 completed the child survey versions in the baseline survey form and adult surveys for the rest of the time points.  The young adult surveys are the correct ones"
-# These are all included in the defined YA group anyway.
 
-# 6 month survey analysis
-child_surveys_6_month <- child_surveys_paid %>%
-  select(record_id,Timepoint,paid_score) %>%
-  left_join(child_surveys_behave[,c("record_id","Timepoint","behave_score")],
-            by=c("record_id", "Timepoint")) %>%
-  left_join(child_surveys_worry[,c("record_id","Timepoint","worry_score")],
-            by=c("record_id", "Timepoint")) %>%
-  mutate(total_hfs_score = worry_score + behave_score) %>%
-  filter(Timepoint %in% c(0,2,3))
-child_surveys_6_month$Group <- "Child"
-# Z scores
-child_surveys_6_month$worry_score_z <- (child_surveys_6_month$worry_score - mean(child_surveys_6_month$worry_score, na.rm = T)) / sd(child_surveys_6_month$worry_score, na.rm = T)
-child_surveys_6_month$behave_score_z <- (child_surveys_6_month$behave_score - mean(child_surveys_6_month$behave_score, na.rm = T)) / sd(child_surveys_6_month$behave_score, na.rm = T)
-
-ya_surveys_6_month <- ya_surveys_paid %>%
-  select(record_id,Timepoint,paid_score) %>%
-  left_join(ya_surveys_behave[,c("record_id","Timepoint","behave_score")],
-            by=c("record_id", "Timepoint")) %>%
-  left_join(ya_surveys_worry[,c("record_id","Timepoint","worry_score")],
-            by=c("record_id", "Timepoint")) %>%
-  mutate(total_hfs_score = worry_score + behave_score) %>%
-  filter(Timepoint %in% c("baseline","Time 1","Time 2"))
-ya_surveys_6_month$Timepoint <- ifelse(ya_surveys_6_month$Timepoint == "baseline",0,
-                                       ifelse(ya_surveys_6_month$Timepoint == "Time 1",2,3))
-ya_surveys_6_month$Group <- "YA"
-# Z scores
-ya_surveys_6_month$worry_score_z <- (ya_surveys_6_month$worry_score - mean(ya_surveys_6_month$worry_score, na.rm = T)) / sd(ya_surveys_6_month$worry_score, na.rm = T)
-ya_surveys_6_month$behave_score_z <- (ya_surveys_6_month$behave_score - mean(ya_surveys_6_month$behave_score, na.rm = T)) / sd(ya_surveys_6_month$behave_score, na.rm = T)
-
-parent_surveys_6_month <- parent_surveys_paid %>%
-  select(record_id,Timepoint,paid_score) %>%
-  left_join(parent_surveys_behave[,c("record_id","Timepoint","behave_score")],
-            by=c("record_id", "Timepoint")) %>%
-  left_join(parent_surveys_worry[,c("record_id","Timepoint","worry_score")],
-            by=c("record_id", "Timepoint")) %>%
-  mutate(total_hfs_score = worry_score + behave_score) %>%
-  filter(Timepoint %in% c("baseline","Time 1","Time 2"))
-parent_surveys_6_month$Timepoint <- as.numeric(parent_surveys_6_month$Timepoint) -1
-parent_surveys_6_month$Group <- "Parents"
-# Z scores
-parent_surveys_6_month$worry_score_z <- (parent_surveys_6_month$worry_score - mean(parent_surveys_6_month$worry_score, na.rm = T)) / sd(parent_surveys_6_month$worry_score, na.rm = T)
-parent_surveys_6_month$behave_score_z <- (parent_surveys_6_month$behave_score - mean(parent_surveys_6_month$behave_score, na.rm = T)) / sd(parent_surveys_6_month$behave_score, na.rm = T)
-```
 
 ```{r echo=FALSE,warning=FALSE,dpi=600}
 # Plot
@@ -859,8 +903,7 @@ parent_surveys_6_month$behave_score_z <- (parent_surveys_6_month$behave_score - 
 paid_plot_data <- rbind(child_surveys_6_month[,c("record_id","Timepoint","Group","paid_score")],
                         ya_surveys_6_month[,c("record_id","Timepoint","Group","paid_score")],
                         parent_surveys_6_month[,c("record_id","Timepoint","Group","paid_score")])
-paid_plot_data$Timepoint <- as.factor(paid_plot_data$Timepoint)
-levels(paid_plot_data$Timepoint) <- list("B"=0,"T1"=2,"T2"=3)
+
 paid_plot <- ggplot(subset(paid_plot_data),aes(x=Timepoint,y=paid_score,group=record_id))+
   geom_point(size = 0.2) +
   stat_summary(fun.y=mean, geom="point",aes(group = Group,colour = Group)) +
@@ -868,7 +911,6 @@ paid_plot <- ggplot(subset(paid_plot_data),aes(x=Timepoint,y=paid_score,group=re
   xlab("Timepoint") + 
   ylab("PAID Score") +
   theme(legend.title=element_blank())
-paid_plot
 # Behave
 behave_plot_data <- rbind(child_surveys_6_month[,c("record_id","Timepoint","Group","behave_score_z")],
                         ya_surveys_6_month[,c("record_id","Timepoint","Group","behave_score_z")],
@@ -882,7 +924,6 @@ behave_plot <- ggplot(subset(behave_plot_data),aes(x=Timepoint,y=behave_score_z,
   xlab("Timepoint") + 
   ylab("Behave Z Score") +
   theme(legend.title=element_blank())
-behave_plot
 # Worry
 worry_plot_data <- rbind(child_surveys_6_month[,c("record_id","Timepoint","Group","worry_score_z")],
                         ya_surveys_6_month[,c("record_id","Timepoint","Group","worry_score_z")],
@@ -896,5 +937,5 @@ worry_plot <- ggplot(subset(worry_plot_data),aes(x=Timepoint,y=worry_score_z,gro
   xlab("Timepoint") + 
   ylab("Worry Z Score") +
   theme(legend.title=element_blank())
-worry_plot
+grid.arrange(paid_plot,behave_plot,worry_plot, ncol=2)
 ```
