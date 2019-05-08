@@ -803,10 +803,11 @@ kable(mod_summary)
 
 Reported as mean (standard error). All continuers, no interaction by HbA1c group included in these models. P values adjusted for multiple comparisons using the false discovery rate (FDR) method. 
 
-```{r echo=FALSE}
+```{r echo=FALSE,include=FALSE}
 # Per Cari Berget 5/1/19:
 # "Subjects 4,8,16,17,21 completed the child survey versions in the baseline survey form and adult surveys for the rest of the time points.  The young adult surveys are the correct ones"
-ya_surveys_correct <- as.character(c(4,8,16,17,21))
+# These are all included in the defined YA group anyway.
+
 # 6 month survey analysis
 child_surveys_6_month <- child_surveys_paid %>%
   select(record_id,Timepoint,paid_score) %>%
@@ -815,6 +816,70 @@ child_surveys_6_month <- child_surveys_paid %>%
   left_join(child_surveys_worry[,c("record_id","Timepoint","worry_score")],
             by=c("record_id", "Timepoint")) %>%
   mutate(total_hfs_score = worry_score + behave_score) %>%
-  filter(Timepoint %in% c("baseline","Time 1", "Time 2"))
+  filter(Timepoint %in% c(0,2,3))
+child_surveys_6_month$Group <- "Child"
+# Z scores
+child_surveys_6_month$worry_score_z <- (child_surveys_6_month$worry_score - mean(child_surveys_6_month$worry_score, na.rm = T)) / sd(child_surveys_6_month$worry_score, na.rm = T)
+child_surveys_6_month$behave_score_z <- (child_surveys_6_month$behave_score - mean(child_surveys_6_month$behave_score, na.rm = T)) / sd(child_surveys_6_month$behave_score, na.rm = T)
+
+ya_surveys_6_month <- ya_surveys_paid %>%
+  select(record_id,Timepoint,paid_score) %>%
+  left_join(ya_surveys_behave[,c("record_id","Timepoint","behave_score")],
+            by=c("record_id", "Timepoint")) %>%
+  left_join(ya_surveys_worry[,c("record_id","Timepoint","worry_score")],
+            by=c("record_id", "Timepoint")) %>%
+  mutate(total_hfs_score = worry_score + behave_score) %>%
+  filter(Timepoint %in% c("baseline","Time 1","Time 2"))
+ya_surveys_6_month$Timepoint <- ifelse(ya_surveys_6_month$Timepoint == "baseline",0,
+                                       ifelse(ya_surveys_6_month$Timepoint == "Time 1",2,3))
+ya_surveys_6_month$Group <- "YA"
+# Z scores
+ya_surveys_6_month$worry_score_z <- (ya_surveys_6_month$worry_score - mean(ya_surveys_6_month$worry_score, na.rm = T)) / sd(ya_surveys_6_month$worry_score, na.rm = T)
+ya_surveys_6_month$behave_score_z <- (ya_surveys_6_month$behave_score - mean(ya_surveys_6_month$behave_score, na.rm = T)) / sd(ya_surveys_6_month$behave_score, na.rm = T)
+
+parent_surveys_6_month <- parent_surveys_paid %>%
+  select(record_id,Timepoint,paid_score) %>%
+  left_join(parent_surveys_behave[,c("record_id","Timepoint","behave_score")],
+            by=c("record_id", "Timepoint")) %>%
+  left_join(parent_surveys_worry[,c("record_id","Timepoint","worry_score")],
+            by=c("record_id", "Timepoint")) %>%
+  mutate(total_hfs_score = worry_score + behave_score) %>%
+  filter(Timepoint %in% c("baseline","Time 1","Time 2"))
+parent_surveys_6_month$Timepoint <- as.numeric(parent_surveys_6_month$Timepoint) -1
+parent_surveys_6_month$Group <- "Parents"
+# Z scores
+parent_surveys_6_month$worry_score_z <- (parent_surveys_6_month$worry_score - mean(parent_surveys_6_month$worry_score, na.rm = T)) / sd(parent_surveys_6_month$worry_score, na.rm = T)
+parent_surveys_6_month$behave_score_z <- (parent_surveys_6_month$behave_score - mean(parent_surveys_6_month$behave_score, na.rm = T)) / sd(parent_surveys_6_month$behave_score, na.rm = T)
+```
+
+```{r echo=FALSE,warning=FALSE,dpi=600}
 # Plot
+# PAID
+paid_plot_data <- rbind(child_surveys_6_month[,c("record_id","Timepoint","Group","paid_score")],
+                        ya_surveys_6_month[,c("record_id","Timepoint","Group","paid_score")],
+                        parent_surveys_6_month[,c("record_id","Timepoint","Group","paid_score")])
+paid_plot_data$Timepoint <- as.factor(paid_plot_data$Timepoint)
+levels(paid_plot_data$Timepoint) <- list("B"=0,"T1"=2,"T2"=3)
+paid_plot <- ggplot(subset(paid_plot_data),aes(x=Timepoint,y=paid_score,group=record_id))+
+  geom_point(size = 0.2) +
+  stat_summary(fun.y=mean, geom="point",aes(group = Group,colour = Group)) +
+  stat_summary(fun.y=mean, geom="line", aes(group = Group,colour = Group)) +
+  xlab("Timepoint") + 
+  ylab("PAID Score") +
+  theme(legend.title=element_blank())
+paid_plot
+# Behave
+behave_plot_data <- rbind(child_surveys_6_month[,c("record_id","Timepoint","Group","behave_score_z")],
+                        ya_surveys_6_month[,c("record_id","Timepoint","Group","behave_score_z")],
+                        parent_surveys_6_month[,c("record_id","Timepoint","Group","behave_score_z")])
+behave_plot_data$Timepoint <- as.factor(behave_plot_data$Timepoint)
+levels(behave_plot_data$Timepoint) <- list("B"=0,"T1"=2,"T2"=3)
+behave_plot <- ggplot(subset(behave_plot_data),aes(x=Timepoint,y=behave_score_z,group=record_id))+
+  geom_point(size = 0.2) +
+  stat_summary(fun.y=mean, geom="point",aes(group = Group,colour = Group)) +
+  stat_summary(fun.y=mean, geom="line", aes(group = Group,colour = Group)) +
+  xlab("Timepoint") + 
+  ylab("behave Score") +
+  theme(legend.title=element_blank())
+behave_plot
 ```
