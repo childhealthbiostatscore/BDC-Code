@@ -11,6 +11,8 @@ library(redcapAPI)
 library(tidyverse)
 library(knitr)
 library(tableone)
+library(readxl)
+library(nlme)
 source("/Users/timvigers/Documents/GitHub/Tim-and-Laura/tim_R_functions.R")
 # Check OS and alter file path accordingly.
 if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.Platform$OS.type == "unix"){pathstart <- "/Volumes/"}
@@ -152,10 +154,16 @@ t2_glycemic <- rbind(t2_glycemic_child,t2_glycemic_ya) %>%
   arrange(as.numeric(record_id))
 t2_glycemic <- as.data.frame(lapply(t2_glycemic, as.numeric))
 t2_glycemic$Timepoint <- "T2"
-# Bind timepoints, remove withdrawals and never trained
-glycemic_data <- bind_rows(baseline_glycemic,m1_glycemic,t1_glycemic,t2_glycemic) %>%
+# Bind timepoints, 
+glycemic_data <- bind_rows(baseline_glycemic,m1_glycemic,t1_glycemic,t2_glycemic) 
+# Baseline HbA1c group
+glycemic_data <- glycemic_data %>%
+  group_by(record_id) %>%
+  mutate(hba1c_baseline = hba1c[1]) %>%
+  mutate(hba1c_clinical = cut(hba1c_baseline,breaks = c(0,7.5,9.0,Inf),
+                              labels = c("Low Baseline HbA1c","Medium Baseline HbA1c","High Baseline HbA1c"))) %>%
   arrange(record_id,Timepoint) %>%
-  select(record_id,Timepoint,days,hba1c:amexit_other) %>%
+  select(record_id,Timepoint,days,hba1c:hba1c_clinical) %>%
   filter(!(record_id %in% never_trained) & !(record_id %in% withdrawn))
 # Discontinuers
 t1_discont <- glycemic_data %>%
@@ -168,12 +176,6 @@ t2_discont <- glycemic_data %>%
   filter(Timepoint == "T2", am_time < 10) %>%
   .$record_id
 t2_discont <- t2_discont[which(!(t2_discont %in% t1_discont))]
-# Baseline HbA1c group
-glycemic_data <- glycemic_data %>%
-  group_by(record_id) %>%
-  mutate(hba1c_baseline = hba1c[1]) %>%
-  mutate(hba1c_clinical = cut(hba1c_baseline,breaks = c(0,7.5,9.0,Inf),
-                              labels = c("Low Baseline HbA1c","Medium Baseline HbA1c","High Baseline HbA1c")))
 ```
 
 ```{r echo=FALSE,include=FALSE,cache=TRUE}
@@ -482,6 +484,22 @@ parent_surveys_worry$worry_score <-
   apply(parent_surveys_worry[3:ncol(parent_surveys_worry)],1,sum)
 ```
 
+# Methods
+
+Linear mixed effects models were used to examine change in HbA1c over time. Three models were compared using Aikaike’s Information Criterion to select the best model:
+
+1.	A random intercept model with visit number (baseline, T1, T2) as a categorical time variable.  No adjustment for baseline.
+2.	A random intercept model with visit number as a continuous time variable, without adjustment for baseline.
+3.	A random intercept and random slope model, without adjustment for baseline.
+
+The random intercept model with time treated as a categorical variable was the best model. Originally the models were adjusted for baseline value (as we did for the abstract), but it was decided that this adjustment does not make sense given the question this study wants to answer, in addition to making the model results difficult to interpret.
+
+The HbA1c model included an interaction term for baseline HbA1c group with timepoint, but the CGM variable models did not. We examined the interaction effect of age and timepoint on HbA1c, but it was not significant. Differences between timepoints for each baseline HbA1c group were compared using linear contrasts.
+
+Discontinuation was defined as AM time < 10 at either T1 or T2. This analysis excluded those never trained on automode, and all timepoints with < 10 AM time.
+
+# Results
+
 ```{r echo=FALSE,include=FALSE}
 # Table 1
 dem_vars <- c("hba1c_baseline","demographics_t1d_duration","demographics_age",
@@ -490,19 +508,22 @@ dem_vars <- c("hba1c_baseline","demographics_t1d_duration","demographics_age",
               "demographics_cgmhx")
 # Get days from AM
 days <- glycemic_data %>%
-  select(record_id,Timepoint,days,hba1c_clinical,hba1c_baseline)
+  select(record_id,Timepoint,days)
 days <- spread(days,Timepoint,days)
-colnames(days) <- c("record_id","hba1c_clinical","hba1c_baseline","baseline_a1c_to_am","am_to_m1","am_to_t1","am_to_t2")
+colnames(days) <- c("record_id","baseline_a1c_to_am","am_to_m1","am_to_t1","am_to_t2")
 days$record_id <- as.character(days$record_id)
 # Add to demographics
 demographics <- left_join(demographics,days,by = "record_id")
-demographics <- left_join(demographics,child_full[,c("record_id","hba1c_date_b")])
+demographics <- left_join(demographics,child_full[,c("record_id","hba1c_date_b","hba1c_baseline")])
+demographics$hba1c_clinical <- cut(demographics$hba1c_baseline,breaks = c(0,7.5,9.0,Inf),
+                              labels = c("Low Baseline HbA1c","Medium Baseline HbA1c","High Baseline HbA1c"))
 demographics$hba1c_date_b <- lubridate::mdy(demographics$hba1c_date_b)
 demographics$baseline_a1c_to_am <- as.numeric(difftime(demographics$automode_start,demographics$hba1c_date_b,units = "days"))
 # Table 1
 demographics$continuation <- ifelse(demographics$record_id %in% t1_discont,"Discontinued T1",
                                ifelse(demographics$record_id %in% t2_discont,"Discontinued T2",
                                       ifelse(demographics$record_id %in% never_trained,"Never Trained","Continued")))
+demographics$trained <- ifelse(demographics$continuation == "Never Trained","Never Trained","Trained")
 # Format
 demographics[c("demographics_ethnicity","demographics_race","demographics_sex",
                "demographics_insurance","demographics_pumphx",
@@ -515,25 +536,272 @@ dem_vars <- c("baseline_a1c_to_am","am_to_m1","am_to_t1","am_to_t2",dem_vars)
 nonnormal <- norm.check(demographics,c("hba1c_baseline","baseline_a1c_to_am",
                                        "am_to_m1","am_to_t1","am_to_t2",
                                        "demographics_age","demographics_t1d_duration"))
+# Trained vs. never
+t1a <- CreateTableOne(dem_vars,data = demographics,strata = "trained")
+t1a <- print(t1a,nonnormal = nonnormal,printToggle = F)
 # Continuers
-t1 <- CreateTableOne(dem_vars,data = demographics,strata = "continuation")
-t1 <- print(t1,nonnormal = nonnormal,printToggle = F)
+t1b <- CreateTableOne(dem_vars,data = demographics,strata = "continuation")
+t1b <- print(t1b,nonnormal = nonnormal,printToggle = F)
 ```
 
-### Table 1: Descriptive statistics
+### Table 1a: Descriptive statistics by AM training status
 
 ```{r echo=FALSE}
-kable(t1)
+kable(t1a)
 ```
 
+### Table 1b: Descriptive statistics by continuation status
+
 ```{r echo=FALSE}
+kable(t1b)
+```
+
+```{r echo=FALSE,include=FALSE}
 # 6 month glycemic analysis
 # If participant discontinued at T1, remove T1 and T2, if dicontinued at T2, remove just T2. Also remove those never trained.
 glycemic_data_6_month <- glycemic_data %>% 
   filter(!(record_id %in% never_trained)) %>%
   filter(!(record_id %in% t1_discont & (Timepoint == "T1" | Timepoint == "T2"))) %>%
   filter(!(record_id %in% t2_discont & Timepoint == "T2"))
+glycemic_data_6_month$record_id <- as.character(glycemic_data_6_month$record_id)
+glycemic_data_6_month <- left_join(glycemic_data_6_month,demographics[,c("record_id","age_group")])
+# Remove M1, group by clinical A1c cutoffs at baseline
+data_no_m1 <- glycemic_data_6_month %>%
+  filter(Timepoint != "M1")
+# Write file for SAS contrasts
+write.csv(data_no_m1,file = "/Users/timvigers/Desktop/cari.csv",
+          row.names = F,na="")
+# Remove B (e.g. for % time AM models etc.)
+data_no_b <- glycemic_data_6_month %>%
+  filter(Timepoint != "B")
+# A1c plot
+a1c_overall <- 
+  ggplot(data_no_m1,aes_string(x = "Timepoint",y = "hba1c")) + 
+  geom_point(size = 0.2) +
+  stat_summary(fun.y=mean, colour="red", geom="point") +
+  stat_summary(fun.y=mean, colour="red", geom="line", aes(group = 1)) +
+  xlab("Timepoint") + 
+  ylab("HbA1c (%)") +
+  theme(legend.title=element_blank())
 ```
+
+### Figure 1: Mean HbA1c by Timepoint
+
+```{r echo=FALSE,warning=FALSE,dpi=600}
+a1c_overall
+```
+
+### Table 2: A1c Mixed Models by Baseline HbA1c Group
+
+```{r include=FALSE}
+# A1c mixed models
+a1c_age_mod <- lme(hba1c ~ Timepoint*age_group,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+a1c_glyc_control_mod <- lme(hba1c ~ Timepoint*hba1c_clinical,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+# Means models
+a1c_age_mod_means <- lme(hba1c ~ Timepoint:age_group-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+a1c_glyc_control_mod_means <- lme(hba1c ~ Timepoint:hba1c_clinical-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+# Contrasts
+# cmat.emmc <- rbind(c(0, 0, 1, 0, 0, 0, 0, 0, -1),
+#               c(1, 0, 0, 0, 0, 0, -1, 0, 0),
+#               c(0, 1, 0, 0, 0, 0, 0, -1, 0),
+#               c(0, 0, 0, 0, 0, 1, 0, 0, -1),
+#               c(0, 0, 0, 1, 0, 0, -1, 0, 0),
+#               c(0, 0, 0, 0, 1, 0, 0, -1, 0))
+# a1c_glyc_emm <- emmeans(a1c_glyc_control_mod,~Timepoint:hba1c_clinical)
+# contrast(a1c_glyc_emm,"cmat")
+```
+
+```{r echo=FALSE}
+# Import results from contrasts in SAS.
+estimates <- read_excel(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Reports/estimates.xlsx"))
+means <- read_excel(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Reports/means.xlsx"))
+```
+
+```{r echo=FALSE}
+kable(means[,c("Timepoint","hba1c_clinical","Estimate","StdErr","Probt")],caption = "Group Means by Time Point")
+kable(anova.lme(a1c_glyc_control_mod),caption = "Type 3 Tests of Fixed Effects")
+kable(estimates[,c("Label","Estimate","StdErr","Probt")],caption = "Timepoint Differences by HbA1c Group")
+```
+
+### HbA1c mixed model interpretation
+The "Group Means by Timepoint" table shows the average HbA1c at each timepoint, for each HbA1c group. The p values in this table ("Probt") refer to whether the mean HbA1c is close to 0, so they can be ignored for now. 
+
+The type 3 tests of fixed effects show that timepoint, HbA1c group, and the interaction between timepoint and HbA1c group were each significant overall.
+
+"Timepoint Differences by HbA1c Group" shows whether time 1 or time 2 were significantly different from baseline, by HbA1c group (Low = (0,7.5], Medium = (7.5,9], High = (9,Inf]). So on average, the low A1c group increased by 0.098 from baseline to visit 1, but it was not statistically significant. On average the high A1c group decreased by 0.994 from baseline to visit 1, which was statistically significant (p < 0.0001).
+
+```{r echo=FALSE}
+# CGM data models
+# TIR
+tir_u54_mod <- lme(sensor_u54 ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+tir_u54_mod_means <- lme(sensor_u54 ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+
+tir_55_69_mod <- lme(sensor_55_69 ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+tir_55_69_mod_means <- lme(sensor_55_69 ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+
+tir_70_180_mod <- lme(sensor_70_180 ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+tir_70_180_mod_means <- lme(sensor_70_180 ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+
+tir_181_250_mod <- lme(sensor_181_250 ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+tir_181_250_mod_means <- lme(sensor_181_250 ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+
+tir_g250_mod <- lme(sensor_g250 ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+tir_g250_mod_means <- lme(sensor_g250 ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+# AM time
+am_mod <- lme(am_time ~ Timepoint,random=~1|record_id,data = data_no_b,na.action = na.omit)
+am_mod_means <- lme(am_time ~ Timepoint-1,random=~1|record_id,data = data_no_b,na.action = na.omit)
+# Sensor wear
+sensor_wear_mod <- lme(sensor_wear ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+sensor_wear_mod_means <- lme(sensor_wear ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+# AM exits
+amexit_day_mod <- lme(amexit_day ~ Timepoint,random=~1|record_id,data = data_no_b,na.action = na.omit)
+amexit_day_mod_means <- lme(amexit_day ~ Timepoint-1,random=~1|record_id,data = data_no_b,na.action = na.omit)
+# BG Checks
+bg_checks_mod <- lme(bg_checks ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+bg_checks_mod_means <- lme(bg_checks ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+# Calibrations
+calibrations_mod <- lme(calibrations ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+calibrations_mod_means <- lme(calibrations ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+# TDD
+tdd_mod <- lme(tdd ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+tdd_mod_means <- lme(tdd ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+# Basal
+basal_mod <- lme(basal ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+basal_mod_means <- lme(basal ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+# Bolus
+bolus_mod <- lme(bolus ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+bolus_mod_means <- lme(bolus ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+```
+
+## Table 3: CGM Variable Mixed Models Summary
+
+```{r echo=FALSE}
+# Make table
+mod_summary <- as.data.frame(matrix(nrow = 13,ncol = 6))
+colnames(mod_summary) <- c("Baseline","Month 1","Time 1","T1 P value","Time 2","T2 P value")
+rownames(mod_summary) <- c("TIR Under 54","TIR 55-69","TIR 70-180",
+                           "TIR 181-250","TIR >250","AM Time","Sensor Wear",
+                           "AM Exits Per Day","BG Checks","Calibrations","TDD",
+                           "Basal","Bolus")
+# TIR
+tir_u54 <- paste0(round(summary(tir_u54_mod_means)$tTable[,1],3)," (",
+              round(summary(tir_u54_mod_means)$tTable[,2],3),")")
+mod_summary["TIR Under 54","Baseline"] <- tir_u54[1]
+mod_summary["TIR Under 54","Time 1"] <- tir_u54[2]
+mod_summary["TIR Under 54","T1 P value"] <- summary(tir_u54_mod)$tTable[2,5]
+mod_summary["TIR Under 54","Time 2"] <- tir_u54[3]
+mod_summary["TIR Under 54","T2 P value"] <- summary(tir_u54_mod)$tTable[3,5]
+
+tir_55_69 <- paste0(round(summary(tir_55_69_mod_means)$tTable[,1],3)," (",
+              round(summary(tir_55_69_mod_means)$tTable[,2],3),")")
+mod_summary["TIR 55-69","Baseline"] <- tir_55_69[1]
+mod_summary["TIR 55-69","Time 1"] <- tir_55_69[2]
+mod_summary["TIR 55-69","T1 P value"] <- summary(tir_55_69_mod)$tTable[2,5]
+mod_summary["TIR 55-69","Time 2"] <- tir_55_69[3]
+mod_summary["TIR 55-69","T2 P value"] <- summary(tir_55_69_mod)$tTable[3,5]
+
+tir_70_180 <- paste0(round(summary(tir_70_180_mod_means)$tTable[,1],3)," (",
+              round(summary(tir_70_180_mod_means)$tTable[,2],3),")")
+mod_summary["TIR 70-180","Baseline"] <- tir_70_180[1]
+mod_summary["TIR 70-180","Time 1"] <- tir_70_180[2]
+mod_summary["TIR 70-180","T1 P value"] <- summary(tir_70_180_mod)$tTable[2,5]
+mod_summary["TIR 70-180","Time 2"] <- tir_70_180[3]
+mod_summary["TIR 70-180","T2 P value"] <- summary(tir_70_180_mod)$tTable[3,5]
+
+tir_181_250 <- paste0(round(summary(tir_181_250_mod_means)$tTable[,1],3)," (",
+              round(summary(tir_181_250_mod_means)$tTable[,2],3),")")
+mod_summary["TIR 181-250","Baseline"] <- tir_181_250[1]
+mod_summary["TIR 181-250","Time 1"] <- tir_181_250[2]
+mod_summary["TIR 181-250","T1 P value"] <- summary(tir_181_250_mod)$tTable[2,5]
+mod_summary["TIR 181-250","Time 2"] <- tir_181_250[3]
+mod_summary["TIR 181-250","T2 P value"] <- summary(tir_181_250_mod)$tTable[3,5]
+
+tir_g250 <- paste0(round(summary(tir_g250_mod_means)$tTable[,1],3)," (",
+              round(summary(tir_g250_mod_means)$tTable[,2],3),")")
+mod_summary["TIR >250","Baseline"] <- tir_g250[1]
+mod_summary["TIR >250","Time 1"] <- tir_g250[2]
+mod_summary["TIR >250","T1 P value"] <- summary(tir_g250_mod)$tTable[2,5]
+mod_summary["TIR >250","Time 2"] <- tir_g250[3]
+mod_summary["TIR >250","T2 P value"] <- summary(tir_g250_mod)$tTable[3,5]
+
+# AM time
+am <- paste0(round(summary(am_mod_means)$tTable[,1],3)," (",
+             round(summary(am_mod_means)$tTable[,2],3),")")
+mod_summary["AM Time","Month 1"] <- am[1]
+mod_summary["AM Time","Time 1"] <- am[2]
+mod_summary["AM Time","T1 P value"] <- summary(am_mod)$tTable[2,5]
+mod_summary["AM Time","Time 2"] <- am[3]
+mod_summary["AM Time","T2 P value"] <- summary(am_mod)$tTable[3,5]
+
+# Sensor
+sensor_wear <- paste0(round(summary(sensor_wear_mod_means)$tTable[,1],3)," (",
+                      round(summary(sensor_wear_mod_means)$tTable[,2],3),")")
+mod_summary["Sensor Wear","Baseline"] <- sensor_wear[1]
+mod_summary["Sensor Wear","Time 1"] <- sensor_wear[2]
+mod_summary["Sensor Wear","T1 P value"] <- summary(sensor_wear_mod)$tTable[2,5]
+mod_summary["Sensor Wear","Time 2"] <- sensor_wear[3]
+mod_summary["Sensor Wear","T2 P value"] <- summary(sensor_wear_mod)$tTable[3,5]
+
+# AM Exits Per Day
+amexit_day <- paste0(round(summary(amexit_day_mod_means)$tTable[,1],3)," (",
+                     round(summary(amexit_day_mod_means)$tTable[,2],3),")")
+mod_summary["AM Exits Per Day","Month 1"] <- amexit_day[1]
+mod_summary["AM Exits Per Day","Time 1"] <- amexit_day[2]
+mod_summary["AM Exits Per Day","T1 P value"] <- summary(amexit_day_mod)$tTable[2,5]
+mod_summary["AM Exits Per Day","Time 2"] <- amexit_day[3]
+mod_summary["AM Exits Per Day","T2 P value"] <- summary(amexit_day_mod)$tTable[3,5]
+
+# BG Checks
+bg_checks <- paste0(round(summary(bg_checks_mod_means)$tTable[,1],3)," (",
+              round(summary(bg_checks_mod_means)$tTable[,2],3),")")
+mod_summary["BG Checks","Baseline"] <- bg_checks[1]
+mod_summary["BG Checks","Time 1"] <- bg_checks[2]
+mod_summary["BG Checks","T1 P value"] <- summary(bg_checks_mod)$tTable[2,5]
+mod_summary["BG Checks","Time 2"] <- bg_checks[3]
+mod_summary["BG Checks","T2 P value"] <- summary(bg_checks_mod)$tTable[3,5]
+# Calibrations
+calibrations <- paste0(round(summary(calibrations_mod_means)$tTable[,1],3)," (",
+              round(summary(calibrations_mod_means)$tTable[,2],3),")")
+mod_summary["Calibrations","Baseline"] <- calibrations[1]
+mod_summary["Calibrations","Time 1"] <- calibrations[2]
+mod_summary["Calibrations","T1 P value"] <- summary(calibrations_mod)$tTable[2,5]
+mod_summary["Calibrations","Time 2"] <- calibrations[3]
+mod_summary["Calibrations","T2 P value"] <- summary(calibrations_mod)$tTable[3,5]
+# TDD
+tdd <- paste0(round(summary(tdd_mod_means)$tTable[,1],3)," (",
+              round(summary(tdd_mod_means)$tTable[,2],3),")")
+mod_summary["TDD","Baseline"] <- tdd[1]
+mod_summary["TDD","Time 1"] <- tdd[2]
+mod_summary["TDD","T1 P value"] <- summary(tdd_mod)$tTable[2,5]
+mod_summary["TDD","Time 2"] <- tdd[3]
+mod_summary["TDD","T2 P value"] <- summary(tdd_mod)$tTable[3,5]
+# Basal
+basal <- paste0(round(summary(basal_mod_means)$tTable[,1],3)," (",
+              round(summary(basal_mod_means)$tTable[,2],3),")")
+mod_summary["Basal","Baseline"] <- basal[1]
+mod_summary["Basal","Time 1"] <- basal[2]
+mod_summary["Basal","T1 P value"] <- summary(basal_mod)$tTable[2,5]
+mod_summary["Basal","Time 2"] <- basal[3]
+mod_summary["Basal","T2 P value"] <- summary(basal_mod)$tTable[3,5]
+# Bolus
+bolus <- paste0(round(summary(bolus_mod_means)$tTable[,1],3)," (",
+              round(summary(bolus_mod_means)$tTable[,2],3),")")
+mod_summary["Bolus","Baseline"] <- bolus[1]
+mod_summary["Bolus","Time 1"] <- bolus[2]
+mod_summary["Bolus","T1 P value"] <- summary(bolus_mod)$tTable[2,5]
+mod_summary["Bolus","Time 2"] <- bolus[3]
+mod_summary["Bolus","T2 P value"] <- summary(bolus_mod)$tTable[3,5]
+# Adjust p values, format
+mod_summary$`T1 P value` <- format.pval(p.adjust(mod_summary$`T1 P value`,"fdr"),
+                                        eps = 0.001,digits = 2)
+mod_summary$`T2 P value` <- format.pval(p.adjust(mod_summary$`T2 P value`,"fdr"),
+                                        eps = 0.001,digits = 2)
+# Print
+options(knitr.kable.NA = '')
+kable(mod_summary)
+```
+
+Reported as mean (standard error). All continuers, no interaction by HbA1c group included in these models. P values adjusted for multiple comparisons using the false discovery rate (FDR) method. 
 
 ```{r echo=FALSE}
 # Per Cari Berget 5/1/19:
@@ -549,5 +817,4 @@ child_surveys_6_month <- child_surveys_paid %>%
   mutate(total_hfs_score = worry_score + behave_score) %>%
   filter(Timepoint %in% c("baseline","Time 1", "Time 2"))
 # Plot
-
 ```
