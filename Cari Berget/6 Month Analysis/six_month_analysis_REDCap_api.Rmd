@@ -510,6 +510,60 @@ days <- glycemic_data %>%
 days <- spread(days,Timepoint,days)
 colnames(days) <- c("record_id","baseline_a1c_to_am","am_to_m1","am_to_t1","am_to_t2")
 days$record_id <- as.character(days$record_id)
+# Survey days between timepoints
+survey_days <- child_full %>%
+  select(record_id,date,timepoint_baselinesurvey)
+colnames(survey_days) <- c("record_id","date","Timepoint")
+temp <- child_full %>%
+  select(record_id,date_t1,timepoint_survey1)
+colnames(temp) <- c("record_id","date","Timepoint")
+survey_days <- rbind(survey_days,temp)
+temp <- child_full %>%
+  select(record_id,c_date_t2,timepoint_survey2)
+colnames(temp) <- c("record_id","date","Timepoint")
+survey_days <- rbind(survey_days,temp)
+temp <- child_full %>%
+  select(record_id,c_date_t3,timepoint_survey3)
+colnames(temp) <- c("record_id","date","Timepoint")
+survey_days <- rbind(survey_days,temp)
+temp <- child_full %>%
+  select(record_id,c_date_t4,timepoint_survey4)
+colnames(temp) <- c("record_id","date","Timepoint")
+survey_days <- rbind(survey_days,temp)
+survey_days$Timepoint <- as.factor(survey_days$Timepoint)
+levels(survey_days$Timepoint) <- list("B"=0,"T1"=2,"T2"=3)
+survey_days <- survey_days %>%
+  arrange(as.numeric(record_id),Timepoint) %>%
+  filter(Timepoint %in% c("B","T1","T2"))
+
+survey_days <- ya_full %>%
+  select(record_id,date,timepoint_baselinesurvey)
+colnames(survey_days) <- c("record_id","date","Timepoint")
+temp <- ya_full %>%
+  select(record_id,date_t1,timepoint_survey1)
+colnames(temp) <- c("record_id","date","Timepoint")
+survey_days <- rbind(survey_days,temp)
+temp <- ya_full %>%
+  select(record_id,c_date_t2,timepoint_survey2)
+colnames(temp) <- c("record_id","date","Timepoint")
+survey_days <- rbind(survey_days,temp)
+temp <- ya_full %>%
+  select(record_id,c_date_t3,timepoint_survey3)
+colnames(temp) <- c("record_id","date","Timepoint")
+survey_days <- rbind(survey_days,temp)
+temp <- ya_full %>%
+  select(record_id,c_date_t4,timepoint_survey4)
+colnames(temp) <- c("record_id","date","Timepoint")
+survey_days <- rbind(survey_days,temp)
+survey_days$Timepoint <- as.factor(survey_days$Timepoint)
+levels(survey_days$Timepoint) <- list("B"=0,"T1"=2,"T2"=3)
+survey_days <- survey_days %>%
+  arrange(as.numeric(record_id),Timepoint) %>%
+  filter(Timepoint %in% c("B","T1","T2"))
+
+temp <- ya_full %>%
+  select(record_id,ya_hfs_date_b,timepoint_baselinesurvey,ya_hfs_date_t1,timepoint_survey1,
+         ya_hfs_date_t2,timepoint_survey2,ya_hfs_date_t3,timepoint_survey3)
 # Add to demographics
 demographics <- left_join(demographics,days,by = "record_id")
 demographics <- left_join(demographics,child_full[,c("record_id","hba1c_date_b","hba1c_baseline")])
@@ -585,10 +639,9 @@ a1c_overall <-
   xlab("Timepoint") + 
   ylab("HbA1c (%)") +
   theme(legend.title=element_blank())
-a1c_overall
 ```
 
-### Number of visits with at least some data for each timepoint
+### Number of visits with at least some glycemic data for each timepoint
 
 ```{r echo=FALSE}
 ns <- glycemic_data_6_month
@@ -653,6 +706,11 @@ The type 3 tests of fixed effects show that timepoint, HbA1c group, and the inte
 # Per Cari Berget 5/1/19:
 # "Subjects 4,8,16,17,21 completed the child survey versions in the baseline survey form and adult surveys for the rest of the time points.  The young adult surveys are the correct ones"
 incorrect_surveys <- c("4","8","16","17","21")
+incorrect_surveys_baseline <- which(child_surveys_paid$record_id %in% incorrect_surveys & !is.na(child_surveys_paid$paid_score))
+incorrect_surveys_baseline <- incorrect_surveys_baseline[-c(2)]
+child_surveys_paid$Timepoint[incorrect_surveys_baseline] <- 0
+child_surveys_paid$Timepoint <- as.integer(child_surveys_paid$Timepoint)
+
 # 6 month survey analysis
 child_surveys_6_month <- child_surveys_paid %>%
   select(record_id,Timepoint,paid_score) %>%
@@ -660,15 +718,15 @@ child_surveys_6_month <- child_surveys_paid %>%
             by=c("record_id", "Timepoint")) %>%
   left_join(child_surveys_worry[,c("record_id","Timepoint","worry_score")],
             by=c("record_id", "Timepoint")) %>%
-  mutate(total_hfs_score = worry_score + behave_score) %>%
-  filter(Timepoint %in% c(0,2,3))
+  mutate(total_hfs_score = worry_score + behave_score)
 child_surveys_6_month$Timepoint <- as.factor(child_surveys_6_month$Timepoint)
 levels(child_surveys_6_month$Timepoint) <- list("B"=0,"T1"=2,"T2"=3)
 child_surveys_6_month$Group <- "Child"
 child_surveys_6_month <- child_surveys_6_month %>%
   filter(!(record_id %in% never_trained)) %>%
   filter(!(record_id %in% t1_discont & (Timepoint == "T1" | Timepoint == "T2"))) %>%
-  filter(!(record_id %in% t2_discont & Timepoint == "T2"))
+  filter(!(record_id %in% t2_discont & Timepoint == "T2")) %>%
+  filter(Timepoint %in% c("B","T1","T2"))
 # Z scores
 child_surveys_6_month$worry_score_z <- (child_surveys_6_month$worry_score - mean(child_surveys_6_month$worry_score, na.rm = T)) / sd(child_surveys_6_month$worry_score, na.rm = T)
 child_surveys_6_month$behave_score_z <- (child_surveys_6_month$behave_score - mean(child_surveys_6_month$behave_score, na.rm = T)) / sd(child_surveys_6_month$behave_score, na.rm = T)
@@ -701,7 +759,8 @@ parent_surveys_6_month <- parent_surveys_paid %>%
   left_join(parent_surveys_worry[,c("record_id","Timepoint","worry_score")],
             by=c("record_id", "Timepoint")) %>%
   mutate(total_hfs_score = worry_score + behave_score) %>%
-  filter(Timepoint %in% c("baseline","Time 1","Time 2"))
+  filter(Timepoint %in% c("baseline","Time 1","Time 2")) %>%
+  filter(!(record_id %in% ya)) # Filter out parents associated with a YA
 parent_surveys_6_month$Timepoint <- as.numeric(parent_surveys_6_month$Timepoint) -1
 parent_surveys_6_month$Group <- "Parents"
 parent_surveys_6_month$Timepoint <- as.factor(parent_surveys_6_month$Timepoint)
@@ -716,6 +775,32 @@ parent_surveys_6_month$worry_score_z <- (parent_surveys_6_month$worry_score - me
 parent_surveys_6_month$behave_score_z <- (parent_surveys_6_month$behave_score - mean(parent_surveys_6_month$behave_score, na.rm = T)) / sd(parent_surveys_6_month$behave_score, na.rm = T)
 # Combine child and YA survey data
 c_ya_surveys_6_month <- rbind(child_surveys_6_month,ya_surveys_6_month)
+```
+
+### Number of visits with at least some glycemic data for each timepoint, children and YA
+
+```{r echo=FALSE}
+# Numbers
+ns <- c_ya_surveys_6_month
+ns$nas <- rowSums(is.na(ns))
+ns <- ns %>%
+  filter(nas < 6) %>%
+  ungroup() %>%
+  count(Timepoint)
+kable(ns)
+```
+
+### Number of visits with at least some glycemic data for each timepoint, parents
+
+```{r echo=FALSE}
+# Numbers
+ns <- parent_surveys_6_month
+ns$nas <- rowSums(is.na(ns))
+ns <- ns %>%
+  filter(nas < 6) %>%
+  ungroup() %>%
+  count(Timepoint)
+kable(ns)
 ```
 
 ```{r echo=FALSE}
