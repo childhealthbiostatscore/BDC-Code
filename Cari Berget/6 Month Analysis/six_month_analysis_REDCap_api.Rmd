@@ -510,60 +510,28 @@ days <- glycemic_data %>%
 days <- spread(days,Timepoint,days)
 colnames(days) <- c("record_id","baseline_a1c_to_am","am_to_m1","am_to_t1","am_to_t2")
 days$record_id <- as.character(days$record_id)
-# Survey days between timepoints
-survey_days <- child_full %>%
-  select(record_id,date,timepoint_baselinesurvey)
-colnames(survey_days) <- c("record_id","date","Timepoint")
-temp <- child_full %>%
-  select(record_id,date_t1,timepoint_survey1)
-colnames(temp) <- c("record_id","date","Timepoint")
-survey_days <- rbind(survey_days,temp)
-temp <- child_full %>%
-  select(record_id,c_date_t2,timepoint_survey2)
-colnames(temp) <- c("record_id","date","Timepoint")
-survey_days <- rbind(survey_days,temp)
-temp <- child_full %>%
-  select(record_id,c_date_t3,timepoint_survey3)
-colnames(temp) <- c("record_id","date","Timepoint")
-survey_days <- rbind(survey_days,temp)
-temp <- child_full %>%
-  select(record_id,c_date_t4,timepoint_survey4)
-colnames(temp) <- c("record_id","date","Timepoint")
-survey_days <- rbind(survey_days,temp)
-survey_days$Timepoint <- as.factor(survey_days$Timepoint)
-levels(survey_days$Timepoint) <- list("B"=0,"T1"=2,"T2"=3)
-survey_days <- survey_days %>%
-  arrange(as.numeric(record_id),Timepoint) %>%
-  filter(Timepoint %in% c("B","T1","T2"))
+# Survey days between timepoints - done manually to save time on this report
+survey_days_c <- read.csv("/Volumes/som-1/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/children_survey_dates.csv",na.strings = c("NA","")) %>%
+  filter(!(record_id %in% ya))
+survey_days_c[,c("automode_start","date","date_t1","c_date_t2","c_date_t3","c_date_t4")] <- 
+  lapply(survey_days_c[,c("automode_start","date","date_t1","c_date_t2","c_date_t3","c_date_t4")],
+         lubridate::mdy)
+survey_days_c$baseline_survey_to_am <- abs(as.numeric(difftime(survey_days_c$date,survey_days_c$automode_start,units = "days")))
+survey_days_c$survey_am_to_t1 <- as.numeric(difftime(survey_days_c$date_t1,survey_days_c$automode_start,units = "days"))
+survey_days_c$survey_am_to_t2 <- as.numeric(difftime(survey_days_c$c_date_t2,survey_days_c$automode_start,units = "days"))
 
-survey_days <- ya_full %>%
-  select(record_id,date,timepoint_baselinesurvey)
-colnames(survey_days) <- c("record_id","date","Timepoint")
-temp <- ya_full %>%
-  select(record_id,date_t1,timepoint_survey1)
-colnames(temp) <- c("record_id","date","Timepoint")
-survey_days <- rbind(survey_days,temp)
-temp <- ya_full %>%
-  select(record_id,c_date_t2,timepoint_survey2)
-colnames(temp) <- c("record_id","date","Timepoint")
-survey_days <- rbind(survey_days,temp)
-temp <- ya_full %>%
-  select(record_id,c_date_t3,timepoint_survey3)
-colnames(temp) <- c("record_id","date","Timepoint")
-survey_days <- rbind(survey_days,temp)
-temp <- ya_full %>%
-  select(record_id,c_date_t4,timepoint_survey4)
-colnames(temp) <- c("record_id","date","Timepoint")
-survey_days <- rbind(survey_days,temp)
-survey_days$Timepoint <- as.factor(survey_days$Timepoint)
-levels(survey_days$Timepoint) <- list("B"=0,"T1"=2,"T2"=3)
-survey_days <- survey_days %>%
-  arrange(as.numeric(record_id),Timepoint) %>%
-  filter(Timepoint %in% c("B","T1","T2"))
-
-temp <- ya_full %>%
-  select(record_id,ya_hfs_date_b,timepoint_baselinesurvey,ya_hfs_date_t1,timepoint_survey1,
-         ya_hfs_date_t2,timepoint_survey2,ya_hfs_date_t3,timepoint_survey3)
+survey_days_ya <- read.csv("/Volumes/som-1/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/ya_survey_dates.csv",na.strings = c("NA",""))
+survey_days_ya[,c("ya_automoste_start","ya_hfs_date_b","ya_hfs_date_t1","ya_hfs_date_t2","ya_hfs_date_t3","ya_hfs_date_t4")] <- 
+  lapply(survey_days_ya[,c("ya_automoste_start","ya_hfs_date_b","ya_hfs_date_t1","ya_hfs_date_t2","ya_hfs_date_t3","ya_hfs_date_t4")],lubridate::mdy)
+survey_days_ya$baseline_survey_to_am <- abs(as.numeric(difftime(survey_days_ya$ya_hfs_date_b,
+                                                            survey_days_ya$ya_automoste_start,units = "days")))
+survey_days_ya$survey_am_to_t1 <- as.numeric(difftime(survey_days_ya$ya_hfs_date_t1,
+                                                      survey_days_ya$ya_automoste_start,units = "days"))
+survey_days_ya$survey_am_to_t2 <- as.numeric(difftime(survey_days_ya$ya_hfs_date_t2,
+                                                      survey_days_ya$ya_automoste_start,units = "days"))
+survey_days <- rbind(survey_days_c[,c("record_id","baseline_survey_to_am","survey_am_to_t1","survey_am_to_t2")],
+                     survey_days_ya[,c("record_id","baseline_survey_to_am","survey_am_to_t1","survey_am_to_t2")])
+survey_days$record_id <- as.character(survey_days$record_id )
 # Add to demographics
 demographics <- left_join(demographics,days,by = "record_id")
 demographics <- left_join(demographics,child_full[,c("record_id","hba1c_date_b","hba1c_baseline")])
@@ -571,6 +539,7 @@ demographics$hba1c_clinical <- cut(demographics$hba1c_baseline,breaks = c(0,7.5,
                               labels = c("Low Baseline HbA1c","Medium Baseline HbA1c","High Baseline HbA1c"))
 demographics$hba1c_date_b <- lubridate::mdy(demographics$hba1c_date_b)
 demographics$baseline_a1c_to_am <- as.numeric(difftime(demographics$automode_start,demographics$hba1c_date_b,units = "days"))
+demographics <- left_join(demographics,survey_days,by="record_id")
 # Table 1
 demographics$continuation <- ifelse(demographics$record_id %in% t1_discont,"Discontinued T1",
                                ifelse(demographics$record_id %in% t2_discont,"Discontinued T2",
@@ -584,9 +553,10 @@ demographics[c("demographics_ethnicity","demographics_race","demographics_sex",
                "demographics_insurance","demographics_pumphx",
                "demographics_cgmhx")], as.factor)
 # Variables
-dem_vars <- c("baseline_a1c_to_am","am_to_m1","am_to_t1","am_to_t2",dem_vars)
+dem_vars <- c("baseline_a1c_to_am","am_to_m1","am_to_t1","am_to_t2",
+              "baseline_survey_to_am","survey_am_to_t1","survey_am_to_t2",dem_vars)
 # Non-normal variables
-nonnormal<- c("baseline_a1c_to_am","am_to_m1","am_to_t2","am_to_t1")
+nonnormal<- c("baseline_a1c_to_am","am_to_m1","am_to_t2","am_to_t1","baseline_survey_to_am","survey_am_to_t1","survey_am_to_t2")
 # Trained vs. never
 t1a <- CreateTableOne(dem_vars,data = demographics,strata = "trained")
 t1a <- print(t1a,nonnormal = nonnormal,printToggle = F)
@@ -694,7 +664,7 @@ kable(estimates[,c("Label","Estimate","StdErr","Probt")],caption = "Timepoint Di
 
 ### HbA1c mixed model interpretation
 
-# The "Mixed Model Fixed Effects, Full Cohort" table includes the effect of timepoint on the cohort overall without accounting for baseline HbA1c.
+The "Mixed Model Fixed Effects, Full Cohort" table includes the effect of timepoint on the cohort overall without accounting for baseline HbA1c.
 
 The "Group Means by Timepoint" table shows the average HbA1c at each timepoint, for each HbA1c group. The p values in this table ("Probt") refer to whether the mean HbA1c is close to 0, so they can be ignored for now. 
 
