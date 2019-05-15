@@ -1,5 +1,5 @@
 ########Gerard Gonzalez Latino Program Analysis########
-
+library(Hmisc)
 ######### READ IN ALL DATASETS ########
 
 #Read in Data: LP patients (will need new dataset)
@@ -85,30 +85,22 @@ dat<-by_pt_by_year(dat$MRN,dat)
 dat<-subset(dat,dat$row_num_year==1)
 dat<-dat[order(dat$MRN,dat$visit),]
 
-#Table 1a: same as kaci's results
-#A1c 
-mean(dat$a1c_last_in_year[dat$yeargrouping=="Base1" & dat$trt_grp=="LP"])
-sd(dat$a1c_last_in_year[dat$yeargrouping=="Base1" & dat$trt_grp=="LP"])
-nrow(subset(dat,dat$yeargrouping=="Base1" & dat$trt_grp=="LP" & !is.na(dat$a1c_last_in_year)))
 
-mean(dat$a1c_last_in_year[dat$yeargrouping=="Year1" & dat$trt_grp=="LP"])
-sd(dat$a1c_last_in_year[dat$yeargrouping=="Year1" & dat$trt_grp=="LP"])
-nrow(subset(dat,dat$yeargrouping=="Year1" & dat$trt_grp=="LP" & !is.na(dat$a1c_last_in_year)))
+##prep all variables:
+dat$yeargrouping<-as.factor(dat$yeargrouping)
+label(dat$yeargrouping)<-"Year"
 
-mean(dat$a1c_last_in_year[dat$yeargrouping=="Year2" & dat$trt_grp=="LP"])
-sd(dat$a1c_last_in_year[dat$yeargrouping=="Year2" & dat$trt_grp=="LP"])
-nrow(subset(dat,dat$yeargrouping=="Year2" & dat$trt_grp=="LP" & !is.na(dat$a1c_last_in_year)))
+label(dat$a1c_last_in_year)<-"A1C - Last Measure in Year"
+label(dat$checks_last_in_year)<-"Checks per Day - Last Measure in Year"
 
-#Table 1b: same as kaci's results
-#checks per day 
-mean(dat$checks_last_in_year[dat$yeargrouping=="Base1" & dat$trt_grp=="LP"])
-sd(dat$checks_last_in_year[dat$yeargrouping=="Base1" & dat$trt_grp=="LP"])
-nrow(subset(dat,dat$yeargrouping=="Base1" & dat$trt_grp=="LP" & !is.na(dat$checks_last_in_year)))
+label(dat$a1c_avg_in_year)<-"A1C - Average in Year"
+label(dat$checks_avg_in_year)<-"Checks per Day - Average in Year"
 
-mean(dat$checks_last_in_year[dat$yeargrouping=="Year1" & dat$trt_grp=="LP"])
-sd(dat$checks_last_in_year[dat$yeargrouping=="Year1" & dat$trt_grp=="LP"])
-nrow(subset(dat,dat$yeargrouping=="Year1" & dat$trt_grp=="LP" & !is.na(dat$checks_last_in_year)))
+dat.trt<-subset(dat,dat$trt_grp=="LP")
+dat.con<-subset(dat,dat$trt_grp=="Control")
 
-mean(dat$checks_last_in_year[dat$yeargrouping=="Year2" & dat$trt_grp=="LP"])
-sd(dat$checks_last_in_year[dat$yeargrouping=="Year2" & dat$trt_grp=="LP"])
-nrow(subset(dat,dat$yeargrouping=="Year2" & dat$trt_grp=="LP" & !is.na(dat$checks_last_in_year)))
+dat.trt.young<-subset(dat.trt,dat.trt$group=="Less than 12")
+dat.trt.old<-subset(dat.trt,dat.trt$group=="greater than or equal to 12")
+dat.con.young<-subset(dat.con,dat.con$group=="Less than 12")
+dat.con.old<-subset(dat.con,dat.con$group=="greater than or equal to 12")
+
