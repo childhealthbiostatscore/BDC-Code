@@ -1,10 +1,10 @@
 ########Gerard Gonzalez Latino Program Analysis########
-
+library(Hmisc)
 ######### READ IN ALL DATASETS ########
 
 #Read in Data: LP patients (will need new dataset)
 setwd('S:/Shared Projects/Laura/BDC/Projects/Andrea Gerard Gonzalez/Data')
-dat.lp<-read.csv('7.24.18_Cleaned_latino_clinical.csv') ###need to replace
+dat.lp<-read.csv('10.11.18_Cleaned_latino_clinical.csv') ###need to replace
 dat.lp<-dat.lp[,-c(which(colnames(dat.lp)=="Repeat_Instrument"),
                    which(colnames(dat.lp)=="Complete_"),
                    which(colnames(dat.lp)=="Repeat_Instance"),
@@ -81,15 +81,26 @@ dat$Appt_Date<-as.POSIXct(dat$Appt_Date,format="%m/%d/%Y")
 
 dat<-by_pt_by_year(dat$MRN,dat)
 
+#subset to only 1 row per patient per year, since already have summary stats:
 dat<-subset(dat,dat$row_num_year==1)
 dat<-dat[order(dat$MRN,dat$visit),]
 
-mean(dat$a1c_last_in_year[dat$yeargrouping=="Base1" & dat$trt_grp=="LP"])
-mean(dat$a1c_avg_in_year[dat$yeargrouping=="Base1" & dat$trt_grp=="LP"])
 
-mean(dat$checks_last_in_year[dat$yeargrouping=="Base1" & dat$trt_grp=="LP"],na.rm=T)
+##prep all variables:
+dat$yeargrouping<-as.factor(dat$yeargrouping)
+label(dat$yeargrouping)<-"Year"
 
-mean(dat$a1c_last_in_year[dat$yeargrouping=="Base1" & dat$trt_grp=="Control"])
-mean(dat$checks_last_in_year[dat$yeargrouping=="Base1" & dat$trt_grp=="Control"],na.rm=T)
+label(dat$a1c_last_in_year)<-"A1C - Last Measure in Year"
+label(dat$checks_last_in_year)<-"Checks per Day - Last Measure in Year"
 
-nrow(subset(dat,dat$yeargrouping=="Base1" & dat$trt_grp=="LP" & !is.na(dat$checks_last_in_year)))
+label(dat$a1c_avg_in_year)<-"A1C - Average in Year"
+label(dat$checks_avg_in_year)<-"Checks per Day - Average in Year"
+
+dat.trt<-subset(dat,dat$trt_grp=="LP")
+dat.con<-subset(dat,dat$trt_grp=="Control")
+
+dat.trt.young<-subset(dat.trt,dat.trt$group=="Less than 12")
+dat.trt.old<-subset(dat.trt,dat.trt$group=="greater than or equal to 12")
+dat.con.young<-subset(dat.con,dat.con$group=="Less than 12")
+dat.con.old<-subset(dat.con,dat.con$group=="greater than or equal to 12")
+
