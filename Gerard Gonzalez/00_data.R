@@ -4,7 +4,7 @@
 
 #Read in Data: LP patients (will need new dataset)
 setwd('S:/Shared Projects/Laura/BDC/Projects/Andrea Gerard Gonzalez/Data')
-dat.lp<-read.csv('7.24.18_Cleaned_latino_clinical.csv') ###need to replace
+dat.lp<-read.csv('10.11.18_Cleaned_latino_clinical.csv') ###need to replace
 dat.lp<-dat.lp[,-c(which(colnames(dat.lp)=="Repeat_Instrument"),
                    which(colnames(dat.lp)=="Complete_"),
                    which(colnames(dat.lp)=="Repeat_Instance"),
@@ -81,15 +81,34 @@ dat$Appt_Date<-as.POSIXct(dat$Appt_Date,format="%m/%d/%Y")
 
 dat<-by_pt_by_year(dat$MRN,dat)
 
+#subset to only 1 row per patient per year, since already have summary stats:
 dat<-subset(dat,dat$row_num_year==1)
 dat<-dat[order(dat$MRN,dat$visit),]
 
+#Table 1a: same as kaci's results
+#A1c 
 mean(dat$a1c_last_in_year[dat$yeargrouping=="Base1" & dat$trt_grp=="LP"])
-mean(dat$a1c_avg_in_year[dat$yeargrouping=="Base1" & dat$trt_grp=="LP"])
+sd(dat$a1c_last_in_year[dat$yeargrouping=="Base1" & dat$trt_grp=="LP"])
+nrow(subset(dat,dat$yeargrouping=="Base1" & dat$trt_grp=="LP" & !is.na(dat$a1c_last_in_year)))
 
-mean(dat$checks_last_in_year[dat$yeargrouping=="Base1" & dat$trt_grp=="LP"],na.rm=T)
+mean(dat$a1c_last_in_year[dat$yeargrouping=="Year1" & dat$trt_grp=="LP"])
+sd(dat$a1c_last_in_year[dat$yeargrouping=="Year1" & dat$trt_grp=="LP"])
+nrow(subset(dat,dat$yeargrouping=="Year1" & dat$trt_grp=="LP" & !is.na(dat$a1c_last_in_year)))
 
-mean(dat$a1c_last_in_year[dat$yeargrouping=="Base1" & dat$trt_grp=="Control"])
-mean(dat$checks_last_in_year[dat$yeargrouping=="Base1" & dat$trt_grp=="Control"],na.rm=T)
+mean(dat$a1c_last_in_year[dat$yeargrouping=="Year2" & dat$trt_grp=="LP"])
+sd(dat$a1c_last_in_year[dat$yeargrouping=="Year2" & dat$trt_grp=="LP"])
+nrow(subset(dat,dat$yeargrouping=="Year2" & dat$trt_grp=="LP" & !is.na(dat$a1c_last_in_year)))
 
+#Table 1b: same as kaci's results
+#checks per day 
+mean(dat$checks_last_in_year[dat$yeargrouping=="Base1" & dat$trt_grp=="LP"])
+sd(dat$checks_last_in_year[dat$yeargrouping=="Base1" & dat$trt_grp=="LP"])
 nrow(subset(dat,dat$yeargrouping=="Base1" & dat$trt_grp=="LP" & !is.na(dat$checks_last_in_year)))
+
+mean(dat$checks_last_in_year[dat$yeargrouping=="Year1" & dat$trt_grp=="LP"])
+sd(dat$checks_last_in_year[dat$yeargrouping=="Year1" & dat$trt_grp=="LP"])
+nrow(subset(dat,dat$yeargrouping=="Year1" & dat$trt_grp=="LP" & !is.na(dat$checks_last_in_year)))
+
+mean(dat$checks_last_in_year[dat$yeargrouping=="Year2" & dat$trt_grp=="LP"])
+sd(dat$checks_last_in_year[dat$yeargrouping=="Year2" & dat$trt_grp=="LP"])
+nrow(subset(dat,dat$yeargrouping=="Year2" & dat$trt_grp=="LP" & !is.na(dat$checks_last_in_year)))
