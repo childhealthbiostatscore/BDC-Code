@@ -1,7 +1,7 @@
 ########Gerard Gonzalez Latino Program Analysis########
 library(Hmisc)
 ######### READ IN ALL DATASETS ########
-
+source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Gerard Gonzalez/01_functions.R')
 #Read in Data: LP patients (will need new dataset)
 setwd('S:/Shared Projects/Laura/BDC/Projects/Andrea Gerard Gonzalez/Data')
 dat.lp<-read.csv('10.11.18_Cleaned_latino_clinical.csv') ###need to replace
