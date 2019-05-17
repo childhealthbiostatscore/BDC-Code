@@ -1,0 +1,104 @@
+---
+title: "Insulin Bone Marker Manuscript"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tableone)
+library(knitr)
+library(tidyverse)
+source("/Users/timvigers/Documents/GitHub/Tim-and-Laura/tim_R_functions.R")
+# Check OS and alter file path accordingly.
+if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.Platform$OS.type == "unix"){pathstart <- "/Volumes/"}
+```
+
+```{r echo=FALSE,warning=FALSE}
+# Read in and format data sets
+cpep <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Manuscript/Data_Cleaned/cpeptide_mmtt_and_gpa.csv"))
+height_weight <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Manuscript/Data_Cleaned/kphysexamrechealth_subset.csv"))
+cpep_ins_gluc <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Manuscript/Data_Cleaned/ksampleresults_subset.csv"))
+demographics <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Manuscript/Data_Cleaned/kvisit0screening_subset.csv"))
+demographics$HbA1c <- as.numeric(as.character(demographics$HbA1c))
+visit_dates <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Manuscript/Data_Cleaned/kvisitinfo_subset.csv"))
+# Metabolic panel
+cmp <- read.csv("/Volumes/som-1/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Manuscript/Data_Cleaned/KSampleResults.csv") 
+cmp <- cmp %>% 
+  filter(Visit == "Visit 0",Analyte %in% c("CA","ALBS","CREA-S"),
+         Codes == "NULL") %>%
+  arrange(PtID,Analyte)
+# Viral's data
+btm <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Manuscript/Data_Cleaned/MSD BTM.csv"))
+btm <- btm[-c(which(btm$Row.Labels == "Grand Total")),]
+btm$timepoint <- sapply(strsplit(as.character(btm$Row.Labels)," "),`[`, 2)
+btm$Row.Labels <- sapply(strsplit(as.character(btm$Row.Labels)," "),`[`, 1)
+vd <- read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Manuscript/Data_Cleaned/VD, P1NP, CTX.csv"),na.strings = c("NA","#DIV/0!"))
+vd <- vd[-c(which(vd$Row.Labels %in% c("(blank)","Grand Total"))),]
+vd$timepoint <- vd$Row.Labels
+vd$Row.Labels[vd$Row.Labels %in% c("0","120")] <- NA
+vd <- vd %>% fill(Row.Labels) %>% filter(timepoint %in% c("0","120"))
+# Merge Viral's data
+btm <- full_join(btm,vd,by = c("Row.Labels", "timepoint")) %>%
+  select(Row.Labels,timepoint,ALP:SOST,
+         Average.of.x21.IGF.Dilution.factor..ng.ml.:Average.of.Vitamin.D.Average) %>%
+  arrange(Row.Labels,timepoint)
+# Remove participant K068-0003, unnecessary columns
+btm <- btm %>%
+  filter(Row.Labels != "K068-0003")
+colnames(btm) <- c("PtID","Timepoint","ALP","ON","OPG","OPN","Osteocalcin",
+                   "SOST","IGF","CTX1","P1NP","Vitamin D")
+# Group by peak c-peptide at visit 1
+v1 <- cpep %>% filter(Visit == "Visit 1",Analyte == "CPEP")
+peak <- v1 %>% group_by(PtID) %>% summarise(PeakCPEP = max(Value_Update_n,na.rm = T))
+peak$group <- cut(peak$PeakCPEP,breaks = c(0.007,0.017,0.2,0.4,Inf),right = F,labels = c("Negative","Low","Medium","High"))
+# Demographics for those with V1 data
+full_data <- left_join(peak[,c("PtID","group")],demographics,by = "PtID")
+# Visit 0 date, merge
+visit_dates$VisitDt <- lubridate::dmy(sub(":00:00:00","",visit_dates$VisitDt))
+full_data$T1DDiagYrMon <- lubridate::ymd(full_data$T1DDiagYrMon, truncated = 1)
+full_data <- left_join(full_data,visit_dates[,c("PtID","VisitDt")],by="PtID")
+# Calculate age at visit 0: visit date - T1d diagnosis date + age at diagnosis
+full_data$AgeAtVisit0 <- 
+  round(as.numeric(difftime(full_data$VisitDt,
+                      full_data$T1DDiagYrMon,
+                      units="days")) / 365.25 + full_data$DiagT1DAge,0)
+# Diabetes duration
+full_data$T1DDuration <- full_data$AgeAtVisit0 - full_data$DiagT1DAge
+# Add height and weight
+full_data <- 
+  left_join(full_data,height_weight[,c("PtID","Height_cm","Weight_kg")],by = "PtID")
+# BMI
+full_data$BMI <- full_data$Weight_kg / (full_data$Height_cm/100)^2
+# Insulin per kilo
+full_data$UnitsInsPerKg <- full_data$UnitsInsTotal / full_data$Weight_kg
+# BTM
+wide_btm <- reshape(btm, timevar = "Timepoint", direction = "wide", idvar = "PtID")
+full_data <- left_join(wide_btm,full_data,by = "PtID")
+# C-pep, insulin, glucagon
+cpep_0 <- reshape(cpep_ins_gluc[which(cpep_ins_gluc$TimePoint == "0"),],
+                  idvar = "PtID",timevar = "Analyte",direction = "wide") %>%
+  select(PtID,Value_Update_n.CPEP,Value_Update_n.GLUCAGON,Value_Update_n.INS_TOSOH)
+colnames(cpep_0) <- c("PtID","CPEP.0","Glucagon.0","Insulin.0")
+cpep_120 <- reshape(cpep_ins_gluc[which(cpep_ins_gluc$TimePoint == "120"),],
+                  idvar = "PtID",timevar = "Analyte",direction = "wide") %>%
+  select(PtID,Value_Update_n.CPEP,Value_Update_n.GLUCAGON,Value_Update_n.INS_TOSOH)
+colnames(cpep_120) <- c("PtID","CPEP.120","Glucagon.120","Insulin.120")
+full_data <- plyr::join_all(list(full_data,cpep_0,cpep_120),by="PtID",type="left")
+# Calcium, etc.
+cmp_wide <- reshape(cmp,idvar = "PtID",timevar = "Analyte",direction = "wide")
+cmp_wide <- cmp_wide %>% 
+  select(PtID,Value.CA,Value.ALBS,`Value.CREA-S`)
+colnames(cmp_wide) <- c("PtID","CA.0","ALBS.0","CREA-S.0")
+full_data <- left_join(full_data,cmp_wide,by = "PtID")
+full_data[,c("CA.0","ALBS.0","CREA-S.0")] <- 
+  lapply(full_data[,c("CA.0","ALBS.0","CREA-S.0")],function(x) as.numeric(as.character(x)))
+# Calculate eGFR
+full_data$eGFR.0 <- NA
+full_data$black <- ifelse(full_data$Race == "Black/African American",1.212,1)
+full_data$female <- ifelse(full_data$Gender == "F",0.742,1)
+full_data$eGFR.0 <- 186*(full_data$`CREA-S.0`^-1.154)*(full_data$AgeAtVisit0^-0.203)*full_data$black*full_data$female
+# Remove indicator columns
+full_data <- full_data %>% select(PtID:eGFR.0)
+```
