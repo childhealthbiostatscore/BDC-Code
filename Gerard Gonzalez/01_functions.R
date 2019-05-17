@@ -46,7 +46,7 @@ by_pt_by_year<-function(ID,data){
     
     dat.temp<-by_year(dat.temp$yeargrouping,dat.temp)
     dat.temp<-dat.temp[order(dat.temp$yeargrouping),]
-    
+    dat.temp$baseline_a1c<-dat.temp$a1c_last_in_year[1]
     
     dat.temp})
   
