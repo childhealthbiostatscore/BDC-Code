@@ -1,6 +1,6 @@
 ##### Tables - Gerard Gonzalez #####
 source('S:/Shared Material/Shared Code/R/temp_table1.R')
-source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Gerard Gonzalez/00_data.R')
+#source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Gerard Gonzalez/00_data.R')
 
 #Table 1A:
 
@@ -69,27 +69,34 @@ tab.1b.2<-rbind(tab.1b.2,n_row_1b.c)
 tab.1b<-rbind(tab.1b,tab.1b.2)
 
 
-mean_sd_table<-function(x,year){
+mean_sd_table<-function(var,year){
   
-  #x<-dat$a1c_last_in_year
-  #year<-"Year"
+  #var<-'checks_last_in_year'
+  #year<-"Base1"
   dat.temp<-subset(dat,dat$yeargrouping==year)
+  x<-dat.temp[,which(colnames(dat.temp)==var)]
   mean.1<-mean(x[dat.temp$group=="Less than 12" & dat.temp$trt_grp=="Control"],na.rm=T)
   sd.1<-sd(x[dat.temp$group=="Less than 12" & dat.temp$trt_grp=="Control"],na.rm=T)
   
-  n.1<-nrow(subset(dat.temp,dat.temp$group=="Less than 12" & dat.temp$trt_grp=="Control" &!is.na(x)))
-  
+  temp.1<-subset(dat.temp,dat.temp$group=="Less than 12" & dat.temp$trt_grp=="Control")
+  n.1<-nrow(subset(temp.1,!is.na(var)))
+ 
   mean.2<-mean(x[dat.temp$group=="greater than or equal to 12" & dat.temp$trt_grp=="Control"],na.rm=T)
   sd.2<-sd(x[dat.temp$group=="greater than or equal to 12" & dat.temp$trt_grp=="Control"],na.rm=T)
-  n.2<-nrow(subset(dat.temp,dat.temp$group=="greater than or equal to 12" & dat.temp$trt_grp=="Control" &!is.na(x)))
+  
+  temp.2<-subset(dat.temp,dat.temp$group=="greater than or equal to 12" & dat.temp$trt_grp=="Control")
+  n.2<-nrow(subset(temp.2,!is.na(var)))
   
   mean.3<-mean(x[dat.temp$group=="Less than 12" & dat.temp$trt_grp=="LP"],na.rm=T)
   sd.3<-sd(x[dat.temp$group=="Less than 12" & dat.temp$trt_grp=="LP"],na.rm=T)
-  n.3<-nrow(subset(dat.temp,dat.temp$group=="Less than 12" & dat.temp$trt_grp=="LP" &!is.na(x)))
-    
+
+  temp.3<-subset(dat.temp,dat.temp$group=="Less than 12" & dat.temp$trt_grp=="LP")
+  n.3<-nrow(subset(temp.3,!is.na(var)))
+  
   mean.4<-mean(x[dat.temp$group=="greater than or equal to 12" & dat.temp$trt_grp=="LP"],na.rm=T)
   sd.4<-sd(x[dat.temp$group=="greater than or equal to 12" & dat.temp$trt_grp=="LP"],na.rm=T)  
-  n.4<-nrow(subset(dat.temp,dat.temp$group=="greater than or equal to 12" & dat.temp$trt_grp=="LP" &!is.na(x)))
+  temp.4<-subset(dat.temp,dat.temp$group=="greater than or equal to 12" & dat.temp$trt_grp=="LP")
+  n.4<-nrow(subset(temp.4,!is.na(var)))
   
   #table for x
   tab.x<-data.frame(
@@ -102,14 +109,14 @@ mean_sd_table<-function(x,year){
   return(tab.x)
 }
 
-a1c_base<-mean_sd_table(dat.temp$a1c_last_in_year,"Base1")
-a1c_1<-mean_sd_table(dat.temp$a1c_last_in_year,"Year1")
-a1c_2<-mean_sd_table(dat.temp$a1c_last_in_year,"Year2")
-a1c_3<-mean_sd_table(dat.temp$a1c_last_in_year,"Year3")
+a1c_base<-mean_sd_table('a1c_last_in_year',"Base1")
+a1c_1<-mean_sd_table('a1c_last_in_year',"Year1")
+a1c_2<-mean_sd_table('a1c_last_in_year',"Year2")
+a1c_3<-mean_sd_table('a1c_last_in_year',"Year3")
 
-checks_base<-mean_sd_table(dat.temp$checks_last_in_year,"Base1")
-checks_1<-mean_sd_table(dat.temp$checks_last_in_year,"Year1")
-checks_2<-mean_sd_table(dat.temp$checks_last_in_year,"Year2")
-checks_3<-mean_sd_table(dat.temp$checks_last_in_year,"Year3")
+checks_base<-mean_sd_table('checks_last_in_year',"Base1")
+checks_1<-mean_sd_table('checks_last_in_year',"Year1")
+checks_2<-mean_sd_table('checks_last_in_year',"Year2")
+checks_3<-mean_sd_table('checks_last_in_year',"Year3")
 
 tab.2<-rbind(a1c_base,a1c_1,a1c_2,a1c_3,checks_base,checks_1,checks_2,checks_3)
