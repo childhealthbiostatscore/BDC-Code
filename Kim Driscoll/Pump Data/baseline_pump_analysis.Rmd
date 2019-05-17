@@ -176,6 +176,19 @@ for (f in 1:length(files)) {
     length(which(weekdat$carbinput > 0)) / weekdays
   summary[f,"carb_inputs_per_weekend"] <- 
     length(which(weekend$carbinput > 0)) / weekends
+# Carbs only  
+  carbs_dat <- dat[which(dat$carbinput > 0),]
+  six_hour_carbs <- setDT(carbs_dat)[, indx := date][, .SD[1:(.N+1)], indx][,indx := NULL][!.N]
+  six_hour_carbs$hour[which(is.na(six_hour_carbs$hour))] <- 24
+# Days with >= 3 carbs
+  carbs_days <- six_hour_carbs
+  carbs_days$carbs_binary <- ifelse(!is.na(carbs_days$carbinput),1,0)
+  carbs_days <- carbs_days %>%
+    filter(!is.na(date)) %>%
+    group_by(date) %>%
+    summarise(num_carbs = sum(carbs_binary,na.rm = T))
+  summary[f,"perc_days_>=3_carbs"] <- 
+    (length(which(carbs_days$num_carbs >=4))/floor(days))*100
 # Boluses only  
   bolus_dat <- dat[which(!is.na(dat$bolusvoldelivered)),]
   bolus_dat$carbinput[which(is.na(bolus_dat$carbinput))] <- 0
@@ -246,7 +259,7 @@ for (f in 1:length(files)) {
   summary[f,"boluses_per_weekday"] <- weekday.total.bolus/weekdays
   summary[f,"boluses_per_weekend"] <- weekend.total.bolus/weekends
   summary[f,"perc_days_>=3_boluses"] <- 
-    (length(which(bolus_days$num_boluses >=3))/nrow(bolus_days))*100
+    (length(which(bolus_days$num_boluses >=3))/floor(days))*100
 # Iterate through boluses and check reading information
   for (t in bolus.times) {
     time.range.15 <- (t - 900):t
@@ -285,6 +298,8 @@ for (f in 1:length(files)) {
   summary[f,"bolus_within_30_bwp_400+"] <- length(which(bwps.within.30 == "400+"))
   
   summary[f,"days_bolus>=6_hours"] <- sum(six_hour_bolus$n > 0)
+# Bolus wizard
+  
 # BG as the anchor.
 # BGs only  
   BG_dat <- dat[which(dat$bgreading > 0),]
@@ -292,6 +307,13 @@ for (f in 1:length(files)) {
 # Add a midnight row to calculate last BG before midnight
   six_hour_BG <- setDT(BG_dat)[, indx := date][, .SD[1:(.N+1)], indx][,indx := NULL][!.N]
   six_hour_BG$hour[which(is.na(six_hour_BG$hour))] <- 24
+# Days with >=4 BG checks
+  bg_days <- six_hour_BG
+  bg_days$bg_binary <- ifelse(!is.na(bg_days$bgreading),1,0)
+  bg_days <- bg_days %>%
+    filter(!is.na(date)) %>%
+    group_by(date) %>%
+    summarise(num_bgs = sum(bg_binary,na.rm = T))
 # Count time between 6am, BGs, and midnight by date  
   six_hour_BG <- six_hour_BG %>% 
     fill(date) %>%
@@ -302,6 +324,8 @@ for (f in 1:length(files)) {
   six_hour_BG <- six_hour_BG %>% group_by(date) %>% 
     summarise(n = sum(time_diff >= 6)) %>% as.data.frame()
   summary[f,"days_reading>=6_hours"] <- sum(six_hour_BG$n > 0)
+  summary[f,"perc_days_>=4_bgs"] <- 
+    (length(which(bg_days$num_bgs >=4))/floor(days))*100
 # Total BGs in ranges
   lowBGcount <- length(which(dat$bgreading < 70))
   intargetBGcount <- length(which(dat$bgreading %in% 70:180))
