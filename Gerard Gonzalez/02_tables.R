@@ -120,3 +120,29 @@ checks_2<-mean_sd_table('checks_last_in_year',"Year2")
 checks_3<-mean_sd_table('checks_last_in_year',"Year3")
 
 tab.2<-rbind(a1c_base,a1c_1,a1c_2,a1c_3,checks_base,checks_1,checks_2,checks_3)
+
+#Table 5: Pump Use Y/N:
+
+tab.5a<-final_table(dat.trt.old,c('pump_yn_inyear'),
+                    dat.trt.old$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
+
+tab.5b<-final_table(dat.con.old,c('pump_yn_inyear'),
+                    dat.con.old$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
+
+tab.6a<-final_table(dat.trt.young,c('pump_yn_inyear'),
+                    dat.trt.young$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
+
+tab.6b<-final_table(dat.con.young,c('pump_yn_inyear'),
+                    dat.con.young$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
+
+tab.7a<-final_table(dat.trt.old,c('cgm_yn_inyear'),
+                    dat.trt.old$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
+
+tab.7b<-final_table(dat.con.old,c('cgm_yn_inyear'),
+                    dat.con.old$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
+
+tab.8a<-final_table(dat.trt.young,c('cgm_yn_inyear'),
+                    dat.trt.young$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
+
+tab.8b<-final_table(dat.con.young,c('cgm_yn_inyear'),
+                    dat.con.young$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]

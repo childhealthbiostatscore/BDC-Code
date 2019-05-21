@@ -87,11 +87,16 @@ dat<-rbind(dat.lp,dat.c)
 ######### 1 ROW PER PATIENT, PER YEAR ########
 
 dat<-by_pt_by_year(dat$MRN,dat)
-
+dat<-dat[order(dat$MRN,dat$yeargrouping),]
+#View(dat[,c(5,2,1,30,31,38)])
 #subset to only 1 row per patient per year, since already have summary stats:
 dat<-subset(dat,dat$row_num_year==1)
 dat<-dat[order(dat$MRN,dat$visit),]
 
+##only include patients who were followed for 3+ years:
+dat<-subset(dat,dat$year_3==1)
+##Remove year 4 data for now:
+dat<-subset(dat,dat$yeargrouping!="Year4")
 
 ##prep all variables:
 dat$yeargrouping<-as.factor(dat$yeargrouping)
@@ -103,6 +108,16 @@ label(dat$checks_last_in_year)<-"Checks per Day - Last Measure in Year"
 label(dat$a1c_avg_in_year)<-"A1C - Average in Year"
 label(dat$checks_avg_in_year)<-"Checks per Day - Average in Year"
 
+dat$pump_yn_inyear<-as.factor(dat$pump_yn_inyear)
+levels(dat$pump_yn_inyear)<-c("No","Yes")
+dat$pump_yn_inyear<-factor(dat$pump_yn_inyear,levels=c("Yes","No"))
+label(dat$pump_yn_inyear)<-"Any Pump Use in Given Year"
+
+dat$cgm_yn_inyear<-as.factor(dat$cgm_yn_inyear)
+levels(dat$cgm_yn_inyear)<-c("No","Yes")
+dat$cgm_yn_inyear<-factor(dat$cgm_yn_inyear,levels=c("Yes","No"))
+label(dat$cgm_yn_inyear)<-"Any CGM Use in Given Year"
+
 dat.trt<-subset(dat,dat$trt_grp=="LP")
 dat.con<-subset(dat,dat$trt_grp=="Control")
 
@@ -110,4 +125,5 @@ dat.trt.young<-subset(dat.trt,dat.trt$group=="Less than 12")
 dat.trt.old<-subset(dat.trt,dat.trt$group=="greater than or equal to 12")
 dat.con.young<-subset(dat.con,dat.con$group=="Less than 12")
 dat.con.old<-subset(dat.con,dat.con$group=="greater than or equal to 12")
+
 
