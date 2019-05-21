@@ -3,17 +3,20 @@ by_pt_by_year<-function(ID,data){
   temp<-lapply(unique(ID), function(x){
     
     dat.temp <- subset(data, ID == x)
-    # dat.temp <- subset(dat,dat$record_id==804609)
+    # dat.temp <- subset(dat,dat$record_id==851479)
     
     dat.temp<-dat.temp[order(dat.temp$Appt_Date),]
     dat.temp$row_tot<-nrow(dat.temp) #count of repeat visits per patient
+    three_yn<-nrow(subset(dat.temp,dat.temp$yeargrouping=="Year3"))>0
+    dat.temp$year_3<-0
+    dat.temp$year_3[three_yn]<-1
     
     by_year<-function(ID,data){
       
       temp2<-lapply(unique(ID), function(x){
         
         dat.temp2 <- subset(data, ID == x)
-        # dat.temp2<-subset(dat.temp,dat.temp$yeargrouping=="Year2")
+        # dat.temp2<-subset(dat.temp,dat.temp$yeargrouping=="Year3")
         
         dat.temp2$row_num_year<-rep(1:nrow(dat.temp2)) #count of repeat visits per year per patient
         
@@ -34,6 +37,14 @@ by_pt_by_year<-function(ID,data){
         #avg value in each year:
         dat.temp2$checks_avg_in_year<-mean(dat.temp2$Checks_Per_Day,na.rm=T)        
         dat.temp2$a1c_avg_in_year<-mean(dat.temp2$A1C,na.rm=T)        
+        
+        #any pump usage:
+        dat.temp2$pump_yn_inyear<-0
+        dat.temp2$pump_yn_inyear[nrow(subset(dat.temp2,dat.temp2$insulin_pump==1))>0]<-1
+        
+        #any CGM use:
+        dat.temp2$cgm_yn_inyear<-0
+        dat.temp2$cgm_yn_inyear[nrow(subset(dat.temp2,dat.temp2$CGM=="Y"))>0]<-1
         
         dat.temp2
         #print(dat.temp2$MRN)

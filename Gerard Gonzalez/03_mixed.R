@@ -41,20 +41,21 @@ contrasts_2$p.value<-round(contrasts_2$p.value,3)
 #### Subset to only patients who had 3 year data ####
 dat_3<-subset(dat,dat$yeargrouping!="Year4")
 
-yr_3<-function(ID,data){
-  
-  temp<-lapply(unique(ID), function(x){
-    
-    dat.temp <- subset(data, ID == x)
-    ##dat.temp <- subset(dat_3,dat_3$MRN==733537)
-    three_yn<-nrow(subset(dat.temp,dat.temp$yeargrouping=="Year3"))>0
-    dat.temp$year_3<-0
-    dat.temp$year_3[three_yn]<-1
-    dat.temp
-    dat.temp})
-  
-  dat<-do.call(rbind,temp)
-}
+# moved this into general function 01_functions.R
+# yr_3<-function(ID,data){
+#   
+#   temp<-lapply(unique(ID), function(x){
+#     
+#     dat.temp <- subset(data, ID == x)
+#     ##dat.temp <- subset(dat_3,dat_3$MRN==733537)
+#     three_yn<-nrow(subset(dat.temp,dat.temp$yeargrouping=="Year3"))>0
+#     dat.temp$year_3<-0
+#     dat.temp$year_3[three_yn]<-1
+#     dat.temp
+#     dat.temp})
+#   
+#   dat<-do.call(rbind,temp)
+# }
 
 dat_3<-yr_3(dat_3$MRN,dat_3)
 
