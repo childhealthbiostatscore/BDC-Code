@@ -17,6 +17,15 @@ dat.lp$insulin_pump<-0
 dat.lp$insulin_pump[dat.lp$Insulin_Regimen==2]<-1
 
 dat.lp<-dat.lp[,-which(colnames(dat.lp)=="Insulin_Regimen")]
+
+# Year 4 data: sent in the control dataset format, Kaci needs base dates in order
+# to create create windows.  export base dates and she merged this in with 
+# year 4 to create final cleand year 4 data
+
+# dat.forkaci<-dat.lp[!duplicated(dat.lp$MRN),]
+# dat.forkaci<-dat.forkaci[,c(5,26)]
+# write.csv(dat.forkaci,'basedates.csv')
+
 #check number of checks per day:
 # dat.lp$checks_yn<-0
 # dat.lp$checks_yn[!is.na(dat.lp$Checks_Per_Day)]<-1
