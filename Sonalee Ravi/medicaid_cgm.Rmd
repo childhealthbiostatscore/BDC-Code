@@ -2,7 +2,7 @@
 title: "Medicaid CGM"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: word_document
+output: html_document
 ---
 
 ```{r setup,include=FALSE}
@@ -12,18 +12,14 @@ library(tableone)
 library(nortest)
 library(knitr)
 library(tidyverse)
-# Check OS and alter file path accordingly.
-if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.Platform$OS.type == "unix"){pathstart <- "/Volumes/"}
 source('~/Documents/GitHub/Tim-and-Laura/tim_R_functions.R')
 ```
 
 ```{r echo=FALSE,cache=TRUE,include=FALSE}
 # Read in demographic data
-filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sonalee Ravi/Medicaid CGM/Data_Cleaned/Demographics.csv")
-demographics <- read.csv(filename)
+demographics <- read.csv("/Volumes/som-1/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sonalee Ravi/Medicaid CGM/Data_Cleaned/Demographics.csv")
 # Read in CGM data
-filename <- paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sonalee Ravi/Medicaid CGM/Data_Cleaned/30 day cgm metrics.csv")
-dat <- read.csv(filename,na.strings = c("","NULL"))
+dat <- read.csv("/Volumes/som-1/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sonalee Ravi/Medicaid CGM/Data_Cleaned/30 day cgm metrics.csv",na.strings = c("","NULL"))
 # Format CGM data
 dat$EncounterDate <- lubridate::mdy(as.character(dat$EncounterDate))
 dat$EPICMRN <- as.factor(dat$EPICMRN)
@@ -248,6 +244,25 @@ kable(cgm_ever_results_mean, caption = "Group Means")
 
 CGM uptake = $\frac{177}{892}=19.84\text{ %}$
 
+Pump use for never on CGM:
+
+```{r echo=FALSE}
+pumpuse <- dat 
+pumpuse$PumpUse <- ifelse(pumpuse$PumpUse == "Yes",1,0)
+pumpuse <- pumpuse %>%
+  group_by(EPICMRN) %>%
+  summarise(Pump = max(PumpUse,na.rm = T))
+pumpuse$Pump <- ifelse(pumpuse$Pump == 1,"Yes","No")
+pumpuse <- left_join(never_some,pumpuse,by = "EPICMRN")
+kable(pumpuse %>% filter(CGMUse == "Never") %>% count(Pump))
+```
+
+Pump use for those with some CGM:
+
+```{r echo=FALSE}
+kable(pumpuse %>% filter(CGMUse == "Some") %>% count(Pump))
+```
+
 ### Figure 1: HbA1c by % CGM Use
 
 ```{r echo=FALSE,include=FALSE}
@@ -265,6 +280,7 @@ summary(mod_adj_int)
 # Plot
 mm_plot <- ggplot(data = dat, aes(x = CGM_Perc, y = HbA1c,group = EPICMRN)) +
   geom_line(size = 0.2,aes(color = EPICMRN)) +
+  geom_smooth(aes(x = CGM_Perc, y = HbA1c),method='lm',inherit.aes = F,size=0.5) + 
   xlab("% CGM Use") + 
   ylab("HbA1c (%)") + 
   theme(legend.position = "none")
@@ -279,10 +295,18 @@ kable(summary(mod_adj_int)$tTable,caption = "Fixed Effects")
 
 The interpretation of this mixed effects model is similar to a simple linear model. For example, on average each 1 point increase in % CGM use resulted in a decrease in HbA1c of 0.005 after adjusting for age, race, diabetes duration, and pump use. 
 
-Mean (SD) CGM use in days across all subjects and all visits (excluding missing values):
+Median [IQR] CGM use in days across all subjects and all visits (excluding missing values):
 ```{r echo=FALSE}
-print(paste0(round(mean(dat$X30.day.CGM.use,na.rm = T),3)," (",
-       round(sd(dat$X30.day.CGM.use,na.rm = T),3),")"))
+print(paste0(median(dat$X30.day.CGM.use,na.rm = T)," [",
+             quantile(dat$X30.day.CGM.use,na.rm = T)[2],",",
+             quantile(dat$X30.day.CGM.use,na.rm = T)[4],"]"))
+```
+
+Percent of CGM users with at least 85% wear:
+
+```{r echo=FALSE}
+temp <- dat %>%
+  filter(CGMUseSomeNever == "Some")
 ```
 
 ### Figure 2: % CGM Use Over Time
@@ -351,6 +375,7 @@ kable(tir_t1)
 ```{r echo=FALSE,warning=FALSE,dpi=600}
 tir_plot <- ggplot(data = tir, aes(x = CGMOKPercent, y = HbA1c,group = EPICMRN)) +
   geom_line(size = 0.2,aes(color = EPICMRN)) +
+  geom_smooth(aes(x = CGMOKPercent, y = HbA1c),method='lm',inherit.aes = F,size=0.5) + 
   xlab("% Time in Range") + 
   ylab("HbA1c (%)") + 
   theme(legend.position = "none")
