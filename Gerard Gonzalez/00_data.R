@@ -7,16 +7,13 @@ setwd('S:/Shared Projects/Laura/BDC/Projects/Andrea Gerard Gonzalez/Data')
 dat.lp<-read.csv('10.11.18_Cleaned_latino_clinical.csv') ###need to replace
 dat.lp<-dat.lp[,-c(which(colnames(dat.lp)=="Repeat_Instrument"),
                    which(colnames(dat.lp)=="Complete_"),
+                   which(colnames(dat.lp)=="record_id"),
                    which(colnames(dat.lp)=="Repeat_Instance"),
                    which(colnames(dat.lp)=="first_name"),
-                   which(colnames(dat.lp)=="last_name"))]
-dat.lp$trt_grp<-"LP"
-dat.lp$record_id<-dat.lp$MRN
-
-dat.lp$insulin_pump<-0
-dat.lp$insulin_pump[dat.lp$Insulin_Regimen==2]<-1
-
-dat.lp<-dat.lp[,-which(colnames(dat.lp)=="Insulin_Regimen")]
+                   which(colnames(dat.lp)=="last_name"),
+                   which(colnames(dat.lp)=="New_Onset"),
+                   which(colnames(dat.lp)=="Status"),
+                   which(colnames(dat.lp)=="TSH"):which(colnames(dat.lp)=="DKA"))]
 
 # Year 4 data: sent in the control dataset format, Kaci needs base dates in order
 # to create create windows.  export base dates and she merged this in with 
@@ -25,6 +22,30 @@ dat.lp<-dat.lp[,-which(colnames(dat.lp)=="Insulin_Regimen")]
 # dat.forkaci<-dat.lp[!duplicated(dat.lp$MRN),]
 # dat.forkaci<-dat.forkaci[,c(5,26)]
 # write.csv(dat.forkaci,'basedates.csv')
+
+#merge in years 2/3 from Year 4 dataset 
+#(depending on base date, some "year4" data qualifies as earlier years for pt)
+
+dat.4<-read.csv('05.24.19_Cleaned_lp_year4.csv')
+#remove year 4 data for this analysis:
+dat.4<-subset(dat.4,dat.4$yeargrouping!="Year4")
+dat.4<-dat.4[,-c(which(colnames(dat.4)=="Enrollement_Date"),
+                 which(colnames(dat.4)=="enroll_age"),
+                 which(colnames(dat.4)=="Diabetes_Onset_Date"))]
+colnames(dat.4)[which(names(dat.4) == "insulin_regimen")]<-"Insulin_Regimen"
+colnames(dat.4)[which(names(dat.4) == "appt_date")]<-"Appt_Date"
+colnames(dat.4)[which(names(dat.4) == "Date_of_Birth")]<-"DOB"
+dat.4$Appt_Type<-NA
+
+dat.lp.final<-rbind(dat.lp,dat.4)
+dat.lp.final$insulin_pump<-0
+dat.lp.final$insulin_pump[dat.lp.final$Insulin_Regimen==2]<-1
+dat.lp.final<-dat.lp.final[,-which(colnames(dat.lp.final)=="Insulin_Regimen")]
+
+dat.lp.final$trt_grp<-"LP"
+#HARD CODE 2 SUBJECTS TO BE CONTROLS:
+dat.lp.final$trt_grp[dat.lp.final$MRN==986571]<-"Control"
+dat.lp.final$trt_grp[dat.lp.final$MRN==1036067]<-"Control"
 
 #check number of checks per day:
 # dat.lp$checks_yn<-0
@@ -54,8 +75,6 @@ dat.c<-dat.c[order(dat.c$MRN,dat.c$visit),]
 
 dat.c<-subset(dat.c,!is.na(dat.c$yeargrouping))
 ######### MERGE CONTROLS AND LP DATASETS ########
-dat.c$trt_grp<-"Control"
-dat.c$record_id<-dat.c$MRN
 colnames(dat.c)[which(names(dat.c) == "Date_of_Birth")]<-"DOB"
 colnames(dat.c)[which(names(dat.c) == "appt_date")]<-"Appt_Date"
 colnames(dat.c)[which(names(dat.c) == "A1CValue")]<-"A1C"
@@ -65,17 +84,6 @@ dat.c$insulin_pump[dat.c$InsulinRegimen=="Insulin Pump"]<-1
 
 #these variables aren't in C, so make them NA
 dat.c$BMI<-NA
-dat.c$TSH<-NA
-dat.c$T4_Free<-NA
-dat.c$TTG<-NA
-dat.c$Cholesterol<-NA
-dat.c$Triglycerides<-NA
-dat.c$HDL<-NA
-dat.c$LDL<-NA
-dat.c$Hospital<-NA
-dat.c$DKA<-NA
-dat.c$New_Onset<-NA
-dat.c$Status<-NA
 #these aren't in LP:
 dat.c<-dat.c[,-c(which(colnames(dat.c)=="Enrollement_Date"),
                  which(colnames(dat.c)=="Diabetes_Onset_Date"),
@@ -84,14 +92,21 @@ dat.c<-dat.c[,-c(which(colnames(dat.c)=="Enrollement_Date"),
 #dat.c<-subset(dat.c,dat.c$MRN!=1482525) #####CHECK ON THIS MRN, IT IS IN BOTH CONTROL AND LP DATA: 1482525
 #dat.c<-subset(dat.c,dat.c$MRN!=1036067) #####CHECK ON THIS MRN, IT IS IN BOTH CONTROL AND LP DATA: 1482525
 ##dat.c<-subset(dat.c,dat.c$MRN!=704437) #####CHECK ON THIS MRN, IT IS IN BOTH CONTROL AND LP DATA: 1482525
+dat.c$trt_grp<-"Control"
 
-lp.mrns<-unique(dat.lp$MRN)
-c.mrns<-unique(dat.c$MRN)
-
-dat.c<-subset(dat.c,!(dat.c$MRN %in% lp.mrns))
-dat.lp$Appt_Date<-as.POSIXct(dat.lp$Appt_Date,format="%m/%d/%Y")
+# lp.mrns<-unique(dat.lp$MRN)
+# c.mrns<-unique(dat.c$MRN)
+# dat.c<-subset(dat.c,!(dat.c$MRN %in% lp.mrns))
+dat.c<-subset(dat.c,dat.c$MRN!=1482525)
+dat.c<-subset(dat.c,dat.c$MRN!=744276)
+dat.c$Appt_Date<-as.POSIXct(dat.c$Appt_Date,format="%Y-%m-%d")
+dat.lp.final$Appt_Date<-as.POSIXct(dat.lp.final$Appt_Date,format="%m/%d/%Y")
 #merge LP and C:
-dat<-rbind(dat.lp,dat.c)
+dat<-rbind(dat.lp.final,dat.c)
+
+#delete duplicate rows for 1036067, since was in LP and control datasets
+dat$duplicate<-0
+dat$duplicate[duplicated(dat[,c(4,8)])]<-1
 
 ######### 1 ROW PER PATIENT, PER YEAR ########
 
