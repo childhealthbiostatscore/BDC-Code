@@ -28,7 +28,7 @@ dat.lp<-dat.lp[,-c(which(colnames(dat.lp)=="Repeat_Instrument"),
 
 dat.4<-read.csv('05.24.19_Cleaned_lp_year4.csv')
 #remove year 4 data for this analysis:
-dat.4<-subset(dat.4,dat.4$yeargrouping!="Year4")
+#dat.4<-subset(dat.4,dat.4$yeargrouping!="Year4")
 dat.4<-dat.4[,-c(which(colnames(dat.4)=="Enrollement_Date"),
                  which(colnames(dat.4)=="enroll_age"),
                  which(colnames(dat.4)=="Diabetes_Onset_Date"))]
@@ -105,8 +105,10 @@ dat.lp.final$Appt_Date<-as.POSIXct(dat.lp.final$Appt_Date,format="%m/%d/%Y")
 dat<-rbind(dat.lp.final,dat.c)
 
 #delete duplicate rows for 1036067, since was in LP and control datasets
+#also duplciates between Year4 data and original LP data
 dat$duplicate<-0
 dat$duplicate[duplicated(dat[,c(4,8)])]<-1
+dat<-subset(dat,dat$duplicate==0)
 
 ######### 1 ROW PER PATIENT, PER YEAR ########
 
@@ -116,11 +118,14 @@ dat<-dat[order(dat$MRN,dat$yeargrouping),]
 #subset to only 1 row per patient per year, since already have summary stats:
 dat<-subset(dat,dat$row_num_year==1)
 dat<-dat[order(dat$MRN,dat$visit),]
+##future dataset: only patients followed through year 4:
+#dat.four<-subset(dat,dat$year_4==1)
 
 ##only include patients who were followed for 3+ years:
-dat<-subset(dat,dat$year_3==1)
-##Remove year 4 data for now:
 dat<-subset(dat,dat$yeargrouping!="Year4")
+dat<-subset(dat,dat$year_3==1)
+
+##Remove year 4 data for now:
 
 ##prep all variables:
 dat$yeargrouping<-as.factor(dat$yeargrouping)
