@@ -10,6 +10,9 @@ by_pt_by_year<-function(ID,data){
     three_yn<-nrow(subset(dat.temp,dat.temp$yeargrouping=="Year3"))>0
     dat.temp$year_3<-0
     dat.temp$year_3[three_yn]<-1
+    four_yn<-nrow(subset(dat.temp,dat.temp$yeargrouping=="Year4"))>0
+    dat.temp$year_4<-0
+    dat.temp$year_4[four_yn]<-1
     
     by_year<-function(ID,data){
       
