@@ -544,8 +544,8 @@ demographics$hba1c_date_b <- lubridate::mdy(demographics$hba1c_date_b)
 demographics$baseline_a1c_to_am <- as.numeric(difftime(demographics$automode_start,demographics$hba1c_date_b,units = "days"))
 demographics <- left_join(demographics,survey_days,by="record_id")
 # Table 1
-demographics$continuation <- ifelse(demographics$record_id %in% t1_discont,"Discontinued T1",
-                               ifelse(demographics$record_id %in% t2_discont,"Discontinued T2",
+demographics$continuation <- ifelse(demographics$record_id %in% t1_discont,"Discontinued",
+                               ifelse(demographics$record_id %in% t2_discont,"Discontinued",
                                       ifelse(demographics$record_id %in% never_trained,"Never Trained",
                                              ifelse(demographics$record_id %in% withdrawn,"Withdrawn","Continued"))))
 demographics$trained <- ifelse(demographics$continuation %in% c("Never Trained","Withdrawn"),"Never Trained","Trained")
@@ -564,7 +564,8 @@ nonnormal<- c("baseline_a1c_to_am","am_to_m1","am_to_t2","am_to_t1","baseline_su
 t1a <- CreateTableOne(dem_vars,data = demographics,strata = "trained")
 t1a <- print(t1a,nonnormal = nonnormal,printToggle = F)
 # Continuers
-t1b <- CreateTableOne(dem_vars,data = demographics,strata = "continuation")
+trained <- demographics[which(demographics$trained=="Trained"),]
+t1b <- CreateTableOne(dem_vars,data = trained,strata = "continuation")
 t1b <- print(t1b,nonnormal = nonnormal,printToggle = F)
 ```
 
@@ -616,6 +617,7 @@ kable(ns)
 ```{r include=FALSE}
 # A1c mixed models
 a1c_mod <- lme(hba1c ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+a1c_mod_means <- lme(hba1c ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
 a1c_glyc_control_mod <- lme(hba1c ~ Timepoint*hba1c_clinical,random=~1|record_id,data = data_no_m1,na.action = na.omit)
 # Means models
 a1c_age_mod_means <- lme(hba1c ~ Timepoint:age_group-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
@@ -652,7 +654,7 @@ a1c_plot <- ggplot(means,aes(x=Timepoint,y=Estimate,group=hba1c_clinical)) +
 a1c_plot
 ```
 
-### Table 2: A1c Mixed Models by Baseline HbA1c Group
+### Table 2: A1c Mixed Models
 
 ```{r echo=FALSE}
 kable(summary(a1c_mod)$tTable,caption = "Mixed Model Fixed Effects, Full Cohort")
@@ -1100,4 +1102,27 @@ worry_plot <- ggplot(subset(worry_plot_data),aes(x=Timepoint,y=worry_score_z,gro
   ylab("Worry Z Score") +
   theme(legend.title=element_blank())
 grid.arrange(paid_plot,behave_plot,worry_plot, ncol=2)
+```
+
+### Sensor Wear Among Discontinuers
+
+```{r echo=FALSE}
+sensor_t1 <- glycemic_data %>% 
+  filter(record_id %in% t1_discont) %>%
+  filter(Timepoint == "T1") %>%
+  ungroup() %>%
+  count(sensor_wear < 10)
+colnames(sensor_t1) <- c("Sensor Wear T1","n")
+sensor_t1$`Sensor Wear T1` <- c("> 10%","< 10%","NA")
+
+sensor_t2 <- glycemic_data %>% 
+  filter(record_id %in% t2_discont) %>%
+  filter(Timepoint == "T2") %>%
+  ungroup() %>%
+  count(sensor_wear < 10)
+colnames(sensor_t2) <- c("Sensor Wear T2","n")
+sensor_t2$`Sensor Wear T2` <- c("> 10%","< 10%","NA")
+
+kable(sensor_t1)
+kable(sensor_t2)
 ```
