@@ -71,7 +71,7 @@ tab.1b<-rbind(tab.1b,tab.1b.2)
 
 mean_sd_table<-function(var,year){
   
-  #var<-'checks_last_in_year'
+  #var<-'a1c_last_in_year'
   #year<-"Base1"
   dat.temp<-subset(dat,dat$yeargrouping==year)
   x<-dat.temp[,which(colnames(dat.temp)==var)]
@@ -100,11 +100,11 @@ mean_sd_table<-function(var,year){
   
   #table for x
   tab.x<-data.frame(
-    variable=c(paste0(year,": ",label(x)),"n","mean (std. dev)"),
-    ControlYoung=c("",n.1,paste0(round(mean.1,3)," ","(",round(sd.1,3),")")),
-    ControlOld=c("",n.2,paste0(round(mean.2,3)," ","(",round(sd.1,3),")")),
-    TrtYoung=c("",n.3,paste0(round(mean.3,3)," ","(",round(sd.1,3),")")),
-    TrtOld=c("",n.4,paste0(round(mean.4,3)," ","(",round(sd.1,3),")"))
+    variable=c(paste0(year,": ",label(x)),"mean\u00B1sd","n"),
+    ControlYoung=c("",paste0(round(mean.1,3),"\u00B1",round(sd.1,3)),n.1),
+    ControlOld=c("",paste0(round(mean.2,3),"\u00B1",round(sd.2,3)),n.2),
+    TrtYoung=c("",paste0(round(mean.3,3),"\u00B1",round(sd.3,3)),n.3),
+    TrtOld=c("",paste0(round(mean.4,3),"\u00B1",round(sd.4,3)),n.4)
     )
   return(tab.x)
 }
@@ -125,24 +125,89 @@ tab.2<-rbind(a1c_base,a1c_1,a1c_2,a1c_3,checks_base,checks_1,checks_2,checks_3)
 
 tab.5a<-final_table(dat.trt.old,c('pump_yn_inyear'),
                     dat.trt.old$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
+#compare base1 to year3
+comp<-subset(dat.trt.old,dat.trt.old$yeargrouping %in% c("Base1","Year3"))
+temp.tab<-(table(comp$MRN)>1)*1
+temp.comp<-data.frame(MRN=rownames(temp.tab),temp.tab)
+comp<-merge(comp,temp.comp,by="MRN")
+comp<-subset(comp,comp$temp.tab==1)
+test.5a<-mcnemar.test(comp$pump_yn_inyear[comp$yeargrouping=="Base1"],
+             comp$pump_yn_inyear[comp$yeargrouping=="Year3"])$p.value
+
 
 tab.5b<-final_table(dat.con.old,c('pump_yn_inyear'),
                     dat.con.old$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
 
+comp<-subset(dat.con.old,dat.con.old$yeargrouping %in% c("Base1","Year3"))
+temp.tab<-(table(comp$MRN)>1)*1
+temp.comp<-data.frame(MRN=rownames(temp.tab),temp.tab)
+comp<-merge(comp,temp.comp,by="MRN")
+comp<-subset(comp,comp$temp.tab==1)
+test.5b<-mcnemar.test(comp$pump_yn_inyear[comp$yeargrouping=="Base1"],
+                      comp$pump_yn_inyear[comp$yeargrouping=="Year3"])$p.value
+
 tab.6a<-final_table(dat.trt.young,c('pump_yn_inyear'),
                     dat.trt.young$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
+
+comp<-subset(dat.trt.young,dat.trt.young$yeargrouping %in% c("Base1","Year3"))
+temp.tab<-(table(comp$MRN)>1)*1
+temp.comp<-data.frame(MRN=rownames(temp.tab),temp.tab)
+comp<-merge(comp,temp.comp,by="MRN")
+comp<-subset(comp,comp$temp.tab==1)
+test.6a<-mcnemar.test(comp$pump_yn_inyear[comp$yeargrouping=="Base1"],
+                      comp$pump_yn_inyear[comp$yeargrouping=="Year3"])$p.value
 
 tab.6b<-final_table(dat.con.young,c('pump_yn_inyear'),
                     dat.con.young$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
 
+comp<-subset(dat.con.young,dat.con.young$yeargrouping %in% c("Base1","Year3"))
+temp.tab<-(table(comp$MRN)>1)*1
+temp.comp<-data.frame(MRN=rownames(temp.tab),temp.tab)
+comp<-merge(comp,temp.comp,by="MRN")
+comp<-subset(comp,comp$temp.tab==1)
+test.6b<-mcnemar.test(comp$pump_yn_inyear[comp$yeargrouping=="Base1"],
+                      comp$pump_yn_inyear[comp$yeargrouping=="Year3"])$p.value
+
 tab.7a<-final_table(dat.trt.old,c('cgm_yn_inyear'),
                     dat.trt.old$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
+
+comp<-subset(dat.trt.old,dat.trt.old$yeargrouping %in% c("Base1","Year3"))
+temp.tab<-(table(comp$MRN)>1)*1
+temp.comp<-data.frame(MRN=rownames(temp.tab),temp.tab)
+comp<-merge(comp,temp.comp,by="MRN")
+comp<-subset(comp,comp$temp.tab==1)
+test.7a<-mcnemar.test(comp$pump_yn_inyear[comp$yeargrouping=="Base1"],
+                      comp$pump_yn_inyear[comp$yeargrouping=="Year3"])$p.value
 
 tab.7b<-final_table(dat.con.old,c('cgm_yn_inyear'),
                     dat.con.old$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
 
+comp<-subset(dat.con.old,dat.con.old$yeargrouping %in% c("Base1","Year3"))
+temp.tab<-(table(comp$MRN)>1)*1
+temp.comp<-data.frame(MRN=rownames(temp.tab),temp.tab)
+comp<-merge(comp,temp.comp,by="MRN")
+comp<-subset(comp,comp$temp.tab==1)
+test.7b<-mcnemar.test(comp$pump_yn_inyear[comp$yeargrouping=="Base1"],
+                      comp$pump_yn_inyear[comp$yeargrouping=="Year3"])$p.value
+
 tab.8a<-final_table(dat.trt.young,c('cgm_yn_inyear'),
                     dat.trt.young$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
 
+comp<-subset(dat.trt.young,dat.trt.young$yeargrouping %in% c("Base1","Year3"))
+temp.tab<-(table(comp$MRN)>1)*1
+temp.comp<-data.frame(MRN=rownames(temp.tab),temp.tab)
+comp<-merge(comp,temp.comp,by="MRN")
+comp<-subset(comp,comp$temp.tab==1)
+test.8a<-mcnemar.test(comp$pump_yn_inyear[comp$yeargrouping=="Base1"],
+                      comp$pump_yn_inyear[comp$yeargrouping=="Year3"])$p.value
+
 tab.8b<-final_table(dat.con.young,c('cgm_yn_inyear'),
                     dat.con.young$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
+
+comp<-subset(dat.con.young,dat.con.young$yeargrouping %in% c("Base1","Year3"))
+temp.tab<-(table(comp$MRN)>1)*1
+temp.comp<-data.frame(MRN=rownames(temp.tab),temp.tab)
+comp<-merge(comp,temp.comp,by="MRN")
+comp<-subset(comp,comp$temp.tab==1)
+test.8b<-mcnemar.test(comp$pump_yn_inyear[comp$yeargrouping=="Base1"],
+                      comp$pump_yn_inyear[comp$yeargrouping=="Year3"])$p.value

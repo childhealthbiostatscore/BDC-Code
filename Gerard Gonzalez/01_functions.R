@@ -3,7 +3,7 @@ by_pt_by_year<-function(ID,data){
   temp<-lapply(unique(ID), function(x){
     
     dat.temp <- subset(data, ID == x)
-    # dat.temp <- subset(dat,dat$record_id==851479)
+    # dat.temp <- subset(dat,dat$MRN==1509435)
     
     dat.temp<-dat.temp[order(dat.temp$Appt_Date),]
     dat.temp$row_tot<-nrow(dat.temp) #count of repeat visits per patient
@@ -61,6 +61,7 @@ by_pt_by_year<-function(ID,data){
     dat.temp<-by_year(dat.temp$yeargrouping,dat.temp)
     dat.temp<-dat.temp[order(dat.temp$yeargrouping),]
     dat.temp$baseline_a1c<-dat.temp$a1c_last_in_year[1]
+    dat.temp$baseline_checks<-dat.temp$checks_last_in_year[1]
     
     dat.temp})
   
