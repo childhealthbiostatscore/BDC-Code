@@ -110,14 +110,36 @@ dat$duplicate<-0
 dat$duplicate[duplicated(dat[,c(4,8)])]<-1
 dat<-subset(dat,dat$duplicate==0)
 
+#NEW FOR THIS ANALYSIS: 
+#remove checks per day when on CGM
+dat$Checks_Per_Day[dat$CGM=="Y"]<-NA
+
 ######### 1 ROW PER PATIENT, PER YEAR ########
 
 dat<-by_pt_by_year(dat$MRN,dat)
 dat<-dat[order(dat$MRN,dat$yeargrouping),]
+
 #View(dat[,c(5,2,1,30,31,38)])
 #subset to only 1 row per patient per year, since already have summary stats:
 dat<-subset(dat,dat$row_num_year==1)
 dat<-dat[order(dat$MRN,dat$visit),]
+
+#NEW in this analysis:
+#adjust for technology type:
+dat$technology_type_inyear<-NA
+dat$technology_type_inyear[dat$cgm_yn_inyear==0 & dat$pump_yn_inyear==0]<-"No CGM or Pump"
+dat$technology_type_inyear[dat$cgm_yn_inyear==1 & dat$pump_yn_inyear==0]<-"CGM Only"
+dat$technology_type_inyear[dat$cgm_yn_inyear==0 & dat$pump_yn_inyear==1]<-"Pump Only"
+dat$technology_type_inyear[dat$cgm_yn_inyear==1 & dat$pump_yn_inyear==1]<-"CGM and Pump"
+dat$technology_type_inyear<-factor(dat$technology_type_inyear,levels=c("No CGM or Pump","CGM and Pump",
+                                                                       "CGM Only","Pump Only"))
+dat$technology_type_inyear<-as.factor(dat$technology_type_inyear)
+label(dat$technology_type_inyear)<-"Technology Type in Year"
+
+#remove Checks per day when CGM is used:
+dat$checks_last_in_year[dat$cgm_yn_inyear==1]<-NA
+
+
 ##future dataset: only patients followed through year 4:
 #dat.four<-subset(dat,dat$year_4==1)
 
@@ -132,7 +154,7 @@ dat$yeargrouping<-as.factor(dat$yeargrouping)
 label(dat$yeargrouping)<-"Year"
 
 label(dat$a1c_last_in_year)<-"A1C - Last Measure in Year"
-label(dat$checks_last_in_year)<-"Checks per Day - Last Measure in Year"
+label(dat$checks_last_in_year)<-"Checks per Day - Last Measure in Year (CGM=No)"
 
 label(dat$a1c_avg_in_year)<-"A1C - Average in Year"
 label(dat$checks_avg_in_year)<-"Checks per Day - Average in Year"
