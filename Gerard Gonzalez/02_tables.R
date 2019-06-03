@@ -176,8 +176,8 @@ temp.tab<-(table(comp$MRN)>1)*1
 temp.comp<-data.frame(MRN=rownames(temp.tab),temp.tab)
 comp<-merge(comp,temp.comp,by="MRN")
 comp<-subset(comp,comp$temp.tab==1)
-test.7a<-mcnemar.test(comp$pump_yn_inyear[comp$yeargrouping=="Base1"],
-                      comp$pump_yn_inyear[comp$yeargrouping=="Year3"])$p.value
+test.7a<-mcnemar.test(comp$cgm_yn_inyear[comp$yeargrouping=="Base1"],
+                      comp$cgm_yn_inyear[comp$yeargrouping=="Year3"])$p.value
 
 tab.7b<-final_table(dat.con.old,c('cgm_yn_inyear'),
                     dat.con.old$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
@@ -187,8 +187,8 @@ temp.tab<-(table(comp$MRN)>1)*1
 temp.comp<-data.frame(MRN=rownames(temp.tab),temp.tab)
 comp<-merge(comp,temp.comp,by="MRN")
 comp<-subset(comp,comp$temp.tab==1)
-test.7b<-mcnemar.test(comp$pump_yn_inyear[comp$yeargrouping=="Base1"],
-                      comp$pump_yn_inyear[comp$yeargrouping=="Year3"])$p.value
+test.7b<-mcnemar.test(comp$cgm_yn_inyear[comp$yeargrouping=="Base1"],
+                      comp$cgm_yn_inyear[comp$yeargrouping=="Year3"])$p.value
 
 tab.8a<-final_table(dat.trt.young,c('cgm_yn_inyear'),
                     dat.trt.young$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
@@ -198,8 +198,8 @@ temp.tab<-(table(comp$MRN)>1)*1
 temp.comp<-data.frame(MRN=rownames(temp.tab),temp.tab)
 comp<-merge(comp,temp.comp,by="MRN")
 comp<-subset(comp,comp$temp.tab==1)
-test.8a<-mcnemar.test(comp$pump_yn_inyear[comp$yeargrouping=="Base1"],
-                      comp$pump_yn_inyear[comp$yeargrouping=="Year3"])$p.value
+test.8a<-mcnemar.test(comp$cgm_yn_inyear[comp$yeargrouping=="Base1"],
+                      comp$cgm_yn_inyear[comp$yeargrouping=="Year3"])$p.value
 
 tab.8b<-final_table(dat.con.young,c('cgm_yn_inyear'),
                     dat.con.young$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
@@ -209,5 +209,5 @@ temp.tab<-(table(comp$MRN)>1)*1
 temp.comp<-data.frame(MRN=rownames(temp.tab),temp.tab)
 comp<-merge(comp,temp.comp,by="MRN")
 comp<-subset(comp,comp$temp.tab==1)
-test.8b<-mcnemar.test(comp$pump_yn_inyear[comp$yeargrouping=="Base1"],
-                      comp$pump_yn_inyear[comp$yeargrouping=="Year3"])$p.value
+test.8b<-mcnemar.test(comp$cgm_yn_inyear[comp$yeargrouping=="Base1"],
+                      comp$cgm_yn_inyear[comp$yeargrouping=="Year3"])$p.value

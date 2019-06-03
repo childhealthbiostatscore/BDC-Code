@@ -3,6 +3,7 @@
 library(nlme)
 library(afex)
 require(lsmeans)
+source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Gerard Gonzalez/00_data.R')
 #### Use only patients who had 3 year data ####
 length(unique(dat$MRN))
 
@@ -18,6 +19,8 @@ year3_sum<-as.data.frame(year3_sum)
 year3_sum$Value<-round(year3_sum$Value,3)
 year3_sum$Std.Error<-round(year3_sum$Std.Error,3)
 year3_sum$`p-value`<-round(year3_sum$`p-value`,3)
+
+anova_a1c_mod_toyear3<-anova(a1c_mod_toyear3)
 
 #test for differences between groups at each time point:
 ref_3 <- lsmeans(a1c_mod_toyear3, c("trt_grp", "yeargrouping"))
@@ -44,6 +47,7 @@ year3_sum_old<-as.data.frame(year3_sum_old)
 year3_sum_old$Value<-round(year3_sum_old$Value,3)
 year3_sum_old$Std.Error<-round(year3_sum_old$Std.Error,3)
 year3_sum_old$`p-value`<-round(year3_sum_old$`p-value`,3)
+anova_a1c_mod_toyear3_old<-anova(a1c_mod_toyear3_old)
 
 #test for differences between groups at each time point:
 ref_3_old <- lsmeans(a1c_mod_toyear3_old, c("trt_grp", "yeargrouping"))
@@ -71,6 +75,8 @@ year3_sum_young$Value<-round(year3_sum_young$Value,3)
 year3_sum_young$Std.Error<-round(year3_sum_young$Std.Error,3)
 year3_sum_young$`p-value`<-round(year3_sum_young$`p-value`,3)
 
+anova_a1c_mod_toyear3_young<-anova(a1c_mod_toyear3_young)
+
 #test for differences between groups at each time point:
 ref_3_young <- lsmeans(a1c_mod_toyear3_young, c("trt_grp", "yeargrouping"))
 
@@ -86,56 +92,58 @@ contrasts_3_young$SE<-round(contrasts_3_young$SE,3)
 contrasts_3_young$p.value<-round(contrasts_3_young$p.value,3)
 
 # #A1c: pump group
-# dat.pump<-subset(dat,dat$technology_type_inyear=="Pump Only")
-# a1c_mod_toyear3_pump<-lme(a1c_last_in_year~baseline_a1c+factor(yeargrouping)+factor(trt_grp)+group+
-#                              factor(yeargrouping)*factor(trt_grp)+duration_of_diagnosis
-#                            ,random=~1|MRN/yeargrouping,data=dat.pump)
-# year3_sum_pump<-summary(a1c_mod_toyear3_pump)
-# year3_sum_pump<-year3_sum_pump$tTable[,c(1,2,5)]
-# year3_sum_pump<-as.data.frame(year3_sum_pump)
-# year3_sum_pump$Value<-round(year3_sum_pump$Value,3)
-# year3_sum_pump$Std.Error<-round(year3_sum_pump$Std.Error,3)
-# year3_sum_pump$`p-value`<-round(year3_sum_pump$`p-value`,3)
+dat.pump<-subset(dat,dat$technology_type_inyear %in% c("Pump Only","CGM and Pump"))
+
+a1c_mod_toyear3_pump<-lme(a1c_last_in_year~baseline_a1c+factor(yeargrouping)+factor(trt_grp)+group+
+                             factor(yeargrouping)*factor(trt_grp)+duration_of_diagnosis+cgm_yn_inyear
+                           ,random=~1|MRN/yeargrouping,data=dat.pump)
+year3_sum_pump<-summary(a1c_mod_toyear3_pump)
+year3_sum_pump<-year3_sum_pump$tTable[,c(1,2,5)]
+year3_sum_pump<-as.data.frame(year3_sum_pump)
+year3_sum_pump$Value<-round(year3_sum_pump$Value,3)
+year3_sum_pump$Std.Error<-round(year3_sum_pump$Std.Error,3)
+year3_sum_pump$`p-value`<-round(year3_sum_pump$`p-value`,3)
+anova_a1c_mod_toyear3_pump<-anova(a1c_mod_toyear3_pump)
 # 
 # #test for differences between groups at each time point:
-# ref_3_pump <- lsmeans(a1c_mod_toyear3_pump, c("trt_grp", "yeargrouping"))
-# 
-# c_list_3_pump <- list(c_base1_pump = c(0, 0, -1, 1, 0, 0, 0, 0),
-#                        c_year1_pump = c(0, 0, 0, 0, -1, 1, 0, 0),
-#                        c_year2_pump = c(0, 0, 0, 0, 0, 0, -1, 1),
-#                        c_year3_pump = c(-1, 1, 0, 0, 0, 0, 0, 0)
-# )
-# contrasts_3_pump<-summary(contrast(ref_3_pump, c_list_3_pump))
-# contrasts_3_pump<-contrasts_3_pump[,c(1,2,3,6)]
-# contrasts_3_pump$estimate<-round(contrasts_3_pump$estimate,3)
-# contrasts_3_pump$SE<-round(contrasts_3_pump$SE,3)
-# contrasts_3_pump$p.value<-round(contrasts_3_pump$p.value,3)
-# 
+ref_3_pump <- lsmeans(a1c_mod_toyear3_pump, c("trt_grp", "yeargrouping"))
+
+c_list_3_pump <- list(c_base1_pump = c(0, 0, -1, 1, 0, 0, 0, 0),
+                       c_year1_pump = c(0, 0, 0, 0, -1, 1, 0, 0),
+                       c_year2_pump = c(0, 0, 0, 0, 0, 0, -1, 1),
+                       c_year3_pump = c(-1, 1, 0, 0, 0, 0, 0, 0)
+)
+contrasts_3_pump<-summary(contrast(ref_3_pump, c_list_3_pump))
+contrasts_3_pump<-contrasts_3_pump[,c(1,2,3,6)]
+contrasts_3_pump$estimate<-round(contrasts_3_pump$estimate,3)
+contrasts_3_pump$SE<-round(contrasts_3_pump$SE,3)
+contrasts_3_pump$p.value<-round(contrasts_3_pump$p.value,3)
+# # 
 # #A1c: no technology
-# dat.nopump<-subset(dat,dat$technology_type_inyear=="No CGM or Pump")
-# a1c_mod_toyear3_nopump<-lme(a1c_last_in_year~baseline_a1c+factor(yeargrouping)+factor(trt_grp)+group+
-#                               factor(yeargrouping)*factor(trt_grp)+duration_of_diagnosis
-#                             ,random=~1|MRN/yeargrouping,data=dat.nopump)
-# year3_sum_nopump<-summary(a1c_mod_toyear3_nopump)
-# year3_sum_nopump<-year3_sum_nopump$tTable[,c(1,2,5)]
-# year3_sum_nopump<-as.data.frame(year3_sum_nopump)
-# year3_sum_nopump$Value<-round(year3_sum_nopump$Value,3)
-# year3_sum_nopump$Std.Error<-round(year3_sum_nopump$Std.Error,3)
-# year3_sum_nopump$`p-value`<-round(year3_sum_nopump$`p-value`,3)
-# 
-# #test for differences between groups at each time point:
-# ref_3_nopump <- lsmeans(a1c_mod_toyear3_nopump, c("trt_grp", "yeargrouping"))
-# 
-# c_list_3_nopump <- list(c_base1_nopump = c(0, 0, -1, 1, 0, 0, 0, 0),
-#                         c_year1_nopump = c(0, 0, 0, 0, -1, 1, 0, 0),
-#                         c_year2_nopump = c(0, 0, 0, 0, 0, 0, -1, 1),
-#                         c_year3_nopump = c(-1, 1, 0, 0, 0, 0, 0, 0)
-# )
-# contrasts_3_nopump<-summary(contrast(ref_3_nopump, c_list_3_nopump))
-# contrasts_3_nopump<-contrasts_3_nopump[,c(1,2,3,6)]
-# contrasts_3_nopump$estimate<-round(contrasts_3_nopump$estimate,3)
-# contrasts_3_nopump$SE<-round(contrasts_3_nopump$SE,3)
-# contrasts_3_nopump$p.value<-round(contrasts_3_nopump$p.value,3)
+dat.nopump<-subset(dat,dat$technology_type_inyear=="No CGM or Pump")
+a1c_mod_toyear3_nopump<-lme(a1c_last_in_year~baseline_a1c+factor(yeargrouping)+factor(trt_grp)+group+
+                              factor(yeargrouping)*factor(trt_grp)+duration_of_diagnosis
+                            ,random=~1|MRN/yeargrouping,data=dat.nopump)
+year3_sum_nopump<-summary(a1c_mod_toyear3_nopump)
+year3_sum_nopump<-year3_sum_nopump$tTable[,c(1,2,5)]
+year3_sum_nopump<-as.data.frame(year3_sum_nopump)
+year3_sum_nopump$Value<-round(year3_sum_nopump$Value,3)
+year3_sum_nopump$Std.Error<-round(year3_sum_nopump$Std.Error,3)
+year3_sum_nopump$`p-value`<-round(year3_sum_nopump$`p-value`,3)
+anova_a1c_mod_toyear3_nopump<-anova(a1c_mod_toyear3_nopump)
+#test for differences between groups at each time point:
+ref_3_nopump <- lsmeans(a1c_mod_toyear3_nopump, c("trt_grp", "yeargrouping"))
+
+c_list_3_nopump <- list(c_base1_nopump = c(0, 0, -1, 1, 0, 0, 0, 0),
+                        c_year1_nopump = c(0, 0, 0, 0, -1, 1, 0, 0),
+                        c_year2_nopump = c(0, 0, 0, 0, 0, 0, -1, 1),
+                        c_year3_nopump = c(-1, 1, 0, 0, 0, 0, 0, 0)
+)
+contrasts_3_nopump<-summary(contrast(ref_3_nopump, c_list_3_nopump))
+contrasts_3_nopump<-contrasts_3_nopump[,c(1,2,3,6)]
+contrasts_3_nopump$estimate<-round(contrasts_3_nopump$estimate,3)
+contrasts_3_nopump$SE<-round(contrasts_3_nopump$SE,3)
+contrasts_3_nopump$p.value<-round(contrasts_3_nopump$p.value,3)
 
 #########Checks Per Day#########
 #OVERALL
@@ -150,6 +158,8 @@ checks_year3_sum$Value<-round(checks_year3_sum$Value,3)
 checks_year3_sum$Std.Error<-round(checks_year3_sum$Std.Error,3)
 checks_year3_sum$`p-value`<-round(checks_year3_sum$`p-value`,3)
 
+
+anova_checks_mod_toyear3<-anova(checks_mod_toyear3)
 #test for differences between groups at each time point:
 ref_3_checks <- lsmeans(checks_mod_toyear3, c("trt_grp", "yeargrouping"))
 
@@ -175,7 +185,7 @@ checks_year3_sum_old<-as.data.frame(checks_year3_sum_old)
 checks_year3_sum_old$Value<-round(checks_year3_sum_old$Value,3)
 checks_year3_sum_old$Std.Error<-round(checks_year3_sum_old$Std.Error,3)
 checks_year3_sum_old$`p-value`<-round(checks_year3_sum_old$`p-value`,3)
-
+anova_checks_mod_toyear3_old<-anova(checks_mod_toyear3_old)
 #test for differences between groups at each time point:
 ref_3_checks_old <- lsmeans(checks_mod_toyear3_old, c("trt_grp", "yeargrouping"))
 
@@ -201,6 +211,7 @@ checks_year3_sum_young<-as.data.frame(checks_year3_sum_young)
 checks_year3_sum_young$Value<-round(checks_year3_sum_young$Value,3)
 checks_year3_sum_young$Std.Error<-round(checks_year3_sum_young$Std.Error,3)
 checks_year3_sum_young$`p-value`<-round(checks_year3_sum_young$`p-value`,3)
+anova_checks_mod_toyear3_young<-anova(checks_mod_toyear3_young)
 
 #test for differences between groups at each time point:
 ref_3_checks_young <- lsmeans(checks_mod_toyear3_young, c("trt_grp", "yeargrouping"))
@@ -217,53 +228,56 @@ contrasts_3_checks_young$SE<-round(contrasts_3_checks_young$SE,3)
 contrasts_3_checks_young$p.value<-round(contrasts_3_checks_young$p.value,3)
 
 ####PUMP ONLY
-# dat_checks_pump<-subset(dat_checks,dat_checks$technology_type_inyear=="Pump Only")
-# checks_mod_toyear3_pump<-lme(checks_last_in_year~baseline_checks+factor(yeargrouping)+group+
-#                                 factor(trt_grp)+factor(yeargrouping)*factor(trt_grp)+duration_of_diagnosis
-#                               ,random=~1|MRN/yeargrouping,data=dat_checks_pump)
-# checks_year3_sum_pump<-summary(checks_mod_toyear3_pump)
-# checks_year3_sum_pump<-checks_year3_sum_pump$tTable[,c(1,2,5)]
-# checks_year3_sum_pump<-as.data.frame(checks_year3_sum_pump)
-# checks_year3_sum_pump$Value<-round(checks_year3_sum_pump$Value,3)
-# checks_year3_sum_pump$Std.Error<-round(checks_year3_sum_pump$Std.Error,3)
-# checks_year3_sum_pump$`p-value`<-round(checks_year3_sum_pump$`p-value`,3)
-# 
-# #test for differences between groups at each time point:
-# ref_3_checks_pump <- lsmeans(checks_mod_toyear3_pump, c("trt_grp", "yeargrouping"))
-# 
-# c_list_3_checks_pump <- list(c_base1_pump = c(0, 0, -1, 1, 0, 0, 0, 0),
-#                               c_year1_pump = c(0, 0, 0, 0, -1, 1, 0, 0),
-#                               c_year2_pump = c(0, 0, 0, 0, 0, 0, -1, 1),
-#                               c_year3_pump = c(-1, 1, 0, 0, 0, 0, 0, 0)
-# )
-# contrasts_3_checks_pump<-summary(contrast(ref_3_checks_pump, c_list_3_checks_pump))
-# contrasts_3_checks_pump<-contrasts_3_checks_pump[,c(1,2,3,6)]
-# contrasts_3_checks_pump$estimate<-round(contrasts_3_checks_pump$estimate,3)
-# contrasts_3_checks_pump$SE<-round(contrasts_3_checks_pump$SE,3)
-# contrasts_3_checks_pump$p.value<-round(contrasts_3_checks_pump$p.value,3)
+dat_checks_pump<-subset(dat_checks,dat_checks$technology_type_inyear=="Pump Only")
+checks_mod_toyear3_pump<-lme(checks_last_in_year~baseline_checks+factor(yeargrouping)+group+
+                                factor(trt_grp)+factor(yeargrouping)*factor(trt_grp)+duration_of_diagnosis
+                              ,random=~1|MRN/yeargrouping,data=dat_checks_pump)
+checks_year3_sum_pump<-summary(checks_mod_toyear3_pump)
+checks_year3_sum_pump<-checks_year3_sum_pump$tTable[,c(1,2,5)]
+checks_year3_sum_pump<-as.data.frame(checks_year3_sum_pump)
+checks_year3_sum_pump$Value<-round(checks_year3_sum_pump$Value,3)
+checks_year3_sum_pump$Std.Error<-round(checks_year3_sum_pump$Std.Error,3)
+checks_year3_sum_pump$`p-value`<-round(checks_year3_sum_pump$`p-value`,3)
+
+anova_checks_mod_toyear3_pump<-anova(checks_mod_toyear3_pump)
+
+#test for differences between groups at each time point:
+ref_3_checks_pump <- lsmeans(checks_mod_toyear3_pump, c("trt_grp", "yeargrouping"))
+
+c_list_3_checks_pump <- list(c_base1_pump = c(0, 0, -1, 1, 0, 0, 0, 0),
+                              c_year1_pump = c(0, 0, 0, 0, -1, 1, 0, 0),
+                              c_year2_pump = c(0, 0, 0, 0, 0, 0, -1, 1),
+                              c_year3_pump = c(-1, 1, 0, 0, 0, 0, 0, 0)
+)
+contrasts_3_checks_pump<-summary(contrast(ref_3_checks_pump, c_list_3_checks_pump))
+contrasts_3_checks_pump<-contrasts_3_checks_pump[,c(1,2,3,6)]
+contrasts_3_checks_pump$estimate<-round(contrasts_3_checks_pump$estimate,3)
+contrasts_3_checks_pump$SE<-round(contrasts_3_checks_pump$SE,3)
+contrasts_3_checks_pump$p.value<-round(contrasts_3_checks_pump$p.value,3)
 # 
 # ####NO TECH
-# dat_checks_nopump<-subset(dat_checks,dat_checks$technology_type_inyear=="No CGM or Pump")
-# checks_mod_toyear3_nopump<-lme(checks_last_in_year~baseline_checks+factor(yeargrouping)+group+
-#                                factor(trt_grp)+factor(yeargrouping)*factor(trt_grp)+duration_of_diagnosis
-#                              ,random=~1|MRN/yeargrouping,data=dat_checks_nopump)
-# checks_year3_sum_nopump<-summary(checks_mod_toyear3_nopump)
-# checks_year3_sum_nopump<-checks_year3_sum_nopump$tTable[,c(1,2,5)]
-# checks_year3_sum_nopump<-as.data.frame(checks_year3_sum_nopump)
-# checks_year3_sum_nopump$Value<-round(checks_year3_sum_nopump$Value,3)
-# checks_year3_sum_nopump$Std.Error<-round(checks_year3_sum_nopump$Std.Error,3)
-# checks_year3_sum_nopump$`p-value`<-round(checks_year3_sum_nopump$`p-value`,3)
-# 
-# #test for differences between groups at each time point:
-# ref_3_checks_nopump <- lsmeans(checks_mod_toyear3_nopump, c("trt_grp", "yeargrouping"))
-# 
-# c_list_3_checks_nopump <- list(c_base1_nopump = c(0, 0, -1, 1, 0, 0, 0, 0),
-#                              c_year1_nopump = c(0, 0, 0, 0, -1, 1, 0, 0),
-#                              c_year2_nopump = c(0, 0, 0, 0, 0, 0, -1, 1),
-#                              c_year3_nopump = c(-1, 1, 0, 0, 0, 0, 0, 0)
-# )
-# contrasts_3_checks_nopump<-summary(contrast(ref_3_checks_nopump, c_list_3_checks_nopump))
-# contrasts_3_checks_nopump<-contrasts_3_checks_nopump[,c(1,2,3,6)]
-# contrasts_3_checks_nopump$estimate<-round(contrasts_3_checks_nopump$estimate,3)
-# contrasts_3_checks_nopump$SE<-round(contrasts_3_checks_nopump$SE,3)
-# contrasts_3_checks_nopump$p.value<-round(contrasts_3_checks_nopump$p.value,3)
+dat_checks_nopump<-subset(dat_checks,dat_checks$technology_type_inyear=="No CGM or Pump")
+checks_mod_toyear3_nopump<-lme(checks_last_in_year~baseline_checks+factor(yeargrouping)+group+
+                               factor(trt_grp)+factor(yeargrouping)*factor(trt_grp)+duration_of_diagnosis
+                             ,random=~1|MRN/yeargrouping,data=dat_checks_nopump)
+checks_year3_sum_nopump<-summary(checks_mod_toyear3_nopump)
+checks_year3_sum_nopump<-checks_year3_sum_nopump$tTable[,c(1,2,5)]
+checks_year3_sum_nopump<-as.data.frame(checks_year3_sum_nopump)
+checks_year3_sum_nopump$Value<-round(checks_year3_sum_nopump$Value,3)
+checks_year3_sum_nopump$Std.Error<-round(checks_year3_sum_nopump$Std.Error,3)
+checks_year3_sum_nopump$`p-value`<-round(checks_year3_sum_nopump$`p-value`,3)
+anova_checks_mod_toyear3_nopump<-anova(checks_mod_toyear3_nopump)
+
+#test for differences between groups at each time point:
+ref_3_checks_nopump <- lsmeans(checks_mod_toyear3_nopump, c("trt_grp", "yeargrouping"))
+
+c_list_3_checks_nopump <- list(c_base1_nopump = c(0, 0, -1, 1, 0, 0, 0, 0),
+                             c_year1_nopump = c(0, 0, 0, 0, -1, 1, 0, 0),
+                             c_year2_nopump = c(0, 0, 0, 0, 0, 0, -1, 1),
+                             c_year3_nopump = c(-1, 1, 0, 0, 0, 0, 0, 0)
+)
+contrasts_3_checks_nopump<-summary(contrast(ref_3_checks_nopump, c_list_3_checks_nopump))
+contrasts_3_checks_nopump<-contrasts_3_checks_nopump[,c(1,2,3,6)]
+contrasts_3_checks_nopump$estimate<-round(contrasts_3_checks_nopump$estimate,3)
+contrasts_3_checks_nopump$SE<-round(contrasts_3_checks_nopump$SE,3)
+contrasts_3_checks_nopump$p.value<-round(contrasts_3_checks_nopump$p.value,3)
