@@ -2,7 +2,7 @@
 setwd("C:/Users/campbkri/Documents/GitHub/BDC-Code/Viral Shah/Gastroparesis/Code")
 source('01_data.R')
 ###A1c, boxplots
-plot(c(0,9),c(6.2,8.4),type="n",main="Figure 1: Change in A1C",ylab="A1C",
+plot(c(0,9),c(6,9),type="n",main="",ylab="HbA1c (%)",
      xaxt="n",xlab="")
 boxplot(dat$A1C_3mo_pre[dat$Group=="Gastroparesis"],dat$A1C_3mo_pre[dat$Group=="Control"],
         dat$A1C_3mo_after[dat$Group=="Gastroparesis"],dat$A1C_3mo_after[dat$Group=="Control"],
@@ -10,11 +10,29 @@ boxplot(dat$A1C_3mo_pre[dat$Group=="Gastroparesis"],dat$A1C_3mo_pre[dat$Group=="
         at=c(1,2,4,5,7,8), xaxt="n",
         col=c("grey90","grey50"),
         add = T)
-axis(1,at=c(1.5,4.5,7.5),labels=c("Pre","Post-1","Post-2"),tick=F,cex.axis=1.5)
-legend("bottomleft",c("Gastroparesis","Control"),
-       col=c("grey90","grey50"),fill=c("grey90","grey50"),bty="n")
+axis(1,at=c(1.5,4.5,7.5),labels=c("Baseline","3 months","6 months"),tick=F,cex.axis=1.2)
+legend("topright",c("Gastroparesis","Control"),
+       col=c("grey90","grey50"),fill=c("grey90","grey50"))
 
 
+text(2.5,9,"Gastroparesis Group Changes:")
+lines(c(0.8,4),c(8.75,8.75),lty=2)
+text(2.4,8.8,"p=0.14")
+
+lines(c(0.8,7),c(8.5,8.5),lty=2)
+text(3.9,8.55,"p=0.10")
+
+text(2.5,6.60,"Control Group Changes:")
+lines(c(2,5),c(6.35,6.35),lty=2)
+text(3.5,6.4,"p=0.04")
+
+lines(c(2,8),c(6.15,6.15),lty=2)
+text(5,6.20,"p=0.06")
+
+# between group differences
+# text(1.5,6.8,"p=0.05")
+# text(4.6,6.3,"p=0.54")
+# text(7.6,6.4,"p=0.79")
 
 #cgm: 
 par(mfrow=c(1,3))
