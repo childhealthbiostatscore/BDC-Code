@@ -12,14 +12,15 @@ library(tableone)
 library(nortest)
 library(knitr)
 library(tidyverse)
+library(emmeans)
 source('~/Documents/GitHub/Tim-and-Laura/tim_R_functions.R')
 ```
 
 ```{r echo=FALSE,cache=TRUE,include=FALSE}
 # Read in demographic data
-demographics <- read.csv("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sonalee Ravi/Medicaid CGM/Data_Cleaned/Demographics.csv")
+demographics <- read.csv("/Volumes/som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sonalee Ravi/Medicaid CGM/Data_Cleaned/Demographics.csv")
 # Read in CGM data
-dat <- read.csv("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sonalee Ravi/Medicaid CGM/Data_Cleaned/30 day cgm metrics.csv",na.strings = c("","NULL"))
+dat <- read.csv("/Volumes/som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sonalee Ravi/Medicaid CGM/Data_Cleaned/30 day cgm metrics.csv",na.strings = c("","NULL"))
 # Format CGM data
 dat$EncounterDate <- lubridate::mdy(as.character(dat$EncounterDate))
 dat$EPICMRN <- as.factor(dat$EPICMRN)
@@ -230,7 +231,7 @@ never_some_comp <- print(never_some_comp,nonnormal = c("mean(HbA1c)",nonnormal),
 kable(never_some_comp)
 ```
 
-### Table 5b: Mixed model comparing HbA1c never on CGM to HbA1c off CGM, adjusting for pump status
+### Table 5b: Mixed model of HbA1c by technology status, adjusted for age and T1D Duration
 
 ```{r echo=FALSE,include=FALSE}
 # Compare A1c in those who never went on CGM to those on CGM
@@ -239,20 +240,22 @@ dat$CGMUseSomeNever <- ifelse(dat$EPICMRN %in% some_cgm_ids,"Some","Never")
 # Group into never CGM yes pump, etc.
 dat <- dat %>% 
   unite(cgm_ever_pump,CGMUseSomeNever,PumpUse,remove = F)
+# Add T1D duration
+dat <- left_join(dat,demographics[,c("EPICMRN","DateOfDiabetesDiagnosis")],by = "EPICMRN")
+dat$T1D_Duration <- round(difftime(dat$EncounterDate,dat$DateOfDiabetesDiagnosis,units = "days")/365.25,3)
+dat$cgm_ever_pump[dat$cgm_ever_pump == "Never_No"] <- "CGM-|Pump-"
+dat$cgm_ever_pump[dat$cgm_ever_pump == "Never_Yes"] <- "CGM-|Pump+"
+dat$cgm_ever_pump[dat$cgm_ever_pump == "Some_No"] <- "CGM+|Pump-"
+dat$cgm_ever_pump[dat$cgm_ever_pump == "Some_Yes"] <- "CGM+|Pump+"
 # Mixed model with random intercept
-mod_cgm_ever <- lme(HbA1c ~ cgm_ever_pump,random=~1|EPICMRN,data = dat,na.action = na.omit)
-cgm_ever_results <- as.data.frame(summary(mod_cgm_ever)$tTable)
-rownames(cgm_ever_results) <- c("cgmNever:pumpNo","cgmNever:pumpYes","cgmSome:pumpNo","cgmSome:pumpYes")
-# Means
-mod_cgm_ever_mean <- lme(HbA1c ~ cgm_ever_pump-1,random=~1|EPICMRN,data = dat,na.action = na.omit)
-cgm_ever_results_mean <- as.data.frame(summary(mod_cgm_ever_mean)$tTable)
-rownames(cgm_ever_results_mean) <- c("cgmNever:pumpNo","cgmNever:pumpYes","cgmSome:pumpNo","cgmSome:pumpYes")
+mod_cgm_ever <- lme(HbA1c ~ cgm_ever_pump + Age_AtEncounterDate + T1D_Duration,
+                    random=~1|EPICMRN,data = dat,na.action = na.omit)
+means <- emmeans(mod_cgm_ever,"cgm_ever_pump")
 ```
 
 ```{r echo=FALSE}
-kable(cgm_ever_results, caption = "Fixed Effects")
-kable(anova.lme(mod_cgm_ever), caption = "Type 3 Tests of Fixed Effects")
-kable(cgm_ever_results_mean, caption = "Group Means")
+kable(means)
+kable(pairs(means))
 ```
 
 CGM uptake = $\frac{177}{892}=19.84\text{ %}$
@@ -273,8 +276,8 @@ summary(mod_adj_int)
 ```{r echo=FALSE,warning=FALSE,dpi=600}
 # Plot
 mm_plot <- ggplot(data = dat, aes(x = CGM_Perc, y = HbA1c,group = EPICMRN)) +
-  geom_smooth(aes(x = CGM_Perc, y = HbA1c),colour="black",method='lm',inherit.aes = F,size=0.5) + 
-  xlab("% CGM Use") + 
+  geom_smooth(aes(x = CGM_Perc, y = HbA1c),colour="black",method='lm',inherit.aes = F,size=0.5) +
+  xlab("% CGM Use") +
   ylab("HbA1c (%)") +
   theme_bw()
 mm_plot
@@ -286,7 +289,7 @@ mm_plot
 kable(summary(mod_adj_int)$tTable,caption = "Fixed Effects")
 ```
 
-The interpretation of this mixed effects model is similar to a simple linear model. For example, on average each 1 point increase in % CGM use resulted in a decrease in HbA1c of 0.005 after adjusting for age, race, diabetes duration, and pump use. 
+The interpretation of this mixed effects model is similar to a simple linear model. For example, on average each 1 point increase in % CGM use resulted in a decrease in HbA1c of 0.005 after adjusting for age, race, diabetes duration, and pump use.
 
 Median [IQR] CGM use in days across all subjects and all visits (excluding missing values):
 ```{r echo=FALSE}
@@ -323,8 +326,8 @@ dat <- dat %>%
 # Plot
 use_plot <- ggplot(data = dat, aes(x = Days, y = CGM_Perc,group = as.factor(EPICMRN))) +
   geom_line(size = 0.2,aes(color = EPICMRN)) +
-  ylab("% CGM Use") + 
-  xlab("Days from First Visit") + 
+  ylab("% CGM Use") +
+  xlab("Days from First Visit") +
   theme(legend.position = "none")
 ```
 
@@ -366,7 +369,7 @@ tir_dem <- left_join(tir_dem,demographics,by = "EPICMRN")
 vars <- c("AgeFirstVisit","DiabetesDuration","Mean_HbA1c","Mean_CGM_Low","Mean_CGM_OK","Mean_CGM_High","Gender","Race.Ethnicity")
 nonnormal <- norm.check(tir_dem,c("AgeFirstVisit","DiabetesDuration","Mean_HbA1c","Mean_CGM_Low","Mean_CGM_OK","Mean_CGM_High"))
 tir_t1 <- CreateTableOne(vars,data = tir_dem)
-tir_t1 <- print(tir_t1,nonnormal = nonnormal)
+tir_t1 <- print(tir_t1,nonnormal = c(nonnormal,"Mean_CGM_High"))
 ```
 
 ```{r echo=FALSE}
@@ -377,9 +380,9 @@ kable(tir_t1)
 
 ```{r echo=FALSE,warning=FALSE,dpi=600}
 tir_plot <- ggplot(data = tir, aes(x = CGMOKPercent, y = HbA1c,group = EPICMRN)) +
-  geom_smooth(aes(x = CGMOKPercent, y = HbA1c),colour="black",method='lm',inherit.aes = F,size=0.5) + 
-  xlab("% Time in Range") + 
-  ylab("HbA1c (%)") + 
+  geom_smooth(aes(x = CGMOKPercent, y = HbA1c),colour="black",method='lm',inherit.aes = F,size=0.5) +
+  xlab("% Time in Range") +
+  ylab("HbA1c (%)") +
   theme_bw()
 tir_plot
 ```
@@ -395,4 +398,4 @@ tir_mod <- lme(HbA1c ~ CGMOKPercent,random = ~1|EPICMRN,data = tir,na.action = n
 kable(summary(tir_mod)$tTable,caption = "Fixed Effects")
 ```
 
-Here the intercept refers to the average HbA1c for participants with 0 % TIR. For each 1 percentage point increase in TIR, HbA1c decreases by 0.04 on average. 
+Here the intercept refers to the average HbA1c for participants with 0 % TIR. For each 1 percentage point increase in TIR, HbA1c decreases by 0.04 on average.
