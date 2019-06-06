@@ -29,6 +29,15 @@ dat$duration_of_gastro<-as.numeric(dat$duration_of_gastro)
 
 #GCI score -???
 #dat$gci_pre<-rowMeans(as.matrix(dat[,c(28:36)]),na.rm=T)
+dat$gci_pre_total<-rowSums(as.matrix(dat[,c(which(colnames(dat)=="GCI_Q1_pre"):which(colnames(dat)=="GCSI_Q9_pre"))]),na.rm=T)
+dat$gci_pre_total[dat$gci_pre_total==0]<-NA
+dat$gci_post_total<-rowSums(as.matrix(dat[,c(which(colnames(dat)=="GCSI_Q1_post"):which(colnames(dat)=="GCSI_Q9_post"))]),na.rm=T)
+dat$gci_post_total[dat$gci_post_total==0]<-NA
+
+label(dat$gci_pre_total)<-"Median Total GCI Score: Pre"
+label(dat$gci_post_total)<-"Median Total GCI Score: Post"
+
+
 dat$gci_pre<-rowMedians(as.matrix(dat[,c(which(colnames(dat)=="GCI_Q1_pre"):which(colnames(dat)=="GCSI_Q9_pre"))]),na.rm=T)
 label(dat$gci_pre)<-"Median GCI Score: Pre"
 dat$gci_post<-rowMedians(as.matrix(dat[,c(which(colnames(dat)=="GCSI_Q1_post"):which(colnames(dat)=="GCSI_Q9_post"))]),na.rm=T)
