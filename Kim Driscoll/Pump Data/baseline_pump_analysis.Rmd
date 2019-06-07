@@ -7,14 +7,8 @@ output: word_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-```
-
-```{r echo=FALSE, include=FALSE}
-# Load libraries and functions
 library(tidyverse)
 library(data.table)
-# Check OS and alter file path accordingly.
-if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.Platform$OS.type == "unix"){pathstart <- "/Volumes/"}
 ```
 
 ```{r echo=FALSE, include=FALSE}
@@ -80,32 +74,42 @@ for (f in 1:length(files)) {
   pump <- pump[which(!is.na(pump$timestamp)),]
 # Remove rows with data outside study time range if there is any.
   pump <- pump %>% filter(timestamp > start & timestamp < end)
-# Standardize column names
+# Standardize column names, delete irrelevant ones
   colnames(pump) <- tolower(gsub(c("[[:punct:]]"),"",colnames(pump)))
   colnames(pump) <- gsub(c(" "),"",colnames(pump))
-# Classify BGs using Bergensthal White Paper Categories and Pump It Up! 
-# categories.
-  pump$piu <- cut(as.numeric(pump$bgreadingmgdl),
-                       breaks = c(0,70,150,250,Inf),
-                       right = F,
-                       labels = c("<70","70-149","150-249","250+"))
-  pump$bwp <- cut(as.numeric(pump$bgreadingmgdl),
-                       breaks = c(0,70,181,251,400,Inf),
-                       right = F,
-                       labels = c("<70","70-180","181-250","251-400","400+"))
-# Select and rename columns.
   pump <- pump[,c("timestamp","bolustype","bwzestimateu",
                   "bolusvolumeselectedu","bolusvolumedeliveredu",
                   "bwzcarbinputgrams","bwzbginputmgdl",
-                  "bgreadingmgdl","piu","bwp")]
+                  "bgreadingmgdl")]
   colnames(pump) <- c(c("timestamp","bolustype","bwzestimate",
                         "bolusvolselected","bolusvoldelivered","carbinput",
-                        "bginput","bgreading","piu","bwp"))
-# Order by timestamp.  
+                        "bginput","bgreading"))
+  # Order by timestamp, delete leading rows with all NA.  
   pump <- pump[order(pump$timestamp),]
   if (rowSums(is.na(pump))[1]==8) {
     pump <- pump[-c(1:(as.numeric(which(rowSums(is.na(pump)) < 8)[1]))-1),]
   }
+# Combine BG columns
+  pump$bgreading <- pmax(pump$bginput,pump$bgreading,na.rm = T)
+  for (r in 1:nrow(pump)) {
+    bg <- pump$bgreading[r]
+    time <- pump$timestamp[r]
+    time15 <- time:(time+900) 
+    rows15 <- which(pump$timestamp %in% time15)
+    if (length(which(pump$bgreading[rows15]==bg)) > 1) {
+      pump$bgreading[rows15[which(pump$bgreading[rows15]==bg)[-1]]] <- NA
+    }
+  }
+# Classify BGs using Bergensthal White Paper Categories and Pump It Up! 
+# categories.
+  pump$piu <- cut(as.numeric(pump$bgreading),
+                       breaks = c(0,70,150,250,Inf),
+                       right = F,
+                       labels = c("<70","70-149","150-249","250+"))
+  pump$bwp <- cut(as.numeric(pump$bgreading),
+                       breaks = c(0,70,181,251,400,Inf),
+                       right = F,
+                       labels = c("<70","70-180","181-250","251-400","400+"))
 # Write to folder.
   filename <- paste(outdir,id,".csv",sep = "")
   write.csv(pump,file = filename,row.names = F,na="")
