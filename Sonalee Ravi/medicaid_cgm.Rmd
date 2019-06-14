@@ -231,172 +231,192 @@ never_some_comp <- print(never_some_comp,nonnormal = c("mean(HbA1c)",nonnormal),
 kable(never_some_comp)
 ```
 
-### Table 5b: Mixed model of HbA1c by technology status, adjusted for age and T1D Duration
+### Comparison between mean A1c for those never on CGM and mean A1c while not on CGM for those with CGM exposure
 
 ```{r echo=FALSE,include=FALSE}
-# Compare A1c in those who never went on CGM to those on CGM
-some_cgm_ids <- unique(dat$EPICMRN[which(dat$CGMUse == "Yes")])
-dat$CGMUseSomeNever <- ifelse(dat$EPICMRN %in% some_cgm_ids,"Some","Never")
-# Group into never CGM yes pump, etc.
-dat <- dat %>% 
-  unite(cgm_ever_pump,CGMUseSomeNever,PumpUse,remove = F)
-# Add T1D duration
-dat <- left_join(dat,demographics[,c("EPICMRN","DateOfDiabetesDiagnosis")],by = "EPICMRN")
-dat$T1D_Duration <- round(difftime(dat$EncounterDate,dat$DateOfDiabetesDiagnosis,units = "days")/365.25,3)
-dat$cgm_ever_pump[dat$cgm_ever_pump == "Never_No"] <- "CGM-|Pump-"
-dat$cgm_ever_pump[dat$cgm_ever_pump == "Never_Yes"] <- "CGM-|Pump+"
-dat$cgm_ever_pump[dat$cgm_ever_pump == "Some_No"] <- "CGM+|Pump-"
-dat$cgm_ever_pump[dat$cgm_ever_pump == "Some_Yes"] <- "CGM+|Pump+"
-# Mixed model with random intercept
-mod_cgm_ever <- lme(HbA1c ~ cgm_ever_pump + Age_AtEncounterDate + T1D_Duration,
-                    random=~1|EPICMRN,data = dat,na.action = na.omit)
-means <- emmeans(mod_cgm_ever,"cgm_ever_pump")
-```
-
-```{r echo=FALSE}
-kable(anova(mod_cgm_ever),caption = "Type 3 Tests of Overall Effect")
-kable(means)
-kable(pairs(means))
-```
-
-CGM uptake = $\frac{177}{892}=19.84\text{ %}$
-
-### Figure 1: HbA1c by % CGM Use
-
-```{r echo=FALSE,include=FALSE}
-# Add demographic info to main data
-dat <- left_join(dat,demographics,by = "EPICMRN")
-dat$DiabetesDuration <- difftime(dat$EncounterDate,dat$DateOfDiabetesDiagnosis,units = "weeks")
-# Model A1c continuously vs. CGM percentage, adjusting for pump, age, diabetes duration
-mod_adj_int <- lme(HbA1c ~ CGM_Perc + Age_AtEncounterDate + DiabetesDuration + PumpUse + Race.Ethnicity-1,
-               random=~1|EPICMRN,data = dat, na.action = na.omit)
-# Model selection
-summary(mod_adj_int)
-```
-
-```{r echo=FALSE,warning=FALSE,dpi=600}
-# Plot
-mm_plot <- ggplot(data = dat, aes(x = CGM_Perc, y = HbA1c,group = EPICMRN)) +
-  geom_smooth(aes(x = CGM_Perc, y = HbA1c),colour="black",method='lm',inherit.aes = F,size=0.5) +
-  xlab("% CGM Use") +
-  ylab("HbA1c (%)") +
-  theme_bw()
-mm_plot
-```
-
-### Table 6: Mixed model HbA1c by % CGM Use, adjusted for age, race, diabetes duration, and pump use
-
-```{r echo=FALSE}
-kable(summary(mod_adj_int)$tTable,caption = "Fixed Effects")
-```
-
-The interpretation of this mixed effects model is similar to a simple linear model. For example, on average each 1 point increase in % CGM use resulted in a decrease in HbA1c of 0.005 after adjusting for age, race, diabetes duration, and pump use.
-
-Median [IQR] CGM use in days across all subjects and all visits (excluding missing values):
-```{r echo=FALSE}
-print(paste0(median(dat$X30.day.CGM.use,na.rm = T)," [",
-             quantile(dat$X30.day.CGM.use,na.rm = T)[2],",",
-             quantile(dat$X30.day.CGM.use,na.rm = T)[4],"]"))
-```
-
-Percent of CGM users with at least 85% wear:
-
-```{r echo=FALSE}
-wear <- dat %>%
-  filter(CGMUseSomeNever == "Some") %>%
+some_cgm_ids <- as.numeric(some_cgm$EPICMRN)
+never_cgm_ids <- as.numeric(never_cgm_ids)
+not_on <- dat %>%
+  filter(as.numeric(EPICMRN) %in% some_cgm_ids) %>%
+  filter(CGMUse=="No") %>%
   group_by(EPICMRN) %>%
-  summarise(max_wear = max(X30.day.CGM.use,na.rm = T),
-            min_wear = min(X30.day.CGM.use,na.rm = T))
-round(length(which(wear$max_wear >= 25)) / nrow(wear) * 100,3)
-```
-
-Percent of CGM users with 0% wear:
-
-```{r echo=FALSE}
-round(length(which(wear$min_wear == 0)) / nrow(wear) * 100,3)
-```
-
-### Figure 2: % CGM Use Over Time
-
-```{r echo=FALSE}
-# Average CGM use change over time
-dat <- dat %>%
-  arrange(EPICMRN,EncounterDate) %>%
-  group_by(EPICMRN) %>%
-  mutate(Days = as.numeric(difftime(EncounterDate,EncounterDate[1],units = "days")))
-# Plot
-use_plot <- ggplot(data = dat, aes(x = Days, y = CGM_Perc,group = as.factor(EPICMRN))) +
-  geom_line(size = 0.2,aes(color = EPICMRN)) +
-  ylab("% CGM Use") +
-  xlab("Days from First Visit") +
-  theme(legend.position = "none")
-```
-
-```{r echo=FALSE,warning=FALSE,dpi=600}
-use_plot
-```
-
-```{r echo=FALSE,dpi=600}
-hist(dat$CGM_Perc,xlab = "CGM_Perc")
-hist(dat$Days,xlab = "Days")
-```
-
-### Table 7: Mixed model % CGM Use by Days from First Visit
-
-```{r echo=FALSE}
-# Model
-use_mod <- lme(CGM_Perc ~ Days,random = ~1|EPICMRN,data = dat,na.action = na.omit)
+  summarise(mean(HbA1c)) %>%
+  mutate(CGMUse = "Some")
+not_on <- rbind(not_on,never_cgm)
+not_on_comp <- CreateTableOne(vars = "mean(HbA1c)",strata = "CGMUse",data = not_on)
+not_on_comp <- print(not_on_comp)
 ```
 
 ```{r echo=FALSE}
-# kable(summary(use_mod)$tTable,caption = "Fixed Effects")
-# plot(use_mod)
+kable(not_on_comp)
 ```
 
-### Table 8: Descriptive statistics for all individuals with TIR data
+<!-- ### Table 5b: Mixed model of HbA1c by technology status, adjusted for age and T1D Duration -->
 
-```{r echo=FALSE,include=FALSE}
-# Average TIR
-tir <- dat %>%
-  filter(CGM_Perc > 0)
-tir_dem <- tir %>%
-  group_by(EPICMRN) %>%
-  summarise(Mean_CGM_Low = mean(CGMLowPercent,na.rm = T),
-            Mean_CGM_OK = mean(CGMOKPercent,na.rm = T),
-            Mean_CGM_High = mean(CGMHighPercent,na.rm = T),
-            Mean_HbA1c = mean(HbA1c,na.rm = T))
-tir_dem[tir_dem == "NaN"] <- NA
-tir_dem <- left_join(tir_dem,demographics,by = "EPICMRN")
-vars <- c("AgeFirstVisit","DiabetesDuration","Mean_HbA1c","Mean_CGM_Low","Mean_CGM_OK","Mean_CGM_High","Gender","Race.Ethnicity")
-nonnormal <- norm.check(tir_dem,c("AgeFirstVisit","DiabetesDuration","Mean_HbA1c","Mean_CGM_Low","Mean_CGM_OK","Mean_CGM_High"))
-tir_t1 <- CreateTableOne(vars,data = tir_dem)
-tir_t1 <- print(tir_t1,nonnormal = c(nonnormal,"Mean_CGM_High"))
-```
+<!-- ```{r echo=FALSE,include=FALSE} -->
+<!-- # Compare A1c in those who never went on CGM to those on CGM -->
+<!-- some_cgm_ids <- unique(dat$EPICMRN[which(dat$CGMUse == "Yes")]) -->
+<!-- dat$CGMUseSomeNever <- ifelse(dat$EPICMRN %in% some_cgm_ids,"Some","Never") -->
+<!-- # Group into never CGM yes pump, etc. -->
+<!-- dat <- dat %>%  -->
+<!--   unite(cgm_ever_pump,CGMUseSomeNever,PumpUse,remove = F) -->
+<!-- # Add T1D duration -->
+<!-- dat <- left_join(dat,demographics[,c("EPICMRN","DateOfDiabetesDiagnosis")],by = "EPICMRN") -->
+<!-- dat$T1D_Duration <- round(difftime(dat$EncounterDate,dat$DateOfDiabetesDiagnosis,units = "days")/365.25,3) -->
+<!-- dat$cgm_ever_pump[dat$cgm_ever_pump == "Never_No"] <- "CGM-|Pump-" -->
+<!-- dat$cgm_ever_pump[dat$cgm_ever_pump == "Never_Yes"] <- "CGM-|Pump+" -->
+<!-- dat$cgm_ever_pump[dat$cgm_ever_pump == "Some_No"] <- "CGM+|Pump-" -->
+<!-- dat$cgm_ever_pump[dat$cgm_ever_pump == "Some_Yes"] <- "CGM+|Pump+" -->
+<!-- # Mixed model with random intercept -->
+<!-- mod_cgm_ever <- lme(HbA1c ~ cgm_ever_pump + Age_AtEncounterDate + T1D_Duration, -->
+<!--                     random=~1|EPICMRN,data = dat,na.action = na.omit) -->
+<!-- means <- emmeans(mod_cgm_ever,"cgm_ever_pump") -->
+<!-- ``` -->
 
-```{r echo=FALSE}
-kable(tir_t1)
-```
+<!-- ```{r echo=FALSE} -->
+<!-- kable(anova(mod_cgm_ever),caption = "Type 3 Tests of Overall Effect") -->
+<!-- kable(means) -->
+<!-- kable(pairs(means)) -->
+<!-- ``` -->
 
-### Figure 3: HbA1c by % Time in Range
+<!-- CGM uptake = $\frac{177}{892}=19.84\text{ %}$ -->
 
-```{r echo=FALSE,warning=FALSE,dpi=600}
-tir_plot <- ggplot(data = tir, aes(x = CGMOKPercent, y = HbA1c,group = EPICMRN)) +
-  geom_smooth(aes(x = CGMOKPercent, y = HbA1c),colour="black",method='lm',inherit.aes = F,size=0.5) +
-  xlab("% Time in Range") +
-  ylab("HbA1c (%)") +
-  theme_bw()
-tir_plot
-```
+<!-- ### Figure 1: HbA1c by % CGM Use -->
 
-### Table 9: Mixed model HbA1c by % Time in Range
+<!-- ```{r echo=FALSE,include=FALSE} -->
+<!-- # Add demographic info to main data -->
+<!-- dat <- left_join(dat,demographics,by = "EPICMRN") -->
+<!-- dat$DiabetesDuration <- difftime(dat$EncounterDate,dat$DateOfDiabetesDiagnosis,units = "weeks") -->
+<!-- # Model A1c continuously vs. CGM percentage, adjusting for pump, age, diabetes duration -->
+<!-- mod_adj_int <- lme(HbA1c ~ CGM_Perc + Age_AtEncounterDate + DiabetesDuration + PumpUse + Race.Ethnicity-1, -->
+<!--                random=~1|EPICMRN,data = dat, na.action = na.omit) -->
+<!-- # Model selection -->
+<!-- summary(mod_adj_int) -->
+<!-- ``` -->
 
-```{r echo=FALSE}
-# Model
-tir_mod <- lme(HbA1c ~ CGMOKPercent,random = ~1|EPICMRN,data = tir,na.action = na.omit)
-```
+<!-- ```{r echo=FALSE,warning=FALSE,dpi=600} -->
+<!-- # Plot -->
+<!-- mm_plot <- ggplot(data = dat, aes(x = CGM_Perc, y = HbA1c,group = EPICMRN)) + -->
+<!--   geom_smooth(aes(x = CGM_Perc, y = HbA1c),colour="black",method='lm',inherit.aes = F,size=0.5) + -->
+<!--   xlab("% CGM Use") + -->
+<!--   ylab("HbA1c (%)") + -->
+<!--   theme_bw() -->
+<!-- mm_plot -->
+<!-- ``` -->
 
-```{r echo=FALSE}
-kable(summary(tir_mod)$tTable,caption = "Fixed Effects")
-```
+<!-- ### Table 6: Mixed model HbA1c by % CGM Use, adjusted for age, race, diabetes duration, and pump use -->
 
-Here the intercept refers to the average HbA1c for participants with 0 % TIR. For each 1 percentage point increase in TIR, HbA1c decreases by 0.04 on average.
+<!-- ```{r echo=FALSE} -->
+<!-- kable(summary(mod_adj_int)$tTable,caption = "Fixed Effects") -->
+<!-- ``` -->
+
+<!-- The interpretation of this mixed effects model is similar to a simple linear model. For example, on average each 1 point increase in % CGM use resulted in a decrease in HbA1c of 0.005 after adjusting for age, race, diabetes duration, and pump use. -->
+
+<!-- Median [IQR] CGM use in days across all subjects and all visits (excluding missing values): -->
+<!-- ```{r echo=FALSE} -->
+<!-- print(paste0(median(dat$X30.day.CGM.use,na.rm = T)," [", -->
+<!--              quantile(dat$X30.day.CGM.use,na.rm = T)[2],",", -->
+<!--              quantile(dat$X30.day.CGM.use,na.rm = T)[4],"]")) -->
+<!-- ``` -->
+
+<!-- Percent of CGM users with at least 85% wear: -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- wear <- dat %>% -->
+<!--   filter(CGMUseSomeNever == "Some") %>% -->
+<!--   group_by(EPICMRN) %>% -->
+<!--   summarise(max_wear = max(X30.day.CGM.use,na.rm = T), -->
+<!--             min_wear = min(X30.day.CGM.use,na.rm = T)) -->
+<!-- round(length(which(wear$max_wear >= 25)) / nrow(wear) * 100,3) -->
+<!-- ``` -->
+
+<!-- Percent of CGM users with 0% wear: -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- round(length(which(wear$min_wear == 0)) / nrow(wear) * 100,3) -->
+<!-- ``` -->
+
+<!-- ### Figure 2: % CGM Use Over Time -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- # Average CGM use change over time -->
+<!-- dat <- dat %>% -->
+<!--   arrange(EPICMRN,EncounterDate) %>% -->
+<!--   group_by(EPICMRN) %>% -->
+<!--   mutate(Days = as.numeric(difftime(EncounterDate,EncounterDate[1],units = "days"))) -->
+<!-- # Plot -->
+<!-- use_plot <- ggplot(data = dat, aes(x = Days, y = CGM_Perc,group = as.factor(EPICMRN))) + -->
+<!--   geom_line(size = 0.2,aes(color = EPICMRN)) + -->
+<!--   ylab("% CGM Use") + -->
+<!--   xlab("Days from First Visit") + -->
+<!--   theme(legend.position = "none") -->
+<!-- ``` -->
+
+<!-- ```{r echo=FALSE,warning=FALSE,dpi=600} -->
+<!-- use_plot -->
+<!-- ``` -->
+
+<!-- ```{r echo=FALSE,dpi=600} -->
+<!-- hist(dat$CGM_Perc,xlab = "CGM_Perc") -->
+<!-- hist(dat$Days,xlab = "Days") -->
+<!-- ``` -->
+
+<!-- ### Table 7: Mixed model % CGM Use by Days from First Visit -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- # Model -->
+<!-- use_mod <- lme(CGM_Perc ~ Days,random = ~1|EPICMRN,data = dat,na.action = na.omit) -->
+<!-- ``` -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- # kable(summary(use_mod)$tTable,caption = "Fixed Effects") -->
+<!-- # plot(use_mod) -->
+<!-- ``` -->
+
+<!-- ### Table 8: Descriptive statistics for all individuals with TIR data -->
+
+<!-- ```{r echo=FALSE,include=FALSE} -->
+<!-- # Average TIR -->
+<!-- tir <- dat %>% -->
+<!--   filter(CGM_Perc > 0) -->
+<!-- tir_dem <- tir %>% -->
+<!--   group_by(EPICMRN) %>% -->
+<!--   summarise(Mean_CGM_Low = mean(CGMLowPercent,na.rm = T), -->
+<!--             Mean_CGM_OK = mean(CGMOKPercent,na.rm = T), -->
+<!--             Mean_CGM_High = mean(CGMHighPercent,na.rm = T), -->
+<!--             Mean_HbA1c = mean(HbA1c,na.rm = T)) -->
+<!-- tir_dem[tir_dem == "NaN"] <- NA -->
+<!-- tir_dem <- left_join(tir_dem,demographics,by = "EPICMRN") -->
+<!-- vars <- c("AgeFirstVisit","DiabetesDuration","Mean_HbA1c","Mean_CGM_Low","Mean_CGM_OK","Mean_CGM_High","Gender","Race.Ethnicity") -->
+<!-- nonnormal <- norm.check(tir_dem,c("AgeFirstVisit","DiabetesDuration","Mean_HbA1c","Mean_CGM_Low","Mean_CGM_OK","Mean_CGM_High")) -->
+<!-- tir_t1 <- CreateTableOne(vars,data = tir_dem) -->
+<!-- tir_t1 <- print(tir_t1,nonnormal = c(nonnormal,"Mean_CGM_High")) -->
+<!-- ``` -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- kable(tir_t1) -->
+<!-- ``` -->
+
+<!-- ### Figure 3: HbA1c by % Time in Range -->
+
+<!-- ```{r echo=FALSE,warning=FALSE,dpi=600} -->
+<!-- tir_plot <- ggplot(data = tir, aes(x = CGMOKPercent, y = HbA1c,group = EPICMRN)) + -->
+<!--   geom_smooth(aes(x = CGMOKPercent, y = HbA1c),colour="black",method='lm',inherit.aes = F,size=0.5) + -->
+<!--   xlab("% Time in Range") + -->
+<!--   ylab("HbA1c (%)") + -->
+<!--   theme_bw() -->
+<!-- tir_plot -->
+<!-- ``` -->
+
+<!-- ### Table 9: Mixed model HbA1c by % Time in Range -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- # Model -->
+<!-- tir_mod <- lme(HbA1c ~ CGMOKPercent,random = ~1|EPICMRN,data = tir,na.action = na.omit) -->
+<!-- ``` -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- kable(summary(tir_mod)$tTable,caption = "Fixed Effects") -->
+<!-- ``` -->
+
+<!-- Here the intercept refers to the average HbA1c for participants with 0 % TIR. For each 1 percentage point increase in TIR, HbA1c decreases by 0.04 on average. -->
