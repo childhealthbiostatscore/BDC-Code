@@ -1,31 +1,59 @@
 ---
-title: "Discontinuer Analysis"
+title: "6 Month Discontinuer Analysis"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
+```{r setup,include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-library(redcapAPI)
 library(tableone)
 library(knitr)
 library(tidyverse)
+library(Hmisc)
 ```
 
-```{r echo=FALSE}
-# REDCap API data import
-source("/Users/timvigers/Documents/GitHub/BDC-Code/api_tokens.R")
-# YA
-rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
-                         token = YA670g)
-ya_full <- exportRecords(rcon)
-# Parents
-rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
-                         token = Parent670g)
-parent_full <- exportRecords(rcon)
-# Child
-rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
-                         token = Child670g)
-child_full <- exportRecords(rcon)
+```{r echo=FALSE,include=FALSE}
+# Import participant data (API no longer working)
+source("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Discontinuers/Data_Raw/AdvancedClosedLoopCl_R_2019-06-24_0915.r")
+# Clean data
+# Format columns
+child_full$timepoint <- factor(child_full$timepoint,
+                               labels = c("baseline","1_month","time_1",
+                                          "time_2","time_3","time_4"))
+# Split child data
+glycemic <- child_full %>%
+  select(record_id:amexits_other)
+# Format timepoint
+glycemic$timepoint <- 
+  factor(sub("_arm_*.","",as.character(glycemic$redcap_event_name)),
+         levels = c("baseline","1_month","time_1","time_2","time_3","time_4"))
+# Get survey columns that don't need editing
+surveys <- child_full %>%
+  select(record_id,timepoint,c_paid1:c_paid20,c_hfs_worry11:c_hfs_worry25,
+         ya_paid1:ya_paid20)
+# Baseline worry and follow up worry are different columns. Convert wide to long.
+baseline_surveys <- child_full %>%
+  select(record_id,timepoint,ya_hfs_b_worry16:ya_hfs_b_worry33) %>%
+  filter(timepoint == "baseline")
+colnames(baseline_surveys) <- sub("_b_","_",colnames(baseline_surveys))
+follow_surveys <- child_full %>%
+  select(record_id,timepoint,ya_hfs_f_worry16:ya_hfs_f_worry33) %>%
+  filter(timepoint != "baseline")
+colnames(follow_surveys) <- sub("_f_","_",colnames(follow_surveys))
+ya_surveys <- rbind(baseline_surveys,follow_surveys)
+# Add to survey dataframe
+surveys <- full_join(surveys,ya_surveys,by=c("record_id","timepoint"))
+# Combine into one dataframe, remove unnecesary columns.
+glycemic <- glycemic %>%
+  select(record_id,timepoint,child_ya,demographics_dob:demographics_t1d_duration,
+         automode_start,hba1c_baseline:amexits_other)
+full_data <- left_join(glycemic,surveys,by=c("record_id","timepoint"))
+# Remove unnecessary objects
+rm(baseline_surveys,follow_surveys,ya_surveys,child_full,glycemic,surveys)
+```
+
+```{r echo=FALSE,include=FALSE}
+# Fill in missing survey values
+
 ```
