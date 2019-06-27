@@ -8,6 +8,7 @@ output: html_document
 ```{r setup,include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tableone)
+library(nortest)
 library(knitr)
 library(tidyverse)
 library(Hmisc)
@@ -21,6 +22,10 @@ source("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC
 child_full$timepoint <- factor(child_full$timepoint,
                                labels = c("baseline","1_month","time_1",
                                           "time_2","time_3","time_4"))
+child_full$demographics_age <- as.numeric(child_full$demographics_age)
+child_full$demographics_t1d_duration <- as.numeric(child_full$demographics_t1d_duration)
+child_full$hba1c_baseline <- as.numeric(child_full$hba1c_baseline)
+child_full$hba1c <- as.numeric(child_full$hba1c)
 # Split child data
 glycemic <- child_full %>%
   select(record_id:amexits_other)
@@ -87,6 +92,8 @@ ya_surveys <- ya_surveys[rowSums(!is.na(ya_surveys))>=3,]
 # Combine everything into one dataframe, remove unnecesary columns.
 surveys <- rbind(surveys,ya_surveys)
 full_data <- left_join(glycemic,surveys,by=c("record_id","timepoint"))
+# Exclude new participants
+full_data <- full_data %>% filter(record_id %in% 1:107)
 # Remove unnecessary objects
 rm(baseline_surveys,follow_surveys,ya_surveys,child_full,glycemic,surveys,
    ya_hfs_surveys,cols,r,replace_rows)
@@ -99,10 +106,9 @@ ya <- full_data$record_id[which(full_data$child_ya == 2)]
 child <- full_data$record_id[which(full_data$child_ya == 1)]
 # Withdrawn and never trained
 withdrawn <- c("41","50") # Per Cari
-exclude <- c(108:115)
 never_trained <- full_data %>%
   filter(timepoint=="baseline",is.na(automode_start)) %>% .$record_id
-never_trained <- never_trained[!(never_trained %in% c(withdrawn,exclude))]
+never_trained <- never_trained[!(never_trained %in% withdrawn)]
 # Discontinuers
 t1_discont <- full_data %>%
   filter(timepoint == "time_1", time_am < 10) %>% .$record_id
@@ -114,4 +120,32 @@ t2_discont <- full_data %>%
   filter(timepoint == "time_2", time_am < 10) %>% .$record_id
 t2_discont <- t2_discont[which(!(t2_discont %in% t1_discont))]
 t2_discont <- t2_discont[!(t2_discont %in% never_trained)]
+# Add to dataframe
+full_data <- full_data %>%
+  mutate(Continued = ifelse(record_id %in% c(t1_discont,t2_discont),"No",
+                            ifelse(record_id %in% never_trained,NA,"Yes")))
+```
+
+```{r echo=FALSE}
+# Survey z scores
+full_data$Worry_Z <- NA
+full_data$Worry_Z[which(full_data$record_id %in% child)] <- 
+  scale(full_data$Worry_Score[which(full_data$record_id %in% child)])
+full_data$Worry_Z[which(full_data$record_id %in% ya)] <- 
+  scale(full_data$Worry_Score[which(full_data$record_id %in% ya)])
+  
+baseline <- full_data %>%
+  filter(timepoint=="baseline")
+  
+
+vars <- c("demographics_age","demographics_t1d_duration","hba1c_baseline",
+          "PAID_Score","Worry_Z",
+          "demographics_ethnicity","demographics_race","demographics_sex",
+          "demographics_insurance","demographics_pumphx","demographics_cgmhx")
+t1 <- CreateTableOne(vars = vars,strata = "Continued",data = baseline)
+t1 <- print(t1,exact = c("demographics_ethnicity","demographics_race",
+                         "demographics_insurance","demographics_pumphx",
+                         "demographics_cgmhx"),printToggle = F,
+            nonnormal = c("PAID_Score","Worry_Z"))
+kable(t1)
 ```
