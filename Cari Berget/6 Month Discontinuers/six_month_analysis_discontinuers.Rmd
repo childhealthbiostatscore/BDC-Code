@@ -7,6 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(MASS)
 library(redcapAPI)
 library(tidyverse)
 library(knitr)
@@ -570,13 +571,13 @@ t1b <- CreateTableOne(dem_vars,data = trained,strata = "continuation")
 t1b <- print(t1b,nonnormal = nonnormal,printToggle = F)
 ```
 
-### Table 1a: Descriptive statistics by AM training status
+<!-- ### Table 1a: Descriptive statistics by AM training status -->
 
 ```{r echo=FALSE,include=FALSE}
 kable(t1a)
 ```
 
-### Table 1b: Descriptive statistics by continuation status
+<!-- ### Table 1b: Descriptive statistics by continuation status -->
 
 ```{r echo=FALSE,include=FALSE}
 kable(t1b)
@@ -1216,11 +1217,73 @@ t1 <- print(t1,nonnormal = c("baseline_to_am","baseline_a1c_to_am","am_to_m1",
 ## Table 1: Baseline Characteristics
 
 ```{r echo=FALSE}
-kable(t1)
+kable(t1[,1:3])
 ```
 
-## Predict dropout
+## Predict dropout from baseline and month 1 variables
 
 ```{r echo=FALSE}
+predict <- demographics %>%
+  select(record_id,hba1c_baseline,demographics_age,demographics_t1d_duration,
+         demographics_insurance)
+predict <- left_join(predict,trained[,c("record_id","paid_score",
+                                        "behave_score_z","worry_score_z",
+                                        "continuation")],by = "record_id")
+predict <- predict %>%
+  filter(!is.na(continuation))
 
+predict <- left_join(predict,glycemic_data_6_month %>%
+                       filter(Timepoint=="M1") %>%
+                       select(record_id,am_time,sensor_wear,amexit_day,bg_checks),
+                     by= "record_id")
+
+# logistic regression
+form <- as.formula(paste("factor(continuation) ~ ",
+                         paste(colnames(predict)[-c(1,which(colnames(predict) == "continuation"))],collapse = "+")))
+mod <- summary(glm(form,family = "binomial",data = predict))
+kable(round(mod$coefficients,3))
+# Stepwise backwards selection
+step_select <- step(glm(form,family = "binomial", scope=,
+                        data = predict[complete.cases(predict),]),direction='both',trace=0)
+# hba1c_baseline,demographics_age,sensor_wear kept in model when using backward selection. hba1c_baseline and sensor_wear are significant.
 ```
+
+## Change in diabetes distress and FOH pre and post discontinuation
+
+```{r echo=FALSE}
+# Convert to long
+survey_change <- reshape(c_ya_surveys_6_month[,c("record_id","Timepoint","paid_score","worry_score_z","behave_score_z")],
+                         v.names = c("paid_score","worry_score_z","behave_score_z"),
+                         timevar = "Timepoint",direction = "wide",idvar = "record_id")
+# Calculate change
+survey_change$paid_b_t1 <- survey_change$paid_score.T1-survey_change$paid_score.B
+survey_change$paid_t1_t2 <- survey_change$paid_score.T2-survey_change$paid_score.T1
+survey_change$worry_b_t1 <- survey_change$worry_score_z.T1 - survey_change$worry_score_z.B
+survey_change$worry_t1_t2 <- survey_change$worry_score_z.T2 - survey_change$worry_score_z.T1
+survey_change$behave_b_t1 <- survey_change$behave_score_z.T1 - survey_change$behave_score_z.B
+survey_change$behave_t1_t2 <- survey_change$behave_score_z.T2 - survey_change$behave_score_z.T1
+# Select columns
+survey_change <- survey_change %>% dplyr::select(record_id,paid_b_t1:behave_t1_t2)
+# Pick values based on when discontinued
+survey_change$paid <- ifelse(survey_change$record_id %in% as.character(t1_discont),
+                             survey_change$paid_b_t1,
+                             ifelse(survey_change$record_id %in% as.character(t2_discont),survey_change$paid_t1_t2,NA))
+
+survey_change$worry <- ifelse(survey_change$record_id %in% as.character(t1_discont),
+                             survey_change$worry_b_t1,
+                             ifelse(survey_change$record_id %in% as.character(t2_discont),survey_change$worry_t1_t2,NA))
+
+survey_change$behave <- ifelse(survey_change$record_id %in% as.character(t1_discont),
+                             survey_change$behave_b_t1,
+                             ifelse(survey_change$record_id %in% as.character(t2_discont),survey_change$behave_t1_t2,NA))
+```
+
+# Questions
+
+## Prediction model
+
+### Do we need all 10 variables in the model? It's a lot for a relatively small sample size.
+
+## Pre-/post-discontinuation
+
+### Only 12 discontinuers have this data
