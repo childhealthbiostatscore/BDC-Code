@@ -1,0 +1,151 @@
+---
+title: "6 Month Discontinuer Analysis"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: html_document
+---
+
+```{r setup,include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tableone)
+library(nortest)
+library(knitr)
+library(tidyverse)
+library(Hmisc)
+```
+
+```{r echo=FALSE,include=FALSE,message=FALSE}
+# Import participant data (API no longer working)
+source("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Discontinuers/Data_Raw/AdvancedClosedLoopCl_R_2019-06-24_0915.r")
+# Clean data
+# Format columns
+child_full$timepoint <- factor(child_full$timepoint,
+                               labels = c("baseline","1_month","time_1",
+                                          "time_2","time_3","time_4"))
+child_full$demographics_age <- as.numeric(child_full$demographics_age)
+child_full$demographics_t1d_duration <- as.numeric(child_full$demographics_t1d_duration)
+child_full$hba1c_baseline <- as.numeric(child_full$hba1c_baseline)
+child_full$hba1c <- as.numeric(child_full$hba1c)
+# Split child data
+glycemic <- child_full %>%
+  select(record_id:amexits_other)
+# Format timepoint
+glycemic$timepoint <- 
+  factor(sub("_arm_*.","",as.character(glycemic$redcap_event_name)),
+         levels = c("baseline","1_month","time_1","time_2","time_3","time_4"))
+# Select columns
+glycemic <- glycemic %>%
+  select(record_id,timepoint,child_ya,demographics_dob:demographics_t1d_duration,
+         automode_start,hba1c_baseline:amexits_other)
+# Get child survey columns, fill in missing values and score
+surveys <- child_full %>%
+  select(record_id,timepoint,c_paid1:c_paid20,c_hfs_worry11:c_hfs_worry25)
+surveys[,3:22] <- lapply(surveys[,3:22],function(x) as.numeric(x) - 1)
+# Rows with >= 75% PAID data
+replace_rows <- which(rowSums(is.na(surveys[,3:22])) %in% 1:5)
+for (r in replace_rows) {
+  cols <- which(is.na(surveys[r,1:22]))
+  surveys[r,cols] <- mean(as.numeric(surveys[r,3:22]),na.rm = T)
+}
+# Worry data
+replace_rows <- which(rowSums(is.na(surveys[,23:37])) %in% 1:3)
+for (r in replace_rows) {
+  cols <- which(is.na(surveys[r,23:37]))
+  surveys[r,22+cols] <- mean(as.numeric(surveys[r,23:37]),na.rm = T)
+}
+# Score, remove unnecessary columns and rows
+surveys$PAID_Score <- apply(surveys[3:22],1,function(x) (mean(4-x))*25)
+surveys$Worry_Score <- apply(surveys[23:37],1,sum)
+surveys <- surveys %>% select(record_id,timepoint,PAID_Score,Worry_Score)
+surveys <- surveys[rowSums(!is.na(surveys))>=3,]
+# YA PAID surveys
+ya_surveys <- child_full %>%
+  select(record_id,timepoint,ya_paid1:ya_paid20)
+# Baseline worry and follow up worry are different columns for YA. Convert wide to long.
+baseline_surveys <- child_full %>%
+  select(record_id,timepoint,ya_hfs_b_worry16:ya_hfs_b_worry33) %>%
+  filter(timepoint == "baseline")
+colnames(baseline_surveys) <- sub("_b_","_",colnames(baseline_surveys))
+follow_surveys <- child_full %>%
+  select(record_id,timepoint,ya_hfs_f_worry16:ya_hfs_f_worry33) %>%
+  filter(timepoint != "baseline")
+colnames(follow_surveys) <- sub("_f_","_",colnames(follow_surveys))
+ya_hfs_surveys <- rbind(baseline_surveys,follow_surveys)
+ya_surveys <- left_join(ya_surveys,ya_hfs_surveys,by=c("record_id","timepoint"))
+# Replace missing data PAID
+replace_rows <- which(rowSums(is.na(ya_surveys[,3:22])) %in% 1:5)
+for (r in replace_rows) {
+  cols <- which(is.na(ya_surveys[r,1:22]))
+  ya_surveys[r,cols] <- mean(as.numeric(ya_surveys[r,3:22]),na.rm = T)
+}
+# Worry
+replace_rows <- which(rowSums(is.na(ya_surveys[,23:40])) %in% 1:4)
+for (r in replace_rows) {
+  cols <- which(is.na(ya_surveys[r,23:ncol(ya_surveys)]))
+  ya_surveys[r,22+cols] <- mean(as.numeric(ya_surveys[r,23:40]),na.rm = T)
+}
+# Score, remove unnecessary columns and rows
+ya_surveys$PAID_Score <- apply(ya_surveys[3:22],1,function(x) (sum(x))*1.25)
+ya_surveys$Worry_Score <- apply(ya_surveys[23:40],1,sum)
+ya_surveys <- ya_surveys %>% select(record_id,timepoint,PAID_Score,Worry_Score)
+ya_surveys <- ya_surveys[rowSums(!is.na(ya_surveys))>=3,]
+# Combine everything into one dataframe, remove unnecesary columns.
+surveys <- rbind(surveys,ya_surveys)
+full_data <- left_join(glycemic,surveys,by=c("record_id","timepoint"))
+# Exclude new participants
+full_data <- full_data %>% filter(record_id %in% 1:107)
+# Remove unnecessary objects
+rm(baseline_surveys,follow_surveys,ya_surveys,child_full,glycemic,surveys,
+   ya_hfs_surveys,cols,r,replace_rows)
+```
+
+```{r echo=FALSE,include=FALSE}
+# Define groups
+# YA and child
+ya <- full_data$record_id[which(full_data$child_ya == 2)]
+child <- full_data$record_id[which(full_data$child_ya == 1)]
+# Withdrawn and never trained
+withdrawn <- c("41","50") # Per Cari
+never_trained <- full_data %>%
+  filter(timepoint=="baseline",is.na(automode_start)) %>% .$record_id
+never_trained <- never_trained[!(never_trained %in% withdrawn)]
+# Discontinuers
+t1_discont <- full_data %>%
+  filter(timepoint == "time_1", time_am < 10) %>% .$record_id
+# Remove participant 10 from discontinuers, because she had AM > 10 at T2.
+t1_discont <- t1_discont[-c(which(t1_discont == "10"))]
+t1_discont <- t1_discont[!(t1_discont %in% never_trained)]
+# T2
+t2_discont <- full_data %>%
+  filter(timepoint == "time_2", time_am < 10) %>% .$record_id
+t2_discont <- t2_discont[which(!(t2_discont %in% t1_discont))]
+t2_discont <- t2_discont[!(t2_discont %in% never_trained)]
+# Add to dataframe
+full_data <- full_data %>%
+  mutate(Continued = ifelse(record_id %in% c(t1_discont,t2_discont),"No",
+                            ifelse(record_id %in% never_trained,NA,"Yes")))
+```
+
+```{r echo=FALSE}
+# Survey z scores
+full_data$Worry_Z <- NA
+full_data$Worry_Z[which(full_data$record_id %in% child)] <- 
+  scale(full_data$Worry_Score[which(full_data$record_id %in% child)])
+full_data$Worry_Z[which(full_data$record_id %in% ya)] <- 
+  scale(full_data$Worry_Score[which(full_data$record_id %in% ya)])
+  
+baseline <- full_data %>%
+  filter(timepoint=="baseline")
+  
+
+vars <- c("demographics_age","demographics_t1d_duration","hba1c_baseline",
+          "PAID_Score","Worry_Z",
+          "demographics_ethnicity","demographics_race","demographics_sex",
+          "demographics_insurance","demographics_pumphx","demographics_cgmhx")
+t1 <- CreateTableOne(vars = vars,strata = "Continued",data = baseline)
+t1 <- print(t1,exact = c("demographics_ethnicity","demographics_race",
+                         "demographics_insurance","demographics_pumphx",
+                         "demographics_cgmhx"),printToggle = F,
+            nonnormal = c("PAID_Score","Worry_Z"))
+kable(t1)
+```
