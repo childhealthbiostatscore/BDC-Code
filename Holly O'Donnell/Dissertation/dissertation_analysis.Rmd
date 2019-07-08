@@ -8,11 +8,13 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tableone)
+library(car)
 library(skimr)
 library(knitr)
 library(tidyverse)
 library(lme4)
 library(nlme)
+library(glmmLasso)
 ```
 
 ```{r echo=FALSE,include=FALSE}
@@ -34,11 +36,73 @@ dat$StudyVisit <- as.factor(dat$StudyVisit)
 dat$Treatment <- as.factor(dat$Treatment)
 ```
 
-# Model Selection
+# Model Selection (BG checks per day)
 
 ## Start with the full model
 
+```{r echo=FALSE,include=FALSE}
+#LME4 models to check convergence
+full_mod_l <- lmer(readings_per_day ~ Treatment + StudyVisit + HbA1c + age_years + T1D_dur_years + IncomeLevel + (1|ID), data = dat)
+reduced_mod_l <- lmer(readings_per_day ~ Treatment + StudyVisit + HbA1c + age_years + (1|ID), data = dat)
+```
+
+```{r}
+full_mod <- lme(readings_per_day ~ Treatment + StudyVisit + HbA1c + age_years + T1D_dur_years + IncomeLevel,
+            random =~1|ID, data = dat,na.action = na.omit)
+```
+
+### Check variance inflation factor
+
 ```{r echo=FALSE}
-mod1_l <- lmer(readings_per_day ~ Treatment + StudyVisit + HbA1c + age_years + T1D_dur_years + IncomeLevel + (1|ID), data = dat)
-mod1 <- lme(readings_per_day ~ Treatment + StudyVisit + HbA1c + age_years + T1D_dur_years + IncomeLevel,random =~1|ID, data = dat,na.action = na.omit)
+vif <- as.data.frame(vif(full_mod))
+kable(vif)
+```
+
+In general, VIF > 10 is a concern so it looks like we don't need to worry about multicollinearity here.
+
+### Full model results
+
+```{r echo=FALSE}
+kable(summary(full_mod)$tTable)
+```
+
+T1D duration and income level are not significant, so check the reduced model without those. 
+
+## Reduced model
+
+```{r}
+reduced_mod <- lme(readings_per_day ~ Treatment + StudyVisit + HbA1c + age_years,
+                   random =~1|ID, data = dat,na.action = na.omit) 
+```
+
+### Compare AIC
+
+```{r warning=FALSE}
+kable(AIC(full_mod,reduced_mod))
+```
+
+Lower AIC is better, so  this indicates that the full model is actually a better fit. Now compare the full model to a model with T1D duration and a model with income level. 
+
+## Semi-reduced models
+
+```{r}
+t1d_dur_mod <- lme(readings_per_day ~ Treatment + StudyVisit + HbA1c + age_years + T1D_dur_years,
+                   random =~1|ID, data = dat,na.action = na.omit)
+income_mod <- lme(readings_per_day ~ Treatment + StudyVisit + HbA1c + age_years + IncomeLevel,
+                   random =~1|ID, data = dat,na.action = na.omit)
+```
+
+### Compare AIC
+
+```{r echo=FALSE,warning=FALSE}
+kable(AIC(full_mod,t1d_dur_mod,income_mod,reduced_mod))
+```
+
+Based on AIC, the model adjusted for age, HbA1c, and income level is best. 
+
+# LASSO Variable Selection
+
+```{r}
+lasso <- glmmLasso(fix = readings_per_day ~ Treatment + StudyVisit + HbA1c + age_years + T1D_dur_years + IncomeLevel,
+                   rnd = list(ID=~1),data = dat,lambda = 1)
 ```
