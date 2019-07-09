@@ -1220,6 +1220,57 @@ t1 <- print(t1,nonnormal = c("baseline_to_am","baseline_a1c_to_am","am_to_m1",
 kable(t1[,1:3])
 ```
 
+## Change in diabetes distress and FOH pre and post discontinuation
+
+```{r echo=FALSE,warning=FALSE}
+survey_change <- rbind(child_surveys_6_month,ya_surveys_6_month) %>% arrange(as.numeric(record_id))
+all_discont <- c(t1_discont,t2_discont)
+# Convert to wide
+survey_change <- reshape(survey_change[,c("record_id","Timepoint","paid_score","worry_score_z","behave_score_z")],
+                         v.names = c("paid_score","worry_score_z","behave_score_z"),
+                         timevar = "Timepoint",direction = "wide",idvar = "record_id")
+# Calculate change
+survey_change$paid_b_t1 <- survey_change$paid_score.T1-survey_change$paid_score.B
+survey_change$paid_t1_t2 <- survey_change$paid_score.T2-survey_change$paid_score.T1
+survey_change$paid_b_t2 <- survey_change$paid_score.T2-survey_change$paid_score.B
+survey_change$worry_b_t1 <- survey_change$worry_score_z.T1 - survey_change$worry_score_z.B
+survey_change$worry_t1_t2 <- survey_change$worry_score_z.T2 - survey_change$worry_score_z.T1
+survey_change$worry_b_t2 <- survey_change$worry_score_z.T2 - survey_change$worry_score_z.B
+survey_change$behave_b_t1 <- survey_change$behave_score_z.T1 - survey_change$behave_score_z.B
+survey_change$behave_t1_t2 <- survey_change$behave_score_z.T2 - survey_change$behave_score_z.T1
+survey_change$behave_b_t2 <- survey_change$behave_score_z.T2 - survey_change$behave_score_z.B
+# Split by when discontinued
+t1_change <- survey_change %>%
+  filter(record_id %in% t1_discont) %>%
+  select(record_id,paid_b_t1,worry_b_t1,behave_b_t1)
+colnames(t1_change) <- c("record_id","paid","worry","behave")
+t2_change <- survey_change %>%
+  filter(record_id %in% t2_discont) %>%
+  select(record_id,paid_t1_t2,paid_b_t2,worry_t1_t2,worry_b_t2,behave_t1_t2,behave_b_t2)
+# If no value for change from T1 to T2, use change from baseline to T2
+t2_change$paid <- t2_change$paid_t1_t2
+t2_change$paid[is.na(t2_change$paid)] <- t2_change$paid_b_t2[is.na(t2_change$paid)]
+t2_change$worry <- t2_change$worry_t1_t2
+t2_change$worry[is.na(t2_change$worry)] <- t2_change$worry_b_t2[is.na(t2_change$worry)]
+t2_change$behave <- t2_change$behave_t1_t2
+t2_change$behave[is.na(t2_change$behave)] <- t2_change$behave_b_t2[is.na(t2_change$behave)]
+# Combine
+t2_change <- t2_change %>% select(record_id,paid,worry,behave)
+survey_change <- rbind(t1_change,t2_change)
+survey_change[nrow(survey_change)+1,] <- c(all_discont[which(!(all_discont %in% survey_change$record_id))],NA,NA,NA)
+# Test if change is different from 0
+change_tab <- CreateTableOne(vars = c("paid","worry","behave"),data = survey_change)
+change_tab <- as.data.frame(print(change_tab,nonnormal=c("paid","worry","behave"),printToggle = F,missing = T))
+change_tab$p <- ""
+change_tab$p[2] <- round(wilcox.test(survey_change$paid)$p.value,3)
+change_tab$p[3] <- round(wilcox.test(survey_change$worry)$p.value,3)
+change_tab$p[4] <- round(wilcox.test(survey_change$behave)$p.value,3)
+colnames(change_tab)[which(colnames(change_tab)=="Missing")] <- "Missing (%)"
+kable(change_tab)
+```
+
+There is not a significant change in survey scores before and after discontinuation.
+
 ## Predict dropout from baseline and month 1 variables
 
 ```{r echo=FALSE}
@@ -1240,50 +1291,12 @@ predict <- left_join(predict,glycemic_data_6_month %>%
 # logistic regression
 form <- as.formula(paste("factor(continuation) ~ ",
                          paste(colnames(predict)[-c(1,which(colnames(predict) == "continuation"))],collapse = "+")))
-mod <- summary(glm(form,family = "binomial",data = predict))
-kable(round(mod$coefficients,3))
+mod <- glm(form,family = "binomial",data = predict)
+kable(round(summary(mod)$coefficients,3))
 # Stepwise backwards selection
-step_select <- step(glm(form,family = "binomial", scope=,
-                        data = predict[complete.cases(predict),]),direction='both',trace=0)
+step_select <- stepAIC(glm(form,family = "binomial",data = predict[complete.cases(predict),]),
+                       direction = "backward",trace = 0)
 # hba1c_baseline,demographics_age,sensor_wear kept in model when using backward selection. hba1c_baseline and sensor_wear are significant.
 ```
 
-## Change in diabetes distress and FOH pre and post discontinuation
-
-```{r echo=FALSE}
-# Convert to long
-survey_change <- reshape(c_ya_surveys_6_month[,c("record_id","Timepoint","paid_score","worry_score_z","behave_score_z")],
-                         v.names = c("paid_score","worry_score_z","behave_score_z"),
-                         timevar = "Timepoint",direction = "wide",idvar = "record_id")
-# Calculate change
-survey_change$paid_b_t1 <- survey_change$paid_score.T1-survey_change$paid_score.B
-survey_change$paid_t1_t2 <- survey_change$paid_score.T2-survey_change$paid_score.T1
-survey_change$worry_b_t1 <- survey_change$worry_score_z.T1 - survey_change$worry_score_z.B
-survey_change$worry_t1_t2 <- survey_change$worry_score_z.T2 - survey_change$worry_score_z.T1
-survey_change$behave_b_t1 <- survey_change$behave_score_z.T1 - survey_change$behave_score_z.B
-survey_change$behave_t1_t2 <- survey_change$behave_score_z.T2 - survey_change$behave_score_z.T1
-# Select columns
-survey_change <- survey_change %>% dplyr::select(record_id,paid_b_t1:behave_t1_t2)
-# Pick values based on when discontinued
-survey_change$paid <- ifelse(survey_change$record_id %in% as.character(t1_discont),
-                             survey_change$paid_b_t1,
-                             ifelse(survey_change$record_id %in% as.character(t2_discont),survey_change$paid_t1_t2,NA))
-
-survey_change$worry <- ifelse(survey_change$record_id %in% as.character(t1_discont),
-                             survey_change$worry_b_t1,
-                             ifelse(survey_change$record_id %in% as.character(t2_discont),survey_change$worry_t1_t2,NA))
-
-survey_change$behave <- ifelse(survey_change$record_id %in% as.character(t1_discont),
-                             survey_change$behave_b_t1,
-                             ifelse(survey_change$record_id %in% as.character(t2_discont),survey_change$behave_t1_t2,NA))
-```
-
-# Questions
-
-## Prediction model
-
-### Do we need all 10 variables in the model? It's a lot for a relatively small sample size.
-
-## Pre-/post-discontinuation
-
-### Only 12 discontinuers have this data
+Baseline HbA1c is the only significant predictor of discontinuation. On average, the odds of discontinuing are 2.656 times higher (95% CI: 1.253, 7.603) for each 1 unit increase in baseline HbA1c. The table above is reported as ln(odds).
