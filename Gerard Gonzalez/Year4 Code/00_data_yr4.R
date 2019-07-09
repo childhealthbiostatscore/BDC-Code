@@ -59,8 +59,8 @@ dat.c.cgm<-read.csv('05.08.19_Cleaned_controls_cgm.csv')
 dat.c.cgm$appt_date<-as.POSIXct(dat.c.cgm$appt_date,format="%m/%d/%Y")
 
 dat.c.cgm<-dat.c.cgm[,-c(which(colnames(dat.c.cgm)=="group"):which(colnames(dat.c.cgm)=="visit"),
-                                                             which(colnames(dat.c.cgm)=="Date_of_Birth"):which(colnames(dat.c.cgm)=="Diabetes_Onset_Date"),
-                                                             which(colnames(dat.c.cgm)=="base_date"):which(colnames(dat.c.cgm)=="duration_of_diagnosis"))]
+                         which(colnames(dat.c.cgm)=="Date_of_Birth"):which(colnames(dat.c.cgm)=="Diabetes_Onset_Date"),
+                         which(colnames(dat.c.cgm)=="base_date"):which(colnames(dat.c.cgm)=="duration_of_diagnosis"))]
 dat.c<-merge(dat.c.aic,dat.c.cgm,by=c("MRN","appt_date"),all=T)
 dat.c<-dat.c[order(dat.c$MRN,dat.c$visit),]
 
@@ -68,8 +68,8 @@ dat.c.ins<-read.csv('05.08.19_Cleaned_controls_insulin.csv')
 dat.c.ins$appt_date<-as.POSIXct(dat.c.ins$appt_date,format="%m/%d/%Y")
 
 dat.c.ins<-dat.c.ins[,-c(which(colnames(dat.c.ins)=="group"):which(colnames(dat.c.ins)=="visit"),
-                                                                 which(colnames(dat.c.ins)=="Date_of_Birth"):which(colnames(dat.c.ins)=="Diabetes_Onset_Date"),
-                                                                 which(colnames(dat.c.ins)=="Insulin_Regimen"):which(colnames(dat.c.ins)=="duration_of_diagnosis"))]
+                         which(colnames(dat.c.ins)=="Date_of_Birth"):which(colnames(dat.c.ins)=="Diabetes_Onset_Date"),
+                         which(colnames(dat.c.ins)=="Insulin_Regimen"):which(colnames(dat.c.ins)=="duration_of_diagnosis"))]
 dat.c<-merge(dat.c,dat.c.ins,by=c("MRN","appt_date"),all=T)
 dat.c<-dat.c[order(dat.c$MRN,dat.c$visit),]
 
@@ -141,13 +141,8 @@ dat$checks_last_in_year[dat$cgm_yn_inyear==1]<-NA
 
 
 ##future dataset: only patients followed through year 4:
-#dat.four<-subset(dat,dat$year_4==1)
+dat<-subset(dat,dat$year_4==1)
 
-##only include patients who were followed for 3+ years:
-dat<-subset(dat,dat$yeargrouping!="Year4")
-dat<-subset(dat,dat$year_3==1)
-
-##Remove year 4 data for now:
 
 ##prep all variables:
 dat$yeargrouping<-as.factor(dat$yeargrouping)
@@ -176,22 +171,3 @@ dat.trt.young<-subset(dat.trt,dat.trt$group=="Less than 12")
 dat.trt.old<-subset(dat.trt,dat.trt$group=="greater than or equal to 12")
 dat.con.young<-subset(dat.con,dat.con$group=="Less than 12")
 dat.con.old<-subset(dat.con,dat.con$group=="greater than or equal to 12")
-
-###sensivity analysis with <10 by year 3: use dob and appt_date?
-dat.3<-subset(dat,dat$yeargrouping=="Year3")
-dat.3$DOB_type<-NA
-dat.3$DOB_type[nchar(as.character(dat.3$DOB))==10]<-"ten"
-dat.3$DOB_type[nchar(as.character(dat.3$DOB))<=9]<-"eight"
-
-dat.3$date_of_birth<-as.POSIXct("2014-10-27 18:11:36 PDT")
-dat.3$date_of_birth[dat.3$DOB_type=="ten"]<-as.POSIXct(dat.3$DOB[dat.3$DOB_type=="ten"],format="%m/%d/%Y")
-dat.3$date_of_birth[dat.3$DOB_type=="eight"]<-as.POSIXct(dat.3$DOB[dat.3$DOB_type=="eight"],format="%d-%B-%y")
-
-dat.3$age_at_year3<-(dat.3$Appt_Date-dat.3$date_of_birth)/365
-table(dat.3$age_at_year3)
-dat.3$year3_age10<-0
-dat.3$year3_age10[dat.3$age_at_year3<10]<-1
-dat.3<-subset(dat.3,dat.3$year3_age10==1)
-sensitivity_mrns<-unique(dat.3$MRN)
-
-dat.3<-subset(dat,dat$MRN %in% sensitivity_mrns)
