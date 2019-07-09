@@ -41,29 +41,29 @@ co.oth<-co.oth[,-1]
 
 #merge them all together:
 dat.temp<-merge(co,co.1,by="EPICMRN",all.x=T)
-dat<-merge(dat.temp,co.oth,by="EPICMRN",all.x=T)
-dat[is.na(dat)]<-0
+dat.c<-merge(dat.temp,co.oth,by="EPICMRN",all.x=T)
+dat.c[is.na(dat.c)]<-0
 
-dat$num_comorb<-0
-dat$num_comorb<-rowSums(dat[,c(2:9)])
-dat$num_1st<-0
-dat$num_1st<-rowSums(dat[,c(9:17)])
-dat$num_other<-0
-dat$num_other<-rowSums(dat[,c(18:25)])
+dat.c$num_comorb<-0
+dat.c$num_comorb<-rowSums(dat.c[,c(2:9)])
+dat.c$num_1st<-0
+dat.c$num_1st<-rowSums(dat.c[,c(9:17)])
+dat.c$num_other<-0
+dat.c$num_other<-rowSums(dat.c[,c(18:25)])
 
-dat[,c(2:25)]<-lapply(dat[,c(2:25)],factor)
+dat.c[,c(2:25)]<-lapply(dat.c[,c(2:25)],factor)
 for (i in c(2:25)){
-  label(dat[,i])<-paste0(colnames(dat[i]))
+  label(dat.c[,i])<-paste0(colnames(dat.c[i]))
 }  
 
 #if hypothyroid or hyperthyroid is checked, do not check thryoid disease
-dat$Thyroid.disease_Any[dat$Hyperthyroidism_Any==1]<-0
-dat$Thyroid.disease_1stDegree[dat$Hyperthyroidism_1stDegree==1]<-0
-dat$Thyroid.disease_Other[dat$Hyperthyroidism_Other==1]<-0
+dat.c$Thyroid.disease_Any[dat.c$Hyperthyroidism_Any==1]<-0
+dat.c$Thyroid.disease_1stDegree[dat.c$Hyperthyroidism_1stDegree==1]<-0
+dat.c$Thyroid.disease_Other[dat.c$Hyperthyroidism_Other==1]<-0
 
-dat$Thyroid.disease_Any[dat$Hypothyroidism_Any==1]<-0
-dat$Thyroid.disease_1stDegree[dat$Hypothyroidism_1stDegree==1]<-0
-dat$Thyroid.disease_Other[dat$Hypothyroidism_Other==1]<-0
-#merge in with full data:
-dat.full<-merge(dat.pt,dat,by="EPICMRN",all.x=T)
+dat.c$Thyroid.disease_Any[dat.c$Hypothyroidism_Any==1]<-0
+dat.c$Thyroid.disease_1stDegree[dat.c$Hypothyroidism_1stDegree==1]<-0
+dat.c$Thyroid.disease_Other[dat.c$Hypothyroidism_Other==1]<-0
+#merge in with full dat.ca:
+dat.c.full<-merge(dat.pt,dat.c,by="EPICMRN",all.x=T)
   
