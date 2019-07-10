@@ -2,72 +2,144 @@
 source('S:/Shared Material/Shared Code/R/temp_table1.R')
 #source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Gerard Gonzalez/00_data.R')
 
-#Table 1A:
+#Table 1A (OLD WAY):
+# 
+# 
+# tab.1a<-final_table(dat.trt,c('a1c_last_in_year'),
+#             dat.trt$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
+# colnames(tab.1a)<-c('Variable','Baseline','Year1','Year2','Year3')
+# 
+# n_row_1a<-data.frame(Variable="n",Baseline=nrow(subset(dat.trt,dat.trt$yeargrouping=="Base1" & !is.na(dat.trt$a1c_last_in_year))),
+#                                   Year1=nrow(subset(dat.trt,dat.trt$yeargrouping=="Year1" & !is.na(dat.trt$a1c_last_in_year))),
+#                                   Year2=nrow(subset(dat.trt,dat.trt$yeargrouping=="Year2" & !is.na(dat.trt$a1c_last_in_year))),
+#                                   Year3=nrow(subset(dat.trt,dat.trt$yeargrouping=="Year3" & !is.na(dat.trt$a1c_last_in_year))))
+# levels(tab.1a$Baseline)<-c(levels(tab.1a$Baseline),n_row_1a$Baseline)
+# levels(tab.1a$Year1)<-c(levels(tab.1a$Year1),n_row_1a$Year1)
+# levels(tab.1a$Year2)<-c(levels(tab.1a$Year2),n_row_1a$Year2)
+# levels(tab.1a$Year3)<-c(levels(tab.1a$Year3),n_row_1a$Year3)
+# 
+# tab.1a<-rbind(tab.1a,n_row_1a)
+# 
+# tab.1a.2<-final_table(dat.trt,c('checks_last_in_year'),
+#                     dat.trt$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
+# colnames(tab.1a.2)<-c('Variable','Baseline','Year1','Year2','Year3')
+# 
+# n_row_1a.c<-data.frame(Variable="n",Baseline=nrow(subset(dat.trt,dat.trt$yeargrouping=="Base1" & !is.na(dat.trt$checks_last_in_year))),
+#                      Year1=nrow(subset(dat.trt,dat.trt$yeargrouping=="Year1" & !is.na(dat.trt$checks_last_in_year))),
+#                      Year2=nrow(subset(dat.trt,dat.trt$yeargrouping=="Year2" & !is.na(dat.trt$checks_last_in_year))),
+#                      Year3=nrow(subset(dat.trt,dat.trt$yeargrouping=="Year3" & !is.na(dat.trt$checks_last_in_year))))
+# levels(tab.1a.2$Baseline)<-c(levels(tab.1a.2$Baseline),n_row_1a.c$Baseline)
+# levels(tab.1a.2$Year1)<-c(levels(tab.1a.2$Year1),n_row_1a.c$Year1)
+# levels(tab.1a.2$Year2)<-c(levels(tab.1a.2$Year2),n_row_1a.c$Year2)
+# levels(tab.1a.2$Year3)<-c(levels(tab.1a.2$Year3),n_row_1a.c$Year3)
+# 
+# tab.1a.2<-rbind(tab.1a.2,n_row_1a.c)
+# tab.1a<-rbind(tab.1a,tab.1a.2)
+# 
+# ##repeat for controls:
+# tab.1b<-final_table(dat.con,c('a1c_last_in_year'),
+#                     dat.con$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
+# colnames(tab.1b)<-c('Variable','Baseline','Year1','Year2','Year3')
+# 
+# n_row_1b<-data.frame(Variable="n",Baseline=nrow(subset(dat.con,dat.con$yeargrouping=="Base1" & !is.na(dat.con$a1c_last_in_year))),
+#                      Year1=nrow(subset(dat.con,dat.con$yeargrouping=="Year1" & !is.na(dat.con$a1c_last_in_year))),
+#                      Year2=nrow(subset(dat.con,dat.con$yeargrouping=="Year2" & !is.na(dat.con$a1c_last_in_year))),
+#                      Year3=nrow(subset(dat.con,dat.con$yeargrouping=="Year3" & !is.na(dat.con$a1c_last_in_year))))
+# levels(tab.1b$Baseline)<-c(levels(tab.1b$Baseline),n_row_1b$Baseline)
+# levels(tab.1b$Year1)<-c(levels(tab.1b$Year1),n_row_1b$Year1)
+# levels(tab.1b$Year2)<-c(levels(tab.1b$Year2),n_row_1b$Year2)
+# levels(tab.1b$Year3)<-c(levels(tab.1b$Year3),n_row_1b$Year3)
+# 
+# tab.1b<-rbind(tab.1b,n_row_1b)
+# 
+# tab.1b.2<-final_table(dat.con,c('checks_last_in_year'),
+#                       dat.con$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
+# colnames(tab.1b.2)<-c('Variable','Baseline','Year1','Year2','Year3')
+# 
+# n_row_1b.c<-data.frame(Variable="n",Baseline=nrow(subset(dat.con,dat.con$yeargrouping=="Base1" & !is.na(dat.con$checks_last_in_year))),
+#                        Year1=nrow(subset(dat.con,dat.con$yeargrouping=="Year1" & !is.na(dat.con$checks_last_in_year))),
+#                        Year2=nrow(subset(dat.con,dat.con$yeargrouping=="Year2" & !is.na(dat.con$checks_last_in_year))),
+#                        Year3=nrow(subset(dat.con,dat.con$yeargrouping=="Year3" & !is.na(dat.con$checks_last_in_year))))
+# levels(tab.1b.2$Baseline)<-c(levels(tab.1b.2$Baseline),n_row_1b.c$Baseline)
+# levels(tab.1b.2$Year1)<-c(levels(tab.1b.2$Year1),n_row_1b.c$Year1)
+# levels(tab.1b.2$Year2)<-c(levels(tab.1b.2$Year2),n_row_1b.c$Year2)
+# levels(tab.1b.2$Year3)<-c(levels(tab.1b.2$Year3),n_row_1b.c$Year3)
+# 
+# tab.1b.2<-rbind(tab.1b.2,n_row_1b.c)
+# tab.1b<-rbind(tab.1b,tab.1b.2)
 
+#TABLE 1 (NEW WAY):
+mean_sd_table_1<-function(var,year){
+  
+  #var<-'a1c_last_in_year'
+  #year<-"Base1"
+  dat.temp<-subset(dat,dat$yeargrouping==year)
+  x<-dat.temp[,which(colnames(dat.temp)==var)]
+  mean.1<-mean(x[dat.temp$trt_grp=="Control"],na.rm=T)
+  sd.1<-sd(x[dat.temp$trt_grp=="Control"],na.rm=T)
+  
+  temp.1<-subset(dat.temp,dat.temp$trt_grp=="Control")
+  n.1<-nrow(subset(temp.1,!is.na(var)))
+  
+  mean.2<-mean(x[dat.temp$trt_grp=="LP"],na.rm=T)
+  sd.2<-sd(x[dat.temp$trt_grp=="LP"],na.rm=T)
+  
+  temp.2<-subset(dat.temp,dat.temp$trt_grp=="LP")
+  n.2<-nrow(subset(temp.2,!is.na(var)))
+  
+  #table for x
+  tab.x<-data.frame(
+    variable=c(paste0(year,": ",label(x)),"mean\u00B1sd","n"),
+    Control=c("",paste0(round(mean.1,2),"\u00B1",round(sd.1,2)),n.1),
+    Trt=c("",paste0(round(mean.2,2),"\u00B1",round(sd.2,2)),n.2)
+      )
+  return(tab.x)
+}
+a1c_base_1<-mean_sd_table_1('a1c_last_in_year',"Base1")
+a1c_year_1<-mean_sd_table_1('a1c_last_in_year',"Year1")
+a1c_year_2<-mean_sd_table_1('a1c_last_in_year',"Year2")
+a1c_year_3<-mean_sd_table_1('a1c_last_in_year',"Year3")
 
-tab.1a<-final_table(dat.trt,c('a1c_last_in_year'),
-            dat.trt$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
-colnames(tab.1a)<-c('Variable','Baseline','Year1','Year2','Year3')
+checks_base_1<-mean_sd_table_1('checks_last_in_year',"Base1")
+checks_year_1<-mean_sd_table_1('checks_last_in_year',"Year1")
+checks_year_2<-mean_sd_table_1('checks_last_in_year',"Year2")
+checks_year_3<-mean_sd_table_1('checks_last_in_year',"Year3")
 
-n_row_1a<-data.frame(Variable="n",Baseline=nrow(subset(dat.trt,dat.trt$yeargrouping=="Base1" & !is.na(dat.trt$a1c_last_in_year))),
-                                  Year1=nrow(subset(dat.trt,dat.trt$yeargrouping=="Year1" & !is.na(dat.trt$a1c_last_in_year))),
-                                  Year2=nrow(subset(dat.trt,dat.trt$yeargrouping=="Year2" & !is.na(dat.trt$a1c_last_in_year))),
-                                  Year3=nrow(subset(dat.trt,dat.trt$yeargrouping=="Year3" & !is.na(dat.trt$a1c_last_in_year))))
-levels(tab.1a$Baseline)<-c(levels(tab.1a$Baseline),n_row_1a$Baseline)
-levels(tab.1a$Year1)<-c(levels(tab.1a$Year1),n_row_1a$Year1)
-levels(tab.1a$Year2)<-c(levels(tab.1a$Year2),n_row_1a$Year2)
-levels(tab.1a$Year3)<-c(levels(tab.1a$Year3),n_row_1a$Year3)
+tab.1<-rbind(a1c_base_1,a1c_year_1,a1c_year_2,a1c_year_3,checks_base_1,checks_year_1,checks_year_2,checks_year_3)
 
-tab.1a<-rbind(tab.1a,n_row_1a)
+#sensitivity analysis:
+mean_sd_table_1.3<-function(var,year){
+  
+  #var<-'a1c_last_in_year'
+  #year<-"Base1"
+  dat.3.temp<-subset(dat.3,dat.3$yeargrouping==year)
+  x<-dat.3.temp[,which(colnames(dat.3.temp)==var)]
+  mean.1<-mean(x[dat.3.temp$trt_grp=="Control"],na.rm=T)
+  sd.1<-sd(x[dat.3.temp$trt_grp=="Control"],na.rm=T)
+  
+  temp.1<-subset(dat.3.temp,dat.3.temp$trt_grp=="Control")
+  n.1<-nrow(subset(temp.1,!is.na(var)))
+  
+  mean.2<-mean(x[dat.3.temp$trt_grp=="LP"],na.rm=T)
+  sd.2<-sd(x[dat.3.temp$trt_grp=="LP"],na.rm=T)
+  
+  temp.2<-subset(dat.3.temp,dat.3.temp$trt_grp=="LP")
+  n.2<-nrow(subset(temp.2,!is.na(var)))
+  
+  #table for x
+  tab.x<-data.frame(
+    variable=c(paste0(year,": ",label(x)),"mean\u00B1sd","n"),
+    Control=c("",paste0(round(mean.1,2),"\u00B1",round(sd.1,2)),n.1),
+    Trt=c("",paste0(round(mean.2,2),"\u00B1",round(sd.2,2)),n.2)
+  )
+  return(tab.x)
+}
+a1c_base_1.sens<-mean_sd_table_1.3('a1c_last_in_year',"Base1")
+a1c_year_1.sens<-mean_sd_table_1.3('a1c_last_in_year',"Year1")
+a1c_year_2.sens<-mean_sd_table_1.3('a1c_last_in_year',"Year2")
+a1c_year_3.sens<-mean_sd_table_1.3('a1c_last_in_year',"Year3")
 
-tab.1a.2<-final_table(dat.trt,c('checks_last_in_year'),
-                    dat.trt$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
-colnames(tab.1a.2)<-c('Variable','Baseline','Year1','Year2','Year3')
-
-n_row_1a.c<-data.frame(Variable="n",Baseline=nrow(subset(dat.trt,dat.trt$yeargrouping=="Base1" & !is.na(dat.trt$checks_last_in_year))),
-                     Year1=nrow(subset(dat.trt,dat.trt$yeargrouping=="Year1" & !is.na(dat.trt$checks_last_in_year))),
-                     Year2=nrow(subset(dat.trt,dat.trt$yeargrouping=="Year2" & !is.na(dat.trt$checks_last_in_year))),
-                     Year3=nrow(subset(dat.trt,dat.trt$yeargrouping=="Year3" & !is.na(dat.trt$checks_last_in_year))))
-levels(tab.1a.2$Baseline)<-c(levels(tab.1a.2$Baseline),n_row_1a.c$Baseline)
-levels(tab.1a.2$Year1)<-c(levels(tab.1a.2$Year1),n_row_1a.c$Year1)
-levels(tab.1a.2$Year2)<-c(levels(tab.1a.2$Year2),n_row_1a.c$Year2)
-levels(tab.1a.2$Year3)<-c(levels(tab.1a.2$Year3),n_row_1a.c$Year3)
-
-tab.1a.2<-rbind(tab.1a.2,n_row_1a.c)
-tab.1a<-rbind(tab.1a,tab.1a.2)
-
-##repeat for controls:
-tab.1b<-final_table(dat.con,c('a1c_last_in_year'),
-                    dat.con$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
-colnames(tab.1b)<-c('Variable','Baseline','Year1','Year2','Year3')
-
-n_row_1b<-data.frame(Variable="n",Baseline=nrow(subset(dat.con,dat.con$yeargrouping=="Base1" & !is.na(dat.con$a1c_last_in_year))),
-                     Year1=nrow(subset(dat.con,dat.con$yeargrouping=="Year1" & !is.na(dat.con$a1c_last_in_year))),
-                     Year2=nrow(subset(dat.con,dat.con$yeargrouping=="Year2" & !is.na(dat.con$a1c_last_in_year))),
-                     Year3=nrow(subset(dat.con,dat.con$yeargrouping=="Year3" & !is.na(dat.con$a1c_last_in_year))))
-levels(tab.1b$Baseline)<-c(levels(tab.1b$Baseline),n_row_1b$Baseline)
-levels(tab.1b$Year1)<-c(levels(tab.1b$Year1),n_row_1b$Year1)
-levels(tab.1b$Year2)<-c(levels(tab.1b$Year2),n_row_1b$Year2)
-levels(tab.1b$Year3)<-c(levels(tab.1b$Year3),n_row_1b$Year3)
-
-tab.1b<-rbind(tab.1b,n_row_1b)
-
-tab.1b.2<-final_table(dat.con,c('checks_last_in_year'),
-                      dat.con$yeargrouping,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')[,c(1,3:6)]
-colnames(tab.1b.2)<-c('Variable','Baseline','Year1','Year2','Year3')
-
-n_row_1b.c<-data.frame(Variable="n",Baseline=nrow(subset(dat.con,dat.con$yeargrouping=="Base1" & !is.na(dat.con$checks_last_in_year))),
-                       Year1=nrow(subset(dat.con,dat.con$yeargrouping=="Year1" & !is.na(dat.con$checks_last_in_year))),
-                       Year2=nrow(subset(dat.con,dat.con$yeargrouping=="Year2" & !is.na(dat.con$checks_last_in_year))),
-                       Year3=nrow(subset(dat.con,dat.con$yeargrouping=="Year3" & !is.na(dat.con$checks_last_in_year))))
-levels(tab.1b.2$Baseline)<-c(levels(tab.1b.2$Baseline),n_row_1b.c$Baseline)
-levels(tab.1b.2$Year1)<-c(levels(tab.1b.2$Year1),n_row_1b.c$Year1)
-levels(tab.1b.2$Year2)<-c(levels(tab.1b.2$Year2),n_row_1b.c$Year2)
-levels(tab.1b.2$Year3)<-c(levels(tab.1b.2$Year3),n_row_1b.c$Year3)
-
-tab.1b.2<-rbind(tab.1b.2,n_row_1b.c)
-tab.1b<-rbind(tab.1b,tab.1b.2)
-
+tab.sens<-rbind(a1c_base_1.sens,a1c_year_1.sens,a1c_year_2.sens,a1c_year_3.sens)
 
 mean_sd_table<-function(var,year){
   

@@ -118,6 +118,34 @@ contrasts_3_pump<-contrasts_3_pump[,c(1,2,3,6)]
 contrasts_3_pump$estimate<-round(contrasts_3_pump$estimate,3)
 contrasts_3_pump$SE<-round(contrasts_3_pump$SE,3)
 contrasts_3_pump$p.value<-round(contrasts_3_pump$p.value,3)
+
+# #A1c: CGM group - not enough pts to fit model
+# dat.cgm<-subset(dat,dat$technology_type_inyear %in% c("CGM Only","CGM and Pump"))
+# dat.cgm$yeargrouping<-factor(dat.cgm$yeargrouping)
+# a1c_mod_toyear3_cgm<-lme(a1c_last_in_year~baseline_a1c+factor(yeargrouping)+factor(trt_grp)+group+
+#                            factor(yeargrouping)*factor(trt_grp)+duration_of_diagnosis+pump_yn_inyear
+#                           ,random=~1|MRN/yeargrouping,data=dat.cgm)
+# year3_sum_cgm<-summary(a1c_mod_toyear3_cgm)
+# year3_sum_cgm<-year3_sum_cgm$tTable[,c(1,2,5)]
+# year3_sum_cgm<-as.data.frame(year3_sum_cgm)
+# year3_sum_cgm$Value<-round(year3_sum_cgm$Value,3)
+# year3_sum_cgm$Std.Error<-round(year3_sum_cgm$Std.Error,3)
+# year3_sum_cgm$`p-value`<-round(year3_sum_cgm$`p-value`,3)
+# anova_a1c_mod_toyear3_cgm<-anova(a1c_mod_toyear3_cgm)
+# # 
+# # #test for differences between groups at each time point:
+# ref_3_cgm <- lsmeans(a1c_mod_toyear3_cgm, c("trt_grp", "yeargrouping"))
+# 
+# c_list_3_cgm <- list(c_base1_cgm = c(0, 0, -1, 1, 0, 0, 0, 0),
+#                       c_year1_cgm = c(0, 0, 0, 0, -1, 1, 0, 0),
+#                       c_year2_cgm = c(0, 0, 0, 0, 0, 0, -1, 1),
+#                       c_year3_cgm = c(-1, 1, 0, 0, 0, 0, 0, 0)
+# )
+# contrasts_3_cgm<-summary(contrast(ref_3_cgm, c_list_3_cgm))
+# contrasts_3_cgm<-contrasts_3_cgm[,c(1,2,3,6)]
+# contrasts_3_cgm$estimate<-round(contrasts_3_cgm$estimate,3)
+# contrasts_3_cgm$SE<-round(contrasts_3_cgm$SE,3)
+# contrasts_3_cgm$p.value<-round(contrasts_3_cgm$p.value,3)
 # # 
 # #A1c: no technology
 dat.nopump<-subset(dat,dat$technology_type_inyear=="No CGM or Pump")
