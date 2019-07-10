@@ -9,7 +9,9 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(MASS)
 library(redcapAPI)
+library(reshape2)
 library(tidyverse)
+library(skimr)
 library(knitr)
 library(tableone)
 library(readxl)
@@ -37,6 +39,10 @@ rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
                          token = Child670g)
 # Read in baseline glycemic data
 baseline_glycemic_csv <- read.csv("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/670GChild_BaselineGlycemicData_14JAN2019.csv")
+# Import VAS data
+rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
+                         token = Discontinuers670g)
+vas_full <- exportRecords(rcon)
 ```
 
 ```{r echo=FALSE,include=FALSE}
@@ -596,8 +602,8 @@ glycemic_data_6_month <- left_join(glycemic_data_6_month,demographics[,c("record
 data_no_m1 <- glycemic_data_6_month %>%
   filter(Timepoint != "M1")
 # Write file for SAS contrasts
-write.csv(data_no_m1,file = "/Users/timvigers/Desktop/cari.csv",
-          row.names = F,na="")
+# write.csv(data_no_m1,file = "/Users/timvigers/Desktop/cari.csv",
+#           row.names = F,na="")
 # Remove B (e.g. for % time AM models etc.)
 data_no_b <- glycemic_data_6_month %>%
   filter(Timepoint != "B")
@@ -1196,12 +1202,19 @@ baseline_surveys <- c_ya_surveys_all %>%
   arrange(record_id)
 trained <- left_join(trained,baseline_surveys,by="record_id")
 
-dem_vars <- c("baseline_to_am","baseline_a1c_to_am","am_to_m1","am_to_t1","am_to_t2",
-              "baseline_survey_to_am","survey_am_to_t1","survey_am_to_t2",
-              "hba1c_baseline","demographics_t1d_duration","demographics_age",
+m1 <- glycemic_data %>%
+  filter(Timepoint == "M1") %>%
+  select(record_id,am_time,sensor_wear,amexit_day,bg_checks)
+colnames(m1) <- c("record_id","m1_am_time","m1_sensor_wear","m1_amexit_day","m1_bg_checks")
+m1$record_id <- as.character(m1$record_id)
+
+trained <- left_join(trained,m1,by="record_id")
+
+dem_vars <- c("hba1c_baseline","demographics_t1d_duration","demographics_age",
               "paid_score","behave_score_z","worry_score_z",
-              "age_group","hba1c_clinical","demographics_ethnicity","demographics_race",
-              "demographics_sex","demographics_insurance","demographics_pumphx",
+              "m1_am_time","m1_sensor_wear","m1_amexit_day","m1_bg_checks",
+              "demographics_ethnicity","demographics_race","demographics_sex",
+              "demographics_insurance","demographics_pumphx",
               "demographics_cgmhx")
 
 t1 <- CreateTableOne(dem_vars,data = trained,strata = "continuation")
@@ -1292,11 +1305,77 @@ predict <- left_join(predict,glycemic_data_6_month %>%
 form <- as.formula(paste("factor(continuation) ~ ",
                          paste(colnames(predict)[-c(1,which(colnames(predict) == "continuation"))],collapse = "+")))
 mod <- glm(form,family = "binomial",data = predict)
-kable(round(summary(mod)$coefficients,3))
+results <- as.data.frame(summary(mod)$coefficients)
+results <- cbind(results$Estimate,confint.default(mod),results$`Pr(>|z|)`)
+results[,1:3] <- exp(results[,1:3])
+colnames(results) <- c("Estimate","2.5% CI","97.5% CI","P Value")
+kable(round(results,3))
 # Stepwise backwards selection
 step_select <- stepAIC(glm(form,family = "binomial",data = predict[complete.cases(predict),]),
                        direction = "backward",trace = 0)
 # hba1c_baseline,demographics_age,sensor_wear kept in model when using backward selection. hba1c_baseline and sensor_wear are significant.
 ```
 
-Baseline HbA1c is the only significant predictor of discontinuation. On average, the odds of discontinuing are 2.656 times higher (95% CI: 1.253, 7.603) for each 1 unit increase in baseline HbA1c. The table above is reported as ln(odds).
+Baseline HbA1c is the only significant predictor of discontinuation. On average, the odds of discontinuing are 2.656 times higher (95% CI: 1.123, 6.283) for each 1 unit increase in baseline HbA1c.
+
+## VAS Scores
+
+```{r echo=FALSE,warning=FALSE}
+# Split by parents and users
+parents <- vas_full %>% filter(user_or_parent == "parent/guardian") %>% select(pid,slider_cost:erroralerts_670g)
+users <- vas_full %>% filter(user_or_parent == "670G user") %>% select(pid,slider_cost:erroralerts_670g)
+# Melt
+users_long <- melt(users,id.vars = "pid")
+parents_long <- melt(parents,id.vars = "pid")
+# Ranks
+users_long <- users_long %>%
+  group_by(pid) %>%
+  mutate(ranks = rank(value)) %>%
+  arrange(pid,ranks)
+parents_long <- parents_long %>%
+  group_by(pid) %>%
+  mutate(ranks = rank(value)) %>%
+  arrange(pid,ranks)
+```
+
+### Users
+
+```{r echo=FALSE,warning=FALSE,dpi=1200}
+# Plot
+ggplot(users_long,aes(x=variable,y=value)) + geom_boxplot() + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 45,hjust = 1)) +
+  stat_summary(fun.y = median,geom = "label",aes(label=round(..y.., digits=2))) +
+  ylab("VAS Score")
+```
+
+Frequent Barriers by Rank
+
+```{r echo=FALSE}
+# Sum the ranks for each variable, display from highest ranked to lowest
+kable(users_long %>% 
+        group_by(variable) %>% 
+        summarise(n=length(which(!is.na(value))),rankmean=sum(ranks)/n) %>% 
+        arrange(desc(rankmean)))
+```
+
+### Parents
+
+```{r echo=FALSE,warning=FALSE,dpi=1200}
+# Plot
+ggplot(parents_long,aes(x=variable,y=value)) + geom_boxplot() + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 45,hjust = 1)) +
+  stat_summary(fun.y = median,geom = "label",aes(label=round(..y.., digits=2))) +
+  ylab("VAS Score")
+```
+
+Frequent Barriers by Rank
+
+```{r echo=FALSE}
+# Sum the ranks for each variable, display from highest ranked to lowest
+kable(parents_long %>% 
+        group_by(variable) %>% 
+        summarise(n=length(which(!is.na(value))),rankmean=sum(ranks)/n) %>% 
+        arrange(desc(rankmean)))
+```
