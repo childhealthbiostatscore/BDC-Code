@@ -30,6 +30,12 @@ dat$RaceEthinicity_cat[dat$RaceEthinicity %in% c("American Indian/Alaska Native"
                                                  "Other")]<-"Other"
 dat$RaceEthinicity_cat<-as.factor(dat$RaceEthinicity_cat)
 label(dat$RaceEthinicity_cat)<-"Race/Ethnicity"
+# dat$Height_AtDX<-as.numeric(as.character(dat$Height_AtDX))
+# dat$Weight_AtDX<-as.numeric(as.character(dat$Weight_AtDX))
+# 
+# label(dat$Height_AtDX)<-"Height at Diabetes Dx"
+# label(dat$Weight_AtDX)<-"Weight at Diabetes Dx"
+
 #time to event:
 dat$LastVisitDate<-as.POSIXct(dat$LastVisitDate,format="%m/%d/%Y")
 
@@ -56,6 +62,10 @@ label(dat$thyroid_timing)<-"Timing of Thyroid Disease"
 dat$thyroid_days_if_yes<-NA
 dat$thyroid_days_if_yes[dat$thyroid_yn==1]<-dat$time_to_thyroid[dat$thyroid_yn==1]
 label(dat$thyroid_days_if_yes)<-"Years from Onset to Thryoid Disease"
+
+#create dataset for only thyroid, and calculate change in quantities of interest (BMI, labs, etc.)
+#dat.thyroid<-subset(dat,dat$thyroid_yn==1)
+
 #celiac
 dat$celiac_yn<-NA
 dat$celiac_yn[dat$CeliacDisease=="Y"]<-1
