@@ -1,0 +1,80 @@
+---
+title: "BMT CGM Analysis"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(redcapAPI)
+library(tableone)
+library(skimr)
+library(knitr)
+library(tidyverse)
+```
+
+```{r include=FALSE,cache=TRUE}
+# REDCap API data import
+source("/Users/timvigers/Documents/GitHub/BDC-Code/api_tokens.R")
+# YA
+rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
+                         token = BMT_CGM)
+data_full <- exportRecords(rcon)
+rm(list=setdiff(ls(), "data_full"))
+# Format columns
+data_full$bmi_percentile <- as.numeric(data_full$bmi_percentile)
+```
+
+```{r echo=FALSE}
+# Get demographic info
+demographics <- data_full %>% group_by(study_id) %>% filter(!is.na(mrn))
+# Combine separate race columns into one
+levels(demographics$race___0) <- c(NA,"AI or AN")
+levels(demographics$race___1) <- c(NA,"Asian")
+levels(demographics$race___2) <- c(NA,"African American")
+levels(demographics$race___3) <- c(NA,"NH or PI")
+levels(demographics$race___4) <- c(NA,"White")
+levels(demographics$race___5) <- c(NA,"Hispanic")
+levels(demographics$race___6) <- c(NA,"Other")
+demographics <- demographics %>% ungroup() %>% unite("Race",race___0,race___1,race___2,race___3,race___4,race___5,race___6)
+demographics$Race <- gsub("NA","",demographics$Race)
+demographics$Race <- gsub("_","",demographics$Race)
+demographics$Race[which(demographics$race_multi == "yes")] <- "Multiple"
+demographics$Race[which(demographics$Race == "")] <- "Unknown"
+# Calculate age at transplant
+demographics$AgeTx <- as.numeric(difftime(demographics$date_of_tx,demographics$date_of_birth,units = "days")) / 365.25
+# Format columns
+```
+
+## Table 1: Descriptive Characteristics
+
+```{r echo=FALSE}
+dem_vars <- c("AgeTx","bmi_percentile","gender","Race","tanner_stage","tx_type","primary_dx_cat","spec_dx_cat")
+t1 <- CreateTableOne(dem_vars,data = demographics)
+t1 <- print(t1, nonnormal = c("AgeTx","bmi_percentile"),printToggle = F)
+kable(t1)
+```
+
+## Table 2: Feasibility/Safety
+
+```{r echo=FALSE}
+# Get CGM data
+cgm_data <- data_full %>% filter(is.na(redcap_repeat_instrument)) %>%
+  select(study_id,sens1_place,plt1,transfuse1,bleed1,sens1_remove,sens1_reason,
+         sens2_place,plt2,transfuse2,bleed2,sens2_remove,sens2_reason,
+         sens3_place,plt3,transfuse3,bleed3,sens3_remove,sens3_reason,
+         sens4_place,plt4,transfuse4,bleed4,sens4_remove,sens4_reason,
+         sens5_place,plt5,transfuse5,bleed5,sens5_remove,sens5_reason,
+         sens6_place,plt6,transfuse6,bleed6,sens6_remove,sens6_reason)
+# Wide to long
+temp <- reshape(cgm_data,idvar = "study_id",varying = 2:37,
+                v.names = c("sens_place","plt","transfuse","bleed","sens_remove","sens_reason" ),
+                direction = "long")
+
+
+safety_vars <- c()
+safety <- CreateTableOne(dem_vars,data = demographics)
+safety <- print(safety, nonnormal = c(),printToggle = F)
+kable(t1)
+```
