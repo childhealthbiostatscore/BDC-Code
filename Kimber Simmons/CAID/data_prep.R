@@ -1,65 +1,108 @@
 ######## Kimber Simmons #########
 library(Hmisc)
 #pt level data:
-dat<-read.csv('S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Data/CAID_PatientLevelRport_V1_07031029_Cleaned.csv')
+dat<-read.csv('S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Data/CAID_PatientLevelRport_V1_07091029_Cleaned.csv')
 
 #format variables:
 
 #demographics:
 dat$DOB<-as.POSIXct(dat$DOB,format="%m/%d/%Y")
 dat$OnsetDate<-as.POSIXct(dat$OnsetDate,format="%m/%d/%Y")
-dat$Age_AtDX<-(dat$OnsetDate-dat$DOB)/365
-label(dat$Age_AtDX)<-"Age at Dx, years"
+dat$Age_At_diabetes_DX<-(dat$OnsetDate-dat$DOB)/365
+dat$Age_At_diabetes_DX<-as.numeric(dat$Age_At_diabetes_DX)
+label(dat$Age_AtDX)<-"Age at Diabetes Dx, years"
 dat$Gender<-as.factor(dat$Gender)
 label(dat$Gender)<-"Gender"
-dat$RaceEthinicity<-as.factor(dat$RaceEthinicity)
-label(dat$RaceEthinicity)<-"Race/Ethnicity"
+dat$BMI_AtDX<-as.numeric(as.character(dat$BMI_AtDX))
 label(dat$BMI_AtDX)<-"BMI at Dx"
 
+dat$RaceEthinicity<-as.factor(dat$RaceEthinicity)
+label(dat$RaceEthinicity)<-"Race/Ethnicity"
+dat$RaceEthinicity_cat<-NA
+dat$RaceEthinicity_cat[dat$RaceEthinicity=="Non-Hispanic White"]<-"Non-Hispanic White"
+dat$RaceEthinicity_cat[dat$RaceEthinicity=="Non-Hispanic Black"]<-"Non-Hispanic Black"
+dat$RaceEthinicity_cat[dat$RaceEthinicity=="Hispanic"]<-"Hispanic"
+dat$RaceEthinicity_cat[dat$RaceEthinicity=="Unknown"]<-"Unknown"
+dat$RaceEthinicity_cat[dat$RaceEthinicity %in% c("American Indian/Alaska Native",
+                                                 "Asian",
+                                                 "More than one Race",
+                                                 "Native Hawaiian/Other Pacific Islander",
+                                                 "Other")]<-"Other"
+dat$RaceEthinicity_cat<-as.factor(dat$RaceEthinicity_cat)
+label(dat$RaceEthinicity_cat)<-"Race/Ethnicity"
 #time to event:
+dat$LastVisitDate<-as.POSIXct(dat$LastVisitDate,format="%m/%d/%Y")
 
 #thyroid
 dat$thyroid_yn<-NA
 dat$thyroid_yn[dat$ThyroidDisease=="Y"]<-1
 dat$thyroid_yn[dat$ThyroidDisease=="N"]<-0
+dat$thyroid_yn<-as.factor(dat$thyroid_yn)
+label(dat$thyroid_yn)<-"Thyroid Y/N"
 
 dat$ThyroidDisease_DxDate<-as.POSIXct(dat$ThyroidDisease_DxDate,format="%m/%d/%Y")
-###need censoring dates
 dat$time_to_thyroid<-NA
-dat$time_to_thyroid[dat$thyroid_yn==1]<-(dat$ThyroidDisease_DxDate[dat$thyroid_yn==1]-dat$OnsetDate[dat$thyroid_yn==1])/60/60/24/31
-label(dat$time_to_thyroid)<-"Months from Onset to Thyroid Disease (days)"
-dat$thyroid_timing<-NA
-dat$thyroid_timing[dat$time_to_thyroid<0]<-"Before Diabetes Onset"
-dat$thyroid_timing[dat$time_to_thyroid==0]<-"At Diabetes Onset"
-dat$thyroid_timing[dat$time_to_thyroid>0]<-"After Diabetes Onset"
+dat$time_to_thyroid[dat$thyroid_yn==1]<-(dat$ThyroidDisease_DxDate[dat$thyroid_yn==1]-dat$OnsetDate[dat$thyroid_yn==1])/60/60/24/365
+dat$time_to_thyroid[dat$thyroid_yn==0]<-(dat$LastVisitDate[dat$thyroid_yn==0]-dat$OnsetDate[dat$thyroid_yn==0])/365
 
+label(dat$time_to_thyroid)<-"Years from Onset to Thyroid Disease"
+dat$thyroid_timing<-NA
+dat$thyroid_timing[dat$time_to_thyroid<0 & dat$thyroid_yn==1]<-"Before Diabetes Onset"
+dat$thyroid_timing[dat$time_to_thyroid==0 & dat$thyroid_yn==1]<-"At Diabetes Onset"
+dat$thyroid_timing[dat$time_to_thyroid>0 & dat$thyroid_yn==1]<-"After Diabetes Onset"
+dat$thyroid_timing<-as.factor(dat$thyroid_timing)
+label(dat$thyroid_timing)<-"Timing of Thyroid Disease"
+
+dat$thyroid_days_if_yes<-NA
+dat$thyroid_days_if_yes[dat$thyroid_yn==1]<-dat$time_to_thyroid[dat$thyroid_yn==1]
+label(dat$thyroid_days_if_yes)<-"Years from Onset to Thryoid Disease"
 #celiac
 dat$celiac_yn<-NA
 dat$celiac_yn[dat$CeliacDisease=="Y"]<-1
 dat$celiac_yn[dat$CeliacDisease=="N"]<-0
+dat$celiac_yn<-as.factor(dat$celiac_yn)
+label(dat$celiac_yn)<-"Celiac Disease Y/N"
 
 dat$CeliacDisease_DxDate<-as.POSIXct(dat$CeliacDisease_DxDate,format="%m/%d/%Y")
-###need censoring dates
+
 dat$time_to_celiac<-NA
-dat$time_to_celiac[dat$celiac_yn==1]<-(dat$CeliacDisease_DxDate[dat$celiac_yn==1]-dat$OnsetDate[dat$celiac_yn==1])/60/60/24/31
-label(dat$time_to_celiac)<-"Months from Onset to Celiac Disease (days)"
+dat$time_to_celiac[dat$celiac_yn==1]<-(dat$CeliacDisease_DxDate[dat$celiac_yn==1]-dat$OnsetDate[dat$celiac_yn==1])/60/60/24/365
+dat$time_to_celiac[dat$celiac_yn==0]<-(dat$LastVisitDate[dat$celiac_yn==0]-dat$OnsetDate[dat$celiac_yn==0])/365
+
+label(dat$time_to_celiac)<-"Years from Onset to Celiac Disease"
 dat$celiac_timing<-NA
-dat$celiac_timing[dat$time_to_celiac<0]<-"Before Diabetes Onset"
-dat$celiac_timing[dat$time_to_celiac==0]<-"At Diabetes Onset"
-dat$celiac_timing[dat$time_to_celiac>0]<-"After Diabetes Onset"
+dat$celiac_timing[dat$time_to_celiac<0 & dat$celiac_yn==1]<-"Before Diabetes Onset"
+dat$celiac_timing[dat$time_to_celiac==0 & dat$celiac_yn==1]<-"At Diabetes Onset"
+dat$celiac_timing[dat$time_to_celiac>0 & dat$celiac_yn==1]<-"After Diabetes Onset"
+dat$celiac_timing<-as.factor(dat$celiac_timing)
+label(dat$celiac_timing)<-"Timing of Celiac Disease"
+
+dat$celiac_days_if_yes<-NA
+dat$celiac_days_if_yes[dat$celiac_yn==1]<-dat$time_to_celiac[dat$celiac_yn==1]
+label(dat$celiac_days_if_yes)<-"Years from Onset to Celiac Disease"
 
 #addisons
 dat$addison_yn<-NA
 dat$addison_yn[dat$AddisonsDisease=="Y"]<-1
 dat$addison_yn[dat$AddisonsDisease=="N"]<-0
+dat$addison_yn[dat$AddisonsDisease=="NULL"]<-0
+dat$addison_yn<-as.factor(dat$addison_yn)
+label(dat$addison_yn)<-"Addison Disease Y/N"
 
 dat$AddisonsDisease_DxDate<-as.POSIXct(dat$AddisonsDisease_DxDate,format="%m/%d/%Y")
-###need censoring dates
-dat$time_to_addison<-NA
-dat$time_to_addison[dat$addison_yn==1]<-(dat$AddisonsDisease_DxDate[dat$addison_yn==1]-dat$OnsetDate[dat$addison_yn==1])/60/60/24/31 ##1 pt is missing addison date
-label(dat$time_to_addison)<-"Months from Onset to addison Disease (days)"
-dat$addison_timing<-NA
-dat$addison_timing[dat$time_to_addison<0]<-"Before Diabetes Onset"
-dat$addison_timing[dat$time_to_addison==0]<-"At Diabetes Onset"
-dat$addison_timing[dat$time_to_addison>0]<-"After Diabetes Onset"
 
+dat$time_to_addison<-NA
+dat$time_to_addison[dat$addison_yn==1]<-(dat$AddisonsDisease_DxDate[dat$addison_yn==1]-dat$OnsetDate[dat$addison_yn==1])/365 ##1 pt is missing addison date
+dat$time_to_addison[dat$addison_yn==0]<-(dat$LastVisitDate[dat$addison_yn==0]-dat$OnsetDate[dat$addison_yn==0])/365
+label(dat$time_to_addison)<-"Months from Onset to addison Disease"
+
+dat$addison_timing<-NA
+dat$addison_timing[dat$time_to_addison<0 & dat$addison_yn==1]<-"Before Diabetes Onset"
+dat$addison_timing[dat$time_to_addison==0 & dat$addison_yn==1]<-"At Diabetes Onset"
+dat$addison_timing[dat$time_to_addison>0& dat$addison_yn==1 ]<-"After Diabetes Onset"
+dat$addison_timing<-as.factor(dat$addison_timing)
+label(dat$addison_timing)<-"Timing of Addison's Disease"
+
+dat$addison_days_if_yes<-NA
+dat$addison_days_if_yes[dat$addison_yn==1]<-dat$time_to_addison[dat$addison_yn==1]
+label(dat$addison_days_if_yes)<-"Years from Onset to Addison Disease"
