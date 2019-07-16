@@ -1248,46 +1248,81 @@ survey_change <- reshape(survey_change[,c("record_id","Timepoint","paid_score","
                          v.names = c("paid_score","worry_score_z","behave_score_z"),
                          timevar = "Timepoint",direction = "wide",idvar = "record_id")
 # Calculate change
-survey_change$paid_b_t1 <- survey_change$paid_score.T1-survey_change$paid_score.B
-survey_change$paid_t1_t2 <- survey_change$paid_score.T2-survey_change$paid_score.T1
-survey_change$paid_b_t2 <- survey_change$paid_score.T2-survey_change$paid_score.B
-survey_change$worry_b_t1 <- survey_change$worry_score_z.T1 - survey_change$worry_score_z.B
-survey_change$worry_t1_t2 <- survey_change$worry_score_z.T2 - survey_change$worry_score_z.T1
-survey_change$worry_b_t2 <- survey_change$worry_score_z.T2 - survey_change$worry_score_z.B
-survey_change$behave_b_t1 <- survey_change$behave_score_z.T1 - survey_change$behave_score_z.B
-survey_change$behave_t1_t2 <- survey_change$behave_score_z.T2 - survey_change$behave_score_z.T1
-survey_change$behave_b_t2 <- survey_change$behave_score_z.T2 - survey_change$behave_score_z.B
-# Split by when discontinued
-t1_change <- survey_change %>%
-  filter(record_id %in% t1_discont) %>%
+survey_change$paid_b_t1 <- 
+  survey_change$paid_score.T1-survey_change$paid_score.B
+survey_change$paid_m1_t1 <- 
+  survey_change$paid_score.T1-survey_change$paid_score.M1
+survey_change$paid_t1_t2 <- 
+  survey_change$paid_score.T2-survey_change$paid_score.T1
+survey_change$paid_b_t2 <- 
+  survey_change$paid_score.T2-survey_change$paid_score.B
+
+survey_change$worry_b_t1 <- 
+  survey_change$worry_score_z.T1 - survey_change$worry_score_z.B
+survey_change$worry_m1_t1 <- 
+  survey_change$worry_score_z.T1 - survey_change$worry_score_z.M1
+survey_change$worry_t1_t2 <- 
+  survey_change$worry_score_z.T2 - survey_change$worry_score_z.T1
+survey_change$worry_b_t2 <- 
+  survey_change$worry_score_z.T2 - survey_change$worry_score_z.B
+
+survey_change$behave_b_t1 <- 
+  survey_change$behave_score_z.T1 - survey_change$behave_score_z.B
+survey_change$behave_m1_t1 <- 
+  survey_change$behave_score_z.T1 - survey_change$behave_score_z.M1
+survey_change$behave_t1_t2 <- 
+  survey_change$behave_score_z.T2 - survey_change$behave_score_z.T1
+survey_change$behave_b_t2 <- 
+  survey_change$behave_score_z.T2 - survey_change$behave_score_z.B
+# Discontinuers only, remove unnecesssary columns
+survey_change <- survey_change %>% filter(as.numeric(record_id) %in% all_discont)
+survey_change <- rbind(c(35,rep(NA,24)),survey_change)
+# By time discontinued
+t1 <- survey_change %>% filter(record_id %in% t1_discont) %>% 
+  select(record_id,paid_m1_t1,worry_m1_t1,behave_m1_t1)
+t2 <- survey_change %>% filter(record_id %in% t2_discont) %>%
+  select(record_id,paid_t1_t2,worry_t1_t2,behave_t1_t2)
+colnames(t1) <- c("record_id","paid","worry","behave")
+colnames(t2) <- c("record_id","paid","worry","behave")
+change_no_baseline <- rbind(t1,t2)
+# Using baseline values
+t1 <- survey_change %>% filter(record_id %in% t1_discont) %>% 
   select(record_id,paid_b_t1,worry_b_t1,behave_b_t1)
-colnames(t1_change) <- c("record_id","paid","worry","behave")
-t2_change <- survey_change %>%
-  filter(record_id %in% t2_discont) %>%
-  select(record_id,paid_t1_t2,paid_b_t2,worry_t1_t2,worry_b_t2,behave_t1_t2,behave_b_t2)
-# If no value for change from T1 to T2, use change from baseline to T2
-t2_change$paid <- t2_change$paid_t1_t2
-t2_change$paid[is.na(t2_change$paid)] <- t2_change$paid_b_t2[is.na(t2_change$paid)]
-t2_change$worry <- t2_change$worry_t1_t2
-t2_change$worry[is.na(t2_change$worry)] <- t2_change$worry_b_t2[is.na(t2_change$worry)]
-t2_change$behave <- t2_change$behave_t1_t2
-t2_change$behave[is.na(t2_change$behave)] <- t2_change$behave_b_t2[is.na(t2_change$behave)]
-# Combine
-t2_change <- t2_change %>% select(record_id,paid,worry,behave)
-survey_change <- rbind(t1_change,t2_change)
-survey_change[nrow(survey_change)+1,] <- c(all_discont[which(!(all_discont %in% survey_change$record_id))],NA,NA,NA)
-# Test if change is different from 0
-change_tab <- CreateTableOne(vars = c("paid","worry","behave"),data = survey_change)
-change_tab <- as.data.frame(print(change_tab,nonnormal=c("paid","worry","behave"),printToggle = F,missing = T))
-change_tab$p <- ""
-change_tab$p[2] <- round(wilcox.test(survey_change$paid)$p.value,3)
-change_tab$p[3] <- round(wilcox.test(survey_change$worry)$p.value,3)
-change_tab$p[4] <- round(wilcox.test(survey_change$behave)$p.value,3)
-colnames(change_tab)[which(colnames(change_tab)=="Missing")] <- "Missing (%)"
-kable(change_tab)
+t2 <- survey_change %>% filter(record_id %in% t2_discont) %>%
+  select(record_id,paid_b_t2,worry_b_t2,behave_b_t2)
+colnames(t1) <- c("record_id","paid","worry","behave")
+colnames(t2) <- c("record_id","paid","worry","behave")
+change_baseline <- rbind(t1,t2)
+# Results 
+vars = c("paid","worry","behave")
+no_baseline <- CreateTableOne(vars = vars,data = change_no_baseline)
+no_baseline <- as.data.frame(print(no_baseline,nonnormal = vars,printToggle = F,
+                                   missing = T))
+ps <- 
+  as.numeric(lapply(change_no_baseline[,vars], function(x) wilcox.test(x)$p.value))
+no_baseline$p.value <- c("",ps)
+
+baseline <- CreateTableOne(vars = vars,data = change_baseline)
+baseline <- as.data.frame(print(baseline,nonnormal = vars,printToggle = F,
+                                missing = T))
+ps <- 
+  as.numeric(lapply(change_baseline[,vars], function(x) wilcox.test(x)$p.value))
+baseline$p.value <- c("",ps)
 ```
 
-There is not a significant change in survey scores before and after discontinuation.
+### Difference between visit prior and visit post-discontinuation
+
+```{r echo=FALSE}
+kable(no_baseline)
+```
+
+### Difference between baseline and visit post-discontinuation
+
+```{r echo=FALSE}
+kable(baseline)
+```
+
+There is not a significant change in survey scores between the visit before and after discontinuation.
 
 ## Predict dropout from baseline and month 1 variables
 
