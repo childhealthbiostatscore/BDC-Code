@@ -74,6 +74,8 @@ dat$thyroid_yn[dat$thyroid_timing=="At Diabetes Onset"]<-NA
 dat$thyroid_yn[dat$thyroid_timing=="Before Diabetes Onset"]<-NA
 dat$time_to_thyroid[dat$thyroid_timing=="At Diabetes Onset"]<-NA
 dat$time_to_thyroid[dat$thyroid_timing=="Before Diabetes Onset"]<-NA
+dat$thyroid_months_if_yes[dat$thyroid_timing=="At Diabetes Onset"]<-NA
+dat$thyroid_months_if_yes[dat$thyroid_timing=="Before Diabetes Onset"]<-NA
 #create dataset for only thyroid, and calculate change in quantities of interest (BMI, labs, etc.)
 #dat.thyroid<-subset(dat,dat$thyroid_yn==1)
 
@@ -106,12 +108,14 @@ dat$time_to_celiac[dat$celiac_yn==0]<-(dat$LastVisitDate[dat$celiac_yn==0]-dat$O
 
 dat$celiac_months_if_yes<-NA
 dat$celiac_months_if_yes[dat$celiac_yn==1]<-dat$time_to_celiac[dat$celiac_yn==1]*12
-label(dat$celiac_months_if_yes)<-"Months from Onset to Thryoid Disease"
+label(dat$celiac_months_if_yes)<-"Months from Onset to Celiac Disease"
 
 dat$celiac_yn[dat$celiac_timing=="At Diabetes Onset"]<-NA
 dat$celiac_yn[dat$celiac_timing=="Before Diabetes Onset"]<-NA
 dat$time_to_celiac[dat$celiac_timing=="At Diabetes Onset"]<-NA
 dat$time_to_celiac[dat$celiac_timing=="Before Diabetes Onset"]<-NA
+dat$celiac_months_if_yes[dat$celiac_timing=="At Diabetes Onset"]<-NA
+dat$celiac_months_if_yes[dat$celiac_timing=="Before Diabetes Onset"]<-NA
 #addisons
 dat$addison_yn<-NA
 dat$addison_yn[dat$AddisonsDisease=="Y"]<-1
@@ -147,34 +151,34 @@ label(dat$addison_months_if_yes)<-"Months from Onset to Addison Disease"
 #first, if event happened before diabetes onset, treat as missing in full dataset
 #for survival analysis, will subset to get rid of these pts
 
-dat$any_caid<-0
+dat$any_caid<-NA
+dat$any_caid[dat$thyroid_yn==0 & dat$celiac_yn==0 & dat$addison_yn==0]<-0
 dat$any_caid[dat$thyroid_yn==1]<-1
 dat$any_caid[dat$celiac_yn==1]<-1
 dat$any_caid[dat$addison_yn==1]<-1
 dat$any_caid<-as.factor(dat$any_caid)
 label(dat$any_caid)<-"Thyroid, Celiac, or Addison's Y/N"
 
-###########NEED TO FIX THISSSSSS
+###########NEED TO FIX THISSSSSS - WHY NEGATIVES
 dat$time_to_any<-NA
-dat$time_to_any[dat$any_caid==1]<-pmin(dat$thyroid_months_if_yes[dat$any_caid==1],dat$celiac_months_if_yes[dat$any_caid==1],
-                                       dat$addison_months_if_yes[dat$any_caid==1],na.rm=T)/12 #pmin results in months
-dat$time_to_any[dat$any_caid==0]<-(dat$LastVisitDate[dat$any_caid==0]-dat$OnsetDate[dat$any_caid==0])/30.6667 #subtraction=days, then convert to month
+dat$time_to_any<-pmin(dat$thyroid_months_if_yes,dat$celiac_months_if_yes,
+                                       dat$addison_months_if_yes,na.rm=T) #pmin results in months
+dat$time_to_any[dat$any_caid==0 & !is.na(dat$any_caid)]<-(dat$LastVisitDate[dat$any_caid==0 & !is.na(dat$any_caid)]-dat$OnsetDate[dat$any_caid==0 & !is.na(dat$any_caid)])/30.6667 #subtraction=days, then convert to month
 
 label(dat$time_to_any)<-"Months from Onset to First CAID"
 
 dat$caid_months_if_yes<-NA
-dat$caid_months_if_yes[dat$any_caid==1]<-dat$time_to_any[dat$any_caid==1]
+dat$caid_months_if_yes[dat$any_caid==1 & !is.na(dat$any_caid)]<-dat$time_to_any[dat$any_caid==1 & !is.na(dat$any_caid)]
 label(dat$caid_months_if_yes)<-"Months from Onset to first CAID"
 
 dat$which_caid<-NA
-dat$which_caid[dat$time_to_any==(dat$thyroid_days_if_yes)/12 & dat$thyroid_yn==1]<-"Thyroid"
-dat$which_caid[dat$time_to_any==(dat$celiac_days_if_yes)/12 & dat$celiac_yn==1]<-"Celiac"
-dat$which_caid[dat$time_to_any==(dat$addison_days_if_yes)/12 & dat$addison_yn==1]<-"Addison's"
+dat$which_caid[dat$time_to_any==dat$thyroid_months_if_yes & dat$thyroid_yn==1]<-"Thyroid"
+dat$which_caid[dat$time_to_any==dat$celiac_months_if_yes & dat$celiac_yn==1]<-"Celiac"
+dat$which_caid[dat$time_to_any==dat$addison_months_if_yes & dat$addison_yn==1]<-"Addison's"
 dat$which_caid<-as.factor(dat$which_caid)
 label(dat$which_caid)<-"Which CAID was first"
 
-
 dat$followup<-NA
-dat$followup[dat$any_caid==0]<-dat$time_to_any[dat$any_caid==0]
+dat$followup[dat$any_caid==0 & !is.na(dat$any_caid)]<-dat$time_to_any[dat$any_caid==0 & !is.na(dat$any_caid)]
 label(dat$followup)<-"Years of Follow-up for no CAIDs"
 
