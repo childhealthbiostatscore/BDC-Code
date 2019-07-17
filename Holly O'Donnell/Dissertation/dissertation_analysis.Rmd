@@ -26,7 +26,7 @@ dat$DiagnosisDate <- lubridate::mdy(dat$DiagnosisDate)
 dat$PumpStartDate <- lubridate::mdy(dat$PumpStartDate)
 dat$VisitDate <- lubridate::mdy(dat$VisitDate)
 dat <- dat %>% group_by(ID) %>% fill(DateofBirth,IncomeLevel,DiagnosisDate,
-                                     PumpStartDate) 
+                                     PumpStartDate,Insurance,Sex) 
 # Calculate age, T1D duration, and pump duration at each visit
 dat$age_days <- difftime(dat$VisitDate,dat$DateofBirth,units = "days")
 dat$age_years <- as.numeric(dat$age_days / 365.25)
@@ -39,21 +39,40 @@ dat$Site <- ifelse(as.numeric(dat$ID) < 300,"Florida","Colorado")
 # Make study visit and treatment categorical
 dat$StudyVisit <- as.factor(dat$StudyVisit)
 dat$Treatment <- as.factor(dat$Treatment)
+# Days from baseline, baseline levels of outcome
+dat <- dat %>% group_by(ID) %>% 
+  mutate(Days_since_baseline = as.numeric(difftime(VisitDate,VisitDate[1],units = "days")),
+         readings_per_day_b = readings_per_day[1])
+# Write CSV
+write.csv(dat,file = "/Users/timvigers/Desktop/Holly_data.csv",row.names = F,na="")
 ```
 
 # Model Selection (BG checks per day)
 
-## Start with the full model
+## Which time variable produces a better model fit?
+
+```{r}
+cat_time_mod <- lmer(readings_per_day ~ StudyVisit + (1|ID), data = dat)
+cont_time_mod <- lmer(readings_per_day ~ Days_since_baseline + (1|ID), data = dat)
+kable(AIC(cat_time_mod,cont_time_mod))
+```
+
+The model with visit number is a better fit than one using days from baseline, so we'll use visit number for the rest of the models. 
+
+## Check the full model
 
 ```{r echo=FALSE,include=FALSE}
-#LME4 models to check convergence
-full_mod_l <- lmer(readings_per_day ~ Treatment + StudyVisit + HbA1c + age_years + T1D_dur_years + IncomeLevel + (1|ID), data = dat)
-reduced_mod_l <- lmer(readings_per_day ~ Treatment + StudyVisit + HbA1c + age_years + (1|ID), data = dat)
+#LME4 model to check convergence
+full_mod_l <- lmer(readings_per_day ~ Treatment + StudyVisit + Sex + HbA1c + Treatment:HbA1c + 
+                     age_years + T1D_dur_years + IncomeLevel + Treatment:IncomeLevel +
+                     Insurance + readings_per_day_b + (1|Site/ID), data = dat)
 ```
 
 ```{r}
-full_mod <- lme(readings_per_day ~ Treatment + StudyVisit + HbA1c + age_years + T1D_dur_years + IncomeLevel,
-            random =~1|ID, data = dat,na.action = na.omit)
+full_mod <- lme(readings_per_day ~ Treatment + StudyVisit + Sex + HbA1c + Treatment:HbA1c + 
+                     age_years + T1D_dur_years + IncomeLevel + Treatment:IncomeLevel +
+                     Insurance + readings_per_day_b,
+                random =~1|Site/ID, data = dat,na.action = na.omit)
 ```
 
 ### Check variance inflation factor
@@ -63,7 +82,7 @@ vif <- as.data.frame(vif(full_mod))
 kable(vif)
 ```
 
-In general, VIF > 10 is a concern so it looks like we don't need to worry about multicollinearity here.
+In general, VIF > 10 is a concern so it looks like we don't need to worry about multicollinearity here. You can ignore the high values for treatment, since it's involved in interaction terms and obviously the interactions term will be correlated with the direct effect term.
 
 ### Full model results
 
@@ -71,13 +90,13 @@ In general, VIF > 10 is a concern so it looks like we don't need to worry about 
 kable(summary(full_mod)$tTable)
 ```
 
-T1D duration and income level are not significant, so check the reduced model without those. 
+Check the reduced model with only significant covariates from the full model. 
 
 ## Reduced model
 
 ```{r}
-reduced_mod <- lme(readings_per_day ~ Treatment + StudyVisit + HbA1c + age_years,
-                   random =~1|ID, data = dat,na.action = na.omit) 
+reduced_mod <- lme(readings_per_day ~ Treatment + StudyVisit + HbA1c + Treatment:HbA1c + 
+                     age_years + readings_per_day_b,random =~1|Site/ID, data = dat,na.action = na.omit) 
 ```
 
 ### Compare AIC
@@ -86,30 +105,53 @@ reduced_mod <- lme(readings_per_day ~ Treatment + StudyVisit + HbA1c + age_years
 kable(AIC(full_mod,reduced_mod))
 ```
 
-Lower AIC is better, so  this indicates that the full model is actually a better fit. Now compare the full model to a model with T1D duration and a model with income level. 
+Lower AIC is better, so  this indicates that the full model is actually a better fit. Now compare to models with single covariates added back in. 
 
 ## Semi-reduced models
 
 ```{r}
-t1d_dur_mod <- lme(readings_per_day ~ Treatment + StudyVisit + HbA1c + age_years + T1D_dur_years,
-                   random =~1|ID, data = dat,na.action = na.omit)
-income_mod <- lme(readings_per_day ~ Treatment + StudyVisit + HbA1c + age_years + IncomeLevel,
-                   random =~1|ID, data = dat,na.action = na.omit)
+t1d_dur_mod <- lme(readings_per_day ~ Treatment + StudyVisit + HbA1c + 
+                     Treatment:HbA1c + age_years + readings_per_day_b + T1D_dur_years,
+                   random =~1|Site/ID, data = dat,na.action = na.omit)
+income_mod <- lme(readings_per_day ~ Treatment + StudyVisit + HbA1c + 
+                    Treatment:HbA1c + age_years + readings_per_day_b + IncomeLevel,
+                  random =~1|Site/ID, data = dat,na.action = na.omit)
+sex_mod <- lme(readings_per_day ~ Treatment + StudyVisit + HbA1c + 
+                    Treatment:HbA1c + age_years + readings_per_day_b + Sex,
+                  random =~1|Site/ID, data = dat,na.action = na.omit)
+insurance_mod <- lme(readings_per_day ~ Treatment + StudyVisit + HbA1c + 
+                    Treatment:HbA1c + age_years + readings_per_day_b + Insurance,
+                  random =~1|Site/ID, data = dat,na.action = na.omit)
+```
+
+```{r echo=FALSE}
+t1d_dur_mod <- lmer(readings_per_day ~ Treatment + StudyVisit + HbA1c + 
+                     Treatment:HbA1c + age_years + readings_per_day_b + T1D_dur_years + (1|Site/ID), 
+                    data = dat,na.action = na.omit)
+income_mod <- lmer(readings_per_day ~ Treatment + StudyVisit + HbA1c + 
+                    Treatment:HbA1c + age_years + readings_per_day_b + IncomeLevel + (1|Site/ID), 
+                   data = dat,na.action = na.omit)
+sex_mod <- lmer(readings_per_day ~ Treatment + StudyVisit + HbA1c + 
+                    Treatment:HbA1c + age_years + readings_per_day_b + Sex + (1|Site/ID), data = dat,na.action = na.omit)
+insurance_mod <- lmer(readings_per_day ~ Treatment + StudyVisit + HbA1c + 
+                    Treatment:HbA1c + age_years + readings_per_day_b + Insurance + (1|Site/ID), data = dat,na.action = na.omit)
 ```
 
 ### Compare AIC
 
 ```{r echo=FALSE,warning=FALSE}
-kable(AIC(full_mod,t1d_dur_mod,income_mod,reduced_mod))
+kable(AIC(full_mod,t1d_dur_mod,sex_mod,insurance_mod,reduced_mod))
 ```
 
-Based on AIC, the model adjusted for age, HbA1c, and income level is best. 
+The model including income did not converge with a treatment:income interaction term, so the interaction was omitted for this comparison. Regardless, the full model is still the best by AIC.
 
 # LASSO Variable Selection
 
 ```{r echo=FALSE,cache=TRUE}
 # Select only the necessary columns
-lasso_data <- dat %>% dplyr::select(ID,readings_per_day,Treatment,StudyVisit,HbA1c,age_years,T1D_dur_years,IncomeLevel)
+lasso_data <- dat %>% dplyr::select(ID,Site,readings_per_day,Treatment,StudyVisit,
+                                    HbA1c,age_years,T1D_dur_years,IncomeLevel,
+                                    Sex,Insurance,readings_per_day_b)
 # Complete cases
 lasso_data <- lasso_data[complete.cases(lasso_data),]
 # ID as a factor
@@ -120,13 +162,20 @@ lasso_data <- as.data.frame(lasso_data)
 lambda <- seq(500,0,by=-1)
 AIC_vec<-rep(Inf,length(lambda))
 for(j in 1:length(lambda)){
-glm1 <- try(glmmLasso(readings_per_day ~ as.factor(Treatment) + as.factor(StudyVisit) + HbA1c + age_years + T1D_dur_years + as.factor(IncomeLevel),data = lasso_data,rnd = list(ID=~1),lambda = lambda[j],final.re=TRUE))  
+glm1 <- try(glmmLasso(readings_per_day ~ as.factor(Treatment) + as.factor(StudyVisit) + 
+                        as.factor(Sex) + HbA1c + as.factor(Treatment):HbA1c + age_years + 
+                        T1D_dur_years + as.factor(IncomeLevel) + as.factor(Treatment):as.factor(IncomeLevel) + 
+                        as.factor(Insurance) + readings_per_day_b,
+            data = lasso_data,rnd = list(ID=~1 + Site),lambda = 1,final.re=TRUE))  
 if(class(glm1)!="try-error"){AIC_vec[j]<-glm1$aic}}
 opt<-which.min(AIC_vec)
 ```
 
 ```{r}
-lasso <- glmmLasso(readings_per_day ~ as.factor(Treatment) + as.factor(StudyVisit) + HbA1c + age_years + T1D_dur_years + as.factor(IncomeLevel),data = lasso_data,rnd = list(ID=~1),lambda = lambda[opt],final.re=TRUE)
+lasso <- glmmLasso(readings_per_day ~ as.factor(Treatment) + as.factor(StudyVisit) + 
+                        as.factor(Sex) + HbA1c + as.factor(Treatment):HbA1c + age_years + 
+                        T1D_dur_years + as.factor(IncomeLevel) + Treatment:as.factor(IncomeLevel) + 
+                        Insurance + readings_per_day_b,data = lasso_data,rnd = list(ID=~1),lambda = lambda[opt],final.re=TRUE)
 ```
 
 ```{r echo=FALSE}
@@ -153,6 +202,6 @@ kable(AIC(bolus_mod_full,bolus_mod_income,bolus_mod_reduced))
 Technically the full model is better than the income model, because AIC is lower by 2.618 (the general rule of thumb is that a difference of 2 is significant). However, since they are pretty close I think it makes sense to use the same model structure for all of your outcomes, to help with the interpretation of the results. 
 
 ### To Do 
-- Ask about random slope for site
+
 - Interaction effects between treatment, A1c, and income
 - Control for gender, insurance, and baseline level of the outcome
