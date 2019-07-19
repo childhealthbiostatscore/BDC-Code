@@ -17,11 +17,9 @@ library(tidyverse)
 ```{r include=FALSE,cache=TRUE}
 # REDCap API data import
 source("/Users/timvigers/Documents/GitHub/BDC-Code/api_tokens.R")
-# YA
 rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
                          token = BMT_CGM)
 data_full <- exportRecords(rcon)
-rm(list=setdiff(ls(), "data_full"))
 # Format columns
 data_full$bmi_percentile <- as.numeric(data_full$bmi_percentile)
 ```
@@ -83,8 +81,22 @@ cgm_data <- reshape(cgm_data,idvar = c("study_id","date_of_tx"),
 # Remove blank rows based on sensor placement date, format DF, calculate days of CGM wear
 cgm_data <- cgm_data %>% filter(!is.na(sens_place)) %>% 
   arrange(as.numeric(study_id)) %>%
-  mutate_at(vars(study_id),funs(as.factor)) %>%
-  mutate(days = as.numeric(difftime(sens_remove,sens_place,units = 'days')))
+  mutate(days_worn = as.numeric(difftime(sens_remove,sens_place,units = 'days')),
+         days_from_tx = as.numeric(difftime(sens_remove,date_of_tx,units = 'days')))
+# Summary variables
+cgm_summary <- cgm_data %>% group_by(study_id) %>%
+  summarise(num_cgms = n(),
+            total_days_worn = sum(days_worn,na.rm = T),
+            last_cgm_removal_post_tx = last(days_from_tx[which(sens_remove > date_of_tx)])) %>%
+  arrange(as.numeric(study_id))
+# Add AE information
+ae <- data_full %>% filter(adv_event == "Yes") %>% select(study_id,adv_event:ae_attrib) %>%
+  group_by(study_id) %>%
+  summarise(bleeding = sum(ae_type___4 == "Checked",na.rm = T),
+            infection = sum(ae_type___2 == "Checked",na.rm = T),
+            skin_reaction = sum((ae_type___0 == "Checked" | ae_type___1 == "Checked"),na.rm = T),
+            other = sum(ae_type___5 == "Checked",na.rm = T))
+cgm_summary <- full_join(cgm_summary,ae,by = "study_id")
 ```
 
 Number of CGMs was counted based on the number of non-missing sensor placement dates.
