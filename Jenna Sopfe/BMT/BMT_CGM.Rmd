@@ -24,7 +24,6 @@ data_full <- exportRecords(rcon)
 rm(list=setdiff(ls(), "data_full"))
 # Format columns
 data_full$bmi_percentile <- as.numeric(data_full$bmi_percentile)
-data_full$sens1_place <- 
 ```
 
 ```{r echo=FALSE}
@@ -61,26 +60,31 @@ kable(t1)
 ```{r echo=FALSE}
 # Get CGM data
 cgm_data <- data_full %>% filter(is.na(redcap_repeat_instrument)) %>%
-  select(study_id,sens1_place,plt1,transfuse1,bleed1,sens1_remove,sens1_reason,
+  select(study_id,date_of_tx,
+         sens1_place,plt1,transfuse1,bleed1,sens1_remove,sens1_reason,
          sens2_place,plt2,transfuse2,bleed2,sens2_remove,sens2_reason,
          sens3_place,plt3,transfuse3,bleed3,sens3_remove,sens3_reason,
          sens4_place,plt4,transfuse4,bleed4,sens4_remove,sens4_reason,
          sens5_place,plt5,transfuse5,bleed5,sens5_remove,sens5_reason,
          sens6_place,plt6,transfuse6,bleed6,sens6_remove,sens6_reason)
+
+colnames(cgm_data) <- c("study_id","date_of_tx",
+                        "sens_place.1","plt.1","transfuse.1","bleed.1","sens_remove.1","sens_reason.1",
+                        "sens_place.2","plt.2","transfuse.2","bleed.2","sens_remove.2","sens_reason.2",
+                        "sens_place.3","plt.3","transfuse.3","bleed.3","sens_remove.3","sens_reason.3",
+                        "sens_place.4","plt.4","transfuse.4","bleed.4","sens_remove.4","sens_reason.4",
+                        "sens_place.5","plt.5","transfuse.5","bleed.5","sens_remove.5","sens_reason.5",
+                        "sens_place.6","plt.6","transfuse.6","bleed.6","sens_remove.6","sens_reason.6")
+
 # Wide to long
-temp <- reshape(cgm_data,idvar = "study_id",
-                varying = list(c("sens1_place","plt1","transfuse1","bleed1","sens1_remove","sens1_reason"),
-                               c("sens2_place","plt2","transfuse2","bleed2","sens2_remove","sens2_reason"),
-                               c("sens3_place","plt3","transfuse3","bleed3","sens3_remove","sens3_reason"),
-                               c("sens4_place","plt4","transfuse4","bleed4","sens4_remove","sens4_reason"),
-                               c("sens5_place","plt5","transfuse5","bleed5","sens5_remove","sens5_reason"),
-                               c("sens6_place","plt6","transfuse6","bleed6","sens6_remove","sens6_reason")),
-                v.names = c("sens_place","plt","transfuse","bleed","sens_remove","sens_reason" ),
+cgm_data <- reshape(cgm_data,idvar = c("study_id","date_of_tx"),
+                varying = colnames(cgm_data)[3:ncol(cgm_data)],
                 direction = "long")
-
-
-safety_vars <- c()
-safety <- CreateTableOne(dem_vars,data = demographics)
-safety <- print(safety, nonnormal = c(),printToggle = F)
-kable(t1)
+# Remove blank rows based on sensor placement date, format DF, calculate days of CGM wear
+cgm_data <- cgm_data %>% filter(!is.na(sens_place)) %>% 
+  arrange(as.numeric(study_id)) %>%
+  mutate_at(vars(study_id),funs(as.factor)) %>%
+  mutate(days = as.numeric(difftime(sens_remove,sens_place,units = 'days')))
 ```
+
+Number of CGMs was counted based on the number of non-missing sensor placement dates.
