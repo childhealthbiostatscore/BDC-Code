@@ -1,7 +1,24 @@
 ######## Kimber Simmons #########
 library(Hmisc)
 #pt level data:
-dat<-read.csv('S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Data/CAID_PatientLevelRport_V1_07091029_Cleaned.csv')
+dat<-read.csv('S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Data/CAID_PatientLevelRport_V1_07091029_Cleaned.csv',na.strings="NULL")
+#remove celiac disease data from this original dataset:
+dat<-dat[,-c(which(colnames(dat)=="CeliacDisease"):
+               which(colnames(dat)=="CeliacDisease_.CGMLow_VisitDate_2ndBeforeDxDate"))]
+
+#updated celiac data with multiple definitions of celiac's disease:
+dat.cel<-read.csv('S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Data/CeliacPatientLevelReport_1sheet_07172019.csv',na.strings="NULL")
+dat.cel<-dat.cel[,c(1,which(colnames(dat.cel)=="CeliacDisease"):
+                   which(colnames(dat.cel)=="CeliacDisease_.CGMLow_VisitDate_2ndBeforeDxDate"))]
+#merge celiac data in with original:
+dat<-merge(dat,dat.cel,by="EPICMRN",all=T)
+
+#where celiac data is missing, it is a "no":
+dat$CeliacDisease[is.na(dat$CeliacDisease)]<-"N"
+dat$AbnormalPanel<-factor(dat$AbnormalPanel,levels=c("Y","N"))
+dat$AbnormalPanel[is.na(dat$AbnormalPanel)]<-"N"
+dat$GlutenFreeDiet[is.na(dat$GlutenFreeDiet)]<-"N"
+
 
 #format variables:
 
@@ -116,6 +133,16 @@ dat$time_to_celiac[dat$celiac_timing=="At Diabetes Onset"]<-NA
 dat$time_to_celiac[dat$celiac_timing=="Before Diabetes Onset"]<-NA
 dat$celiac_months_if_yes[dat$celiac_timing=="At Diabetes Onset"]<-NA
 dat$celiac_months_if_yes[dat$celiac_timing=="Before Diabetes Onset"]<-NA
+
+#other types of celiac:
+dat$celiac_groups<-NA
+dat$celiac_groups[dat$CeliacDisease=="Y" & dat$Biopsy=="Positive"]<-"Grp1. Celiac Disease, Positive Biopsy"
+dat$celiac_groups[dat$CeliacDisease=="Y" & dat$GlutenFreeDiet=="Y"]<-"Grp2. Celiac Disease, Gluten Free Diet"
+dat$celiac_groups[dat$CeliacDisease=="Y" & dat$Biopsy=="Negative" & dat$GlutenFreeDiet=="Y"]<-"Grp3. Celiac Disease, Gluten Free Diet, Negative Biopsy"
+dat$celiac_groups[dat$CeliacDisease=="N" & dat$AbnormalPanel=="Y" & is.na(dat$Biopsy)]<-"Grp4. Abnormal panel, no celiac disease, no biopsy"
+dat$celiac_groups[dat$CeliacDisease=="N" & dat$AbnormalPanel=="Y" & dat$Biopsy=="Negative"]<-"Grp5. Abnormal panel, no celiac disease, negative biopsy"
+dat$celiac_groups<-as.factor(dat$celiac_groups)
+label(dat$celiac_groups)<-"Celiac Groups"
 #addisons
 dat$addison_yn<-NA
 dat$addison_yn[dat$AddisonsDisease=="Y"]<-1
