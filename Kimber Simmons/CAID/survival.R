@@ -3,8 +3,7 @@ library(survival)
 
 #########THYROID TIME-TO-EVENT#############
 ###time to thyroid:
-dat.thy<-subset(dat,!(dat$thyroid_timing %in% c("At Diabetes Onset",
-                                                "Before Diabetes Onset")))
+dat.thy<-subset(dat,!is.na(dat$time_to_thyroid))
 
 dat.thy$time_to_thyroid<-as.numeric(dat.thy$time_to_thyroid)
 dat.thy$thyroid_yn<-as.numeric(dat.thy$thyroid_yn)
@@ -117,7 +116,7 @@ logrank<-coxph(Surv(dat.cel$time_to_celiac, dat.cel$celiac_yn) ~ dat.cel$age_cat
 logrank_sum<-summary(logrank)
 text(3,.85,paste0("Younger vs. Older Group p=",round(logrank_sum$coefficients[1,5],4)))
 
-#########CELIAC TIME-TO-EVENT#############
+#########ADDISON TIME-TO-EVENT#############
 ###time to addison:
 dat.add<-subset(dat,!(dat$addison_timing %in% c("At Diabetes Onset",
                                                "Before Diabetes Onset")))
