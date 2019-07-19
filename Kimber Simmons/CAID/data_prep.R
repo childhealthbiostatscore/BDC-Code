@@ -136,9 +136,9 @@ dat$celiac_months_if_yes[dat$celiac_timing=="Before Diabetes Onset"]<-NA
 
 #other types of celiac:
 dat$celiac_groups<-NA
-dat$celiac_groups[dat$CeliacDisease=="Y" & dat$Biopsy=="Positive"]<-"Grp1. Celiac Disease, Positive Biopsy"
-dat$celiac_groups[dat$CeliacDisease=="Y" & dat$GlutenFreeDiet=="Y"]<-"Grp2. Celiac Disease, Gluten Free Diet"
-dat$celiac_groups[dat$CeliacDisease=="Y" & dat$Biopsy=="Negative" & dat$GlutenFreeDiet=="Y"]<-"Grp3. Celiac Disease, Gluten Free Diet, Negative Biopsy"
+dat$celiac_groups[dat$celiac_yn==1 & dat$Biopsy=="Positive"]<-"Grp1. Celiac Disease, Positive Biopsy"
+dat$celiac_groups[dat$celiac_yn==1 & dat$GlutenFreeDiet=="Y"]<-"Grp2. Celiac Disease, Gluten Free Diet"
+dat$celiac_groups[dat$celiac_yn==1 & dat$Biopsy=="Negative" & dat$GlutenFreeDiet=="Y"]<-"Grp3. Celiac Disease, Gluten Free Diet, Negative Biopsy"
 dat$celiac_groups[dat$CeliacDisease=="N" & dat$AbnormalPanel=="Y" & is.na(dat$Biopsy)]<-"Grp4. Abnormal panel, no celiac disease, no biopsy"
 dat$celiac_groups[dat$CeliacDisease=="N" & dat$AbnormalPanel=="Y" & dat$Biopsy=="Negative"]<-"Grp5. Abnormal panel, no celiac disease, negative biopsy"
 dat$celiac_groups<-as.factor(dat$celiac_groups)
@@ -154,8 +154,10 @@ label(dat$addison_yn)<-"Addison Disease Y/N"
 dat$AddisonsDisease_DxDate<-as.POSIXct(dat$AddisonsDisease_DxDate,format="%m/%d/%Y")
 
 dat$time_to_addison<-NA
-dat$time_to_addison[dat$addison_yn==1]<-(dat$AddisonsDisease_DxDate[dat$addison_yn==1]-dat$OnsetDate[dat$addison_yn==1])/365 ##1 pt is missing addison date
-dat$time_to_addison[dat$addison_yn==0]<-(dat$LastVisitDate[dat$addison_yn==0]-dat$OnsetDate[dat$addison_yn==0])/365
+dat$time_to_addison[dat$addison_yn==1 & !is.na(dat$addison_yn)]<-(dat$AddisonsDisease_DxDate[dat$addison_yn==1 & !is.na(dat$addison_yn)]-
+                                                                    dat$OnsetDate[dat$addison_yn==1  & !is.na(dat$addison_yn)])/365 ##1 pt is missing addison date
+dat$time_to_addison[dat$addison_yn==0  & !is.na(dat$addison_yn)]<-(dat$LastVisitDate[dat$addison_yn==0  & !is.na(dat$addison_yn)]-
+                                                                     dat$OnsetDate[dat$addison_yn==0  & !is.na(dat$addison_yn)])/365
 label(dat$time_to_addison)<-"Years from Onset to addison Disease"
 
 dat$addison_timing<-NA
@@ -166,7 +168,7 @@ dat$addison_timing<-as.factor(dat$addison_timing)
 label(dat$addison_timing)<-"Timing of Addison's Disease"
 
 dat$addison_months_if_yes<-NA
-dat$addison_months_if_yes[dat$addison_yn==1]<-dat$time_to_addison[dat$addison_yn==1]*12
+dat$addison_months_if_yes[dat$addison_yn==1& !is.na(dat$addison_yn)]<-dat$time_to_addison[dat$addison_yn==1& !is.na(dat$addison_yn)]*12
 label(dat$addison_months_if_yes)<-"Months from Onset to Addison Disease"
 
 #######DISEASE SPECIFIC DATASETS WITH ONLY EVENTS AFTER DIABETES:
