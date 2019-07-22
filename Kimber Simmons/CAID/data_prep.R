@@ -193,7 +193,7 @@ dat$time_to_any<-NA
 dat$time_to_any<-pmin(dat$thyroid_months_if_yes,dat$celiac_months_if_yes,
                                        dat$addison_months_if_yes,na.rm=T) #pmin results in months
 dat$time_to_any[dat$any_caid==0 & !is.na(dat$any_caid)]<-(dat$LastVisitDate[dat$any_caid==0 & !is.na(dat$any_caid)]-dat$OnsetDate[dat$any_caid==0 & !is.na(dat$any_caid)])/30.6667 #subtraction=days, then convert to month
-
+dat$time_to_any<-dat$time_to_any/12
 label(dat$time_to_any)<-"Months from Onset to First CAID"
 
 dat$caid_months_if_yes<-NA
