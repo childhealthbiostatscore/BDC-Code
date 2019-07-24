@@ -49,8 +49,15 @@ demographics$AgeTx <- as.numeric(difftime(demographics$date_of_tx,demographics$d
 ```{r echo=FALSE}
 dem_vars <- c("AgeTx","bmi_percentile","gender","Race","tanner_stage","tx_type","primary_dx_cat","spec_dx_cat")
 t1 <- CreateTableOne(dem_vars,data = demographics)
-t1 <- as.data.frame(print(t1, nonnormal = c("AgeTx","bmi_percentile"),printToggle = F))
-kable(t1)
+t1 <- as.data.frame(print(t1, nonnormal = c("AgeTx","bmi_percentile"),printToggle = F,showAllLevels = T,missing = T))
+t1 <- cbind(new = NA,t1)
+colnames(t1) <- c("","Level","Overall","% Missing")
+t1[,1] <- c("n","Age at HSCT (median [IQR])","BMI Percentile (median [IQR])",
+            "Gender (%)","","Race (%)","","","","","","",
+            "Tanner Stage (%)","","","","","","HSCT Type (%)","",
+            "Primary Diagnosis (%)","",
+            "Specific Diagnosis (%)","","","","","","","","")
+kable(t1,row.names = F)
 ```
 
 ## Table 2: Feasibility/Safety Tables
@@ -86,6 +93,10 @@ cgm_data <- cgm_data %>% filter(!is.na(sens_place)) %>%
            pmax(days_worn_total - pmax(as.numeric(difftime(sens_remove,date_of_tx,units = 'days')),0),0),
          days_worn_post_tx = 
            pmax(days_worn_total - pmax(as.numeric(difftime(date_of_tx,sens_place,units = 'days')),0),0))
+# Platelet count variables
+cgm_data$plt <- as.numeric(cgm_data$plt)
+cgm_data$plt_bleed <- ifelse(cgm_data$bleed == "Yes",cgm_data$plt,NA)
+cgm_data$plt_no_bleed <- ifelse(cgm_data$bleed == "No",cgm_data$plt,NA)
 # Summary variables
 cgm_summary <- cgm_data %>% group_by(study_id) %>%
   summarise(num_cgms = n(),
@@ -94,14 +105,23 @@ cgm_summary <- cgm_data %>% group_by(study_id) %>%
             total_days_post_tx = sum(days_worn_post_tx),
             last_cgm_removal_post_tx = 
               last(as.numeric(difftime(sens_remove,date_of_tx,units = 'days'))[which(sens_remove > date_of_tx)]))
-# Add AE information
-ae <- data_full %>% select(study_id,adv_event:ae_attrib) %>% filter(!is.na(adv_event)) %>%
+# AE and CGM refusal information
+ae <- data_full %>% 
+  select(study_id,adv_event:ae_attrib) %>% 
+  filter(!is.na(adv_event)) %>%
   group_by(study_id) %>%
   summarise(bleeding = ifelse(sum(ae_type___4 == "Checked",na.rm = T) > 0,"Yes","No"),
             infection = ifelse(sum(ae_type___2 == "Checked",na.rm = T) > 0,"Yes","No"),
             skin_reaction = ifelse(sum((ae_type___0 == "Checked" | ae_type___1 == "Checked"),na.rm = T) > 0,"Yes","No"),
             other = ifelse(sum(ae_type___5 == "Checked",na.rm = T) > 0,"Yes","No"))
+# Refusal
+refuse <- data_full %>% select(study_id,refuse_cgm:refusal_reason___4) %>%
+  filter(refuse_cgm == "Yes")
+# Add AEs
 cgm_summary <- full_join(cgm_summary,ae,by = "study_id") %>% arrange(as.numeric(study_id))
+# Refusal
+cgm_summary$refuse_cgm <- ifelse(cgm_summary$study_id %in% refuse$study_id,"Yes","No")
+cgm_summary$time_to_refuse <- ifelse(cgm_summary$refuse_cgm == "Yes",cgm_summary$last_cgm_removal_post_tx,NA)
 ```
 
 ### By Patient
@@ -110,26 +130,44 @@ cgm_summary <- full_join(cgm_summary,ae,by = "study_id") %>% arrange(as.numeric(
 vars <- colnames(cgm_summary)[-1]
 t2_by_patient <- CreateTableOne(vars,data = cgm_summary)
 t2_by_patient <- as.data.frame(print(t2_by_patient, missing = T,printToggle = F,
-                       nonnormal = c("num_cgms","total_days_worn","total_days_post_tx",
-                                     "last_cgm_removal_post_tx")))
-colnames(t2_by_patient) <- c("Overall","% Missing")
-rownames(t2_by_patient) <- c("n","Number of CGMs (median [IQR])",
-                             "Total Days Worn (median [IQR])","Total Days Worn Pre-HSCT",
-                             "Total Days Worn Post-HSCT (median [IQR])",
-                             "Number of Days from HSCT to Last CGM Removal (median [IQR])",
-                             "AE - Bleeding (%)","AE - Infection (%)",
-                             "AE - Skin Reaction (%)","AE - Other (%)")
-kable(t2_by_patient)
+                                     showAllLevels = T,
+                                     nonnormal = c("num_cgms","total_days_worn",
+                                                   "total_days_post_tx",
+                                                   "last_cgm_removal_post_tx",
+                                                   "time_to_refuse")))
+t2_by_patient <- cbind(new = NA,t2_by_patient)
+colnames(t2_by_patient) <- c("","Level","Overall","% Missing")
+t2_by_patient[,1] <- c("n","Number of CGMs (median [IQR])",
+                       "Total Days Worn (median [IQR])","Total Days Worn Pre-HSCT",
+                       "Total Days Worn Post-HSCT (median [IQR])",
+                       "Number of Days from HSCT to Last CGM Removal (median [IQR])",
+                       "AE - Bleeding (%)","","AE - Infection (%)",
+                       "AE - Skin Reaction (%)","AE - Other (%)","",
+                       "Refused CGM (%)","",
+                       "Days to CGM Refusal (median [IQR])")
+kable(t2_by_patient,row.names = F)
 ```
 
 Number of CGMs worn was counted based on the number of non-missing sensor placement dates. Of the 84 CGMs with placement dates, 2 did not have removal dates (participant 5 placed 6/8/17 and participant 6 placed 8/7/17). Total days worn variables could not be calculated for these two participants, and the number of days from HSCT to last removal was calculated using the last CGM wear with a non-missing removal date. Participant 10 had no CGM data.
 
-### Reasons for Removal, All CGMs
+Time to CGM refusal was calculated based on time from transplant to last CGM removal for those who refused CGM. All participants who refused CGM refused due to patient/parent preference:
 
 ```{r echo=FALSE}
-t2_all <- CreateTableOne("sens_reason",data = cgm_data)
-t2_all <- as.data.frame(print(t2_all,printToggle = F))
-row.names(t2_all)[2] <- "Sensor Removal Reason (%)"
-kable(t2_all)
+kable(refuse)
 ```
 
+### All CGMs
+
+```{r echo=FALSE}
+t2_all <- CreateTableOne(c("plt","plt_bleed","plt_no_bleed","bleed","sens_reason"),
+                         data = cgm_data)
+t2_all <- as.data.frame(print(t2_all,printToggle = F,nonnormal = c("plt","plt_bleed","plt_no_bleed"),
+                              missing=T,showAllLevels = T))
+t2_all <- cbind(new = NA,t2_all)
+colnames(t2_all) <- c("","Level","Overall","% Missing")
+t2_all[,1] <- c("n","Platelet Count at Time of CGM Placement - All (median [IQR])",
+                "Platelet Count at Time of CGM Placement - Bleeding Event (median [IQR])",
+                "Platelet Count at Time of CGM Placement - No Bleeding Event (median [IQR])",
+                "Bleeding Events (%)","","Sensor Removal Reason (%)","","","","","","","","")
+kable(t2_all,row.names = F)
+```
