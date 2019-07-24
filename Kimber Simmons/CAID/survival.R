@@ -2,6 +2,7 @@
 library(survival)
 library(RColorBrewer)
 source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Kimber Simmons/CAID/data_prep.R')
+options(scipen=999)
 #########ANY CAID TIME-TO-EVENT#############
 dat.any<-subset(dat,!is.na(dat$time_to_any))
 
@@ -71,7 +72,7 @@ km_fit <- survfit(Surv(dat.thy$time_to_thyroid, dat.thy$thyroid_yn) ~ 1, data=da
 
 summary(km_fit)
 plot(km_fit,xlab="Years from Diabetes Onset",ylab="Percent Thyroid Disease-Free",
-     main="Time-to-Thyroid Disease",lwd=2,ylim=c(0.8,1))
+     main="Time-to-Thyroid Disease",lwd=3,ylim=c(0.8,1),cex.axis=1.5,cex.main=1.5,cex.lab=1.5)
 
 # BY GENDER
 par(mfrow=c(1,3))
@@ -79,26 +80,32 @@ km_fit_2 <- survfit(Surv(dat.thy$time_to_thyroid, dat.thy$thyroid_yn) ~ dat.thy$
 
 summary(km_fit_2)
 plot(km_fit_2,xlab="Years from Diabetes Onset",ylab="Percent Thyroid Disease-Free",
-     main="Thyroid Disease by Gender",lwd=2,ylim=c(0.8,1),col=brewer.pal(3,"Set2"))
+     main="By Gender",lwd=3,ylim=c(0.8,1),col=brewer.pal(3,"Set1"),cex.main=1.5,
+     cex.axis=1.5,cex.lab=1.5)
 
-legend("bottomleft",levels(dat$Gender),col=brewer.pal(3,"Set2"),bty="n",lwd=c(2,2))
+legend("bottomleft",levels(dat$Gender),col=brewer.pal(3,"Set1"),
+       bty="n",lwd=c(3,3),cex=1.5)
 
 logrank<-coxph(Surv(dat.thy$time_to_thyroid, dat.thy$thyroid_yn) ~ dat.thy$Gender, data=dat.thy)
 logrank_sum<-summary(logrank)
-text(2,.9,paste0("Female vs. Male p=",round(logrank_sum$coefficients[1,5],5)))
+text(2.3,.9,paste0("p=",round(logrank_sum$coefficients[1,5],4)),cex=1.5)
 
 # BY RACE/ETHNICITY
 km_fit_3 <- survfit(Surv(dat.thy$time_to_thyroid, dat.thy$thyroid_yn) ~ dat.thy$RaceEthinicity_cat, data=dat.thy)
 
 summary(km_fit_3)
 plot(km_fit_3,xlab="Years from Diabetes Onset",ylab="Percent Thyroid Disease-Free",
-     main="Thyroid Disease by Race/Ethnicity",lwd=2,ylim=c(0.8,1),col=brewer.pal(5,"Set2"))
+     main="By Race/Ethnicity",lwd=3,ylim=c(0.8,1),col=brewer.pal(5,"Set1"),cex.main=1.5,
+     cex.axis=1.5,cex.lab=1.5)
 
-legend("bottomleft",levels(dat$RaceEthinicity_cat),col=brewer.pal(5,"Set2"),bty="n",lwd=c(2,2))
+legend("bottomleft",levels(dat$RaceEthinicity_cat),
+       col=brewer.pal(5,"Set1"),bty="n",lwd=c(3,3),cex=1.2)
 
 logrank<-coxph(Surv(dat.thy$time_to_thyroid, dat.thy$thyroid_yn) ~ dat.thy$RaceEthinicity_cat, data=dat.thy)
 logrank_sum<-summary(logrank)
-text(3,.88,paste0("Hispanic vs. Non-Hispanic White p=",round(logrank_sum$coefficients[2,5],5)))
+text(3,.86,paste0("p=",
+                  round(logrank_sum$coefficients[2,5],4)),cex=1.5)
+text(3,.875,"Hispanic vs. White",cex=1.5)
 
 # BY MEDIAN AGE
 median_age<-median(dat.thy$Age_At_diabetes_DX)
@@ -110,13 +117,15 @@ km_fit_4 <- survfit(Surv(dat.thy$time_to_thyroid, dat.thy$thyroid_yn) ~ dat.thy$
 
 summary(km_fit_4)
 plot(km_fit_4,xlab="Years from Diabetes Onset",ylab="Percent Thyroid Disease-Free",
-     main="Thyroid Disease by Median Age",lwd=2,ylim=c(0.8,1),col=brewer.pal(3,"Set2"))
+     main="By Median Age",lwd=3,ylim=c(0.8,1),col=brewer.pal(3,"Set1"),cex.main=1.5,
+     cex.axis=1.5,cex.lab=1.5)
 
-legend("bottomleft",levels(dat.thy$age_cat),col=brewer.pal(3,"Set2"),bty="n",lwd=c(2,2))
+legend("bottomleft",c("<10.1 yrs",">=10.1 yrs"),
+       col=brewer.pal(3,"Set1"),bty="n",lwd=c(3,3),cex=1.5)
 
 logrank<-coxph(Surv(dat.thy$time_to_thyroid, dat.thy$thyroid_yn) ~ dat.thy$age_cat, data=dat.thy)
 logrank_sum<-summary(logrank)
-text(3,.88,paste0("Younger vs. Older Group p=",round(logrank_sum$coefficients[1,5],4)))
+text(3,.88,paste0("p=",round(logrank_sum$coefficients[1,5],3)),cex=1.5)
 
 #########CELIAC TIME-TO-EVENT#############
 ###time to celiac:
@@ -129,8 +138,8 @@ dat.cel<-dat.cel[order(dat.cel$time_to_celiac),]
 km_fit <- survfit(Surv(dat.cel$time_to_celiac, dat.cel$celiac_yn) ~ 1, data=dat.cel)
 
 summary(km_fit)
-plot(km_fit,xlab="Years from Diabetes Onset",ylab="Percent celiac Disease-Free",
-     main="Time-to-celiac Disease",lwd=2,ylim=c(0.8,1))
+plot(km_fit,xlab="Years from Diabetes Onset",ylab="Percent Celiac Disease-Free",
+     main="Time-to-Celiac Disease",lwd=3,ylim=c(0.8,1),cex.axis=1.5,cex.main=1.5,cex.lab=1.5)
 
 # BY GENDER
 par(mfrow=c(1,3))
@@ -138,26 +147,33 @@ km_fit_2 <- survfit(Surv(dat.cel$time_to_celiac, dat.cel$celiac_yn) ~ dat.cel$Ge
 
 summary(km_fit_2)
 plot(km_fit_2,xlab="Years from Diabetes Onset",ylab="Percent celiac Disease-Free",
-     main="Celiac Disease by Gender",lwd=2,ylim=c(0.8,1),col=brewer.pal(3,"Set2"))
+     main="By Gender",lwd=3,ylim=c(0.8,1),col=brewer.pal(3,"Set1"),cex.main=1.5,
+     cex.axis=1.5,cex.lab=1.5)
 
-legend("bottomleft",levels(dat$Gender),col=brewer.pal(3,"Set2"),bty="n",lwd=c(2,2))
+legend("bottomleft",levels(dat$Gender),col=brewer.pal(3,"Set1"),
+       bty="n",lwd=c(3,3),cex=1.5)
 
 logrank<-coxph(Surv(dat.cel$time_to_celiac, dat.cel$celiac_yn) ~ dat.cel$Gender, data=dat.cel)
 logrank_sum<-summary(logrank)
-text(2,.85,paste0("Female Vs. Male p=",round(logrank_sum$coefficients[1,5],4)))
+text(2,.9,paste0("p=",round(logrank_sum$coefficients[1,5],3)),cex=1.5)
 
 # BY RACE/ETHNICITY
 km_fit_3 <- survfit(Surv(dat.cel$time_to_celiac, dat.cel$celiac_yn) ~ dat.cel$RaceEthinicity_cat, data=dat.cel)
 
 summary(km_fit_3)
 plot(km_fit_3,xlab="Years from Diabetes Onset",ylab="Percent celiac Disease-Free",
-     main="Celiac Disease by Race/Ethnicity",lwd=2,ylim=c(0.8,1),col=brewer.pal(5,"Set2"))
+     main="By Race/Ethnicity",lwd=3,ylim=c(0.8,1),
+     col=brewer.pal(5,"Set1"),cex.main=1.5,
+     cex.axis=1.5,cex.lab=1.5)
 
-legend("bottomleft",levels(dat$RaceEthinicity_cat),col=brewer.pal(5,"Set2"),bty="n",lwd=c(2,2))
+legend("bottomleft",levels(dat$RaceEthinicity_cat),
+       col=brewer.pal(5,"Set1"),bty="n",lwd=c(3,3),cex=1.2)
 
 logrank<-coxph(Surv(dat.cel$time_to_celiac, dat.cel$celiac_yn) ~ dat.cel$RaceEthinicity_cat, data=dat.cel)
 logrank_sum<-summary(logrank)
-text(2.8,.85,paste0("Hispanic vs. Non-Hispanic White p=",round(logrank_sum$coefficients[2,5],4)))
+text(3,.885,paste0("p=",
+                  round(logrank_sum$coefficients[2,5],4)),cex=1.5)
+text(3,.9,"Hispanic vs. White",cex=1.5)
 
 # BY MEDIAN AGE
 median_age<-median(dat.cel$Age_At_diabetes_DX)
@@ -169,13 +185,16 @@ km_fit_4 <- survfit(Surv(dat.cel$time_to_celiac, dat.cel$celiac_yn) ~ dat.cel$ag
 
 summary(km_fit_4)
 plot(km_fit_4,xlab="Years from Diabetes Onset",ylab="Percent celiac Disease-Free",
-     main="Celiac Disease by Median Age",lwd=2,ylim=c(0.8,1),col=brewer.pal(3,"Set2"))
+     main="By Median Age",lwd=3,ylim=c(0.8,1),
+     col=brewer.pal(3,"Set1"),cex.main=1.5,
+     cex.axis=1.5,cex.lab=1.5)
 
-legend("bottomleft",levels(dat.cel$age_cat),col=brewer.pal(3,"Set2"),bty="n",lwd=c(2,2))
+legend("bottomleft",c("<10.1 yrs",">=10.1 yrs"),col=brewer.pal(3,"Set1"),
+       bty="n",lwd=c(3,3),cex=1.5)
 
 logrank<-coxph(Surv(dat.cel$time_to_celiac, dat.cel$celiac_yn) ~ dat.cel$age_cat, data=dat.cel)
 logrank_sum<-summary(logrank)
-text(2.5,.85,paste0("Younger vs. Older Group p=",round(logrank_sum$coefficients[1,5],4)))
+text(2.5,.9,paste0("p=",round(logrank_sum$coefficients[1,5],4)),cex=1.5)
 
 #########ADDISON TIME-TO-EVENT#############
 ###time to addison:
