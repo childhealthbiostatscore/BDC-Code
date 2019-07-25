@@ -2,7 +2,7 @@
 title: "Holly's Dissertation"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: word_document
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
@@ -41,9 +41,12 @@ dat$StudyVisit <- as.factor(dat$StudyVisit)
 dat$Treatment <- as.factor(dat$Treatment)
 # Days from baseline, baseline levels of outcome
 dat <- dat %>% group_by(ID) %>% 
-  mutate(Days_since_baseline = as.numeric(difftime(VisitDate,VisitDate[1],units = "days")),
+  mutate(Days_since_baseline = 
+           as.numeric(difftime(VisitDate,VisitDate[1],units = "days")),
          readings_per_day_b = readings_per_day[1],
-         highBG_without_carb_with_bolus_b = highBG_without_carb_with_bolus[1])
+         highBG_without_carb_with_bolus_b = highBG_without_carb_with_bolus[1],
+         carb_inputs_per_day_b = carb_inputs_per_day[1],
+         boluses_per_day_b = boluses_per_day[1])
 ```
 
 # Model Selection (BG checks per day)
@@ -231,7 +234,7 @@ bg_mod <- lme(readings_per_day ~ Treatment*StudyVisit + HbA1c + Sex +
 ### Plot the residuals
 
 ```{r echo=FALSE,dpi=600}
-plot(bg_mod)
+plot(bg_mod,main="BG Readings per Day")
 ```
 
 These are pretty nice looking residuals! Not exactly normal but I don't think they violate any assumptions, so I think this model is good to go.
@@ -320,7 +323,7 @@ bolus_mod <- lme(highBG_without_carb_with_bolus ~ Treatment*StudyVisit +
 ### Check the residuals
 
 ```{r echo=FALSE,dpi=600}
-plot(bolus_mod)
+plot(bolus_mod,main="% bolused when high (150-250) and no carb")
 ```
 
 These residuals are okay, but not great. I tried log transforming the outcome to see if it helps, but it didn't make much difference (plus controlling for the baseline value of the outcome complicates things because I think you also need to transform those values and it's hard to interpret on the log scale). I wouldn't say these violate assumptions though, and I've certainly seen worse. 
@@ -333,3 +336,59 @@ kable(summary(bolus_mod)$tTable,caption = "Fixed Effects")
 ```
 
 There was an overall effect of time on % high boluses without carb, but neither visit on its own was significantly different from baseline (I know this is a little odd, so we can chat about it when we go over the results). There was also an overall HbA1c effect, but nothing else was significant.
+
+# Other outcomes
+
+## Carb inputs per day
+
+```{r echo=FALSE}
+carb_mod <- lme(carb_inputs_per_day ~ Treatment*StudyVisit + HbA1c + Sex + 
+                  age_years + IncomeLevel + Insurance + carb_inputs_per_day_b,
+                random =~1|Site/ID, data = dat,na.action = na.omit)
+plot(carb_mod,main="Carb Inputs per Day")
+```
+
+Residuals look pretty good! It looks like there might be a couple of outliers though, so let's check those. To identify outliers we usually use something called Cook's distance:
+
+```{r echo=FALSE}
+carb_mod_lin <- lm(carb_inputs_per_day ~ Treatment*StudyVisit + HbA1c + Sex + age_years + IncomeLevel + Insurance + carb_inputs_per_day_b,data = dat)
+plot(carb_mod_lin,which=4)
+```
+
+Here it looks like observations 171, 264, and 291 are potential outliers. these correspond to:
+
+```{r echo=FALSE}
+dat[171,c("ID","StudyVisit")]
+dat[264,c("ID","StudyVisit")]
+dat[291,c("ID","StudyVisit")]
+```
+
+```{r echo=FALSE}
+kable(anova(carb_mod),caption = "Overall Effects")
+kable(summary(carb_mod)$tTable,caption = "Fixed Effects")
+```
+
+There was an overall effect of study visit, HbA1c, sex, age, and income level. Study visit 3 was significantly different from baseline (p = 0.043), and on average there were 0.369 fewer carb inputs per day. 
+
+## Boluses per day
+
+```{r echo=FALSE}
+bolus_day_mod <- lme(boluses_per_day ~ Treatment*StudyVisit + HbA1c + Sex + 
+                  age_years + IncomeLevel + Insurance + boluses_per_day_b,
+                random =~1|Site/ID, data = dat,na.action = na.omit)
+plot(bolus_day_mod,main="Boluses per Day")
+```
+
+Residuals look okay. It looks like there might be a couple of outliers, so 
+
+```{r echo=FALSE}
+bolus_day_mod <- lm(boluses_per_day ~ Treatment*StudyVisit + HbA1c + Sex + 
+                  age_years + IncomeLevel + Insurance + boluses_per_day_b,
+                  data = dat)
+
+```
+
+```{r echo=FALSE}
+kable(anova(carb_mod),caption = "Overall Effects")
+kable(summary(carb_mod)$tTable,caption = "Fixed Effects")
+```
