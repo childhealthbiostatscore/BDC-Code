@@ -2,7 +2,7 @@
 title: "Holly's Dissertation"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: html_document
+output: word_document
 ---
 
 ```{r setup, include=FALSE}
@@ -44,9 +44,11 @@ dat <- dat %>% group_by(ID) %>%
   mutate(Days_since_baseline = 
            as.numeric(difftime(VisitDate,VisitDate[1],units = "days")),
          readings_per_day_b = readings_per_day[1],
-         highBG_without_carb_with_bolus_b = highBG_without_carb_with_bolus[1],
+         highBG_without_carb_with_bolus_b = highBG_without_carb_with_bolus_piu[1],
          carb_inputs_per_day_b = carb_inputs_per_day[1],
-         boluses_per_day_b = boluses_per_day[1])
+         boluses_per_day_b = boluses_per_day[1],
+         extremeBG_without_carb_with_bolus_b = 
+           extremeBG_without_carb_with_bolus_piu[1])
 ```
 
 # Model Selection (BG checks per day)
@@ -60,7 +62,9 @@ cont_time_mod <- lmer(readings_per_day ~ Days_since_baseline + (1|ID),
 ```
 
 ```{r echo=FALSE}
-kable(AIC(cat_time_mod,cont_time_mod))
+aic <- AIC(cat_time_mod,cont_time_mod)
+aic <- aic[order(aic$AIC),]
+kable(aic)
 ```
 
 The model with visit number is a better fit than one using days from baseline (AIC is lower), so we'll use visit number for the rest of the models. 
@@ -108,8 +112,10 @@ reduced_mod <- lme(readings_per_day ~ Treatment*HbA1c + Treatment*StudyVisit +
 
 ### Compare AIC
 
-```{r warning=FALSE}
-kable(AIC(full_mod,reduced_mod))
+```{r warning=FALSE,echo=FALSE}
+aic <- as.data.frame(AIC(full_mod,reduced_mod))
+aic <- aic[order(aic$AIC),]
+kable(aic)
 ```
 
 This indicates that the full model is actually a better fit. Now compare to models with single covariates added back in. 
@@ -140,7 +146,6 @@ no_t1d_no_income_mod <- lmer(readings_per_day ~ Treatment*HbA1c +
                               Treatment*StudyVisit + Sex + age_years + 
                               Treatment*Insurance + readings_per_day_b+ (1|Site/ID), 
                             data = dat,na.action = na.omit)
-AIC(no_t1d_no_insur_mod,no_t1d_no_income_mod)
 ```
 
 ```{r}
@@ -183,7 +188,9 @@ no_t1d_no_income_no_ins_mod <- lme(readings_per_day ~ Treatment*HbA1c +
 ### Compare AIC
 
 ```{r echo=FALSE,warning=FALSE}
-kable(AIC(full_mod,no_t1d_dur_mod,no_sex_mod,no_insurance_mod,no_income_mod,no_t1d_no_insur_mod,no_t1d_no_income_mod,reduced_mod,no_t1d_no_income_no_ins_mod))
+aic <- as.data.frame(AIC(full_mod,no_t1d_dur_mod,no_sex_mod,no_insurance_mod,no_income_mod,no_t1d_no_insur_mod,no_t1d_no_income_mod,reduced_mod,no_t1d_no_income_no_ins_mod))
+aic <- aic[order(aic$AIC),]
+kable(aic)
 ```
 
 The model without T1D duration or insurance is the best by AIC, but we need insurance in the model because the groups were different at baseline. So, we'll stick with the model without T1D duration, but including both insurance and income: 
@@ -220,7 +227,9 @@ bg_mod_ins <- lme(readings_per_day ~ HbA1c + Treatment*StudyVisit + Sex +
 ### Compare AIC
 
 ```{r echo=FALSE,warning=FALSE}
-kable(AIC(bg_mod_trt_visit,bg_mod_a1c,bg_mod_inc,bg_mod_ins))
+aic <- as.data.frame(AIC(bg_mod_trt_visit,bg_mod_a1c,bg_mod_inc,bg_mod_ins))
+aic <- aic[order(aic$AIC),]
+kable(aic)
 ```
 
 The model with only the treatment by visit interaction is the best and is the interaction effect that we care most about. So, our final model for BG checks per day is:
@@ -253,68 +262,74 @@ So, the overall effects of treatment, HbA1c, sex, and age were significant. Ther
 ## Compare full model to reduced models
 
 ```{r}
-bolus_mod_full <- lme(highBG_without_carb_with_bolus ~ Treatment*HbA1c + 
+bolus_mod_full <- lme(highBG_without_carb_with_bolus_piu ~ Treatment*HbA1c + 
                         Treatment*StudyVisit + Sex + age_years + T1D_dur_years + 
                         Treatment*IncomeLevel + Treatment*Insurance + 
                         highBG_without_carb_with_bolus_b,
                      random =~1|Site/ID, data = dat,na.action = na.omit)
 
-bolus_mod_no_t1d <- lme(highBG_without_carb_with_bolus ~ Treatment*HbA1c + 
+bolus_mod_no_t1d <- lme(highBG_without_carb_with_bolus_piu ~ Treatment*HbA1c + 
                           Treatment*StudyVisit + Sex + age_years + 
                           Treatment*IncomeLevel + Treatment*Insurance + 
                           highBG_without_carb_with_bolus_b,
                      random =~1|Site/ID, data = dat,na.action = na.omit)
 
-bolus_mod_reduced <- lme(highBG_without_carb_with_bolus ~ Treatment*HbA1c + 
+bolus_mod_reduced <- lme(highBG_without_carb_with_bolus_piu ~ Treatment*HbA1c + 
                            Sex + Treatment*StudyVisit + age_years + 
                            highBG_without_carb_with_bolus_b,
                      random =~1|Site/ID, data = dat,na.action = na.omit)
 ```
 
 ```{r echo=FALSE,warning=FALSE}
-kable(AIC(bolus_mod_full,bolus_mod_no_t1d,bolus_mod_reduced))
+aic <- AIC(bolus_mod_full,bolus_mod_no_t1d,bolus_mod_reduced)
+aic <- aic[order(aic$AIC),]
+kable(aic)
 ```
 
 Again, the model without T1D duration is the best, but let's check the models without insurance and income as well. 
 
 ```{r echo=FALSE,warning=FALSE}
-bolus_mod_no_ins <- lme(highBG_without_carb_with_bolus ~ Treatment*HbA1c + 
+bolus_mod_no_ins <- lme(highBG_without_carb_with_bolus_piu ~ Treatment*HbA1c + 
                           Treatment*StudyVisit + Sex + age_years + 
                           T1D_dur_years + Treatment*IncomeLevel + 
                         highBG_without_carb_with_bolus_b,
                      random =~1|Site/ID, data = dat,na.action = na.omit)
-bolus_mod_no_inc <- lme(highBG_without_carb_with_bolus ~ Treatment*HbA1c + Treatment*StudyVisit + Sex + 
+bolus_mod_no_inc <- lme(highBG_without_carb_with_bolus_piu ~ Treatment*HbA1c + Treatment*StudyVisit + Sex + 
                         age_years + T1D_dur_years + 
                         Treatment*Insurance + highBG_without_carb_with_bolus_b,
                      random =~1|Site/ID, data = dat,na.action = na.omit)
-bolus_mod_neither <- lme(highBG_without_carb_with_bolus ~ Treatment*HbA1c + Treatment*StudyVisit + Sex + 
+bolus_mod_neither <- lme(highBG_without_carb_with_bolus_piu ~ Treatment*HbA1c + Treatment*StudyVisit + Sex + 
                         age_years + T1D_dur_years + highBG_without_carb_with_bolus_b,
                      random =~1|Site/ID, data = dat,na.action = na.omit)
-kable(AIC(bolus_mod_no_ins,bolus_mod_no_inc,bolus_mod_neither))
+aic <- AIC(bolus_mod_no_ins,bolus_mod_no_inc,bolus_mod_neither)
+aic <- aic[order(aic$AIC),]
+kable(aic)
 ```
 
-Unfortunately, the model without insurance is the best again, but we need to keep it in there (mostly so reviewers don't ask why you didn't control for it). Let's check the models with and without interaction terms as well, just to be sure:
+Technically, the model without insurance is the best again, but we need to keep it in there (mostly so reviewers don't ask why you didn't control for it). Also the difference in AIC is small, so we could really pick either the model without insurance or without income. Let's check the models with and without interaction terms as well, just to be sure:
 
 ```{r echo=FALSE,warning=FALSE}
-bolus_mod_trt_visit <- lme(highBG_without_carb_with_bolus ~ Treatment*StudyVisit + HbA1c + Sex +
+bolus_mod_trt_visit <- lme(highBG_without_carb_with_bolus_piu ~ Treatment*StudyVisit + HbA1c + Sex +
                                       age_years + IncomeLevel + Insurance + highBG_without_carb_with_bolus_b,
                      random =~1|Site/ID, data = dat,na.action = na.omit)
-bolus_mod_a1c <- lme(highBG_without_carb_with_bolus ~ Treatment*StudyVisit + Treatment*HbA1c + Sex +
+bolus_mod_a1c <- lme(highBG_without_carb_with_bolus_piu ~ Treatment*StudyVisit + Treatment*HbA1c + Sex +
                                       age_years + IncomeLevel + Insurance + highBG_without_carb_with_bolus_b,
                      random =~1|Site/ID, data = dat,na.action = na.omit)
-bolus_mod_inc <- lme(highBG_without_carb_with_bolus ~ Treatment*StudyVisit + HbA1c + Sex +
+bolus_mod_inc <- lme(highBG_without_carb_with_bolus_piu ~ Treatment*StudyVisit + HbA1c + Sex +
                                       age_years + Treatment*IncomeLevel + Insurance + highBG_without_carb_with_bolus_b,
                      random =~1|Site/ID, data = dat,na.action = na.omit)
-bolus_mod_ins <- lme(highBG_without_carb_with_bolus ~ Treatment*StudyVisit + HbA1c + Sex +
+bolus_mod_ins <- lme(highBG_without_carb_with_bolus_piu ~ Treatment*StudyVisit + HbA1c + Sex +
                                       age_years + IncomeLevel + Treatment*Insurance + highBG_without_carb_with_bolus_b,
                      random =~1|Site/ID, data = dat,na.action = na.omit)
-kable(AIC(bolus_mod_trt_visit,bolus_mod_a1c,bolus_mod_inc,bolus_mod_ins))
+aic <- AIC(bolus_mod_trt_visit,bolus_mod_a1c,bolus_mod_inc,bolus_mod_ins)
+aic <- aic[order(aic$AIC),]
+kable(aic)
 ```
 
 These are essentially the same in terms of AIC (as a rule of thumb an AIC difference > 2 is significant), so for consistency it makes sense to stick with the same model structure as for BG checks per day. So, the final model for % high boluses without carb is:
 
 ```{r}
-bolus_mod <- lme(highBG_without_carb_with_bolus ~ Treatment*StudyVisit + 
+bolus_mod <- lme(highBG_without_carb_with_bolus_piu ~ Treatment*StudyVisit + 
                    HbA1c + Sex + age_years + IncomeLevel + Insurance + 
                    highBG_without_carb_with_bolus_b,
                  random =~1|Site/ID, data = dat,na.action = na.omit)
@@ -326,7 +341,7 @@ bolus_mod <- lme(highBG_without_carb_with_bolus ~ Treatment*StudyVisit +
 plot(bolus_mod,main="% bolused when high (150-250) and no carb")
 ```
 
-These residuals are okay, but not great. I tried log transforming the outcome to see if it helps, but it didn't make much difference (plus controlling for the baseline value of the outcome complicates things because I think you also need to transform those values and it's hard to interpret on the log scale). I wouldn't say these violate assumptions though, and I've certainly seen worse. 
+These residuals aren't ideal. I tried log transforming the outcome to see if it helps, but it didn't make much difference (plus controlling for the baseline value of the outcome complicates things because I think you also need to transform those values and it's hard to interpret on the log scale). I wouldn't say these violate assumptions though, and I've certainly seen worse. 
 
 ### Results
 
@@ -335,33 +350,22 @@ kable(anova(bolus_mod),caption = "Overall Effects")
 kable(summary(bolus_mod)$tTable,caption = "Fixed Effects")
 ```
 
-There was an overall effect of time on % high boluses without carb, but neither visit on its own was significantly different from baseline (I know this is a little odd, so we can chat about it when we go over the results). There was also an overall HbA1c effect, but nothing else was significant.
+There was an overall effect of time on % high boluses without carb, but neither visit on its own was significantly different from baseline (I know this is a little odd, so we can chat about it when we go over the results). There were also overall effects of HbA1c and sex, but nothing else was significant overall. 
+
+There was a significant difference between treatment groups at study visit 2.
 
 # Other outcomes
 
 ## Carb inputs per day
 
-```{r echo=FALSE}
+```{r echo=FALSE,dpi=600}
 carb_mod <- lme(carb_inputs_per_day ~ Treatment*StudyVisit + HbA1c + Sex + 
                   age_years + IncomeLevel + Insurance + carb_inputs_per_day_b,
                 random =~1|Site/ID, data = dat,na.action = na.omit)
-plot(carb_mod,main="Carb Inputs per Day")
+plot(carb_mod,main="Carb Inputs per Day",idLabels=~ID,id=0.0001)
 ```
 
-Residuals look pretty good! It looks like there might be a couple of outliers though, so let's check those. To identify outliers we usually use something called Cook's distance:
-
-```{r echo=FALSE}
-carb_mod_lin <- lm(carb_inputs_per_day ~ Treatment*StudyVisit + HbA1c + Sex + age_years + IncomeLevel + Insurance + carb_inputs_per_day_b,data = dat)
-plot(carb_mod_lin,which=4)
-```
-
-Here it looks like observations 171, 264, and 291 are potential outliers. these correspond to:
-
-```{r echo=FALSE}
-dat[171,c("ID","StudyVisit")]
-dat[264,c("ID","StudyVisit")]
-dat[291,c("ID","StudyVisit")]
-```
+Residuals look pretty good! I think there might be a couple of outliers, but really they look well distributed overall. It might be worth looking into those observations, just in case, but I wouldn't worry about them too much right now.
 
 ```{r echo=FALSE}
 kable(anova(carb_mod),caption = "Overall Effects")
@@ -372,23 +376,45 @@ There was an overall effect of study visit, HbA1c, sex, age, and income level. S
 
 ## Boluses per day
 
-```{r echo=FALSE}
+```{r echo=FALSE,dpi=600}
 bolus_day_mod <- lme(boluses_per_day ~ Treatment*StudyVisit + HbA1c + Sex + 
                   age_years + IncomeLevel + Insurance + boluses_per_day_b,
                 random =~1|Site/ID, data = dat,na.action = na.omit)
-plot(bolus_day_mod,main="Boluses per Day")
+plot(bolus_day_mod,main="Boluses per Day",idLabels=~ID,id=0.001)
 ```
 
-Residuals look okay. It looks like there might be a couple of outliers, so 
+Residuals look pretty good again, but the same group as carbs per day might be outliers here as well. So it might be worth looking into those to make sure there isn't something off with their data. I'm always hesitant to exclude data unless there's a really good reason for it (e.g. biologically or technically impossible values), but it's probably worth checking. The fact that it's the same three people makes me think they're just inputting carbs and following up with a bolus a lot, and overall the model seems to be a good fit. 
 
 ```{r echo=FALSE}
-bolus_day_mod <- lm(boluses_per_day ~ Treatment*StudyVisit + HbA1c + Sex + 
-                  age_years + IncomeLevel + Insurance + boluses_per_day_b,
-                  data = dat)
-
+kable(anova(bolus_day_mod),caption = "Overall Effects")
+kable(summary(bolus_day_mod)$tTable,caption = "Fixed Effects")
 ```
 
+## % extreme boluses without carb
+
+```{r echo=FALSE,dpi=600}
+extreme_bolus_mod <- lme(extremeBG_without_carb_with_bolus_piu ~ Treatment*StudyVisit + HbA1c + Sex + age_years + IncomeLevel + Insurance + extremeBG_without_carb_with_bolus_b,random =~1|Site/ID, data = dat,na.action = na.omit)
+plot(extreme_bolus_mod,main="% bolused when extreme (>250) and no carb",idLabels=~ID,id=0.0001)
+```
+
+Those residauls look pretty weird. I'd say they're sort of on the line. Let's try log-transforming the outcome and baseline scores:
+
+```{r echo=FALSE,dpi=600}
+dat$extremeBG_without_carb_with_bolus_log <- 
+  log(dat$extremeBG_without_carb_with_bolus)
+dat$extremeBG_without_carb_with_bolus_log[dat$extremeBG_without_carb_with_bolus_log == -Inf] <- NA
+dat$extremeBG_without_carb_with_bolus_b_log <- 
+  log(dat$extremeBG_without_carb_with_bolus_b)
+dat$extremeBG_without_carb_with_bolus_b_log[dat$extremeBG_without_carb_with_bolus_b_log == -Inf] <- NA
+
+extreme_bolus_mod_log <- lme(extremeBG_without_carb_with_bolus_log ~ Treatment*StudyVisit + HbA1c + Sex + age_years + IncomeLevel + Insurance + extremeBG_without_carb_with_bolus_b_log,random =~1|Site/ID, data = dat,na.action = na.omit)
+
+plot(extreme_bolus_mod_log,main="log(% bolused when extreme (>250) and no carb)")
+```
+
+Those are even worse! So I think we should stick with the non-transformed model. Any other transformations will make the analysis more complex than necessary. Why don't we see if the data for 211, 112, and 114 look reasonable. If not we can exclude them and see if it improves the model. Otherwise, I think we can with this model even though the residuals aren't amazing. 
+
 ```{r echo=FALSE}
-kable(anova(carb_mod),caption = "Overall Effects")
-kable(summary(carb_mod)$tTable,caption = "Fixed Effects")
+kable(anova(extreme_bolus_mod),caption = "Overall Effects")
+kable(summary(extreme_bolus_mod)$tTable,caption = "Fixed Effects")
 ```
