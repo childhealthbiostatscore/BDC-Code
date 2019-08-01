@@ -2,7 +2,7 @@
 title: "BMT CGM Analysis"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: word_document
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
@@ -25,6 +25,8 @@ data_full$bmi_percentile <- as.numeric(data_full$bmi_percentile)
 ```
 
 ```{r echo=FALSE}
+# Remove participant 10
+data_full <- data_full %>% filter(study_id != "10")
 # Get demographic info
 demographics <- data_full %>% group_by(study_id) %>% filter(!is.na(mrn))
 # Combine separate race columns into one
@@ -53,7 +55,7 @@ t1 <- as.data.frame(print(t1, nonnormal = c("AgeTx","bmi_percentile"),printToggl
 t1 <- cbind(new = NA,t1)
 colnames(t1) <- c("","Level","Overall","% Missing")
 t1[,1] <- c("n","Age at HSCT (median [IQR])","BMI Percentile (median [IQR])",
-            "Gender (%)","","Race (%)","","","","","","",
+            "Gender (%)","","Race (%)","","","","","",
             "Tanner Stage (%)","","","","","","HSCT Type (%)","",
             "Primary Diagnosis (%)","",
             "Specific Diagnosis (%)","","","","","","","","")
@@ -101,10 +103,12 @@ cgm_data$plt_no_bleed <- ifelse(cgm_data$bleed == "No",cgm_data$plt,NA)
 cgm_summary <- cgm_data %>% group_by(study_id) %>%
   summarise(num_cgms = n(),
             total_days_worn = sum(days_worn_total),
-            total_days_pre_tx = sum(days_worn_pre_tx),
+            total_days_pre_tx = sum(days_worn_pre_tx,na.rm = T),
             total_days_post_tx = sum(days_worn_post_tx),
             last_cgm_removal_post_tx = 
               last(as.numeric(difftime(sens_remove,date_of_tx,units = 'days'))[which(sens_remove > date_of_tx)]))
+# Remove participant 5 pre-HSCT data since they lost CGM close to translant
+cgm_summary$total_days_pre_tx[5] <- NA
 # AE and CGM refusal information
 ae <- data_full %>% 
   select(study_id,adv_event:ae_attrib) %>% 
@@ -140,15 +144,17 @@ colnames(t2_by_patient) <- c("","Level","Overall","% Missing")
 t2_by_patient[,1] <- c("n","Number of CGMs (median [IQR])",
                        "Total Days Worn (median [IQR])","Total Days Worn Pre-HSCT",
                        "Total Days Worn Post-HSCT (median [IQR])",
-                       "Number of Days from HSCT to Last CGM Removal (median [IQR])",
+                       "Number of Days HSCT to Last CGM Removal (median [IQR])",
                        "AE - Bleeding (%)","","AE - Infection (%)",
                        "AE - Skin Reaction (%)","AE - Other (%)","",
                        "Refused CGM (%)","",
                        "Days to CGM Refusal (median [IQR])")
+t2_by_patient$`% Missing` <- as.character(t2_by_patient$`% Missing`)
+t2_by_patient$`% Missing`[nrow(t2_by_patient)] <- "0.0"
 kable(t2_by_patient,row.names = F)
 ```
 
-Number of CGMs worn was counted based on the number of non-missing sensor placement dates. Of the 84 CGMs with placement dates, 2 did not have removal dates (participant 5 placed 6/8/17 and participant 6 placed 8/7/17). Total days worn variables could not be calculated for these two participants, and the number of days from HSCT to last removal was calculated using the last CGM wear with a non-missing removal date. Participant 10 had no CGM data.
+Number of CGMs worn was counted based on the number of non-missing sensor placement dates. Of the 84 CGMs with placement dates, 2 did not have removal dates (participant 5 placed 6/8/17 and participant 6 placed 8/7/17). Total days worn variables could not be calculated for these two participants, and the number of days from HSCT to last removal was calculated using the last CGM wear with a non-missing removal date.
 
 Time to CGM refusal was calculated based on time from transplant to last CGM removal for those who refused CGM. All participants who refused CGM refused due to patient/parent preference:
 
@@ -166,8 +172,11 @@ t2_all <- as.data.frame(print(t2_all,printToggle = F,nonnormal = c("plt","plt_bl
 t2_all <- cbind(new = NA,t2_all)
 colnames(t2_all) <- c("","Level","Overall","% Missing")
 t2_all[,1] <- c("n","Platelet Count at Time of CGM Placement - All (median [IQR])",
-                "Platelet Count at Time of CGM Placement - Bleeding Event (median [IQR])",
-                "Platelet Count at Time of CGM Placement - No Bleeding Event (median [IQR])",
-                "Bleeding Events (%)","","Sensor Removal Reason (%)","","","","","","","","")
+                "Platelet Count at CGM Placement - Bleeding (median [IQR])",
+                "Platelet Count at CGM Placement - No Bleeding (median [IQR])",
+                "Bleeding Events (%)","",
+                "Sensor Removal Reason (%)","","","","","","","","")
+t2_all$`% Missing` <- as.character(t2_all$`% Missing`)
+t2_all$`% Missing`[3] <- "0.0"
 kable(t2_all,row.names = F)
 ```
