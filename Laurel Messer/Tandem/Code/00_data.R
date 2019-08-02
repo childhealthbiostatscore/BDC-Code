@@ -1,0 +1,121 @@
+#######PI: LAUREL MESSER
+#######PROJECT: TANDEM PROs
+
+library(Hmisc)
+source('S:/Shared Material/Shared Code/R/temp_table1.R')
+#1st row is labels, then assign them to the actual variable names:
+labels<-read.csv('S:/Shared Projects/Laura/BDC/Projects/Laurel Messer/Tandem/Data/labels.csv')[1,]
+dat<-read.csv('S:/Shared Projects/Laura/BDC/Projects/Laurel Messer/Tandem/Data/BIQPRO_RawComplete_07.30.csv',
+              na.strings=c("","I don't know"))
+label(dat[,c(1:131)])<-as.list(names(labels))
+
+#patient demographics:
+dist_check(dat$Age) #normal
+
+#date of diagnosis: 2 year date format, but some are 19 and some are 20:
+#any dates between 00 and 19 are 2000s, any greater than 19 are 1900s
+dat$date_of_dx_year<-substr(dat$DateOfDiagnosis,nchar(as.character(dat$DateOfDiagnosis))-1,
+                            nchar(as.character(dat$DateOfDiagnosis)))
+dat$date_of_dx_year4<-NA
+dat$date_of_dx_year4[dat$date_of_dx_year<=19]<-paste0("20",dat$date_of_dx_year[dat$date_of_dx_year<=19])
+dat$date_of_dx_year4[dat$date_of_dx_year>19]<-paste0("19",dat$date_of_dx_year[dat$date_of_dx_year>19])
+dat$date_of_dx_year4[dat$date_of_dx_year4==20]<-NA
+dat$DateOfDiagnosis_4<-substr(as.character(dat$DateOfDiagnosis),0,nchar(as.character(dat$DateOfDiagnosis))-2)
+dat$DateOfDiagnosis_4<-paste0(dat$DateOfDiagnosis_4,as.character(dat$date_of_dx_year4))
+#temp<-dat[,c(123,141:143)]
+dat$DateOfDiagnosis_4<-as.POSIXct(dat$DateOfDiagnosis_4,format="%d-%B-%Y")
+
+dat$B_StartDate<-as.POSIXct(dat$B_StartDate,format="%m/%d/%Y %H:%M")
+dat$duration_of_diabetes_at_baseline_days<-dat$B_StartDate-dat$DateOfDiagnosis_4
+dat$duration_of_diabetes_at_baseline_years<-as.numeric(dat$duration_of_diabetes_at_baseline_days)/365
+label(dat$duration_of_diabetes_at_baseline_years)<-"Duration of diabetes at baseline (years)"
+dist_check(dat$duration_of_diabetes_at_baseline_years) 
+
+dat$DiabetesType<-as.factor(dat$DiabetesType) #1061 Type 1 - remove all "type 2","unknown" and "missing"??
+
+dat$B_CGMUSE<-as.factor(dat$B_CGMUSE) #ask laurel how to categorize
+
+dat$BaselineMethod<-as.factor(dat$BaselineMethod)
+
+table(dat$B_RESPONDENT)
+
+###Survey Data: BASELINE
+#first remove qualitative questions:
+dat<-dat[,-c(which(colnames(dat)=="Baseline_1.qualitative"),
+             which(colnames(dat)=="Baseline_2.qualitative"),
+             which(colnames(dat)=="post6m_1.qualitative"),
+             which(colnames(dat)=="post6m_2.qualitative"))]
+replace<-function(x){
+  temp<-x
+  temp<-factor(x,levels=c(levels(x),"1","10"))
+  temp[temp=="Very Unsatisfied\n1"]<-1
+  temp[temp=="Very\nSatisfied\n10"]<-10
+  temp[temp=="Not At All\n\n1"]<-1
+  temp[temp=="A Lot\n\n10"]<-10
+  temp[temp=="Strongly\nDisagree\n1"]<-1
+  temp[temp=="Strongly\nAgree\n10"]<-10
+  temp[temp=="Never\n1"]<-1
+  temp[temp=="Always\n10"]<-10
+  temp[temp=="A lot less\n1"]<-1
+  temp[temp=="A lot more\n10"]<-10
+  temp<-factor(temp)
+  return(temp)
+}
+
+dat[,c(which(colnames(dat)=="Baseline_1"):
+         which(colnames(dat)=="Baseline_12"))]<-lapply(dat[,c(which(colnames(dat)=="Baseline_1"):
+                                                                which(colnames(dat)=="Baseline_12"))],replace)
+dat[,c(which(colnames(dat)=="post2m_1"):
+         which(colnames(dat)=="post2m_12"))]<-lapply(dat[,c(which(colnames(dat)=="post2m_1"):
+                                                            which(colnames(dat)=="post2m_12"))],replace)
+dat[,c(which(colnames(dat)=="post4m_1"):
+         which(colnames(dat)=="post4m_12"))]<-lapply(dat[,c(which(colnames(dat)=="post4m_1"):
+                                                            which(colnames(dat)=="post4m_12"))],replace)
+dat[,c(which(colnames(dat)=="post6m_1"):
+         which(colnames(dat)=="post6m_12"))]<-lapply(dat[,c(which(colnames(dat)=="post6m_1"):
+                                                              which(colnames(dat)=="post6m_12"))],replace)
+#number of questions completed:
+y_n<-function(x){
+  temp<-x
+  temp.2<-NA
+  temp.2<-ifelse(is.na(temp),0,1)
+  return(temp.2)
+}
+
+dat<-cbind(dat, setNames(lapply(dat[,c(which(colnames(dat)=="Baseline_1"):
+                                    which(colnames(dat)=="Baseline_12"),
+                                    which(colnames(dat)=="post2m_1"):
+                                      which(colnames(dat)=="post2m_12"),
+                                    which(colnames(dat)=="post4m_1"):
+                                      which(colnames(dat)=="post4m_12"),
+                                    which(colnames(dat)=="post6m_1"):
+                                      which(colnames(dat)=="post6m_12"))], y_n),
+                   paste0(names(dat[,c(which(colnames(dat)=="Baseline_1"):
+                                         which(colnames(dat)=="Baseline_12"),
+                                       which(colnames(dat)=="post2m_1"):
+                                         which(colnames(dat)=="post2m_12"),
+                                       which(colnames(dat)=="post4m_1"):
+                                         which(colnames(dat)=="post4m_12"),
+                                       which(colnames(dat)=="post6m_1"):
+                                         which(colnames(dat)=="post6m_12"))]), "_yn")))
+
+dat$baseline_num_complete<-rowSums(dat[,c(which(colnames(dat)=="Baseline_1_yn"):
+                                            which(colnames(dat)=="Baseline_12_yn"))])
+
+dat$post2m_num_complete<-rowSums(dat[,c(which(colnames(dat)=="post2m_1_yn"):
+                                            which(colnames(dat)=="post2m_12_yn"))])
+
+dat$post4m_num_complete<-rowSums(dat[,c(which(colnames(dat)=="post4m_1_yn"):
+                                            which(colnames(dat)=="post4m_12_yn"))])
+
+dat$post6m_num_complete<-rowSums(dat[,c(which(colnames(dat)=="post6m_1_yn"):
+                                            which(colnames(dat)=="post6m_12_yn"))])
+###Survey Data: 2mo:
+# table(dat$Baseline_PARAMEDIC) #20+ answer??
+# table(dat$Baseline_ER)
+# table(dat$Baseline_HOSPITAL)
+# dist_check(dat$Baseline_A1C)
+# dist_check(dat$Baseline_TDD) #skewed
+# dat$Baseline_TDD_l<-log(dat$Baseline_TDD)
+
+
