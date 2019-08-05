@@ -10,26 +10,30 @@ dat<-read.csv('S:/Shared Projects/Laura/BDC/Projects/Laurel Messer/Tandem/Data/B
 label(dat[,c(1:131)])<-as.list(names(labels))
 
 #patient demographics:
-dist_check(dat$Age) #normal
-
+#age is at 6 months:
+# dat$B_StartDate<-as.POSIXct(dat$B_StartDate,format="%m/%d/%Y %H:%M")
+# dat$post6m_StartDate<-as.POSIXct(dat$post6m_StartDate,format="%m/%d/%Y %H:%M")
+# dat$yrs_in_study<-(dat$post6m_StartDate-dat$B_StartDate)/365
+# 
+# dat$age_at_baseline<-as.numeric(dat$Age-dat$yrs_in_study)
 #date of diagnosis: 2 year date format, but some are 19 and some are 20:
 #any dates between 00 and 19 are 2000s, any greater than 19 are 1900s
 dat$date_of_dx_year<-substr(dat$DateOfDiagnosis,nchar(as.character(dat$DateOfDiagnosis))-1,
                             nchar(as.character(dat$DateOfDiagnosis)))
 dat$date_of_dx_year4<-NA
-dat$date_of_dx_year4[dat$date_of_dx_year<=19]<-paste0("20",dat$date_of_dx_year[dat$date_of_dx_year<=19])
-dat$date_of_dx_year4[dat$date_of_dx_year>19]<-paste0("19",dat$date_of_dx_year[dat$date_of_dx_year>19])
-dat$date_of_dx_year4[dat$date_of_dx_year4==20]<-NA
+dat$date_of_dx_year4[dat$date_of_dx_year<=19 &!is.na(dat$date_of_dx_year)]<-
+  paste0("20",dat$date_of_dx_year[dat$date_of_dx_year<=19 &!is.na(dat$date_of_dx_year)])
+dat$date_of_dx_year4[dat$date_of_dx_year>19 &!is.na(dat$date_of_dx_year)]<-
+  paste0("19",dat$date_of_dx_year[dat$date_of_dx_year>19 &!is.na(dat$date_of_dx_year)])
 dat$DateOfDiagnosis_4<-substr(as.character(dat$DateOfDiagnosis),0,nchar(as.character(dat$DateOfDiagnosis))-2)
 dat$DateOfDiagnosis_4<-paste0(dat$DateOfDiagnosis_4,as.character(dat$date_of_dx_year4))
 #temp<-dat[,c(123,141:143)]
 dat$DateOfDiagnosis_4<-as.POSIXct(dat$DateOfDiagnosis_4,format="%d-%B-%Y")
-
 dat$B_StartDate<-as.POSIXct(dat$B_StartDate,format="%m/%d/%Y %H:%M")
 dat$duration_of_diabetes_at_baseline_days<-dat$B_StartDate-dat$DateOfDiagnosis_4
 dat$duration_of_diabetes_at_baseline_years<-as.numeric(dat$duration_of_diabetes_at_baseline_days)/365
 label(dat$duration_of_diabetes_at_baseline_years)<-"Duration of diabetes at baseline (years)"
-dist_check(dat$duration_of_diabetes_at_baseline_years) 
+# dist_check(dat$duration_of_diabetes_at_baseline_years) 
 
 dat$DiabetesType<-as.factor(dat$DiabetesType) #1061 Type 1 - remove all "type 2","unknown" and "missing"??
 
@@ -46,19 +50,25 @@ dat<-dat[,-c(which(colnames(dat)=="Baseline_1.qualitative"),
              which(colnames(dat)=="post6m_1.qualitative"),
              which(colnames(dat)=="post6m_2.qualitative"))]
 replace<-function(x){
+  #x<-dat$post6m_2
   temp<-x
   temp<-factor(x,levels=c(levels(x),"1","10"))
   temp[temp=="Very Unsatisfied\n1"]<-1
   temp[temp=="Very\nSatisfied\n10"]<-10
   temp[temp=="Not At All\n\n1"]<-1
+  temp[temp=="Not at all\n1"]<-1
   temp[temp=="A Lot\n\n10"]<-10
+  temp[temp=="A lot\n10"]<-10
   temp[temp=="Strongly\nDisagree\n1"]<-1
   temp[temp=="Strongly\nAgree\n10"]<-10
   temp[temp=="Never\n1"]<-1
   temp[temp=="Always\n10"]<-10
   temp[temp=="A lot less\n1"]<-1
   temp[temp=="A lot more\n10"]<-10
+  temp[temp=="All the time\n10"]<-10
   temp<-factor(temp)
+  temp<-as.numeric(as.character(temp))
+  label(temp)<-paste0(label(x))
   return(temp)
 }
 
@@ -74,6 +84,19 @@ dat[,c(which(colnames(dat)=="post4m_1"):
 dat[,c(which(colnames(dat)=="post6m_1"):
          which(colnames(dat)=="post6m_12"))]<-lapply(dat[,c(which(colnames(dat)=="post6m_1"):
                                                               which(colnames(dat)=="post6m_12"))],replace)
+
+dat[,c(which(colnames(dat)=="post2m_BIQuse"),
+         which(colnames(dat)=="post4m_BIQuse"),
+          which(colnames(dat)=="post6m_BIQuse"))]<-lapply(dat[,c(which(colnames(dat)=="post2m_BIQuse"),
+                                                                 which(colnames(dat)=="post4m_BIQuse"),
+                                                                 which(colnames(dat)=="post6m_BIQuse"))],replace)
+dat$post2m_BIQ_YES<-as.factor(ifelse(dat$post2m_BIQuse==1,0,1))
+dat$post4m_BIQ_YES<-as.factor(ifelse(dat$post4m_BIQuse==1,0,1))
+dat$post6m_BIQ_YES<-as.factor(ifelse(dat$post6m_BIQuse==1,0,1))
+label(dat$post2m_BIQ_YES)<-"2mo: used BIQ"
+label(dat$post4m_BIQ_YES)<-"4mo: used BIQ"
+label(dat$post6m_BIQ_YES)<-"6mo: used BIQ"
+
 #number of questions completed:
 y_n<-function(x){
   temp<-x
@@ -110,6 +133,50 @@ dat$post4m_num_complete<-rowSums(dat[,c(which(colnames(dat)=="post4m_1_yn"):
 
 dat$post6m_num_complete<-rowSums(dat[,c(which(colnames(dat)=="post6m_1_yn"):
                                             which(colnames(dat)=="post6m_12_yn"))])
+
+dat[,c(which(colnames(dat)=="baseline_num_complete"):
+         which(colnames(dat)=="post6m_num_complete"))]<-lapply(dat[,c(which(colnames(dat)=="baseline_num_complete"):
+                                                                        which(colnames(dat)=="post6m_num_complete"))],
+                                                               as.factor)
+label(dat$baseline_num_complete)<-"Number of questions completed at baseline"
+label(dat$post2m_num_complete)<-"Number of questions completed at 2 mo"
+label(dat$post4m_num_complete)<-"Number of questions completed at 4 mo"
+label(dat$post6m_num_complete)<-"Number of questions completed at 6 mo"
+
+dat$baseline_complete_yn<-as.factor(ifelse(dat$baseline_num_complete==12,1,0))
+dat$post2m_complete_yn<-as.factor(ifelse(dat$post2m_num_complete==12,1,0))
+dat$post4m_complete_yn<-as.factor(ifelse(dat$post4m_num_complete==12,1,0))
+dat$post6m_complete_yn<-as.factor(ifelse(dat$post6m_num_complete==12,1,0))
+
+label(dat$baseline_complete_yn)<-"Baseline fully completed"
+label(dat$post2m_complete_yn)<-"2mo fully completed"
+label(dat$post4m_complete_yn)<-"4mo fully completed"
+label(dat$post6m_complete_yn)<-"6mo fully completed"
+
+#combinations of survey missingness:
+dat$baseline_2mo_complete<-as.factor(ifelse(dat$baseline_complete_yn==1 & dat$post2m_complete_yn==1,1,0))
+dat$baseline_4mo_complete<-as.factor(ifelse(dat$baseline_complete_yn==1 & dat$post4m_complete_yn==1,1,0))
+dat$baseline_2mo_or_4mo_complete<-as.factor(ifelse(dat$post2m_complete_yn==1 | dat$post4m_complete_yn==1,1,0))
+dat$baseline_6mo_complete<-as.factor(ifelse(dat$baseline_complete_yn==1 & dat$post6m_complete_yn==1,1,0))
+
+dat$post2mo_6mo_complete<-as.factor(ifelse(dat$post2m_complete_yn==1 & dat$post6m_complete_yn==1,1,0))
+dat$post4mo_6mo_complete<-as.factor(ifelse(dat$post4m_complete_yn==1 & dat$post6m_complete_yn==1,1,0))
+dat$post2mo_or_4mo_6mo_complete<-as.factor(ifelse(dat$post2mo_6mo_complete==1 | dat$post4mo_6mo_complete==1,1,0))
+
+dat$allcomplete<-as.factor(ifelse(dat$baseline_complete_yn==1 & dat$post2m_complete_yn==1 & dat$post6m_complete_yn==1,1,0))
+
+label(dat$baseline_2mo_complete)<-"Baseline and 2mo Complete"
+label(dat$baseline_4mo_complete)<-"Baseline and 4mo Complete"
+label(dat$baseline_2mo_or_4mo_complete)<-"Baseline and 2mo OR 4mo Complete"
+label(dat$baseline_6mo_complete)<-"Baseline and 6mo Complete"
+
+label(dat$post2mo_6mo_complete)<-"2mo and 6mo Complete"
+label(dat$post4mo_6mo_complete)<-"4mo and 6mo Complete"
+label(dat$post2mo_or_4mo_6mo_complete)<-"2mo OR 4mo, and 6mo Complete"
+
+label(dat$allcomplete)<-"All time points Complete"
+
+
 ###Survey Data: 2mo:
 # table(dat$Baseline_PARAMEDIC) #20+ answer??
 # table(dat$Baseline_ER)
