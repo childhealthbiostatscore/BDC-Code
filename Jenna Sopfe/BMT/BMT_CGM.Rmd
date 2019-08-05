@@ -11,6 +11,7 @@ library(redcapAPI)
 library(tableone)
 library(skimr)
 library(knitr)
+library(AGD)
 library(tidyverse)
 ```
 
@@ -20,8 +21,6 @@ source("/Users/timvigers/Documents/GitHub/BDC-Code/api_tokens.R")
 rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
                          token = BMT_CGM)
 data_full <- exportRecords(rcon)
-# Format columns
-data_full$bmi_percentile <- as.numeric(data_full$bmi_percentile)
 ```
 
 ```{r echo=FALSE}
@@ -44,6 +43,13 @@ demographics$Race[which(demographics$race_multi == "yes")] <- "Multiple"
 demographics$Race[which(demographics$Race == "")] <- "Unknown"
 # Calculate age at transplant
 demographics$AgeTx <- as.numeric(difftime(demographics$date_of_tx,demographics$date_of_birth,units = "days")) / 365.25
+# Format/calculate variables for BMI calculation
+demographics$sex <- demographics$gender
+levels(demographics$sex) <- c("F","M")
+# Calculate BMI and BMI percentile
+demographics$bmi <- as.numeric(demographics$weight) / ((as.numeric(demographics$height)/100)^2)
+demographics$bmi_z <- y2z(demographics$bmi,x = demographics$AgeTx,sex = demographics$sex,ref = get("cdc.bmi"))
+demographics$bmi_percentile <- round(pnorm(demographics$bmi_z) * 100,3)
 ```
 
 ## Table 1: Descriptive Characteristics
@@ -180,3 +186,48 @@ t2_all$`% Missing` <- as.character(t2_all$`% Missing`)
 t2_all$`% Missing`[3] <- "0.0"
 kable(t2_all,row.names = F)
 ```
+
+# CGM Glucose vs. Serum
+
+```{r echo=FALSE,cache=TRUE}
+# Read detailed CGM data and serum data
+cgm <- read.csv("/Volumes/som-1/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/BMT/Data_Cleaned/Prospective HSCT CGM Data Updated 6.24.19 FULL DATA SET.csv")
+serum <- read.csv("/Volumes/som-1/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/BMT/Data_Cleaned/Glucose_Monitoring_061019 edited 6.25.19.csv",na.strings = "") %>% 
+  filter(!is.na(glucose_spec_taken_datetime))
+# Format
+cgm$Time <- lubridate::mdy_hm(cgm$Time)
+cgm$Tx_date <- lubridate::mdy(cgm$Tx_date)
+serum$glucose_spec_taken_datetime <- lubridate::dmy_hms(serum$glucose_spec_taken_datetime)
+serum$date_of_tx <- lubridate::mdy(serum$date_of_tx)
+colnames(cgm)[1] <- "study_id"
+# Days from Tx
+cgm$Days <- as.numeric(difftime(cgm$Time,cgm$Tx_date,units = "days"))
+# Find CGM values closest to serum - really slow because of double for loop
+for (r in 1:nrow(serum)) {
+  id <- serum[r,"study_id"] # Match within study ID (some patients' wears overlap)
+  temp <- cgm[which(cgm$study_id == id),]
+  dates <- cgm_data[which(cgm_data$study_id == id),] # Get dates of CGM wear
+  dates <- dates[which(!is.na(dates$sens_place) & !is.na(dates$sens_remove)),]
+  date_list <- c()
+  for (row in 1:nrow(dates)) {
+    date_list <- c(date_list,dates$sens_place[row]:dates$sens_remove[row])
+  }
+  if (serum$glucose_spec_taken_datetime[r] %in% date_list){
+    serum[r,"delete"] <- "N" # Exclude serum if not during CGM wear
+  } else {
+    serum[r,"delete"] <- "Y"
+  }
+  time <- temp$Time[which.min(abs(serum$glucose_spec_taken_datetime[r] - temp$Time))]
+  serum[r,"Time"] <- time
+}
+# Remove serum values when patient was not wearing a CGM
+serum <- serum[serum$delete == "N",]
+# Join
+cgm_serum <- left_join(serum,cgm,by=c("study_id","Time"))
+cgm_serum <- cgm_serum %>% select(study_id,mrn,glucose_spec_taken_datetime,glucose_rslt,Time,Historic_Glucose,date_of_tx,Days)
+colnames(cgm_serum) <- c("ID","MRN","Serum Time","Serum Value","CGM Time","CGM Value","Date of Tx","Days from Tx")
+cgm_serum <- cgm_serum %>% arrange(ID,`Serum Time`)
+# Write to data folder
+write.csv(cgm_serum,file = "/Volumes/som-1/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/BMT/Data_Cleaned/cgm_serum_comparison.csv",row.names = F,na="")
+```
+
