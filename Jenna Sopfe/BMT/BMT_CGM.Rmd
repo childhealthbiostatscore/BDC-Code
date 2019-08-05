@@ -2,7 +2,7 @@
 title: "BMT CGM Analysis"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: html_document
+output: word_document
 ---
 
 ```{r setup, include=FALSE}
@@ -201,7 +201,7 @@ serum$glucose_spec_taken_datetime <- lubridate::dmy_hms(serum$glucose_spec_taken
 serum$date_of_tx <- lubridate::mdy(serum$date_of_tx)
 colnames(cgm)[1] <- "study_id"
 # Days from Tx
-cgm$Days <- as.numeric(difftime(cgm$Time,cgm$Tx_date,units = "days"))
+cgm$Days <- round(as.numeric(difftime(cgm$Time,cgm$Tx_date,units = "days")))
 # Find CGM values closest to serum - really slow because of double for loop
 for (r in 1:nrow(serum)) {
   id <- serum[r,"study_id"] # Match within study ID (some patients' wears overlap)
@@ -227,7 +227,49 @@ cgm_serum <- left_join(serum,cgm,by=c("study_id","Time"))
 cgm_serum <- cgm_serum %>% select(study_id,mrn,glucose_spec_taken_datetime,glucose_rslt,Time,Historic_Glucose,date_of_tx,Days)
 colnames(cgm_serum) <- c("ID","MRN","Serum Time","Serum Value","CGM Time","CGM Value","Date of Tx","Days from Tx")
 cgm_serum <- cgm_serum %>% arrange(ID,`Serum Time`)
-# Write to data folder
-write.csv(cgm_serum,file = "/Volumes/som-1/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/BMT/Data_Cleaned/cgm_serum_comparison.csv",row.names = F,na="")
+# Calculate MARD
+cgm_serum$`Absolute Diff.` <- abs(cgm_serum$`CGM Value` - cgm_serum$`Serum Value`)
+cgm_serum$`Absolute Relative Diff.` <- cgm_serum$`Absolute Diff.` / cgm_serum$`Serum Value`
+# Time periods
+cgm_serum$`Time Period` <- cut(cgm_serum$`Days from Tx`,breaks = c(-7,0,15,29,43,60,Inf),
+                               labels = c("Days -7 to -1","Days 0-14","Days 15-28","Days 29-42","Days 43-60","Days 60+"),right = F)
 ```
 
+## Table 3: Continuous Glucose Monitoring and Blood Glucose Monitoring Metrics
+
+```{r echo=FALSE}
+vars <- c("CGM Value","Serum Value","Absolute Diff.","Absolute Relative Diff.")
+t3 <- CreateTableOne(vars,data = cgm_serum)
+kableone(t3)
+```
+
+## Table 4: Continuous Glucose Monitoring Accuracy by Time Period
+
+```{r echo=FALSE,warning=FALSE}
+vars <- c("Absolute Diff.","Absolute Relative Diff.")
+t4 <- CreateTableOne(vars,strata = "Time Period",data = cgm_serum)
+t4 <- as.data.frame(print(t4,printToggle = F))
+t4 <- t(t4)
+t4 <- t4[1:5,]
+kable(t4)
+```
+
+## Figure 1: Glucose Distribution by Time Period
+
+### a. CGM Values
+
+```{r echo=FALSE}
+fig1a <- ggplot(data = cgm_serum[!is.na(cgm_serum$`Time Period`),],aes(x = `Time Period`,y = `CGM Value`,na.r)) + geom_boxplot()
+fig1a
+```
+
+### b. Serum Values
+
+```{r echo=FALSE}
+fig1b <- ggplot(data = cgm_serum[!is.na(cgm_serum$`Time Period`),],aes(x = `Time Period`,y = `Serum Value`,na.r)) + geom_boxplot()
+fig1b
+```
+
+# Questions for Jenna
+- Did she mean boxplot instead of histogram?
+- What to do about serum values more than 7 days prior to transplant?
