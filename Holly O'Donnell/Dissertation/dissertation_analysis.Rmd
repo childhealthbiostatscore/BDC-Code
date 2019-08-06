@@ -14,7 +14,7 @@ library(knitr)
 library(tidyverse)
 library(lme4)
 library(nlme)
-library(glmmLasso)
+library(MASS)
 ```
 
 ```{r echo=FALSE,include=FALSE}
@@ -52,7 +52,9 @@ dat <- dat %>% group_by(ID) %>%
            extremeBG_without_carb_with_bolus_piu[1])
 # Change scores
 dat <- dat %>% group_by(ID) %>%
-  mutate(readings_per_day_change = readings_per_day - readings_per_day[1])
+  mutate(readings_per_day_change = readings_per_day - readings_per_day[1],
+         highBG_change = highBG_without_carb_with_bolus_piu - highBG_without_carb_with_bolus_piu[1],
+         carb_inputs_per_day_change = carb_inputs_per_day - carb_inputs_per_day[1])
 ```
 
 # Model Selection (BG checks per day)
@@ -402,38 +404,70 @@ kable(summary(extreme_bolus_mod)$tTable,caption = "Fixed Effects")
 
 # Psych Outcomes
 
-## Depression
-
 ```{r echo=FALSE,eval=FALSE}
 # Model selection
-#LME4 model to check convergence
-full_mod_l <- lmer(readings_per_day ~ Treatment*zDEPRESSION + Treatment*StudyVisit + HbA1c +
+# Make non-missing dataframe
+step_data <- dat %>% select(ID,readings_per_day_change,Treatment,zDEPRESSION,
+                            HbA1c,StudyVisit,Sex,age_years,T1D_dur_years,
+                            IncomeLevel,Insurance)
+step_data <- step_data[complete.cases(step_data),]
+# Stepwise selection by AIC
+full_mod_l <- lme(readings_per_day_change ~ Treatment*zDEPRESSION*StudyVisit + 
                      Sex + age_years + T1D_dur_years + Treatment*IncomeLevel +
-                     Treatment*Insurance + readings_per_day_b + (1|Site/ID), 
-                   data = dat) # Singular fit, try simpler model
-simple_mod_l <- lmer(readings_per_day ~ Treatment*zDEPRESSION*StudyVisit + HbA1c +
-                     Sex + age_years + T1D_dur_years + IncomeLevel + Insurance + readings_per_day_b + (1|Site/ID), 
-                   data = dat) # Still singular, try simpler random effects
-simple_mod_l <- lmer(readings_per_day ~ Treatment*zDEPRESSION*StudyVisit + HbA1c +
-                     Sex + age_years + T1D_dur_years + IncomeLevel + Insurance + readings_per_day_b + (1|ID), 
-                   data = dat) # Singular again, try without triple interaction, but with nested random effects
-simple_mod_l <- lmer(readings_per_day ~ Treatment*zDEPRESSION + Treatment*StudyVisit + HbA1c +
-                     Sex + age_years + T1D_dur_years + IncomeLevel + Insurance + readings_per_day_b + (1|Site/ID), 
-                   data = dat) # STILL singular, ugh. Start simple and add back in.
-simple_mod_l <- lmer(readings_per_day ~ Treatment*zDEPRESSION*StudyVisit + HbA1c
-                     + Sex + age_years + Insurance + T1D_dur_years + IncomeLevel + (1|Site/ID), 
-                   data = dat) # Adjusting for baseline value of the outcome appears to be causing the problems. Try change scores.
-full_mod_l <- lme(readings_per_day_change ~ Treatment*zDEPRESSION*StudyVisit + HbA1c +
-                     Sex + age_years + T1D_dur_years + IncomeLevel + Insurance,random = ~1|ID,na.action = na.omit, 
-                   data = dat) # Change score works without nested random effect
-reduced_mod_l <- lme(readings_per_day_change ~ Treatment*zDEPRESSION*StudyVisit,random =~1|ID,na.action = na.omit, 
-                   data = dat)
+                     Treatment*Insurance,random = ~1|ID,data = step_data,
+                  na.action = na.omit,method = "ML")
+step_mod <- stepAIC(full_mod_l) 
+# The model readings_per_day_change ~ Treatment + zDEPRESSION + StudyVisit + 
+# Insurance + Treatment:StudyVisit + zDEPRESSION:StudyVisit 
+# is the best, and also makes the most sense in terms of the question.
+
+# Check another outcome
+step_data <- dat %>% select(ID,highBG_change,Treatment,zDEPRESSION,
+                            HbA1c,StudyVisit,Sex,age_years,T1D_dur_years,
+                            IncomeLevel,Insurance)
+step_data <- step_data[complete.cases(step_data),]
+full_mod_l <- lme(highBG_change ~ Treatment*zDEPRESSION*StudyVisit + 
+                     Sex + age_years + T1D_dur_years + Treatment*IncomeLevel +
+                     Treatment*Insurance,random = ~1|ID,data = step_data,
+                  na.action = na.omit,method = "ML")
+step_mod <- stepAIC(full_mod_l) 
+
+# highBG_change ~ Treatment + zDEPRESSION + StudyVisit + Sex + age_years + 
+# T1D_dur_years + IncomeLevel + Insurance + Treatment:zDEPRESSION + 
+# Treatment:IncomeLevel + Treatment:Insurance 
+# is the best model that includes Treatment:zDEPRESSION. 
+
+# One more outcome.
+step_data <- dat %>% select(ID,carb_inputs_per_day_change,Treatment,zDEPRESSION,
+                            HbA1c,StudyVisit,Sex,age_years,T1D_dur_years,
+                            IncomeLevel,Insurance)
+step_data <- step_data[complete.cases(step_data),]
+full_mod_l <- lme(carb_inputs_per_day_change ~ Treatment*zDEPRESSION*StudyVisit + 
+                     Sex + age_years + T1D_dur_years + Treatment*IncomeLevel +
+                     Treatment*Insurance,random = ~1|ID,data = step_data,
+                  na.action = na.omit,method = "ML")
+step_mod <- stepAIC(full_mod_l) 
+# carb_inputs_per_day_change ~ Treatment + zDEPRESSION + StudyVisit + 
+# Treatment:zDEPRESSION
+# is the best. Because high BG change has a lot of covariates but the other ones 
+# don't, I think it makes sense to stick with a model similar to the outcomes 
+# above, but without HbA1c:
+# outcome ~ Treatment + zDEPRESSION + StudyVisit + Treatment:StudyVisit + 
+# zDEPRESSION:StudyVisit + Sex + age_years + IncomeLevel + Insurance
 ```
 
-## FOH_C_Help
+## Depression
 
-```{r echo=FALSE,eval=FALSE}
-
+```{r}
+# Singular fit
+bg_checks_mod <- lmer(readings_per_day_change ~ Treatment*zDEPRESSION + 
+                       StudyVisit + Treatment:StudyVisit + 
+                       Sex + age_years + IncomeLevel + Insurance + (1|ID),
+                     data = dat)
+# Okay fit
+bg_checks_mod <- lmer(readings_per_day_change ~ Treatment*zDEPRESSION + 
+                       StudyVisit + Treatment:StudyVisit + (1|ID),
+                     data = dat)
+plot(bg_checks_mod)
 ```
 
-- Send Allison paper on change scores
