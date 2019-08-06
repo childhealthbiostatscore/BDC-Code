@@ -163,6 +163,15 @@ dat$post2mo_6mo_complete<-as.factor(ifelse(dat$post2m_complete_yn==1 & dat$post6
 dat$post4mo_6mo_complete<-as.factor(ifelse(dat$post4m_complete_yn==1 & dat$post6m_complete_yn==1,1,0))
 dat$post2mo_or_4mo_6mo_complete<-as.factor(ifelse(dat$post2mo_6mo_complete==1 | dat$post4mo_6mo_complete==1,1,0))
 
+dat$cohort_complete<-as.factor(ifelse(dat$baseline_complete_yn==1 &
+                                        (dat$post2mo_6mo_complete==1 | dat$post4mo_6mo_complete==1),1,0))
+
+dat$cohort_complete<-as.factor(ifelse(dat$baseline_6mo_complete==1 & dat$baseline_complete_yn==1 &
+                                        (dat$baseline_2mo_complete==1 | dat$baseline_4mo_complete==1),1,0))
+
+dat$cohort_complete<-as.factor(ifelse(dat$baseline_6mo_complete==1 & dat$baseline_complete_yn==1 &
+                                        (dat$baseline_4mo_complete==1),1,0))
+
 dat$allcomplete<-as.factor(ifelse(dat$baseline_complete_yn==1 & dat$post2m_complete_yn==1 & dat$post6m_complete_yn==1,1,0))
 
 label(dat$baseline_2mo_complete)<-"Baseline and 2mo Complete"
