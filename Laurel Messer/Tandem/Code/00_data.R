@@ -37,12 +37,36 @@ label(dat$duration_of_diabetes_at_baseline_years)<-"Duration of diabetes at base
 
 dat$DiabetesType<-as.factor(dat$DiabetesType) #1061 Type 1 - remove all "type 2","unknown" and "missing"??
 
-dat$B_CGMUSE<-as.factor(dat$B_CGMUSE) #ask laurel how to categorize
 
+dat$cgm_yn<-NA
+dat$cgm_yn[dat$B_CGMUSE=="No, I do not currently use a CGM, but I used to in the past."]<-"Yes"
+dat$cgm_yn[dat$B_CGMUSE=="Yes, I use a Dexcom CGM."]<-"Yes"
+dat$cgm_yn[dat$B_CGMUSE=="Yes, I use a Medtronic CGM."]<-"Yes"
+dat$cgm_yn[dat$B_CGMUSE=="Yes, I use the Abbott Freestyle Libre."]<-"Yes"
+dat$cgm_yn[dat$B_CGMUSE=="No, I have never used a CGM."]<-"No"
+dat$cgm_yn<-as.factor(dat$cgm_yn)
+label(dat$cgm_yn)<-"Any previous CGM use?"
 dat$BaselineMethod<-as.factor(dat$BaselineMethod)
+
+dat$method_cat<-NA
+dat$method_cat[dat$BaselineMethod=="Animas Insulin Pump"]<-"Non-Tandem Pump"
+dat$method_cat[dat$BaselineMethod=="Insulet OmniPod Insulin Pump"]<-"Non-Tandem Pump"
+dat$method_cat[dat$BaselineMethod=="Medtronic MiniMed Insulin Pump"]<-"Non-Tandem Pump"
+dat$method_cat[dat$BaselineMethod=="Multiple Daily Injections (e.g., insulin pen, syringe)"]<-"Injections"
+dat$method_cat[dat$BaselineMethod=="Other (Please Specify)"]<-"Other"
+dat$method_cat[dat$BaselineMethod=="Roche Accu-Chek Insulin Pump"]<-"Non-Tandem Pump"
+dat$method_cat[dat$BaselineMethod=="Tandem Insulin Pump"]<-"Tandem Pump"
+dat$method_cat<-as.factor(dat$method_cat)
+label(dat$method_cat)<-"Previous insulin method"
 
 table(dat$B_RESPONDENT)
 
+dat$age_cat<-NA
+dat$age_cat[dat$Age<18]<-"<18"
+dat$age_cat[dat$Age>=18]<-">=18"
+
+dat$age_cat<-as.factor(dat$age_cat)
+label(dat$age_cat)<-"Age, categorical"
 ###Survey Data: BASELINE
 #first remove qualitative questions:
 dat<-dat[,-c(which(colnames(dat)=="Baseline_1.qualitative"),
@@ -97,7 +121,8 @@ label(dat$post2m_BIQ_YES)<-"2mo: used BIQ"
 label(dat$post4m_BIQ_YES)<-"4mo: used BIQ"
 label(dat$post6m_BIQ_YES)<-"6mo: used BIQ"
 
-#number of questions completed:
+
+#SURVEY COMPLETION DATA:
 y_n<-function(x){
   temp<-x
   temp.2<-NA
@@ -143,10 +168,10 @@ label(dat$post2m_num_complete)<-"Number of questions completed at 2 mo"
 label(dat$post4m_num_complete)<-"Number of questions completed at 4 mo"
 label(dat$post6m_num_complete)<-"Number of questions completed at 6 mo"
 
-dat$baseline_complete_yn<-as.factor(ifelse(dat$baseline_num_complete==12,1,0))
-dat$post2m_complete_yn<-as.factor(ifelse(dat$post2m_num_complete==12,1,0))
-dat$post4m_complete_yn<-as.factor(ifelse(dat$post4m_num_complete==12,1,0))
-dat$post6m_complete_yn<-as.factor(ifelse(dat$post6m_num_complete==12,1,0))
+dat$baseline_complete_yn<-as.factor(ifelse(dat$baseline_num_complete!=0,1,0))
+dat$post2m_complete_yn<-as.factor(ifelse(dat$post2m_num_complete!=0,1,0))
+dat$post4m_complete_yn<-as.factor(ifelse(dat$post4m_num_complete!=0,1,0))
+dat$post6m_complete_yn<-as.factor(ifelse(dat$post6m_num_complete!=0,1,0))
 
 label(dat$baseline_complete_yn)<-"Baseline fully completed"
 label(dat$post2m_complete_yn)<-"2mo fully completed"
@@ -158,40 +183,42 @@ dat$baseline_2mo_complete<-as.factor(ifelse(dat$baseline_complete_yn==1 & dat$po
 dat$baseline_4mo_complete<-as.factor(ifelse(dat$baseline_complete_yn==1 & dat$post4m_complete_yn==1,1,0))
 dat$baseline_2mo_or_4mo_complete<-as.factor(ifelse(dat$post2m_complete_yn==1 | dat$post4m_complete_yn==1,1,0))
 dat$baseline_6mo_complete<-as.factor(ifelse(dat$baseline_complete_yn==1 & dat$post6m_complete_yn==1,1,0))
-
 dat$post2mo_6mo_complete<-as.factor(ifelse(dat$post2m_complete_yn==1 & dat$post6m_complete_yn==1,1,0))
 dat$post4mo_6mo_complete<-as.factor(ifelse(dat$post4m_complete_yn==1 & dat$post6m_complete_yn==1,1,0))
 dat$post2mo_or_4mo_6mo_complete<-as.factor(ifelse(dat$post2mo_6mo_complete==1 | dat$post4mo_6mo_complete==1,1,0))
-
-dat$cohort_complete<-as.factor(ifelse(dat$baseline_complete_yn==1 &
-                                        (dat$post2mo_6mo_complete==1 | dat$post4mo_6mo_complete==1),1,0))
-
 dat$cohort_complete<-as.factor(ifelse(dat$baseline_6mo_complete==1 & dat$baseline_complete_yn==1 &
                                         (dat$baseline_2mo_complete==1 | dat$baseline_4mo_complete==1),1,0))
-
-dat$cohort_complete<-as.factor(ifelse(dat$baseline_6mo_complete==1 & dat$baseline_complete_yn==1 &
-                                        (dat$baseline_4mo_complete==1),1,0))
-
 dat$allcomplete<-as.factor(ifelse(dat$baseline_complete_yn==1 & dat$post2m_complete_yn==1 & dat$post6m_complete_yn==1,1,0))
-
 label(dat$baseline_2mo_complete)<-"Baseline and 2mo Complete"
 label(dat$baseline_4mo_complete)<-"Baseline and 4mo Complete"
 label(dat$baseline_2mo_or_4mo_complete)<-"Baseline and 2mo OR 4mo Complete"
 label(dat$baseline_6mo_complete)<-"Baseline and 6mo Complete"
-
 label(dat$post2mo_6mo_complete)<-"2mo and 6mo Complete"
 label(dat$post4mo_6mo_complete)<-"4mo and 6mo Complete"
 label(dat$post2mo_or_4mo_6mo_complete)<-"2mo OR 4mo, and 6mo Complete"
-
 label(dat$allcomplete)<-"All time points Complete"
+###determine which midpoint survey to use:
+dat$mid_point<-NA
+dat$mid_point[dat$baseline_2mo_complete==1]<-"2 mo"
+dat$mid_point[dat$baseline_4mo_complete==1 & dat$baseline_2mo_complete==0]<-"4 mo"
+dat$mid_point<-as.factor(dat$mid_point)
+label(dat$mid_point)<-"First mid-point survey"
+
+dat$midpoint_num_complete<-NA
+dat$midpoint_num_complete[dat$mid_point=="2 mo" & !is.na(dat$mid_point)]<-as.character(dat$post2m_num_complete[dat$mid_point=="2 mo" & 
+                                                                                                                 !is.na(dat$mid_point)])
+dat$midpoint_num_complete[dat$mid_point=="4 mo" & !is.na(dat$mid_point)]<-as.character(dat$post4m_num_complete[dat$mid_point=="4 mo" & 
+                                                                                                                 !is.na(dat$mid_point)])
+dat$midpoint_num_complete<-as.factor(dat$midpoint_num_complete)
+label(dat$midpoint_num_complete)<-"Number of questions completed at midpoint"
 
 
-###Survey Data: 2mo:
-# table(dat$Baseline_PARAMEDIC) #20+ answer??
-# table(dat$Baseline_ER)
-# table(dat$Baseline_HOSPITAL)
-# dist_check(dat$Baseline_A1C)
-# dist_check(dat$Baseline_TDD) #skewed
-# dat$Baseline_TDD_l<-log(dat$Baseline_TDD)
+dat.all<-subset(dat,dat$DiabetesType=="Type 1")
+
+#COHORT FOR SURVEY ANALYSIS:
+dat<-subset(dat.all,dat.all$cohort_complete==1)
+
+
+
 
 
