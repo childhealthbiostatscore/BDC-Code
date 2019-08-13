@@ -7,10 +7,41 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+source("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/Retinopathy/Data_Raw/PregnancyCGM_R_2019-08-12_1528.r")
 library(tableone)
 library(skimr)
 library(knitr)
 library(tidyverse)
+```
+
+```{r echo=FALSE}
+# Get retinopathy data, wide to extra long
+retino <- data %>% filter(redcap_event_name == "retinopathy_arm_1") %>% 
+  select(subject_id,retinop_precon_right.factor:retinop_pp_left.factor) %>%
+  gather(.,visit,value,retinop_precon_right.factor:retinop_pp_left.factor) %>%
+  mutate(eye = str_replace_all(visit,".*_|.factor",""))
+# Get visit number, retinopathy as factor
+retino$visit <- sapply(strsplit(retino$visit,"_"), `[`,2)
+retino$value <- factor(retino$value,
+                       levels = c("None","Mild nonproliferative diabetic retinopathy",
+                          "Mild-moderate nonproliferative diabetic retinopathy",
+                          "Moderate nonproliferative diabetic retinopathy",
+                          "Moderate-severe nonproliferative diabetic retinopathy",
+                          "Severe nonproliferative diabetic retinopathy",
+                          "Proliferative retinopathy"))
+# Extra long to long
+retino <- retino %>% spread(eye,value)
+# Study group
+group <- data %>% filter(redcap_event_name == "baseline_informati_arm_1") %>%
+  select(subject_id,study_group.factor)
+group$Group <- NA
+group$Group[grep("alone",group$study_group.factor)] <- "Alone"
+group$Group[grep("Share",group$study_group.factor)] <- "Share"
+retino <- left_join(retino,group,by="subject_id") %>% 
+  select(subject_id,visit,left,right,Group)
+# Colnames and formatting
+colnames(retino) <- c("subject_id","Visit","Left Eye","Right Eye","Group")
+retino$Visit <- as.factor(retino$Visit)
 ```
 
 ```{r echo=FALSE}
