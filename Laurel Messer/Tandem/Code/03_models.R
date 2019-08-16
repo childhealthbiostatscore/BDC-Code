@@ -3,7 +3,7 @@
 ###DATE: 8/15/2019
 
 library(nlme)
-
+library(lme4)
 source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Laurel Messer/Tandem/Code/00_data.R')
 source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Laurel Messer/Tandem/Code/01_survey_factors.R')
 
@@ -21,7 +21,28 @@ dat.long<-dat.long[order(dat.long$ExternalReference,dat.long$time),]
 
 dat.long$time<-factor(dat.long$time)
 
-####A1c: overall cohort####
+#####FACTOR 1 - not normal
+require(MASS)
+qqp(dat.long$factor1, "norm")
+qqp(dat.long$factor1, "lnorm")
+gam <- fitdistr(dat.long$factor1, "Gamma")
+qqp(dat.long$factor1, "gamma", shape = gam$estimate[[1]], rate = gam$estimate[[2]])
+
+
+dat.long$factor1_2<-dat.long$factor1^3
+hist(dat.long$factor1_2)
+
+
+
+
+#LMM: can't do this
+factor1_uni<-lme(factor1~time+time*method_cat
+                 ,random=~1|ExternalReference,data=dat.long)
+plot(factor1_uni)
+summary(factor1_uni)
+
+
+#####FACTOR 2 - pretty normal
 factor2_uni<-lme(factor2~time+time*method_cat
                      ,random=~1|ExternalReference,data=dat.long)
 plot(factor2_uni)
