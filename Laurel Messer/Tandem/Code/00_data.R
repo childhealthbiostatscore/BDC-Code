@@ -168,10 +168,10 @@ label(dat$post2m_num_complete)<-"Number of questions completed at 2 mo"
 label(dat$post4m_num_complete)<-"Number of questions completed at 4 mo"
 label(dat$post6m_num_complete)<-"Number of questions completed at 6 mo"
 
-dat$baseline_complete_yn<-as.factor(ifelse(dat$baseline_num_complete!=0,1,0))
-dat$post2m_complete_yn<-as.factor(ifelse(dat$post2m_num_complete!=0,1,0))
-dat$post4m_complete_yn<-as.factor(ifelse(dat$post4m_num_complete!=0,1,0))
-dat$post6m_complete_yn<-as.factor(ifelse(dat$post6m_num_complete!=0,1,0))
+dat$baseline_complete_yn<-as.factor(ifelse(dat$baseline_num_complete==12,1,0))
+dat$post2m_complete_yn<-as.factor(ifelse(dat$post2m_num_complete==12,1,0))
+dat$post4m_complete_yn<-as.factor(ifelse(dat$post4m_num_complete==12,1,0))
+dat$post6m_complete_yn<-as.factor(ifelse(dat$post6m_num_complete==12,1,0))
 
 label(dat$baseline_complete_yn)<-"Baseline fully completed"
 label(dat$post2m_complete_yn)<-"2mo fully completed"
@@ -219,6 +219,15 @@ dat.all<-subset(dat,dat$DiabetesType=="Type 1")
 dat<-subset(dat.all,dat.all$cohort_complete==1)
 
 
-
+table(dat$BaselineMethod_other)
+dat$method_cat[dat$BaselineMethod_other=="Medtronic 670G"]<-"Non-Tandem Pump"
+dat$method_cat[dat$BaselineMethod_other=="Medtronic 670g"]<-"Non-Tandem Pump"
+dat$method_cat[dat$BaselineMethod_other=="Loop DIY closed-loop system"]<-"Non-Tandem Pump"
+dat$method_cat[dat$BaselineMethod_other=="deltec cozmo insulin pump"]<-"Non-Tandem Pump"
+dat$method_cat[dat$BaselineMethod_other=="Both X2 and Omnipod"]<-"Non-Tandem Pump"
+dat$method_cat[dat$BaselineMethod_other=="both Medtronic and Tandem pumps"]<-"Tandem Pump"
+dat$method_cat[dat$BaselineMethod_other=="Animas, MDI and now tandem"]<-"Tandem Pump"
+dat$method_cat<-factor(dat$method_cat)
+table(dat$method_cat,useNA="always")
 
 

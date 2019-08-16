@@ -75,65 +75,33 @@ dat$post6m_7<-reverse(dat$post6m_7)
 
 ####SURVEY FACTORS:
 dat$baseline_factor1<-NA
-dat$baseline_factor1<-rowMeans(dat[,c(which(colnames(dat)=="Baseline_1"),
-                                      which(colnames(dat)=="Baseline_2"),
-                                      which(colnames(dat)=="Baseline_4"),
-                                      which(colnames(dat)=="Baseline_6"))],na.rm=T)
-label(dat$baseline_factor1)<-"Baseline: Factor 1 Utility"
+dat$baseline_factor1<-rowMeans(dat[,c(which(colnames(dat)=="Baseline_1"):
+                                      which(colnames(dat)=="Baseline_7"))],na.rm=T)
+label(dat$baseline_factor1)<-"Baseline: Factor 1 Benefit"
 
 dat$mid_factor1<-NA
-dat$mid_factor1<-rowMeans(dat[,c(which(colnames(dat)=="mid_1"),
-                                      which(colnames(dat)=="mid_2"),
-                                      which(colnames(dat)=="mid_4"),
-                                      which(colnames(dat)=="mid_6"))],na.rm=T)
-label(dat$mid_factor1)<-"Mid: Factor 1 Utility"
+dat$mid_factor1<-rowMeans(dat[,c(which(colnames(dat)=="mid_1"):
+                                   which(colnames(dat)=="mid_7"))],na.rm=T)
+label(dat$mid_factor1)<-"Mid: Factor 1 Benefit"
 
 dat$post6m_factor1<-NA
-dat$post6m_factor1<-rowMeans(dat[,c(which(colnames(dat)=="post6m_1"),
-                                 which(colnames(dat)=="post6m_2"),
-                                 which(colnames(dat)=="post6m_4"),
-                                 which(colnames(dat)=="post6m_6"))],na.rm=T)
-label(dat$post6m_factor1)<-"6 month: Factor 1 Utility"
+dat$post6m_factor1<-rowMeans(dat[,c(which(colnames(dat)=="post6m_1"):
+                                      which(colnames(dat)=="post6m_7"))],na.rm=T)
+label(dat$post6m_factor1)<-"6 month: Factor 1 Benefit"
 
 
 dat$baseline_factor2<-NA
-dat$baseline_factor2<-rowMeans(dat[,c(which(colnames(dat)=="Baseline_3"),
-                                      which(colnames(dat)=="Baseline_5"),
-                                      which(colnames(dat)=="Baseline_7"))],na.rm=T)
-label(dat$baseline_factor2)<-"Baseline: Factor 2 Usability"
+dat$baseline_factor2<-rowMeans(dat[,c(which(colnames(dat)=="Baseline_8"):
+                                        which(colnames(dat)=="Baseline_12"))],na.rm=T)
+label(dat$baseline_factor2)<-"Baseline: Factor 2 Burden"
 
 dat$mid_factor2<-NA
-dat$mid_factor2<-rowMeans(dat[,c(which(colnames(dat)=="mid_3"),
-                                      which(colnames(dat)=="mid_5"),
-                                      which(colnames(dat)=="mid_7"))],na.rm=T)
-label(dat$mid_factor2)<-"Mid: Factor 2 Usability"
+dat$mid_factor2<-rowMeans(dat[,c(which(colnames(dat)=="mid_8"):
+                                   which(colnames(dat)=="mid_12"))],na.rm=T)
+label(dat$mid_factor2)<-"Mid: Factor 2 Burden"
 
 dat$post6m_factor2<-NA
-dat$post6m_factor2<-rowMeans(dat[,c(which(colnames(dat)=="post6m_3"),
-                                      which(colnames(dat)=="post6m_5"),
-                                      which(colnames(dat)=="post6m_7"))],na.rm=T)
-label(dat$post6m_factor2)<-"6 month: Factor 2 Usability"
+dat$post6m_factor2<-rowMeans(dat[,c(which(colnames(dat)=="post6m_8"):
+                                      which(colnames(dat)=="post6m_12"))],na.rm=T)
+label(dat$post6m_factor2)<-"6 month: Factor 2 Burden"
 
-dat$baseline_factor3<-NA
-dat$baseline_factor3<-rowMeans(dat[,c(which(colnames(dat)=="Baseline_8"),
-                                      which(colnames(dat)=="Baseline_9"),
-                                      which(colnames(dat)=="Baseline_11"),
-                                      which(colnames(dat)=="Baseline_12"))],na.rm=T)
-# test<-dat[,c(21,22,24,25,228)]
-label(dat$baseline_factor3)<-"Baseline: Factor 3 Hypoglycemia Burden"
-
-dat$mid_factor3<-NA
-dat$mid_factor3<-rowMeans(dat[,c(which(colnames(dat)=="mid_8"),
-                                      which(colnames(dat)=="mid_9"),
-                                      which(colnames(dat)=="mid_11"),
-                                      which(colnames(dat)=="mid_12"))],na.rm=T)
-# test<-dat[,c(21,22,24,25,228)]
-label(dat$mid_factor3)<-"Mid: Factor 3 Hypoglycemia Burden"
-
-dat$post6m_factor3<-NA
-dat$post6m_factor3<-rowMeans(dat[,c(which(colnames(dat)=="post6m_8"),
-                                 which(colnames(dat)=="post6m_9"),
-                                 which(colnames(dat)=="post6m_11"),
-                                 which(colnames(dat)=="post6m_12"))],na.rm=T)
-# test<-dat[,c(21,22,24,25,228)]
-label(dat$post6m_factor3)<-"6 month: Factor 3 Hypoglycemia Burden"
