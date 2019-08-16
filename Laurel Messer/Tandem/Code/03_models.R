@@ -8,6 +8,9 @@ source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Laurel Messer/Tandem/Code/00
 source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Laurel Messer/Tandem/Code/01_survey_factors.R')
 
 dat.temp<-dat[,c(1,6,30,116:117,142:144,227:232)]
+#might have to do this:
+# dat.temp$change1_factor1<-dat.temp$baseline_factor1-dat.temp$mid_factor1
+# dat.temp$change2_factor1<-dat.temp$mid_factor2-dat.temp$mid_factor1
 
 dat.long<-reshape(dat.temp, 
                   varying=c("baseline_factor1","baseline_factor2",
@@ -31,7 +34,6 @@ qqp(dat.long$factor1, "gamma", shape = gam$estimate[[1]], rate = gam$estimate[[2
 
 dat.long$factor1_2<-dat.long$factor1^3
 hist(dat.long$factor1_2)
-
 
 
 
