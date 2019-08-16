@@ -58,9 +58,9 @@ demographics$bmi_percentile <- round(pnorm(demographics$bmi_z) * 100,3)
 ```{r echo=FALSE}
 dem_vars <- c("AgeTx","bmi_percentile","gender","Race","tanner_stage","tx_type","primary_dx_cat","spec_dx_cat")
 t1 <- CreateTableOne(dem_vars,data = demographics)
-t1 <- as.data.frame(print(t1, nonnormal = c("AgeTx","bmi_percentile"),printToggle = F,showAllLevels = T,missing = T))
+t1 <- as.data.frame(print(t1, nonnormal = c("AgeTx","bmi_percentile"),printToggle = F,showAllLevels = T))
 t1 <- cbind(new = NA,t1)
-colnames(t1) <- c("","Level","Overall","% Missing")
+colnames(t1) <- c("","Level","Overall")
 t1[,1] <- c("n","Age at HSCT (median [IQR])","BMI Percentile (median [IQR])",
             "Gender (%)","","Race (%)","","","","","",
             "Tanner Stage (%)","","","","","","HSCT Type (%)","",
@@ -104,6 +104,7 @@ cgm_data <- cgm_data %>% filter(!is.na(sens_place)) %>%
            pmax(days_worn_total - pmax(as.numeric(difftime(date_of_tx,sens_place,units = 'days')),0),0))
 # Platelet count variables
 cgm_data$plt <- as.numeric(cgm_data$plt)
+cgm_data$plt[cgm_data$transfuse == "Yes"] <- NA # Remove those with transfusion = "yes"
 cgm_data$plt_bleed <- ifelse(cgm_data$bleed == "Yes",cgm_data$plt,NA)
 cgm_data$plt_no_bleed <- ifelse(cgm_data$bleed == "No",cgm_data$plt,NA)
 # Summary variables
@@ -140,14 +141,14 @@ cgm_summary$time_to_refuse <- ifelse(cgm_summary$refuse_cgm == "Yes",cgm_summary
 ```{r echo=FALSE}
 vars <- colnames(cgm_summary)[-1]
 t2_by_patient <- CreateTableOne(vars,data = cgm_summary)
-t2_by_patient <- as.data.frame(print(t2_by_patient, missing = T,printToggle = F,
+t2_by_patient <- as.data.frame(print(t2_by_patient,printToggle = F,
                                      showAllLevels = T,
                                      nonnormal = c("num_cgms","total_days_worn",
                                                    "total_days_post_tx",
                                                    "last_cgm_removal_post_tx",
                                                    "time_to_refuse")))
 t2_by_patient <- cbind(new = NA,t2_by_patient)
-colnames(t2_by_patient) <- c("","Level","Overall","% Missing")
+colnames(t2_by_patient) <- c("","Level","Overall")
 t2_by_patient[,1] <- c("n","Number of CGMs (median [IQR])",
                        "Total Days Worn (median [IQR])","Total Days Worn Pre-HSCT",
                        "Total Days Worn Post-HSCT (median [IQR])",
@@ -156,8 +157,6 @@ t2_by_patient[,1] <- c("n","Number of CGMs (median [IQR])",
                        "AE - Skin Reaction (%)","AE - Other (%)","",
                        "Refused CGM (%)","",
                        "Days to CGM Refusal (median [IQR])")
-t2_by_patient$`% Missing` <- as.character(t2_by_patient$`% Missing`)
-t2_by_patient$`% Missing`[nrow(t2_by_patient)] <- "0.0"
 kable(t2_by_patient,row.names = F)
 ```
 
@@ -174,26 +173,25 @@ kable(refuse)
 ```{r echo=FALSE}
 t2_all <- CreateTableOne(c("plt","plt_bleed","plt_no_bleed","bleed","sens_reason"),
                          data = cgm_data)
-t2_all <- as.data.frame(print(t2_all,printToggle = F,nonnormal = c("plt","plt_bleed","plt_no_bleed"),
-                              missing=T,showAllLevels = T))
+t2_all <- as.data.frame(print(t2_all,printToggle = F,
+                              nonnormal = c("plt","plt_bleed","plt_no_bleed"),
+                              showAllLevels = T))
 t2_all <- cbind(new = NA,t2_all)
-colnames(t2_all) <- c("","Level","Overall","% Missing")
+colnames(t2_all) <- c("","Level","Overall")
 t2_all[,1] <- c("n","Platelet Count at Time of CGM Placement - All (median [IQR])",
                 "Platelet Count at CGM Placement - Bleeding (median [IQR])",
                 "Platelet Count at CGM Placement - No Bleeding (median [IQR])",
                 "Bleeding Events (%)","",
                 "Sensor Removal Reason (%)","","","","","","","","")
-t2_all$`% Missing` <- as.character(t2_all$`% Missing`)
-t2_all$`% Missing`[3] <- "0.0"
 kable(t2_all,row.names = F)
 ```
 
 # CGM Glucose vs. Serum
 
-```{r echo=FALSE,cache=TRUE}
+```{r echo=FALSE}
 # Read detailed CGM data and serum data
-cgm <- read.csv("/Volumes/som-1/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/BMT/Data_Cleaned/Prospective HSCT CGM Data Updated 6.24.19 FULL DATA SET.csv")
-serum <- read.csv("/Volumes/som-1/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/BMT/Data_Cleaned/Glucose_Monitoring_061019 edited 6.25.19.csv",na.strings = "") %>% 
+cgm <- read.csv("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/BMT/Data_Cleaned/Prospective HSCT CGM Data Updated 6.24.19 FULL DATA SET.csv")
+serum <- read.csv("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/BMT/Data_Cleaned/Glucose_Monitoring_061019 edited 6.25.19.csv",na.strings = "") %>% 
   filter(!is.na(glucose_spec_taken_datetime))
 # Format
 cgm$Time <- lubridate::mdy_hm(cgm$Time)
@@ -289,3 +287,4 @@ kable(clark_table)
 ```{r echo=FALSE,dpi=600}
 plotClarkeGrid(cgm_serum$`Serum Value`,cgm_serum$`CGM Value`)
 ```
+

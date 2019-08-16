@@ -1,0 +1,105 @@
+---
+title: "Retinopathy Analysis"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/Retinopathy/Data_Raw/PregnancyCGM_R_2019-08-12_1528.r")
+library(tableone)
+library(skimr)
+library(knitr)
+library(tidyverse)
+```
+
+```{r echo=FALSE}
+# Get retinopathy data, wide to extra long
+retino <- data %>% filter(redcap_event_name == "retinopathy_arm_1") %>% 
+  select(subject_id,retinop_precon_right.factor:retinop_pp_left.factor) %>%
+  gather(.,visit,value,retinop_precon_right.factor:retinop_pp_left.factor) %>%
+  mutate(eye = str_replace_all(visit,".*_|.factor",""))
+# Get visit number, retinopathy and visit as factors
+retino$visit <- sapply(strsplit(retino$visit,"_"), `[`,2)
+retino$visit <- factor(retino$visit,levels = c("precon","1st","2nd","3rd","pp"))
+retino$value <- factor(retino$value,
+                       levels = c("None","Mild nonproliferative diabetic retinopathy",
+                          "Mild-moderate nonproliferative diabetic retinopathy",
+                          "Moderate nonproliferative diabetic retinopathy",
+                          "Moderate-severe nonproliferative diabetic retinopathy",
+                          "Severe nonproliferative diabetic retinopathy",
+                          "Proliferative retinopathy"))
+# Extra long to long
+retino <- retino %>% spread(eye,value)
+# Study group
+group <- data %>% filter(redcap_event_name == "baseline_informati_arm_1") %>%
+  select(subject_id,study_group.factor)
+group$Group <- NA
+group$Group[grep("alone",group$study_group.factor)] <- "Alone"
+group$Group[grep("Share",group$study_group.factor)] <- "Share"
+retino <- left_join(retino,group,by="subject_id") %>% 
+  select(subject_id,visit,left,right,Group)
+# Colnames and formatting
+colnames(retino) <- c("subject_id","Visit","Left Eye","Right Eye","Group")
+retino$Visit <- as.factor(retino$Visit)
+```
+
+# Retinopathy Status, CGM Alone vs. CGM Share
+
+## Table 1: Pre-Conception Visit
+
+```{r echo=FALSE}
+table1 <- CreateTableOne(c("Left Eye","Right Eye"),strata = "Group",data = retino[retino$Visit == "precon",])
+table1 <- print(table1,exact=c("Left Eye","Right Eye"),printToggle = F,missing = T)
+kable(table1)
+```
+
+*Missing data reported as a percentage
+
+## Table 2: 1st Trimester Visit
+
+```{r echo=FALSE}
+table2 <- CreateTableOne(c("Left Eye","Right Eye"),strata = "Group",data = retino[retino$Visit == "1st",])
+table2 <- print(table2,exact=c("Left Eye","Right Eye"),printToggle = F,missing = T)
+kable(table2)
+```
+
+## Table 3: 2nd Trimester Visit
+
+```{r echo=FALSE}
+table3 <- CreateTableOne(c("Left Eye","Right Eye"),strata = "Group",data = retino[retino$Visit == "2nd",])
+table3 <- print(table3,exact=c("Left Eye","Right Eye"),printToggle = F,missing = T)
+kable(table3)
+```
+
+## Table 4: 3rd Trimester Visit
+
+```{r echo=FALSE}
+table4 <- CreateTableOne(c("Left Eye","Right Eye"),strata = "Group",data = retino[retino$Visit == "3rd",])
+table4 <- print(table4,exact=c("Left Eye","Right Eye"),printToggle = F,missing = T)
+kable(table4)
+```
+
+## Table 5: Post-Partum Visit
+
+```{r echo=FALSE}
+table5 <- CreateTableOne(c("Left Eye","Right Eye"),strata = "Group",data = retino[retino$Visit == "pp",])
+table5 <- print(table5,exact=c("Left Eye","Right Eye"),printToggle = F,missing = T)
+kable(table5)
+```
+
+<!-- # Retinopathy Progression, CGM Alone vs. CGM Share -->
+
+```{r echo=FALSE,warning=FALSE,eval=FALSE}
+progression <- retino
+progression$`Left Eye` <- as.numeric(progression$`Left Eye`)
+progression$`Right Eye` <- as.numeric(progression$`Right Eye`)
+progression <- progression %>% group_by(subject_id) %>%
+  summarise(Group = Group[1],
+            left_progessed = 
+              if(`Left Eye`[2] > `Left Eye`[1] | `Left Eye`[3] > `Left Eye`[1] | 
+                 `Left Eye`[4] > `Left Eye`[1] | `Left Eye`[3] > `Left Eye`[2] | 
+                 `Left Eye`[4] > `Left Eye`[2] | `Left Eye`[4] > `Left Eye`[1]) {1}
+            else {0})
+```
