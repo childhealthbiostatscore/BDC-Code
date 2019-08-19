@@ -1,10 +1,11 @@
 ######MODELS FOR PRO TANDEM STUDY
 ###AUTHOR: KRISTEN CAMPBELL
 ###DATE: 8/15/2019
+# library(nlme)
+# library(lme4)
+
 require(lsmeans)
 
-library(nlme)
-library(lme4)
 source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Laurel Messer/Tandem/Code/00_data.R')
 source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Laurel Messer/Tandem/Code/01_survey_factors.R')
 
