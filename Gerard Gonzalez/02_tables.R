@@ -215,7 +215,7 @@ temp.tab<-(table(comp$MRN)>1)*1
 temp.comp<-data.frame(MRN=rownames(temp.tab),temp.tab)
 comp<-merge(comp,temp.comp,by="MRN")
 comp<-subset(comp,comp$temp.tab==1)
-table(comp$pump_yn_inyear[comp$yeargrouping=="Base1"],comp$pump_yn_inyear[comp$yeargrouping=="Year3"])
+tab.5a.plot<-table(comp$pump_yn_inyear[comp$yeargrouping=="Base1"],comp$pump_yn_inyear[comp$yeargrouping=="Year3"])
 test.5a<-mcnemar.test(comp$pump_yn_inyear[comp$yeargrouping=="Base1"],
              comp$pump_yn_inyear[comp$yeargrouping=="Year3"])$p.value
 
@@ -228,7 +228,7 @@ temp.tab<-(table(comp$MRN)>1)*1
 temp.comp<-data.frame(MRN=rownames(temp.tab),temp.tab)
 comp<-merge(comp,temp.comp,by="MRN")
 comp<-subset(comp,comp$temp.tab==1)
-table(comp$pump_yn_inyear[comp$yeargrouping=="Base1"],comp$pump_yn_inyear[comp$yeargrouping=="Year3"])
+tab.5b.plot<-table(comp$pump_yn_inyear[comp$yeargrouping=="Base1"],comp$pump_yn_inyear[comp$yeargrouping=="Year3"])
 test.5b<-mcnemar.test(comp$pump_yn_inyear[comp$yeargrouping=="Base1"],
                       comp$pump_yn_inyear[comp$yeargrouping=="Year3"])$p.value
 
@@ -240,7 +240,7 @@ temp.tab<-(table(comp$MRN)>1)*1
 temp.comp<-data.frame(MRN=rownames(temp.tab),temp.tab)
 comp<-merge(comp,temp.comp,by="MRN")
 comp<-subset(comp,comp$temp.tab==1)
-table(comp$pump_yn_inyear[comp$yeargrouping=="Base1"],comp$pump_yn_inyear[comp$yeargrouping=="Year3"])
+tab.6a.plot<-table(comp$pump_yn_inyear[comp$yeargrouping=="Base1"],comp$pump_yn_inyear[comp$yeargrouping=="Year3"])
 test.6a<-mcnemar.test(comp$pump_yn_inyear[comp$yeargrouping=="Base1"],
                       comp$pump_yn_inyear[comp$yeargrouping=="Year3"])$p.value
 
@@ -252,7 +252,7 @@ temp.tab<-(table(comp$MRN)>1)*1
 temp.comp<-data.frame(MRN=rownames(temp.tab),temp.tab)
 comp<-merge(comp,temp.comp,by="MRN")
 comp<-subset(comp,comp$temp.tab==1)
-table(comp$pump_yn_inyear[comp$yeargrouping=="Base1"],comp$pump_yn_inyear[comp$yeargrouping=="Year3"])
+tab.6b.plot<-table(comp$pump_yn_inyear[comp$yeargrouping=="Base1"],comp$pump_yn_inyear[comp$yeargrouping=="Year3"])
 
 test.6b<-mcnemar.test(comp$pump_yn_inyear[comp$yeargrouping=="Base1"],
                       comp$pump_yn_inyear[comp$yeargrouping=="Year3"])$p.value
@@ -265,7 +265,7 @@ temp.tab<-(table(comp$MRN)>1)*1
 temp.comp<-data.frame(MRN=rownames(temp.tab),temp.tab)
 comp<-merge(comp,temp.comp,by="MRN")
 comp<-subset(comp,comp$temp.tab==1)
-table(comp$cgm_yn_inyear[comp$yeargrouping=="Base1"],comp$cgm_yn_inyear[comp$yeargrouping=="Year3"])
+tab.7a.plot<-table(comp$cgm_yn_inyear[comp$yeargrouping=="Base1"],comp$cgm_yn_inyear[comp$yeargrouping=="Year3"])
 
 test.7a<-mcnemar.test(comp$cgm_yn_inyear[comp$yeargrouping=="Base1"],
                       comp$cgm_yn_inyear[comp$yeargrouping=="Year3"])$p.value
@@ -278,7 +278,7 @@ temp.tab<-(table(comp$MRN)>1)*1
 temp.comp<-data.frame(MRN=rownames(temp.tab),temp.tab)
 comp<-merge(comp,temp.comp,by="MRN")
 comp<-subset(comp,comp$temp.tab==1)
-table(comp$cgm_yn_inyear[comp$yeargrouping=="Base1"],comp$cgm_yn_inyear[comp$yeargrouping=="Year3"])
+tab.7b.plot<-table(comp$cgm_yn_inyear[comp$yeargrouping=="Base1"],comp$cgm_yn_inyear[comp$yeargrouping=="Year3"])
 
 test.7b<-mcnemar.test(comp$cgm_yn_inyear[comp$yeargrouping=="Base1"],
                       comp$cgm_yn_inyear[comp$yeargrouping=="Year3"])$p.value
@@ -291,7 +291,7 @@ temp.tab<-(table(comp$MRN)>1)*1
 temp.comp<-data.frame(MRN=rownames(temp.tab),temp.tab)
 comp<-merge(comp,temp.comp,by="MRN")
 comp<-subset(comp,comp$temp.tab==1)
-table(comp$cgm_yn_inyear[comp$yeargrouping=="Base1"],comp$cgm_yn_inyear[comp$yeargrouping=="Year3"])
+tab.8a.plot<-table(comp$cgm_yn_inyear[comp$yeargrouping=="Base1"],comp$cgm_yn_inyear[comp$yeargrouping=="Year3"])
 
 test.8a<-mcnemar.test(comp$cgm_yn_inyear[comp$yeargrouping=="Base1"],
                       comp$cgm_yn_inyear[comp$yeargrouping=="Year3"])$p.value
@@ -304,7 +304,7 @@ temp.tab<-(table(comp$MRN)>1)*1
 temp.comp<-data.frame(MRN=rownames(temp.tab),temp.tab)
 comp<-merge(comp,temp.comp,by="MRN")
 comp<-subset(comp,comp$temp.tab==1)
-table(comp$cgm_yn_inyear[comp$yeargrouping=="Base1"],comp$cgm_yn_inyear[comp$yeargrouping=="Year3"])
+tab.8b.plot<-table(comp$cgm_yn_inyear[comp$yeargrouping=="Base1"],comp$cgm_yn_inyear[comp$yeargrouping=="Year3"])
 
 test.8b<-mcnemar.test(comp$cgm_yn_inyear[comp$yeargrouping=="Base1"],
                       comp$cgm_yn_inyear[comp$yeargrouping=="Year3"])$p.value
