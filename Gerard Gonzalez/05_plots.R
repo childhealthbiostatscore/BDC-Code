@@ -8,9 +8,9 @@ source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Gerard Gonzalez/02_tables.R'
 table_prep<-function(tab){
   #tab<-tab.5a.plot
   temp<-tab
-  temp[1,1]<-tab[1,1]/sum(tab)
+  temp[1,1]<-(tab[1,1]+tab[1,2])/sum(tab)
   temp[2,1]<-1-temp[1,1]
-  temp[1,2]<-tab[2,2]/sum(tab)
+  temp[1,2]<-(tab[1,1]+tab[2,1])/sum(tab)
   temp[2,2]<-1-temp[1,2]
   colnames(temp)<-c("Year1","Year3")
   rownames(temp)<-c("Year1","Year3")
