@@ -104,6 +104,7 @@ year3_sum_pump$Value<-round(year3_sum_pump$Value,3)
 year3_sum_pump$Std.Error<-round(year3_sum_pump$Std.Error,3)
 year3_sum_pump$`p-value`<-round(year3_sum_pump$`p-value`,3)
 anova_a1c_mod_toyear3_pump<-anova(a1c_mod_toyear3_pump)
+
 # 
 # #test for differences between groups at each time point:
 ref_3_pump <- lsmeans(a1c_mod_toyear3_pump, c("trt_grp", "yeargrouping"))
@@ -119,6 +120,28 @@ contrasts_3_pump$estimate<-round(contrasts_3_pump$estimate,3)
 contrasts_3_pump$SE<-round(contrasts_3_pump$SE,3)
 contrasts_3_pump$p.value<-round(contrasts_3_pump$p.value,3)
 
+##pump cohort - plot
+dat.temp<-as.data.frame(ref_3_pump)
+dat.temp$time<-c(0,0,1,1,2,2,3,3)
+
+plot(c(0,3),c(8,12),type="n",xlab="",ylab="")
+points(dat.temp$time[dat.temp$trt_grp=="LP"],dat.temp$lsmean[dat.temp$trt_grp=="LP"],pch=19,
+       col="red")
+lines(dat.temp$time[dat.temp$trt_grp=="LP"],dat.temp$lsmean[dat.temp$trt_grp=="LP"],
+       col="red")
+lines(dat.temp$time[dat.temp$trt_grp=="LP"],dat.temp$lower.CL[dat.temp$trt_grp=="LP"],
+      col="red",lty=2)
+lines(dat.temp$time[dat.temp$trt_grp=="LP"],dat.temp$upper.CL[dat.temp$trt_grp=="LP"],
+      col="red",lty=2)
+
+points(dat.temp$time[dat.temp$trt_grp=="Control"],dat.temp$lsmean[dat.temp$trt_grp=="Control"],pch=19,
+       col="blue")
+lines(dat.temp$time[dat.temp$trt_grp=="Control"],dat.temp$lsmean[dat.temp$trt_grp=="Control"],
+      col="blue")
+lines(dat.temp$time[dat.temp$trt_grp=="Control"],dat.temp$lower.CL[dat.temp$trt_grp=="Control"],
+      col="blue",lty=2)
+lines(dat.temp$time[dat.temp$trt_grp=="Control"],dat.temp$upper.CL[dat.temp$trt_grp=="Control"],
+      col="blue",lty=2)
 # #A1c: CGM group - not enough pts to fit model
 # dat.cgm<-subset(dat,dat$technology_type_inyear %in% c("CGM Only","CGM and Pump"))
 # dat.cgm$yeargrouping<-factor(dat.cgm$yeargrouping)
@@ -173,6 +196,27 @@ contrasts_3_nopump$estimate<-round(contrasts_3_nopump$estimate,3)
 contrasts_3_nopump$SE<-round(contrasts_3_nopump$SE,3)
 contrasts_3_nopump$p.value<-round(contrasts_3_nopump$p.value,3)
 
+dat.temp<-as.data.frame(ref_3_nopump)
+dat.temp$time<-c(0,0,1,1,2,2,3,3)
+
+plot(c(0,3),c(8,12),type="n",xlab="",ylab="")
+points(dat.temp$time[dat.temp$trt_grp=="LP"],dat.temp$lsmean[dat.temp$trt_grp=="LP"],pch=19,
+       col="red")
+lines(dat.temp$time[dat.temp$trt_grp=="LP"],dat.temp$lsmean[dat.temp$trt_grp=="LP"],
+      col="red")
+lines(dat.temp$time[dat.temp$trt_grp=="LP"],dat.temp$lower.CL[dat.temp$trt_grp=="LP"],
+      col="red",lty=2)
+lines(dat.temp$time[dat.temp$trt_grp=="LP"],dat.temp$upper.CL[dat.temp$trt_grp=="LP"],
+      col="red",lty=2)
+
+points(dat.temp$time[dat.temp$trt_grp=="Control"],dat.temp$lsmean[dat.temp$trt_grp=="Control"],pch=19,
+       col="blue")
+lines(dat.temp$time[dat.temp$trt_grp=="Control"],dat.temp$lsmean[dat.temp$trt_grp=="Control"],
+      col="blue")
+lines(dat.temp$time[dat.temp$trt_grp=="Control"],dat.temp$lower.CL[dat.temp$trt_grp=="Control"],
+      col="blue",lty=2)
+lines(dat.temp$time[dat.temp$trt_grp=="Control"],dat.temp$upper.CL[dat.temp$trt_grp=="Control"],
+      col="blue",lty=2)
 #########Checks Per Day#########
 #OVERALL
 dat_checks<-subset(dat,!is.na(dat$checks_last_in_year))

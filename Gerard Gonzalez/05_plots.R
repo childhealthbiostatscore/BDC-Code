@@ -24,7 +24,7 @@ pump.con.young<-table_prep(tab.6b.plot)
 par(mfrow=c(1,4),mar=c(6,4.2,4,0))
 barplot(pump.lp.old,col=c('grey','white'), xlab="",
         ylab="Percent of Patients Using Pump", main = "LP - teens",
-        sub=paste0("p-value=",round(test.5a,3),"; n=",sum(tab.5a.plot)),
+        sub=paste0("p=",round(test.5a,3),"; n=",sum(tab.5a.plot)),
         cex.main=1.5,
         cex.names = 1.5,
         cex.axis = 1.5,
@@ -32,18 +32,18 @@ barplot(pump.lp.old,col=c('grey','white'), xlab="",
         cex.lab=1.5)
 #par(mar=c(5,2,4,2))
 barplot(pump.lp.young,col=c('grey','white'), xlab="",yaxt="n",
-        ylab="", main = "LP - children", sub=paste0("p-value=",round(test.6a,3),"; n=",
+        ylab="", main = "LP - children", sub=paste0("p=",round(test.6a,3),"; n=",
                                                     sum(tab.6a.plot)),
         cex.main=1.5,
         cex.sub=1.5,
         cex.names = 1.5)
 barplot(pump.con.old,col=c('grey','white'), xlab="",yaxt="n",
-        ylab="", main = "Comparison - teens",sub=paste0("p-value=",round(test.5b,3),"; n=",sum(tab.5b.plot)),
+        ylab="", main = "Comparison - teens",sub=paste0("p=",round(test.5b,3),"; n=",sum(tab.5b.plot)),
         cex.main=1.5,
         cex.sub=1.5,
         cex.names = 1.5)
 barplot(pump.con.young,col=c('grey','white'), xlab="",yaxt="n",
-        ylab="", main = "Comparison - children",sub=paste0("p-value=",round(test.6b,3),"; n=",sum(tab.6b.plot)),
+        ylab="", main = "Comparison - children",sub=paste0("p=",round(test.6b,3),"; n=",sum(tab.6b.plot)),
         cex.main=1.5,
         cex.sub=1.5,
         cex.names = 1.5)
@@ -60,7 +60,7 @@ cgm.con.young<-table_prep(tab.8b.plot)
 par(mfrow=c(1,4),mar=c(6,4.2,4,0))
 barplot(cgm.lp.old,col=c('grey','white'), xlab="",
         ylab="Percent of Patients Using CGM", main = "LP - teens",
-        sub=paste0("p-value=",round(test.7a,3),"; n=",sum(tab.7a.plot)),
+        sub=paste0("p=",round(test.7a,3),"; n=",sum(tab.7a.plot)),
         cex.main=1.5,
         cex.names = 1.5,
         cex.axis = 1.5,
@@ -68,18 +68,18 @@ barplot(cgm.lp.old,col=c('grey','white'), xlab="",
         cex.lab=1.5)
 #par(mar=c(5,2,4,2))
 barplot(cgm.lp.young,col=c('grey','white'), xlab="",yaxt="n",
-        ylab="", main = "LP - children", sub=paste0("p-value=",round(test.8a,3),"; n=",
+        ylab="", main = "LP - children", sub=paste0("p=",round(test.8a,3),"; n=",
                                                     sum(tab.8a.plot)),
         cex.main=1.5,
         cex.sub=1.5,
         cex.names = 1.5)
 barplot(cgm.con.old,col=c('grey','white'), xlab="",yaxt="n",
-        ylab="", main = "Comparison - teens",sub=paste0("p-value=",round(test.7b,3),"; n=",sum(tab.7b.plot)),
+        ylab="", main = "Comparison - teens",sub=paste0("p=",round(test.7b,3),"; n=",sum(tab.7b.plot)),
         cex.main=1.5,
         cex.sub=1.5,
         cex.names = 1.5)
 barplot(cgm.con.young,col=c('grey','white'), xlab="",yaxt="n",
-        ylab="", main = "Comparison - children",sub=paste0("p-value=",round(test.8b,3),"; n=",sum(tab.8b.plot)),
+        ylab="", main = "Comparison - children",sub=paste0("p=",round(test.8b,3),"; n=",sum(tab.8b.plot)),
         cex.main=1.5,
         cex.sub=1.5,
         cex.names = 1.5)
