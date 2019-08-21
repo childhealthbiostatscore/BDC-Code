@@ -19,7 +19,9 @@ library(nlme)
 
 ```{r echo=FALSE,include=FALSE}
 # Import data
-dat <- read.csv("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Holly O'Donnell/Dissertation/Data_Raw/diss_data_7.22.19.csv",na.strings = "")
+dat <- 
+  read.csv("/Users/timvigers/Desktop/Dissertation/Data_Raw/diss_data_7.22.19.csv",
+           na.strings = "")
 # format and fill down dates and income level
 dat$DateofBirth <- lubridate::mdy(dat$DateofBirth)
 dat$DiagnosisDate <- lubridate::mdy(dat$DiagnosisDate)
@@ -61,688 +63,475 @@ dat <- dat %>% group_by(ID) %>%
            highBG_without_carb_with_bolus_piu[1],
          extremeBG_change = extremeBG_without_carb_with_bolus_piu - 
            extremeBG_without_carb_with_bolus_piu[1])
+# Center age and HbA1c
+
+# Collapse income categories
+dat$income_three <- as.character(dat$IncomeLevel)
+dat$income_three[dat$income_three == "1" | dat$income_three == "2"] <- "Low"
+dat$income_three[dat$income_three == "3" | dat$income_three == "4"] <- "Medium"
+dat$income_three[dat$income_three == "5" | dat$income_three == "6"] <- "High"
+dat$income_three <- as.factor(dat$income_three)
+# Check insurance pediction by income
+mylogit <- glm(Insurance ~ income_three, data = dat[dat$StudyVisit==1,], family = "binomial")
+summary(mylogit) # SE looks good
 ```
 
-# Model Selection (BG checks per day)
+# BG Checks per Day
 
-## Which time variable produces a better model fit?
+## Final model
 
 ```{r}
-cat_time_mod <- lmer(readings_per_day ~ StudyVisit + readings_per_day_b + (1|ID), data = dat)
-cont_time_mod <- lmer(readings_per_day ~ Days_since_baseline + readings_per_day_b + (1|ID),data = dat)
+bg_mod <- lmer(readings_per_day ~ Treatment*StudyVisit + HbA1c + Sex + 
+                age_years + income_three + readings_per_day_b + (1|Site/ID),
+               data = dat)
 ```
 
-```{r echo=FALSE,warning=FALSE}
-aic <- AIC(cat_time_mod,cont_time_mod)
-aic <- aic[order(aic$AIC),]
-kable(aic)
+```{r include=FALSE}
+plot(bg_mod)
 ```
-
-The model with visit number is a better fit than one using days from baseline (AIC is lower), so we'll use visit number for the rest of the models. 
-
-## Check the full model
-
-```{r echo=FALSE,include=FALSE}
-#LME4 model to check convergence
-full_mod_l <- lmer(readings_per_day ~ Treatment*HbA1c + Treatment*StudyVisit + 
-                     Sex + age_years + T1D_dur_years + Treatment*IncomeLevel +
-                     Treatment*Insurance + readings_per_day_b + (1|Site/ID), 
-                   data = dat)
-
-full_mod_no_interact <- lme(readings_per_day ~ Treatment + HbA1c + StudyVisit + 
-                              Sex + age_years + T1D_dur_years + IncomeLevel + 
-                              Insurance + readings_per_day_b,
-                random =~1|Site/ID, data = dat,na.action = na.omit)
-```
-
-```{r}
-full_mod <- lme(readings_per_day ~ Treatment*HbA1c + Treatment*StudyVisit + 
-                  Sex + age_years + T1D_dur_years + Treatment*IncomeLevel + 
-                  Treatment*Insurance + readings_per_day_b,
-                random =~1|Site/ID, data = dat,na.action = na.omit)
-```
-
-### Check variance inflation factor
-
-```{r echo=FALSE}
-vif <- as.data.frame(vif(full_mod_no_interact))
-kable(vif)
-```
-
-In general, VIF > 10 is a concern so it looks like we don't need to worry about multicollinearity here.
-
-## Reduced model
-
-Check the reduced model with only significant covariates from the full model. 
-
-```{r}
-reduced_mod <- lme(readings_per_day ~ Treatment*HbA1c + Treatment*StudyVisit + 
-                     age_years + readings_per_day_b,
-                   random =~1|Site/ID, data = dat,na.action = na.omit) 
-```
-
-### Compare AIC
-
-```{r warning=FALSE,echo=FALSE}
-aic <- as.data.frame(AIC(full_mod,reduced_mod))
-aic <- aic[order(aic$AIC),]
-kable(aic)
-```
-
-This indicates that the reduced model is as good a fit as the full model. But let's check some other in between models as well, just in case.
-
-## Semi-reduced models
-
-```{r echo=FALSE,include=FALSE}
-no_t1d_dur_mod <- lmer(readings_per_day ~ Treatment*HbA1c + Treatment*StudyVisit
-                       + Sex + age_years + Treatment*IncomeLevel + 
-                         Treatment*Insurance + readings_per_day_b + (1|Site/ID), 
-                    data = dat,na.action = na.omit)
-no_income_mod <- lmer(readings_per_day ~ Treatment*HbA1c + Treatment*StudyVisit + Sex + 
-                     age_years + T1D_dur_years + Treatment*Insurance + 
-                       readings_per_day_b + (1|Site/ID), 
-                   data = dat,na.action = na.omit)
-no_sex_mod <- lmer(readings_per_day ~ Treatment*HbA1c + Treatment*StudyVisit + 
-                     age_years + T1D_dur_years + Treatment*IncomeLevel +
-                     Treatment*Insurance + readings_per_day_b + (1|Site/ID), 
-                   data = dat,na.action = na.omit)
-no_insurance_mod <- lmer(readings_per_day ~ Treatment*HbA1c + Treatment*StudyVisit + Sex + 
-                     age_years + T1D_dur_years + Treatment*IncomeLevel + 
-                       readings_per_day_b + (1|Site/ID), data = dat,na.action = na.omit)
-no_t1d_no_insur_mod <- lmer(readings_per_day ~ Treatment*HbA1c + 
-                              Treatment*StudyVisit + Sex + age_years + 
-                              IncomeLevel + readings_per_day_b+ (1|Site/ID), 
-                            data = dat,na.action = na.omit)
-no_t1d_no_income_mod <- lmer(readings_per_day ~ Treatment*HbA1c + 
-                              Treatment*StudyVisit + Sex + age_years + 
-                              Treatment*Insurance + readings_per_day_b+ (1|Site/ID), 
-                            data = dat,na.action = na.omit)
-```
-
-```{r}
-no_t1d_dur_mod <- lme(readings_per_day ~ Treatment*HbA1c + Treatment*StudyVisit
-                      + Sex + age_years + Treatment*IncomeLevel + 
-                        Treatment*Insurance + readings_per_day_b,
-                   random =~1|Site/ID, data = dat,na.action = na.omit)
-
-no_sex_mod <- lme(readings_per_day ~ Treatment*HbA1c + Treatment*StudyVisit + 
-                     age_years + T1D_dur_years + Treatment*IncomeLevel +
-                     Treatment*Insurance + readings_per_day_b,
-                  random =~1|Site/ID, data = dat,na.action = na.omit)
-
-no_income_mod <- lme(readings_per_day ~ Treatment*HbA1c + Treatment*StudyVisit 
-                     + Sex + age_years + T1D_dur_years + Treatment*Insurance + 
-                       readings_per_day_b,
-                  random =~1|Site/ID, data = dat,na.action = na.omit)
-
-no_insurance_mod <- lme(readings_per_day ~ Treatment*HbA1c + 
-                          Treatment*StudyVisit + Sex + age_years + T1D_dur_years
-                        + Treatment*IncomeLevel + readings_per_day_b,
-                  random =~1|Site/ID, data = dat,na.action = na.omit)
-
-no_t1d_no_insur_mod <- lme(readings_per_day ~ Treatment*HbA1c + 
-                              Treatment*StudyVisit + Sex + age_years + 
-                              IncomeLevel + readings_per_day_b,
-                random =~1|Site/ID, data = dat,na.action = na.omit)
-
-no_t1d_no_income_mod <- lme(readings_per_day ~ Treatment*HbA1c + 
-                              Treatment*StudyVisit + Sex + age_years + 
-                              Insurance + readings_per_day_b,
-                random =~1|Site/ID, data = dat,na.action = na.omit)
-
-no_t1d_no_income_no_ins_mod <- lme(readings_per_day ~ Treatment*HbA1c + 
-                              Treatment*StudyVisit + Sex + age_years + 
-                                readings_per_day_b,
-                random =~1|Site/ID, data = dat,na.action = na.omit)
-```
-
-### Compare AIC
-
-```{r echo=FALSE,warning=FALSE}
-aic <- as.data.frame(AIC(full_mod,no_t1d_dur_mod,no_sex_mod,no_insurance_mod,no_income_mod,no_t1d_no_insur_mod,no_t1d_no_income_mod,reduced_mod,no_t1d_no_income_no_ins_mod))
-aic <- aic[order(aic$AIC),]
-kable(aic)
-```
-
-The model without T1D duration or insurance is the best by AIC, but we need insurance in the model because the groups were different at baseline. So, we'll stick with the model without T1D duration, but including both insurance and income: 
-
-```{r echo=FALSE}
-kable(summary(no_t1d_dur_mod)$tTable)
-```
-
-## Without interaction terms
-
-Since the HbA1c, insurance, and income interaction terms are not significant, let's check and see if the model improves without them:
-
-```{r}
-bg_mod_trt_visit <- lme(readings_per_day ~ HbA1c + Treatment*StudyVisit + Sex + 
-                     age_years + IncomeLevel + Insurance + readings_per_day_b,
-                   random =~1|Site/ID, data = dat,na.action = na.omit)
-
-bg_mod_a1c <- lme(readings_per_day ~ Treatment*HbA1c + Treatment*StudyVisit + 
-                    Sex + age_years + IncomeLevel + Insurance + 
-                    readings_per_day_b,
-                   random =~1|Site/ID, data = dat,na.action = na.omit)
-
-bg_mod_inc <- lme(readings_per_day ~ HbA1c + Treatment*StudyVisit + Sex + 
-                     age_years + Treatment*IncomeLevel + Insurance + 
-                    readings_per_day_b,
-                   random =~1|Site/ID, data = dat,na.action = na.omit)
-
-bg_mod_ins <- lme(readings_per_day ~ HbA1c + Treatment*StudyVisit + Sex + 
-                     age_years + IncomeLevel + Treatment*Insurance + 
-                    readings_per_day_b,
-                   random =~1|Site/ID, data = dat,na.action = na.omit)
-```
-
-### Compare AIC
-
-```{r echo=FALSE,warning=FALSE}
-aic <- as.data.frame(AIC(bg_mod_trt_visit,bg_mod_a1c,bg_mod_inc,bg_mod_ins))
-aic <- aic[order(aic$AIC),]
-kable(aic)
-```
-
-The model with only the treatment by visit interaction is the best and that's the interaction effect that we care most about. So, our final model for BG checks per day is:
-
-```{r}
-bg_mod <- lme(readings_per_day ~ Treatment*StudyVisit + HbA1c + Sex + 
-                age_years + IncomeLevel + Insurance + readings_per_day_b,
-              random =~1|Site/ID, data = dat,na.action = na.omit)
-```
-
-### Plot the residuals
-
-```{r echo=FALSE,dpi=600}
-plot(bg_mod,main="BG Readings per Day")
-```
-
-These are nice-looking residuals! Not exactly normal but really close, so this model is good to go.
 
 ### Results
 
 ```{r echo=FALSE}
 kable(anova(bg_mod),caption = "Overall Effects")
-kable(summary(bg_mod)$tTable,caption = "Fixed Effects")
+kable(summary(bg_mod)$coefficients,caption = "Fixed Effects")
 ```
 
-So, the overall effects of treatment, HbA1c, sex, and age were significant. There was also a significant interaction between treatment and study visit. Let's go over the interpretation for these numbers in more detail over Zoom.
+# Percent high boluses without carb
 
-# Check similar models for another outcome (% high boluses without carb)
-
-## Compare full model to reduced models
+## Final model
 
 ```{r}
-bolus_mod_full <- lme(highBG_without_carb_with_bolus_piu ~ Treatment*HbA1c + 
-                        Treatment*StudyVisit + Sex + age_years + T1D_dur_years + 
-                        Treatment*IncomeLevel + Treatment*Insurance + 
-                        highBG_without_carb_with_bolus_b,
-                     random =~1|Site/ID, data = dat,na.action = na.omit)
-
-bolus_mod_no_t1d <- lme(highBG_without_carb_with_bolus_piu ~ Treatment*HbA1c + 
-                          Treatment*StudyVisit + Sex + age_years + 
-                          Treatment*IncomeLevel + Treatment*Insurance + 
-                          highBG_without_carb_with_bolus_b,
-                     random =~1|Site/ID, data = dat,na.action = na.omit)
-
-bolus_mod_reduced <- lme(highBG_without_carb_with_bolus_piu ~ Treatment*HbA1c + 
-                           Sex + Treatment*StudyVisit + age_years + 
-                           highBG_without_carb_with_bolus_b,
-                     random =~1|Site/ID, data = dat,na.action = na.omit)
+highBG_mod <- lmer(highBG_without_carb_with_bolus_piu ~ Treatment*StudyVisit + 
+                   HbA1c + Sex + age_years + Insurance + IncomeLevel + 
+                   highBG_without_carb_with_bolus_b + (1|Site/ID), data = dat)
 ```
 
-```{r echo=FALSE,warning=FALSE}
-aic <- AIC(bolus_mod_full,bolus_mod_no_t1d,bolus_mod_reduced)
-aic <- aic[order(aic$AIC),]
-kable(aic)
+```{r include=FALSE}
+plot(highBG_mod,main="% bolused when high (150-250) and no carb")
 ```
-
-Again, the model without T1D duration is the best, but let's check the models without insurance and income as well. 
-
-```{r echo=FALSE,warning=FALSE}
-bolus_mod_no_ins <- lme(highBG_without_carb_with_bolus_piu ~ Treatment*HbA1c + 
-                          Treatment*StudyVisit + Sex + age_years + 
-                          T1D_dur_years + Treatment*IncomeLevel + 
-                        highBG_without_carb_with_bolus_b,
-                     random =~1|Site/ID, data = dat,na.action = na.omit)
-bolus_mod_no_inc <- lme(highBG_without_carb_with_bolus_piu ~ Treatment*HbA1c + Treatment*StudyVisit + Sex + 
-                        age_years + T1D_dur_years + 
-                        Treatment*Insurance + highBG_without_carb_with_bolus_b,
-                     random =~1|Site/ID, data = dat,na.action = na.omit)
-bolus_mod_neither <- lme(highBG_without_carb_with_bolus_piu ~ Treatment*HbA1c + Treatment*StudyVisit + Sex + 
-                        age_years + T1D_dur_years + highBG_without_carb_with_bolus_b,
-                     random =~1|Site/ID, data = dat,na.action = na.omit)
-aic <- AIC(bolus_mod_no_ins,bolus_mod_no_inc,bolus_mod_neither)
-aic <- aic[order(aic$AIC),]
-kable(aic)
-```
-
-Technically, the model without insurance is the best again, but we need to keep it in there (mostly so reviewers don't ask why you didn't control for it). So, the final model for % high boluses without carb is:
-
-```{r}
-bolus_mod <- lme(highBG_without_carb_with_bolus_piu ~ Treatment*StudyVisit + 
-                   HbA1c + Sex + age_years + IncomeLevel + Insurance + 
-                   highBG_without_carb_with_bolus_b,
-                 random =~1|Site/ID, data = dat,na.action = na.omit)
-```
-
-### Check the residuals
-
-```{r echo=FALSE,dpi=600}
-plot(bolus_mod,main="% bolused when high (150-250) and no carb")
-```
-
-These residuals aren't ideal. I tried log transforming the outcome to see if it helps, but it didn't make much difference (plus controlling for the baseline value of the outcome complicates things because I think you also need to transform those values and it's hard to interpret on the log scale). I wouldn't say these violate assumptions though, and I've certainly seen worse. 
 
 ### Results
 
 ```{r echo=FALSE}
-kable(anova(bolus_mod),caption = "Overall Effects")
-kable(summary(bolus_mod)$tTable,caption = "Fixed Effects")
+kable(anova(highBG_mod),caption = "Overall Effects")
+kable(summary(highBG_mod)$coefficients,caption = "Fixed Effects")
 ```
 
-There was an overall effect of time on % high boluses without carb, but neither visit on its own was significantly different from baseline (I know this is a little odd, so we can chat about it when we go over the results). There was also an overall effect of HbA1c, but nothing else was significant.
+# Carb inputs per day
 
-# Other outcomes
+## Final model
 
-## Carb inputs per day
+```{r}
+carb_mod <- lmer(carb_inputs_per_day ~ Treatment*StudyVisit + HbA1c + Sex + 
+                  age_years + income_three + carb_inputs_per_day_b + (1|Site/ID),
+                 data = dat)
+```
 
-```{r echo=FALSE,dpi=600}
-carb_mod <- lme(carb_inputs_per_day ~ Treatment*StudyVisit + HbA1c + Sex + 
-                  age_years + IncomeLevel + Insurance + carb_inputs_per_day_b,
-                random =~1|Site/ID, data = dat,na.action = na.omit)
+```{r include=FALSE}
 plot(carb_mod,main="Carb Inputs per Day",idLabels=~ID,id=0.0001)
 ```
 
-Residuals look pretty good! I think there might be a couple of outliers, but really they look well distributed overall. It might be worth looking into those observations, just in case, but I wouldn't worry about them too much right now.
+### Results
 
 ```{r echo=FALSE}
 kable(anova(carb_mod),caption = "Overall Effects")
-kable(summary(carb_mod)$tTable,caption = "Fixed Effects")
+kable(summary(carb_mod)$coefficients,caption = "Fixed Effects")
 ```
 
-There was an overall effect of study visit, HbA1c, sex, age, and income level.
+# Boluses per day
 
-## Boluses per day
+## Final model
 
-```{r echo=FALSE,dpi=600}
-bolus_day_mod <- lme(boluses_per_day ~ Treatment*StudyVisit + HbA1c + Sex + 
-                  age_years + IncomeLevel + Insurance + boluses_per_day_b,
-                random =~1|Site/ID, data = dat,na.action = na.omit)
+```{r}
+bolus_day_mod <- lmer(boluses_per_day ~ Treatment*StudyVisit + HbA1c + Sex + 
+                  age_years + income_three + boluses_per_day_b + (1|Site/ID),
+                  data = dat)
+```
+
+```{r include=FALSE}
 plot(bolus_day_mod,main="Boluses per Day",idLabels=~ID,id=0.001)
 ```
 
-Residuals look pretty good again, but the same group as carbs per day might be outliers here as well. So it might be worth looking into those to make sure there isn't something off with their data. I'm always hesitant to exclude data unless there's a really good reason for it (e.g. biologically or technically impossible values), but it's probably worth checking. The fact that it's the same three people makes me think they're just inputting carbs and following up with a bolus a lot, and overall the model seems to be a good fit. 
+### Results
 
 ```{r echo=FALSE}
 kable(anova(bolus_day_mod),caption = "Overall Effects")
-kable(summary(bolus_day_mod)$tTable,caption = "Fixed Effects")
+kable(summary(bolus_day_mod)$coefficients,caption = "Fixed Effects")
 ```
 
-## % extreme boluses without carb
+# Percent extreme boluses without carb
 
-```{r echo=FALSE,dpi=600}
-extreme_bolus_mod <- lme(extremeBG_without_carb_with_bolus_piu ~ Treatment*StudyVisit + HbA1c + Sex + age_years + IncomeLevel + Insurance + extremeBG_without_carb_with_bolus_b,random =~1|Site/ID, data = dat,na.action = na.omit)
+## Final model
+
+```{r}
+extreme_bolus_mod <- lmer(extremeBG_without_carb_with_bolus_piu ~ 
+                            Treatment*StudyVisit + HbA1c + Sex + age_years + 
+                            income_three + extremeBG_without_carb_with_bolus_b +
+                            (1|Site/ID), data = dat)
+```
+
+```{r include=FALSE}
 plot(extreme_bolus_mod,main="% bolused when extreme (>250) and no carb",idLabels=~ID,id=0.0001)
 ```
 
-Those residauls look pretty weird. I'd say they're sort of on the line. Let's try log-transforming the outcome and baseline scores:
-
-```{r echo=FALSE,dpi=600}
-dat$extremeBG_without_carb_with_bolus_log <- 
-  log(dat$extremeBG_without_carb_with_bolus)
-dat$extremeBG_without_carb_with_bolus_log[dat$extremeBG_without_carb_with_bolus_log == -Inf] <- NA
-dat$extremeBG_without_carb_with_bolus_b_log <- 
-  log(dat$extremeBG_without_carb_with_bolus_b)
-dat$extremeBG_without_carb_with_bolus_b_log[dat$extremeBG_without_carb_with_bolus_b_log == -Inf] <- NA
-
-extreme_bolus_mod_log <- lme(extremeBG_without_carb_with_bolus_log ~ Treatment*StudyVisit + HbA1c + Sex + age_years + IncomeLevel + Insurance + extremeBG_without_carb_with_bolus_b_log,random =~1|Site/ID, data = dat,na.action = na.omit)
-
-plot(extreme_bolus_mod_log,main="log(% bolused when extreme (>250) and no carb)")
-```
-
-Those are even worse! So I think we should stick with the non-transformed model. Any other transformations will make the analysis more complex than necessary. Why don't we see if the data for 211, 112, and 114 look reasonable? If not we can exclude them and see if it improves the model. Otherwise, I think we can with this model even though the residuals aren't amazing. 
+### Results 
 
 ```{r echo=FALSE}
 kable(anova(extreme_bolus_mod),caption = "Overall Effects")
-kable(summary(extreme_bolus_mod)$tTable,caption = "Fixed Effects")
+kable(summary(extreme_bolus_mod)$coefficients,caption = "Fixed Effects")
 ```
 
 # Psych Variables
 
-```{r echo=FALSE,eval=FALSE}
-# Model selection
-# Make non-missing dataframe
-step_data <- dat %>% select(ID,readings_per_day_change,Treatment,zDEPRESSION,
-                            HbA1c,StudyVisit,Sex,age_years,T1D_dur_years,
-                            IncomeLevel,Insurance)
-step_data <- step_data[complete.cases(step_data),]
-# Stepwise selection by AIC
-full_mod_l <- lme(readings_per_day_change ~ Treatment*zDEPRESSION*StudyVisit + 
-                     Sex + age_years + T1D_dur_years + Treatment*IncomeLevel +
-                     Treatment*Insurance,random = ~1|ID,data = step_data,
-                  na.action = na.omit,method = "ML")
-step_mod <- stepAIC(full_mod_l) 
-# The model readings_per_day_change ~ Treatment + zDEPRESSION + StudyVisit + 
-# Insurance + Treatment:StudyVisit + zDEPRESSION:StudyVisit 
-# is the best, and also makes the most sense in terms of the question.
+## Check convergence
 
-# Check another outcome
-step_data <- dat %>% select(ID,highBG_change,Treatment,zDEPRESSION,
-                            HbA1c,StudyVisit,Sex,age_years,T1D_dur_years,
-                            IncomeLevel,Insurance)
-step_data <- step_data[complete.cases(step_data),]
-full_mod_l <- lme(highBG_change ~ Treatment*zDEPRESSION*StudyVisit + 
-                     Sex + age_years + T1D_dur_years + Treatment*IncomeLevel +
-                     Treatment*Insurance,random = ~1|ID,data = step_data,
-                  na.action = na.omit,method = "ML")
-step_mod <- stepAIC(full_mod_l) 
-
-# highBG_change ~ Treatment + zDEPRESSION + StudyVisit + Sex + age_years + 
-# T1D_dur_years + IncomeLevel + Insurance + Treatment:zDEPRESSION + 
-# Treatment:IncomeLevel + Treatment:Insurance 
-# is the best model that includes Treatment:zDEPRESSION. 
-
-# One more outcome.
-step_data <- dat %>% select(ID,carb_inputs_per_day_change,Treatment,zDEPRESSION,
-                            HbA1c,StudyVisit,Sex,age_years,T1D_dur_years,
-                            IncomeLevel,Insurance)
-step_data <- step_data[complete.cases(step_data),]
-full_mod_l <- lme(carb_inputs_per_day_change ~ Treatment*zDEPRESSION*StudyVisit + 
-                     Sex + age_years + T1D_dur_years + Treatment*IncomeLevel +
-                     Treatment*Insurance,random = ~1|ID,data = step_data,
-                  na.action = na.omit,method = "ML")
-step_mod <- stepAIC(full_mod_l) 
-# carb_inputs_per_day_change ~ Treatment + zDEPRESSION + StudyVisit + 
-# Treatment:zDEPRESSION
-# is the best. Because high BG change has a lot of covariates but the other ones 
-# don't, I think it makes sense to stick with a model similar to the outcomes 
-# above, but without HbA1c:
-# outcome ~ Treatment + zDEPRESSION + StudyVisit + Treatment:StudyVisit + 
-# zDEPRESSION:StudyVisit + Sex + age_years + IncomeLevel + Insurance
+```{r}
+# BG readings
+reading_mod <- lmer(readings_per_day ~ Treatment*zDEPRESSION + StudyVisit + 
+                   Treatment:StudyVisit + Sex + age_years + income_three + 
+                   readings_per_day_b + (1|Site/ID), data = dat)
+# High BG without carb
+high_mod <- lmer(highBG_without_carb_with_bolus_piu ~ Treatment*zDEPRESSION + 
+                   StudyVisit + Treatment:StudyVisit + Sex + age_years + 
+                   income_three + highBG_without_carb_with_bolus_b + (1|Site/ID),
+                 data = dat)
 ```
 
-## Change Scores Baseline to T3
-
-```{r echo=FALSE}
-# Split the change score model into two linear models without random effects, e.g. change at T2 ~ depression, change at T3 ~ depression etc. Keep same covariates as before, since we don't have to worry about singular fits, etc. Change at T3 only for now.
-t3 <- dat %>% filter(StudyVisit == 3)
-vars <- c("HbA1c","Sex","age_years","T1D_dur_years","Insurance","IncomeLevel")
-t1 <- CreateTableOne(vars,strata = "Treatment",data = t3)
-kableone(t1)
-```
-
-Because there is a significant difference in sex at T3, we'll adjust for it in the linear models. Also, even though insurance technically isn't significantly different, it was at T1 and we adjusted for it earlier, so we'll include it in these models as well. Everything else is the same between the two groups, and we're not interested in the effects, so we can leave them out of the models. 
-
-All p values FDR-adjusted for multiple comparisons.
-
-```{r eval=FALSE,echo=FALSE}
-# More model selection
-# Singular fit
-bg_checks_mod <- lmer(readings_per_day_change ~ Treatment*zDEPRESSION + 
-                       StudyVisit + Treatment:StudyVisit + 
-                       Sex + age_years + IncomeLevel + Insurance + (1|ID),
-                     data = dat) 
-# Should I start with this model and remove least important covariates until the fit isn't singular?
-# I think the issue that we basically have 2 measures per person, so can't support a complicated model?
-
-# Okay fit
-bg_checks_mod <- lmer(readings_per_day_change ~ Treatment*zDEPRESSION + 
-                       StudyVisit + Treatment:StudyVisit + (1|ID),
-                     data = dat)
-plot(bg_checks_mod)
-bg_checks_mod <- lme(readings_per_day_change ~ Treatment*zDEPRESSION + 
-                       StudyVisit + Treatment:StudyVisit,random = ~1|ID,
-                     data = dat,na.action = na.omit)
-kable(summary(bg_checks_mod)$tTable)
-```
-
-```{r echo=FALSE}
-# Depression
-bg_depress_mod <- lm(readings_per_day_change ~ Treatment*zDEPRESSION + Sex + Insurance,data = t3)
-results <- as.data.frame(summary(bg_depress_mod)$coefficients)
-results$model <- "bg_depress_mod"
-adjust_dep <- results
-
-carb_depress_mod <- lm(carb_inputs_per_day_change ~ Treatment*zDEPRESSION + Sex + Insurance,data = t3)
-results <- as.data.frame(summary(carb_depress_mod)$coefficients)
-results$model <- "carb_depress_mod"
-adjust_dep <- rbind(adjust_dep,results)
-
-bolus_depress_mod <- lm(boluses_per_day_change ~ Treatment*zDEPRESSION + Sex + Insurance,data = t3)
-results <- as.data.frame(summary(bolus_depress_mod)$coefficients)
-results$model <- "bolus_depress_mod"
-adjust_dep <- rbind(adjust_dep,results)
-
-highbg_depress_mod <- lm(highBG_change ~ Treatment*zDEPRESSION + Sex + Insurance,data = t3)
-results <- as.data.frame(summary(highbg_depress_mod)$coefficients)
-results$model <- "highbg_depress_mod"
-adjust_dep <- rbind(adjust_dep,results)
-
-extremebg_depress_mod <- lm(extremeBG_change ~ Treatment*zDEPRESSION + Sex + Insurance,data = t3)
-results <- as.data.frame(summary(extremebg_depress_mod)$coefficients)
-results$model <- "extremebg_depress_mod"
-adjust_dep <- rbind(adjust_dep,results)
-
-#FOH Help
-bg_help_mod <- lm(readings_per_day_change ~ Treatment*FOH_C_Help + Sex + Insurance,data = t3)
-results <- as.data.frame(summary(bg_help_mod)$coefficients)
-results$model <- "bg_help_mod"
-adjust_help <- results
-
-carb_help_mod <- lm(carb_inputs_per_day_change ~ Treatment*FOH_C_Help + Sex + Insurance,data = t3)
-results <- as.data.frame(summary(carb_help_mod)$coefficients)
-results$model <- "carb_help_mod"
-adjust_help <- rbind(adjust_help,results)
-
-bolus_help_mod <- lm(boluses_per_day_change ~ Treatment*FOH_C_Help + Sex + Insurance,data = t3)
-results <- as.data.frame(summary(bolus_help_mod)$coefficients)
-results$model <- "bolus_help_mod"
-adjust_help <- rbind(adjust_help,results)
-
-highbg_help_mod <- lm(highBG_change ~ Treatment*FOH_C_Help + Sex + Insurance,data = t3)
-results <- as.data.frame(summary(highbg_help_mod)$coefficients)
-results$model <- "highbg_help_mod"
-adjust_help <- rbind(adjust_help,results)
-
-extremebg_help_mod <- lm(extremeBG_change ~ Treatment*FOH_C_Help + Sex + Insurance,data = t3)
-results <- as.data.frame(summary(extremebg_help_mod)$coefficients)
-results$model <- "extremebg_help_mod"
-adjust_help <- rbind(adjust_help,results)
-
-# FOH Maintain
-bg_maint_mod <- lm(readings_per_day_change ~ Treatment*FOH_C_Maint + Sex + Insurance,data = t3)
-results <- as.data.frame(summary(bg_maint_mod)$coefficients)
-results$model <- "bg_maint_mod"
-adjust_maint <- results
-
-carb_maint_mod <- lm(carb_inputs_per_day_change ~ Treatment*FOH_C_Maint + Sex + Insurance,data = t3)
-results <- as.data.frame(summary(carb_maint_mod)$coefficients)
-results$model <- "carb_maint_mod"
-adjust_maint <- rbind(adjust_maint,results)
-
-bolus_maint_mod <- lm(boluses_per_day_change ~ Treatment*FOH_C_Maint + Sex + Insurance,data = t3)
-results <- as.data.frame(summary(bolus_maint_mod)$coefficients)
-results$model <- "bolus_maint_mod"
-adjust_maint <- rbind(adjust_maint,results)
+<!-- ```{r echo=FALSE,eval=FALSE} -->
+<!-- # Model selection -->
+<!-- # Make non-missing dataframe -->
+<!-- step_data <- dat %>% select(ID,readings_per_day_change,Treatment,zDEPRESSION, -->
+<!--                             HbA1c,StudyVisit,Sex,age_years,T1D_dur_years, -->
+<!--                             IncomeLevel,Insurance) -->
+<!-- step_data <- step_data[complete.cases(step_data),] -->
+<!-- # Stepwise selection by AIC -->
+<!-- full_mod_l <- lme(readings_per_day_change ~ Treatment*zDEPRESSION*StudyVisit + -->
+<!--                      Sex + age_years + T1D_dur_years + Treatment*IncomeLevel + -->
+<!--                      Treatment*Insurance,random = ~1|ID,data = step_data, -->
+<!--                   na.action = na.omit,method = "ML") -->
+<!-- step_mod <- stepAIC(full_mod_l) -->
+<!-- # The model readings_per_day_change ~ Treatment + zDEPRESSION + StudyVisit + -->
+<!-- # Insurance + Treatment:StudyVisit + zDEPRESSION:StudyVisit -->
+<!-- # is the best, and also makes the most sense in terms of the question. -->
+
+<!-- # Check another outcome -->
+<!-- step_data <- dat %>% select(ID,highBG_change,Treatment,zDEPRESSION, -->
+<!--                             HbA1c,StudyVisit,Sex,age_years,T1D_dur_years, -->
+<!--                             IncomeLevel,Insurance) -->
+<!-- step_data <- step_data[complete.cases(step_data),] -->
+<!-- full_mod_l <- lme(highBG_change ~ Treatment*zDEPRESSION*StudyVisit + -->
+<!--                      Sex + age_years + T1D_dur_years + Treatment*IncomeLevel + -->
+<!--                      Treatment*Insurance,random = ~1|ID,data = step_data, -->
+<!--                   na.action = na.omit,method = "ML") -->
+<!-- step_mod <- stepAIC(full_mod_l) -->
+
+<!-- # highBG_change ~ Treatment + zDEPRESSION + StudyVisit + Sex + age_years + -->
+<!-- # T1D_dur_years + IncomeLevel + Insurance + Treatment:zDEPRESSION + -->
+<!-- # Treatment:IncomeLevel + Treatment:Insurance -->
+<!-- # is the best model that includes Treatment:zDEPRESSION. -->
+
+<!-- # One more outcome. -->
+<!-- step_data <- dat %>% select(ID,carb_inputs_per_day_change,Treatment,zDEPRESSION, -->
+<!--                             HbA1c,StudyVisit,Sex,age_years,T1D_dur_years, -->
+<!--                             IncomeLevel,Insurance) -->
+<!-- step_data <- step_data[complete.cases(step_data),] -->
+<!-- full_mod_l <- lme(carb_inputs_per_day_change ~ Treatment*zDEPRESSION*StudyVisit + -->
+<!--                      Sex + age_years + T1D_dur_years + Treatment*IncomeLevel + -->
+<!--                      Treatment*Insurance,random = ~1|ID,data = step_data, -->
+<!--                   na.action = na.omit,method = "ML") -->
+<!-- step_mod <- stepAIC(full_mod_l) -->
+<!-- # carb_inputs_per_day_change ~ Treatment + zDEPRESSION + StudyVisit + -->
+<!-- # Treatment:zDEPRESSION -->
+<!-- # is the best. Because high BG change has a lot of covariates but the other ones -->
+<!-- # don't, I think it makes sense to stick with a model similar to the outcomes -->
+<!-- # above, but without HbA1c: -->
+<!-- # outcome ~ Treatment + zDEPRESSION + StudyVisit + Treatment:StudyVisit + -->
+<!-- # zDEPRESSION:StudyVisit + Sex + age_years + IncomeLevel + Insurance -->
+<!-- ``` -->
+
+<!-- ## Change Scores Baseline to T3 -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- # Split the change score model into two linear models without random effects, e.g. change at T2 ~ depression, change at T3 ~ depression etc. Keep same covariates as before, since we don't have to worry about singular fits, etc. Change at T3 only for now. -->
+<!-- t3 <- dat %>% filter(StudyVisit == 3) -->
+<!-- vars <- c("HbA1c","Sex","age_years","T1D_dur_years","Insurance","IncomeLevel") -->
+<!-- t1 <- CreateTableOne(vars,strata = "Treatment",data = t3) -->
+<!-- kableone(t1) -->
+<!-- ``` -->
+
+<!-- Because there is a significant difference in sex at T3, we'll adjust for it in the linear models. Also, even though insurance technically isn't significantly different, it was at T1 and we adjusted for it earlier, so we'll include it in these models as well. Everything else is the same between the two groups, and we're not interested in the effects, so we can leave them out of the models. -->
+
+<!-- All p values FDR-adjusted for multiple comparisons. -->
+
+<!-- ```{r eval=FALSE,echo=FALSE} -->
+<!-- # More model selection -->
+<!-- # Singular fit -->
+<!-- bg_checks_mod <- lmer(readings_per_day_change ~ Treatment*zDEPRESSION + -->
+<!--                        StudyVisit + Treatment:StudyVisit + -->
+<!--                        Sex + age_years + IncomeLevel + Insurance + (1|ID), -->
+<!--                      data = dat) -->
+<!-- # Should I start with this model and remove least important covariates until the fit isn't singular? -->
+<!-- # I think the issue that we basically have 2 measures per person, so can't support a complicated model? -->
+
+<!-- # Okay fit -->
+<!-- bg_checks_mod <- lmer(readings_per_day_change ~ Treatment*zDEPRESSION + -->
+<!--                        StudyVisit + Treatment:StudyVisit + (1|ID), -->
+<!--                      data = dat) -->
+<!-- plot(bg_checks_mod) -->
+<!-- bg_checks_mod <- lme(readings_per_day_change ~ Treatment*zDEPRESSION + -->
+<!--                        StudyVisit + Treatment:StudyVisit,random = ~1|ID, -->
+<!--                      data = dat,na.action = na.omit) -->
+<!-- kable(summary(bg_checks_mod)$tTable) -->
+<!-- ``` -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- # Depression -->
+<!-- bg_depress_mod <- lm(readings_per_day_change ~ Treatment*zDEPRESSION + Sex + Insurance,data = t3) -->
+<!-- results <- as.data.frame(summary(bg_depress_mod)$coefficients) -->
+<!-- results$model <- "bg_depress_mod" -->
+<!-- adjust_dep <- results -->
+
+<!-- carb_depress_mod <- lm(carb_inputs_per_day_change ~ Treatment*zDEPRESSION + Sex + Insurance,data = t3) -->
+<!-- results <- as.data.frame(summary(carb_depress_mod)$coefficients) -->
+<!-- results$model <- "carb_depress_mod" -->
+<!-- adjust_dep <- rbind(adjust_dep,results) -->
+
+<!-- bolus_depress_mod <- lm(boluses_per_day_change ~ Treatment*zDEPRESSION + Sex + Insurance,data = t3) -->
+<!-- results <- as.data.frame(summary(bolus_depress_mod)$coefficients) -->
+<!-- results$model <- "bolus_depress_mod" -->
+<!-- adjust_dep <- rbind(adjust_dep,results) -->
+
+<!-- highbg_depress_mod <- lm(highBG_change ~ Treatment*zDEPRESSION + Sex + Insurance,data = t3) -->
+<!-- results <- as.data.frame(summary(highbg_depress_mod)$coefficients) -->
+<!-- results$model <- "highbg_depress_mod" -->
+<!-- adjust_dep <- rbind(adjust_dep,results) -->
+
+<!-- extremebg_depress_mod <- lm(extremeBG_change ~ Treatment*zDEPRESSION + Sex + Insurance,data = t3) -->
+<!-- results <- as.data.frame(summary(extremebg_depress_mod)$coefficients) -->
+<!-- results$model <- "extremebg_depress_mod" -->
+<!-- adjust_dep <- rbind(adjust_dep,results) -->
+
+<!-- #FOH Help -->
+<!-- bg_help_mod <- lm(readings_per_day_change ~ Treatment*FOH_C_Help + Sex + Insurance,data = t3) -->
+<!-- results <- as.data.frame(summary(bg_help_mod)$coefficients) -->
+<!-- results$model <- "bg_help_mod" -->
+<!-- adjust_help <- results -->
+
+<!-- carb_help_mod <- lm(carb_inputs_per_day_change ~ Treatment*FOH_C_Help + Sex + Insurance,data = t3) -->
+<!-- results <- as.data.frame(summary(carb_help_mod)$coefficients) -->
+<!-- results$model <- "carb_help_mod" -->
+<!-- adjust_help <- rbind(adjust_help,results) -->
+
+<!-- bolus_help_mod <- lm(boluses_per_day_change ~ Treatment*FOH_C_Help + Sex + Insurance,data = t3) -->
+<!-- results <- as.data.frame(summary(bolus_help_mod)$coefficients) -->
+<!-- results$model <- "bolus_help_mod" -->
+<!-- adjust_help <- rbind(adjust_help,results) -->
+
+<!-- highbg_help_mod <- lm(highBG_change ~ Treatment*FOH_C_Help + Sex + Insurance,data = t3) -->
+<!-- results <- as.data.frame(summary(highbg_help_mod)$coefficients) -->
+<!-- results$model <- "highbg_help_mod" -->
+<!-- adjust_help <- rbind(adjust_help,results) -->
+
+<!-- extremebg_help_mod <- lm(extremeBG_change ~ Treatment*FOH_C_Help + Sex + Insurance,data = t3) -->
+<!-- results <- as.data.frame(summary(extremebg_help_mod)$coefficients) -->
+<!-- results$model <- "extremebg_help_mod" -->
+<!-- adjust_help <- rbind(adjust_help,results) -->
+
+<!-- # FOH Maintain -->
+<!-- bg_maint_mod <- lm(readings_per_day_change ~ Treatment*FOH_C_Maint + Sex + Insurance,data = t3) -->
+<!-- results <- as.data.frame(summary(bg_maint_mod)$coefficients) -->
+<!-- results$model <- "bg_maint_mod" -->
+<!-- adjust_maint <- results -->
+
+<!-- carb_maint_mod <- lm(carb_inputs_per_day_change ~ Treatment*FOH_C_Maint + Sex + Insurance,data = t3) -->
+<!-- results <- as.data.frame(summary(carb_maint_mod)$coefficients) -->
+<!-- results$model <- "carb_maint_mod" -->
+<!-- adjust_maint <- rbind(adjust_maint,results) -->
+
+<!-- bolus_maint_mod <- lm(boluses_per_day_change ~ Treatment*FOH_C_Maint + Sex + Insurance,data = t3) -->
+<!-- results <- as.data.frame(summary(bolus_maint_mod)$coefficients) -->
+<!-- results$model <- "bolus_maint_mod" -->
+<!-- adjust_maint <- rbind(adjust_maint,results) -->
+
+<!-- highbg_maint_mod <- lm(highBG_change ~ Treatment*FOH_C_Maint + Sex + Insurance,data = t3) -->
+<!-- results <- as.data.frame(summary(highbg_maint_mod)$coefficients) -->
+<!-- results$model <- "highbg_maint_mod" -->
+<!-- adjust_maint <- rbind(adjust_maint,results) -->
+
+<!-- extremebg_maint_mod <- lm(extremeBG_change ~ Treatment*FOH_C_Maint + Sex + Insurance,data = t3) -->
+<!-- results <- as.data.frame(summary(extremebg_maint_mod)$coefficients) -->
+<!-- results$model <- "extremebg_maint_mod" -->
+<!-- adjust_maint <- rbind(adjust_maint,results) -->
+
+<!-- # FOH Soc -->
+<!-- bg_soc_mod <- lm(readings_per_day_change ~ Treatment*FOH_C_Soc + Sex + Insurance,data = t3) -->
+<!-- results <- as.data.frame(summary(bg_soc_mod)$coefficients) -->
+<!-- results$model <- "bg_soc_mod" -->
+<!-- adjust_soc <- results -->
 
-highbg_maint_mod <- lm(highBG_change ~ Treatment*FOH_C_Maint + Sex + Insurance,data = t3)
-results <- as.data.frame(summary(highbg_maint_mod)$coefficients)
-results$model <- "highbg_maint_mod"
-adjust_maint <- rbind(adjust_maint,results)
+<!-- carb_soc_mod <- lm(carb_inputs_per_day_change ~ Treatment*FOH_C_Soc + Sex + Insurance,data = t3) -->
+<!-- results <- as.data.frame(summary(carb_soc_mod)$coefficients) -->
+<!-- results$model <- "carb_soc_mod" -->
+<!-- adjust_soc <- rbind(adjust_soc,results) -->
 
-extremebg_maint_mod <- lm(extremeBG_change ~ Treatment*FOH_C_Maint + Sex + Insurance,data = t3)
-results <- as.data.frame(summary(extremebg_maint_mod)$coefficients)
-results$model <- "extremebg_maint_mod"
-adjust_maint <- rbind(adjust_maint,results)
+<!-- bolus_soc_mod <- lm(boluses_per_day_change ~ Treatment*FOH_C_Soc + Sex + Insurance,data = t3) -->
+<!-- results <- as.data.frame(summary(bolus_soc_mod)$coefficients) -->
+<!-- results$model <- "bolus_soc_mod" -->
+<!-- adjust_soc <- rbind(adjust_soc,results) -->
 
-# FOH Soc
-bg_soc_mod <- lm(readings_per_day_change ~ Treatment*FOH_C_Soc + Sex + Insurance,data = t3)
-results <- as.data.frame(summary(bg_soc_mod)$coefficients)
-results$model <- "bg_soc_mod"
-adjust_soc <- results
+<!-- highbg_soc_mod <- lm(highBG_change ~ Treatment*FOH_C_Soc + Sex + Insurance,data = t3) -->
+<!-- results <- as.data.frame(summary(highbg_soc_mod)$coefficients) -->
+<!-- results$model <- "highbg_soc_mod" -->
+<!-- adjust_soc <- rbind(adjust_soc,results) -->
 
-carb_soc_mod <- lm(carb_inputs_per_day_change ~ Treatment*FOH_C_Soc + Sex + Insurance,data = t3)
-results <- as.data.frame(summary(carb_soc_mod)$coefficients)
-results$model <- "carb_soc_mod"
-adjust_soc <- rbind(adjust_soc,results)
+<!-- extremebg_soc_mod <- lm(extremeBG_change ~ Treatment*FOH_C_Soc + Sex + Insurance,data = t3) -->
+<!-- results <- as.data.frame(summary(extremebg_soc_mod)$coefficients) -->
+<!-- results$model <- "extremebg_soc_mod" -->
+<!-- adjust_soc <- rbind(adjust_soc,results) -->
+<!-- # Adjust p values -->
+<!-- adjust_dep$`Pr(>|t|)` <- p.adjust(adjust_dep$`Pr(>|t|)`,"fdr") -->
+<!-- adjust_help$`Pr(>|t|)` <- p.adjust(adjust_help$`Pr(>|t|)`,"fdr") -->
+<!-- adjust_maint$`Pr(>|t|)` <- p.adjust(adjust_maint$`Pr(>|t|)`,"fdr") -->
+<!-- adjust_soc$`Pr(>|t|)` <- p.adjust(adjust_soc$`Pr(>|t|)`,"fdr") -->
+<!-- ``` -->
 
-bolus_soc_mod <- lm(boluses_per_day_change ~ Treatment*FOH_C_Soc + Sex + Insurance,data = t3)
-results <- as.data.frame(summary(bolus_soc_mod)$coefficients)
-results$model <- "bolus_soc_mod"
-adjust_soc <- rbind(adjust_soc,results)
+<!-- ## Depression -->
 
-highbg_soc_mod <- lm(highBG_change ~ Treatment*FOH_C_Soc + Sex + Insurance,data = t3)
-results <- as.data.frame(summary(highbg_soc_mod)$coefficients)
-results$model <- "highbg_soc_mod"
-adjust_soc <- rbind(adjust_soc,results)
+<!-- ### BG Checks per Day -->
 
-extremebg_soc_mod <- lm(extremeBG_change ~ Treatment*FOH_C_Soc + Sex + Insurance,data = t3)
-results <- as.data.frame(summary(extremebg_soc_mod)$coefficients)
-results$model <- "extremebg_soc_mod"
-adjust_soc <- rbind(adjust_soc,results)
-# Adjust p values
-adjust_dep$`Pr(>|t|)` <- p.adjust(adjust_dep$`Pr(>|t|)`,"fdr")
-adjust_help$`Pr(>|t|)` <- p.adjust(adjust_help$`Pr(>|t|)`,"fdr")
-adjust_maint$`Pr(>|t|)` <- p.adjust(adjust_maint$`Pr(>|t|)`,"fdr")
-adjust_soc$`Pr(>|t|)` <- p.adjust(adjust_soc$`Pr(>|t|)`,"fdr")
-```
+<!-- ```{r echo=FALSE} -->
+<!-- kable(adjust_dep[adjust_dep$model == "bg_depress_mod",1:4]) -->
+<!-- ``` -->
 
-## Depression
+<!-- ### Carb Inputs per Day -->
 
-### BG Checks per Day
+<!-- ```{r echo=FALSE} -->
+<!-- kable(adjust_dep[adjust_dep$model == "carb_depress_mod",1:4]) -->
+<!-- ``` -->
 
-```{r echo=FALSE}
-kable(adjust_dep[adjust_dep$model == "bg_depress_mod",1:4])
-```
+<!-- ### Boluses per Day -->
 
-### Carb Inputs per Day
+<!-- ```{r echo=FALSE} -->
+<!-- kable(adjust_dep[adjust_dep$model == "bolus_depress_mod",1:4]) -->
+<!-- ``` -->
 
-```{r echo=FALSE}
-kable(adjust_dep[adjust_dep$model == "carb_depress_mod",1:4])
-```
+<!-- ### High BG Without Carb With Bolus -->
 
-### Boluses per Day
+<!-- ```{r echo=FALSE} -->
+<!-- kable(adjust_dep[adjust_dep$model == "highbg_depress_mod",1:4]) -->
+<!-- ``` -->
 
-```{r echo=FALSE}
-kable(adjust_dep[adjust_dep$model == "bolus_depress_mod",1:4])
-```
+<!-- ### Extreme BG Without Carb With Bolus -->
 
-### High BG Without Carb With Bolus
+<!-- ```{r echo=FALSE} -->
+<!-- kable(adjust_dep[adjust_dep$model == "extremebg_depress_mod",1:4]) -->
+<!-- ``` -->
 
-```{r echo=FALSE}
-kable(adjust_dep[adjust_dep$model == "highbg_depress_mod",1:4])
-```
+<!-- ## FOH Help -->
 
-### Extreme BG Without Carb With Bolus
+<!-- ### BG Checks per Day -->
 
-```{r echo=FALSE}
-kable(adjust_dep[adjust_dep$model == "extremebg_depress_mod",1:4])
-```
+<!-- ```{r echo=FALSE} -->
+<!-- kable(adjust_help[adjust_help$model == "bg_help_mod",1:4]) -->
+<!-- ``` -->
 
-## FOH Help
+<!-- ### Carb Inputs per Day -->
 
-### BG Checks per Day
+<!-- ```{r echo=FALSE} -->
+<!-- kable(adjust_help[adjust_help$model == "carb_help_mod",1:4]) -->
+<!-- ``` -->
 
-```{r echo=FALSE}
-kable(adjust_help[adjust_help$model == "bg_help_mod",1:4])
-```
+<!-- ### Boluses per Day -->
 
-### Carb Inputs per Day
+<!-- ```{r echo=FALSE} -->
+<!-- kable(adjust_help[adjust_help$model == "bolus_help_mod",1:4]) -->
+<!-- ``` -->
 
-```{r echo=FALSE}
-kable(adjust_help[adjust_help$model == "carb_help_mod",1:4])
-```
+<!-- ### High BG Without Carb With Bolus -->
 
-### Boluses per Day
+<!-- ```{r echo=FALSE} -->
+<!-- kable(adjust_help[adjust_help$model == "highbg_help_mod",1:4]) -->
+<!-- ``` -->
 
-```{r echo=FALSE}
-kable(adjust_help[adjust_help$model == "bolus_help_mod",1:4])
-```
+<!-- ### Extreme BG Without Carb With Bolus -->
 
-### High BG Without Carb With Bolus
+<!-- ```{r echo=FALSE} -->
+<!-- kable(adjust_help[adjust_help$model == "extremebg_help_mod",1:4]) -->
+<!-- ``` -->
 
-```{r echo=FALSE}
-kable(adjust_help[adjust_help$model == "highbg_help_mod",1:4])
-```
+<!-- ## FOH Maintain -->
 
-### Extreme BG Without Carb With Bolus
+<!-- ### BG Checks per Day -->
 
-```{r echo=FALSE}
-kable(adjust_help[adjust_help$model == "extremebg_help_mod",1:4])
-```
+<!-- ```{r echo=FALSE} -->
+<!-- kable(adjust_maint[adjust_maint$model == "bg_maint_mod",1:4]) -->
+<!-- ``` -->
 
-## FOH Maintain
+<!-- ### Carb Inputs per Day -->
 
-### BG Checks per Day
+<!-- ```{r echo=FALSE} -->
+<!-- kable(adjust_maint[adjust_maint$model == "carb_maint_mod",1:4]) -->
+<!-- ``` -->
 
-```{r echo=FALSE}
-kable(adjust_maint[adjust_maint$model == "bg_maint_mod",1:4])
-```
+<!-- ### Boluses per Day -->
 
-### Carb Inputs per Day
+<!-- ```{r echo=FALSE} -->
+<!-- kable(adjust_maint[adjust_maint$model == "bolus_maint_mod",1:4]) -->
+<!-- ``` -->
 
-```{r echo=FALSE}
-kable(adjust_maint[adjust_maint$model == "carb_maint_mod",1:4])
-```
+<!-- ### High BG Without Carb With Bolus -->
 
-### Boluses per Day
+<!-- ```{r echo=FALSE} -->
+<!-- kable(adjust_maint[adjust_maint$model == "highbg_maint_mod",1:4]) -->
+<!-- ``` -->
 
-```{r echo=FALSE}
-kable(adjust_maint[adjust_maint$model == "bolus_maint_mod",1:4])
-```
+<!-- ### Extreme BG Without Carb With Bolus -->
 
-### High BG Without Carb With Bolus
+<!-- ```{r echo=FALSE} -->
+<!-- kable(adjust_maint[adjust_maint$model == "extremebg_maint_mod",1:4]) -->
+<!-- ``` -->
 
-```{r echo=FALSE}
-kable(adjust_maint[adjust_maint$model == "highbg_maint_mod",1:4])
-```
+<!-- ## FOH Soc -->
 
-### Extreme BG Without Carb With Bolus
+<!-- ### BG Checks per Day -->
 
-```{r echo=FALSE}
-kable(adjust_maint[adjust_maint$model == "extremebg_maint_mod",1:4])
-```
+<!-- ```{r echo=FALSE} -->
+<!-- kable(adjust_soc[adjust_soc$model == "bg_soc_mod",1:4]) -->
+<!-- ``` -->
 
-## FOH Soc
+<!-- ### Carb Inputs per Day -->
 
-### BG Checks per Day
+<!-- ```{r echo=FALSE} -->
+<!-- kable(adjust_soc[adjust_soc$model == "carb_soc_mod",1:4]) -->
+<!-- ``` -->
 
-```{r echo=FALSE}
-kable(adjust_soc[adjust_soc$model == "bg_soc_mod",1:4])
-```
+<!-- ### Boluses per Day -->
 
-### Carb Inputs per Day
+<!-- ```{r echo=FALSE} -->
+<!-- kable(adjust_soc[adjust_soc$model == "bolus_soc_mod",1:4]) -->
+<!-- ``` -->
 
-```{r echo=FALSE}
-kable(adjust_soc[adjust_soc$model == "carb_soc_mod",1:4])
-```
+<!-- ### High BG Without Carb With Bolus -->
 
-### Boluses per Day
+<!-- ```{r echo=FALSE} -->
+<!-- kable(adjust_soc[adjust_soc$model == "highbg_soc_mod",1:4]) -->
+<!-- ``` -->
 
-```{r echo=FALSE}
-kable(adjust_soc[adjust_soc$model == "bolus_soc_mod",1:4])
-```
+<!-- ### Extreme BG Without Carb With Bolus -->
 
-### High BG Without Carb With Bolus
+<!-- ```{r echo=FALSE} -->
+<!-- kable(adjust_soc[adjust_soc$model == "extremebg_soc_mod",1:4]) -->
+<!-- ``` -->
 
-```{r echo=FALSE}
-kable(adjust_soc[adjust_soc$model == "highbg_soc_mod",1:4])
-```
+<!-- # Models with income replacing insurance -->
 
-### Extreme BG Without Carb With Bolus
-
-```{r echo=FALSE}
-kable(adjust_soc[adjust_soc$model == "extremebg_soc_mod",1:4])
-```
-
-
-```{r echo=FALSE}
-# Power Analysis
-# PA done with GLIMMPSE, cross tabs for group sizes page
-cross_tabs <- xtabs(formula = ~Insurance+Sex+Treatment,data = dat)
-cross_tabs
-means <- plyr::ddply(dat,~Insurance+Sex+Treatment+StudyVisit,summarise,mean(extremeBG_without_carb_with_bolus,na.rm=T)) %>%
-  arrange(StudyVisit,Treatment,Sex)
-means
-```
+<!-- ```{r echo=FALSE} -->
+<!-- # Power Analysis -->
+<!-- # PA done with GLIMMPSE, cross tabs for group sizes page -->
+<!-- cross_tabs <- xtabs(formula = ~Insurance+Sex+Treatment,data = dat) -->
+<!-- cross_tabs -->
+<!-- means <- plyr::ddply(dat,~Insurance+Sex+Treatment+StudyVisit,summarise,mean(extremeBG_without_carb_with_bolus,na.rm=T)) %>% -->
+<!--   arrange(StudyVisit,Treatment,Sex) -->
+<!-- means -->
+<!-- ``` -->
