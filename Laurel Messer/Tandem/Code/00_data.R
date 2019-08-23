@@ -59,8 +59,6 @@ dat$method_cat[dat$BaselineMethod=="Tandem Insulin Pump"]<-"Tandem Pump"
 dat$method_cat<-as.factor(dat$method_cat)
 label(dat$method_cat)<-"Previous insulin method"
 
-table(dat$B_RESPONDENT)
-
 dat$age_cat<-NA
 dat$age_cat[dat$Age<18]<-"<18"
 dat$age_cat[dat$Age>=18]<-">=18"
@@ -229,5 +227,17 @@ dat$method_cat[dat$BaselineMethod_other=="both Medtronic and Tandem pumps"]<-"Ta
 dat$method_cat[dat$BaselineMethod_other=="Animas, MDI and now tandem"]<-"Tandem Pump"
 dat$method_cat<-factor(dat$method_cat)
 table(dat$method_cat,useNA="always")
+
+
+table(dat$B_RESPONDENT)
+table(dat$B_RESPONDENT_OTHER)
+dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="Both"]<-"Person with Diabetes"
+dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="both of the above"]<-"Person with Diabetes"
+dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="Both person with diabetes and parent of diabetic"]<-"Person with Diabetes"
+dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="both, my daughter and myself have diabetes"]<-"Person with Diabetes"
+dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="Diabetic"]<-"Person with Diabetes"
+dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="I am both of the above options."]<-"Person with Diabetes"
+dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="Mom"]<-"A Parent/Guardian/Caregiver of someone with Diabetes"
+dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="wife of person with diabetes"]<-"A Parent/Guardian/Caregiver of someone with Diabetes"
 
 
