@@ -232,7 +232,7 @@ table(dat$method_cat,useNA="always")
 table(dat$B_RESPONDENT)
 table(dat$B_RESPONDENT_OTHER)
 dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="Both"]<-"Person with Diabetes"
-dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="both of the above"]<-"Person with Diabetes"
+dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="both of the above"]<-"A Parent/Guardian/Caregiver of someone with Diabetes"
 dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="Both person with diabetes and parent of diabetic"]<-"Person with Diabetes"
 dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="both, my daughter and myself have diabetes"]<-"Person with Diabetes"
 dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="Diabetic"]<-"Person with Diabetes"
