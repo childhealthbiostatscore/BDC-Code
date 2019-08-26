@@ -46,8 +46,22 @@ change1.benefit<-lm(dat.model$change1_benefit~dat.model$method_cat+dat.model$cgm
                       dat.model$Age+dat.model$mid_point)
 
 summary(change1.benefit)
+anova(change1.benefit)
+
 #plot(change1.benefit)
 ch1.fac1.means <- lsmeans(change1.benefit, c("method_cat"))
+###prep for tables:
+ch1.fac1.means<-as.data.frame(ch1.fac1.means)
+ch1.fac1.means<-ch1.fac1.means[,-c(3,4)]
+ch1.fac1.means$lsmean<-round(as.numeric(ch1.fac1.means$lsmean),2)
+ch1.fac1.means$lower.CL<-round(as.numeric(ch1.fac1.means$lower.CL),2)
+ch1.fac1.means$upper.CL<-round(as.numeric(ch1.fac1.means$upper.CL),2)
+
+ch1.fac1.means$change_est<-paste0(ch1.fac1.means$lsmean," (95% CI: ",
+                                  ch1.fac1.means$lower.CL,",",
+                                  ch1.fac1.means$upper.CL,")")
+ch1.fac1.means<-ch1.fac1.means[,-c(2:4)]
+colnames(ch1.fac1.means)<-c("Previous Method","Change from Baseline to Mid-Point")
 
 
 change2.benefit<-lm(dat.model$change2_benefit~1)
@@ -66,9 +80,24 @@ change2.benefit<-lm(dat.model$change2_benefit~dat.model$method_cat+dat.model$cgm
                     +dat.model$Baseline_A1C+dat.model$mid_point)
 
 summary(change2.benefit)
+anova(change2.benefit)
+
 #plot(change2.benefit)
 ch2.fac1.means <- lsmeans(change2.benefit, c("method_cat"))
+ch2.fac1.means<-as.data.frame(ch2.fac1.means)
 
+ch2.fac1.means<-ch2.fac1.means[,-c(3,4)]
+ch2.fac1.means$lsmean<-round(as.numeric(ch2.fac1.means$lsmean),2)
+ch2.fac1.means$lower.CL<-round(as.numeric(ch2.fac1.means$lower.CL),2)
+ch2.fac1.means$upper.CL<-round(as.numeric(ch2.fac1.means$upper.CL),2)
+
+ch2.fac1.means$change_est<-paste0(ch2.fac1.means$lsmean," (95% CI: ",
+                                  ch2.fac1.means$lower.CL,",",
+                                  ch2.fac1.means$upper.CL,")")
+ch2.fac1.means<-ch2.fac1.means[,-c(2:4)]
+colnames(ch2.fac1.means)<-c("Previous Method","Change from Mid-Point to 6 Month")
+
+fac1.changes<-merge(ch1.fac1.means,ch2.fac1.means,by="Previous Method")
 ####FACTOR 2 MODELS
 change1.burden<-lm(dat.model$change1_burden~1)
 change1.burden<-lm(dat.model$change1_burden~dat.model$method_cat)
@@ -78,7 +107,18 @@ change1.burden<-lm(dat.model$change1_burden~dat.model$method_cat+dat.model$cgm_y
 summary(change1.burden)
 #plot(change1.burden)
 ch1.fac2.means <- lsmeans(change1.burden, c("method_cat"))
+###prep for tables:
+ch1.fac2.means<-as.data.frame(ch1.fac2.means)
+ch1.fac2.means<-ch1.fac2.means[,-c(3,4)]
+ch1.fac2.means$lsmean<-round(as.numeric(ch1.fac2.means$lsmean),2)
+ch1.fac2.means$lower.CL<-round(as.numeric(ch1.fac2.means$lower.CL),2)
+ch1.fac2.means$upper.CL<-round(as.numeric(ch1.fac2.means$upper.CL),2)
 
+ch1.fac2.means$change_est<-paste0(ch1.fac2.means$lsmean," (95% CI: ",
+                                  ch1.fac2.means$lower.CL,",",
+                                  ch1.fac2.means$upper.CL,")")
+ch1.fac2.means<-ch1.fac2.means[,-c(2:4)]
+colnames(ch1.fac2.means)<-c("Previous Method","Change from Baseline to Mid-Point")
 
 change2.burden<-lm(dat.model$change2_burden~1)
 change2.burden<-lm(dat.model$change2_burden~dat.model$method_cat+dat.model$cgm_yn)
@@ -88,6 +128,19 @@ change2.burden<-lm(dat.model$change2_burden~dat.model$method_cat+dat.model$cgm_y
 summary(change2.burden)
 #plot(change2.burden)
 ch2.fac2.means <- lsmeans(change2.burden, c("method_cat"))
+###prep for tables:
+ch2.fac2.means<-as.data.frame(ch2.fac2.means)
+ch2.fac2.means<-ch2.fac2.means[,-c(3,4)]
+ch2.fac2.means$lsmean<-round(as.numeric(ch2.fac2.means$lsmean),2)
+ch2.fac2.means$lower.CL<-round(as.numeric(ch2.fac2.means$lower.CL),2)
+ch2.fac2.means$upper.CL<-round(as.numeric(ch2.fac2.means$upper.CL),2)
+
+ch2.fac2.means$change_est<-paste0(ch2.fac2.means$lsmean," (95% CI: ",
+                                  ch2.fac2.means$lower.CL,",",
+                                  ch2.fac2.means$upper.CL,")")
+ch2.fac2.means<-ch2.fac2.means[,-c(2:4)]
+colnames(ch2.fac2.means)<-c("Previous Method","Change from Mid-Point to 6 Month")
+fac2.changes<-merge(ch1.fac2.means,ch2.fac2.means,by="Previous Method")
 
 
 ###Mixed modeling: 

@@ -195,6 +195,7 @@ label(dat$post2mo_6mo_complete)<-"2mo and 6mo Complete"
 label(dat$post4mo_6mo_complete)<-"4mo and 6mo Complete"
 label(dat$post2mo_or_4mo_6mo_complete)<-"2mo OR 4mo, and 6mo Complete"
 label(dat$allcomplete)<-"All time points Complete"
+label(dat$cohort_complete)<-"In Cohort - baseline, mid-point, and 6 month complete"
 ###determine which midpoint survey to use:
 dat$mid_point<-NA
 dat$mid_point[dat$baseline_2mo_complete==1]<-"2 mo"
@@ -240,4 +241,7 @@ dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="I am both of the above options."]<-"Pe
 dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="Mom"]<-"A Parent/Guardian/Caregiver of someone with Diabetes"
 dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="wife of person with diabetes"]<-"A Parent/Guardian/Caregiver of someone with Diabetes"
 
-
+dat$B_RESPONDENT<-factor(dat$B_RESPONDENT)
+label(dat$B_RESPONDENT)<-"Respondent Type"
+label(dat$Age)<-"Age at 6 mo Survey, years"
+label(dat$Baseline_A1C)<-"HbA1c at baseline"
