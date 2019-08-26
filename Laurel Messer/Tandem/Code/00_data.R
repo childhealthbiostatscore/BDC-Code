@@ -9,6 +9,14 @@ dat<-read.csv('S:/Shared Projects/Laura/BDC/Projects/Laurel Messer/Tandem/Data/B
               na.strings=c("","I don't know"))
 label(dat[,c(1:131)])<-as.list(names(labels))
 
+#adding baseline age, 8/26:
+age<-read.csv('S:/Shared Projects/Laura/BDC/Projects/Laurel Messer/Tandem/Data/PRO Baseline Age.csv')
+
+dat<-merge(dat,age,by="ExternalReference",all.x=T)
+
+#look at ages:
+age<-dat[,c(1,which(colnames(dat)=="Age"),
+            which(colnames(dat)=="Baseline_Age"))]
 #patient demographics:
 #age is at 6 months:
 # dat$B_StartDate<-as.POSIXct(dat$B_StartDate,format="%m/%d/%Y %H:%M")
@@ -65,6 +73,29 @@ dat$age_cat[dat$Age>=18]<-">=18"
 
 dat$age_cat<-as.factor(dat$age_cat)
 label(dat$age_cat)<-"Age, categorical"
+
+table(dat$B_RESPONDENT)
+dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="Both"]<-"Person with Diabetes"
+dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="both of the above"]<-"A Parent/Guardian/Caregiver of someone with Diabetes"
+dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="Both person with diabetes and parent of diabetic"]<-"Person with Diabetes"
+dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="both, my daughter and myself have diabetes"]<-"Person with Diabetes"
+dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="Diabetic"]<-"Person with Diabetes"
+dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="I am both of the above options."]<-"Person with Diabetes"
+dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="Mom"]<-"A Parent/Guardian/Caregiver of someone with Diabetes"
+dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="wife of person with diabetes"]<-"A Parent/Guardian/Caregiver of someone with Diabetes"
+dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="I am a person with diabetes."]<-"Person with Diabetes"
+dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="Mother"]<-"A Parent/Guardian/Caregiver of someone with Diabetes"
+dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="Parent"]<-"A Parent/Guardian/Caregiver of someone with Diabetes"
+dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="Self"]<-"Person with Diabetes"
+
+dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="Both, patients and parent"]<-"A Parent/Guardian/Caregiver of someone with Diabetes"
+dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="Also grandparent of a diabetic."]<-"A Parent/Guardian/Caregiver of someone with Diabetes"
+dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="I have it and my daughter does as well"]<-"Person with Diabetes"
+dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="T1 diabetic with T1 child"]<-"Person with Diabetes"
+
+table(dat$B_RESPONDENT_OTHER[dat$B_RESPONDENT=="Other (Please Specify)"],
+      dat$Age[dat$B_RESPONDENT=="Other (Please Specify)"])
+
 ###Survey Data: BASELINE
 #first remove qualitative questions:
 dat<-dat[,-c(which(colnames(dat)=="Baseline_1.qualitative"),
