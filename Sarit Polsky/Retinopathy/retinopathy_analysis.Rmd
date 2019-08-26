@@ -2,7 +2,7 @@
 title: "Retinopathy Analysis"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: html_document
+output: word_document
 ---
 
 ```{r setup, include=FALSE}
@@ -47,6 +47,8 @@ retino$Visit <- as.factor(retino$Visit)
 
 # Retinopathy Status, CGM Alone vs. CGM Share
 
+The number and percentage of women in each group with each grade of retinopathy, split by time point. Missing data is given as a percentage throughout the report.
+
 ## Table 1: Pre-Conception Visit
 
 ```{r echo=FALSE}
@@ -54,8 +56,6 @@ table1 <- CreateTableOne(c("Left Eye","Right Eye"),strata = "Group",data = retin
 table1 <- print(table1,exact=c("Left Eye","Right Eye"),printToggle = F,missing = T)
 kable(table1)
 ```
-
-*Missing data reported as a percentage
 
 ## Table 2: 1st Trimester Visit
 
@@ -89,17 +89,42 @@ table5 <- print(table5,exact=c("Left Eye","Right Eye"),printToggle = F,missing =
 kable(table5)
 ```
 
-<!-- # Retinopathy Progression, CGM Alone vs. CGM Share -->
+There were no differences in retinopathy grades between the two groups at any time point.
 
-```{r echo=FALSE,warning=FALSE,eval=FALSE}
+# Retinopathy Progression, CGM Alone vs. CGM Share
+
+A participant was said to have progressed if their most severe retinopathy grade during pregnancy was worse than their grade at the pre-conception visit. Regression was similarly defined as a post-delivery retinopathy grade less severe than the worst grade during pregnancy. 
+
+Participants without pre-conception retinopathy data were counted as missing for the progression numbers, and those without post-delivery data were treated as missing for regression.
+
+```{r echo=FALSE,warning=FALSE}
 progression <- retino
 progression$`Left Eye` <- as.numeric(progression$`Left Eye`)
 progression$`Right Eye` <- as.numeric(progression$`Right Eye`)
+# Find worst diagnoses during pregnancy
 progression <- progression %>% group_by(subject_id) %>%
-  summarise(Group = Group[1],
-            left_progessed = 
-              if(`Left Eye`[2] > `Left Eye`[1] | `Left Eye`[3] > `Left Eye`[1] | 
-                 `Left Eye`[4] > `Left Eye`[1] | `Left Eye`[3] > `Left Eye`[2] | 
-                 `Left Eye`[4] > `Left Eye`[2] | `Left Eye`[4] > `Left Eye`[1]) {1}
-            else {0})
+  summarise(precon_left = `Left Eye`[1],
+            preg_max_left = max(`Left Eye`[2:4],na.rm=T),
+            postdel_left = `Left Eye`[5],
+            precon_right = `Right Eye`[1],
+            preg_max_right = max(`Right Eye`[2:4],na.rm=T),
+            postdel_right = `Right Eye`[5],
+            Group = Group[1])
+# Remove -Inf (from those who had no measures during pregnancy)
+progression <- as.data.frame(progression)
+progression[!is.na(progression) & progression == -Inf] <- NA
+# Determine if they progressed during pregnancy/resolved post-delivery
+# Left
+progression$`Left Eye Progressed` <- ifelse(progression$preg_max_left > progression$precon_left,T,F)
+progression$`Left Eye Regressed` <- ifelse(progression$preg_max_left > progression$postdel_left,T,F)
+# Right
+progression$`Right Eye Progressed` <- ifelse(progression$preg_max_right > progression$precon_right,T,F)
+progression$`Right Eye Regressed` <- ifelse(progression$preg_max_right > progression$postdel_right,T,F)
+```
+
+```{r echo=FALSE}
+vars = c("Left Eye Progressed","Left Eye Regressed","Right Eye Progressed","Right Eye Regressed")
+t6 <- CreateTableOne(vars,strata = "Group",data = progression)
+t6 <- print(t6,exact = vars,missing = T,printToggle = F,showAllLevels = T)
+kable(t6)
 ```
