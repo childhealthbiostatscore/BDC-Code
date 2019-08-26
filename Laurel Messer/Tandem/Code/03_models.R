@@ -9,85 +9,232 @@ require(lsmeans)
 source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Laurel Messer/Tandem/Code/00_data.R')
 source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Laurel Messer/Tandem/Code/01_survey_factors.R')
 
-dat.model<-dat[,c(1,6,30,116:117,142:144,213,227:232)]
+dat.model<-dat[,c(1,6,30,116:117,137,142:144,214,228:233)]
 #might have to do this:
-dat.model$change1_benefit<-dat.model$mid_factor1-dat.model$baseline_factor1
-dat.model$change2_benefit<-dat.model$post6m_factor1-dat.model$mid_factor1
+dat.model$change1_satis<-dat.model$mid_factor1-dat.model$baseline_factor1
+dat.model$change2_satis<-dat.model$post6m_factor1-dat.model$mid_factor1
 
 dat.model$change1_burden<-dat.model$mid_factor2-dat.model$baseline_factor2
 dat.model$change2_burden<-dat.model$post6m_factor2-dat.model$mid_factor2
 
-hist(dat.model$change1_benefit)
-hist(dat.model$change2_benefit)
+hist(dat.model$change1_satis)
+hist(dat.model$change2_satis)
 hist(dat.model$change1_burden)
 hist(dat.model$change2_burden)
 
 
-#how many went up vs down:
-dat.model$change1_benefit_up<-1
-dat.model$change1_benefit_up[dat.model$change1_benefit<=0]<-0
+##############FACTOR 1: SATISFACTION###################
 
-dat.model$change2_benefit_up<-1
-dat.model$change2_benefit_up[dat.model$change2_benefit<=0]<-0
-
-change1.benefit<-lm(dat.model$change1_benefit~1)
-change1.benefit<-lm(dat.model$change1_benefit~dat.model$method_cat)
 #model selection:
-change1.benefit.respon<-lm(dat.model$change1_benefit~dat.model$B_RESPONDENT)
-summary(change1.benefit.respon)
-change1.benefit.cgm<-lm(dat.model$change1_benefit~dat.model$cgm_yn)
-summary(change1.benefit.cgm)
-change1.benefit.age<-lm(dat.model$change1_benefit~dat.model$Age) #dont include
-summary(change1.benefit.age)
-change1.benefit.gen<-lm(dat.model$change1_benefit~dat.model$Gender) #dont include
-summary(change1.benefit.gen)
+change1.satis.respon<-lm(dat.model$change1_satis~dat.model$B_RESPONDENT)
+summary(change1.satis.respon)
+change1.satis.cgm<-lm(dat.model$change1_satis~dat.model$cgm_yn)
+summary(change1.satis.cgm)
+change1.satis.age<-lm(dat.model$change1_satis~dat.model$Age) #dont include
+summary(change1.satis.age)
+change1.satis.gen<-lm(dat.model$change1_satis~dat.model$Gender) #dont include
+summary(change1.satis.gen)
 
-change1.benefit<-lm(dat.model$change1_benefit~dat.model$method_cat+dat.model$cgm_yn+dat.model$Baseline_A1C+
-                      dat.model$Age+dat.model$mid_point)
+change1.satis<-lm(dat.model$change1_satis~dat.model$method_cat+dat.model$cgm_yn+dat.model$Baseline_A1C+
+                      dat.model$Age+dat.model$mid_point+dat.model$B_RESPONDENT)
 
-summary(change1.benefit)
-#plot(change1.benefit)
-ch1.fac1.means <- lsmeans(change1.benefit, c("method_cat"))
+summary(change1.satis)
+anova(change1.satis)
+
+#plot(change1.satis)
+ch1.fac1.means <- lsmeans(change1.satis, c("method_cat"))
+###prep for tables:
+ch1.fac1.means<-as.data.frame(ch1.fac1.means)
+ch1.fac1.means<-ch1.fac1.means[,-c(3,4)]
+ch1.fac1.means$lsmean<-round(as.numeric(ch1.fac1.means$lsmean),2)
+ch1.fac1.means$lower.CL<-round(as.numeric(ch1.fac1.means$lower.CL),2)
+ch1.fac1.means$upper.CL<-round(as.numeric(ch1.fac1.means$upper.CL),2)
+
+ch1.fac1.means$change_est<-paste0(ch1.fac1.means$lsmean," (95% CI: ",
+                                  ch1.fac1.means$lower.CL,",",
+                                  ch1.fac1.means$upper.CL,")")
+ch1.fac1.means<-ch1.fac1.means[,-c(2:4)]
+colnames(ch1.fac1.means)<-c("Previous Method","Change from Baseline to Mid-Point")
 
 
-change2.benefit<-lm(dat.model$change2_benefit~1)
-change2.benefit<-lm(dat.model$change2_benefit~dat.model$method_cat+dat.model$cgm_yn)
+change2.satis<-lm(dat.model$change2_satis~1)
+change2.satis<-lm(dat.model$change2_satis~dat.model$method_cat+dat.model$cgm_yn)
 #model selection:
-change2.benefit.respon<-lm(dat.model$change2_benefit~dat.model$B_RESPONDENT)
-summary(change2.benefit.respon)
-change2.benefit.cgm<-lm(dat.model$change2_benefit~dat.model$cgm_yn)
-summary(change2.benefit.cgm)
-change2.benefit.age<-lm(dat.model$change2_benefit~dat.model$Age) 
-summary(change2.benefit.age)
-change2.benefit.gen<-lm(dat.model$change2_benefit~dat.model$Gender) #dont include
-summary(change2.benefit.gen)
+change2.satis.respon<-lm(dat.model$change2_satis~dat.model$B_RESPONDENT)
+summary(change2.satis.respon)
+change2.satis.cgm<-lm(dat.model$change2_satis~dat.model$cgm_yn)
+summary(change2.satis.cgm)
+change2.satis.age<-lm(dat.model$change2_satis~dat.model$Age) 
+summary(change2.satis.age)
+change2.satis.gen<-lm(dat.model$change2_satis~dat.model$Gender) #dont include
+summary(change2.satis.gen)
 
-change2.benefit<-lm(dat.model$change2_benefit~dat.model$method_cat+dat.model$cgm_yn+dat.model$Age
-                    +dat.model$Baseline_A1C+dat.model$mid_point)
+change2.satis<-lm(dat.model$change2_satis~dat.model$method_cat+dat.model$cgm_yn+dat.model$Age
+                    +dat.model$Baseline_A1C+dat.model$mid_point+dat.model$B_RESPONDENT)
 
-summary(change2.benefit)
-#plot(change2.benefit)
-ch2.fac1.means <- lsmeans(change2.benefit, c("method_cat"))
+summary(change2.satis)
+anova(change2.satis)
 
-####FACTOR 2 MODELS
+#plot(change2.satis)
+ch2.fac1.means <- lsmeans(change2.satis, c("method_cat"))
+ch2.fac1.means<-as.data.frame(ch2.fac1.means)
+
+ch2.fac1.means<-ch2.fac1.means[,-c(3,4)]
+ch2.fac1.means$lsmean<-round(as.numeric(ch2.fac1.means$lsmean),2)
+ch2.fac1.means$lower.CL<-round(as.numeric(ch2.fac1.means$lower.CL),2)
+ch2.fac1.means$upper.CL<-round(as.numeric(ch2.fac1.means$upper.CL),2)
+
+ch2.fac1.means$change_est<-paste0(ch2.fac1.means$lsmean," (95% CI: ",
+                                  ch2.fac1.means$lower.CL,",",
+                                  ch2.fac1.means$upper.CL,")")
+ch2.fac1.means<-ch2.fac1.means[,-c(2:4)]
+colnames(ch2.fac1.means)<-c("Previous Method","Change from Mid-Point to 6 Month")
+
+fac1.changes<-merge(ch1.fac1.means,ch2.fac1.means,by="Previous Method")
+
+#################FACTOR 2: DIABETES BURDEN#####################
+
 change1.burden<-lm(dat.model$change1_burden~1)
 change1.burden<-lm(dat.model$change1_burden~dat.model$method_cat)
 change1.burden<-lm(dat.model$change1_burden~dat.model$method_cat+dat.model$cgm_yn+dat.model$Age
-                    +dat.model$Baseline_A1C+dat.model$mid_point)
+                    +dat.model$Baseline_A1C+dat.model$mid_point+dat.model$B_RESPONDENT)
 
 summary(change1.burden)
+anova(change1.burden)
+
 #plot(change1.burden)
 ch1.fac2.means <- lsmeans(change1.burden, c("method_cat"))
+###prep for tables:
+ch1.fac2.means<-as.data.frame(ch1.fac2.means)
+ch1.fac2.means<-ch1.fac2.means[,-c(3,4)]
+ch1.fac2.means$lsmean<-round(as.numeric(ch1.fac2.means$lsmean),2)
+ch1.fac2.means$lower.CL<-round(as.numeric(ch1.fac2.means$lower.CL),2)
+ch1.fac2.means$upper.CL<-round(as.numeric(ch1.fac2.means$upper.CL),2)
 
+ch1.fac2.means$change_est<-paste0(ch1.fac2.means$lsmean," (95% CI: ",
+                                  ch1.fac2.means$lower.CL,",",
+                                  ch1.fac2.means$upper.CL,")")
+ch1.fac2.means<-ch1.fac2.means[,-c(2:4)]
+colnames(ch1.fac2.means)<-c("Previous Method","Change from Baseline to Mid-Point")
 
 change2.burden<-lm(dat.model$change2_burden~1)
 change2.burden<-lm(dat.model$change2_burden~dat.model$method_cat+dat.model$cgm_yn)
 change2.burden<-lm(dat.model$change2_burden~dat.model$method_cat+dat.model$cgm_yn+dat.model$Age
-                    +dat.model$Gender+dat.model$Baseline_A1C+dat.model$mid_point)
+                    +dat.model$Gender+dat.model$Baseline_A1C+dat.model$mid_point+dat.model$B_RESPONDENT)
 
 summary(change2.burden)
+anova(change2.burden)
+
 #plot(change2.burden)
 ch2.fac2.means <- lsmeans(change2.burden, c("method_cat"))
+ch2.fac2.means <- lsmeans(change2.burden, c("method_cat"))
+
+###prep for tables:
+ch2.fac2.means<-as.data.frame(ch2.fac2.means)
+ch2.fac2.means<-ch2.fac2.means[,-c(3,4)]
+ch2.fac2.means$lsmean<-round(as.numeric(ch2.fac2.means$lsmean),2)
+ch2.fac2.means$lower.CL<-round(as.numeric(ch2.fac2.means$lower.CL),2)
+ch2.fac2.means$upper.CL<-round(as.numeric(ch2.fac2.means$upper.CL),2)
+
+ch2.fac2.means$change_est<-paste0(ch2.fac2.means$lsmean," (95% CI: ",
+                                  ch2.fac2.means$lower.CL,",",
+                                  ch2.fac2.means$upper.CL,")")
+ch2.fac2.means<-ch2.fac2.means[,-c(2:4)]
+colnames(ch2.fac2.means)<-c("Previous Method","Change from Mid-Point to 6 Month")
+fac2.changes<-merge(ch1.fac2.means,ch2.fac2.means,by="Previous Method")
+
+################ SENSITIVITY ANALYSIS exclude caregivers ################
+dat.diab<-subset(dat.model,dat.model$B_RESPONDENT=="Person with Diabetes")
+
+diab.change1.satis<-lm(dat.diab$change1_satis~dat.diab$method_cat+dat.diab$cgm_yn+dat.diab$Baseline_A1C+
+                      dat.diab$Age+dat.diab$mid_point)
+
+summary(diab.change1.satis)
+anova(diab.change1.satis)
+
+#plot(change1.satis)
+diab.ch1.fac1.means <- lsmeans(diab.change1.satis, c("method_cat"))
+###prep for tables:
+diab.ch1.fac1.means<-as.data.frame(diab.ch1.fac1.means)
+diab.ch1.fac1.means<-diab.ch1.fac1.means[,-c(3,4)]
+diab.ch1.fac1.means$lsmean<-round(as.numeric(diab.ch1.fac1.means$lsmean),2)
+diab.ch1.fac1.means$lower.CL<-round(as.numeric(diab.ch1.fac1.means$lower.CL),2)
+diab.ch1.fac1.means$upper.CL<-round(as.numeric(diab.ch1.fac1.means$upper.CL),2)
+
+diab.ch1.fac1.means$change_est<-paste0(diab.ch1.fac1.means$lsmean," (95% CI: ",
+                                  diab.ch1.fac1.means$lower.CL,",",
+                                  diab.ch1.fac1.means$upper.CL,")")
+diab.ch1.fac1.means<-diab.ch1.fac1.means[,-c(2:4)]
+colnames(diab.ch1.fac1.means)<-c("Previous Method","Change from Baseline to Midpoint")
+
+diab.change2.satis<-lm(dat.diab$change2_satis~dat.diab$method_cat+dat.diab$cgm_yn+dat.diab$Baseline_A1C+
+                           dat.diab$Age+dat.diab$mid_point)
+
+summary(diab.change2.satis)
+anova(diab.change2.satis)
+
+#plot(change2.satis)
+diab.ch2.fac1.means <- lsmeans(diab.change2.satis, c("method_cat"))
+###prep for tables:
+diab.ch2.fac1.means<-as.data.frame(diab.ch2.fac1.means)
+diab.ch2.fac1.means<-diab.ch2.fac1.means[,-c(3,4)]
+diab.ch2.fac1.means$lsmean<-round(as.numeric(diab.ch2.fac1.means$lsmean),2)
+diab.ch2.fac1.means$lower.CL<-round(as.numeric(diab.ch2.fac1.means$lower.CL),2)
+diab.ch2.fac1.means$upper.CL<-round(as.numeric(diab.ch2.fac1.means$upper.CL),2)
+
+diab.ch2.fac1.means$change_est<-paste0(diab.ch2.fac1.means$lsmean," (95% CI: ",
+                                       diab.ch2.fac1.means$lower.CL,",",
+                                       diab.ch2.fac1.means$upper.CL,")")
+diab.ch2.fac1.means<-diab.ch2.fac1.means[,-c(2:4)]
+colnames(diab.ch2.fac1.means)<-c("Previous Method","Change from Midpoint to 6 Months")
+
+diab.fac1.changes<-merge(diab.ch1.fac1.means,diab.ch2.fac1.means,by="Previous Method")
+
+
+diab.change1.burden<-lm(dat.diab$change1_burden~dat.diab$method_cat+dat.diab$cgm_yn+dat.diab$Baseline_A1C+
+                           dat.diab$Age+dat.diab$mid_point)
+
+summary(diab.change1.burden)
+anova(diab.change1.burden)
+
+#plot(change1.burden)
+diab.ch1.fac2.means <- lsmeans(diab.change1.burden, c("method_cat"))
+###prep for tables:
+diab.ch1.fac2.means<-as.data.frame(diab.ch1.fac2.means)
+diab.ch1.fac2.means<-diab.ch1.fac2.means[,-c(3,4)]
+diab.ch1.fac2.means$lsmean<-round(as.numeric(diab.ch1.fac2.means$lsmean),2)
+diab.ch1.fac2.means$lower.CL<-round(as.numeric(diab.ch1.fac2.means$lower.CL),2)
+diab.ch1.fac2.means$upper.CL<-round(as.numeric(diab.ch1.fac2.means$upper.CL),2)
+
+diab.ch1.fac2.means$change_est<-paste0(diab.ch1.fac2.means$lsmean," (95% CI: ",
+                                       diab.ch1.fac2.means$lower.CL,",",
+                                       diab.ch1.fac2.means$upper.CL,")")
+diab.ch1.fac2.means<-diab.ch1.fac2.means[,-c(2:4)]
+colnames(diab.ch1.fac2.means)<-c("Previous Method","Change from Baseline to Mid-Point")
+
+diab.change2.burden<-lm(dat.diab$change2_burden~dat.diab$method_cat+dat.diab$cgm_yn+dat.diab$Baseline_A1C+
+                           dat.diab$Age+dat.diab$mid_point)
+
+summary(diab.change2.burden)
+anova(diab.change2.burden)
+
+#plot(change2.burden)
+diab.ch2.fac2.means <- lsmeans(diab.change2.burden, c("method_cat"))
+###prep for tables:
+diab.ch2.fac2.means<-as.data.frame(diab.ch2.fac2.means)
+diab.ch2.fac2.means<-diab.ch2.fac2.means[,-c(3,4)]
+diab.ch2.fac2.means$lsmean<-round(as.numeric(diab.ch2.fac2.means$lsmean),2)
+diab.ch2.fac2.means$lower.CL<-round(as.numeric(diab.ch2.fac2.means$lower.CL),2)
+diab.ch2.fac2.means$upper.CL<-round(as.numeric(diab.ch2.fac2.means$upper.CL),2)
+
+diab.ch2.fac2.means$change_est<-paste0(diab.ch2.fac2.means$lsmean," (95% CI: ",
+                                       diab.ch2.fac2.means$lower.CL,",",
+                                       diab.ch2.fac2.means$upper.CL,")")
+diab.ch2.fac2.means<-diab.ch2.fac2.means[,-c(2:4)]
+colnames(diab.ch2.fac2.means)<-c("Previous Method","Change from Midpoint to 6 months")
+
+diab.fac2.changes<-merge(diab.ch1.fac2.means,diab.ch2.fac2.means,by="Previous Method")
+
 
 
 ###Mixed modeling: 
