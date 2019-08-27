@@ -16,7 +16,7 @@ dat<-merge(dat,age,by="ExternalReference",all.x=T)
 
 #look at ages:
 age<-dat[,c(1,which(colnames(dat)=="Age"),
-            which(colnames(dat)=="Baseline_Age"))]
+            which(colnames(dat)=="BaselineAGE"))]
 #patient demographics:
 #age is at 6 months:
 # dat$B_StartDate<-as.POSIXct(dat$B_StartDate,format="%m/%d/%Y %H:%M")

@@ -30,19 +30,24 @@ change1.satis.respon<-lm(dat.model$change1_satis~dat.model$B_RESPONDENT)
 summary(change1.satis.respon)
 change1.satis.cgm<-lm(dat.model$change1_satis~dat.model$cgm_yn)
 summary(change1.satis.cgm)
-change1.satis.age<-lm(dat.model$change1_satis~dat.model$Age) #dont include
-summary(change1.satis.age)
+change1.satis.BaselineAGE<-lm(dat.model$change1_satis~dat.model$BaselineAGE) #dont include
+summary(change1.satis.BaselineAGE)
 change1.satis.gen<-lm(dat.model$change1_satis~dat.model$Gender) #dont include
 summary(change1.satis.gen)
 
 change1.satis<-lm(dat.model$change1_satis~dat.model$method_cat+dat.model$cgm_yn+dat.model$Baseline_A1C+
-                      dat.model$Age+dat.model$mid_point+dat.model$B_RESPONDENT)
+                      dat.model$BaselineAGE+dat.model$mid_point+dat.model$B_RESPONDENT)
 
 summary(change1.satis)
 anova(change1.satis)
 
 #plot(change1.satis)
 ch1.fac1.means <- lsmeans(change1.satis, c("method_cat"))
+
+ch1.fac1.means<-summary(ch1.fac1.means, adjust = "bon")
+
+
+
 ###prep for tables:
 ch1.fac1.means<-as.data.frame(ch1.fac1.means)
 ch1.fac1.means<-ch1.fac1.means[,-c(3,4)]
@@ -50,7 +55,7 @@ ch1.fac1.means$lsmean<-round(as.numeric(ch1.fac1.means$lsmean),2)
 ch1.fac1.means$lower.CL<-round(as.numeric(ch1.fac1.means$lower.CL),2)
 ch1.fac1.means$upper.CL<-round(as.numeric(ch1.fac1.means$upper.CL),2)
 
-ch1.fac1.means$change_est<-paste0(ch1.fac1.means$lsmean," (95% CI: ",
+ch1.fac1.means$change_est<-paste0(ch1.fac1.means$lsmean," (Adj CI: ",
                                   ch1.fac1.means$lower.CL,",",
                                   ch1.fac1.means$upper.CL,")")
 ch1.fac1.means<-ch1.fac1.means[,-c(2:4)]
@@ -64,12 +69,12 @@ change2.satis.respon<-lm(dat.model$change2_satis~dat.model$B_RESPONDENT)
 summary(change2.satis.respon)
 change2.satis.cgm<-lm(dat.model$change2_satis~dat.model$cgm_yn)
 summary(change2.satis.cgm)
-change2.satis.age<-lm(dat.model$change2_satis~dat.model$Age) 
-summary(change2.satis.age)
+change2.satis.BaselineAGE<-lm(dat.model$change2_satis~dat.model$BaselineAGE) 
+summary(change2.satis.BaselineAGE)
 change2.satis.gen<-lm(dat.model$change2_satis~dat.model$Gender) #dont include
 summary(change2.satis.gen)
 
-change2.satis<-lm(dat.model$change2_satis~dat.model$method_cat+dat.model$cgm_yn+dat.model$Age
+change2.satis<-lm(dat.model$change2_satis~dat.model$method_cat+dat.model$cgm_yn+dat.model$BaselineAGE
                     +dat.model$Baseline_A1C+dat.model$mid_point+dat.model$B_RESPONDENT)
 
 summary(change2.satis)
@@ -77,6 +82,8 @@ anova(change2.satis)
 
 #plot(change2.satis)
 ch2.fac1.means <- lsmeans(change2.satis, c("method_cat"))
+ch2.fac1.means<-summary(ch2.fac1.means, adjust = "bon")
+
 ch2.fac1.means<-as.data.frame(ch2.fac1.means)
 
 ch2.fac1.means<-ch2.fac1.means[,-c(3,4)]
@@ -84,7 +91,7 @@ ch2.fac1.means$lsmean<-round(as.numeric(ch2.fac1.means$lsmean),2)
 ch2.fac1.means$lower.CL<-round(as.numeric(ch2.fac1.means$lower.CL),2)
 ch2.fac1.means$upper.CL<-round(as.numeric(ch2.fac1.means$upper.CL),2)
 
-ch2.fac1.means$change_est<-paste0(ch2.fac1.means$lsmean," (95% CI: ",
+ch2.fac1.means$change_est<-paste0(ch2.fac1.means$lsmean," (Adj CI: ",
                                   ch2.fac1.means$lower.CL,",",
                                   ch2.fac1.means$upper.CL,")")
 ch2.fac1.means<-ch2.fac1.means[,-c(2:4)]
@@ -96,7 +103,7 @@ fac1.changes<-merge(ch1.fac1.means,ch2.fac1.means,by="Previous Method")
 
 change1.burden<-lm(dat.model$change1_burden~1)
 change1.burden<-lm(dat.model$change1_burden~dat.model$method_cat)
-change1.burden<-lm(dat.model$change1_burden~dat.model$method_cat+dat.model$cgm_yn+dat.model$Age
+change1.burden<-lm(dat.model$change1_burden~dat.model$method_cat+dat.model$cgm_yn+dat.model$BaselineAGE
                     +dat.model$Baseline_A1C+dat.model$mid_point+dat.model$B_RESPONDENT)
 
 summary(change1.burden)
@@ -104,6 +111,8 @@ anova(change1.burden)
 
 #plot(change1.burden)
 ch1.fac2.means <- lsmeans(change1.burden, c("method_cat"))
+ch1.fac2.means<-summary(ch1.fac2.means, adjust = "bon")
+
 ###prep for tables:
 ch1.fac2.means<-as.data.frame(ch1.fac2.means)
 ch1.fac2.means<-ch1.fac2.means[,-c(3,4)]
@@ -111,7 +120,7 @@ ch1.fac2.means$lsmean<-round(as.numeric(ch1.fac2.means$lsmean),2)
 ch1.fac2.means$lower.CL<-round(as.numeric(ch1.fac2.means$lower.CL),2)
 ch1.fac2.means$upper.CL<-round(as.numeric(ch1.fac2.means$upper.CL),2)
 
-ch1.fac2.means$change_est<-paste0(ch1.fac2.means$lsmean," (95% CI: ",
+ch1.fac2.means$change_est<-paste0(ch1.fac2.means$lsmean," (Adj CI: ",
                                   ch1.fac2.means$lower.CL,",",
                                   ch1.fac2.means$upper.CL,")")
 ch1.fac2.means<-ch1.fac2.means[,-c(2:4)]
@@ -119,7 +128,7 @@ colnames(ch1.fac2.means)<-c("Previous Method","Change from Baseline to Mid-Point
 
 change2.burden<-lm(dat.model$change2_burden~1)
 change2.burden<-lm(dat.model$change2_burden~dat.model$method_cat+dat.model$cgm_yn)
-change2.burden<-lm(dat.model$change2_burden~dat.model$method_cat+dat.model$cgm_yn+dat.model$Age
+change2.burden<-lm(dat.model$change2_burden~dat.model$method_cat+dat.model$cgm_yn+dat.model$BaselineAGE
                     +dat.model$Gender+dat.model$Baseline_A1C+dat.model$mid_point+dat.model$B_RESPONDENT)
 
 summary(change2.burden)
@@ -127,7 +136,7 @@ anova(change2.burden)
 
 #plot(change2.burden)
 ch2.fac2.means <- lsmeans(change2.burden, c("method_cat"))
-ch2.fac2.means <- lsmeans(change2.burden, c("method_cat"))
+ch2.fac2.means<-summary(ch2.fac2.means, adjust = "bon")
 
 ###prep for tables:
 ch2.fac2.means<-as.data.frame(ch2.fac2.means)
@@ -136,7 +145,7 @@ ch2.fac2.means$lsmean<-round(as.numeric(ch2.fac2.means$lsmean),2)
 ch2.fac2.means$lower.CL<-round(as.numeric(ch2.fac2.means$lower.CL),2)
 ch2.fac2.means$upper.CL<-round(as.numeric(ch2.fac2.means$upper.CL),2)
 
-ch2.fac2.means$change_est<-paste0(ch2.fac2.means$lsmean," (95% CI: ",
+ch2.fac2.means$change_est<-paste0(ch2.fac2.means$lsmean," (Adj CI: ",
                                   ch2.fac2.means$lower.CL,",",
                                   ch2.fac2.means$upper.CL,")")
 ch2.fac2.means<-ch2.fac2.means[,-c(2:4)]
@@ -147,13 +156,15 @@ fac2.changes<-merge(ch1.fac2.means,ch2.fac2.means,by="Previous Method")
 dat.diab<-subset(dat.model,dat.model$B_RESPONDENT=="Person with Diabetes")
 
 diab.change1.satis<-lm(dat.diab$change1_satis~dat.diab$method_cat+dat.diab$cgm_yn+dat.diab$Baseline_A1C+
-                      dat.diab$Age+dat.diab$mid_point)
+                      dat.diab$BaselineAGE+dat.diab$mid_point)
 
 summary(diab.change1.satis)
 anova(diab.change1.satis)
 
 #plot(change1.satis)
 diab.ch1.fac1.means <- lsmeans(diab.change1.satis, c("method_cat"))
+diab.ch1.fac1.means<-summary(diab.ch1.fac1.means, adjust = "bon")
+
 ###prep for tables:
 diab.ch1.fac1.means<-as.data.frame(diab.ch1.fac1.means)
 diab.ch1.fac1.means<-diab.ch1.fac1.means[,-c(3,4)]
@@ -161,20 +172,22 @@ diab.ch1.fac1.means$lsmean<-round(as.numeric(diab.ch1.fac1.means$lsmean),2)
 diab.ch1.fac1.means$lower.CL<-round(as.numeric(diab.ch1.fac1.means$lower.CL),2)
 diab.ch1.fac1.means$upper.CL<-round(as.numeric(diab.ch1.fac1.means$upper.CL),2)
 
-diab.ch1.fac1.means$change_est<-paste0(diab.ch1.fac1.means$lsmean," (95% CI: ",
+diab.ch1.fac1.means$change_est<-paste0(diab.ch1.fac1.means$lsmean," (Adj CI: ",
                                   diab.ch1.fac1.means$lower.CL,",",
                                   diab.ch1.fac1.means$upper.CL,")")
 diab.ch1.fac1.means<-diab.ch1.fac1.means[,-c(2:4)]
 colnames(diab.ch1.fac1.means)<-c("Previous Method","Change from Baseline to Midpoint")
 
 diab.change2.satis<-lm(dat.diab$change2_satis~dat.diab$method_cat+dat.diab$cgm_yn+dat.diab$Baseline_A1C+
-                           dat.diab$Age+dat.diab$mid_point)
+                           dat.diab$BaselineAGE+dat.diab$mid_point)
 
 summary(diab.change2.satis)
 anova(diab.change2.satis)
 
 #plot(change2.satis)
 diab.ch2.fac1.means <- lsmeans(diab.change2.satis, c("method_cat"))
+diab.ch2.fac1.means<-summary(diab.ch2.fac1.means, adjust = "bon")
+
 ###prep for tables:
 diab.ch2.fac1.means<-as.data.frame(diab.ch2.fac1.means)
 diab.ch2.fac1.means<-diab.ch2.fac1.means[,-c(3,4)]
@@ -182,7 +195,7 @@ diab.ch2.fac1.means$lsmean<-round(as.numeric(diab.ch2.fac1.means$lsmean),2)
 diab.ch2.fac1.means$lower.CL<-round(as.numeric(diab.ch2.fac1.means$lower.CL),2)
 diab.ch2.fac1.means$upper.CL<-round(as.numeric(diab.ch2.fac1.means$upper.CL),2)
 
-diab.ch2.fac1.means$change_est<-paste0(diab.ch2.fac1.means$lsmean," (95% CI: ",
+diab.ch2.fac1.means$change_est<-paste0(diab.ch2.fac1.means$lsmean," (Adj CI: ",
                                        diab.ch2.fac1.means$lower.CL,",",
                                        diab.ch2.fac1.means$upper.CL,")")
 diab.ch2.fac1.means<-diab.ch2.fac1.means[,-c(2:4)]
@@ -192,13 +205,15 @@ diab.fac1.changes<-merge(diab.ch1.fac1.means,diab.ch2.fac1.means,by="Previous Me
 
 
 diab.change1.burden<-lm(dat.diab$change1_burden~dat.diab$method_cat+dat.diab$cgm_yn+dat.diab$Baseline_A1C+
-                           dat.diab$Age+dat.diab$mid_point)
+                           dat.diab$BaselineAGE+dat.diab$mid_point)
 
 summary(diab.change1.burden)
 anova(diab.change1.burden)
 
 #plot(change1.burden)
 diab.ch1.fac2.means <- lsmeans(diab.change1.burden, c("method_cat"))
+diab.ch1.fac2.means<-summary(diab.ch1.fac2.means, adjust = "bon")
+
 ###prep for tables:
 diab.ch1.fac2.means<-as.data.frame(diab.ch1.fac2.means)
 diab.ch1.fac2.means<-diab.ch1.fac2.means[,-c(3,4)]
@@ -206,20 +221,22 @@ diab.ch1.fac2.means$lsmean<-round(as.numeric(diab.ch1.fac2.means$lsmean),2)
 diab.ch1.fac2.means$lower.CL<-round(as.numeric(diab.ch1.fac2.means$lower.CL),2)
 diab.ch1.fac2.means$upper.CL<-round(as.numeric(diab.ch1.fac2.means$upper.CL),2)
 
-diab.ch1.fac2.means$change_est<-paste0(diab.ch1.fac2.means$lsmean," (95% CI: ",
+diab.ch1.fac2.means$change_est<-paste0(diab.ch1.fac2.means$lsmean," (Adj CI: ",
                                        diab.ch1.fac2.means$lower.CL,",",
                                        diab.ch1.fac2.means$upper.CL,")")
 diab.ch1.fac2.means<-diab.ch1.fac2.means[,-c(2:4)]
 colnames(diab.ch1.fac2.means)<-c("Previous Method","Change from Baseline to Mid-Point")
 
 diab.change2.burden<-lm(dat.diab$change2_burden~dat.diab$method_cat+dat.diab$cgm_yn+dat.diab$Baseline_A1C+
-                           dat.diab$Age+dat.diab$mid_point)
+                           dat.diab$BaselineAGE+dat.diab$mid_point)
 
 summary(diab.change2.burden)
 anova(diab.change2.burden)
 
 #plot(change2.burden)
 diab.ch2.fac2.means <- lsmeans(diab.change2.burden, c("method_cat"))
+diab.ch2.fac2.means<-summary(diab.ch2.fac2.means, adjust = "bon")
+
 ###prep for tables:
 diab.ch2.fac2.means<-as.data.frame(diab.ch2.fac2.means)
 diab.ch2.fac2.means<-diab.ch2.fac2.means[,-c(3,4)]
@@ -227,7 +244,7 @@ diab.ch2.fac2.means$lsmean<-round(as.numeric(diab.ch2.fac2.means$lsmean),2)
 diab.ch2.fac2.means$lower.CL<-round(as.numeric(diab.ch2.fac2.means$lower.CL),2)
 diab.ch2.fac2.means$upper.CL<-round(as.numeric(diab.ch2.fac2.means$upper.CL),2)
 
-diab.ch2.fac2.means$change_est<-paste0(diab.ch2.fac2.means$lsmean," (95% CI: ",
+diab.ch2.fac2.means$change_est<-paste0(diab.ch2.fac2.means$lsmean," (Adj CI: ",
                                        diab.ch2.fac2.means$lower.CL,",",
                                        diab.ch2.fac2.means$upper.CL,")")
 diab.ch2.fac2.means<-diab.ch2.fac2.means[,-c(2:4)]
