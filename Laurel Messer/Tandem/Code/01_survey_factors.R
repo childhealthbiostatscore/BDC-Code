@@ -89,19 +89,19 @@ dat$post6m_factor1<-rowMeans(dat[,c(which(colnames(dat)=="post6m_1"):
                                       which(colnames(dat)=="post6m_7"))],na.rm=T)
 label(dat$post6m_factor1)<-"6 month: Factor 1 Benefit"
 
-
+####8/29/19 removed "treat low blood glucose by eating snacks" from burden factor
 dat$baseline_factor2<-NA
 dat$baseline_factor2<-rowMeans(dat[,c(which(colnames(dat)=="Baseline_8"):
-                                        which(colnames(dat)=="Baseline_12"))],na.rm=T)
+                                        which(colnames(dat)=="Baseline_11"))],na.rm=T)
 label(dat$baseline_factor2)<-"Baseline: Factor 2 Burden"
 
 dat$mid_factor2<-NA
 dat$mid_factor2<-rowMeans(dat[,c(which(colnames(dat)=="mid_8"):
-                                   which(colnames(dat)=="mid_12"))],na.rm=T)
+                                   which(colnames(dat)=="mid_11"))],na.rm=T)
 label(dat$mid_factor2)<-"Mid: Factor 2 Burden"
 
 dat$post6m_factor2<-NA
 dat$post6m_factor2<-rowMeans(dat[,c(which(colnames(dat)=="post6m_8"):
-                                      which(colnames(dat)=="post6m_12"))],na.rm=T)
+                                      which(colnames(dat)=="post6m_11"))],na.rm=T)
 label(dat$post6m_factor2)<-"6 month: Factor 2 Burden"
 
