@@ -13,7 +13,7 @@ library(skimr)
 library(knitr)
 library(AGD)
 library(ega)
-library(BlandAltmanLeh)
+library(blandr)
 library(tidyverse)
 ```
 
@@ -189,7 +189,7 @@ kable(t2_all,row.names = F)
 
 # CGM Glucose vs. Serum
 
-```{r echo=FALSE}
+```{r echo=FALSE,cache=TRUE}
 # Read detailed CGM data and serum data
 cgm <- read.csv("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/BMT/Data_Cleaned/Prospective HSCT CGM Data Updated 6.24.19 FULL DATA SET.csv")
 serum <- read.csv("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/BMT/Data_Cleaned/Glucose_Monitoring_061019 edited 6.25.19.csv",na.strings = "") %>% 
@@ -255,29 +255,71 @@ t4 <- t4[1:5,]
 kable(t4)
 ```
 
-# Bland Altman
+## Figure 1: Bland-Altman
 
 ```{r echo=FALSE}
-
+blandr.draw(cgm_serum$`Serum Value`,cgm_serum$`CGM Value`,
+            ciDisplay = F,plotTitle = "Bland-Altman Plot of Serum vs. CGM") + 
+  theme_bw()
 ```
 
-## Figure 1: Glucose Distribution by Time Period
+## Table 5: Bias
+
+```{r echo=FALSE}
+cgm_serum$diff <- cgm_serum$`Serum Value` - cgm_serum$`CGM Value`
+bias <- cgm_serum %>% unite(Sensor,ID,SensorNum,remove = F) %>% group_by(Sensor) %>%
+  summarise(mean_diff = mean(diff))
+bias$Sign <- factor(sign(bias$mean_diff),labels = c("Negative","0","Positive"))
+
+res <- rbind(summary(cgm_serum$diff),summary(bias$mean_diff))
+rownames(res) <- c("Difference - All Values","Mean Difference by Sensor")
+kable(res)
+```
+
+This table shows some summary values of the differences between serum and CGM. The first row is a summary of all 893 difference values. For row two, the mean difference was calculated for each individual sensor (n = 74). The histograms below (Figure 2) show these distributions.
+
+## Figure 2: Difference Histograms
+
+### a. Difference - All Values
+
+```{r echo=FALSE}
+hist(cgm_serum$diff,xlab = "Serum Value - CGM Value",main = "")
+```
+
+### b. Mean Difference by Sensor
+
+```{r echo=FALSE}
+hist(bias$mean_diff,xlab = "Mean Difference",main = "")
+```
+
+## Table 6: Positive or Negative Bias by Sensor
+
+```{r echo=FALSE}
+pos_neg <- CreateTableOne("Sign",data =bias)
+kableone(pos_neg)
+```
+
+This table shows the number and percentage of sensors with a positive, negative, or 0 average difference between serum and CGM.
+
+## Figure 3: Glucose Distribution by Time Period
 
 ### a. CGM Values
 
 ```{r echo=FALSE,dpi=600}
-fig1a <- ggplot(data = cgm_serum[!is.na(cgm_serum$`Time Period`),],aes(x = `Time Period`,y = `CGM Value`,na.r)) + geom_boxplot()
+fig1a <- ggplot(data = cgm_serum[!is.na(cgm_serum$`Time Period`),],aes(x = `Time Period`,y = `CGM Value`,na.r)) + 
+  geom_boxplot() + theme_bw()
 fig1a
 ```
 
 ### b. Serum Values
 
 ```{r echo=FALSE,dpi=600}
-fig1b <- ggplot(data = cgm_serum[!is.na(cgm_serum$`Time Period`),],aes(x = `Time Period`,y = `Serum Value`,na.r)) + geom_boxplot()
+fig1b <- ggplot(data = cgm_serum[!is.na(cgm_serum$`Time Period`),],aes(x = `Time Period`,y = `Serum Value`,na.r)) + 
+  geom_boxplot() + theme_bw()
 fig1b
 ```
 
-## Table 5: Clarke Error Grid Analysis (Serum as Reference)
+## Table 7: Clarke Error Grid Analysis (Serum as Reference)
 
 ```{r echo=FALSE}
 zones <- getClarkeZones(cgm_serum$`Serum Value`,cgm_serum$`CGM Value`)
@@ -290,7 +332,7 @@ rownames(clark_table) <- c("Points","%","% A+B")
 kable(clark_table)
 ```
 
-## Figure 2: Clark Error Grid (Serum as Reference)
+## Figure 4: Clark Error Grid (Serum as Reference)
 
 ```{r echo=FALSE,dpi=600}
 ceg <- plotClarkeGrid(cgm_serum$`Serum Value`,cgm_serum$`CGM Value`)
