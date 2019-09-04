@@ -96,6 +96,26 @@ dat$B_RESPONDENT[dat$B_RESPONDENT_OTHER=="T1 diabetic with T1 child"]<-"Person w
 table(dat$B_RESPONDENT_OTHER[dat$B_RESPONDENT=="Other (Please Specify)"],
       dat$Age[dat$B_RESPONDENT=="Other (Please Specify)"])
 
+table(dat$BaselineMethod)
+table(dat$BaselineMethod_other)
+dat$method_cat[dat$BaselineMethod_other=="Medtronic 670G"]<-"Non-Tandem Pump"
+dat$method_cat[dat$BaselineMethod_other=="Medtronic 670g"]<-"Non-Tandem Pump"
+dat$method_cat[dat$BaselineMethod_other=="Parasympathetic 723"]<-"Non-Tandem Pump"
+dat$method_cat[dat$BaselineMethod_other=="Pen but previously had Animas Pump"]<-"Non-Tandem Pump"
+dat$method_cat[dat$BaselineMethod_other=="previously used omnipod"]<-"Non-Tandem Pump"
+dat$method_cat[dat$BaselineMethod_other=="V go"]<-"Non-Tandem Pump"
+dat$method_cat[dat$BaselineMethod_other=="Vgo"]<-"Non-Tandem Pump"
+dat$method_cat[dat$BaselineMethod_other=="VGO 40"]<-"Non-Tandem Pump"
+
+dat$method_cat[dat$BaselineMethod_other=="Loop DIY closed-loop system"]<-"Non-Tandem Pump"
+dat$method_cat[dat$BaselineMethod_other=="deltec cozmo insulin pump"]<-"Non-Tandem Pump"
+dat$method_cat[dat$BaselineMethod_other=="Both X2 and Omnipod"]<-"Non-Tandem Pump"
+dat$method_cat[dat$BaselineMethod_other=="both Medtronic and Tandem pumps"]<-"Tandem Pump"
+dat$method_cat[dat$BaselineMethod_other=="Animas, MDI and now tandem"]<-"Tandem Pump"
+dat$method_cat[dat$BaselineMethod_other=="Tandem loaner"]<-"Tandem Pump"
+dat$method_cat[dat$BaselineMethod_other=="dx mid june and used pens/syringes until started tandem mid july"]<-"Tandem Pump"
+dat$method_cat[dat$BaselineMethod_other=="just switched to Tandem"]<-"Tandem Pump"
+
 ###Survey Data: BASELINE
 #first remove qualitative questions:
 dat<-dat[,-c(which(colnames(dat)=="Baseline_1.qualitative"),
@@ -249,14 +269,6 @@ dat.all<-subset(dat,dat$DiabetesType=="Type 1")
 dat<-subset(dat.all,dat.all$cohort_complete==1)
 
 
-table(dat$BaselineMethod_other)
-dat$method_cat[dat$BaselineMethod_other=="Medtronic 670G"]<-"Non-Tandem Pump"
-dat$method_cat[dat$BaselineMethod_other=="Medtronic 670g"]<-"Non-Tandem Pump"
-dat$method_cat[dat$BaselineMethod_other=="Loop DIY closed-loop system"]<-"Non-Tandem Pump"
-dat$method_cat[dat$BaselineMethod_other=="deltec cozmo insulin pump"]<-"Non-Tandem Pump"
-dat$method_cat[dat$BaselineMethod_other=="Both X2 and Omnipod"]<-"Non-Tandem Pump"
-dat$method_cat[dat$BaselineMethod_other=="both Medtronic and Tandem pumps"]<-"Tandem Pump"
-dat$method_cat[dat$BaselineMethod_other=="Animas, MDI and now tandem"]<-"Tandem Pump"
 dat$method_cat<-factor(dat$method_cat)
 table(dat$method_cat,useNA="always")
 
