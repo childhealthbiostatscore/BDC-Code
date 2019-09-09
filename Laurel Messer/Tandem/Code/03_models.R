@@ -44,21 +44,24 @@ anova(change1.satis)
 #plot(change1.satis)
 ch1.fac1.means <- lsmeans(change1.satis, c("method_cat"))
 
-ch1.fac1.means<-summary(ch1.fac1.means, adjust = "bon")
+#ch1.fac1.means<-summary(ch1.fac1.means, adjust = "bon")
 
+ch1.fac1.means<-summary(ch1.fac1.means, infer = c(TRUE,TRUE), adjust = "bon")
 
 
 ###prep for tables:
 ch1.fac1.means<-as.data.frame(ch1.fac1.means)
-ch1.fac1.means<-ch1.fac1.means[,-c(3,4)]
+#ch1.fac1.means<-ch1.fac1.means[,-c(3,4)]
 ch1.fac1.means$lsmean<-round(as.numeric(ch1.fac1.means$lsmean),2)
 ch1.fac1.means$lower.CL<-round(as.numeric(ch1.fac1.means$lower.CL),2)
 ch1.fac1.means$upper.CL<-round(as.numeric(ch1.fac1.means$upper.CL),2)
+ch1.fac1.means$pval<-round(ch1.fac1.means$p.value,3)
+ch1.fac1.means$pval[ch1.fac1.means$pval==0]<-"<0.001"
 
 ch1.fac1.means$change_est<-paste0(ch1.fac1.means$lsmean," (Adj CI: ",
                                   ch1.fac1.means$lower.CL,",",
-                                  ch1.fac1.means$upper.CL,")")
-ch1.fac1.means<-ch1.fac1.means[,-c(2:4)]
+                                  ch1.fac1.means$upper.CL,"); p=",ch1.fac1.means$pval)
+ch1.fac1.means<-ch1.fac1.means[,-c(2:9)]
 colnames(ch1.fac1.means)<-c("Previous Method","Change from Baseline to Mid-Point")
 
 
@@ -82,19 +85,20 @@ anova(change2.satis)
 
 #plot(change2.satis)
 ch2.fac1.means <- lsmeans(change2.satis, c("method_cat"))
-ch2.fac1.means<-summary(ch2.fac1.means, adjust = "bon")
+ch2.fac1.means<-summary(ch2.fac1.means, infer = c(TRUE,TRUE), adjust = "bon")
 
 ch2.fac1.means<-as.data.frame(ch2.fac1.means)
 
-ch2.fac1.means<-ch2.fac1.means[,-c(3,4)]
 ch2.fac1.means$lsmean<-round(as.numeric(ch2.fac1.means$lsmean),2)
 ch2.fac1.means$lower.CL<-round(as.numeric(ch2.fac1.means$lower.CL),2)
 ch2.fac1.means$upper.CL<-round(as.numeric(ch2.fac1.means$upper.CL),2)
+ch2.fac1.means$pval<-round(ch2.fac1.means$p.value,3)
+ch2.fac1.means$pval[ch2.fac1.means$pval==0]<-"<0.001"
 
 ch2.fac1.means$change_est<-paste0(ch2.fac1.means$lsmean," (Adj CI: ",
                                   ch2.fac1.means$lower.CL,",",
-                                  ch2.fac1.means$upper.CL,")")
-ch2.fac1.means<-ch2.fac1.means[,-c(2:4)]
+                                  ch2.fac1.means$upper.CL,"); p=",ch2.fac1.means$pval)
+ch2.fac1.means<-ch2.fac1.means[,-c(2:9)]
 colnames(ch2.fac1.means)<-c("Previous Method","Change from Mid-Point to 6 Month")
 
 fac1.changes<-merge(ch1.fac1.means,ch2.fac1.means,by="Previous Method")
@@ -111,19 +115,20 @@ anova(change1.burden)
 
 #plot(change1.burden)
 ch1.fac2.means <- lsmeans(change1.burden, c("method_cat"))
-ch1.fac2.means<-summary(ch1.fac2.means, adjust = "bon")
+ch1.fac2.means<-summary(ch1.fac2.means, infer = c(TRUE,TRUE), adjust = "bon")
 
 ###prep for tables:
 ch1.fac2.means<-as.data.frame(ch1.fac2.means)
-ch1.fac2.means<-ch1.fac2.means[,-c(3,4)]
 ch1.fac2.means$lsmean<-round(as.numeric(ch1.fac2.means$lsmean),2)
 ch1.fac2.means$lower.CL<-round(as.numeric(ch1.fac2.means$lower.CL),2)
 ch1.fac2.means$upper.CL<-round(as.numeric(ch1.fac2.means$upper.CL),2)
+ch1.fac2.means$pval<-round(ch1.fac2.means$p.value,3)
+ch1.fac2.means$pval[ch1.fac2.means$pval==0]<-"<0.001"
 
 ch1.fac2.means$change_est<-paste0(ch1.fac2.means$lsmean," (Adj CI: ",
                                   ch1.fac2.means$lower.CL,",",
-                                  ch1.fac2.means$upper.CL,")")
-ch1.fac2.means<-ch1.fac2.means[,-c(2:4)]
+                                  ch1.fac2.means$upper.CL,"); p=",ch1.fac2.means$pval)
+ch1.fac2.means<-ch1.fac2.means[,-c(2:9)]
 colnames(ch1.fac2.means)<-c("Previous Method","Change from Baseline to Mid-Point")
 
 change2.burden<-lm(dat.model$change2_burden~1)
@@ -136,19 +141,20 @@ anova(change2.burden)
 
 #plot(change2.burden)
 ch2.fac2.means <- lsmeans(change2.burden, c("method_cat"))
-ch2.fac2.means<-summary(ch2.fac2.means, adjust = "bon")
+ch2.fac2.means<-summary(ch2.fac2.means, infer = c(TRUE,TRUE), adjust = "bon")
 
 ###prep for tables:
 ch2.fac2.means<-as.data.frame(ch2.fac2.means)
-ch2.fac2.means<-ch2.fac2.means[,-c(3,4)]
 ch2.fac2.means$lsmean<-round(as.numeric(ch2.fac2.means$lsmean),2)
 ch2.fac2.means$lower.CL<-round(as.numeric(ch2.fac2.means$lower.CL),2)
 ch2.fac2.means$upper.CL<-round(as.numeric(ch2.fac2.means$upper.CL),2)
+ch2.fac2.means$pval<-round(ch2.fac2.means$p.value,3)
+ch2.fac2.means$pval[ch2.fac2.means$pval==0]<-"<0.001"
 
 ch2.fac2.means$change_est<-paste0(ch2.fac2.means$lsmean," (Adj CI: ",
                                   ch2.fac2.means$lower.CL,",",
-                                  ch2.fac2.means$upper.CL,")")
-ch2.fac2.means<-ch2.fac2.means[,-c(2:4)]
+                                  ch2.fac2.means$upper.CL,"); p=",ch2.fac2.means$pval)
+ch2.fac2.means<-ch2.fac2.means[,-c(2:9)]
 colnames(ch2.fac2.means)<-c("Previous Method","Change from Mid-Point to 6 Month")
 fac2.changes<-merge(ch1.fac2.means,ch2.fac2.means,by="Previous Method")
 
@@ -163,19 +169,20 @@ anova(diab.change1.satis)
 
 #plot(change1.satis)
 diab.ch1.fac1.means <- lsmeans(diab.change1.satis, c("method_cat"))
-diab.ch1.fac1.means<-summary(diab.ch1.fac1.means, adjust = "bon")
+diab.ch1.fac1.means<-summary(diab.ch1.fac1.means, infer = c(TRUE,TRUE), adjust = "bon")
 
 ###prep for tables:
 diab.ch1.fac1.means<-as.data.frame(diab.ch1.fac1.means)
-diab.ch1.fac1.means<-diab.ch1.fac1.means[,-c(3,4)]
 diab.ch1.fac1.means$lsmean<-round(as.numeric(diab.ch1.fac1.means$lsmean),2)
 diab.ch1.fac1.means$lower.CL<-round(as.numeric(diab.ch1.fac1.means$lower.CL),2)
 diab.ch1.fac1.means$upper.CL<-round(as.numeric(diab.ch1.fac1.means$upper.CL),2)
+diab.ch1.fac1.means$pval<-round(diab.ch1.fac1.means$p.value,3)
+diab.ch1.fac1.means$pval[diab.ch1.fac1.means$pval==0]<-"<0.001"
 
 diab.ch1.fac1.means$change_est<-paste0(diab.ch1.fac1.means$lsmean," (Adj CI: ",
                                   diab.ch1.fac1.means$lower.CL,",",
-                                  diab.ch1.fac1.means$upper.CL,")")
-diab.ch1.fac1.means<-diab.ch1.fac1.means[,-c(2:4)]
+                                  diab.ch1.fac1.means$upper.CL,"); p=",diab.ch1.fac1.means$pval)
+diab.ch1.fac1.means<-diab.ch1.fac1.means[,-c(2:9)]
 colnames(diab.ch1.fac1.means)<-c("Previous Method","Change from Baseline to Midpoint")
 
 diab.change2.satis<-lm(dat.diab$change2_satis~dat.diab$method_cat+dat.diab$cgm_yn+dat.diab$Baseline_A1C+
@@ -186,19 +193,20 @@ anova(diab.change2.satis)
 
 #plot(change2.satis)
 diab.ch2.fac1.means <- lsmeans(diab.change2.satis, c("method_cat"))
-diab.ch2.fac1.means<-summary(diab.ch2.fac1.means, adjust = "bon")
+diab.ch2.fac1.means<-summary(diab.ch2.fac1.means, infer = c(TRUE,TRUE), adjust = "bon")
 
 ###prep for tables:
 diab.ch2.fac1.means<-as.data.frame(diab.ch2.fac1.means)
-diab.ch2.fac1.means<-diab.ch2.fac1.means[,-c(3,4)]
 diab.ch2.fac1.means$lsmean<-round(as.numeric(diab.ch2.fac1.means$lsmean),2)
 diab.ch2.fac1.means$lower.CL<-round(as.numeric(diab.ch2.fac1.means$lower.CL),2)
 diab.ch2.fac1.means$upper.CL<-round(as.numeric(diab.ch2.fac1.means$upper.CL),2)
+diab.ch2.fac1.means$pval<-round(diab.ch2.fac1.means$p.value,3)
+diab.ch2.fac1.means$pval[diab.ch2.fac1.means$pval==0]<-"<0.001"
 
 diab.ch2.fac1.means$change_est<-paste0(diab.ch2.fac1.means$lsmean," (Adj CI: ",
                                        diab.ch2.fac1.means$lower.CL,",",
-                                       diab.ch2.fac1.means$upper.CL,")")
-diab.ch2.fac1.means<-diab.ch2.fac1.means[,-c(2:4)]
+                                       diab.ch2.fac1.means$upper.CL,"); p=",diab.ch2.fac1.means$pval)
+diab.ch2.fac1.means<-diab.ch2.fac1.means[,-c(2:9)]
 colnames(diab.ch2.fac1.means)<-c("Previous Method","Change from Midpoint to 6 Months")
 
 diab.fac1.changes<-merge(diab.ch1.fac1.means,diab.ch2.fac1.means,by="Previous Method")
@@ -212,19 +220,20 @@ anova(diab.change1.burden)
 
 #plot(change1.burden)
 diab.ch1.fac2.means <- lsmeans(diab.change1.burden, c("method_cat"))
-diab.ch1.fac2.means<-summary(diab.ch1.fac2.means, adjust = "bon")
+diab.ch1.fac2.means<-summary(diab.ch1.fac2.means, infer = c(TRUE,TRUE), adjust = "bon")
 
 ###prep for tables:
 diab.ch1.fac2.means<-as.data.frame(diab.ch1.fac2.means)
-diab.ch1.fac2.means<-diab.ch1.fac2.means[,-c(3,4)]
 diab.ch1.fac2.means$lsmean<-round(as.numeric(diab.ch1.fac2.means$lsmean),2)
 diab.ch1.fac2.means$lower.CL<-round(as.numeric(diab.ch1.fac2.means$lower.CL),2)
 diab.ch1.fac2.means$upper.CL<-round(as.numeric(diab.ch1.fac2.means$upper.CL),2)
+diab.ch1.fac2.means$pval<-round(diab.ch1.fac2.means$p.value,3)
+diab.ch1.fac2.means$pval[diab.ch1.fac2.means$pval==0]<-"<0.001"
 
 diab.ch1.fac2.means$change_est<-paste0(diab.ch1.fac2.means$lsmean," (Adj CI: ",
                                        diab.ch1.fac2.means$lower.CL,",",
-                                       diab.ch1.fac2.means$upper.CL,")")
-diab.ch1.fac2.means<-diab.ch1.fac2.means[,-c(2:4)]
+                                       diab.ch1.fac2.means$upper.CL,"); p=",diab.ch1.fac2.means$pval)
+diab.ch1.fac2.means<-diab.ch1.fac2.means[,-c(2:9)]
 colnames(diab.ch1.fac2.means)<-c("Previous Method","Change from Baseline to Mid-Point")
 
 diab.change2.burden<-lm(dat.diab$change2_burden~dat.diab$method_cat+dat.diab$cgm_yn+dat.diab$Baseline_A1C+
@@ -235,19 +244,20 @@ anova(diab.change2.burden)
 
 #plot(change2.burden)
 diab.ch2.fac2.means <- lsmeans(diab.change2.burden, c("method_cat"))
-diab.ch2.fac2.means<-summary(diab.ch2.fac2.means, adjust = "bon")
+diab.ch2.fac2.means<-summary(diab.ch2.fac2.means, infer = c(TRUE,TRUE), adjust = "bon")
 
 ###prep for tables:
 diab.ch2.fac2.means<-as.data.frame(diab.ch2.fac2.means)
-diab.ch2.fac2.means<-diab.ch2.fac2.means[,-c(3,4)]
 diab.ch2.fac2.means$lsmean<-round(as.numeric(diab.ch2.fac2.means$lsmean),2)
 diab.ch2.fac2.means$lower.CL<-round(as.numeric(diab.ch2.fac2.means$lower.CL),2)
 diab.ch2.fac2.means$upper.CL<-round(as.numeric(diab.ch2.fac2.means$upper.CL),2)
+diab.ch2.fac2.means$pval<-round(diab.ch2.fac2.means$p.value,3)
+diab.ch2.fac2.means$pval[diab.ch2.fac2.means$pval==0]<-"<0.001"
 
 diab.ch2.fac2.means$change_est<-paste0(diab.ch2.fac2.means$lsmean," (Adj CI: ",
                                        diab.ch2.fac2.means$lower.CL,",",
-                                       diab.ch2.fac2.means$upper.CL,")")
-diab.ch2.fac2.means<-diab.ch2.fac2.means[,-c(2:4)]
+                                       diab.ch2.fac2.means$upper.CL,"); p=",diab.ch2.fac2.means$pval)
+diab.ch2.fac2.means<-diab.ch2.fac2.means[,-c(2:9)]
 colnames(diab.ch2.fac2.means)<-c("Previous Method","Change from Midpoint to 6 months")
 
 diab.fac2.changes<-merge(diab.ch1.fac2.means,diab.ch2.fac2.means,by="Previous Method")
