@@ -1,6 +1,6 @@
 #!/bin/bash
 # Set directory
-cd kimber_gwas/Data_Cleaned/
+cd /Volumes/som/PEDS/RI\ Biostatistics\ Core/Shared/Shared\ Projects/Laura/BDC/Projects/Kimber\ Simmons/GWAS/Data_Cleaned/
 # Raw file name
 file="Simmons_redo"
 # Check missing
