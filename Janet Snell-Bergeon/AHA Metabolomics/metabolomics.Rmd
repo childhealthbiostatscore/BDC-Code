@@ -17,7 +17,7 @@ library(tidyverse)
 
 ```{r echo=FALSE}
 # Read in
-raw_metab <- read.csv("./Data_Cleaned/CIL global metabolomics data matrix_20190725_Import.csv",na.strings = "",stringsAsFactors = F)
+raw_metab <- read.csv("./Data_Cleaned/metabolomics.csv",na.strings = "",stringsAsFactors = F)
 # Subset
 metab <- raw_metab %>% 
   mutate(compound = coalesce(HMDB.No.,LI.Library.No.),
@@ -27,13 +27,32 @@ metab <- raw_metab %>%
          rterror = coalesce(RT.Error..s.,RT.Error..s..1)) %>% 
   dplyr::select(compound,neutralmass,rt,masserror,rterror,
                 IsoMS_results_QC01_190618171010_converted.csv:IsoMS_results_S227_Batch07_1400_RA8_converted.csv)
+# Rename columns by sample number
 colnames(metab) <- gsub("IsoMS_results_","",colnames(metab))
 colnames(metab) <- gsub("*_.*","",colnames(metab))
-# Read in sample list
-sample_list <- read.csv("./Data_Cleaned/sample_list.csv")
-# Match injection number to sample ID
-ids <- sample_list$SampleID[match(colnames(metab),sample_list$Injection)]
-ids <- ids[which(!is.na(ids))]
-# Replace column names
-colnames(metab)[which(colnames(metab) == "S001"):ncol(metab)] <- ids
+# Import clinical data and sample list
+clinical <- read.csv("./Data_Cleaned/clinical_info.csv")
+samples <- read.csv("./Data_Cleaned/sample_list.csv")
+# Match sample number to subject ID
+clinical$SampleID <- samples$Injection[match(clinical$StudyID,samples$SampleID)]
+# Select columns, filter out missing
+clinical <- clinical %>% 
+  dplyr::select(SampleID,gender,age,sex,race,CACGROUP) %>% 
+  filter(!is.na(SampleID)) %>% arrange(SampleID)
+```
+
+```{r echo=FALSE}
+# Transpose
+X <- metab %>% dplyr::select(compound,S001:S227)
+X <- t(X)
+cols <- X[1,]
+X <- X[-c(1),]
+class(X) <- "numeric"
+colnames(X) <- cols
+# Try PCA 
+trans.pca <- pca(X,center = F,scale = F,ncomp=10)
+plot(trans.pca)
+# Sample plot
+plotIndiv(trans.pca,comp=c(1,2),group = clinical$CACGROUP,legend = T,
+          title = "PCA comp 1-2 by CAC Group")
 ```
