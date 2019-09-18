@@ -7,6 +7,7 @@ output: word_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
 library(tableone)
 library(nortest)
 library(knitr)
@@ -14,18 +15,15 @@ library(psych)
 library(sas7bdat)
 library(reshape2)
 library(tidyverse)
-# Check OS and alter file path accordingly.
-if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.Platform$OS.type == "unix"){pathstart <- "/Volumes/"}
-source("/Users/timvigers/Documents/GitHub/Tim-and-Laura/tim_R_functions.R")
 ```
 
 ```{r echo=FALSE,message=FALSE,warning=FALSE}
 # Read in data 
-phys <- read.sas7bdat(paste0(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Raw/Second_Analysis/kphysexamrechealth_subset.sas7bdat"))
-sample <- read.sas7bdat(paste0(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Raw/Second_Analysis/ksampleresults_subset.sas7bdat"))
-screen <- read.sas7bdat(paste0(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Raw/Second_Analysis/kvisit0screening_subset.sas7bdat"))
-visit <- read.sas7bdat(paste0(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Raw/Second_Analysis/kvisitinfo_subset.sas7bdat"))
-bone <- read.csv(paste0(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Cleaned/bone_injury.csv"),skip = 1)
+phys <- read.sas7bdat(paste0("./Viral Shah/Insulin bone marker/Manuscript/Data_Raw/kphysexamrechealth_subset.sas7bdat"))
+sample <- read.sas7bdat(paste0("./Viral Shah/Insulin bone marker/Manuscript/Data_Raw/ksampleresults_subset.sas7bdat"))
+screen <- read.sas7bdat(paste0("./Viral Shah/Insulin bone marker/Manuscript/Data_Raw/kvisit0screening_subset.sas7bdat"))
+visit <- read.sas7bdat(paste0("./Viral Shah/Insulin bone marker/Manuscript/Data_Raw/kvisitinfo_subset.sas7bdat"))
+bone <- read.csv(paste0("./Viral Shah/Insulin bone marker/Abstract/Data_Cleaned/bone_injury.csv"),skip = 1)
 bone$TimePoint <- sapply(strsplit(as.character(bone$Row.Labels)," "),`[`,2)
 bone$Row.Labels <- sub(" 0","",bone$Row.Labels)
 bone$Row.Labels <- sub(" 120","",bone$Row.Labels)
@@ -33,8 +31,8 @@ colnames(bone) <- c("PtID","ALP","ON","OPG","OPN","Osteocalcin","SOST","Grand.To
 # Long to wide
 bone <- reshape(bone[-c(which(bone$PtID == "Grand Total")),c("PtID","ALP","ON","OPG","OPN","Osteocalcin","SOST","TimePoint")],
               idvar = "PtID",timevar = "TimePoint",direction = "wide",sep = "_")
-previous <- read.csv(paste0(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Cleaned/full_data_bone_turnover.csv"))
-age <- read.csv(paste0(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Cleaned/updated_full_data_bone_turnover.csv"))
+previous <- read.csv(paste0("./Viral Shah/Insulin bone marker/Abstract/Data_Cleaned/full_data_bone_turnover.csv"))
+age <- read.csv(paste0("./Viral Shah/Insulin bone marker/Abstract/Data_Cleaned/updated_full_data_bone_turnover.csv"))
 # Combine
 alldata <- dcast(sample[,c("PtID","TimePoint","Analyte","Value_Update_n")],PtID ~ Analyte + TimePoint,value.var = "Value_Update_n")
 alldata <- left_join(alldata,phys[,c("PtID","Weight_kg","Height_cm")])
@@ -45,7 +43,7 @@ alldata <- left_join(alldata,previous[,c("PtID","IGF0","CTX0","P1NP0","VitD0","I
                                            "calcium","po4")])
 alldata <- left_join(alldata,age[,c("PtID","AgeAtConsent")])
 # Fix c-peptide group
-cpep <- read.csv(paste0(pathstart,"som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Insulin bone marker/Data_Cleaned/KSampleResults.csv"),na.strings = "NULL")
+cpep <- read.csv(paste0("./Viral Shah/Insulin bone marker/Abstract/Data_Cleaned/KSampleResults.csv"),na.strings = "NULL")
 cpep$Value <- as.numeric(as.character(cpep$Value))
 cpep <- cpep %>%
   filter(Analyte == "CPEP",Visit=="Visit 1") %>%
@@ -84,7 +82,7 @@ alldata <- alldata[which(alldata$PtID != "K068-0003"),]
 ```{r echo=FALSE,include=FALSE}
 contvars <- c("AgeAtConsent","T1DDuration","UnitsInsPerKg","HbA1c","BMI","VitD0",
               "calcium","po4")
-nonnormvars <- norm.check(alldata,contvars)
+nonnormvars <- c("AgeAtConsent","T1DDuration","po4")
 catvars <- c("Gender","InsDeliveryMethod","CurrUseCGM")
 t1vars <- c(catvars,contvars)
 t1a <- CreateTableOne(t1vars,data = alldata)
@@ -118,6 +116,18 @@ rownames(means_group) <- rownames(means)
 ```{r echo=FALSE}
 kable(means)
 kable(means_group[,1:2])
+```
+
+### Average percent change by group
+
+```{r echo=FALSE}
+vars_perc <- c("ON_perc_change","CTX_perc_change","P1NP_perc_change")
+means_group_perc <- CreateTableOne(vars_perc,"cpep_group",alldata)
+means_group_perc <- as.data.frame(print(means_group_perc,printToggle = F))
+rownames(means_group_perc) <- c("n","Percent Change ON (mean (SD))",
+                                "Percent Change CTX (mean (SD))",
+                                "Percent Change P1NP (mean (SD))")
+kable(means_group_perc[,1:3])
 ```
 
 <!-- # Correlations -->
