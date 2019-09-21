@@ -3,18 +3,21 @@
 cd /Volumes/som/PEDS/RI\ Biostatistics\ Core/Shared/Shared\ Projects/Laura/BDC/Projects/Kimber\ Simmons/GWAS/Data_Cleaned/
 # Combine files
 plink --noweb --bfile Simmons_redo --merge-list files_to_combine.txt --make-bed --out Simmons_combined
-# Raw file name
-file="Simmons_combined"
 # Check missing
-plink --noweb --bfile $file --missing
+plink --noweb --bfile Simmons_combined --missing
 # Delete SNPs and individuals with high levels of missingness
 # Delete SNPs
-plink --noweb --bfile $file --geno 0.02 --make-bed --out "${file}_remove_miss"
+plink --noweb --bfile Simmons_combined --geno 0.02 --make-bed --out Simmons_combined_remove_miss
 # Delete individuals
-plink --noweb --bfile "${file}_remove_miss" --mind 0.02 --make-bed --out "${file}_remove_miss"
+plink --noweb --bfile Simmons_combined_remove_miss --mind 0.02 --make-bed --out Simmons_combined_remove_miss
 # Check missing post-deletion
-plink --noweb --bfile "${file}_remove_miss" --missing --out "${file}_check_miss"
+plink --noweb --bfile Simmons_combined_remove_miss --missing --out Simmons_combined_check_miss
 # Check sex discrepancy
-plink --noweb --bfile "${file}_remove_miss" --check-sex --out "${file}_sex"
-# Impute sex
-plink --noweb --bfile "${file}_sex" --impute-sex --make-bed --out "${file}_imputed_sex"
+plink --noweb --bfile Simmons_combined_remove_miss --check-sex
+# Remove subjects with problematic X chromosome homozygosity
+grep "PROBLEM" plink.sexcheck| awk '{print$1,$2}'> sex_discrepancy.txt
+plink --bfile Simmons_combined_remove_miss --remove sex_discrepancy.txt --make-bed --out Simmons_combined_remove_miss_and_sex --noweb
+# Check sex discrepancy again
+plink --noweb --bfile Simmons_combined_remove_miss --check-sex --out post_del
+# Minor allele frequency
+plink --noweb --bfile Simmons_combined_remove_miss --freq --out MAF_check
