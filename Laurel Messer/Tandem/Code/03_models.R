@@ -51,6 +51,7 @@ ch1.fac1.means<-summary(ch1.fac1.means, infer = c(TRUE,TRUE), adjust = "bon")
 
 ###prep for tables:
 ch1.fac1.means<-as.data.frame(ch1.fac1.means)
+ch1.fac1.means_plots<-ch1.fac1.means
 #ch1.fac1.means<-ch1.fac1.means[,-c(3,4)]
 ch1.fac1.means$lsmean<-round(as.numeric(ch1.fac1.means$lsmean),2)
 ch1.fac1.means$lower.CL<-round(as.numeric(ch1.fac1.means$lower.CL),2)
@@ -88,6 +89,7 @@ ch2.fac1.means <- lsmeans(change2.satis, c("method_cat"))
 ch2.fac1.means<-summary(ch2.fac1.means, infer = c(TRUE,TRUE), adjust = "bon")
 
 ch2.fac1.means<-as.data.frame(ch2.fac1.means)
+ch2.fac1.means_plots<-ch2.fac1.means
 
 ch2.fac1.means$lsmean<-round(as.numeric(ch2.fac1.means$lsmean),2)
 ch2.fac1.means$lower.CL<-round(as.numeric(ch2.fac1.means$lower.CL),2)
@@ -145,6 +147,8 @@ ch2.fac2.means<-summary(ch2.fac2.means, infer = c(TRUE,TRUE), adjust = "bon")
 
 ###prep for tables:
 ch2.fac2.means<-as.data.frame(ch2.fac2.means)
+ch2.fac2.means_plots<-ch2.fac2.means
+
 ch2.fac2.means$lsmean<-round(as.numeric(ch2.fac2.means$lsmean),2)
 ch2.fac2.means$lower.CL<-round(as.numeric(ch2.fac2.means$lower.CL),2)
 ch2.fac2.means$upper.CL<-round(as.numeric(ch2.fac2.means$upper.CL),2)
