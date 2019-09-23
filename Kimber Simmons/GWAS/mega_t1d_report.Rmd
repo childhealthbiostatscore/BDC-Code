@@ -10,11 +10,18 @@ knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kimber Simmons/GWAS/Data_Cleaned")
 ```
 
-# Missingness pre-deletion
+# Combine "_redo" and "_removeKnownFails"
+
+```{bash combine files, eval=FALSE}
+# Combine files
+plink --noweb --bfile Simmons_redo --merge-list files_to_combine.txt --make-bed --out Simmons_combined
+```
+
+## Missingness pre-deletion
 
 ```{bash plink missing, eval=FALSE}
 # Check missing
-plink --noweb --bfile Simmons_redo --missing
+plink --noweb --bfile Simmons_combined --missing
 ```
 
 ```{r r missing plots pre-deletion, echo=FALSE}
@@ -30,25 +37,25 @@ hist(snpmiss[,5],main="Histogram proportion missing individuals per SNP",
      xlab = "Proportion Missing ") 
 ```
 
-# Missingness post-deletion
+## Missingness post-deletion
 
 ```{bash plink filter missing, eval=FALSE}
 # Delete SNPs and individuals with high levels of missingness
 # Delete SNPs
-plink --noweb --bfile Simmons_redo --geno 0.02 --make-bed --out Simmons_redo_remove_miss
+plink --noweb --bfile Simmons_combined --geno 0.02 --make-bed --out Simmons_combined
 # Delete individuals
-plink --noweb --bfile Simmons_redo_remove_miss --mind 0.02 --make-bed --out Simmons_redo_remove_miss
+plink --noweb --bfile Simmons_combined --mind 0.02 --make-bed --out Simmons_combined
 # Check missing post-deletion
-plink --noweb --bfile Simmons_redo_remove_miss --missing --out Simmons_redo_check_miss
+plink --noweb --bfile Simmons_combined --missing --out miss_post_del
 ```
 
 ```{r r missing plots post-deletion, echo=FALSE}
 # Post-deletion
 indmiss_check <-
-  read.table(file="./Simmons_redo_check_miss.imiss",
+  read.table(file="./miss_post_del.imiss",
                     header=TRUE)
 snpmiss_check <-
-  read.table(file="./Simmons_redo_check_miss.lmiss",
+  read.table(file="./miss_post_del.lmiss",
                     header=TRUE)
 # Plots
 hist(indmiss_check[,6],main="Histogram proportion missing SNPs per individual",
@@ -57,11 +64,11 @@ hist(snpmiss_check[,5],main="Histogram proportion missing individuals per SNP",
      xlab = "Proportion Missing ") 
 ```
 
-# Sex check pre-deletion
+## Sex check pre-deletion
 
 ```{bash plink sex check pre, eval=FALSE}
 # Check sex discrepancy
-plink --noweb --bfile Simmons_redo_remove_miss --check-sex
+plink --noweb --bfile Simmons_combined --check-sex
 ```
 
 ```{r r sex check pre, echo=FALSE}
@@ -78,16 +85,19 @@ female=subset(gender, gender$PEDSEX==2)
 hist(female[,6],main="Women",xlab="F")
 ```
 
-# Sex check post-deletion
+## Sex check post-deletion
 
 ```{bash plink sex check post, eval=FALSE}
-# Check sex discrepancy
-plink --noweb --bfile Simmons_redo_remove_miss --check-sex
+# Remove subjects with problematic X chromosome homozygosity
+grep "PROBLEM" plink.sexcheck| awk '{print$1,$2}'> sex_discrepancy.txt
+plink --noweb --bfile Simmons_combined --remove sex_discrepancy.txt --make-bed --out Simmons_combined
+# Check sex discrepancy again
+plink --noweb --bfile Simmons_combined --check-sex --out sex_post_del
 ```
 
 ```{r r sex check post, echo=FALSE}
 # Gender file
-gender <- read.table("./post_del.sexcheck",
+gender <- read.table("./sex_post_del.sexcheck",
                      header=T,as.is=T)
 # Histograms
 hist(gender[,6],main="Gender", xlab="F")
@@ -99,3 +109,83 @@ female=subset(gender, gender$PEDSEX==2)
 hist(female[,6],main="Women",xlab="F")
 ```
 
+## MAF check pre-deletion
+
+```{bash plink maf check pre, eval=FALSE} 
+# Select autosomal SNPs only (i.e., from chromosomes 1 to 22).
+awk '{ if ($1 >= 1 && $1 <= 22) print $2 }' Simmons_combined.bim > snp_1_22.txt
+plink --noweb --bfile Simmons_combined --extract snp_1_22.txt --make-bed --out Simmons_combined
+# Check minor allele frequency
+plink --noweb --bfile Simmons_combined --freq --out MAF_check
+```
+
+```{r r maf check pre, echo=FALSE}
+# MAF file
+maf_freq <- read.table("./MAF_check.frq", header =TRUE, as.is=T)
+hist(maf_freq[,5],main = "MAF distribution", xlab = "MAF")
+```
+
+## MAF check post-deletion
+
+```{bash plink maf check post, eval=FALSE}
+# Remove those with MAF < 0.05
+plink --noweb --bfile Simmons_combined --maf 0.05 --make-bed --out Simmons_combined
+# Check minor allele frequency again
+plink --noweb --bfile Simmons_combined --freq --out MAF_check_post
+```
+
+```{r r maf check post, echo=FALSE}
+# MAF file
+maf_freq <- read.table("./MAF_check_post.frq", header =TRUE, as.is=T)
+hist(maf_freq[,5],main = "MAF distribution", xlab = "MAF")
+```
+
+## Hardy-Weinberg equilibrium pre-deletion
+
+```{bash plink hw check pre, eval=FALSE}
+plink --noweb --bfile Simmons_combined --hardy
+# Select SNPs with HWE p-value below 0.00001
+awk '{ if ($9 <0.00001) print $0 }' plink.hwe>plinkzoomhwe.hwe
+```
+
+```{r r hw check pre, echo=FALSE}
+hwe<-read.table (file="./plink.hwe", header=TRUE)
+hist(hwe[,9],main="Histogram HWE")
+# Zoomed in
+hwe_zoom<-read.table (file="./plinkzoomhwe.hwe", header=TRUE)
+hist(hwe_zoom[,9],main="Histogram HWE: strongly deviating SNPs only")
+```
+
+## Hardy-Weinberg equilibrium post-deletion
+
+```{bash plink hw check post, eval=FALSE}
+# Filter for controls
+plink --noweb --bfile Simmons_combined --hwe 1e-6 --make-bed --out Simmons_combined
+# Filter for cases
+plink --noweb --bfile Simmons_combined --hwe 1e-10 --hwe-all --make-bed --out Simmons_combined
+# Check again
+plink --noweb --bfile Simmons_combined --hardy --out post_del
+# Select SNPs with HWE p-value below 0.00001
+awk '{ if ($9 <0.00001) print $0 }' post_del.hwe>post_del_zoom.hwe
+```
+
+```{r r hw check post, echo=FALSE}
+hwe<-read.table (file="./plink.hwe", header=TRUE)
+hist(hwe[,9],main="Histogram HWE")
+# Zoomed in
+hwe_zoom<-read.table (file="./plinkzoomhwe.hwe", header=TRUE)
+hist(hwe_zoom[,9],main="Histogram HWE: strongly deviating SNPs only")
+```
+
+## Heterozygosity pre-deletion
+
+```{bash plink heterozyg check pre, eval=FALSE}
+plink --noweb --bfile Simmons_combined --exclude inversion.txt --range --indep-pairwise 50 5 0.2 --out indepSNP
+plink --noweb --bfile Simmons_combined --extract indepSNP.prune.in --het --out R_check
+```
+
+```{r r heterozyg check pre, echo=FALSE}
+het <- read.table("./R_check.het", head=TRUE)
+het$HET_RATE = (het$"N.NM." - het$"O.HOM.")/het$"N.NM."
+hist(het$HET_RATE, xlab="Heterozygosity Rate", ylab="Frequency", main= "Heterozygosity Rate")
+```
