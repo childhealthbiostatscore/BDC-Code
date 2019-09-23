@@ -320,7 +320,30 @@ legend("bottomright",c("Injections","Non-Tandem Pump","Tandem Pump"),lty=c(3,2,1
 
 ###forest plots:
 library(plotrix)
-plotCI(sbi_or,5,li=sbi_ci[1],ui=sbi_ci[2],err="x",xlim=c(0.5,18),ylim=c(0,8),
-       pch=15,xlab="Adjusted Odds Ratio/Hazard Ratio",yaxt="n",ylab="",
-       main="Pre-tx glucose variability vs. risk of infection")
 
+plotCI(c(0.9,1,1.1),ch1.fac1.means_plots$lsmean,li=ch1.fac1.means_plots$lower.CL,
+       ui=ch1.fac1.means_plots$upper.CL,err="y",xlim=c(0.7,2.3),ylim=c(-0.3,3),
+       pch=15,xlab="Change",ylab="Average Change (CI)",xaxt="n",
+       main="Change in Satisfaction Factor",slty=c(1,2,3))
+abline(h=0,lty=1)
+axis(1,at=c(1,2),c("Baseline to midpoint","Midpoint to 6 months"))
+
+plotCI(c(1.9,2,2.1),ch2.fac1.means_plots$lsmean,li=ch2.fac1.means_plots$lower.CL,
+       ui=ch2.fac1.means_plots$upper.CL,err="y",xlim=c(0.5,2.5),ylim=c(-0.3,3),
+       pch=15,xlab="",ylab="Average Change (CI)",xaxt="n",
+       main="Change in Satisfaction Factor, by Previous Insulin Method",slty=c(1,2,3),add=T)
+legend("topright",c("MDI","Non-Tandem Pump","Tandem Pump"),lty=c(1,2,3),pch=c(15,15,15))
+
+
+plotCI(c(0.9,1,1.1),ch1.fac2.means_plots$lsmean,li=ch1.fac2.means_plots$lower.CL,
+       ui=ch1.fac2.means_plots$upper.CL,err="y",xlim=c(0.7,2.3),ylim=c(-0.3,3),
+       pch=15,xlab="Change",ylab="Average Change (CI)",xaxt="n",
+       main="Change in Diabetes Burden Factor",slty=c(1,2,3))
+abline(h=0,lty=1)
+axis(1,at=c(1,2),c("Baseline to midpoint","Midpoint to 6 months"))
+
+plotCI(c(1.9,2,2.1),ch2.fac2.means_plots$lsmean,li=ch2.fac2.means_plots$lower.CL,
+       ui=ch2.fac2.means_plots$upper.CL,err="y",xlim=c(0.5,2.5),ylim=c(-0.3,3),
+       pch=15,xlab="",ylab="Average Change (CI)",xaxt="n",
+       main="Change in Satisfaction Factor, by Previous Insulin Method",slty=c(1,2,3),add=T)
+legend("topright",c("MDI","Non-Tandem Pump","Tandem Pump"),lty=c(1,2,3),pch=c(15,15,15))
