@@ -8,21 +8,24 @@ output: word_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(redcapAPI)
-library(tidyverse)
 library(knitr)
 library(tableone)
 library(readxl)
+library(emmeans)
 library(nlme)
 library(gridExtra)
 library(psych)
-source("/Users/timvigers/Documents/GitHub/Tim-and-Laura/tim_R_functions.R")
 # Check OS and alter file path accordingly.
 if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.Platform$OS.type == "unix"){pathstart <- "/Volumes/"}
+library(tidyverse)
 ```
 
 ```{r echo=FALSE,include=FALSE,cache=TRUE}
 # REDCap API data import
-source("/Users/timvigers/Documents/GitHub/BDC-Code/api_tokens.R")
+tokens <- read.csv("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/api_tokens.csv",
+                   stringsAsFactors = F)
+YA670g <- tokens$Token[tokens$Study == "YA670g"]
+Parent670g <- tokens$Token[tokens$Study == "Parent670g"]
 # YA
 rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
                          token = YA670g)
@@ -32,8 +35,8 @@ rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
                          token = Parent670g)
 parent_full <- exportRecords(rcon)
 # Child
-rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
-                         token = Child670g)
+# rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
+#                          token = Child670g)
 # Read in baseline glycemic data
 baseline_glycemic_csv <- read.csv("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/670GChild_BaselineGlycemicData_14JAN2019.csv")
 ```
@@ -594,9 +597,6 @@ glycemic_data_6_month <- left_join(glycemic_data_6_month,demographics[,c("record
 # Remove M1, group by clinical A1c cutoffs at baseline
 data_no_m1 <- glycemic_data_6_month %>%
   filter(Timepoint != "M1")
-# Write file for SAS contrasts
-write.csv(data_no_m1,file = "/Users/timvigers/Desktop/cari.csv",
-          row.names = F,na="")
 # Remove B (e.g. for % time AM models etc.)
 data_no_b <- glycemic_data_6_month %>%
   filter(Timepoint != "B")
@@ -624,29 +624,32 @@ a1c_glyc_control_mod <- lme(hba1c ~ Timepoint*hba1c_clinical,random=~1|record_id
 a1c_age_mod_means <- lme(hba1c ~ Timepoint:age_group-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
 a1c_glyc_control_mod_means <- lme(hba1c ~ Timepoint:hba1c_clinical-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
 # Contrasts
-# cmat.emmc <- rbind(c(0, 0, 1, 0, 0, 0, 0, 0, -1),
-#               c(1, 0, 0, 0, 0, 0, -1, 0, 0),
-#               c(0, 1, 0, 0, 0, 0, 0, -1, 0),
-#               c(0, 0, 0, 0, 0, 1, 0, 0, -1),
-#               c(0, 0, 0, 1, 0, 0, -1, 0, 0),
-#               c(0, 0, 0, 0, 1, 0, 0, -1, 0))
-# a1c_glyc_emm <- emmeans(a1c_glyc_control_mod,~Timepoint:hba1c_clinical)
-# contrast(a1c_glyc_emm,"cmat")
-```
-
-```{r echo=FALSE}
-# Import results from contrasts in SAS.
-estimates <- read_excel(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Reports/estimates.xlsx"))
-means <- read_excel(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Reports/means.xlsx"))
+a1c_glyc_emm <- emmeans(a1c_glyc_control_mod,~Timepoint:hba1c_clinical)
+bl <- c(1,0,0,0,0,0,0,0,0)
+t1l <- c(0,1,0,0,0,0,0,0,0)
+t2l <- c(0,0,1,0,0,0,0,0,0)
+bm <- c(0,0,0,1,0,0,0,0,0)
+t1m <- c(0,0,0,0,1,0,0,0,0)
+t2m <- c(0,0,0,0,0,1,0,0,0)
+bh <- c(0,0,0,0,0,0,1,0,0)
+t1h <- c(0,0,0,0,0,0,0,1,0)
+t2h <- c(0,0,0,0,0,0,0,0,1)
+cont <- contrast(a1c_glyc_emm, method = list("B vs. T1, Low A1c" = t1l - bl,
+                                     "B vs. T1, Medium A1c" = t1m - bm,
+                                     "B vs. T1, High A1c" = t1h - bh,
+                                     "B vs. T2, Low A1c" = t2l - bl,
+                                     "B vs. T2, Medium A1c" = t2m - bm,
+                                     "B vs. T2, High A1c" = t2h - bh))
 ```
 
 ### Figure 1: Mean HbA1c by Timepoint
 
 ```{r echo=FALSE,warning=FALSE,dpi=1200,fig.width=7}
-a1c_plot <- ggplot(means,aes(x=Timepoint,y=Estimate,group=hba1c_clinical)) + 
+means <- as.data.frame(a1c_glyc_emm)
+a1c_plot <- ggplot(means,aes(x=Timepoint,y=emmean,group=hba1c_clinical)) + 
   geom_line(aes(linetype=hba1c_clinical)) +
   geom_point() + 
-  geom_label(aes(label = round(Estimate,1)),nudge_x = -0.25,nudge_y = -0.4) +
+  geom_label(aes(label = round(emmean,1)),nudge_x = -0.25,nudge_y = -0.4) +
   xlab("Timepoint") + 
   ylab("HbA1c (%)") +
   theme_bw() + 
@@ -663,9 +666,9 @@ a1c_plot
 ```{r echo=FALSE}
 kable(summary(a1c_mod)$tTable,caption = "Mixed Model Fixed Effects, Full Cohort")
 kable(summary(a1c_mod_means)$tTable,caption = "Mixed Model Means, Full Cohort")
-kable(means[,c("Timepoint","hba1c_clinical","Estimate","StdErr","Probt")],caption = "Group Means by Time Point")
+kable(a1c_glyc_emm,caption = "Group Means by Time Point")
 kable(anova.lme(a1c_glyc_control_mod),caption = "Type 3 Tests of Fixed Effects")
-kable(estimates[,c("Label","Estimate","StdErr","Probt")],caption = "Timepoint Differences by HbA1c Group")
+kable(cont,caption = "Timepoint Differences by HbA1c Group")
 ```
 
 ### HbA1c mixed model interpretation
@@ -1182,4 +1185,116 @@ alpha_table$`Month 6` <- c(alpha_cpt2$total$std.alpha,alpha_yapt2$total$std.alph
                           alpha_parentworryt2$total$std.alpha)
 alpha_table <- round(alpha_table,3)
 kable(alpha_table)
+```
+
+### Figure 3: HbA1c by AM Use
+
+```{r echo=FALSE,warning=FALSE,dpi=1200}
+# Get am use and HbA1c data
+am_a1c <- glycemic_data %>% select(record_id,Timepoint,hba1c,am_time) %>%
+  group_by(record_id) %>% mutate(baseline_a1c = hba1c[1]) %>% 
+  filter(Timepoint != "B",am_time > 10)
+# Model
+am_a1c_mod <- lme(hba1c ~ am_time + baseline_a1c, random=~1|record_id,
+                   data = am_a1c,na.action = na.omit)
+# Plot
+ggplot(am_a1c,aes(x=am_time,y=hba1c)) + geom_point() + 
+  geom_smooth(method = "lm",se=F) +
+  ylab("HbA1c (%)") + xlab("AM Use (%)") +
+  theme_bw()
+```
+
+### AM Use Model
+
+```{r echo=FALSE}
+# Results
+results <- as.data.frame(summary(am_a1c_mod)$tTable)
+results[,c(1,2,4)] <- lapply(results[,c(1,2,4)],round,digits=3)
+results$`p-value` <- format.pval(results$`p-value`,eps = 0.001,digits = 2)
+kable(results)
+```
+
+This model excludes visits with AM < 10% and includes month 1 data. For every 10% increase in auto mode use, HbA1c decreased by 0.07% on average (95% CI: 0.01%, 0.12%), adjusted for baseline HbA1c. This decrease was statistically significant (p = 0.015).
+
+```{r include=FALSE}
+# Mean BG mixed models
+mean_bg_mod <- lme(mean_sg ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+mean_bg_mod_means <- lme(mean_sg ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+mean_bg_glyc_control_mod <- lme(mean_sg ~ Timepoint*hba1c_clinical,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+# Means models
+mean_bg_age_mod_means <- lme(mean_sg ~ Timepoint:age_group-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+mean_bg_glyc_control_mod_means <- lme(mean_sg ~ Timepoint:hba1c_clinical-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+# Contrasts
+mean_bg_glyc_emm <- emmeans(mean_bg_glyc_control_mod,~Timepoint:hba1c_clinical)
+bl <- c(1,0,0,0,0,0,0,0,0)
+t1l <- c(0,1,0,0,0,0,0,0,0)
+t2l <- c(0,0,1,0,0,0,0,0,0)
+bm <- c(0,0,0,1,0,0,0,0,0)
+t1m <- c(0,0,0,0,1,0,0,0,0)
+t2m <- c(0,0,0,0,0,1,0,0,0)
+bh <- c(0,0,0,0,0,0,1,0,0)
+t1h <- c(0,0,0,0,0,0,0,1,0)
+t2h <- c(0,0,0,0,0,0,0,0,1)
+cont <- contrast(mean_bg_glyc_emm, method = list("B vs. T1, Low A1c" = t1l - bl,
+                                     "B vs. T1, Medium A1c" = t1m - bm,
+                                     "B vs. T1, High A1c" = t1h - bh,
+                                     "B vs. T2, Low A1c" = t2l - bl,
+                                     "B vs. T2, Medium A1c" = t2m - bm,
+                                     "B vs. T2, High A1c" = t2h - bh))
+```
+
+### Figure 4: Mean SG by Timepoint
+
+```{r echo=FALSE,warning=FALSE,dpi=1200,fig.width=7}
+means <- as.data.frame(mean_bg_glyc_emm)
+mean_bg_plot <- ggplot(means,aes(x=Timepoint,y=emmean,group=hba1c_clinical)) + 
+  geom_line(aes(linetype=hba1c_clinical)) +
+  geom_point() + 
+  geom_label(aes(label = round(emmean,1)),nudge_x = -0.25,nudge_y = -0.4) +
+  xlab("Timepoint") + 
+  ylab("Mean SG (mg/dL)") +
+  theme_bw() + 
+  theme(legend.title=element_blank()) +
+  geom_point(data=data_no_m1,aes(x=Timepoint,y=mean_sg),size=0.2) +
+  scale_x_discrete(labels = c("Baseline","Month 3","Month 6")) + 
+  scale_linetype_discrete(breaks = c("High Baseline HbA1c","Medium Baseline HbA1c","Low Baseline HbA1c"),
+                          labels = c("High Baseline HbA1c","Middle Baseline HbA1c","Low Baseline HbA1c"))
+mean_bg_plot
+```
+
+### Mean SG Results
+
+```{r echo=FALSE}
+kable(summary(mean_bg_mod)$tTable,caption = "Mixed Model Fixed Effects, Full Cohort")
+kable(summary(mean_bg_mod_means)$tTable,caption = "Mixed Model Means, Full Cohort")
+kable(mean_bg_glyc_emm,caption = "Group Means by Time Point")
+kable(anova.lme(mean_bg_glyc_control_mod),caption = "Type 3 Tests of Fixed Effects")
+kable(cont,caption = "Timepoint Differences by HbA1c Group")
+```
+
+### Number of visits with sensor data
+
+```{r echo=FALSE}
+# Get all T1 and T2 visits with sensor data
+ns <- glycemic_data_6_month %>%
+  select(record_id:hba1c_clinical) %>% 
+  filter(!is.na(sensor_wear))
+# Summarize by number of post-baseline visits
+ns <- ns %>% ungroup() %>%
+  count(Timepoint)
+kable(ns)
+```
+
+### Participants missing CGM and pump hx
+
+Missing CGM:
+
+```{r echo=FALSE}
+demographics$record_id[is.na(demographics$demographics_cgmhx)]
+```
+
+Missing pump:
+
+```{r echo=FALSE}
+demographics$record_id[is.na(demographics$demographics_pumphx)]
 ```
