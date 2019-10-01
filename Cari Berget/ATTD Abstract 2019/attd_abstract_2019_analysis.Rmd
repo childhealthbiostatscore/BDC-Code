@@ -32,26 +32,16 @@ source("./Cari Berget/ATTD Abstract 2019/Data_Cleaned/AdvancedClosedLoopCl_R_201
 # A1c as numeric
 data$hba1c <- as.numeric(as.character(data$hba1c))
 data$hba1c_baseline <- as.numeric(as.character(data$hba1c_baseline))
-# Subjects who withdrew (per Cari)
-withdrawn <- c("41","50")
-# Demographics
-demographics <- data %>% 
-  filter(redcap_event_name %in% c("baseline_arm_1","baseline_arm_2"),
-         !is.na(automode_start),!(record_id %in% withdrawn)) %>%
-  select(record_id,demographics_dob,demographics_diabetesdx,automode_start,hba1c_date_b,
-         hba1c_baseline,demographics_sex.factor,demographics_race.factor,demographics_ethnicity.factor,
-         demographics_insurance.factor,demographics_cgmhx.factor,demographics_pumphx.factor) %>%
-  mutate(age_at_am_start = round(as.numeric((difftime(automode_start,demographics_dob,units = "days"))/365.25),2),
-         t1d_duration_at_am_start = round(as.numeric((difftime(automode_start,demographics_diabetesdx,units = "days"))/365.25),2))
+
 # Survey data
 # Young adults
 # PAID
 ya_paid <- data %>% select(record_id,redcap_event_name,ya_paid1:ya_paid20)
 ya_paid <- fill_NAs(ya_paid,0.75,1:2)
 # Score
-ya_paid <- ya_paid %>% group_by(record_id,redcap_event_name) %>% 
-  summarise(paid_score = (sum(ya_paid1:ya_paid20))*1.25)
-# Get baseline and followup HFS scores
+ya_paid$paid_score <- apply(ya_paid[,3:ncol(ya_paid)],1,sum)*1.25
+
+# HFS scores (baseline and followup)
 ya_hfs_b <- data %>% select(record_id,redcap_event_name,
                             ya_hfs_b_behave1:ya_hfs_b_behave15,
                             ya_hfs_b_worry16:ya_hfs_b_worry33) %>% 
@@ -73,17 +63,57 @@ ya_hfs_worry <- ya_hfs %>% select(record_id,redcap_event_name,
                                    ya_hfs_worry16:ya_hfs_worry33)
 ya_hfs_worry <- fill_NAs(ya_hfs_worry,0.75,1:2)
 # Score
-ya_hfs_behave <- ya_hfs_behave %>% group_by(record_id,redcap_event_name) %>% 
-  summarise(behave_score = sum(ya_hfs_behave1:ya_hfs_behave15))
-ya_hfs_worry <- ya_hfs_worry %>% group_by(record_id,redcap_event_name) %>% 
-  summarise(worry_score = sum(ya_hfs_worry16:ya_hfs_worry33))
-# Combine scores
-# Put back into full dataframe
-data <- left_join(data,ya_paid,by = c("record_id","redcap_event_name"))
-data <- left_join(data,ya_hfs_behave,by = c("record_id","redcap_event_name"))
-data <- left_join(data,ya_hfs_worry,by = c("record_id","redcap_event_name"))
+ya_hfs_behave$behave_score <- apply(ya_hfs_behave[,3:ncol(ya_hfs_behave)],1,sum)
+ya_hfs_worry$worry_score <- apply(ya_hfs_worry[,3:ncol(ya_hfs_worry)],1,sum)
+
 # Child
 # PAID Peds still needs 1 subtracted from each score (coded as 1-5 instead of 0-4)
+child_paid <- data %>% select(record_id,redcap_event_name,c_paid1:c_paid20)
+child_paid[,3:ncol(child_paid)] <- lapply(child_paid[,3:ncol(child_paid)],function(x) x-1)
+# Fill NAs
+child_paid <- fill_NAs(child_paid,0.75,1:2)
+# Score
+child_paid$paid_score <- apply(child_paid[,3:ncol(child_paid)],1,sum)*1.25
+
+# HFS
+child_hfs_behave <- data %>% select(record_id,redcap_event_name,c_hfs_behave1:c_hfs_behave10)
+child_hfs_worry <- data %>% select(record_id,redcap_event_name,c_hfs_worry11:c_hfs_worry25)
+# Fill NAs
+child_hfs_behave <- fill_NAs(child_hfs_behave,0.75,1:2)
+child_hfs_worry <- fill_NAs(child_hfs_worry,0.75,1:2)
+# Score
+child_hfs_behave$behave_score <- apply(child_hfs_behave[,3:ncol(child_hfs_behave)],1,sum)
+child_hfs_worry$worry_score <- apply(child_hfs_worry[,3:ncol(child_hfs_worry)],1,sum)
+
+# Combine, put back into full dataframe
+paid <- rbind(ya_paid[,c("record_id","redcap_event_name","paid_score")],
+              child_paid[,c("record_id","redcap_event_name","paid_score")])
+behave <- rbind(ya_hfs_behave[,c("record_id","redcap_event_name","behave_score")],
+                child_hfs_behave[,c("record_id","redcap_event_name","behave_score")])
+worry <- rbind(ya_hfs_worry[,c("record_id","redcap_event_name","worry_score")],
+               child_hfs_worry[,c("record_id","redcap_event_name","worry_score")])
+
+data <- left_join(data,paid,by = c("record_id","redcap_event_name"))
+data <- left_join(data,behave,by = c("record_id","redcap_event_name"))
+data <- left_join(data,worry,by = c("record_id","redcap_event_name"))
+
+# Total score
+data$total_hfs_score <- data$behave_score + data$worry_score
+
+# Clean up workspace
+rm(list=setdiff(ls(), "data"))
+
+# Subjects who withdrew (per Cari)
+withdrawn <- c("41","50")
+# Demographics
+demographics <- data %>% 
+  filter(redcap_event_name %in% c("baseline_arm_1","baseline_arm_2"),
+         !is.na(automode_start),!(record_id %in% withdrawn)) %>%
+  select(record_id,demographics_dob,demographics_diabetesdx,automode_start,hba1c_date_b,
+         hba1c_baseline,demographics_sex.factor,demographics_race.factor,demographics_ethnicity.factor,
+         demographics_insurance.factor,demographics_cgmhx.factor,demographics_pumphx.factor) %>%
+  mutate(age_at_am_start = round(as.numeric((difftime(automode_start,demographics_dob,units = "days"))/365.25),2),
+         t1d_duration_at_am_start = round(as.numeric((difftime(automode_start,demographics_diabetesdx,units = "days"))/365.25),2))
 ```
 
 ```{r table 1,echo=FALSE}
