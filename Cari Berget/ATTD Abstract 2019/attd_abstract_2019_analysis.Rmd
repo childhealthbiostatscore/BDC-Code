@@ -7,9 +7,9 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
+knitr::opts_knit$set(root.dir = "S:/Shared Projects/Laura/BDC/Projects")
 library(tableone)
-library(pROC)
+#library(skimr)
 library(knitr)
 library(tidyverse)
 ```
@@ -92,6 +92,9 @@ behave <- rbind(ya_hfs_behave[,c("record_id","redcap_event_name","behave_score")
                 child_hfs_behave[,c("record_id","redcap_event_name","behave_score")])
 worry <- rbind(ya_hfs_worry[,c("record_id","redcap_event_name","worry_score")],
                child_hfs_worry[,c("record_id","redcap_event_name","worry_score")])
+label(paid$redcap_event_name)="Event Name"
+label(behave$redcap_event_name)="Event Name"
+label(worry$redcap_event_name)="Event Name"
 
 data <- left_join(data,paid,by = c("record_id","redcap_event_name"))
 data <- left_join(data,behave,by = c("record_id","redcap_event_name"))
@@ -99,9 +102,10 @@ data <- left_join(data,worry,by = c("record_id","redcap_event_name"))
 
 # Total score
 data$total_hfs_score <- data$behave_score + data$worry_score
+keep <- c("record_id","redcap_event_name","paid_score","behave_score","worry_score","total_hfs_score")
 
 # Clean up workspace
-rm(list=setdiff(ls(),c("fill_NAs","data")))
+rm(list=setdiff(ls(), "data"))
 
 # Subjects who withdrew (per Cari)
 withdrawn <- c("41","50")
@@ -114,14 +118,6 @@ demographics <- data %>%
          demographics_insurance.factor,demographics_cgmhx.factor,demographics_pumphx.factor) %>%
   mutate(age_at_am_start = round(as.numeric((difftime(automode_start,demographics_dob,units = "days"))/365.25),2),
          t1d_duration_at_am_start = round(as.numeric((difftime(automode_start,demographics_diabetesdx,units = "days"))/365.25),2))
-# 12 month data
-year <- data %>% filter(record_id %in% demographics$record_id) %>% 
-  group_by(record_id) %>%
-  summarise(av_am_use = mean(time_am,na.rm = T))
-year <- left_join(data[grep("4",data$redcap_event_name),c("record_id","hba1c")],
-                  year, by = "record_id")
-# Split HbA1c into above vs. below or = 7.5
-year$hba1c <- cut(year$hba1c,breaks = c(-Inf,7.5,Inf),labels = c("<=7.5%",">7.5%"))
 ```
 
 ```{r table 1,echo=FALSE}
@@ -134,12 +130,3 @@ t1 <- print(t1,nonnormal = nonnormal,printToggle = F)
 kable(t1)
 ```
 
-```{r ROC analysis,echo=FALSE,message=FALSE}
-roc <- roc(year,hba1c,av_am_use)
-results <- as.data.frame(coords(roc,x="best",input = "threshold",
-                                best.method = "youden",transpose = FALSE))
-results$auc <- auc(roc)
-results <- round(results,3)
-plot.roc(roc)
-kable(results,row.names = F)
-```
