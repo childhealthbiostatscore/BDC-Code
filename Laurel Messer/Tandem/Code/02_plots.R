@@ -320,11 +320,11 @@ legend("bottomright",c("Injections","Non-Tandem Pump","Tandem Pump"),lty=c(3,2,1
 
 ###forest plots:
 library(plotrix)
-
+par(mar=c(3,4.1,2,2.1))
 plotCI(c(0.9,1,1.1),ch1.fac1.means_plots$lsmean,li=ch1.fac1.means_plots$lower.CL,
        ui=ch1.fac1.means_plots$upper.CL,err="y",xlim=c(0.7,2.3),ylim=c(-0.3,3),
-       pch=15,xlab="Change",ylab="Average Change (CI)",xaxt="n",
-       main="Change in Satisfaction Factor",slty=c(1,2,3))
+       pch=15,xlab="",ylab="Average Change (CI)",xaxt="n",
+       main="",slty=c(1,2,3))
 abline(h=0,lty=1)
 axis(1,at=c(1,2),c("Baseline to midpoint","Midpoint to 6 months"))
 
@@ -334,11 +334,12 @@ plotCI(c(1.9,2,2.1),ch2.fac1.means_plots$lsmean,li=ch2.fac1.means_plots$lower.CL
        main="Change in Satisfaction Factor, by Previous Insulin Method",slty=c(1,2,3),add=T)
 legend("topright",c("MDI","Non-Tandem Pump","Tandem Pump"),lty=c(1,2,3),pch=c(15,15,15))
 
-
+###2nd plot:
+par(mar=c(3,4.1,2,2.1))
 plotCI(c(0.9,1,1.1),ch1.fac2.means_plots$lsmean,li=ch1.fac2.means_plots$lower.CL,
-       ui=ch1.fac2.means_plots$upper.CL,err="y",xlim=c(0.7,2.3),ylim=c(-0.3,3),
-       pch=15,xlab="Change",ylab="Average Change (CI)",xaxt="n",
-       main="Change in Diabetes Burden Factor",slty=c(1,2,3))
+       ui=ch1.fac2.means_plots$upper.CL,err="y",xlim=c(0.7,2.3),ylim=c(-3,0.35),
+       pch=15,xlab="",ylab="Average Change (CI)",xaxt="n",
+       main="",slty=c(1,2,3))
 abline(h=0,lty=1)
 axis(1,at=c(1,2),c("Baseline to midpoint","Midpoint to 6 months"))
 
@@ -346,4 +347,5 @@ plotCI(c(1.9,2,2.1),ch2.fac2.means_plots$lsmean,li=ch2.fac2.means_plots$lower.CL
        ui=ch2.fac2.means_plots$upper.CL,err="y",xlim=c(0.5,2.5),ylim=c(-0.3,3),
        pch=15,xlab="",ylab="Average Change (CI)",xaxt="n",
        main="Change in Satisfaction Factor, by Previous Insulin Method",slty=c(1,2,3),add=T)
-legend("topright",c("MDI","Non-Tandem Pump","Tandem Pump"),lty=c(1,2,3),pch=c(15,15,15))
+legend("bottomright",c("MDI","Non-Tandem Pump","Tandem Pump"),lty=c(1,2,3),pch=c(15,15,15),seg.len=3)
+

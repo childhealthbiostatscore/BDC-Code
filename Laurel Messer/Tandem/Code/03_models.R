@@ -121,6 +121,8 @@ ch1.fac2.means<-summary(ch1.fac2.means, infer = c(TRUE,TRUE), adjust = "bon")
 
 ###prep for tables:
 ch1.fac2.means<-as.data.frame(ch1.fac2.means)
+ch1.fac2.means_plots<-ch1.fac2.means
+
 ch1.fac2.means$lsmean<-round(as.numeric(ch1.fac2.means$lsmean),2)
 ch1.fac2.means$lower.CL<-round(as.numeric(ch1.fac2.means$lower.CL),2)
 ch1.fac2.means$upper.CL<-round(as.numeric(ch1.fac2.means$upper.CL),2)
