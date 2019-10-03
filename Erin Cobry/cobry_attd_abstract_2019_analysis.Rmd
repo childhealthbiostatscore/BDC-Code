@@ -1,5 +1,5 @@
 ---
-title: "670G Obs. ATTD 2019"
+title: "670G Obs. ATTD 2019 - Erin Cobry abstract"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
 output: html_document
@@ -28,7 +28,8 @@ fill_NAs <- function(data,threshold,idcols) {
 
 ```{r data import and formatting,echo=FALSE,include=FALSE}
 # Import
-source("T:/Cari Berget/ATTD Abstract 2019/Data_Cleaned/AdvancedClosedLoopCl_R_2019-09-30_1049.r")
+setwd("S:/Shared Projects/Laura/BDC/Projects")
+source("S:/Shared Projects/Laura/BDC/Projects/Cari Berget/ATTD Abstract 2019/Data_Cleaned/AdvancedClosedLoopCl_R_2019-09-30_1049.r")
 
 
 # A1c as numeric
@@ -67,6 +68,9 @@ ya_hfs_worry <- fill_NAs(ya_hfs_worry,0.75,1:2)
 # Score
 ya_hfs_behave$behave_score <- apply(ya_hfs_behave[,3:ncol(ya_hfs_behave)],1,sum)
 ya_hfs_worry$worry_score <- apply(ya_hfs_worry[,3:ncol(ya_hfs_worry)],1,sum)
+# calculate Z-score
+ya_hfs_behave$behave_score_z <- (ya_hfs_behave$behave_score - mean(ya_hfs_behave$behave_score,na.rm=T)) / sd(ya_hfs_behave$behave_score,na.rm=T)
+ya_hfs_worry$worry_score_z <- (ya_hfs_worry$worry_score - mean(ya_hfs_worry$worry_score,na.rm=T)) / sd(ya_hfs_worry$worry_score,na.rm=T)
 
 # Child
 # PAID Peds still needs 1 subtracted from each score (coded as 1-5 instead of 0-4)
@@ -86,14 +90,17 @@ child_hfs_worry <- fill_NAs(child_hfs_worry,0.75,1:2)
 # Score
 child_hfs_behave$behave_score <- apply(child_hfs_behave[,3:ncol(child_hfs_behave)],1,sum)
 child_hfs_worry$worry_score <- apply(child_hfs_worry[,3:ncol(child_hfs_worry)],1,sum)
+# calculate Z-score
+child_hfs_behave$behave_score_z <- (child_hfs_behave$behave_score - mean(child_hfs_behave$behave_score,na.rm=T)) / sd(child_hfs_behave$behave_score,na.rm=T)
+child_hfs_worry$worry_score_z <- (child_hfs_worry$worry_score - mean(child_hfs_worry$worry_score,na.rm=T)) / sd(child_hfs_worry$worry_score,na.rm=T)
 
 # Combine, put back into full dataframe
 paid <- rbind(ya_paid[,c("record_id","redcap_event_name","paid_score")],
               child_paid[,c("record_id","redcap_event_name","paid_score")])
-behave <- rbind(ya_hfs_behave[,c("record_id","redcap_event_name","behave_score")],
-                child_hfs_behave[,c("record_id","redcap_event_name","behave_score")])
-worry <- rbind(ya_hfs_worry[,c("record_id","redcap_event_name","worry_score")],
-               child_hfs_worry[,c("record_id","redcap_event_name","worry_score")])
+behave <- rbind(ya_hfs_behave[,c("record_id","redcap_event_name","behave_score","behave_score_z")],
+                child_hfs_behave[,c("record_id","redcap_event_name","behave_score","behave_score_z")])
+worry <- rbind(ya_hfs_worry[,c("record_id","redcap_event_name","worry_score","worry_score_z")],
+               child_hfs_worry[,c("record_id","redcap_event_name","worry_score","worry_score_z")])
 label(paid$redcap_event_name)="Event Name"
 label(behave$redcap_event_name)="Event Name"
 label(worry$redcap_event_name)="Event Name"
@@ -101,10 +108,6 @@ label(worry$redcap_event_name)="Event Name"
 data <- left_join(data,paid,by = c("record_id","redcap_event_name"))
 data <- left_join(data,behave,by = c("record_id","redcap_event_name"))
 data <- left_join(data,worry,by = c("record_id","redcap_event_name"))
-
-# Total score
-data$total_hfs_score <- data$behave_score + data$worry_score
-keep <- c("record_id","redcap_event_name","paid_score","behave_score","worry_score","total_hfs_score")
 
 # Clean up workspace
 rm(list=setdiff(ls(), "data"))
@@ -115,22 +118,26 @@ withdrawn <- c("41","50")
 # remove those who withdrew
 data <- subset(data, !(record_id %in% withdrawn))
 
+# delete some extra visits
+data <- data[!(data$record_id==17 & data$redcap_event_name=="baseline_arm_2"),]
+data <- data[!(data$record_id==21 & data$redcap_event_name=="baseline_arm_2"),]
+data <- data[!(data$record_id==8 & data$redcap_event_name=="baseline_arm_2"),]
+
 # calculate change in scores
-# Zscore scales that are not on 100
+keep <- c("record_id","redcap_event_name","paid_score","behave_score","worry_score","behave_score_z","worry_score_z")
 times <- data[data$redcap_event_name %in% c("baseline_arm_1","3_arm_1","5_arm_1","baseline_arm_2","3_arm_2","5_arm_2"),keep]
-# assign variable for pre vs. post treatment
-#alldata <- alldata[order(alldata$ANALYTICID,alldata$COLLECTIONDT),]
-#alldata <- alldata %>% group_by(ANALYTICID) %>% mutate(id=row_number())
-#alldata$prepost[alldata$id==1] <- "PRE"
-#alldata$prepost[alldata$id==2] <- "POST"
-# Tim deltas
-#nums <- unlist(lapply(alldata, is.numeric)) 
-#deltas <- alldata[alldata$prepost == "POST",nums] - alldata[alldata$prepost == "PRE",nums]
-#deltas$ANALYTICID <- alldata$ANALYTICID[alldata$prepost == "PRE"]
-# merge datasets
-#deltas <- merge(deltas,rand,by=c("ANALYTICID"))
-
-
+times$visit[times$redcap_event_name %in% c("baseline_arm_1","baseline_arm_2")] <- "B"
+times$visit[times$redcap_event_name %in% c("3_arm_1","3_arm_2")] <- "M6"
+times$visit[times$redcap_event_name %in% c("5_arm_1","5_arm_2")] <- "M12"
+times$redcap_event_name <- NULL
+# make a wide dataset
+wide <- reshape(times,timevar="visit",idvar="record_id",direction="wide")
+wide$delta_paid6 <- wide$paid_score.M6 - wide$paid_score.B
+wide$delta_paid12 <- wide$paid_score.M12 - wide$paid_score.B
+wide$delta_behavez_6 <- wide$behave_score_z.M6 - wide$behave_score_z.B
+wide$delta_behavez_12 <- wide$behave_score_z.M12 - wide$behave_score_z.B
+wide$delta_worryz_6 <- wide$worry_score_z.M6 - wide$worry_score_z.B
+wide$delta_worryz_12 <- wide$worry_score_z.M12 - wide$worry_score_z.B
 
 # Demographics
 demographics <- data %>% 
@@ -150,5 +157,43 @@ cat_vars <- c("demographics_sex.factor","demographics_race.factor","demographics
 nonnormal <- c("t1d_duration_at_am_start") # A1c always reported as mean (SD)
 t1 <- CreateTableOne(vars = c(cont_vars,cat_vars),data = demographics)
 t1 <- print(t1,nonnormal = nonnormal,printToggle = F)
-kable(t1)
+#kable(t1)
 ```
+
+## Summary statistics for 6 mo change in PAID score (6 mo - baseline)
+
+```{r echo=FALSE, include=TRUE}
+summary(wide$delta_paid6)
+hist(wide$delta_paid6)
+```
+
+## Summary statistics for 12 mo change in PAID score (12 mo - baseline)
+
+```{r echo=FALSE, include=TRUE}
+summary(wide$delta_paid12)
+hist(wide$delta_paid12)
+```
+
+## Summary statistics for 6 mo change in Behave Z-score (6 mo - baseline)
+```{r echo=FALSE, include=TRUE}
+summary(wide$delta_behavez_6)
+hist(wide$delta_behavez_6)
+```
+
+## Summary statistics for 12 mo change in Behave Z-score (12 mo - baseline)
+```{r echo=FALSE, include=TRUE}
+summary(wide$delta_behavez_12)
+hist(wide$delta_behavez_12)
+```
+
+## Summary statistics for 6 mo change in Worry Z-score (6 mo - baseline)
+```{r echo=FALSE, include=TRUE}
+summary(wide$delta_worryz_6)
+hist(wide$delta_worryz_6)
+```
+ 
+## Summary statistics for 12 mo change in Worry Z-score (12 mo - baseline)
+```{r echo=FALSE, include=TRUE}
+summary(wide$delta_worryz_12)
+hist(wide$delta_worryz_12)
+``` 
