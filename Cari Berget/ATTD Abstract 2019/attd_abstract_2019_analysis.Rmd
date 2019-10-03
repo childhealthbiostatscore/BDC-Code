@@ -33,17 +33,36 @@ source("./Cari Berget/ATTD Abstract 2019/Data_Cleaned/AdvancedClosedLoopCl_R_201
 # A1c as numeric
 data$hba1c <- as.numeric(as.character(data$hba1c))
 data$hba1c_baseline <- as.numeric(as.character(data$hba1c_baseline))
+# Participant 7 first time 4 to time 3
+data$timepoint.factor[37] <- "Time 3"
 # Subjects who withdrew (per Cari)
 withdrawn <- c("41","50")
 # Demographics
 demographics <- data %>% 
   filter(redcap_event_name %in% c("baseline_arm_1","baseline_arm_2"),
          !is.na(automode_start),!(record_id %in% withdrawn)) %>%
-  select(record_id,demographics_dob,demographics_diabetesdx,automode_start,hba1c_date_b,
-         hba1c_baseline,demographics_sex.factor,demographics_race.factor,demographics_ethnicity.factor,
+  select(record_id,demographics_dob,demographics_diabetesdx,automode_start,
+         hba1c_date_b,hba1c_baseline,demographics_sex.factor,
+         demographics_race.factor,demographics_ethnicity.factor,
          demographics_insurance.factor,demographics_cgmhx.factor,demographics_pumphx.factor) %>%
   mutate(age_at_am_start = round(as.numeric((difftime(automode_start,demographics_dob,units = "days"))/365.25),2),
          t1d_duration_at_am_start = round(as.numeric((difftime(automode_start,demographics_diabetesdx,units = "days"))/365.25),2))
+# Days from AM start
+days <- data %>% group_by(record_id) %>%
+  mutate(date = coalesce(as.character(hba1c_date_b),as.character(date_visit))) %>%
+  fill(automode_start) %>%
+  mutate(days_to_am = abs(as.numeric((difftime(automode_start,date,
+                                               units = "days"))))) %>%
+  select(record_id,timepoint.factor,days_to_am) %>% 
+  filter(!is.na(timepoint.factor) & !is.na(days_to_am))
+days$timepoint.factor <- as.character(days$timepoint.factor)
+# Long to wide for demographics frame
+days <- days %>% spread(timepoint.factor,days_to_am)
+# Column names
+colnames(days) <- c("record_id","baseline_to_am","am_to_m1","am_to_t1","am_to_t2",
+                    "am_to_t3","am_to_t4")
+# add to demographics
+demographics <- left_join(demographics,days,by = "record_id")
 # 12 month data
 year <- data %>% filter(record_id %in% demographics$record_id) %>% 
   group_by(record_id) %>%
@@ -54,34 +73,41 @@ year <- left_join(data[grep("5",data$redcap_event_name),c("record_id","hba1c")],
 year$hba1c <- cut(year$hba1c,breaks = c(-Inf,7.5,Inf),labels = c("<=7.5%",">7.5%"))
 ```
 
+# Table 1: Demographics
+
 ```{r table 1,echo=FALSE}
-cont_vars <- c("hba1c_baseline","age_at_am_start","t1d_duration_at_am_start")
-cat_vars <- c("demographics_sex.factor","demographics_race.factor","demographics_ethnicity.factor",
-              "demographics_insurance.factor","demographics_cgmhx.factor","demographics_pumphx.factor")
-nonnormal <- c("t1d_duration_at_am_start") # A1c always reported as mean (SD)
+cont_vars <- c("hba1c_baseline","age_at_am_start","t1d_duration_at_am_start",
+               "baseline_to_am","am_to_m1","am_to_t1","am_to_t2","am_to_t3",
+               "am_to_t4")
+cat_vars <- c("demographics_sex.factor","demographics_race.factor",
+              "demographics_ethnicity.factor","demographics_insurance.factor",
+              "demographics_cgmhx.factor","demographics_pumphx.factor")
+nonnormal <- c("t1d_duration_at_am_start","baseline_to_am","am_to_m1","am_to_t1",
+               "am_to_t2","am_to_t3","am_to_t4") # A1c always reported as mean (SD)
 t1 <- CreateTableOne(vars = c(cont_vars,cat_vars),data = demographics)
 t1 <- print(t1,nonnormal = nonnormal,printToggle = F)
 kable(t1)
 ```
 
 ```{r descriptive models,echo=FALSE}
-# Rename redcap events to combine child and YA
-mod_data <- data
-mod_data$redcap_event_name <- factor(sub("_arm.*","",mod_data$redcap_event_name),
-                                     levels = c("baseline","1","2","3","4","5"),
-                                     labels = c("Baseline","M1","M3","M6","M9","M12"))
 # Models and model means
 # AM use
-am_use_mod <- lme(time_am ~ redcap_event_name,random=~1|record_id,
-                  data = mod_data[mod_data$redcap_event_name != "Baseline",],na.action = na.omit)
-am_use_mod_means <- lme(time_am ~ redcap_event_name-1,random=~1|record_id,
-                        mod_data[mod_data$redcap_event_name != "Baseline",],na.action = na.omit)
+am_use_mod <- lme(time_am ~ timepoint.factor,random=~1|record_id,
+                  data = data[data$timepoint.factor != "baseline",],
+                  na.action = na.omit)
+am_use_mod_means <- lme(time_am ~ timepoint.factor-1,random=~1|record_id,
+                        data[data$timepoint.factor != "baseline",],
+                        na.action = na.omit)
 # TIR
-tir_70_180_mod <- lme(sensor_70_180 ~ redcap_event_name,random=~1|record_id,data = mod_data,na.action = na.omit)
-tir_70_180_mod_means <- lme(sensor_70_180 ~ redcap_event_name-1,random=~1|record_id,data = mod_data,na.action = na.omit)
+tir_70_180_mod <- lme(sensor_70_180 ~ timepoint.factor,random=~1|record_id,
+                      data = data,na.action = na.omit)
+tir_70_180_mod_means <- lme(sensor_70_180 ~ timepoint.factor-1,random=~1|record_id,
+                            data = data,na.action = na.omit)
 # HbA1c
-hba1c_mod <- lme(hba1c ~ redcap_event_name,random=~1|record_id,data = mod_data,na.action = na.omit)
-hba1c_mod_means <- lme(hba1c ~ redcap_event_name-1,random=~1|record_id,data = mod_data,na.action = na.omit)
+hba1c_mod <- lme(hba1c ~ timepoint.factor,random=~1|record_id,
+                 data = data,na.action = na.omit)
+hba1c_mod_means <- lme(hba1c ~ timepoint.factor-1,random=~1|record_id,
+                       data = data,na.action = na.omit)
 ```
 
 # Outcomes over time
@@ -90,33 +116,33 @@ hba1c_mod_means <- lme(hba1c ~ redcap_event_name-1,random=~1|record_id,data = mo
 
 ```{r am use diff, echo=FALSE}
 diff <- summary(am_use_mod)$tTable
-rownames(diff) <- sub("redcap_event_name","",rownames(diff))
+rownames(diff) <- sub("timepoint.factor","",rownames(diff))
 kable(diff,caption = "Difference From Baseline")
 ```
 
-This table shows the difference between each timepoint and baseline (the intercept). So for example, on average AM use was 14.7 points lower at month 6 compared to baseline (p = 0.0003).
+This table shows the difference between each timepoint and month 1 (the intercept). So for example, on average AM use was 14.7 points lower at month 6 compared to baseline (p = 0.0003).
 
 ```{r am use means, echo=FALSE}
 means <- summary(am_use_mod_means)$tTable
-rownames(means) <- sub("redcap_event_name","",rownames(means))
+rownames(means) <- sub("timepoint.factor","",rownames(means))
 kable(means,caption = "Model Means")
 ```
 
 This table shows the average AM use at each time point. The p-values here indicate whether or not the average is close to 0, so I would ignore them when reporting these results. 
 
-The interpretation of the following tables is the same.
+The interpretation of the following tables is the same, but the differences are from baseline visit (all time points were compared to month 1 for AM use, as it is the first visit with AM use data).
 
 ## TIR (%)
 
 ```{r tir diff, echo=FALSE}
 diff <- summary(tir_70_180_mod)$tTable
-rownames(diff) <- sub("redcap_event_name","",rownames(diff))
+rownames(diff) <- sub("timepoint.factor","",rownames(diff))
 kable(diff,caption = "Difference From Baseline")
 ```
 
 ```{r tir means, echo=FALSE}
 means <- summary(tir_70_180_mod_means)$tTable
-rownames(means) <- sub("redcap_event_name","",rownames(means))
+rownames(means) <- sub("timepoint.factor","",rownames(means))
 kable(means,caption = "Model Means")
 ```
 
@@ -124,13 +150,13 @@ kable(means,caption = "Model Means")
 
 ```{r hba1c diff, echo=FALSE}
 diff <- summary(hba1c_mod)$tTable
-rownames(diff) <- sub("redcap_event_name","",rownames(diff))
+rownames(diff) <- sub("timepoint.factor","",rownames(diff))
 kable(diff,caption = "Difference From Baseline")
 ```
 
 ```{r hba1c means, echo=FALSE}
 means <- summary(hba1c_mod_means)$tTable
-rownames(means) <- sub("redcap_event_name","",rownames(means))
+rownames(means) <- sub("timepoint.factor","",rownames(means))
 kable(means,caption = "Model Means")
 ```
 
@@ -145,4 +171,4 @@ results$AUC <- auc(roc)
 kable(results,caption = "ROC Analysis Results")
 ```
 
-The optimal average AM use threshold based on the Youden index is 68.9%. This has a specificity of 62.5% and a sensitivity of 84.1% to detect whether or not HbA1c was <=7.5 % or >7.5 % after 12 months. AUC is 0.76.
+The optimal average AM use (across all visits) threshold based on the Youden index is 68.9%. This has a specificity of 62.5% and a sensitivity of 84.1% to detect whether or not HbA1c was <=7.5 % or >7.5 % after 12 months. AUC is 0.76.
