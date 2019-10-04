@@ -7,7 +7,7 @@ output: word_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
+knitr::opts_knit$set(root.dir = "/Volumes/som/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
 library(tableone)
 library(knitr)
 library(nlme)
@@ -33,8 +33,9 @@ source("./Cari Berget/ATTD Abstract 2019/Data_Cleaned/AdvancedClosedLoopCl_R_201
 # A1c as numeric
 data$hba1c <- as.numeric(as.character(data$hba1c))
 data$hba1c_baseline <- as.numeric(as.character(data$hba1c_baseline))
-# Participant 7 first time 4 to time 3
-data$timepoint.factor[37] <- "Time 3"
+data$hba1c <- ifelse(data$gyl_timepoint.factor == "Baseline",data$hba1c_baseline,data$hba1c)
+# Missing glycemic timepoints to baseline
+data$gyl_timepoint.factor[is.na(data$gyl_timepoint.factor)] <- "Baseline"
 # Subjects who withdrew (per Cari)
 withdrawn <- c("41","50")
 # Demographics
@@ -53,11 +54,11 @@ days <- data %>% group_by(record_id) %>%
   fill(automode_start) %>%
   mutate(days_to_am = abs(as.numeric((difftime(automode_start,date,
                                                units = "days"))))) %>%
-  select(record_id,timepoint.factor,days_to_am) %>% 
-  filter(!is.na(timepoint.factor) & !is.na(days_to_am))
-days$timepoint.factor <- as.character(days$timepoint.factor)
+  select(record_id,gyl_timepoint.factor,days_to_am) %>% 
+  filter(!is.na(gyl_timepoint.factor) & !is.na(days_to_am))
+days$gyl_timepoint.factor <- as.character(days$gyl_timepoint.factor)
 # Long to wide for demographics frame
-days <- days %>% spread(timepoint.factor,days_to_am)
+days <- days %>% spread(gyl_timepoint.factor,days_to_am)
 # Column names
 colnames(days) <- c("record_id","baseline_to_am","am_to_m1","am_to_t1","am_to_t2",
                     "am_to_t3","am_to_t4")
@@ -89,25 +90,52 @@ t1 <- print(t1,nonnormal = nonnormal,printToggle = F)
 kable(t1)
 ```
 
+```{r discontinuers,echo=FALSE}
+# Find discontinuers
+t1_discont <- data %>%
+  filter(gyl_timepoint.factor == "Time 1", time_am < 10) %>%
+  .$record_id
+t2_discont <- data %>%
+  filter(gyl_timepoint.factor == "Time 2", time_am < 10) %>%
+  .$record_id
+t3_discont <- data %>%
+  filter(gyl_timepoint.factor == "Time 3", time_am < 10) %>%
+  .$record_id
+t4_discont <- data %>%
+  filter(gyl_timepoint.factor == "Time 4", time_am < 10) %>%
+  .$record_id
+all_discont <- unique(c(t1_discont,t2_discont,t3_discont,t4_discont))
+first_six <- unique(c(t1_discont,t2_discont))
+# Intermittent discontinuers
+intermittent <- data %>% filter(!is.na(time_am),gyl_timepoint.factor != "Baseline") %>% 
+  select(record_id,redcap_event_name,time_am)
+intermittent$time_am <- ifelse(intermittent$time_am < 10,0,1)
+intermittent <- intermittent %>% group_by(record_id) %>%
+  summarise(rle = length(rle(time_am)$lengths))
+intermittent <- intermittent$record_id[which(intermittent$rle > 2)]
+```
+
 ```{r descriptive models,echo=FALSE}
+# Model data with AM < 10 excluded
+mod_data <- data %>% filter(gyl_timepoint.factor == "Baseline" | time_am >=10)
 # Models and model means
 # AM use
-am_use_mod <- lme(time_am ~ timepoint.factor,random=~1|record_id,
-                  data = data[data$timepoint.factor != "baseline",],
+am_use_mod <- lme(time_am ~ gyl_timepoint.factor,random=~1|record_id,
+                  data = mod_data[mod_data$gyl_timepoint.factor != "Baseline",],
                   na.action = na.omit)
-am_use_mod_means <- lme(time_am ~ timepoint.factor-1,random=~1|record_id,
-                        data[data$timepoint.factor != "baseline",],
+am_use_mod_means <- lme(time_am ~ gyl_timepoint.factor-1,random=~1|record_id,
+                        mod_data[mod_data$gyl_timepoint.factor != "Baseline",],
                         na.action = na.omit)
 # TIR
-tir_70_180_mod <- lme(sensor_70_180 ~ timepoint.factor,random=~1|record_id,
-                      data = data,na.action = na.omit)
-tir_70_180_mod_means <- lme(sensor_70_180 ~ timepoint.factor-1,random=~1|record_id,
-                            data = data,na.action = na.omit)
+tir_70_180_mod <- lme(sensor_70_180 ~ gyl_timepoint.factor,random=~1|record_id,
+                      data = mod_data[mod_data$gyl_timepoint.factor != "Baseline",],na.action = na.omit)
+tir_70_180_mod_means <- lme(sensor_70_180 ~ gyl_timepoint.factor-1,random=~1|record_id,
+                            data = mod_data[mod_data$gyl_timepoint.factor != "Baseline",],na.action = na.omit)
 # HbA1c
-hba1c_mod <- lme(hba1c ~ timepoint.factor,random=~1|record_id,
-                 data = data,na.action = na.omit)
-hba1c_mod_means <- lme(hba1c ~ timepoint.factor-1,random=~1|record_id,
-                       data = data,na.action = na.omit)
+hba1c_mod <- lme(hba1c ~ gyl_timepoint.factor,random=~1|record_id,
+                 data = mod_data,na.action = na.omit)
+hba1c_mod_means <- lme(hba1c ~ gyl_timepoint.factor-1,random=~1|record_id,
+                       data = mod_data,na.action = na.omit)
 ```
 
 # Outcomes over time
@@ -116,33 +144,33 @@ hba1c_mod_means <- lme(hba1c ~ timepoint.factor-1,random=~1|record_id,
 
 ```{r am use diff, echo=FALSE}
 diff <- summary(am_use_mod)$tTable
-rownames(diff) <- sub("timepoint.factor","",rownames(diff))
+rownames(diff) <- sub("gyl_timepoint.factor","",rownames(diff))
 kable(diff,caption = "Difference From Baseline")
 ```
 
-This table shows the difference between each timepoint and month 1 (the intercept). So for example, on average AM use was 14.7 points lower at month 6 compared to baseline (p = 0.0003).
+This table shows the difference between each timepoint and month 1 (the intercept). So for example, on average AM use was 16.1 points lower at month 6 compared to baseline (p = 0.0003).
 
 ```{r am use means, echo=FALSE}
 means <- summary(am_use_mod_means)$tTable
-rownames(means) <- sub("timepoint.factor","",rownames(means))
+rownames(means) <- sub("gyl_timepoint.factor","",rownames(means))
 kable(means,caption = "Model Means")
 ```
 
 This table shows the average AM use at each time point. The p-values here indicate whether or not the average is close to 0, so I would ignore them when reporting these results. 
 
-The interpretation of the following tables is the same, but the differences are from baseline visit (all time points were compared to month 1 for AM use, as it is the first visit with AM use data).
+The interpretation of the following tables is the same, but the differences are from baseline visit (all time points were compared to month 1 for AM use, as it is the first visit with AM use data). All models only included baseline observations and visits with AM use >= 10%.
 
 ## TIR (%)
 
 ```{r tir diff, echo=FALSE}
 diff <- summary(tir_70_180_mod)$tTable
-rownames(diff) <- sub("timepoint.factor","",rownames(diff))
+rownames(diff) <- sub("gyl_timepoint.factor","",rownames(diff))
 kable(diff,caption = "Difference From Baseline")
 ```
 
 ```{r tir means, echo=FALSE}
 means <- summary(tir_70_180_mod_means)$tTable
-rownames(means) <- sub("timepoint.factor","",rownames(means))
+rownames(means) <- sub("gyl_timepoint.factor","",rownames(means))
 kable(means,caption = "Model Means")
 ```
 
@@ -150,19 +178,36 @@ kable(means,caption = "Model Means")
 
 ```{r hba1c diff, echo=FALSE}
 diff <- summary(hba1c_mod)$tTable
-rownames(diff) <- sub("timepoint.factor","",rownames(diff))
+rownames(diff) <- sub("gyl_timepoint.factor","",rownames(diff))
 kable(diff,caption = "Difference From Baseline")
 ```
 
 ```{r hba1c means, echo=FALSE}
 means <- summary(hba1c_mod_means)$tTable
-rownames(means) <- sub("timepoint.factor","",rownames(means))
+rownames(means) <- sub("gyl_timepoint.factor","",rownames(means))
 kable(means,caption = "Model Means")
 ```
 
+# Discontinuers
+
+```{r echo=FALSE}
+discont_table <- as.data.frame(matrix(nrow = 1,ncol = 6))
+colnames(discont_table) <- c("T1","T2","T3","T4","Total","Intermittent")
+rownames(discont_table) <- "n"
+discont_table$T1 <- length(t1_discont)
+discont_table$T2 <- length(t2_discont)
+discont_table$T3 <- length(t3_discont)
+discont_table$T4 <- length(t4_discont)
+discont_table$Total <- length(all_discont)
+discont_table$Intermittent <- length(intermittent)
+kable(t(discont_table),caption = "Discontinuers")
+```
+
+The table above includes the number of participants with AM use < 10% at each time point, the total number of participants who discontinued at some point in the study ("Total"), and the number of participants who discontinued at one visit, then were counted as a continuer at a later visit, then discontinued again ("Intermittent"). 
+
 # ROC Analysis
 
-```{r ROC analysis,echo=FALSE,message=FALSE}
+```{r ROC analysis,echo=FALSE,message=FALSE,dpi=600}
 roc <- roc(year,hba1c,av_am_use)
 plot.roc(roc)
 results <- as.data.frame(coords(roc,x="best",input = "threshold",best.method = "youden",
