@@ -320,6 +320,7 @@ legend("bottomright",c("Injections","Non-Tandem Pump","Tandem Pump"),lty=c(3,2,1
 
 ###forest plots:
 library(plotrix)
+jpeg("abstract_figure.jpg",units="in", width=10, height=6,res=450)
 par(mfrow=c(1,2),mar=c(3,4.1,3,2.1))
 plotCI(c(0.9,1,1.1),ch1.fac1.means_plots$lsmean,li=ch1.fac1.means_plots$lower.CL,
        ui=ch1.fac1.means_plots$upper.CL,err="y",xlim=c(0.7,2.3),ylim=c(-0.3,3),
@@ -335,7 +336,7 @@ plotCI(c(1.9,2,2.1),ch2.fac1.means_plots$lsmean,li=ch2.fac1.means_plots$lower.CL
 #legend("topright",c("MDI","Non-Tandem Pump","Tandem Pump"),lty=c(1,2,3),pch=c(15,15,15))
 
 ###2nd plot:
-par(mar=c(3,4.1,3,2.1))
+# par(mar=c(3,4.1,3,2.1))
 plotCI(c(0.9,1,1.1),ch1.fac2.means_plots$lsmean,li=ch1.fac2.means_plots$lower.CL,
        ui=ch1.fac2.means_plots$upper.CL,err="y",xlim=c(0.7,2.3),ylim=c(-3,0.35),
        pch=15,xlab="",ylab="Average Change (CI)",xaxt="n",
@@ -349,4 +350,4 @@ plotCI(c(1.9,2,2.1),ch2.fac2.means_plots$lsmean,li=ch2.fac2.means_plots$lower.CL
        main="Figure 1A: Change in Diabetes Burden",slty=c(1,2,3),add=T)
 legend("bottomright",c("MDI","Non-Tandem Pump","Tandem Pump"),
        lty=c(1,2,3),pch=c(15,15,15),seg.len=3,title = "Previous Insulin Method:")
-
+dev.off()
