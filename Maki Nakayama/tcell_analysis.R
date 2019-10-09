@@ -58,12 +58,25 @@ mean_table<-function(x,group){
 }
 tab.2grp<-mean_table(dat$Value,dat$group_2)
 t.test(dat$Value[dat$group_2=="AM"],dat$Value[dat$group_2=="LO"])
-b <- boxplot(dat$Value~dat$Group,data=dat, plot=0)
 
+###box plot for publication:
+
+b <- boxplot(dat$Value~dat$Group,data=dat, plot=0)
+dat$Group<-factor(dat$Group,levels=c("AM+BFP","AM+CR","AM+TM","AM+mChe","LO+BFP","LO+CR","LO+TM","LO+mChe"))
+#windowsFonts(A = windowsFont("MS Gothic"))
+windowsFonts("Arial" = windowsFont("Arial"))
+op <- par(family = "Arial")
+par(mar=c(4.5,4.1,2,1))
 boxplot(dat$Value~dat$Group,
-        xlab="Fluorochromes",main="All Combinations",
+       main="",xlab="",
         ylab="% ZsGreen-1 Positive",
-        names=paste(b$names, "(n=", b$n, ")"))
+        xaxt="n",yaxt="n",cex.lab=1.2,
+       ,boxlwd = 3,whisklwd=3,staplelwd=3,
+       outlwd=2)
+box(lwd=3)
+axis(1,cex.axis=1.2,labels=paste(b$names, "\n (n=",b$n,")"),
+     at=c(1,2,3,4,5,6,7,8),line=1,tick = F, outer=F)
+axis(2,cex.axis=1.2,at=c(2,4,6,8))
 
 b <- boxplot(dat$Value~dat$group_4, data=dat, plot=0)
 boxplot(dat$Value~dat$group_4,
