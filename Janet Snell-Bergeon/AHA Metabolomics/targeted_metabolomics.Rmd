@@ -11,28 +11,30 @@ knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/
 library(tableone)
 library(skimr)
 library(knitr)
+library(survival)
 library(nnet)
 library(tidyverse)
 ```
 
 ```{r echo=FALSE}
 # Import pilot data
-pilot <- read.csv("./Background/Pilot Project/setup.csv")
-colnames(pilot)[which(colnames(pilot) == "studyid")] <- "StudyID"
+pilot <- read.csv("./Data_Cleaned/pilot_matched.csv")
+colnames(pilot)[which(colnames(pilot) == "STUDYID")] <- "StudyID"
 # Import new data
 all_targeted <- read.csv("./Data_Cleaned/targeted.csv")
 # Get new target data for those who were in pilot
-targeted <- inner_join(pilot[,c("StudyID","matchid")],all_targeted,by = "StudyID")
+targeted <- inner_join(pilot[,c("StudyID","MATCHID")],all_targeted,by = "StudyID")
 # CAC progression - increase in square root calcium volume >= 2.5 between baseline and visit 3
-targeted$CACp <- ifelse(targeted$c3 - targeted$c1 >= 2.5,"Progressiond","No Progression")
+targeted$CACp <- ifelse(targeted$c3 - targeted$c1 >= 2.5,1,0)
 ```
 
-```{r echo=FALSE}
+```{r echo=FALSE,message=FALSE}
 # Univariate logistic regression
 logits <- lapply(colnames(targeted)[which(colnames(targeted) == "Betaine"):which(colnames(targeted)=="linoleic.acid")], 
                  function(var){
-                   formula <- as.formula(paste0("factor(CACp) ~ ",var))
-                   mod <- glm(formula, data = targeted, family = binomial) # CHANGE THIS TO CONDITIONAL LOGISTIC?
+                   #print(var)
+                   formula <- as.formula(paste0("CACp ~ ",var,"+ strata(MATCHID)"))
+                   mod <- clogit(formula, data = targeted, method = "exact") 
                    cfs <- as.data.frame(summary(mod)$coefficients)
                    cfs$metabolite <- rownames(cfs)
                    cfs})
@@ -40,13 +42,13 @@ logits <- lapply(colnames(targeted)[which(colnames(targeted) == "Betaine"):which
 metab_logits <- bind_rows(logits)
 # Remove intercept estimates
 metab_logits <- metab_logits %>% filter(metabolite != "(Intercept)") %>% 
-  select(metabolite,Estimate,`Std. Error`,`Pr(>|z|)`)
+  select(metabolite,coef,`se(coef)`,`Pr(>|z|)`)
 # Rename metabolites
 metab_logits$metabolite <- sub("X","",metab_logits$metabolite)
 # Adjust p values
-metab_logits$`Pr(>|z|)` <- p.adjust(metab_logits$`Pr(>|z|)`, method = "fdr")
+# metab_logits$`Pr(>|z|)` <- p.adjust(metab_logits$`Pr(>|z|)`, method = "fdr")
 # Univariate results
-kable(metab_logits)
+kable(metab_logits, caption = "Unadjusted p values")
 ```
 
 ```{r echo=FALSE}
