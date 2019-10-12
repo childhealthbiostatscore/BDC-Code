@@ -19,17 +19,24 @@ library(tidyverse)
 ```{r echo=FALSE}
 # Import new data
 targeted <- read.csv("./Data_Cleaned/targeted.csv")
+# Three progression groups
+cac_groups <- read.table("./Data_Raw/CAC Trajectories 3 groups.txt",sep = "\t",
+                         header = T)
 # CAC progression - increase in square root calcium volume >= 2.5 between baseline and visit 3
 targeted$CACp <- ifelse(targeted$c3 - targeted$c1 >= 2.5,"Progression","No Progression")
+# New CAC groups
+targeted <- left_join(targeted,cac_groups[,c("StudyID","GROUP")],by = "StudyID")
 ```
 
+# CAC Progression
+
 ```{r echo=FALSE,message=FALSE}
-# Univariate logistic regression
+# Logistic regression
 logits <- lapply(colnames(targeted)[which(colnames(targeted) == "Betaine"):
                                       which(colnames(targeted)=="linoleic.acid")], 
                  function(var){
                    #print(var)
-                   formula <- as.formula(paste0("factor(CACp) ~ ",var))
+                   formula <- as.formula(paste0("factor(CACp) ~ ",var,"+age+sex"))
                    mod <- glm(formula, data = targeted, family = "binomial") 
                    cfs <- as.data.frame(summary(mod)$coefficients)
                    cfs$metabolite <- rownames(cfs)
@@ -37,19 +44,50 @@ logits <- lapply(colnames(targeted)[which(colnames(targeted) == "Betaine"):
 # Combine into one dataframe
 metab_logits <- bind_rows(logits)
 # Remove intercept estimates
-metab_logits <- metab_logits %>% filter(metabolite != "(Intercept)") %>% 
+metab_logits <- metab_logits %>% 
+  filter(!(metabolite %in% c("(Intercept)","age","sex"))) %>% 
   select(metabolite,Estimate,`Std. Error`,`Pr(>|z|)`)
 # Rename metabolites, sort by p value
 metab_logits$metabolite <- sub("X","",metab_logits$metabolite)
 metab_logits <- metab_logits %>% arrange(`Pr(>|z|)`)
 # Adjust p values
 # metab_logits$`Pr(>|z|)` <- p.adjust(metab_logits$`Pr(>|z|)`, method = "fdr")
-# Univariate results
+# Results
 kable(metab_logits, caption = "Unadjusted p values")
 ```
 
-```{r echo=FALSE}
+# CAC Group
+
+```{r echo=FALSE,include=FALSE}
 # Multinomial logistic regression on CACGROUP - adjust for known markers
-# PCA
-# PCA factors as covariates in logistic regression
+multinom_logits <- lapply(colnames(targeted)[which(colnames(targeted) == "Betaine"):
+                                      which(colnames(targeted)=="linoleic.acid")], 
+                 function(var){
+                   #print(var)
+                   formula <- as.formula(paste0("factor(GROUP) ~ ",var,"+age+sex"))
+                   mod <- multinom(formula, data = targeted) 
+                   coeffs <- as.data.frame(summary(mod)$coefficients)[[var]]
+                   ses <- as.data.frame(summary(mod)$standard.errors)[[var]]
+                   z <- coeffs/ses
+                   ps <- p <- (1 - pnorm(abs(z), 0, 1))*2
+                   results <- as.data.frame(cbind(c(2,3),coeffs,ses,ps))
+                   results$metab <- paste(var)
+                   colnames(results) <- c("CAC Group","Estimate","SE",
+                                          "p value","Metabolite")
+                   results
+                   })
+# Single DF
+multinom_metab_logits <- bind_rows(multinom_logits)
+multinom_metab_logits <- multinom_metab_logits %>% 
+  select(Metabolite,`CAC Group`,Estimate,SE,`p value`)
+# Rename metabolites, sort by p value
+multinom_metab_logits$Metabolite <- sub("X","",multinom_metab_logits$Metabolite)
+multinom_metab_logits <- multinom_metab_logits %>% arrange(`p value`)
+# Adjust p values
+# multinom_metab_logits$`p value` <- p.adjust(multinom_metab_logits$`p value`,method = "fdr")
+```
+
+```{r echo=FALSE}
+# Univariate results
+kable(multinom_metab_logits, caption = "Unadjusted p values")
 ```
