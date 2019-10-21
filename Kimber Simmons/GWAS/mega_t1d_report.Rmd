@@ -8,20 +8,25 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kimber Simmons/GWAS/Data_Cleaned")
+library(tidyverse)
 ```
 
 # Combine "_redo" and "_removeKnownFails"
 
-```{bash combine files, eval=FALSE}
+```{bash combine files,eval=FALSE}
 # Combine files
-plink --noweb --bfile Simmons_redo --merge-list files_to_combine.txt --make-bed --out Simmons_combined
+plink --bfile Simmons_redo --merge-list files_to_combine.txt --make-bed --out Simmons_combined
+```
+
+```{r check combine, eval=FALSE}
+combined <- read.table("Simmons_combined.fam")
 ```
 
 ## Missingness pre-deletion
 
-```{bash plink missing, eval=FALSE}
+```{bash plink missing,eval=FALSE}
 # Check missing
-plink --noweb --bfile Simmons_combined --missing
+plink --bfile Simmons_combined --missing
 ```
 
 ```{r r missing plots pre-deletion, echo=FALSE}
@@ -42,11 +47,11 @@ hist(snpmiss[,5],main="Histogram proportion missing individuals per SNP",
 ```{bash plink filter missing, eval=FALSE}
 # Delete SNPs and individuals with high levels of missingness
 # Delete SNPs
-plink --noweb --bfile Simmons_combined --geno 0.02 --make-bed --out Simmons_combined
+plink --bfile Simmons_combined --geno 0.02 --make-bed --out Simmons_combined_1
 # Delete individuals
-plink --noweb --bfile Simmons_combined --mind 0.02 --make-bed --out Simmons_combined
+plink --bfile Simmons_combined_1 --mind 0.02 --make-bed --out Simmons_combined_1
 # Check missing post-deletion
-plink --noweb --bfile Simmons_combined --missing --out miss_post_del
+plink --bfile Simmons_combined_1 --missing --out miss_post_del
 ```
 
 ```{r r missing plots post-deletion, echo=FALSE}
@@ -62,13 +67,26 @@ hist(indmiss_check[,6],main="Histogram proportion missing SNPs per individual",
      xlab = "Proportion Missing")
 hist(snpmiss_check[,5],main="Histogram proportion missing individuals per SNP",
      xlab = "Proportion Missing ") 
+# For duplicated individuals, keep the one with highest call rate (lowest missing)
+indmiss_check$id <- gsub(".*_","",indmiss_check$IID)
+keep <- indmiss_check %>% group_by(id) %>% slice(which.min(N_MISS))
+write.table(keep[,1:2],file = "./call_rate_keep.txt",row.names = F,sep = "\t",col.names = F,quote = F)
+```
+
+```{bash plink call rate,eval=FALSE}
+# Delete low call rate duplicates
+plink --bfile Simmons_combined_1 --keep call_rate_keep.txt --make-bed --out Simmons_combined_2
+```
+
+```{r echo=FALSE}
+post_repeated_subs_del <- read.table("./Simmons_combined_2.fam") 
 ```
 
 ## Sex check pre-deletion
 
 ```{bash plink sex check pre, eval=FALSE}
 # Check sex discrepancy
-plink --noweb --bfile Simmons_combined --check-sex
+plink --bfile Simmons_combined_2 --check-sex
 ```
 
 ```{r r sex check pre, echo=FALSE}
@@ -90,9 +108,9 @@ hist(female[,6],main="Women",xlab="F")
 ```{bash plink sex check post, eval=FALSE}
 # Remove subjects with problematic X chromosome homozygosity
 grep "PROBLEM" plink.sexcheck| awk '{print$1,$2}'> sex_discrepancy.txt
-plink --noweb --bfile Simmons_combined --remove sex_discrepancy.txt --make-bed --out Simmons_combined
+plink --bfile Simmons_combined_2 --remove sex_discrepancy.txt --make-bed --out Simmons_combined_3
 # Check sex discrepancy again
-plink --noweb --bfile Simmons_combined --check-sex --out sex_post_del
+plink --bfile Simmons_combined_3 --check-sex --out sex_post_del
 ```
 
 ```{r r sex check post, echo=FALSE}
@@ -113,10 +131,10 @@ hist(female[,6],main="Women",xlab="F")
 
 ```{bash plink maf check pre, eval=FALSE} 
 # Select autosomal SNPs only (i.e., from chromosomes 1 to 22).
-awk '{ if ($1 >= 1 && $1 <= 22) print $2 }' Simmons_combined.bim > snp_1_22.txt
-plink --noweb --bfile Simmons_combined --extract snp_1_22.txt --make-bed --out Simmons_combined
+awk '{ if ($1 >= 1 && $1 <= 22) print $2 }' Simmons_combined_3.bim > snp_1_22.txt
+plink --bfile Simmons_combined_3 --extract snp_1_22.txt --make-bed --out Simmons_combined_4
 # Check minor allele frequency
-plink --noweb --bfile Simmons_combined --freq --out MAF_check
+plink --bfile Simmons_combined_4 --freq --out MAF_check
 ```
 
 ```{r r maf check pre, echo=FALSE}
@@ -129,9 +147,9 @@ hist(maf_freq[,5],main = "MAF distribution", xlab = "MAF")
 
 ```{bash plink maf check post, eval=FALSE}
 # Remove those with MAF < 0.05
-plink --noweb --bfile Simmons_combined --maf 0.05 --make-bed --out Simmons_combined
+plink --bfile Simmons_combined_4 --maf 0.05 --make-bed --out Simmons_combined_5
 # Check minor allele frequency again
-plink --noweb --bfile Simmons_combined --freq --out MAF_check_post
+plink --bfile Simmons_combined_5 --freq --out MAF_check_post
 ```
 
 ```{r r maf check post, echo=FALSE}
@@ -143,7 +161,7 @@ hist(maf_freq[,5],main = "MAF distribution", xlab = "MAF")
 ## Hardy-Weinberg equilibrium pre-deletion
 
 ```{bash plink hw check pre, eval=FALSE}
-plink --noweb --bfile Simmons_combined --hardy
+plink --bfile Simmons_combined_5 --hardy
 # Select SNPs with HWE p-value below 0.00001
 awk '{ if ($9 <0.00001) print $0 }' plink.hwe>plinkzoomhwe.hwe
 ```
@@ -160,11 +178,11 @@ hist(hwe_zoom[,9],main="Histogram HWE: strongly deviating SNPs only")
 
 ```{bash plink hw check post, eval=FALSE}
 # Filter for controls
-plink --noweb --bfile Simmons_combined --hwe 1e-6 --make-bed --out Simmons_combined
+plink --bfile Simmons_combined_5 --hwe 1e-6 --make-bed --out Simmons_combined_6
 # Filter for cases
-plink --noweb --bfile Simmons_combined --hwe 1e-12 --hwe-all --make-bed --out Simmons_combined
+plink --bfile Simmons_combined_6 --hwe 1e-12 --hwe-all --make-bed --out Simmons_combined_6
 # Check again
-plink --noweb --bfile Simmons_combined --hardy --out post_del
+plink --bfile Simmons_combined_6 --hardy --out post_del
 # Select SNPs with HWE p-value below 0.00001
 awk '{ if ($9 <0.00001) print $0 }' post_del.hwe>post_del_zoom.hwe
 ```
@@ -180,8 +198,8 @@ hist(hwe_zoom[,9],main="Histogram HWE: strongly deviating SNPs only")
 ## Heterozygosity pre-deletion
 
 ```{bash plink heterozyg check pre, eval=FALSE}
-plink --noweb --bfile Simmons_combined --exclude inversion.txt --range --indep-pairwise 50 5 0.2 --out indepSNP
-plink --noweb --bfile Simmons_combined --extract indepSNP.prune.in --het --out R_check
+plink --bfile Simmons_combined_6 --exclude inversion.txt --range --indep-pairwise 50 5 0.2 --out indepSNP
+plink --bfile Simmons_combined_6 --extract indepSNP.prune.in --het --out R_check
 ```
 
 ```{r r heterozyg check pre, echo=FALSE}
@@ -200,8 +218,8 @@ write.table(het_fail, "fail-het-qc.txt", row.names=FALSE)
 ```{bash plink heterozyg check post, eval=FALSE}
 sed 's/"// g' fail-het-qc.txt | awk '{print$1, $2}'> het_fail_ind.txt
 # Remove heterozygosity rate outliers.
-plink --noweb --bfile Simmons_combined --remove het_fail_ind.txt --make-bed --out Simmons_combined
-plink --noweb --bfile Simmons_combined --extract indepSNP.prune.in --het --out R_check_post
+plink --bfile Simmons_combined_6 --remove het_fail_ind.txt --make-bed --out Simmons_combined_7
+plink --bfile Simmons_combined_7 --extract indepSNP.prune.in --het --out R_check_post
 ```
 
 ```{r r heterozyg check post, echo=FALSE}
@@ -210,57 +228,20 @@ het$HET_RATE = (het$"N.NM." - het$"O.HOM.")/het$"N.NM."
 hist(het$HET_RATE, xlab="Heterozygosity Rate", ylab="Frequency", main= "Heterozygosity Rate")
 ```
 
-## Relatedness pre-deletion
+## Relatedness
 
 ```{bash plink related check pre, eval=FALSE}
-plink --noweb --bfile Simmons_combined --extract indepSNP.prune.in --genome --min 0.2 --out pihat_min0.2
-awk '{ if ($8 >0.9) print $0 }' pihat_min0.2.genome>zoom_pihat.genome
+plink --bfile Simmons_combined_7 --genome --min 0.05
 ```
 
 ```{r r related check pre, echo=FALSE}
-relatedness = read.table("pihat_min0.2.genome", header=T)
+relatedness = read.table("./plink.genome", header=T)
 par(pch=16, cex=1)
 with(relatedness,plot(Z0,Z1, xlim=c(0,1), ylim=c(0,1), type="n"))
-with(subset(relatedness,RT=="PO") , points(Z0,Z1,col=4))
 with(subset(relatedness,RT=="UN") , points(Z0,Z1,col=3))
-legend(1,1, xjust=1, yjust=1, legend=levels(relatedness$RT), pch=16, col=c(4,3))
-
-relatedness_zoom = read.table("zoom_pihat.genome", header=T)
-par(pch=16, cex=1)
-with(relatedness_zoom,plot(Z0,Z1, xlim=c(0,0.02), ylim=c(0.98,1), type="n"))
-with(subset(relatedness_zoom,RT=="PO") , points(Z0,Z1,col=4))
-with(subset(relatedness_zoom,RT=="UN") , points(Z0,Z1,col=3))
-legend(0.02,1, xjust=1, yjust=1, legend=levels(relatedness$RT), pch=16, col=c(4,3))
-
-relatedness = read.table("pihat_min0.2.genome", header=T)
-hist(relatedness[,10],main="Histogram relatedness", xlab= "Pihat")  
-```
-
-## Relatedness post-deletion
-
-```{bash plink related check post, eval=FALSE}
-plink --noweb --bfile Simmons_combined --filter-founders --make-bed --out Simmons_combined
-plink --noweb --bfile Simmons_combined --extract indepSNP.prune.in --genome --min 0.2 --out pihat_min0.2_post
-awk '{ if ($8 >0.9) print $0 }' pihat_min0.2.genome>zoom_pihat_post.genome
-```
-
-```{r r related check post, echo=FALSE}
-relatedness = read.table("pihat_min0.2_post.genome", header=T)
-par(pch=16, cex=1)
-with(relatedness,plot(Z0,Z1, xlim=c(0,1), ylim=c(0,1), type="n"))
-with(subset(relatedness,RT=="PO") , points(Z0,Z1,col=4))
-with(subset(relatedness,RT=="UN") , points(Z0,Z1,col=3))
-legend(1,1, xjust=1, yjust=1, legend=levels(relatedness$RT), pch=16, col=c(4,3))
-
-relatedness_zoom = read.table("zoom_pihat_post.genome", header=T)
-par(pch=16, cex=1)
-with(relatedness_zoom,plot(Z0,Z1, xlim=c(0,0.02), ylim=c(0.98,1), type="n"))
-with(subset(relatedness_zoom,RT=="PO") , points(Z0,Z1,col=4))
-with(subset(relatedness_zoom,RT=="UN") , points(Z0,Z1,col=3))
-legend(0.02,1, xjust=1, yjust=1, legend=levels(relatedness$RT), pch=16, col=c(4,3))
-
-relatedness = read.table("pihat_min0.2_post.genome", header=T)
+legend(1,1, xjust=1, yjust=1, legend=levels(relatedness$RT), pch=16, col=c(3))
 hist(relatedness[,10],main="Histogram relatedness", xlab= "Pihat") 
+temp <- read.table("./Simmons_combined_7.fam")
 ```
 
-# Try the GENESIS package for this analysis
+
