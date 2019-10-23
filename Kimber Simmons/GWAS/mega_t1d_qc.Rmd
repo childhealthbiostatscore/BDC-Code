@@ -1,5 +1,5 @@
 ---
-title: "Hispanic T1D MEGA Array"
+title: "Hispanic T1D MEGA Array QC"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
 output: html_document
@@ -7,29 +7,31 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kimber Simmons/GWAS/Data_Cleaned/QC")
+knitr::opts_knit$set(root.dir = "/Volumes/Tim/Kimber_GWAS/Data_Cleaned/QC")
 library(tidyverse)
 ```
 
-# Combine "_redo" and "_removeKnownFails"
+# QC
 
-```{bash combine files,cache=TRUE}
+## Combine "_redo" and "_removeKnownFails"
+
+```{bash combine files,cache=TRUE,results = 'hide'}
 # Combine files
 plink --bfile Simmons_redo --merge-list files_to_combine.txt --make-bed --out Simmons_combined
 ```
 
-```{r check combine, cache=TRUE}
+```{r check combine,echo=FALSE,cache=TRUE}
 combined <- read.table("Simmons_combined.fam")
 ```
 
-## Missingness pre-deletion
+### Missingness pre-deletion
 
-```{bash plink missing,cache=TRUE}
+```{bash plink missing,cache=TRUE,results = 'hide'}
 # Check missing
 plink --bfile Simmons_combined --missing
 ```
 
-```{r r missing plots pre-deletion, echo=FALSE}
+```{r r missing plots pre-deletion, echo=FALSE, cache=TRUE}
 # Read in plink missingness files
 indmiss <-read.table(file="./plink.imiss",
                     header=TRUE)
@@ -42,9 +44,9 @@ hist(snpmiss[,5],main="Histogram proportion missing individuals per SNP",
      xlab = "Proportion Missing ") 
 ```
 
-## Missingness post-deletion
+### Missingness post-deletion
 
-```{bash plink filter missing, cache=TRUE}
+```{bash plink filter missing, cache=TRUE,results = 'hide'}
 # Delete SNPs and individuals with high levels of missingness
 # Delete SNPs
 plink --bfile Simmons_combined --geno 0.02 --make-bed --out Simmons_combined_1
@@ -54,7 +56,7 @@ plink --bfile Simmons_combined_1 --mind 0.02 --make-bed --out Simmons_combined_1
 plink --bfile Simmons_combined_1 --missing --out miss_post_del
 ```
 
-```{r r missing plots post-deletion, echo=FALSE}
+```{r r missing plots post-deletion, echo=FALSE, cache=TRUE}
 # Post-deletion
 indmiss_check <-
   read.table(file="./miss_post_del.imiss",
@@ -73,7 +75,7 @@ keep <- indmiss_check %>% group_by(id) %>% slice(which.min(N_MISS))
 write.table(keep[,1:2],file = "./call_rate_keep.txt",row.names = F,sep = "\t",col.names = F,quote = F)
 ```
 
-```{bash plink call rate,cache=TRUE}
+```{bash plink call rate,cache=TRUE,results = 'hide'}
 # Delete low call rate duplicates
 plink --bfile Simmons_combined_1 --keep call_rate_keep.txt --make-bed --out Simmons_combined_2
 ```
@@ -82,9 +84,9 @@ plink --bfile Simmons_combined_1 --keep call_rate_keep.txt --make-bed --out Simm
 post_repeated_subs_del <- read.table("./Simmons_combined_2.fam") 
 ```
 
-## Sex check pre-deletion
+### Sex check pre-deletion
 
-```{bash plink sex check pre, cache=TRUE}
+```{bash plink sex check pre, cache=TRUE,results = 'hide'}
 # Check sex discrepancy
 plink --bfile Simmons_combined_2 --check-sex
 ```
@@ -103,9 +105,9 @@ female=subset(gender, gender$PEDSEX==2)
 hist(female[,6],main="Women",xlab="F")
 ```
 
-## Sex check post-deletion
+### Sex check post-deletion
 
-```{bash plink sex check post, cache=TRUE}
+```{bash plink sex check post, cache=TRUE,results = 'hide'}
 # Remove subjects with problematic X chromosome homozygosity
 grep "PROBLEM" plink.sexcheck| awk '{print$1,$2}'> sex_discrepancy.txt
 plink --bfile Simmons_combined_2 --remove sex_discrepancy.txt --make-bed --out Simmons_combined_3
@@ -127,9 +129,9 @@ female=subset(gender, gender$PEDSEX==2)
 hist(female[,6],main="Women",xlab="F")
 ```
 
-## MAF check pre-deletion
+### MAF check pre-deletion
 
-```{bash plink maf check pre, cache=TRUE} 
+```{bash plink maf check pre, cache=TRUE,results = 'hide'} 
 # Select autosomal SNPs only (i.e., from chromosomes 1 to 22).
 awk '{ if ($1 >= 1 && $1 <= 22) print $2 }' Simmons_combined_3.bim > snp_1_22.txt
 plink --bfile Simmons_combined_3 --extract snp_1_22.txt --make-bed --out Simmons_combined_4
@@ -143,9 +145,9 @@ maf_freq <- read.table("./MAF_check.frq", header =TRUE, as.is=T)
 hist(maf_freq[,5],main = "MAF distribution", xlab = "MAF")
 ```
 
-## MAF check post-deletion
+### MAF check post-deletion
 
-```{bash plink maf check post, cache=TRUE}
+```{bash plink maf check post, cache=TRUE,results = 'hide'}
 # Remove those with MAF < 0.05
 plink --bfile Simmons_combined_4 --maf 0.05 --make-bed --out Simmons_combined_5
 # Check minor allele frequency again
@@ -158,9 +160,9 @@ maf_freq <- read.table("./MAF_check_post.frq", header =TRUE, as.is=T)
 hist(maf_freq[,5],main = "MAF distribution", xlab = "MAF")
 ```
 
-## Hardy-Weinberg equilibrium pre-deletion
+### Hardy-Weinberg equilibrium pre-deletion
 
-```{bash plink hw check pre, cache=TRUE}
+```{bash plink hw check pre, cache=TRUE,results = 'hide'}
 plink --bfile Simmons_combined_5 --hardy
 # Select SNPs with HWE p-value below 0.00001
 awk '{ if ($9 <0.00001) print $0 }' plink.hwe>plinkzoomhwe.hwe
@@ -174,9 +176,9 @@ hwe_zoom<-read.table (file="./plinkzoomhwe.hwe", header=TRUE)
 hist(hwe_zoom[,9],main="Histogram HWE: strongly deviating SNPs only")
 ```
 
-## Hardy-Weinberg equilibrium post-deletion
+### Hardy-Weinberg equilibrium post-deletion
 
-```{bash plink hw check post, cache=TRUE}
+```{bash plink hw check post, cache=TRUE,results = 'hide'}
 # Filter for controls
 plink --bfile Simmons_combined_5 --hwe 1e-6 --make-bed --out Simmons_combined_6
 # Filter for cases
@@ -195,9 +197,9 @@ hwe_zoom<-read.table (file="./post_del_zoom.hwe", header=TRUE)
 hist(hwe_zoom[,9],main="Histogram HWE: strongly deviating SNPs only")
 ```
 
-## Heterozygosity pre-deletion
+### Heterozygosity pre-deletion
 
-```{bash plink heterozyg check pre, cache=TRUE}
+```{bash plink heterozyg check pre, cache=TRUE,results = 'hide'}
 plink --bfile Simmons_combined_6 --exclude inversion.txt --range --indep-pairwise 50 5 0.2 --out indepSNP
 plink --bfile Simmons_combined_6 --extract indepSNP.prune.in --het --out R_check
 ```
@@ -213,9 +215,9 @@ het_fail$HET_DST = (het_fail$HET_RATE-mean(het$HET_RATE))/sd(het$HET_RATE);
 write.table(het_fail, "fail-het-qc.txt", row.names=FALSE)
 ```
 
-## Heterozygosity post-deletion
+### Heterozygosity post-deletion
 
-```{bash plink heterozyg check post, cache=TRUE}
+```{bash plink heterozyg check post, cache=TRUE,results = 'hide'}
 sed 's/"// g' fail-het-qc.txt | awk '{print$1, $2}'> het_fail_ind.txt
 # Remove heterozygosity rate outliers.
 plink --bfile Simmons_combined_6 --remove het_fail_ind.txt --make-bed --out Simmons_passed_qc
@@ -228,9 +230,9 @@ het$HET_RATE = (het$"N.NM." - het$"O.HOM.")/het$"N.NM."
 hist(het$HET_RATE, xlab="Heterozygosity Rate", ylab="Frequency", main= "Heterozygosity Rate")
 ```
 
-## Relatedness
+### Relatedness
 
-```{bash plink related check pre, cache=TRUE}
+```{bash plink related check pre, cache=TRUE,results = 'hide'}
 plink --bfile Simmons_passed_qc --genome --min 0.05
 ```
 
@@ -241,7 +243,11 @@ with(relatedness,plot(Z0,Z1, xlim=c(0,1), ylim=c(0,1), type="n"))
 with(subset(relatedness,RT=="UN") , points(Z0,Z1,col=3))
 legend(1,1, xjust=1, yjust=1, legend=levels(relatedness$RT), pch=16, col=c(3))
 hist(relatedness[,10],main="Histogram relatedness", xlab= "Pihat") 
-temp <- read.table("./Simmons_combined_7.fam")
 ```
 
+# Population Stratification
 
+```{bash make 1000 genomes bed bim fam,cache=TRUE,results = 'hide'}
+# Convert 1000 genomes file to plink format
+plink --vcf ALL.2of4intersection.20100804.genotypes.vcf.gz --make-bed --out ALL.2of4intersection.20100804.genotypes
+```
