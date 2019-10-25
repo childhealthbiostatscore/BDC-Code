@@ -11,7 +11,7 @@ knitr::opts_knit$set(root.dir = "/Volumes/Tim/Kimber_GWAS/Data_Cleaned/Populatio
 library(tidyverse)
 ```
 
-
+# Test
 
 ```{bash make 1000 genomes bed bim fam,cache=TRUE,results = 'hide'}
 # Convert 1000 genomes file to plink format
@@ -40,4 +40,78 @@ plink --bfile 1kG_MDS5 --extract Simmons_SNPs.txt --make-bed --out 1kG_MDS6
 # 1000 genomes from Simmons
 awk '{print$2}' 1kG_MDS6.bim > 1kG_MDS6_SNPs.txt
 plink --bfile Simmons_passed_qc --extract 1kG_MDS6_SNPs.txt --recode --make-bed --out Simmons_MDS
+```
+
+```{bash same build,cache=TRUE,results = 'hide'}
+awk '{print$2,$4}' Simmons_MDS.map > buildSimmonsmap.txt
+plink --bfile 1kG_MDS6 --update-map buildSimmonsmap.txt --make-bed --out 1kG_MDS7
+```
+
+```{bash reference genome,cache=TRUE,results = 'hide'}
+awk '{print$2,$5}' 1kG_MDS7.bim > 1kg_ref-list.txt
+plink --bfile Simmons_MDS --reference-allele 1kg_ref-list.txt --make-bed --out Simmons-adj
+```
+
+```{bash strand issues,cache=TRUE,results = 'hide'}
+awk '{print$2,$5,$6}' 1kG_MDS7.bim > 1kGMDS7_tmp
+awk '{print$2,$5,$6}' Simmons-adj.bim > Simmons-adj_tmp
+sort 1kGMDS7_tmp Simmons-adj_tmp |uniq -u > all_differences.txt
+awk '{print$1}' all_differences.txt | sort -u > flip_list.txt
+# Flip the non-corresponding SNPs. 
+plink --bfile Simmons-adj --flip flip_list.txt --reference-allele 1kg_ref-list.txt --make-bed --out corrected_Simmons
+# Check for and resolve still problematic SNPs
+awk '{print$2,$5,$6}' corrected_Simmons.bim > corrected_Simmons_tmp
+sort 1kGMDS7_tmp corrected_Simmons_tmp |uniq -u  > uncorresponding_SNPs.txt
+awk '{print$1}' uncorresponding_SNPs.txt | sort -u > SNPs_for_exlusion.txt
+plink --bfile corrected_Simmons --exclude SNPs_for_exlusion.txt --make-bed --out Simmons_MDS2
+plink --bfile 1kG_MDS7 --exclude SNPs_for_exlusion.txt --make-bed --out 1kG_MDS8
+# Merge again
+plink --bfile Simmons_MDS2 --bmerge 1kG_MDS8.bed 1kG_MDS8.bim 1kG_MDS8.fam --allow-no-sex --make-bed --out MDS_merge2
+plink --bfile MDS_merge2 --extract indepSNP.prune.in --genome --out MDS_merge2
+plink --bfile MDS_merge2 --read-genome MDS_merge2.genome --cluster --mds-plot 10 --out MDS_merge2
+```
+
+```{bash superpopulation codes,cache=TRUE,results = 'hide'}
+awk '{print$1,$1,$2}' 20100804.ALL.panel > race_1kG.txt
+sed 's/JPT/ASN/g' race_1kG.txt>race_1kG2.txt
+sed 's/ASW/AFR/g' race_1kG2.txt>race_1kG3.txt
+sed 's/CEU/EUR/g' race_1kG3.txt>race_1kG4.txt
+sed 's/CHB/ASN/g' race_1kG4.txt>race_1kG5.txt
+sed 's/CHD/ASN/g' race_1kG5.txt>race_1kG6.txt
+sed 's/YRI/AFR/g' race_1kG6.txt>race_1kG7.txt
+sed 's/LWK/AFR/g' race_1kG7.txt>race_1kG8.txt
+sed 's/TSI/EUR/g' race_1kG8.txt>race_1kG9.txt
+sed 's/MXL/AMR/g' race_1kG9.txt>race_1kG10.txt
+sed 's/GBR/EUR/g' race_1kG10.txt>race_1kG11.txt
+sed 's/FIN/EUR/g' race_1kG11.txt>race_1kG12.txt
+sed 's/CHS/ASN/g' race_1kG12.txt>race_1kG13.txt
+sed 's/PUR/AMR/g' race_1kG13.txt>race_1kG14.txt
+# Simmons race file
+awk '{print$1,$2,"OWN"}' Simmons_MDS.fam>racefile_own.txt
+# Combine
+cat race_1kG14.txt racefile_own.txt | sed -i txt -e '1i\FID IID race' > racefile.txt
+```
+
+```{r pop strat plot, echo=FALSE}
+# Read in data
+data<- read.table(file="./MDS_merge2.mds",header=TRUE)
+race<- read.table(file="./racefile.txt",header=TRUE)
+datafile<- merge(data,race,by=c("IID","FID"))
+# Plot 
+for (i in 1:nrow(datafile))
+{
+if (datafile[i,14]=="EUR") {plot(datafile[i,4],datafile[i,5],type="p",xlim=c(-0.1,0.2),ylim=c(-0.15,0.1),xlab="MDS Component 1",ylab="MDS Component 2",pch=1,cex=0.5,col="green")}
+par(new=T)
+if (datafile[i,14]=="ASN") {plot(datafile[i,4],datafile[i,5],type="p",xlim=c(-0.1,0.2),ylim=c(-0.15,0.1),xlab="MDS Component 1",ylab="MDS Component 2",pch=1,cex=0.5,col="red")}
+par(new=T)
+if (datafile[i,14]=="AMR") {plot(datafile[i,4],datafile[i,5],type="p",xlim=c(-0.1,0.2),ylim=c(-0.15,0.1),xlab="MDS Component 1",ylab="MDS Component 2",pch=1,cex=0.5,col=470)}
+par(new=T)
+if (datafile[i,14]=="AFR") {plot(datafile[i,4],datafile[i,5],type="p",xlim=c(-0.1,0.2),ylim=c(-0.15,0.1),xlab="MDS Component 1",ylab="MDS Component 2",pch=1,cex=0.5,col="blue")}
+par(new=T)
+if (datafile[i,14]=="OWN") {plot(datafile[i,4],datafile[i,5],type="p",xlim=c(-0.1,0.2),ylim=c(-0.15,0.1),xlab="MDS Component 1",ylab="MDS Component 2",pch=3,cex=0.7,col="black")}
+par(new=T)
+}
+abline(v=-0.035,lty=3)
+abline(h=0.035,lty=3)
+legend("topright", pch=c(1,1,1,1,3),c("EUR","ASN","AMR","AFR","OWN"),col=c("green","red",470,"blue","black"),bty="o",cex=1)
 ```
