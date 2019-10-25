@@ -46,6 +46,9 @@ for (f in 1:length(files)) {
   } else if (ncol(dat) < 33) {
     stop("Not enough columns",call. = F)
   }
+  # Remove sensor data  
+  pumpend <- which(dat$Patient.ID == "Sensor")
+  if (length(pumpend) > 0) {dat <- dat[-c(pumpend:nrow(dat)),]}
   if (colnames(dat)[1] != "Index") {
 # Delete nonessential rows.
     rowstart <- which(dat$Last.Name == "-------")[1]
@@ -54,27 +57,24 @@ for (f in 1:length(files)) {
   } else {
     pump <- dat
   }
-# Remove sensor data  
-  pumpend <- which(dat$Patient.ID == "Sensor")
-  if (length(pumpend) > 0) {dat <- dat[-c(pumpend:nrow(dat)),]}
-# Get dates
-  if (grepl("T1",id) == T) {
-    end <- dates$T1_Date[which(dates$ID == id_no_timepoint)]
-    start <- end - 90
-  } else if (grepl("T2",id) == T) {
-    start <- dates$T1_Date[which(dates$ID == id_no_timepoint)]
-    end <- dates$T2_Date[which(dates$ID == id_no_timepoint)]
-  } else if (grepl("T3",id) == T) {
-    start <- dates$T2_Date[which(dates$ID == id_no_timepoint)]
-    end <- dates$T3_Date[which(dates$ID == id_no_timepoint)]
-  } else if (grepl("T5",id) == T) {
-    start <- dates$T4_Date[which(dates$ID == id_no_timepoint)]
-    end <- dates$T5_Date[which(dates$ID == id_no_timepoint)]
-  }
 # Format timestamp, remove rows without datetime data.
   pump$timestamp <- paste(pump$Date,pump$Time)
   pump$timestamp <- lubridate::mdy_hms(pump$timestamp)
   pump <- pump[which(!is.na(pump$timestamp)),]
+# Get dates
+  if (grepl("T1",id) == T) {
+    end <- dates$T1_Date[which(dates$ID == id_no_timepoint)] + 1
+    start <- end - 90
+  } else if (grepl("T2",id) == T) {
+    start <- dates$T1_Date[which(dates$ID == id_no_timepoint)]
+    end <- dates$T2_Date[which(dates$ID == id_no_timepoint)] + 1
+  } else if (grepl("T3",id) == T) {
+    start <- dates$T2_Date[which(dates$ID == id_no_timepoint)]
+    end <- dates$T3_Date[which(dates$ID == id_no_timepoint)] + 1
+  } else if (grepl("T5",id) == T) {
+    start <- dates$T4_Date[which(dates$ID == id_no_timepoint)]
+    end <- dates$T5_Date[which(dates$ID == id_no_timepoint)] + 1
+  }
 # Remove rows with data outside study time range if there is any.
   pump <- pump %>% filter(timestamp > start & timestamp < end)
 # Standardize column names, delete irrelevant ones
@@ -136,7 +136,7 @@ for (f in 1:length(files)) {
 # Calculate number of days of data  
   days <- as.numeric(difftime(max(dat$timestamp),min(dat$timestamp),
                               units = "days"))
-  summary[f,"days_worn"] <- days
+  summary[f,"days_worn"] <- ceiling(days)
 # Combine rows, remove rows with all NA.
   dat$timestamp <- strftime(dat$timestamp,"%Y-%m-%d %H:%M", tz = "UTC")
   dat <- aggregate(dat[,2:ncol(dat)],list(dat[,1]),
@@ -175,14 +175,14 @@ for (f in 1:length(files)) {
 # BG checks
   BGcount <- length(which(dat$bgreading > 0))
   summary[f,"total_readings"] <- BGcount
-  summary[f,"readings_per_day"] <- length(which(dat$bgreading > 0))/days
+  summary[f,"readings_per_day"] <- length(which(dat$bgreading > 0))/ceiling(days)
   summary[f,"readings_per_weekday"] <- 
     length(which(weekdat$bgreading > 0)) / weekdays
   summary[f,"readings_per_weekend"] <- 
     length(which(weekend$bgreading > 0)) / weekends
 # Carbs
   summary[f,"total_carb_inputs"] <- carbs
-  summary[f,"carb_inputs_per_day"] <- carbs/days
+  summary[f,"carb_inputs_per_day"] <- carbs/ceiling(days)
   summary[f,"carb_inputs_per_weekday"] <- 
     length(which(weekdat$carbinput > 0)) / weekdays
   summary[f,"carb_inputs_per_weekend"] <- 
@@ -266,7 +266,7 @@ for (f in 1:length(files)) {
     }
   }
   summary[f,"total_bolus"] <- total.bolus
-  summary[f,"boluses_per_day"] <- total.bolus/days
+  summary[f,"boluses_per_day"] <- total.bolus/ceiling(days)
   summary[f,"boluses_per_weekday"] <- weekday.total.bolus/weekdays
   summary[f,"boluses_per_weekend"] <- weekend.total.bolus/weekends
   summary[f,"perc_days_>=3_boluses"] <- 
