@@ -10,11 +10,41 @@ knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Shideh Majidi/Depression")
 library(tableone)
 library(Hmisc)
+library(nlme)
+library(segmented)
 library(skimr)
 library(knitr)
+library(reshape2)
 library(tidyverse)
 ```
 
 ```{r data import and clean,echo=FALSE}
-source("./Data_Raw/SuicideRiskAssessmen_R_2019-11-01_1456.r")
+sra <- read.csv("./Data_Cleaned/sra.csv")
+a1cs <- read.csv("./Data_Cleaned/a1cs.csv")
+a1cs$A1cResultDate <- lubridate::mdy(a1cs$A1cResultDate)
+# Add screen date to A1c data, find days between
+a1cs <- left_join(a1cs,sra[,c("record_id","screen_date")],by = "record_id")
+a1cs$days_from_screen <- 
+  as.numeric(difftime(a1cs$A1cResultDate,a1cs$screen_date,units = "days"))
+```
+
+## Plot A1cs by Days From Screening
+
+```{r echo=FALSE}
+ggplot(a1cs,aes(x = days_from_screen,y = A1cValue,group = record_id)) + theme_bw() +
+  geom_point() + geom_point(data = a1cs[which(a1cs$A1cValue == 14.1),],color = "red")
+```
+
+About `r round(length(which(a1cs$A1cValue == 15))/length(a1cs$A1cValue),3)*100`% of the values are 15% and another `r round(length(which(a1cs$A1cValue == 14.1))/length(a1cs$A1cValue),3)*100`% of the values are 14.1% (in red above).
+
+```{r echo=FALSE}
+# Correlation structure
+mod <- lme(A1cValue ~ days_from_screen,random = ~1|record_id,data = a1cs,method = "ML")
+mod_ar1 <- lme(A1cValue ~ days_from_screen,random = ~1|record_id,data = a1cs,
+               correlation = corAR1(),method = "ML")
+# AR(1) is much better, so refit with REML:
+a1c_mod <- lme(A1cValue ~ days_from_screen,random = ~1|record_id,data = a1cs,
+               correlation = corAR1())
+# Use segmented package for regression with breakpoints
+seg <- segmented(a1c_mod,seg.Z = ~ days_from_screen,psi = 0)
 ```
