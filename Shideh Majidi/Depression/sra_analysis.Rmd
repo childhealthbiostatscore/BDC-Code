@@ -16,14 +16,18 @@ library(skimr)
 library(knitr)
 library(reshape2)
 library(tidyverse)
+source("/Users/timvigers/Documents/GitHub/Tim-and-Laura/tim_r_functions.R")
 ```
 
 ```{r data import and clean,echo=FALSE}
+# Import data, format columns
 sra <- read.csv("./Data_Cleaned/sra.csv")
+sra$charttreatafter <- as.factor(sra$charttreatafter)
 a1cs <- read.csv("./Data_Cleaned/a1cs.csv")
 a1cs$A1cResultDate <- lubridate::mdy(a1cs$A1cResultDate)
 # Add screen date to A1c data, find days between
-a1cs <- left_join(a1cs,sra[,c("record_id","screen_date")],by = "record_id")
+a1cs <- left_join(a1cs,sra[,c("record_id","screen_date","charttreatafter")],
+                  by = "record_id")
 a1cs$days_from_screen <- 
   round(as.numeric(difftime(a1cs$A1cResultDate,a1cs$screen_date,units = "days")))
 ```
@@ -37,17 +41,27 @@ ggplot(a1cs,aes(x = days_from_screen,y = A1cValue,group = record_id)) + theme_bw
 
 About `r round(length(which(a1cs$A1cValue == 15))/length(a1cs$A1cValue),3)*100`% of the values are 15% and another `r round(length(which(a1cs$A1cValue == 14.1))/length(a1cs$A1cValue),3)*100`% of the values are 14.1% (in red above).
 
+## Piecewise Regression
+
 ```{r echo=FALSE}
 # Correlation structure
 mod <- lme(A1cValue ~ days_from_screen,random = ~1|record_id,data = a1cs,method = "ML")
 mod_ar1 <- lme(A1cValue ~ days_from_screen,random = ~1|record_id,data = a1cs,
                correlation = corAR1(),method = "ML")
 # AR(1) is much better, so refit with REML and check polynomials. 
-a1c_mod <- lme(A1cValue ~ poly(days_from_screen,4),random = ~1|record_id,
+a1c_mod_poly <- lme(A1cValue ~ poly(days_from_screen,4),random = ~1|record_id,
                data = a1cs,correlation = corAR1())
 # Time significant up to quadratic. Use splines for knot at 0.
 a1cs$days_star <- ifelse(a1cs$days_from_screen < 0,0,a1cs$days_from_screen)
 a1c_mod <- lme(A1cValue ~ poly(days_from_screen,2) + poly(days_star,2),
                random = ~1|record_id,data = a1cs,correlation = corAR1())
-# Now quadratic trend goes away. What to do?
+# Now quadratic trend goes away, since we're putting a knot in. So stick with linear.
+a1c_mod <- lme(A1cValue ~ days_from_screen + days_star*charttreatafter,
+               random = ~1|record_id,data = a1cs,correlation = corAR1())
+# Plot splines
+plot_piecewise_single_knot(a1cs,a1c_mod,xknot = 0,splinevar = "days_star",
+                           xvar = "days_from_screen",yvar = "A1cValue") + 
+  xlab("Days from Start") + ylab("HbA1c (%)")
+# Spline results
+format_nlme_out(a1c_mod,round = T,digits = 4)
 ```
