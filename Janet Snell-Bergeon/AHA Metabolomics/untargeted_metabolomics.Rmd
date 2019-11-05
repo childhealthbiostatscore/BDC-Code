@@ -16,7 +16,7 @@ library(mixOmics)
 library(tidyverse)
 ```
 
-```{r echo=FALSE,cache=TRUE}
+```{r echo=FALSE,cache=TRUE,include=FALSE}
 # Read in
 raw_metab <- read.csv("./Data_Cleaned/metabolomics.csv",na.strings = "",stringsAsFactors = F)
 # Subset
@@ -28,36 +28,59 @@ metab <- raw_metab %>%
          rterror = coalesce(RT.Error..s.,RT.Error..s..1)) %>% 
   dplyr::select(compound,neutralmass,rt,masserror,rterror,
                 IsoMS_results_QC01_190618171010_converted.csv:IsoMS_results_S227_Batch07_1400_RA8_converted.csv)
+metab$compound <- paste(metab$compound,metab$neutralmass,metab$rt,sep = "")
 # Rename columns by sample number
 colnames(metab) <- gsub("IsoMS_results_","",colnames(metab))
 colnames(metab) <- gsub("*_.*","",colnames(metab))
 # Import clinical data and sample list
 targeted <- read.csv("./Data_Cleaned/targeted.csv")
+# Three progression groups
+cac_groups <- read.table("./Data_Raw/CAC Trajectories 3 groups.txt",sep = "\t",
+                         header = T)
+# CAC progression - increase in square root calcium volume >= 2.5 between baseline and visit 3
+targeted$CACp <- as.factor(ifelse(targeted$c3 - targeted$c1 >= 2.5,"Progression","No Progression"))
+# New CAC groups
+targeted <- left_join(targeted,cac_groups[,c("StudyID","GROUP")],by = "StudyID")
 samples <- read.csv("./Data_Cleaned/sample_list.csv")
 # Match sample number to subject ID
 targeted$GlobalSampleID <- samples$Injection[match(targeted$StudyID,samples$SampleID)]
-# Select columns, filter out missing
-clinical <- targeted %>% 
-  dplyr::select(GlobalSampleID,gender,age,sex,race,CACGROUP) %>% 
-  filter(!is.na(GlobalSampleID)) %>% arrange(GlobalSampleID)
+# Select relevant columns
+df <- targeted %>% 
+  select(GlobalSampleID,gender,age,sex,race,CACp,GROUP) %>% 
+  filter(!is.na(GlobalSampleID))
+# Metabolite matrix
+X <- metab %>% dplyr::select(compound,S001:S227)
+X <- t(X)
+colnames(X) <- X[1,]
+X <- X[-c(1),]
+X <- as.data.frame(X)
+X$GlobalSampleID <- rownames(X)
+df <- left_join(X,df,by = "GlobalSampleID")
 ```
 
 # PCA
 
 ```{r echo=FALSE}
-# Transpose
-X <- metab %>% dplyr::select(compound,S001:S227)
-X <- t(X)
-cols <- X[1,]
-X <- X[-c(1),]
+X <- subset(X,select = -GlobalSampleID)
+X <- as.matrix(X)
 class(X) <- "numeric"
-colnames(X) <- cols
 # Try PCA 
 pca <- pca(X,ncomp=5,center=F,scale=F)
 plot(pca)
 # Sample plot
-plotIndiv(pca,comp=c(1,2),group = clinical$CACGROUP,legend = T,ind.names = F,
+plotIndiv(pca,comp=c(1,2),group = clinical$GROUP,legend = T,ind.names = F,
           title = "PCA comp 1-2 by CAC Group",pch = 20)
 ```
 
-# SPLSDA
+# PLS-DA
+
+```{r echo=FALSE,include=FALSE}
+# Outcome
+Y <- factor(df$GROUP)
+# PLSDA
+plsda <- plsda(X, Y, ncomp = 10)
+# Plot
+plotIndiv(plsda , comp = 1:2,
+          group = df$GROUP, ind.names = FALSE, 
+          ellipse = TRUE, legend = TRUE, title = 'PLSDA on GROUP')
+```
