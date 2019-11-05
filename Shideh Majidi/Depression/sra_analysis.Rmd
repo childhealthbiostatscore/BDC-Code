@@ -11,7 +11,7 @@ knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/
 library(tableone)
 library(Hmisc)
 library(nlme)
-library(segmented)
+library(splines)
 library(skimr)
 library(knitr)
 library(reshape2)
@@ -25,7 +25,7 @@ a1cs$A1cResultDate <- lubridate::mdy(a1cs$A1cResultDate)
 # Add screen date to A1c data, find days between
 a1cs <- left_join(a1cs,sra[,c("record_id","screen_date")],by = "record_id")
 a1cs$days_from_screen <- 
-  as.numeric(difftime(a1cs$A1cResultDate,a1cs$screen_date,units = "days"))
+  round(as.numeric(difftime(a1cs$A1cResultDate,a1cs$screen_date,units = "days")))
 ```
 
 ## Plot A1cs by Days From Screening
@@ -42,9 +42,12 @@ About `r round(length(which(a1cs$A1cValue == 15))/length(a1cs$A1cValue),3)*100`%
 mod <- lme(A1cValue ~ days_from_screen,random = ~1|record_id,data = a1cs,method = "ML")
 mod_ar1 <- lme(A1cValue ~ days_from_screen,random = ~1|record_id,data = a1cs,
                correlation = corAR1(),method = "ML")
-# AR(1) is much better, so refit with REML:
-a1c_mod <- lme(A1cValue ~ days_from_screen,random = ~1|record_id,data = a1cs,
-               correlation = corAR1())
-# Use segmented package for regression with breakpoints
-seg <- segmented(a1c_mod,seg.Z = ~ days_from_screen,psi = 0)
+# AR(1) is much better, so refit with REML and check polynomials. 
+a1c_mod <- lme(A1cValue ~ poly(days_from_screen,4),random = ~1|record_id,
+               data = a1cs,correlation = corAR1())
+# Time significant up to quadratic. Use splines for knot at 0.
+a1cs$days_star <- ifelse(a1cs$days_from_screen < 0,0,a1cs$days_from_screen)
+a1c_mod <- lme(A1cValue ~ poly(days_from_screen,2) + poly(days_star,2),
+               random = ~1|record_id,data = a1cs,correlation = corAR1())
+# Now quadratic trend goes away. What to do?
 ```
