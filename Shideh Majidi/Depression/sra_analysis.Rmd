@@ -35,14 +35,27 @@ a1cs$days_from_screen <-
 a1cs <- a1cs[abs(a1cs$days_from_screen) < 365.25,]
 ```
 
-## Plot A1cs by Days From Screening
+## Plot All A1cs by Days From Screening
 
-```{r echo=FALSE}
-ggplot(a1cs,aes(x = days_from_screen,y = A1cValue,group = record_id)) + theme_bw() +
-  geom_point() + geom_point(data = a1cs[which(a1cs$A1cValue == 14.1),],color = "red")
+```{r echo=FALSE,warning=FALSE,message=FALSE}
+ggplot(a1cs,aes(x = days_from_screen,y = A1cValue)) + theme_bw() +
+  geom_point() +
+  geom_smooth(aes(color = charttreatafter)) + 
+  geom_point(data = a1cs[which(a1cs$A1cValue == 14.1),],color = "red")
 ```
 
 About `r round(length(which(a1cs$A1cValue == 15))/length(a1cs$A1cValue),3)*100`% of the values are 15% and another `r round(length(which(a1cs$A1cValue == 14.1))/length(a1cs$A1cValue),3)*100`% of the values are 14.1% (in red above).
+
+## First, Screening, and Last A1cs
+
+```{r echo=FALSE,warning=FALSE,message=FALSE}
+random <- a1cs %>% group_by(record_id) %>% 
+  slice(which.min(days_from_screen),which(days_from_screen == 0), 
+        which.max(days_from_screen))
+ggplot(random,aes(x = days_from_screen,y = A1cValue)) + 
+  theme_bw() +
+  geom_line(aes(group = record_id,color = charttreatafter))
+```
 
 ## Piecewise Regression
 
@@ -54,10 +67,12 @@ mod_ar1 <- lme(A1cValue ~ days_from_screen,random = ~1|record_id,data = a1cs,
 # AR(1) is much better, so refit with REML and check polynomials. 
 a1c_mod_poly <- lme(A1cValue ~ poly(days_from_screen,4),random = ~1|record_id,
                data = a1cs,correlation = corAR1())
-# Can use linear time. Use splines for knot at 0.
+# Can use linear time. Use splines for knot at 0. Random intercept and slope for subject.
 a1cs$days_star <- ifelse(a1cs$days_from_screen < 0,0,a1cs$days_from_screen)
-a1c_mod <- lme(A1cValue ~ days_from_screen*charttreatafter + days_star*charttreatafter,
+a1c_mod_ri <- lme(A1cValue ~ days_from_screen*charttreatafter + days_star*charttreatafter,
                random = ~1|record_id,data = a1cs,correlation = corAR1())
+a1c_mod_ris <- lme(A1cValue ~ days_from_screen*charttreatafter + days_star*charttreatafter,
+               random = ~days_from_screen|record_id,data = a1cs,correlation = corAR1())
 # Plot splines
 plot_piecewise_single_knot(a1cs,a1c_mod,xknot = 0,
                            xvar = "days_from_screen",
@@ -66,3 +81,8 @@ plot_piecewise_single_knot(a1cs,a1c_mod,xknot = 0,
 # Spline results
 format_nlme_out(a1c_mod,round = F)
 ```
+
+# To do
+
+1. Look into Tobit regression
+2. Random slope and intercept for subject
