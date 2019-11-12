@@ -15,6 +15,7 @@ library(emmeans)
 library(nlme)
 library(gridExtra)
 library(psych)
+source("/Users/timvigers/Documents/GitHub/Tim-and-Laura/tim_r_functions.R")
 # Check OS and alter file path accordingly.
 if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.Platform$OS.type == "unix"){pathstart <- "/Volumes/"}
 library(tidyverse)
@@ -1300,3 +1301,68 @@ Missing pump:
 ```{r echo=FALSE}
 demographics$record_id[is.na(demographics$demographics_pumphx)]
 ```
+
+### HCL by Age
+
+```{r echo=FALSE,include=FALSE}
+# Models 
+hcl_mod_ri <- lme(am_time ~ Timepoint*age_group,random = ~1|record_id,data=data_no_b,na.action = na.omit)
+hcl_mod_ris <- lme(am_time ~ Timepoint*age_group,random = ~Timepoint|record_id,data=data_no_b,na.action = na.omit)
+AIC(hcl_mod_ri,hcl_mod_ris) # Random intercept only is better by AIC
+# Contrasts
+hcl_means <- emmeans(hcl_mod_ri,specs = ~age_group + Timepoint)
+m1u14 <- c(1,0,0,0,0,0,0,0,0)
+m1btw1417 <- c(0,1,0,0,0,0,0,0,0)
+m1a17 <- c(0,0,1,0,0,0,0,0,0)
+t1u14 <- c(0,0,0,1,0,0,0,0,0)
+t1btw1417 <- c(0,0,0,0,1,0,0,0,0)
+t1a17 <- c(0,0,0,0,0,1,0,0,0)
+t2u14 <- c(0,0,0,0,0,0,1,0,0)
+t2btw1417 <- c(0,0,0,0,0,0,0,1,0)
+t2a17 <- c(0,0,0,0,0,0,0,0,1)
+cont <- contrast(hcl_means, method = list("M1, <14 vs. 14 - 17" = m1u14 - m1btw1417,
+                                          "M1, <14 vs. 18+" = m1u14 - m1a17,
+                                          "M1, 14 - 17 vs. 18+" = m1btw1417 - m1a17,
+                                          "T1, <14 vs. 14 - 17" = t1u14 - t1btw1417,
+                                          "T1, <14 vs. 18+" = t1u14 - t1a17,
+                                          "T1, 14 - 17 vs. 18+" = t1btw1417 - t1a17,
+                                          "T2, <14 vs. 14 - 17" = t2u14 - t2btw1417,
+                                          "T2, <14 vs. 18+" = t2u14 - t2a17,
+                                          "T2, 14 - 17 vs. 18+" = t2btw1417 - t2a17))
+```
+
+```{r echo=FALSE,warning=FALSE,dpi=600}
+means <- as.data.frame(hcl_means)
+mean_am_plot <- ggplot(means,aes(x=Timepoint,y=emmean,group=age_group)) + 
+  geom_point(data=data_no_b,aes(x=Timepoint,y=am_time),size=0.2) +
+  geom_line(aes(linetype=age_group)) +
+  geom_point() + 
+  geom_label(aes(label = round(emmean,1)),nudge_x = -0.2,nudge_y = -0.4) +
+  xlab("Timepoint") + 
+  ylab("AM Time") +
+  theme_bw() + 
+  theme(legend.title=element_blank())
+```
+
+### Model results
+
+```{r echo=FALSE}
+kable(anova(hcl_mod_ri))
+format_nlme_out(hcl_mod_ri)
+# cont_results <- as.data.frame(cont)
+# cont_results$p.value <- format.pval(cont_results$p.value,eps = 0.001,digits = 2)
+# cont_results[,c("estimate","SE","t.ratio")] <- 
+#   lapply(cont_results[,c("estimate","SE","t.ratio")], function(x) round(x,3))
+# kable(cont_results)
+```
+
+There is an overall effect of age group on AM time (p = 0.015). There are no significant interaction effects though, so change in AM use over time was not different between the three age groups. I re-fit the model without interaction terms, to look at the main effect of age group.
+
+```{r echo=FALSE}
+# Models 
+hcl_mod_ri_no_inter <- lme(am_time ~ Timepoint+age_group,random = ~1|record_id,data=data_no_b,na.action = na.omit)
+kable(anova(hcl_mod_ri_no_inter))
+format_nlme_out(hcl_mod_ri_no_inter)
+```
+
+On average, AM use was lower on average by 9.599 points at T1 compared to month 1 (p = 0.002) and by 14.923 points (p < 0.0001) at T2 compared to month 1. Also, AM use for the 14-17 age group was lower by 16.949 points on average compared to the <14 group (p = 0.005) and 12.864 points lower for the 18+ group compared to the <14 group (p = 0.045).
