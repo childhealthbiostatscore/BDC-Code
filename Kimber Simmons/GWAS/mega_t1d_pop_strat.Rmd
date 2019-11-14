@@ -11,16 +11,16 @@ knitr::opts_knit$set(root.dir = "/Volumes/Tim/Kimber_GWAS/Data_Cleaned/Populatio
 library(tidyverse)
 ```
 
-# Test
+# Code for ALL.2of4intersection.20100804.genotypes
 
-```{bash make 1000 genomes bed bim fam,cache=TRUE,results = 'hide'}
+```{bash make 1000 genomes bed bim fam,eval=FALSE,results='hide'}
 # Convert 1000 genomes file to plink format
 plink --vcf ALL.2of4intersection.20100804.genotypes.vcf.gz --make-bed --out ALL.2of4intersection.20100804.genotypes
 # Set missing IDs
 plink --bfile ALL.2of4intersection.20100804.genotypes --set-missing-var-ids @:#[b37]\$1,\$2 --make-bed --out ALL.2of4intersection.20100804.genotypes_no_missing_IDs
 ```
 
-```{bash 1000 genomes QC,cache=TRUE,results = 'hide'}
+```{bash 1000 genomes QC,eval=FALSE,results = 'hide'}
 # Remove variants based on missing genotype data.
 plink --bfile ALL.2of4intersection.20100804.genotypes_no_missing_IDs --geno 0.2 --allow-no-sex --make-bed --out 1kG_MDS
 # Remove individuals based on missing genotype data.
@@ -43,8 +43,11 @@ plink --bfile Simmons_passed_qc --extract 1kG_MDS6_SNPs.txt --recode --make-bed 
 ```
 
 ```{bash same build,cache=TRUE,results = 'hide'}
+# The datasets must have the same build. Change the build 1000 Genomes data build.
 awk '{print$2,$4}' Simmons_MDS.map > buildSimmonsmap.txt
+# buildSimmonsmap.txt contains one SNP-id and physical position per line.
 plink --bfile 1kG_MDS6 --update-map buildSimmonsmap.txt --make-bed --out 1kG_MDS7
+# 1kG_MDS7 and Simmons_MDS now have the same build.
 ```
 
 ```{bash reference genome,cache=TRUE,results = 'hide'}
@@ -114,4 +117,84 @@ par(new=T)
 abline(v=-0.035,lty=3)
 abline(h=0.035,lty=3)
 legend("topright", pch=c(1,1,1,1,3),c("EUR","ASN","AMR","AFR","OWN"),col=c("green","red",470,"blue","black"),bty="o",cex=1)
+```
+
+# Code for hapmap_r23a
+
+```{bash echo=FALSE,eval=FALSE}
+# QC reference
+# Remove variants based on missing genotype data.
+plink --bfile hapmap_r23a --geno 0.2 --allow-no-sex --make-bed --out 1kG_MDS
+# Remove individuals based on missing genotype data.
+plink --bfile 1kG_MDS --mind 0.2 --allow-no-sex --make-bed --out 1kG_MDS2
+# Remove variants based on missing genotype data.
+plink --bfile 1kG_MDS2 --geno 0.02 --allow-no-sex --make-bed --out 1kG_MDS3
+# Remove individuals based on missing genotype data.
+plink --bfile 1kG_MDS3 --mind 0.02 --allow-no-sex --make-bed --out 1kG_MDS4
+# Remove variants based on MAF.
+plink --bfile 1kG_MDS4 --maf 0.05 --allow-no-sex --make-bed --out 1kG_MDS5
+```
+
+```{bash echo=FALSE,eval=FALSE}
+# Extract the variants present in Kimber's dataset from the 1000 genomes dataset.
+awk '{print$2}' Simmons_passed_qc.bim > Simmons_SNPs.txt
+plink --bfile 1kG_MDS5 --extract Simmons_SNPs.txt --make-bed --out 1kG_MDS6
+# Extract the variants present in 1000 Genomes dataset from the HapMap dataset.
+awk '{print$2}' 1kG_MDS6.bim > 1kG_MDS6_SNPs.txt
+plink --bfile Simmons_passed_qc --extract 1kG_MDS6_SNPs.txt --recode --make-bed --out Simmons_MDS
+# The datasets now contain the exact same variants.
+## The datasets must have the same build. Change the build 1000 Genomes data build.
+awk '{print$2,$4}' Simmons_MDS.map > buildSimmons.txt
+# buildhapmap.txt contains one SNP-id and physical position per line.
+plink --bfile 1kG_MDS6 --update-map buildSimmons.txt --make-bed --out 1kG_MDS7
+# 1kG_MDS7 and HapMap_MDS now have the same build.
+```
+
+```{bash echo=FALSE,eval=FALSE}
+# 1) set reference genome 
+awk '{print$2,$5}' 1kG_MDS7.bim > 1kg_ref-list.txt
+plink --bfile Simmons_MDS --reference-allele 1kg_ref-list.txt --make-bed --out Simmons-adj
+# The 1kG_MDS7 and the Simmons-adj have the same reference genome for all SNPs.
+# This command will generate some warnings for impossible A1 allele assignment.
+
+# 2) Resolve strand issues.
+# Check for potential strand issues.
+awk '{print$2,$5,$6}' 1kG_MDS7.bim > 1kGMDS7_tmp
+awk '{print$2,$5,$6}' Simmons-adj.bim > Simmons-adj_tmp
+sort 1kGMDS7_tmp Simmons-adj_tmp |uniq -u > all_differences.txt
+
+## Flip SNPs for resolving strand issues.
+# Print SNP-identifier and remove duplicates.
+awk '{print$1}' all_differences.txt | sort -u > flip_list.txt
+# These are the non-corresponding SNPs between the two files. 
+# Flip the non-corresponding SNPs. 
+plink --bfile Simmons-adj --flip flip_list.txt --reference-allele 1kg_ref-list.txt --make-bed --out corrected_Simmons
+
+# Check for SNPs which are still problematic after they have been flipped.
+awk '{print$2,$5,$6}' corrected_Simmons.bim > corrected_Simmons_tmp
+sort 1kGMDS7_tmp corrected_Simmons_tmp |uniq -u  > uncorresponding_SNPs.txt
+
+# 3) Remove problematic SNPs from Simmons and 1000 Genomes.
+awk '{print$1}' uncorresponding_SNPs.txt | sort -u > SNPs_for_exlusion.txt
+# The command above generates a list of the 42 SNPs which caused the 84 differences between the Simmons and the 1000 Genomes data sets after flipping and setting of the reference genome.
+
+# Remove the problematic SNPs from both datasets.
+plink --bfile corrected_Simmons --exclude SNPs_for_exlusion.txt --make-bed --out Simmons_MDS2
+plink --bfile 1kG_MDS7 --exclude SNPs_for_exlusion.txt --make-bed --out 1kG_MDS8
+
+# Merge Simmons with 1000 Genomes Data.
+plink --bfile Simmons_MDS2 --bmerge 1kG_MDS8.bed 1kG_MDS8.bim 1kG_MDS8.fam --allow-no-sex --make-bed --out MDS_merge2
+
+## Perform MDS on Simmons-CEU data anchored by 1000 Genomes data.
+# Using a set of pruned SNPs
+plink --bfile MDS_merge2 --extract indepSNP.prune.in --genome --out MDS_merge2
+plink --bfile MDS_merge2 --read-genome MDS_merge2.genome --cluster --mds-plot 10 --out MDS_merge2
+
+## Exclude ethnic outliers.
+# Select individuals in HapMap data below cut-off thresholds. The cut-off levels are not fixed thresholds but have to be determined based on the visualization of the first two dimensions. To exclude ethnic outliers, the thresholds need to be set around the cluster of population of interest.
+awk '{ if ($4 <-0.04 && $5 >0.03) print $1,$2 }' MDS_merge2.mds > EUR_MDS_merge2
+
+# Extract these individuals in HapMap data.
+plink --bfile Simmons_passed_qc --keep EUR_MDS_merge2 --make-bed --out Simmons_pop_strat
+# Note, since our HapMap data did include any ethnic outliers, no individuls were removed at this step. However, if our data would have included individuals outside of the thresholds we set, then these individuals would have been removed.
 ```
