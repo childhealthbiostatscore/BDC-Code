@@ -8,12 +8,19 @@ output: word_document
 ```{r setup,include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(nlme)
+library(lme4)
 library(tableone)
 library(nortest)
 library(knitr)
 library(tidyverse)
 library(emmeans)
 library(survival)
+norm.check <- function(data,columns, alpha = 0.05) {
+  require(nortest)
+  norm.tests <- as.data.frame(sapply(data[,columns], lillie.test))
+  return(colnames(norm.tests)[which(norm.tests[2,] < alpha)])
+}
+source("/Users/timvigers/Documents/GitHub/Tim-and-Laura/tim_r_functions.R")
 ```
 
 ```{r echo=FALSE,cache=TRUE,include=FALSE}
@@ -312,7 +319,7 @@ kable(summary(mod_adj_int)$tTable,caption = "Fixed Effects")
 
 The interpretation of this mixed effects model is similar to a simple linear model. For example, on average each 1 point increase in % CGM use resulted in a decrease in HbA1c of 0.005 after adjusting for age, race, diabetes duration, and pump use.
 
-Median [IQR] CGM use in days across all subjects and all visits (excluding missing values):
+Median [IQR] CGM use in days across all participants and all visits (excluding missing values):
 ```{r echo=FALSE}
 print(paste0(median(dat$X30.day.CGM.use,na.rm = T)," [",
              quantile(dat$X30.day.CGM.use,na.rm = T)[2],",",
@@ -456,11 +463,13 @@ quantile(count$CGM_Perc,na.rm = T)
 some_cgm <- dat[which(dat$CGMUse == "Yes"),] %>%
   group_by(EPICMRN) %>%
   summarise(mean(HbA1c)) %>%
+  filter(!is.nan(`mean(HbA1c)`)) %>%
   mutate(CGMUse = "Some")
 never_cgm_ids <- unique(dat$EPICMRN[which(!(dat$EPICMRN %in% some_cgm$EPICMRN))])
 never_cgm <- dat[which(dat$EPICMRN %in% never_cgm_ids),] %>%
   group_by(EPICMRN) %>%
   summarise(mean(HbA1c)) %>%
+  filter(!is.nan(`mean(HbA1c)`)) %>%
   mutate(CGMUse = "Never")
 never_some <- rbind(never_cgm,some_cgm)
 never_some <- left_join(never_some,demographics,by = "EPICMRN")
@@ -486,7 +495,7 @@ pumpuse$Pump <- ifelse(pumpuse$Pump == 1,"Yes","No")
 never_some <- left_join(never_some,pumpuse,by = "EPICMRN")
 vars[length(vars)-1] <- "Pump"
 # Tableone
-never_some_comp <- CreateTableOne(c("mean(HbA1c)",vars,"AI_AN","Asian","Hispanic","more_than_one","NativeH_OPI","NH_Black","NH_White","Other_Unknown"),strata = "CGMUse",never_some)
+never_some_comp <- CreateTableOne(c("AgeFirstVisit"),strata = "CGMUse",never_some)
 never_some_comp <- print(never_some_comp,nonnormal = c("mean(HbA1c)","AgeFirstVisit",nonnormal),
                          exact = c("AI_AN","Asian","more_than_one","NativeH_OPI"),
                          minMax = T)
@@ -496,8 +505,54 @@ never_some_comp <- print(never_some_comp,nonnormal = c("mean(HbA1c)","AgeFirstVi
 kable(never_some_comp)
 ```
 
-## TIR by Age Group
+## TIR by Age Group at First Visit
+
+n = number of observations (not number of participants)
 
 ```{r echo = F}
+dat$`Age Group at First Visit` <- as.factor(cut(round(dat$Age_AtEncounterDate),
+                                 breaks = c(0,5,12,17,Inf),
+                                 labels = c("(0,5]","(5,12]","(12,17]","18+")))
+temp <- dat %>% filter(!is.na(CGMOKPercent))
+vars <- c("CGMLowPercent","CGMOKPercent","CGMHighPercent")
+tir_descriptives <- CreateTableOne(vars,strata = "Age Group at First Visit",temp)
+tir_descriptives <- print(tir_descriptives,nonnormal = "CGMLowPercent",printToggle = F)
+kable(tir_descriptives)
+```
 
+## The Effect of Time since last visit on CGM Use
+
+```{r echo=FALSE}
+dat <- dat %>% arrange(EPICMRN,EncounterDate) %>% group_by(EPICMRN) %>%
+  mutate(days_since_last = as.numeric(difftime(EncounterDate,EncounterDate[1],units = "days")))
+cgm_use_mod <- lme(CGM_Perc ~ days_since_last + Age_AtEncounterDate + DiabetesDuration + PumpUse + Race.Ethnicity,
+               random=~1|EPICMRN,data = dat, na.action = na.omit)
+```
+
+## TIR by Visit Number
+
+```{r echo=FALSE,warning=FALSE,dpi=600}
+visnums <- dat %>% 
+  filter(!is.na(CGMOKPercent)) %>%
+  mutate(visitnum = row_number())
+tir_mod <- lme(CGMOKPercent ~ factor(visitnum) + Age_AtEncounterDate + DiabetesDuration + PumpUse + Race.Ethnicity,
+               random=~1|EPICMRN,data = visnums, na.action = na.omit)
+ggplot(visnums,aes(x = visitnum,y = CGMOKPercent,group = EPICMRN)) + geom_line() + theme_bw()
+format_nlme_out(tir_mod)
+```
+
+## Predicting CGM Use > 85%
+
+```{r echo=FALSE}
+dat$cgm_binary <- ifelse(dat$CGM_Perc>=85,1,0)
+dat$cgm_binary[is.na(dat$CGM_Perc)] <- NA
+use_pred <- glm(factor(cgm_binary) ~ Age_AtEncounterDate + DiabetesDuration + 
+                    PumpUse + Race.Ethnicity,
+                  dat[dat$CGMUse == "Yes",],family = "binomial")
+car::vif(use_pred)
+# Can't get this to converge, but works fine without random effects. It will with pconv = 0.1. Scaling continuous variables doesn't help.
+use_pred <- glmer(factor(cgm_binary) ~ scale(Age_AtEncounterDate) + scale(DiabetesDuration) + 
+                    PumpUse + Race.Ethnicity + (1|EPICMRN),
+                  dat[dat$CGMUse == "Yes",],family = "binomial",
+                  control = glmerControl(optimizer ="Nelder_Mead")) 
 ```
