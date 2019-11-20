@@ -110,8 +110,8 @@
    if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
    run;
 
-proc glimmix data = cgm pconv = 0.1;
-class EPICMRN cgm_binary PumpUse Race_Ethnicity;
-model cgm_binary = Age_AtEncounterDate DiabetesDuration PumpUse Race_Ethnicity / solution distribution=binary;
+proc glimmix data = cgm method=mspl;
+class EPICMRN cgm_binary PumpUse(ref="No") Race_Ethnicity mod_race(ref="Hispanic");
+model cgm_binary(event='1') = Age_AtEncounterDate DiabetesDuration PumpUse mod_race / solution distribution=binary;
 random intercept / subject = EPICMRN;
 run;

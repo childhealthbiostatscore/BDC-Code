@@ -525,7 +525,8 @@ kable(tir_descriptives)
 ```{r echo=FALSE}
 dat <- dat %>% arrange(EPICMRN,EncounterDate) %>% group_by(EPICMRN) %>%
   mutate(days_since_last = as.numeric(difftime(EncounterDate,EncounterDate[1],units = "days")))
-cgm_use_mod <- lme(CGM_Perc ~ days_since_last + Age_AtEncounterDate + DiabetesDuration + PumpUse + Race.Ethnicity,
+cgm_use_mod <- lme(CGM_Perc ~ days_since_last + Age_AtEncounterDate + 
+                     DiabetesDuration + PumpUse + Race.Ethnicity,
                random=~1|EPICMRN,data = dat, na.action = na.omit)
 ```
 
@@ -546,13 +547,11 @@ format_nlme_out(tir_mod)
 ```{r echo=FALSE}
 dat$cgm_binary <- ifelse(dat$CGM_Perc>=85,1,0)
 dat$cgm_binary[is.na(dat$CGM_Perc)] <- NA
-use_pred <- glm(factor(cgm_binary) ~ Age_AtEncounterDate + DiabetesDuration + 
-                    PumpUse + Race.Ethnicity,
-                  dat[dat$CGMUse == "Yes",],family = "binomial")
-car::vif(use_pred)
+dat$mod_race <- ifelse(dat$Race.Ethnicity == "Non-Hispanic White","Non-Hispanic White",
+                       ifelse(dat$Race.Ethnicity == "Hispanic","Hispanic","Other"))
+dat$mod_race[is.na(dat$Race.Ethnicity)] <- NA
 # Can't get this to converge, but works fine without random effects. It will with pconv = 0.1. Scaling continuous variables doesn't help.
-use_pred <- glmer(factor(cgm_binary) ~ scale(Age_AtEncounterDate) + scale(DiabetesDuration) + 
-                    PumpUse + Race.Ethnicity + (1|EPICMRN),
-                  dat[dat$CGMUse == "Yes",],family = "binomial",
-                  control = glmerControl(optimizer ="Nelder_Mead")) 
+use_pred <- glmmPQL(factor(cgm_binary) ~ Age_AtEncounterDate + DiabetesDuration + 
+                    PumpUse + mod_race, random =~1|EPICMRN,
+                  dat,family = "binomial") 
 ```
