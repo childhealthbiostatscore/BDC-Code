@@ -70,32 +70,43 @@ class(X) <- "numeric"
 pca <- pca(X,ncomp=5,center=T,scale=T)
 plot(pca)
 # Sample plot
-plotIndiv(pca,group = df$GROUP,legend = T,ind.names = F, style='3d',
-          title = "PCA comp 1-2 by CAC Group",pch = "sphere")
+plotIndiv(pca,group = df$GROUP,legend = T,ind.names = F,
+          title = "PCA comp 1-2 by CAC Group",pch = 20)
 ```
 
-Would we just include factor 1 in the regression model? Or 1 and 2 to get above 80% of the variance?
+How many factors to include in the model?
 
 # PLS-DA
 
-```{r}
+## Performance and Results
+
+```{r cache=T}
 # Outcome
 Y <- factor(df$GROUP)
 # PLSDA
-plsda <- plsda(X, Y, ncomp = 10)
+plsda <- plsda(X, Y, ncomp = 10,scale = T)
 # Evaluate
-perf.plsda <- perf(plsda, validation = "Mfold", folds = 5, 
-                  progressBar = FALSE, auc = TRUE, nrepeat = 10)
+perf.plsda <- perf(plsda, validation = "loo", folds = 5, 
+                  progressBar = FALSE, auc = TRUE)
 plot(perf.plsda, sd = TRUE, legend.position = "horizontal")
-# Plot
-plotIndiv(plsda,style='3d',pch = "sphere",
-          group = df$GROUP, ind.names = FALSE, 
+# Plots
+plotIndiv(plsda,group = df$GROUP, ind.names = FALSE,pch = 20,
+          ellipse = TRUE, legend = TRUE, title = 'PLSDA on GROUP')
+plotIndiv(plsda,group = df$GROUP, ind.names = FALSE,pch = "sphere",style = "3d",
           ellipse = TRUE, legend = TRUE, title = 'PLSDA on GROUP')
 ```
 
-Maybe through component 4 for PLS-DA?
+Maybe through component 4 for PLS-DA? Why do the QCs appear to be a little different in 3D?
+
+## Heatmap
+
+```{r echo=FALSE,fig.width=8,fig.height=8}
+cim(plsda)
+```
 
 # sPLS-DA
+
+## Performance and Results
 
 ```{r}
 # sPLSDA tuning
@@ -111,68 +122,14 @@ perf.splsda <- perf(splsda.res, validation = "Mfold", folds = 5,
                   progressBar = FALSE, auc = TRUE, nrepeat = 10) 
 plot(perf.splsda, sd = TRUE, legend.position = "horizontal")
 perf.splsda$error.rate
+plotIndiv(splsda.res,group = df$GROUP, ind.names = FALSE,pch = 20,
+          ellipse = TRUE, legend = TRUE, title = 'sPLSDA on GROUP')
+plotIndiv(splsda.res,group = df$GROUP, ind.names = FALSE,pch = "sphere",style = "3d",
+          ellipse = TRUE, legend = TRUE, title = 'sPLSDA on GROUP')
 ```
 
-# PCA - repeat compounds summed
+## Heatmap
 
-```{r echo=FALSE}
-# Sum repeated compounds
-summed <- raw_metab %>% 
-  mutate(compound = coalesce(HMDB.No.,LI.Library.No.),
-         neutralmass = Neutral.Mass..Da.,
-         rt = RT..s.,
-         masserror = coalesce(Mass.Error..ppm.,Mass.Error..ppm..1),
-         rterror = coalesce(RT.Error..s.,RT.Error..s..1)) %>% 
-  dplyr::select(compound,neutralmass,rt,masserror,rterror,
-                IsoMS_results_QC01_190618171010_converted.csv:
-                  IsoMS_results_S227_Batch07_1400_RA8_converted.csv) %>%
-  group_by(compound) %>%
-  summarise_all(sum)
-# Numeric matrix
-X <- summed %>% select(IsoMS_results_QC01_190618171010_converted.csv:
-                         IsoMS_results_S227_Batch07_1400_RA8_converted.csv) %>%
-  as.data.frame()
-rownames(X) <- summed$compound
-X <- t(X)
-X <- as.matrix(X)
-class(X) <- "numeric"
-# Try PCA 
-pca <- pca(X,ncomp=5,center=T,scale=T)
-plot(pca)
-# Sample plot
-plotIndiv(pca,comp=c(1,2),group = df$GROUP,legend = T,ind.names = F,
-          title = "PCA comp 1-2 by CAC Group",pch = 20)
+```{r echo=FALSE,fig.width=8,fig.height=8}
+cim(splsda.res)
 ```
-
-# PCA - mean of repeat compounds 
-
-```{r echo=FALSE}
-# Sum repeated compounds
-averaged <- raw_metab %>% 
-  mutate(compound = coalesce(HMDB.No.,LI.Library.No.),
-         neutralmass = Neutral.Mass..Da.,
-         rt = RT..s.,
-         masserror = coalesce(Mass.Error..ppm.,Mass.Error..ppm..1),
-         rterror = coalesce(RT.Error..s.,RT.Error..s..1)) %>% 
-  dplyr::select(compound,neutralmass,rt,masserror,rterror,
-                IsoMS_results_QC01_190618171010_converted.csv:
-                  IsoMS_results_S227_Batch07_1400_RA8_converted.csv) %>%
-  group_by(compound) %>%
-  summarise_all(mean)
-# Numeric matrix
-X <- averaged %>% select(IsoMS_results_QC01_190618171010_converted.csv:
-                         IsoMS_results_S227_Batch07_1400_RA8_converted.csv) %>%
-  as.data.frame()
-rownames(X) <- averaged$compound
-X <- t(X)
-X <- as.matrix(X)
-class(X) <- "numeric"
-# Try PCA 
-pca <- pca(X,ncomp=5,center=T,scale=T)
-plot(pca)
-# Sample plot
-plotIndiv(pca,comp=c(1,2),group = df$GROUP,legend = T,ind.names = F,
-          title = "PCA comp 1-2 by CAC Group",pch = 20)
-```
-
-- What are the assumptions of PCA?
