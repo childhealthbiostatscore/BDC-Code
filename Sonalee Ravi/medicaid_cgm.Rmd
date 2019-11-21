@@ -7,6 +7,8 @@ output: word_document
 
 ```{r setup,include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(MASS)
 library(nlme)
 library(lme4)
 library(tableone)
@@ -507,8 +509,6 @@ kable(never_some_comp)
 
 ## TIR by Age Group at First Visit
 
-n = number of observations (not number of participants)
-
 ```{r echo = F}
 dat$`Age Group at First Visit` <- as.factor(cut(round(dat$Age_AtEncounterDate),
                                  breaks = c(0,5,12,17,Inf),
@@ -517,41 +517,69 @@ temp <- dat %>% filter(!is.na(CGMOKPercent))
 vars <- c("CGMLowPercent","CGMOKPercent","CGMHighPercent")
 tir_descriptives <- CreateTableOne(vars,strata = "Age Group at First Visit",temp)
 tir_descriptives <- print(tir_descriptives,nonnormal = "CGMLowPercent",printToggle = F)
-kable(tir_descriptives)
-```
-
-## The Effect of Time since last visit on CGM Use
-
-```{r echo=FALSE}
-dat <- dat %>% arrange(EPICMRN,EncounterDate) %>% group_by(EPICMRN) %>%
-  mutate(days_since_last = as.numeric(difftime(EncounterDate,EncounterDate[1],units = "days")))
-cgm_use_mod <- lme(CGM_Perc ~ days_since_last + Age_AtEncounterDate + 
-                     DiabetesDuration + PumpUse + Race.Ethnicity,
-               random=~1|EPICMRN,data = dat, na.action = na.omit)
+kable(tir_descriptives[,1:4])
 ```
 
 ## TIR by Visit Number
 
 ```{r echo=FALSE,warning=FALSE,dpi=600}
 visnums <- dat %>% 
-  filter(!is.na(CGMOKPercent)) %>%
-  mutate(visitnum = row_number())
-tir_mod <- lme(CGMOKPercent ~ factor(visitnum) + Age_AtEncounterDate + DiabetesDuration + PumpUse + Race.Ethnicity,
-               random=~1|EPICMRN,data = visnums, na.action = na.omit)
-ggplot(visnums,aes(x = visitnum,y = CGMOKPercent,group = EPICMRN)) + geom_line() + theme_bw()
-format_nlme_out(tir_mod)
+  filter(CGMUse == "Yes") %>%
+  mutate(visitnum = row_number()) %>%
+  group_by(visitnum) %>%
+  summarise(tir_mean = mean(CGMOKPercent,na.rm = T),
+            tir_se = sd(CGMOKPercent,na.rm = T)/sqrt(length(which(!is.na(CGMOKPercent)))),
+            wear_mean = mean(CGM_Perc,na.rm = T),
+            wear_se = sd(CGM_Perc,na.rm = T)/sqrt(length(which(!is.na(CGM_Perc)))))
+
+plot(visnums$visitnum, visnums$tir_mean,ylab="% (Mean +/- SE)",
+     xlab = "Visit Number",ylim = c(0,100),cex = 0.5,
+     main = "Percent TIR and CGM Wear by Visit Number")
+segments(visnums$visitnum, visnums$tir_mean - visnums$tir_se, 
+         visnums$visitnum, visnums$tir_mean + visnums$tir_se)
+par(new = T)
+plot(visnums$visitnum, visnums$wear_mean,axes=F, xlab=NA, ylab=NA,
+     ylim = c(0,100),cex = 0.5,pch = 2)
+segments(visnums$visitnum, visnums$wear_mean - visnums$wear_se, 
+         visnums$visitnum, visnums$wear_mean + visnums$wear_se)
+legend("bottomright",legend=c("TIR", "CGM Wear"),pch=c(1, 2),cex = 0.65)
 ```
 
 ## Predicting CGM Use > 85%
 
-```{r echo=FALSE}
+```{r echo=FALSE,eval=FALSE}
+dat <- dat %>% arrange(EPICMRN,EncounterDate) %>% group_by(EPICMRN) %>%
+  mutate(days_since_last = as.numeric(difftime(EncounterDate,EncounterDate[1],
+                                               units = "days")))
 dat$cgm_binary <- ifelse(dat$CGM_Perc>=85,1,0)
 dat$cgm_binary[is.na(dat$CGM_Perc)] <- NA
-dat$mod_race <- ifelse(dat$Race.Ethnicity == "Non-Hispanic White","Non-Hispanic White",
-                       ifelse(dat$Race.Ethnicity == "Hispanic","Hispanic","Other"))
-dat$mod_race[is.na(dat$Race.Ethnicity)] <- NA
+dat$mod_race <- dat$Race.Ethnicity
+levels(dat$mod_race) <- c("Other","Other","Hispanic","Other","Other",
+                          "Non-Hispanic Black","Non-Hispanic White","Other",
+                          "Other")
 # Can't get this to converge, but works fine without random effects. It will with pconv = 0.1. Scaling continuous variables doesn't help.
-use_pred <- glmmPQL(factor(cgm_binary) ~ Age_AtEncounterDate + DiabetesDuration + 
-                    PumpUse + mod_race, random =~1|EPICMRN,
-                  dat,family = "binomial") 
+write.csv(dat,file = "/Users/timvigers/Desktop/cgm_medicaid.csv",
+          row.names = F,na = "")
+```
+
+```{r echo=FALSE}
+# Results require running "glmer in SAS.sas" code
+t3 <- read_excel("/Users/timvigers/Desktop/type3.xlsx")
+t3$FValue <- round(t3$FValue,3)
+t3$ProbF <- round(t3$ProbF,3)
+results <- read_excel("/Users/timvigers/Desktop/predict_cgm.xlsx",na = ".")
+results[,5:ncol(results)] <- lapply(results[,5:ncol(results)],function(x) round(x,3))
+sigt3 <- which(t3$ProbF < 0.05)
+kable(t3,caption = "Overall Effects",na = "")
+kable(results,caption = "Results",na = "")
+```
+
+Results above presented on the log scale.
+
+Overall, age and race predicted CGM use >= 85% (p = `r t3$ProbF[sigt3[1]]` and p = `r t3$ProbF[sigt3[2]]` respectively). On average, each year increase in age resulted in a `r round((1 - exp(results$Estimate[3]))*100,2)`% decrease in the odds of successful CGM use (p = `r as.numeric(results$Probt[3])`). Also, Hispanic participants were `r round((1 - exp(results$Estimate[7]))*100,2)`% less likely to successfully use CGM compared to non-Hispanic whites (p = `r as.numeric(results$Probt[7])`). Days since last visit was not associated with successful CGM use (p = `r as.numeric(results$Probt[2])`).
+
+# Distribution of CGM % Use
+
+```{r echo=FALSE,dpi=600}
+hist(dat$CGM_Perc,main = "Histogram of % CGM Wear",xlab = "% CGM Wear")
 ```
