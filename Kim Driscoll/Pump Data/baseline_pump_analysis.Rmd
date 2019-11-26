@@ -140,7 +140,8 @@ for (f in 1:length(files)) {
 # Combine rows, remove rows with all NA.
   dat$timestamp <- strftime(dat$timestamp,"%Y-%m-%d %H:%M", tz = "UTC")
   dat <- aggregate(dat[,2:ncol(dat)],list(dat[,1]),
-                   function(x) ifelse(length(x[which(!is.na(x))]) > 0,x[which(!is.na(x))],NA))
+                   function(x) ifelse(length(x[which(!is.na(x))]) >
+                                        0,x[which(!is.na(x))],NA))
   dat <- dat[-c(which(rowSums(is.na(dat[,2:ncol(dat)])) >= (length(2:ncol(dat))-1))),]
 # Format timestamp
   colnames(dat)[1] <- "timestamp"
@@ -189,7 +190,8 @@ for (f in 1:length(files)) {
     length(which(weekend$carbinput > 0)) / weekends
 # Carbs only  
   carbs_dat <- dat[which(dat$carbinput > 0),]
-  six_hour_carbs <- setDT(carbs_dat)[, indx := date][, .SD[1:(.N+1)], indx][,indx := NULL][!.N]
+  six_hour_carbs <- 
+    setDT(carbs_dat)[, indx := date][, .SD[1:(.N+1)], indx][,indx := NULL][!.N]
   six_hour_carbs$hour[which(is.na(six_hour_carbs$hour))] <- 24
 # Days with >= 3 carbs
   carbs_days <- six_hour_carbs
@@ -203,6 +205,12 @@ for (f in 1:length(files)) {
 # Boluses only  
   bolus_dat <- dat[which(!is.na(dat$bolusvoldelivered)),]
   bolus_dat$carbinput[which(is.na(bolus_dat$carbinput))] <- 0
+# Combine square bolus rows
+  normal_part <- which(bolus_dat$bolustype == "Dual (normal part)")
+  bolus_dat$bolusvoldelivered[normal_part] <- 
+    bolus_dat$bolusvoldelivered[normal_part] + bolus_dat$bolusvoldelivered[normal_part+1]
+  bolus_dat <- bolus_dat[bolus_dat$bolustype != "Dual (square part)",]
+  
 # Check for days with >= 6 hours without a bolus.
 # Add a midnight row to calculate last bolus before midnight
   six_hour_bolus <- data.table::setDT(bolus_dat)[, indx := date][, .SD[1:(.N+1)], indx][,indx := NULL][!.N]
@@ -237,51 +245,54 @@ for (f in 1:length(files)) {
   pius.within.30 <- character()
   bwps.within.15 <- character()
   bwps.within.30 <- character()
+  bolus.high <- 0
+  bolus.low <- 0
   bolus.correct <- 0
-  bolus.lower <- 0
-  bolus.higher <- 0
-  if (bolus_dat$bolustype[1] == "Normal") {
-    if (bolus_dat$bwzestimate[1] == bolus_dat$bolusvoldelivered[1]) {
-      bolus.correct <- bolus.correct + 1
-    } else if (bolus_dat$bwzestimate[1] < bolus_dat$bolusvoldelivered[1]) {
-      bolus.lower <- bolus.lower + 1
-    } else if (bolus_dat$bwzestimate[1] > bolus_dat$bolusvoldelivered[1]) {
-      bolus.higher <- bolus.higher + 1
-    }
-  } else {
-    if (bolus_dat$bwzestimate[1] == (bolus_dat$bolusvoldelivered[1] + 
-                                     bolus_dat$bolusvoldelivered[2])) {
-      bolus.correct <- bolus.correct + 1
-                                     } 
-    else if (bolus_dat$bwzestimate[1] < (bolus_dat$bolusvoldelivered[1] + 
-                                     bolus_dat$bolusvoldelivered[2])) {
-      bolus.lower <- bolus.lower + 1
-                                     } 
-    else if (bolus_dat$bwzestimate[1] > (bolus_dat$bolusvoldelivered[1] + 
-                                     bolus_dat$bolusvoldelivered[2])) {
-      bolus.higher <- bolus.higher + 1
-                                     }
+  prev.bol.count <- 0
+  if (bolus_dat$bolusvoldelivered[1] == bolus_dat$bwzestimate[1]) {
+    bolus.correct <- bolus.correct + 1
+  } else if (bolus_dat$bolusvoldelivered[1] < bolus_dat$bwzestimate[1]) {
+    bolus.low <- bolus.low + 1
+  } else if (bolus_dat$bolusvoldelivered[1] > bolus_dat$bwzestimate[1]) {
+    bolus.high <- bolus.high + 1
   }
 # Iterate through data rows. Count total boluses
-  for (r in 2:nrow(bolus_dat)) {
+  for (r in 2:6) {
     bolus.time <- bolus_dat$timestamp[r]
+    bolus.vol <- bolus_dat$bolusvoldelivered[r]
+    bolus.wiz <- bolus_dat$bwzestimate[r]
     prev.bolus.time <- bolus_dat$timestamp[r-1]
+    prev.bolus <- bolus_dat$bolusvoldelivered[r-1]
+    prev.wiz <- bolus_dat$bwzestimate[r-1]
     time.diff <- as.numeric(difftime(bolus.time,prev.bolus.time,units = "mins"))
     time.range.15 <- (bolus.time - 900):(bolus.time-1)
     time.range.20 <- (bolus.time - 1200):(bolus.time-1)
     time.range.30 <- (bolus.time - 1800):(bolus.time-1)
     if (time.diff > 20) {
+      prev.bol.count <- 0
       total.bolus <- total.bolus + 1
+      if (bolus.vol == bolus.wiz) {
+        bolus.correct <- bolus.correct + 1
+      } else if (bolus.vol < bolus.wiz) {
+        bolus.low <- bolus.low + 1
+      } else if (bolus.vol > bolus.wiz) {
+        bolus.high <- bolus.high + 1
+      }
       bolus.times <- c(bolus.times,bolus.time)
       if (bolus_dat$weekday[r] %in% 2:6) {
         weekday.total.bolus <- weekday.total.bolus + 1
       } else {
         weekend.total.bolus <- weekend.total.bolus + 1
       }
-      bolus.wiz <- bolus_dat$bwzestimate[r]
-      
     } else if (bolus_dat$carbinput[r] > 0 & bolus_dat$carbinput[r-1] > 0) {
       total.bolus <- total.bolus + 1
+      if (bolus.vol == bolus.wiz) {
+        bolus.correct <- bolus.correct + 1
+      } else if (bolus.vol < bolus.wiz) {
+        bolus.low <- bolus.low + 1
+      } else if (bolus.vol > bolus.wiz) {
+        bolus.high <- bolus.high + 1
+      }
       bolus.times <- c(bolus.times,bolus.time)
       if (bolus_dat$weekday[r] %in% 2:6) {
         weekday.total.bolus <- weekday.total.bolus + 1
@@ -289,15 +300,17 @@ for (f in 1:length(files)) {
         weekend.total.bolus <- weekend.total.bolus + 1
       }
     } else {
-      double.bolus <- 1
-      total.bolus.vol <- 
-        bolus_dat$bolusvoldelivered[r] + bolus_dat$bolusvoldelivered[r-1]
-      bolus.wiz <- sum(bolus_dat$bwzestimate[r],bolus_dat$bwzestimate[r-1],
-                       na.rm = T)
-      if (total.bolus.vol == bolus.wiz) {bolus.correct <- bolus.correct + 1} 
-      else if (total.bolus.vol < bolus.wiz) {bolus.lower <- bolus.lower + 1}
-      else if (total.bolus.vol > bolus.wiz) {bolus.higher <- bolus.higher + 1}
-      
+      prev.bol.count <- prev.bol.count + 1
+      total.vol <- sum(bolus_dat$bolusvoldelivered[c(r,r + c(-1:-prev.bol.count))])
+      total.wiz <- sum(bolus_dat$bwzestimate[c(r,r + c(-1:-prev.bol.count))])
+      multiple.bolus <- 1
+      if (total.vol == total.wiz) {
+        bolus.correct <- bolus.correct + 1
+      } else if (total.vol < total.wiz) {
+        bolus.low <- bolus.low + 1
+      } else if (total.vol > total.wiz) {
+        bolus.high <- bolus.high + 1
+      }
     }
   }
   summary[f,"total_bolus"] <- total.bolus
@@ -344,18 +357,6 @@ for (f in 1:length(files)) {
   summary[f,"bolus_within_30_bwp_400+"] <- length(which(bwps.within.30 == "400+"))
   
   summary[f,"days_bolus>=6_hours"] <- sum(six_hour_bolus$n > 0)
-# Bolus wizard
-  bolus_dat$wizard_diff <- bolus_dat$bolusvoldelivered - bolus_dat$bwzestimate
-  bolus_dat$wizard_diff <- ifelse(bolus_dat$wizard_diff < 0,"lower",
-                                  ifelse(bolus_dat$wizard_diff > 0,"higher","equal"))
-  wizard <- bolus_dat %>%
-    filter(!is.na(wizard_diff)) %>%
-    ungroup() %>%
-    count(wizard_diff) %>%
-    mutate(percentage = (n/sum(n))*100)
-  summary[f,"perc_bolus_equal_bwz"] <- wizard$percentage[1]
-  summary[f,"perc_bolus_higher_bwz"] <- wizard$percentage[2]
-  summary[f,"perc_bolus_lower_bwz"] <- wizard$percentage[3]
 # BG as the anchor.
 # BGs only  
   BG_dat <- dat[which(dat$bgreading > 0),]
@@ -564,7 +565,6 @@ for (f in 1:length(files)) {
   
   summary[f,"extremeBG_without_carb_with_bolus_piu"] <- (extremeBG_followed_by_bolus_piu/(extremeBGcount_piu-extremeBG_with_carb_piu))*100
   summary[f,"extremeBG_with_carb_and_bolus_piu"] <- (extremeBG_with_carb_bolus_piu/extremeBG_with_carb_piu)*100
-
 # Rebound BGs. Same as above for low BGs, but 24 hour range. Check how many 
 # >300 BGs occur within 24 hour ranges.
   lowBGs <- unique(unlist(lapply((as.list(dat$timestamp[which(dat$bgreading < 70)])),function(x) x:(x+14400))))
