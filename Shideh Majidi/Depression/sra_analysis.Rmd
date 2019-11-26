@@ -8,7 +8,8 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Shideh Majidi/Depression")
-library(tableone)
+library(arsenal)
+library(VGAM)
 library(Hmisc)
 library(nlme)
 library(splines)
@@ -59,7 +60,7 @@ ggplot(random,aes(x = days_from_screen,y = A1cValue)) +
 
 ## Piecewise Regression
 
-```{r echo=FALSE}
+```{r}
 # Correlation structure
 mod <- lme(A1cValue ~ days_from_screen,random = ~1|record_id,data = a1cs,method = "ML")
 mod_ar1 <- lme(A1cValue ~ days_from_screen,random = ~1|record_id,data = a1cs,
@@ -71,18 +72,43 @@ a1c_mod_poly <- lme(A1cValue ~ poly(days_from_screen,4),random = ~1|record_id,
 a1cs$days_star <- ifelse(a1cs$days_from_screen < 0,0,a1cs$days_from_screen)
 a1c_mod_ri <- lme(A1cValue ~ days_from_screen*charttreatafter + days_star*charttreatafter,
                random = ~1|record_id,data = a1cs,correlation = corAR1())
-a1c_mod_ris <- lme(A1cValue ~ days_from_screen*charttreatafter + days_star*charttreatafter,
+a1c_mod_ris <- lme(A1cValue ~ days_from_screen*charttreatafter + 
+                     days_star*charttreatafter,
                random = ~days_from_screen|record_id,data = a1cs,correlation = corAR1())
+AIC(a1c_mod_ri,a1c_mod_ris) # RI only better by AIC
+# Censored
+a1cs$A1cCensored <- a1cs$A1cValue
+a1cs$A1cCensored[a1cs$A1cCensored > 14.1] <- 14.1
+cens <- vglm(A1cValue ~ days_from_screen*charttreatafter + 
+                     days_star*charttreatafter, tobit(Upper = 14.1), 
+             data = a1cs)
+uncens <- glm(A1cValue ~ days_from_screen*charttreatafter + 
+                     days_star*charttreatafter,data = a1cs)
+```
+
+```{r echo=FALSE,include=FALSE}
 # Plot splines
-plot_piecewise_single_knot(a1cs,a1c_mod,xknot = 0,
+plot_piecewise_single_knot(a1cs,a1c_mod_ri,xknot = 0,
                            xvar = "days_from_screen",
                            yvar = "A1cValue", group = "charttreatafter") + 
   xlab("Days from Start") + ylab("HbA1c (%)")
 # Spline results
-format_nlme_out(a1c_mod,round = F)
+format_nlme_out(a1c_mod_ri,round = F)
+```
+
+### Censored
+
+```{r echo=FALSE}
+summary(cens)
+```
+
+### Uncensored
+
+```{r echo=FALSE}
+summary(uncens)
 ```
 
 # To do
 
 1. Look into Tobit regression
-2. Random slope and intercept for subject
+2. Random slope and intercept for subject. Additional random effect for spline?
