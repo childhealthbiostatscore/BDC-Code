@@ -19,11 +19,11 @@ library(data.table)
 #   - manually deleted "Timestamp" column for T3_325
 #   - manually combined T2_148 into a single file
 #   - manually changed 327 dates:
-    # T1 3/6/2017
-    # T2 6/26/2017
-    # T3 9/20/2017
-    # T4 12/4/2017
-    # T5 6/15/2018
+# T1 3/6/2017
+# T2 6/26/2017
+# T3 9/20/2017
+# T4 12/4/2017
+# T5 6/15/2018
 ```
 
 ```{r echo=FALSE,eval=FALSE}
@@ -40,7 +40,7 @@ for (f in 1:length(files)) {
                   na.strings = "")
   id <- sub("_pump.csv","",basename(files[f]))
   id_no_timepoint <- sub(".*_","",id)
-# Check file format.  
+  # Check file format.  
   if (id == "") {
     stop("No ID")
   } else if (ncol(dat) < 33) {
@@ -50,18 +50,18 @@ for (f in 1:length(files)) {
   pumpend <- which(dat$Patient.ID == "Sensor")
   if (length(pumpend) > 0) {dat <- dat[-c(pumpend:nrow(dat)),]}
   if (colnames(dat)[1] != "Index") {
-# Delete nonessential rows.
+    # Delete nonessential rows.
     rowstart <- which(dat$Last.Name == "-------")[1]
     pump <- dat[c((rowstart + 2):(nrow(dat)-3)),]
     colnames(pump) <- dat[rowstart+1,]
   } else {
     pump <- dat
   }
-# Format timestamp, remove rows without datetime data.
+  # Format timestamp, remove rows without datetime data.
   pump$timestamp <- paste(pump$Date,pump$Time)
   pump$timestamp <- lubridate::mdy_hms(pump$timestamp)
   pump <- pump[which(!is.na(pump$timestamp)),]
-# Get dates
+  # Get dates
   if (grepl("T1",id) == T) {
     end <- dates$T1_Date[which(dates$ID == id_no_timepoint)] + 1
     start <- end - 90
@@ -75,9 +75,9 @@ for (f in 1:length(files)) {
     start <- dates$T4_Date[which(dates$ID == id_no_timepoint)]
     end <- dates$T5_Date[which(dates$ID == id_no_timepoint)] + 1
   }
-# Remove rows with data outside study time range if there is any.
+  # Remove rows with data outside study time range if there is any.
   pump <- pump %>% filter(timestamp > start & timestamp < end)
-# Standardize column names, delete irrelevant ones
+  # Standardize column names, delete irrelevant ones
   colnames(pump) <- tolower(gsub(c("[[:punct:]]"),"",colnames(pump)))
   colnames(pump) <- gsub(c(" "),"",colnames(pump))
   pump <- pump[,c("timestamp","bolustype","bwzestimateu",
@@ -92,7 +92,7 @@ for (f in 1:length(files)) {
   if (rowSums(is.na(pump))[1]==8) {
     pump <- pump[-c(1:(as.numeric(which(rowSums(is.na(pump)) < 8)[1]))-1),]
   }
-# Combine BG columns
+  # Combine BG columns
   pump$bgreading <- pmax(pump$bginput,pump$bgreading,na.rm = T)
   for (r in 1:nrow(pump)) {
     bg <- pump$bgreading[r]
@@ -103,17 +103,17 @@ for (f in 1:length(files)) {
       pump$bgreading[rows15[which(pump$bgreading[rows15]==bg)[-1]]] <- NA
     }
   }
-# Classify BGs using Bergensthal White Paper Categories and Pump It Up! 
-# categories.
+  # Classify BGs using Bergensthal White Paper Categories and Pump It Up! 
+  # categories.
   pump$piu <- cut(as.numeric(pump$bgreading),
-                       breaks = c(1,70,150,250,Inf),
-                       right = F,
-                       labels = c("<70","70-149","150-249","250+"))
+                  breaks = c(1,70,150,250,Inf),
+                  right = F,
+                  labels = c("<70","70-149","150-249","250+"))
   pump$bwp <- cut(as.numeric(pump$bgreading),
-                       breaks = c(1,70,181,251,400,Inf),
-                       right = F,
-                       labels = c("<70","70-180","181-250","251-400","400+"))
-# Write to folder.
+                  breaks = c(1,70,181,251,400,Inf),
+                  right = F,
+                  labels = c("<70","70-180","181-250","251-400","400+"))
+  # Write to folder.
   filename <- paste(outdir,id,".csv",sep = "")
   write.csv(pump,file = filename,row.names = F,na="")
 }
@@ -133,31 +133,31 @@ for (f in 1:length(files)) {
   dat$timestamp <- lubridate::ymd_hms(dat$timestamp)
   id <- sub(".csv","",basename(files[f]))
   summary[f,"subject_id"] <- id
-# Calculate number of days of data  
+  # Calculate number of days of data  
   days <- as.numeric(difftime(max(dat$timestamp),min(dat$timestamp),
                               units = "days"))
   summary[f,"days_worn"] <- ceiling(days)
-# Combine rows, remove rows with all NA.
+  # Combine rows, remove rows with all NA.
   dat$timestamp <- strftime(dat$timestamp,"%Y-%m-%d %H:%M", tz = "UTC")
   dat <- aggregate(dat[,2:ncol(dat)],list(dat[,1]),
                    function(x) ifelse(length(x[which(!is.na(x))]) >
                                         0,x[which(!is.na(x))],NA))
   dat <- dat[-c(which(rowSums(is.na(dat[,2:ncol(dat)])) >= (length(2:ncol(dat))-1))),]
-# Format timestamp
+  # Format timestamp
   colnames(dat)[1] <- "timestamp"
   dat$timestamp <- lubridate::ymd_hm(dat$timestamp)
-# Get BG readings by PIU and BWP categories  
+  # Get BG readings by PIU and BWP categories  
   reading.times <- dat$timestamp[which(dat$bgreading > 0)]
   pius <- dat$piu[which(!is.na(dat$bgreading))]
   bwps <- dat$bwp[which(!is.na(dat$bgreading))]
-# Find date, weekday, hour of the day
+  # Find date, weekday, hour of the day
   dat$date <- lubridate::date(dat$timestamp)
   dat$weekday <- lubridate::wday(dat$timestamp)
   dat$hour <- lubridate::hour(dat$timestamp)
-# Average number of BG checks and carb inputs on weekdays and weekends
+  # Average number of BG checks and carb inputs on weekdays and weekends
   weekdat <- dat[dat$weekday %in% 2:6,]
   weekdays <- length(unique(weekdat$date))
-# On weekends
+  # On weekends
   weekend <- dat[dat$weekday %in% c(1,7),]
   weekends <- length(unique(weekend$date))
   # Carb inputs and BG readings
@@ -173,7 +173,7 @@ for (f in 1:length(files)) {
   summary[f,"total_bwp_181-250"] <- length(which(dat$bwp == "181-250"))
   summary[f,"total_bwp_251-400"] <- length(which(dat$bwp == "251-400"))
   summary[f,"total_bwp_400+"] <- length(which(dat$bwp == "400+"))
-# BG checks
+  # BG checks
   BGcount <- length(which(dat$bgreading > 0))
   summary[f,"total_readings"] <- BGcount
   summary[f,"readings_per_day"] <- length(which(dat$bgreading > 0))/ceiling(days)
@@ -181,19 +181,19 @@ for (f in 1:length(files)) {
     length(which(weekdat$bgreading > 0)) / weekdays
   summary[f,"readings_per_weekend"] <- 
     length(which(weekend$bgreading > 0)) / weekends
-# Carbs
+  # Carbs
   summary[f,"total_carb_inputs"] <- carbs
   summary[f,"carb_inputs_per_day"] <- carbs/ceiling(days)
   summary[f,"carb_inputs_per_weekday"] <- 
     length(which(weekdat$carbinput > 0)) / weekdays
   summary[f,"carb_inputs_per_weekend"] <- 
     length(which(weekend$carbinput > 0)) / weekends
-# Carbs only  
+  # Carbs only  
   carbs_dat <- dat[which(dat$carbinput > 0),]
   six_hour_carbs <- 
     setDT(carbs_dat)[, indx := date][, .SD[1:(.N+1)], indx][,indx := NULL][!.N]
   six_hour_carbs$hour[which(is.na(six_hour_carbs$hour))] <- 24
-# Days with >= 3 carbs
+  # Days with >= 3 carbs
   carbs_days <- six_hour_carbs
   carbs_days$carbs_binary <- ifelse(!is.na(carbs_days$carbinput),1,0)
   carbs_days <- carbs_days %>%
@@ -202,44 +202,44 @@ for (f in 1:length(files)) {
     summarise(num_carbs = sum(carbs_binary,na.rm = T))
   summary[f,"perc_days_>=3_carbs"] <- 
     (length(which(carbs_days$num_carbs >=4))/ceiling(days))*100
-# Boluses only  
+  # Boluses only  
   bolus_dat <- dat[which(!is.na(dat$bolusvoldelivered)),]
   bolus_dat$carbinput[which(is.na(bolus_dat$carbinput))] <- 0
-# Combine square bolus rows
+  # Combine square bolus rows
   normal_part <- which(bolus_dat$bolustype == "Dual (normal part)")
   bolus_dat$bolusvoldelivered[normal_part] <- 
     bolus_dat$bolusvoldelivered[normal_part] + bolus_dat$bolusvoldelivered[normal_part+1]
   bolus_dat <- bolus_dat[bolus_dat$bolustype != "Dual (square part)",]
   
-# Check for days with >= 6 hours without a bolus.
-# Add a midnight row to calculate last bolus before midnight
+  # Check for days with >= 6 hours without a bolus.
+  # Add a midnight row to calculate last bolus before midnight
   six_hour_bolus <- data.table::setDT(bolus_dat)[, indx := date][, .SD[1:(.N+1)], indx][,indx := NULL][!.N]
   six_hour_bolus$hour[which(is.na(six_hour_bolus$hour))] <- 24
-# Days with >= 3 boluses
+  # Days with >= 3 boluses
   bolus_days <- six_hour_bolus
   bolus_days$bolus_binary <- ifelse(!is.na(bolus_days$bolusvoldelivered),1,0)
   bolus_days <- bolus_days %>%
     filter(!is.na(date)) %>%
     group_by(date) %>%
     summarise(num_boluses = sum(bolus_binary,na.rm = T))
-# Count time between 6am, boluses, and midnight by date  
+  # Count time between 6am, boluses, and midnight by date  
   six_hour_bolus <- six_hour_bolus %>% 
     fill(date) %>%
     group_by(date) %>%
     filter(hour %in% 6:24) %>%
     mutate(time_diff = hour - lag(hour, default = 6))
-# Summarize
+  # Summarize
   six_hour_bolus <- six_hour_bolus %>% group_by(date) %>% 
     summarise(n = sum(time_diff > 6)) %>% as.data.frame()
-# Counting variables and placeholder
+  # Counting variables and placeholder
   total.bolus <- 1
   if (bolus_dat$weekday[1] %in% 2:6) {
     weekday.total.bolus <- 1
     weekend.total.bolus <- 0
   } else {
-      weekday.total.bolus <- 0
-      weekend.total.bolus <- 1
-      }
+    weekday.total.bolus <- 0
+    weekend.total.bolus <- 1
+  }
   bolus.times <- bolus_dat$timestamp[1]
   pius.within.15 <- character()
   pius.within.30 <- character()
@@ -258,7 +258,7 @@ for (f in 1:length(files)) {
     bolus.high <- bolus.high + 1
   }
   time.cutoff <- 20
-# Iterate through data rows. Count total boluses
+  # Iterate through data rows. Count total boluses
   for (r in 2:nrow(bolus_dat)) {
     bolus.time <- bolus_dat$timestamp[r]
     bolus.vol <- bolus_dat$bolusvoldelivered[r]
@@ -290,25 +290,7 @@ for (f in 1:length(files)) {
       } else {
         weekend.total.bolus <- weekend.total.bolus + 1
       }
-    } 
-    # else if (bolus_dat$carbinput[r] > 0 & bolus_dat$carbinput[r-1] > 0) {
-    #   prev.bol.count <- 0
-    #   total.bolus <- total.bolus + 1
-    #   if (bolus.vol == bolus.wiz) {
-    #     bolus.correct <- bolus.correct + 1
-    #   } else if (bolus.vol < bolus.wiz) {
-    #     bolus.low <- bolus.low + 1
-    #   } else if (bolus.vol > bolus.wiz) {
-    #     bolus.high <- bolus.high + 1
-    #   }
-    #   bolus.times <- c(bolus.times,bolus.time)
-    #   if (bolus_dat$weekday[r] %in% 2:6) {
-    #     weekday.total.bolus <- weekday.total.bolus + 1
-    #   } else {
-    #     weekend.total.bolus <- weekend.total.bolus + 1
-    #   }
-    # } 
-    else {
+    } else {
       prev.bol.count <- prev.bol.count + 1
       total.vol <- sum(bolus_dat$bolusvoldelivered[c(r,r + c(-1:-prev.bol.count))])
       total.wiz <- sum(bolus_dat$bwzestimate[c(r,r + c(-1:-prev.bol.count))])
@@ -330,7 +312,10 @@ for (f in 1:length(files)) {
   summary[f,"boluses_per_weekend"] <- weekend.total.bolus/weekends
   summary[f,"perc_days_>=3_boluses"] <- 
     (length(which(bolus_days$num_boluses >=3))/ceiling(days))*100
-# Iterate through boluses and check reading information
+  summary[f,"bolus_equal_bwz"] <- bolus.correct
+  summary[f,"bolus_lower_bwz"] <- bolus.low
+  summary[f,"bolus_higher_bwz"] <- bolus.high
+  # Iterate through boluses and check reading information
   for (t in bolus.times) {
     time.range.15 <- (t - 900):t
     time.range.30 <- (t - 1800):t
@@ -368,39 +353,39 @@ for (f in 1:length(files)) {
   summary[f,"bolus_within_30_bwp_400+"] <- length(which(bwps.within.30 == "400+"))
   
   summary[f,"days_bolus>=6_hours"] <- sum(six_hour_bolus$n > 0)
-# BG as the anchor.
-# BGs only  
+  # BG as the anchor.
+  # BGs only  
   BG_dat <- dat[which(dat$bgreading > 0),]
-# Check for days with >= 6 hours without a BG.
-# Add a midnight row to calculate last BG before midnight
+  # Check for days with >= 6 hours without a BG.
+  # Add a midnight row to calculate last BG before midnight
   six_hour_BG <- setDT(BG_dat)[, indx := date][, .SD[1:(.N+1)], indx][,indx := NULL][!.N]
   six_hour_BG$hour[which(is.na(six_hour_BG$hour))] <- 24
-# Days with >=4 BG checks
+  # Days with >=4 BG checks
   bg_days <- six_hour_BG
   bg_days$bg_binary <- ifelse(!is.na(bg_days$bgreading),1,0)
   bg_days <- bg_days %>%
     filter(!is.na(date)) %>%
     group_by(date) %>%
     summarise(num_bgs = sum(bg_binary,na.rm = T))
-# Count time between 6am, BGs, and midnight by date  
+  # Count time between 6am, BGs, and midnight by date  
   six_hour_BG <- six_hour_BG %>% 
     fill(date) %>%
     group_by(date) %>%
     filter(hour %in% 6:24) %>%
     mutate(time_diff = hour - lag(hour, default = 6))
-# Summarize
+  # Summarize
   six_hour_BG <- six_hour_BG %>% group_by(date) %>% 
     summarise(n = sum(time_diff >= 6)) %>% as.data.frame()
   summary[f,"days_reading>=6_hours"] <- sum(six_hour_BG$n > 0)
   summary[f,"perc_days_>=4_bgs"] <- 
     (length(which(bg_days$num_bgs >=4))/ceiling(days))*100
-# Total BGs in ranges BWP
+  # Total BGs in ranges BWP
   lowBGcount <- length(which(dat$bgreading < 70))
   intargetBGcount <- length(which(dat$bgreading %in% 70:180))
   highBGcount <- length(which(dat$bgreading %in% 181:250))
   veryhighBGcount <- length(which(dat$bgreading %in% 251:400))
   extremeBGcount <- length(which(dat$bgreading > 400))
-# BG count variables BWP
+  # BG count variables BWP
   lowBG_followed_by_bolus <- 0
   lowBG_followed_by_carb_bolus <- 0
   intargetBG_followed_by_bolus <- 0
@@ -422,12 +407,12 @@ for (f in 1:length(files)) {
   veryhighBG_with_carb_bolus <- 0
   extremeBG_with_carb <- 0
   extremeBG_with_carb_bolus <- 0
-# Total BGs in ranges PIU
+  # Total BGs in ranges PIU
   lowBGcount_piu <- length(which(dat$bgreading < 70))
   intargetBGcount_piu <- length(which(dat$bgreading %in% 70:149))
   highBGcount_piu <- length(which(dat$bgreading %in% 150:249))
   extremeBGcount_piu <- length(which(dat$bgreading >= 250))
-# BG count variables PIU
+  # BG count variables PIU
   lowBG_followed_by_bolus_piu <- 0
   lowBG_followed_by_carb_bolus_piu <- 0
   intargetBG_followed_by_bolus_piu <- 0
@@ -444,12 +429,12 @@ for (f in 1:length(files)) {
   highBG_with_carb_bolus_piu <- 0
   extremeBG_with_carb_piu <- 0
   extremeBG_with_carb_bolus_piu <- 0
-# Iterate through each BG reading
+  # Iterate through each BG reading
   bgreadings <- which(dat$bgreading > 0)
   for (r in bgreadings) {
     bg <- dat$bgreading[r]
     time.range.15 <- (dat$timestamp[r]:(dat$timestamp[r]+900))
-# BWP    
+    # BWP    
     if ((TRUE %in% (bolus.times %in% time.range.15)) & 
         (TRUE %in% (carbtimes %in% time.range.15))) {
       if (bg < 70) {lowBG_followed_by_carb_bolus <- lowBG_followed_by_carb_bolus + 1}
@@ -478,7 +463,7 @@ for (f in 1:length(files)) {
       if (bg > 400) {extremeBG_with_carb <- extremeBG_with_carb + 1}
       if (bg > 400 & (TRUE %in% (bolus.times %in% time.range.15))) {extremeBG_with_carb_bolus <- extremeBG_with_carb_bolus + 1}
     }
-# PIU    
+    # PIU    
     if ((TRUE %in% (bolus.times %in% time.range.15)) & 
         (TRUE %in% (carbtimes %in% time.range.15))) {
       if (bg < 70) {lowBG_followed_by_carb_bolus_piu <- lowBG_followed_by_carb_bolus_piu + 1}
@@ -503,8 +488,8 @@ for (f in 1:length(files)) {
       if (bg >=250 & (TRUE %in% (bolus.times %in% time.range.15))) {extremeBG_with_carb_bolus_piu <- extremeBG_with_carb_bolus_piu + 1}
     }
   }
-# As percentages in summary table
-# BWP
+  # As percentages in summary table
+  # BWP
   summary[f,"perc_lowBG_followed_by_carb_bolus"] <- 
     (lowBG_followed_by_carb_bolus/lowBGcount)*100
   summary[f,"perc_lowBG_followed_by_bolus"] <- 
@@ -544,7 +529,7 @@ for (f in 1:length(files)) {
   
   summary[f,"extremeBG_without_carb_with_bolus"] <- (extremeBG_followed_by_bolus/(extremeBGcount-extremeBG_with_carb))*100
   summary[f,"extremeBG_with_carb_and_bolus"] <- (extremeBG_with_carb_bolus/extremeBG_with_carb)*100
-# PIU
+  # PIU
   summary[f,"perc_lowBG_followed_by_carb_bolus_piu"] <- 
     (lowBG_followed_by_carb_bolus_piu/lowBGcount_piu)*100
   summary[f,"perc_lowBG_followed_by_bolus_piu"] <- 
@@ -576,8 +561,8 @@ for (f in 1:length(files)) {
   
   summary[f,"extremeBG_without_carb_with_bolus_piu"] <- (extremeBG_followed_by_bolus_piu/(extremeBGcount_piu-extremeBG_with_carb_piu))*100
   summary[f,"extremeBG_with_carb_and_bolus_piu"] <- (extremeBG_with_carb_bolus_piu/extremeBG_with_carb_piu)*100
-# Rebound BGs. Same as above for low BGs, but 24 hour range. Check how many 
-# >300 BGs occur within 24 hour ranges.
+  # Rebound BGs. Same as above for low BGs, but 24 hour range. Check how many 
+  # >300 BGs occur within 24 hour ranges.
   lowBGs <- unique(unlist(lapply((as.list(dat$timestamp[which(dat$bgreading < 70)])),function(x) x:(x+14400))))
   reboundBGs <- dat$timestamp[which(dat$bgreading > 300)]
   summary[f,"num_rebound_bgs"] <- sum(reboundBGs %in% lowBGs)
