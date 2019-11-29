@@ -288,3 +288,4 @@ dat$B_RESPONDENT<-factor(dat$B_RESPONDENT)
 label(dat$B_RESPONDENT)<-"Respondent Type"
 label(dat$Age)<-"Age at 6 mo Survey, years"
 label(dat$Baseline_A1C)<-"HbA1c at baseline"
+label(dat$Gender)<-"Gender"
