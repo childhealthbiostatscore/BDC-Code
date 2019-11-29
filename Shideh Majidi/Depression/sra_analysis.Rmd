@@ -8,32 +8,48 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Shideh Majidi/Depression")
+source("/Users/timvigers/Documents/GitHub/BDC-Code/Shideh Majidi/Depression/sra.r")
+source("/Users/timvigers/Documents/GitHub/Tim-and-Laura/tim_r_functions.R")
 library(arsenal)
 library(VGAM)
-library(Hmisc)
 library(nlme)
 library(splines)
 library(skimr)
 library(knitr)
 library(reshape2)
 library(tidyverse)
-source("/Users/timvigers/Documents/GitHub/Tim-and-Laura/tim_r_functions.R")
 ```
 
-```{r data import and clean,echo=FALSE}
-# Import data, format columns
-sra <- read.csv("./Data_Cleaned/sra.csv")
-factorvars <- c("charttreatafter")
-sra$charttreatafter <- as.factor(sra$charttreatafter)
-a1cs <- read.csv("./Data_Cleaned/a1cs.csv")
+```{r a1c data import,echo=FALSE}
+a1cs <- read.csv("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Shideh Majidi/Depression/Data_Cleaned/a1cs.csv")
 a1cs$A1cResultDate <- lubridate::mdy(a1cs$A1cResultDate)
+temp <- data
+temp$record_id <- as.numeric(as.character(temp$record_id))
 # Add screen date to A1c data, find days between
-a1cs <- left_join(a1cs,sra[,c("record_id","screen_date","charttreatafter")],
+a1cs <- left_join(a1cs,temp[,c("record_id","screen_date","charttreatafter")],
                   by = "record_id")
 a1cs$days_from_screen <- 
   round(as.numeric(difftime(a1cs$A1cResultDate,a1cs$screen_date,units = "days")))
 # 1 year pre-/post-screening
 a1cs <- a1cs[abs(a1cs$days_from_screen) < 365.25,]
+# Clean up
+rm(temp)
+```
+
+# Table 1: Descriptive Characteristics
+
+```{r table 1,echo=FALSE,results='asis'}
+t1 <- tableby(charttreatafter.factor ~ age + diabetes_duration + a1c + total_score_epic +
+                followupscore + 
+                sex.factor + race.factor + ethnicity.factor + insurance.factor + 
+                pump_use.factor + cgm.factor + si_pos.factor + followupphq9.factor + 
+                followupsi,data)
+newlabels <- list(sex.factor = "Sex",race.factor = "Race",
+                  ethnicity.factor = "Ethnicity",insurance.factor = "Insurance",
+                  insulin_type.factor = "Insulin Type",pump_use.factor = "Pump Use", 
+                  cgm.factor = "CGM Use",followupphq9.factor = "Follow-Up PHQ 9?",
+                  followupsi = "Follow-Up SI?")
+summary(t1,pfootnote = T,labelTranslations = newlabels)
 ```
 
 ## Plot All A1cs by Days From Screening
@@ -49,13 +65,13 @@ About `r round(length(which(a1cs$A1cValue == 15))/length(a1cs$A1cValue),3)*100`%
 
 ## First, Screening, and Last A1cs
 
-```{r echo=FALSE,warning=FALSE,message=FALSE}
+```{r echo=FALSE,warning=FALSE,message=FALSE,include=FALSE}
 random <- a1cs %>% group_by(record_id) %>% 
   slice(which.min(days_from_screen),which(days_from_screen == 0), 
         which.max(days_from_screen))
 ggplot(random,aes(x = days_from_screen,y = A1cValue)) + 
   theme_bw() +
-  geom_line(aes(group = record_id,color = charttreatafter))
+  geom_line(aes(group = record_id,color = factor(charttreatafter)))
 ```
 
 ## Piecewise Regression
@@ -90,7 +106,7 @@ uncens <- glm(A1cValue ~ days_from_screen*charttreatafter +
 # Plot splines
 plot_piecewise_single_knot(a1cs,a1c_mod_ri,xknot = 0,
                            xvar = "days_from_screen",
-                           yvar = "A1cValue", group = "charttreatafter") + 
+                           yvar = "A1cValue", group = "factor(charttreatafter)") + 
   xlab("Days from Start") + ylab("HbA1c (%)")
 # Spline results
 format_nlme_out(a1c_mod_ri,round = F)
@@ -107,8 +123,3 @@ summary(cens)
 ```{r echo=FALSE}
 summary(uncens)
 ```
-
-# To do
-
-1. Look into Tobit regression
-2. Random slope and intercept for subject. Additional random effect for spline?
