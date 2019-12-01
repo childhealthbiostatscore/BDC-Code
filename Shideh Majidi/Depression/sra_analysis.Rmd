@@ -2,14 +2,14 @@
 title: "Suicide Risk Assessment"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: html_document
+output: word_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Shideh Majidi/Depression")
 source("/Users/timvigers/Documents/GitHub/BDC-Code/Shideh Majidi/Depression/sra.r")
 source("/Users/timvigers/Documents/GitHub/Tim-and-Laura/tim_r_functions.R")
+a1cs <- read.csv("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Shideh Majidi/Depression/Data_Cleaned/a1cs.csv")
 library(arsenal)
 library(VGAM)
 library(nlme)
@@ -21,12 +21,12 @@ library(tidyverse)
 ```
 
 ```{r a1c data import,echo=FALSE}
-a1cs <- read.csv("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Shideh Majidi/Depression/Data_Cleaned/a1cs.csv")
 a1cs$A1cResultDate <- lubridate::mdy(a1cs$A1cResultDate)
 temp <- data
 temp$record_id <- as.numeric(as.character(temp$record_id))
 # Add screen date to A1c data, find days between
-a1cs <- left_join(a1cs,temp[,c("record_id","screen_date","charttreatafter")],
+a1cs <- left_join(a1cs,temp[,c("record_id","screen_date","charttreatafter.factor",
+                               "charttreatbefore.factor")],
                   by = "record_id")
 a1cs$days_from_screen <- 
   round(as.numeric(difftime(a1cs$A1cResultDate,a1cs$screen_date,units = "days")))
@@ -52,74 +52,116 @@ newlabels <- list(sex.factor = "Sex",race.factor = "Race",
 summary(t1,pfootnote = T,labelTranslations = newlabels)
 ```
 
-## Plot All A1cs by Days From Screening
+# HbA1c
 
-```{r echo=FALSE,warning=FALSE,message=FALSE}
-ggplot(a1cs,aes(x = days_from_screen,y = A1cValue)) + theme_bw() +
+## Pre-/post-Screening
+
+HbA1c was not significantly different 1 year before and 1 year after screening (p = `r round(t.test(data$a1c_1yearbefore,data$a1c_1yearafter,paired = T)$p.value,3)`).
+
+## HbA1c by Days From Screening
+
+```{r echo=FALSE,warning=FALSE,message=FALSE,dpi=1200,fig.width=7}
+ggplot(a1cs,aes(x = days_from_screen,y = A1cValue)) +
   geom_point() +
-  geom_smooth(aes(color = charttreatafter)) + 
-  geom_point(data = a1cs[which(a1cs$A1cValue == 14.1),],color = "red")
+  geom_smooth(aes(color = charttreatafter.factor)) + 
+  xlab("Days from Screening") + ylab("HbA1c (%)") +
+  scale_color_discrete(name = "Evidence of Psych. Treat.") +
+  theme_bw() 
 ```
 
-About `r round(length(which(a1cs$A1cValue == 15))/length(a1cs$A1cValue),3)*100`% of the values are 15% and another `r round(length(which(a1cs$A1cValue == 14.1))/length(a1cs$A1cValue),3)*100`% of the values are 14.1% (in red above).
+The teal and red lines indicate locally-smoothed (loess) curves for the two groups. It looks like there are two limits of detection in measuring HbA1c, which is why there appear to be horizontal lines at 14.1% and 15%. We probably do not need to worry about these censored results for the abstract, but Laura and I are looking into ways to deal with it for a manuscript.
 
-## First, Screening, and Last A1cs
+About `r round(length(which(a1cs$A1cValue == 15))/length(a1cs$A1cValue),3)*100`% of the values are at 15% and another `r round(length(which(a1cs$A1cValue == 14.1))/length(a1cs$A1cValue),3)*100`% of the values are at 14.1%.
 
-```{r echo=FALSE,warning=FALSE,message=FALSE,include=FALSE}
-random <- a1cs %>% group_by(record_id) %>% 
-  slice(which.min(days_from_screen),which(days_from_screen == 0), 
-        which.max(days_from_screen))
-ggplot(random,aes(x = days_from_screen,y = A1cValue)) + 
-  theme_bw() +
-  geom_line(aes(group = record_id,color = factor(charttreatafter)))
-```
+<!-- ## First, Screening, and Last A1cs -->
+
+<!-- ```{r echo=FALSE,warning=FALSE,message=FALSE,include=FALSE} -->
+<!-- random <- a1cs %>% group_by(record_id) %>%  -->
+<!--   slice(which.min(days_from_screen),which(days_from_screen == 0),  -->
+<!--         which.max(days_from_screen)) -->
+<!-- ggplot(random,aes(x = days_from_screen,y = A1cValue)) +  -->
+<!--   theme_bw() + -->
+<!--   geom_line(aes(group = record_id,color = factor(charttreatafter))) -->
+<!-- ``` -->
 
 ## Piecewise Regression
 
-```{r}
-# Correlation structure
-mod <- lme(A1cValue ~ days_from_screen,random = ~1|record_id,data = a1cs,method = "ML")
-mod_ar1 <- lme(A1cValue ~ days_from_screen,random = ~1|record_id,data = a1cs,
-               correlation = corAR1(),method = "ML")
+```{r echo=FALSE,include=FALSE}
 # AR(1) is much better, so refit with REML and check polynomials. 
 a1c_mod_poly <- lme(A1cValue ~ poly(days_from_screen,4),random = ~1|record_id,
                data = a1cs,correlation = corAR1())
 # Can use linear time. Use splines for knot at 0. Random intercept and slope for subject.
 a1cs$days_star <- ifelse(a1cs$days_from_screen < 0,0,a1cs$days_from_screen)
-a1c_mod_ri <- lme(A1cValue ~ days_from_screen*charttreatafter + days_star*charttreatafter,
-               random = ~1|record_id,data = a1cs,correlation = corAR1())
-a1c_mod_ris <- lme(A1cValue ~ days_from_screen*charttreatafter + 
-                     days_star*charttreatafter,
+a1c_mod_ri <- lme(A1cValue ~ days_from_screen*charttreatafter.factor + 
+                    days_star*charttreatafter.factor,
+               random = ~1|record_id,data = a1cs,correlation = corAR1(),method = "ML")
+a1c_mod_ris <- lme(A1cValue ~ days_from_screen*charttreatafter.factor + 
+                     days_star*charttreatafter.factor,
                random = ~days_from_screen|record_id,data = a1cs,correlation = corAR1())
 AIC(a1c_mod_ri,a1c_mod_ris) # RI only better by AIC
+# Correlation structure
+mod <- lme(A1cValue ~ days_from_screen*charttreatafter.factor + 
+                    days_star*charttreatafter.factor,
+           random = ~1|record_id,data = a1cs,method = "ML")
+mod_ar1 <- lme(A1cValue ~ days_from_screen*charttreatafter.factor + 
+                    days_star*charttreatafter.factor,random = ~1|record_id,data = a1cs,
+               correlation = corAR1(),method = "ML")
+AIC(mod,mod_ar1)
 # Censored
 a1cs$A1cCensored <- a1cs$A1cValue
 a1cs$A1cCensored[a1cs$A1cCensored > 14.1] <- 14.1
-cens <- vglm(A1cValue ~ days_from_screen*charttreatafter + 
-                     days_star*charttreatafter, tobit(Upper = 14.1), 
+cens <- vglm(A1cValue ~ days_from_screen*charttreatafter.factor + 
+                     days_star*charttreatafter.factor, tobit(Upper = 14.1), 
              data = a1cs)
-uncens <- glm(A1cValue ~ days_from_screen*charttreatafter + 
-                     days_star*charttreatafter,data = a1cs)
+uncens <- glm(A1cValue ~ days_from_screen*charttreatafter.factor + 
+                     days_star*charttreatafter.factor,data = a1cs)
 ```
 
-```{r echo=FALSE,include=FALSE}
+```{r plot model,echo=FALSE,include=FALSE}
 # Plot splines
-plot_piecewise_single_knot(a1cs,a1c_mod_ri,xknot = 0,
-                           xvar = "days_from_screen",
-                           yvar = "A1cValue", group = "factor(charttreatafter)") + 
+ggplot(data = a1cs,aes_string(x = "days_from_screen",y = "A1cValue",
+                                           group = "record_id")) + 
+  geom_line(aes_string(x = "days_from_screen",y = fitted(a1c_mod_ri)),
+            alpha = 0.05) +
+  theme_bw() +
   xlab("Days from Start") + ylab("HbA1c (%)")
+```
+
+```{r model results, echo=FALSE}
+# Adjust for previous treatment 
+a1c_mod_ri <- lme(A1cValue ~ days_from_screen*charttreatafter.factor + 
+                    days_star*charttreatafter.factor + charttreatbefore.factor,
+               random = ~1|record_id,data = a1cs,correlation = corAR1(),method = "ML")
 # Spline results
-format_nlme_out(a1c_mod_ri,round = F)
+results <- format_nlme_out(a1c_mod_ri,kable = F)
+vars <- c("Days","No Evidence of Psych. Treat.","Change in Slope",
+          "No Previous Psych. Treat.")
+format_nlme_out(a1c_mod_ri,varnames = vars)
 ```
 
-### Censored
+On average, HbA1c changed by `r results["days_from_screen","Value"]` per day for all participants (p = `r results["days_from_screen","p-value"]`). HbA1c changed by an additional `r results["days_from_screen:charttreatafter.factorNo","Value"]` each day for those with no evidence of psychological treatment compared to those with evidence for treatment (p = `r results["days_from_screen:charttreatafter.factorNo","p-value"]`). In other words, the slopes for the two groups are significantly different and the "No Evidence" group was essentially flat.
 
-```{r echo=FALSE}
-summary(cens)
+The slope changed by `r results["days_star","Value"]` on average post-screening for all participants (p = `r results["days_star","p-value"]`). On average the change in slope post-screening visit was different by `r results["charttreatafter.factorNo:days_star","Value"]` for those with no evidence of psychological treatment compared to those with evidence for treatment (p = `r results["charttreatafter.factorNo:days_star","p-value"]`). So again, the two groups are significantly different and the "No Evidence" group stayed essentially flat post-screening.
+
+The results above were not affected by adjustment for previous psychological treatment. However, on average those with no evidence of previous psychological treatment had HbA1c values different by `r results["charttreatbefore.factorNo","Value"]` compared to those with evidence of previous treatment (p = `r results["charttreatbefore.factorNo","p-value"]`).
+
+# Predicting use of psych treatment
+
+```{r logistic model,echo=FALSE}
+data$charttreatafter.factor <- relevel(data$charttreatafter.factor,ref = "No")
+# Check models
+mod <- glm(charttreatafter.factor ~ sex.factor + race.factor + ethnicity.factor
+           + insurance.factor + a1c + total_score_epic + pump_use.factor + cgm.factor +
+             charttreatbefore.factor,
+           data = data,family = binomial(link='logit'))
+# Nice formatting
+results <- format_logistic_out(mod,kable = F)
+format_logistic_out(mod,varnames = c("Male","Non-white","Hispanic or Latino",
+                                     "Private insurance","HbA1c at Screening",
+                                     "PHQ9 score","No pump","No CGM",
+                                     "No previous treat."))
 ```
 
-### Uncensored
+In order to get this model to work, I had to combine levels of race (white vs. non-white), ethnicity (Hispanic vs. non-Hispanic or unknown), and insurance (private vs. other). 
 
-```{r echo=FALSE}
-summary(uncens)
-```
+Males were `r abs(results["sex.factorMale","Percent Change"])`% less likely to use psych resources after screening (p = `r results["sex.factorMale","p-value"]`). Hispanics were `r abs(results["ethnicity.factorHispanic or Latino","Percent Change"])`% less likely (p = `r results["ethnicity.factorHispanic or Latino","p-value"]`) and those with no previous treatment were `r abs(results["charttreatbefore.factorNo","Percent Change"])`% less likely (p = `r results["charttreatbefore.factorNo","p-value"]`) to get treatment after screening. For each one unit increase in PHQ9 score, participants were on average `r abs(results["total_score_epic","Percent Change"])`% more likely to get treatment (p = `r results["total_score_epic","p-value"]`).
