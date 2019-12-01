@@ -1,5 +1,3 @@
-rm(list = ls())
-graphics.off()
 library(Hmisc)
 #Read Data
 data=read.csv('/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Shideh Majidi/Depression/Data_Cleaned/sra.csv')
@@ -648,3 +646,8 @@ data$sex.factor <- droplevels(data$sex.factor)
 data$insurace.factor <- droplevels(data$insurance.factor)
 data$pump_use.factor <- droplevels(data$pump_use.factor)
 data$cgm.factor <- droplevels(data$cgm.factor)
+# Collapse race, ethnicity, and insurance levels
+levels(data$race.factor) <- c("White","Non-white","Non-white",
+                              "Non-white","Non-white","Non-white")
+levels(data$ethnicity.factor) <- c("Non-Hispanic/Unknown","Hispanic or Latino","Non-Hispanic/Unknown")
+levels(data$insurance.factor) <- c("Other","Private","Other","Other","Other","Other","Other")
