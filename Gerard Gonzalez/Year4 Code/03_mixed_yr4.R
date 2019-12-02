@@ -28,7 +28,9 @@ c_list_4 <- list(c_base1 = c(0, 0, -1, 1, 0, 0, 0, 0, 0, 0),
                  c_year1 = c(0, 0, 0, 0, -1, 1, 0, 0, 0, 0),
                  c_year2 = c(0, 0, 0, 0, 0, 0, -1, 1, 0, 0),
                  c_year3 = c(0, 0, 0, 0, 0, 0, 0, 0, -1, 1),
-                 c_year4 = c(-1, 1, 0, 0, 0, 0, 0, 0, 0, 0)
+                 c_year4 = c(-1, 1, 0, 0, 0, 0, 0, 0, 0, 0),
+                 lp_3_4 = c(0, 1, 0, 0, 0, 0, 0, 0, 0, -1),
+                 c_3_4 = c(1, 0, 0, 0, 0, 0, 0, 0, -1, 0)
 )
 contrasts_4<-summary(contrast(ref_4, c_list_4))
 contrasts_4<-contrasts_4[,c(1,2,3,6)]
@@ -56,7 +58,9 @@ c_list_4_old <- list(c_base1_old = c(0, 0, -1, 1, 0, 0, 0, 0, 0, 0),
                      c_year1_old = c(0, 0, 0, 0, -1, 1, 0, 0, 0, 0),
                      c_year2_old = c(0, 0, 0, 0, 0, 0, -1, 1, 0, 0),
                      c_year3_old = c(0, 0, 0, 0, 0, 0, 0, 0, -1, 1),
-                     c_year4_old = c(-1, 1, 0, 0, 0, 0, 0, 0, 0, 0)
+                     c_year4_old = c(-1, 1, 0, 0, 0, 0, 0, 0, 0, 0),
+                     lp_3_4 = c(0, 1, 0, 0, 0, 0, 0, 0, 0, -1),
+                     c_3_4 = c(1, 0, 0, 0, 0, 0, 0, 0, -1, 0)
 )
 contrasts_4_old<-summary(contrast(ref_4_old, c_list_4_old))
 contrasts_4_old<-contrasts_4_old[,c(1,2,3,6)]
@@ -85,7 +89,9 @@ c_list_4_young <- list(c_base1_young = c(0, 0, -1, 1, 0, 0, 0, 0, 0, 0),
                        c_year1_young = c(0, 0, 0, 0, -1, 1, 0, 0, 0, 0),
                        c_year2_young = c(0, 0, 0, 0, 0, 0, -1, 1, 0, 0),
                        c_year3_young = c(0, 0, 0, 0, 0, 0, 0, 0, -1, 1),
-                       c_year4_young = c(-1, 1, 0, 0, 0, 0, 0, 0, 0, 0)
+                       c_year4_young = c(-1, 1, 0, 0, 0, 0, 0, 0, 0, 0),
+                       lp_3_4 = c(0, 1, 0, 0, 0, 0, 0, 0, 0, -1),
+                       c_3_4 = c(1, 0, 0, 0, 0, 0, 0, 0, -1, 0)
 )
 contrasts_4_young<-summary(contrast(ref_4_young, c_list_4_young))
 contrasts_4_young<-contrasts_4_young[,c(1,2,3,6)]
@@ -114,7 +120,9 @@ c_list_4_pump <- list(c_base1_pump = c(0, 0, -1, 1, 0, 0, 0, 0, 0, 0),
                       c_year1_pump = c(0, 0, 0, 0, -1, 1, 0, 0, 0, 0),
                       c_year2_pump = c(0, 0, 0, 0, 0, 0, -1, 1, 0, 0),
                       c_year3_pump = c(0, 0, 0, 0, 0, 0, 0, 0, -1, 1),
-                      c_year4_pump = c(-1, 1, 0, 0, 0, 0, 0, 0, 0, 0)
+                      c_year4_pump = c(-1, 1, 0, 0, 0, 0, 0, 0, 0, 0),
+                      lp_3_4 = c(0, 1, 0, 0, 0, 0, 0, 0, 0, -1),
+                      c_3_4 = c(1, 0, 0, 0, 0, 0, 0, 0, -1, 0)
 )
 contrasts_4_pump<-summary(contrast(ref_4_pump, c_list_4_pump))
 contrasts_4_pump<-contrasts_4_pump[,c(1,2,3,6)]
@@ -141,7 +149,9 @@ c_list_4_nopump <- list(c_base1_nopump = c(0, 0, -1, 1, 0, 0, 0, 0, 0, 0),
                       c_year1_nopump = c(0, 0, 0, 0, -1, 1, 0, 0, 0, 0),
                       c_year2_nopump = c(0, 0, 0, 0, 0, 0, -1, 1, 0, 0),
                       c_year3_nopump = c(0, 0, 0, 0, 0, 0, 0, 0, -1, 1),
-                      c_year4_nopump = c(-1, 1, 0, 0, 0, 0, 0, 0, 0, 0)
+                      c_year4_nopump = c(-1, 1, 0, 0, 0, 0, 0, 0, 0, 0),
+                      lp_3_4 = c(0, 1, 0, 0, 0, 0, 0, 0, 0, -1),
+                      c_3_4 = c(1, 0, 0, 0, 0, 0, 0, 0, -1, 0)
 )
 contrasts_4_nopump<-summary(contrast(ref_4_nopump, c_list_4_nopump))
 contrasts_4_nopump<-contrasts_4_nopump[,c(1,2,3,6)]
@@ -171,7 +181,9 @@ c_list_4_checks <- list(c_base1_checks = c(0, 0, -1, 1, 0, 0, 0, 0, 0, 0),
                         c_year1_checks = c(0, 0, 0, 0, -1, 1, 0, 0, 0, 0),
                         c_year2_checks = c(0, 0, 0, 0, 0, 0, -1, 1, 0, 0),
                         c_year3_checks = c(0, 0, 0, 0, 0, 0, 0, 0, -1, 1),
-                        c_year4_checks = c(-1, 1, 0, 0, 0, 0, 0, 0, 0, 0)
+                        c_year4_checks = c(-1, 1, 0, 0, 0, 0, 0, 0, 0, 0),
+                        lp_3_4 = c(0, 1, 0, 0, 0, 0, 0, 0, 0, -1),
+                        c_3_4 = c(1, 0, 0, 0, 0, 0, 0, 0, -1, 0)
 )
 contrasts_4_checks<-summary(contrast(ref_4_checks, c_list_4_checks))
 contrasts_4_checks<-contrasts_4_checks[,c(1,2,3,6)]
@@ -198,7 +210,9 @@ c_list_4_checks_old <- list(c_base1_checks_old = c(0, 0, -1, 1, 0, 0, 0, 0, 0, 0
                         c_year1_checks_old = c(0, 0, 0, 0, -1, 1, 0, 0, 0, 0),
                         c_year2_checks_old = c(0, 0, 0, 0, 0, 0, -1, 1, 0, 0),
                         c_year3_checks_old = c(0, 0, 0, 0, 0, 0, 0, 0, -1, 1),
-                        c_year4_checks_old = c(-1, 1, 0, 0, 0, 0, 0, 0, 0, 0)
+                        c_year4_checks_old = c(-1, 1, 0, 0, 0, 0, 0, 0, 0, 0),
+                        lp_3_4 = c(0, 1, 0, 0, 0, 0, 0, 0, 0, -1),
+                        c_3_4 = c(1, 0, 0, 0, 0, 0, 0, 0, -1, 0)
 )
 contrasts_4_checks_old<-summary(contrast(ref_4_checks_old, c_list_4_checks_old))
 contrasts_4_checks_old<-contrasts_4_checks_old[,c(1,2,3,6)]
@@ -226,7 +240,9 @@ c_list_4_checks_young <- list(c_base1_checks_young = c(0, 0, -1, 1, 0, 0, 0, 0, 
                             c_year1_checks_young = c(0, 0, 0, 0, -1, 1, 0, 0, 0, 0),
                             c_year2_checks_young = c(0, 0, 0, 0, 0, 0, -1, 1, 0, 0),
                             c_year3_checks_young = c(0, 0, 0, 0, 0, 0, 0, 0, -1, 1),
-                            c_year4_checks_young = c(-1, 1, 0, 0, 0, 0, 0, 0, 0, 0)
+                            c_year4_checks_young = c(-1, 1, 0, 0, 0, 0, 0, 0, 0, 0),
+                            lp_3_4 = c(0, 1, 0, 0, 0, 0, 0, 0, 0, -1),
+                            c_3_4 = c(1, 0, 0, 0, 0, 0, 0, 0, -1, 0)
 )
 contrasts_4_checks_young<-summary(contrast(ref_4_checks_young, c_list_4_checks_young))
 contrasts_4_checks_young<-contrasts_4_checks_young[,c(1,2,3,6)]
@@ -255,7 +271,9 @@ c_list_4_checks_pump <- list(c_base1_checks_pump = c(0, 0, -1, 1, 0, 0, 0, 0, 0,
                             c_year1_checks_pump = c(0, 0, 0, 0, -1, 1, 0, 0, 0, 0),
                             c_year2_checks_pump = c(0, 0, 0, 0, 0, 0, -1, 1, 0, 0),
                             c_year3_checks_pump = c(0, 0, 0, 0, 0, 0, 0, 0, -1, 1),
-                            c_year4_checks_pump = c(-1, 1, 0, 0, 0, 0, 0, 0, 0, 0)
+                            c_year4_checks_pump = c(-1, 1, 0, 0, 0, 0, 0, 0, 0, 0),
+                            lp_3_4 = c(0, 1, 0, 0, 0, 0, 0, 0, 0, -1),
+                            c_3_4 = c(1, 0, 0, 0, 0, 0, 0, 0, -1, 0)
 )
 contrasts_4_checks_pump<-summary(contrast(ref_4_checks_pump, c_list_4_checks_pump))
 contrasts_4_checks_pump<-contrasts_4_checks_pump[,c(1,2,3,6)]
@@ -283,7 +301,9 @@ c_list_4_checks_nopump <- list(c_base1_checks_nopump = c(0, 0, -1, 1, 0, 0, 0, 0
                             c_year1_checks_nopump = c(0, 0, 0, 0, -1, 1, 0, 0, 0, 0),
                             c_year2_checks_nopump = c(0, 0, 0, 0, 0, 0, -1, 1, 0, 0),
                             c_year3_checks_nopump = c(0, 0, 0, 0, 0, 0, 0, 0, -1, 1),
-                            c_year4_checks_nopump = c(-1, 1, 0, 0, 0, 0, 0, 0, 0, 0)
+                            c_year4_checks_nopump = c(-1, 1, 0, 0, 0, 0, 0, 0, 0, 0),
+                            lp_3_4 = c(0, 1, 0, 0, 0, 0, 0, 0, 0, -1),
+                            c_3_4 = c(1, 0, 0, 0, 0, 0, 0, 0, -1, 0)
 )
 contrasts_4_checks_nopump<-summary(contrast(ref_4_checks_nopump, c_list_4_checks_nopump))
 contrasts_4_checks_nopump<-contrasts_4_checks_nopump[,c(1,2,3,6)]
