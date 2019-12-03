@@ -7,7 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/media/tim/Tim/kimber/population_stratification")
+knitr::opts_knit$set(root.dir = "/Volumes/Tim/kimber/population_stratification")
 library(tidyverse)
 ```
 
@@ -91,33 +91,39 @@ plink --bfile MDS_merge2 --read-genome MDS_merge2.genome --cluster --pca --out M
 
 ```{r echo=FALSE,warning=FALSE}
 # Read in race info for Kimber's participants
-kimber <- read.csv("/Volumes/Tim/kimber/population_stratification/clinical.csv")
+kimber <- read.csv("./clinical.csv")
 # Match to .fam IDs
-fam <- read.table(file="/Volumes/Tim/kimber/population_stratification/MDS_merge2.fam",header=F)
+fam <- read.table(file="./MDS_merge2.fam",header=F)
 fam$studyid <- gsub(".*_","",fam$V2)
 fam$race <- kimber$Hispanic..0.N..1.Y.[match(fam$studyid,kimber$correct_labID)]
 fam$race <- factor(fam$race,levels = c(0,1),labels = c("Non-Hispanic","Hispanic"))
 fam$race <- as.character(fam$race)
 # Reference races
-race<- read.csv(file="/Volumes/Tim/kimber/population_stratification/race_1kG.csv",stringsAsFactors = F)
-colnames(race) <- c("FID","V2","race")
+race<- read.csv(file="./race_1kG.csv",stringsAsFactors = F)
+colnames(race) <- c("FID","V2","superpop","pop")
 race <- full_join(race,fam[,c("V2","race")],by = "V2")
-race <- race %>% mutate(race = coalesce(race.x,race.y))
+race <- race %>% mutate(pop = coalesce(race,pop))
+race$superpop <- ifelse(race$pop == "Hispanic","Hispanic",
+                        ifelse(race$pop == "Non-Hispanic","Non-Hispanic",race$superpop))
 colnames(race)[2] <- "IID"
 
-data<- read.table(file="/Volumes/Tim/kimber/population_stratification/MDS_merge2.mds",header=TRUE)
+data<- read.table(file="./MDS_merge2.mds",header=TRUE)
 
-datafile<- left_join(data,race[,c("IID","FID","race")],by=c("IID"))
+datafile<- left_join(data,race[,c("IID","superpop","pop")],by="IID")
 # Plot
-ggplot(datafile,aes(x=C1,y=C2)) + geom_point(aes(color = race))
+ggplot(datafile,aes(x=C1,y=C2)) + geom_point(aes(color = pop))
+ggplot(datafile,aes(x=C1,y=C2)) + geom_point(aes(color = superpop))
+ggplot(subset(datafile,pop %in% c("Non-Hispanic","Hispanic","MXL","PUR","CLM","PEL")),aes(x=C1,y=C2)) + geom_point(aes(color = pop))
 ```
 
 # PCA
 
 ```{r echo=FALSE,warning=FALSE}
-data<- read.table(file="MDS_merge2.eigenvec",header=FALSE)
+data<- read.table(file="./MDS_merge2.eigenvec",header=FALSE)
 colnames(data) <- c("FID","IID",paste0("pc",seq(1,ncol(data)-2)))
-datafile<- left_join(data,race,by=c("IID","FID"))
-
-ggplot(datafile,aes(x=pc1,y=pc2)) + geom_point(aes(color = race))
+datafile<- left_join(data,race,by="IID")
+# Plot
+ggplot(datafile,aes(x=pc1,y=pc2)) + geom_point(aes(color = pop))
+ggplot(datafile,aes(x=pc1,y=pc2)) + geom_point(aes(color = superpop))
+ggplot(subset(datafile,pop %in% c("Non-Hispanic","Hispanic","MXL","PUR","CLM","PEL")),aes(x=pc1,y=pc2)) + geom_point(aes(color = pop))
 ```
