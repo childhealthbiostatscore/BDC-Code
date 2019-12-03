@@ -90,10 +90,24 @@ plink --bfile MDS_merge2 --read-genome MDS_merge2.genome --cluster --pca --out M
 # MDS
 
 ```{r echo=FALSE,warning=FALSE}
-data<- read.table(file="MDS_merge2.mds",header=TRUE)
-race<- read.table(file="race_1kG.txt",header=FALSE)
-colnames(race) <- c("FID","IID","race")
-datafile<- left_join(data,race,by=c("IID","FID"))
+# Read in race info for Kimber's participants
+kimber <- read.csv("/Volumes/Tim/kimber/population_stratification/clinical.csv")
+# Match to .fam IDs
+fam <- read.table(file="/Volumes/Tim/kimber/population_stratification/MDS_merge2.fam",header=F)
+fam$studyid <- gsub(".*_","",fam$V2)
+fam$race <- kimber$Hispanic..0.N..1.Y.[match(fam$studyid,kimber$correct_labID)]
+fam$race <- factor(fam$race,levels = c(0,1),labels = c("Non-Hispanic","Hispanic"))
+fam$race <- as.character(fam$race)
+# Reference races
+race<- read.csv(file="/Volumes/Tim/kimber/population_stratification/race_1kG.csv",stringsAsFactors = F)
+colnames(race) <- c("FID","V2","race")
+race <- full_join(race,fam[,c("V2","race")],by = "V2")
+race <- race %>% mutate(race = coalesce(race.x,race.y))
+colnames(race)[2] <- "IID"
+
+data<- read.table(file="/Volumes/Tim/kimber/population_stratification/MDS_merge2.mds",header=TRUE)
+
+datafile<- left_join(data,race[,c("IID","FID","race")],by=c("IID"))
 # Plot
 ggplot(datafile,aes(x=C1,y=C2)) + geom_point(aes(color = race))
 ```
