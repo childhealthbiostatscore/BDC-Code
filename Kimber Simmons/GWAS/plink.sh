@@ -9,7 +9,7 @@ plink --bfile 1kG_MDS3 --mind 0.02 --allow-no-sex --make-bed --out 1kG_MDS4 --al
 # Remove variants based on MAF.
 plink --bfile 1kG_MDS4 --maf 0.05 --allow-no-sex --make-bed --out 1kG_MDS5 --allow-extra-chr --memory 6144
 # Exclude all non-autosomal variants, except those with chromosome code XY
-plink --bfile 1kG_MDS5 --allow-extra-chr --allow-no-sex --autosome --filter-founders --make-bed --out 1kG_MDS6 --memory 6144
+plink --bfile 1kG_MDS5 --allow-extra-chr --allow-no-sex --autosome-xy --filter-founders --make-bed --out 1kG_MDS6 --memory 6144
 # Relatedness
 plink --bfile 1kG_MDS6 --extract indepSNP.prune.in --genome --min 0.2 --out pihat_min0.2 --memory 6144
 awk '{ if ($8 >0.9) print $0 }' pihat_min0.2.genome>zoom_pihat.genome
@@ -62,11 +62,10 @@ plink --bfile corrected_Simmons --exclude SNPs_for_exlusion.txt --make-bed --out
 plink --bfile 1kG_MDS9 --exclude SNPs_for_exlusion.txt --make-bed --out 1kG_MDS10 --memory 6144
 
 # Merge Simmons with 1000 Genomes Data.
-plink --bfile Simmons_MDS2 --bmerge 1kG_MDS9.bed 1kG_MDS9.bim 1kG_MDS9.fam --allow-no-sex --make-bed --out MDS_merge2 --memory 6144
+plink --bfile Simmons_MDS2 --bmerge 1kG_MDS10.bed 1kG_MDS10.bim 1kG_MDS10.fam --allow-no-sex --make-bed --out MDS_merge2 --memory 6144
 
 # Using a set of pruned SNPs
 # plink --bfile MDS_merge2 --extract indepSNP.prune.in --genome --out MDS_merge2 --memory 6144
-# MDS
+# MDS & PCA
 plink --bfile MDS_merge2 --read-genome MDS_merge2.genome --cluster --mds-plot 10 --out MDS_merge2 --memory 6144
-# PCA
 plink --bfile MDS_merge2 --read-genome MDS_merge2.genome --cluster --pca --out MDS_merge2
