@@ -65,7 +65,6 @@ plink --bfile 1kG_MDS9 --exclude SNPs_for_exlusion.txt --make-bed --out 1kG_MDS1
 plink --bfile Simmons_MDS2 --bmerge 1kG_MDS10.bed 1kG_MDS10.bim 1kG_MDS10.fam --allow-no-sex --make-bed --out MDS_merge2 --memory 6144
 
 # Using a set of pruned SNPs
-# plink --bfile MDS_merge2 --extract indepSNP.prune.in --genome --out MDS_merge2 --memory 6144
 # MDS & PCA
-plink --bfile MDS_merge2 --read-genome MDS_merge2.genome --cluster --mds-plot 10 --out MDS_merge2 --memory 6144
-plink --bfile MDS_merge2 --read-genome MDS_merge2.genome --cluster --pca --out MDS_merge2
+plink --bfile MDS_merge2 --cluster --mds-plot 10 --out MDS_merge2 --memory 6144 --extract indepSNP.prune.in
+plink --bfile MDS_merge2 --cluster --pca --out PCA_merge2 --memory 6144 --extract indepSNP.prune.in
