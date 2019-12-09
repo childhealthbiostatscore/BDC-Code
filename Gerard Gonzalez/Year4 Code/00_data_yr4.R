@@ -171,3 +171,19 @@ dat.trt.young<-subset(dat.trt,dat.trt$group=="Less than 12")
 dat.trt.old<-subset(dat.trt,dat.trt$group=="greater than or equal to 12")
 dat.con.young<-subset(dat.con,dat.con$group=="Less than 12")
 dat.con.old<-subset(dat.con,dat.con$group=="greater than or equal to 12")
+
+#compare year 3 and year 4 patients:
+dat.3<-read.csv("year3_data.csv")
+dat.3<-dat.3[!duplicated(dat.3$MRN),]
+dat.3$year3<-1
+dat.3<-dat.3[,c(5,20,35)]
+
+dat.4<-dat[!duplicated(dat$MRN),]
+dat.4$year4<-1
+dat.4<-dat.4[,c(4,19,34)]
+
+dat.pts<-merge(dat.3,dat.4,by=c("MRN","trt_grp"),all=T)
+
+dat.pts$year3[is.na(dat.pts$year3)]<-0
+dat.pts$year4[is.na(dat.pts$year4)]<-0
+table(dat.pts$year3)

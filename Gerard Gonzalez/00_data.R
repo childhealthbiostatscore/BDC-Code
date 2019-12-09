@@ -177,6 +177,8 @@ dat.trt.old<-subset(dat.trt,dat.trt$group=="greater than or equal to 12")
 dat.con.young<-subset(dat.con,dat.con$group=="Less than 12")
 dat.con.old<-subset(dat.con,dat.con$group=="greater than or equal to 12")
 
+#write.csv(dat,"year3_data.csv")
+
 ###sensivity analysis with <10 by year 3: use dob and appt_date?
 dat.3<-subset(dat,dat$yeargrouping=="Year3")
 dat.3$DOB_type<-NA
