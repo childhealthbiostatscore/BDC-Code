@@ -359,18 +359,19 @@ dev.off()
 
 ###for poster:
 jpeg("abstract_figure.jpg",units="in", width=10, height=6,res=450)
-par(mfrow=c(1,2),mar=c(3,4.1,3,2.1))
+par(mfrow=c(1,2),mar=c(3,4.1,3,1))
 plotCI(c(0.9,1,1.1),ch1.fac1.means_plots$lsmean,li=ch1.fac1.means_plots$lower.CL,
        ui=ch1.fac1.means_plots$upper.CL,err="y",xlim=c(0.7,2.3),ylim=c(-0.3,3),
        pch=15,xlab="",ylab="Average Change (CI)",xaxt="n",
-       main="A: Device Satisfaction",slty=c(1,2,3),lwd=2)
+       main="A: Device Satisfaction",slty=c(1,2,3),lwd=2,cex.axis=1.2,cex.lab=1.2,yaxt="n")
 abline(h=0,lty=1)
-axis(1,at=c(1,2),c("Baseline to midpoint","Midpoint to 6 months"))
+axis(1,at=c(1,2),c("Baseline to midpoint","Midpoint to 6 months"),cex.axis=1.2)
+axis(2,at=c(0,1,2,3),c("0","1","2","3"),cex.axis=1.2)
 
 plotCI(c(1.9,2,2.1),ch2.fac1.means_plots$lsmean,li=ch2.fac1.means_plots$lower.CL,
        ui=ch2.fac1.means_plots$upper.CL,err="y",xlim=c(0.5,2.5),ylim=c(-0.3,3),
        pch=15,xlab="",ylab="Average Change (CI)",xaxt="n",
-       main="A: Device Satisfaction",slty=c(1,2,3),add=T,lwd=2)
+       main="A: Device Satisfaction",slty=c(1,2,3),add=T,lwd=2,cex.axis=1.2,cex.lab=1.2)
 #legend("topright",c("MDI","Non-Tandem Pump","Tandem Pump"),lty=c(1,2,3),pch=c(15,15,15))
 
 ###2nd plot:
@@ -378,14 +379,15 @@ plotCI(c(1.9,2,2.1),ch2.fac1.means_plots$lsmean,li=ch2.fac1.means_plots$lower.CL
 plotCI(c(0.9,1,1.1),ch1.fac2.means_plots$lsmean,li=ch1.fac2.means_plots$lower.CL,
        ui=ch1.fac2.means_plots$upper.CL,err="y",xlim=c(0.7,2.3),ylim=c(-3,0.35),
        pch=15,xlab="",ylab="Average Change (CI)",xaxt="n",
-       main="B: Diabetes Impact",slty=c(1,2,3),lwd=2)
+       main="B: Diabetes Impact",slty=c(1,2,3),lwd=2,cex.axis=1.2,cex.lab=1.2,yaxt="n")
 abline(h=0,lty=1)
-axis(1,at=c(1,2),c("Baseline to midpoint","Midpoint to 6 months"))
+axis(1,at=c(1,2),c("Baseline to midpoint","Midpoint to 6 months"),cex.axis=1.2)
+axis(2,at=c(-3,-2,-1,0),c("-3","-2","-1","0"),cex.axis=1.2)
 
 plotCI(c(1.9,2,2.1),ch2.fac2.means_plots$lsmean,li=ch2.fac2.means_plots$lower.CL,
        ui=ch2.fac2.means_plots$upper.CL,err="y",xlim=c(0.5,2.5),ylim=c(-0.3,3),
        pch=15,xlab="",ylab="Average Change (CI)",xaxt="n",
        main="B: Diabetes Impact",slty=c(1,2,3),add=T,lwd=2)
 legend("bottomright",c("MDI","Non-Tandem Pump","Tandem Pump"),
-       lty=c(1,2,3),pch=c(15,15,15),,lwd=2,seg.len=3,title = "Previous Insulin Method:")
+       lty=c(1,2,3),pch=c(15,15,15),lwd=2,seg.len=3,title = "Previous Insulin Method:",cex=1.2)
 dev.off()
