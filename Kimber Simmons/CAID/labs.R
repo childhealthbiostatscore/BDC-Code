@@ -101,15 +101,88 @@ labs$ResultingAgency[labs$ResultingAgency=="CHILDRENS HOSPITAL COLORADO LABORATO
 labs$ResultingAgency[labs$ResultingAgency=="LabCorp-Denver"]<-"LABCORP - DENVER"
 labs$ResultingAgency[labs$ResultingAgency=="QUEST"]<-"QUEST DIAGNOSTICS"
 
-labs<-merge(labs,labs_ref,by=c("LabSubGroupName","ResultingAgency"),all=T)
-
-missing_refs<-subset(labs,is.na(labs$ReferenceHigh) & is.na(labs$ReferenceHigh_new) & is.na(labs$pos_neg))
-missing_refs<-missing_refs[!duplicated(missing_refs[,c(1,2)]),]
+# labs<-merge(labs,labs_ref,by=c("LabSubGroupName","ResultingAgency"),all=T)
+# 
+# missing_refs<-subset(labs,is.na(labs$ReferenceHigh) & is.na(labs$ReferenceHigh_new) & is.na(labs$pos_neg))
+# missing_refs<-missing_refs[!duplicated(missing_refs[,c(1,2)]),]
 #manual from missing_refs:
 labs$pos_neg[labs$EPICMRN==1608512 & labs$LabSubGroupName=="TPO Ab" & labs$OrderValue==414]<-"POS"
 labs$pos_neg[labs$EPICMRN==1190282 & labs$LabSubGroupName=="TTG IgA" & labs$OrderValue==1]<-"NEG"
 
-###############PICK UP HERE
-#TTG IGA:
-#1. determine pos/neg:
+####INDIVIDUAL LABS TYPES, USING REFERENCE RANGES SHEET:
+#Thyroglobulin Ab:
+labs$pos_neg[labs$LabSubGroupName=="Thyroglobulin Ab" & labs$ResultingAgency=="CHCO" &
+               labs$OrderValue>1.8]<-"POS"
+labs$pos_neg[labs$LabSubGroupName=="Thyroglobulin Ab" & labs$ResultingAgency=="CHCO" &
+               labs$OrderValue<=1.8]<-"NEG"
+labs$pos_neg[labs$LabSubGroupName=="Thyroglobulin Ab" & labs$ResultingAgency=="MAYO MEDICAL LABORATORIES" &
+               labs$OrderValue>4]<-"POS"
+labs$pos_neg[labs$LabSubGroupName=="Thyroglobulin Ab" & labs$ResultingAgency=="MAYO MEDICAL LABORATORIES" &
+               labs$OrderValue<=4]<-"NEG"
+labs$pos_neg[labs$LabSubGroupName=="Thyroglobulin Ab" & labs$ResultingAgency=="QUEST DIAGNOSTICS" &
+               labs$OrderValue>1]<-"POS"
+labs$pos_neg[labs$LabSubGroupName=="Thyroglobulin Ab" & labs$ResultingAgency=="QUEST DIAGNOSTICS" &
+               labs$OrderValue<=1]<-"NEG"
+#21-OH:
+labs$pos_neg[labs$LabSubGroupName=="21-OH" & labs$ResultingAgency=="CHCO" &
+               labs$OrderValue>0.5]<-"POS"
+labs$pos_neg[labs$LabSubGroupName=="21-OH" & labs$ResultingAgency=="CHCO" &
+               labs$OrderValue<=0.5]<-"NEG"
+labs$pos_neg[labs$LabSubGroupName=="21-OH" & labs$ResultingAgency=="LABCORP - DENVER" &
+               labs$OrderValue>1]<-"POS"
+labs$pos_neg[labs$LabSubGroupName=="21-OH" & labs$ResultingAgency=="LABCORP - DENVER" &
+               labs$OrderValue<=1]<-"NEG"
+labs$pos_neg[labs$LabSubGroupName=="21-OH" & labs$ResultingAgency=="MAYO MEDICAL LABORATORIES" &
+               labs$OrderValue>1]<-"POS"
+labs$pos_neg[labs$LabSubGroupName=="21-OH" & labs$ResultingAgency=="MAYO MEDICAL LABORATORIES" &
+               labs$OrderValue<=1]<-"NEG"
 
+#TTG IgA:
+
+######need to check with kate on this one
+labs$pos_neg[labs$LabSubGroupName=="TTG IgA" & labs$ResultingAgency=="CHCO" &
+               labs$OrderValue>30]<-"POS"
+labs$pos_neg[labs$LabSubGroupName=="TTG IgA" & labs$ResultingAgency=="CHCO" &
+               labs$OrderValue<=30]<-"NEG"
+######end check
+labs$pos_neg[labs$LabSubGroupName=="TTG IgA" & labs$ResultingAgency=="LABCORP - DENVER" &
+               labs$OrderValue>3]<-"POS"
+labs$pos_neg[labs$LabSubGroupName=="TTG IgA" & labs$ResultingAgency=="LABCORP - DENVER" &
+               labs$OrderValue<=3]<-"NEG"
+labs$pos_neg[labs$LabSubGroupName=="TTG IgA" & labs$ResultingAgency=="QUEST DIAGNOSTICS" &
+               labs$OrderValue>4]<-"POS"
+labs$pos_neg[labs$LabSubGroupName=="TTG IgA" & labs$ResultingAgency=="QUEST DIAGNOSTICS" &
+               labs$OrderValue<=4]<-"NEG"
+
+#TPO Ab:
+labs$pos_neg[labs$LabSubGroupName=="TPO Ab" & labs$ResultingAgency=="CHCO"  &
+               labs$OrderValue>9]<-"POS"
+labs$pos_neg[labs$LabSubGroupName=="TPO Ab" & labs$ResultingAgency=="CHCO"  &
+               labs$OrderValue<=9]<-"NEG"
+labs$pos_neg[labs$LabSubGroupName=="TPO Ab" & labs$ResultingAgency=="QUEST DIAGNOSTICS"  &
+               labs$OrderValue>9]<-"POS"
+labs$pos_neg[labs$LabSubGroupName=="TPO Ab" & labs$ResultingAgency=="QUEST DIAGNOSTICS"  &
+               labs$OrderValue<=9]<-"NEG"
+labs$pos_neg[labs$LabSubGroupName=="TPO Ab" & labs$ResultingAgency=="ESOTERIX LABORATORY SERVICES, INC"  &
+               labs$OrderValue>9]<-"POS"
+labs$pos_neg[labs$LabSubGroupName=="TPO Ab" & labs$ResultingAgency=="ESOTERIX LABORATORY SERVICES, INC"  &
+               labs$OrderValue<=9]<-"NEG"
+#this one depends on age:
+labs$pos_neg[labs$LabSubGroupName=="TPO Ab" & labs$ResultingAgency=="LABCORP - DENVER" & labs$age_years>0.916666667 & labs$age_years<=5 &
+               labs$OrderValue>13]<-"POS"
+labs$pos_neg[labs$LabSubGroupName=="TPO Ab" & labs$ResultingAgency=="LABCORP - DENVER" & labs$age_years>0.916666667 & labs$age_years<=5 &
+               labs$OrderValue<=13]<-"NEG"
+labs$pos_neg[labs$LabSubGroupName=="TPO Ab" & labs$ResultingAgency=="LABCORP - DENVER" & labs$age_years>5 & labs$age_years<=10 &
+               labs$OrderValue>18]<-"POS"
+labs$pos_neg[labs$LabSubGroupName=="TPO Ab" & labs$ResultingAgency=="LABCORP - DENVER" & labs$age_years>5 & labs$age_years<=10 &
+               labs$OrderValue<=18]<-"NEG"
+labs$pos_neg[labs$LabSubGroupName=="TPO Ab" & labs$ResultingAgency=="LABCORP - DENVER" & labs$age_years>10 & labs$age_years<=19 &
+               labs$OrderValue>26]<-"POS"
+labs$pos_neg[labs$LabSubGroupName=="TPO Ab" & labs$ResultingAgency=="LABCORP - DENVER" & labs$age_years>10 & labs$age_years<=19 &
+               labs$OrderValue<=26]<-"NEG"
+labs$pos_neg[labs$LabSubGroupName=="TPO Ab" & labs$ResultingAgency=="LABCORP - DENVER" & labs$age_years>19 & 
+               labs$OrderValue>34]<-"POS"
+labs$pos_neg[labs$LabSubGroupName=="TPO Ab" & labs$ResultingAgency=="LABCORP - DENVER" & labs$age_years>19 & 
+               labs$OrderValue<=34]<-"NEG"
+
+#TODO: summarize how many pts are positive at any time, and timing of positivity (relative to diabetes onset and CAIDs)
