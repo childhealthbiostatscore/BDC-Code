@@ -18,7 +18,8 @@ library(tidyverse)
 
 ```{r echo=FALSE,include=FALSE,cache=TRUE}
 # Read in
-raw_metab <- read.csv("./Data_Cleaned/metabolomics.csv",na.strings = "",stringsAsFactors = F)
+# Manually changed HMDB library for 292 from "314" to "HMDB314
+raw_metab <- read.csv("./Data_Cleaned/metabolomics.csv",na.strings = "",stringsAsFactors = F) 
 # Subset
 metab <- raw_metab %>% 
   mutate(compound = coalesce(HMDB.No.,LI.Library.No.),
@@ -59,6 +60,9 @@ X$GlobalSampleID <- rownames(X)
 df <- left_join(X,df,by = "GlobalSampleID")
 df$GROUP[grep("QC",df$GlobalSampleID)] <- "QC"
 df <- df %>% select(GlobalSampleID,gender,age,sex,race,CACp,GROUP,everything())
+# As numeric
+metabolites <- setdiff(names(df),c("GlobalSampleID","gender","age","sex","race","CACp","GROUP"))
+df[,metabolites] <- lapply(df[,metabolites], function(x) as.numeric(as.character(x)))
 ```
 
 # PCA
@@ -135,4 +139,54 @@ plotIndiv(splsda.res,group = df$GROUP, ind.names = FALSE,pch = 20,
 
 ```{r echo=FALSE,fig.width=8,fig.height=8}
 cim(splsda.res)
+```
+
+## ANOVA
+
+### With QC in Group
+
+Unadjusted p-values
+
+```{r anova qc,echo=FALSE}
+anova_results <- lapply(metabolites, function(x){
+  form <- as.formula(paste0(x,"~factor(GROUP)"))
+  mod <- aov(form,df)
+  results <- broom::tidy(mod)
+  results[1,1] <- x
+  as.data.frame(results[1,])
+}) 
+anova_results <- bind_rows(anova_results)
+anova_results <- anova_results %>% arrange(p.value)
+kable(anova_results[which(anova_results$p.value < 0.05),])
+```
+
+P values adjusted using the FDR method
+
+```{r anova qc adjusted,echo=FALSE}
+anova_results$p.value <- p.adjust(anova_results$p.value,"fdr")
+kable(anova_results[which(anova_results$p.value < 0.05),])
+```
+
+### Without QC in Group
+
+Unadjusted p-values
+
+```{r anova,echo=FALSE}
+anova_results <- lapply(metabolites, function(x){
+  form <- as.formula(paste0(x,"~factor(GROUP)"))
+  mod <- aov(form,df[which(df$GROUP != "QC"),])
+  results <- broom::tidy(mod)
+  results[1,1] <- x
+  as.data.frame(results[1,])
+}) 
+anova_results <- bind_rows(anova_results)
+anova_results <- anova_results %>% arrange(p.value)
+kable(anova_results[which(anova_results$p.value < 0.05),])
+```
+
+P values adjusted using the FDR method
+
+```{r anova adjusted,echo=FALSE}
+anova_results$p.value <- p.adjust(anova_results$p.value,"fdr")
+kable(anova_results[which(anova_results$p.value < 0.05),])
 ```
