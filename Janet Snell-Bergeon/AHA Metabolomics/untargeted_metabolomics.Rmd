@@ -68,6 +68,7 @@ df <- df %>% select(GlobalSampleID,gender,age,sex,race,CACp,GROUP,sex_and_group,
 metabolites <- setdiff(names(df),c("GlobalSampleID","gender","age","sex","race","CACp","GROUP","sex_and_group"))
 df[,metabolites] <- lapply(df[,metabolites], function(x) as.numeric(as.character(x)))
 df$sex_and_group[df$GROUP == "QC"] <- "QC"
+df <- df[df$GROUP != "QC",]
 ```
 
 # PCA
@@ -140,12 +141,9 @@ cim(plsda)
 
 ### Performance and Results
 
-```{r sex and group plsda}
-X <- df %>% filter(GROUP != "QC") %>%
-  select(-GlobalSampleID,-gender,-age,-sex,-race,-CACp,-GROUP,-sex_and_group)
-X <- as.matrix(X)
+```{r sex plsda}
 # Outcome
-Y <- factor(df$gender[df$GROUP != "QC"])
+Y <- factor(df$gender)
 # PLSDA
 plsda <- plsda(X, Y, ncomp = 10,scale = T)
 # Evaluate
@@ -153,7 +151,7 @@ perf.plsda <- perf(plsda, validation = "loo", folds = 5,
                   progressBar = FALSE, auc = TRUE)
 plot(perf.plsda, sd = TRUE, legend.position = "horizontal")
 # Plots
-plotIndiv(plsda,group = df$gender[df$GROUP != "QC"], ind.names = FALSE,pch = 20,
+plotIndiv(plsda,group = df$gender, ind.names = FALSE,pch = 20,
           ellipse = TRUE, legend = TRUE, title = 'PLSDA on Sex')
 ```
 
@@ -198,7 +196,7 @@ Y <- factor(df$sex_and_group)
 tune.splsda <- tune.splsda(X, Y, ncomp = 4, validation = 'Mfold', folds = 5, 
                            progressBar = FALSE, dist = 'max.dist',
                            nrepeat = 10)
-choice.ncomp <- tune.splsda$choice.ncomp$ncomp
+choice.ncomp <- 2
 choice.keepX <- tune.splsda$choice.keepX[1:choice.ncomp]
 # sPLS-DA
 splsda.res <- splsda(X, Y, ncomp = choice.ncomp, keepX = choice.keepX)
@@ -217,52 +215,52 @@ plotIndiv(splsda.res,group = df$sex_and_group, ind.names = FALSE,pch = 20,
 cim(splsda.res)
 ```
 
+## Sex Only
+
+### Performance and Results
+
+```{r sex splsda}
+# Outcome
+Y <- factor(df$gender)
+# sPLSDA tuning
+tune.splsda <- tune.splsda(X, Y, ncomp = 4, validation = 'Mfold', folds = 5, 
+                           progressBar = FALSE, dist = 'max.dist',
+                           nrepeat = 10)
+choice.ncomp <- tune.splsda$choice.ncomp$ncomp
+choice.keepX <- tune.splsda$choice.keepX[1:choice.ncomp]
+# sPLS-DA
+splsda.res <- splsda(X, Y, ncomp = choice.ncomp, keepX = choice.keepX)
+# Model performance
+perf.splsda <- perf(splsda.res, validation = "Mfold", folds = 5, 
+                  progressBar = FALSE, auc = TRUE, nrepeat = 10) 
+plot(perf.splsda, sd = TRUE, legend.position = "horizontal")
+perf.splsda$error.rate
+plotIndiv(splsda.res,group = df$gender, ind.names = FALSE,pch = 20,
+          ellipse = TRUE, legend = TRUE, title = 'sPLSDA on Sex')
+```
+
+## Heatmap
+
+```{r echo=FALSE,fig.width=8,fig.height=8}
+cim(splsda.res)
+```
+
 ## ANOVA
 
-### With QC in Group
+### Sex Only
 
-Unadjusted p-values
+P values adjusted using the FDR method
 
-```{r anova qc,echo=FALSE}
+```{r anova sex,echo=FALSE}
 anova_results <- lapply(metabolites, function(x){
-  form <- as.formula(paste0(x,"~factor(GROUP)"))
-  mod <- aov(form,df)
+  form <- as.formula(paste0(x,"~factor(gender)"))
+  mod <- aov(form,df[df$GROUP != "QC",])
   results <- broom::tidy(mod)
   results[1,1] <- x
   as.data.frame(results[1,])
 }) 
 anova_results <- bind_rows(anova_results)
 anova_results <- anova_results %>% arrange(p.value)
-kable(anova_results[which(anova_results$p.value < 0.05),])
-```
-
-P values adjusted using the FDR method
-
-```{r anova qc adjusted,echo=FALSE}
-anova_results$p.value <- p.adjust(anova_results$p.value,"fdr")
-kable(anova_results[which(anova_results$p.value < 0.05),])
-```
-
-### Without QC in Group
-
-Unadjusted p-values
-
-```{r anova,echo=FALSE}
-anova_results <- lapply(metabolites, function(x){
-  form <- as.formula(paste0(x,"~factor(GROUP)"))
-  mod <- aov(form,df[which(df$GROUP != "QC"),])
-  results <- broom::tidy(mod)
-  results[1,1] <- x
-  as.data.frame(results[1,])
-}) 
-anova_results <- bind_rows(anova_results)
-anova_results <- anova_results %>% arrange(p.value)
-kable(anova_results[which(anova_results$p.value < 0.05),])
-```
-
-P values adjusted using the FDR method
-
-```{r anova adjusted,echo=FALSE}
 anova_results$p.value <- p.adjust(anova_results$p.value,"fdr")
 kable(anova_results[which(anova_results$p.value < 0.05),])
 ```
