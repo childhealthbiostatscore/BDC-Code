@@ -516,7 +516,7 @@ dat$`Age Group at First Visit` <- as.factor(cut(round(dat$Age_AtEncounterDate),
 temp <- dat %>% filter(!is.na(CGMOKPercent))
 vars <- c("CGMLowPercent","CGMOKPercent","CGMHighPercent")
 tir_descriptives <- CreateTableOne(vars,strata = "Age Group at First Visit",temp)
-tir_descriptives <- print(tir_descriptives,nonnormal = "CGMLowPercent",printToggle = F)
+tir_descriptives <- print(tir_descriptives,nonnormal = vars,printToggle = F)
 kable(tir_descriptives[,1:4])
 ```
 
@@ -547,7 +547,7 @@ legend("bottomright",legend=c("TIR", "CGM Wear"),pch=c(1, 2),cex = 0.65)
 
 ## Predicting CGM Use > 85%
 
-```{r echo=FALSE,eval=FALSE}
+```{r echo=FALSE}
 dat <- dat %>% arrange(EPICMRN,EncounterDate) %>% group_by(EPICMRN) %>%
   mutate(days_since_last = as.numeric(difftime(EncounterDate,EncounterDate[1],
                                                units = "days")))
@@ -557,26 +557,44 @@ dat$mod_race <- dat$Race.Ethnicity
 levels(dat$mod_race) <- c("Other","Other","Hispanic","Other","Other",
                           "Non-Hispanic Black","Non-Hispanic White","Other",
                           "Other")
-# Can't get this to converge, but works fine without random effects. It will with pconv = 0.1. Scaling continuous variables doesn't help.
-write.csv(dat,file = "/Users/timvigers/Desktop/cgm_medicaid.csv",
-          row.names = F,na = "")
+dat$mod_race <- factor(dat$mod_race,levels = c("Non-Hispanic White","Other","Hispanic","Non-Hispanic Black"))
+# Just those with CGM percentage data and CGM+
+log_data <- dat %>% 
+  filter(!is.na(cgm_binary),cgm_ever_pump %in% c("CGM+|Pump-","CGM+|Pump+"))
+# Models
+mod1 <- glmmPQL(factor(cgm_binary)~days_since_last+Age_AtEncounterDate+DiabetesDuration+PumpUse+mod_race,
+                random = ~1|EPICMRN,family = binomial,data=log_data)
+mod2 <- glmmPQL(factor(cgm_binary)~days_since_last+Age_AtEncounterDate+DiabetesDuration+cgm_ever_pump+mod_race,
+                random = ~1|EPICMRN,family = binomial,data=log_data)
 ```
 
+### Pump Use
+
 ```{r echo=FALSE}
-# Results require running "glmer in SAS.sas" code
-t3 <- read_excel("/Users/timvigers/Desktop/type3.xlsx")
-t3$FValue <- round(t3$FValue,3)
-t3$ProbF <- round(t3$ProbF,3)
-results <- read_excel("/Users/timvigers/Desktop/predict_cgm.xlsx",na = ".")
-results[,5:ncol(results)] <- lapply(results[,5:ncol(results)],function(x) round(x,3))
-sigt3 <- which(t3$ProbF < 0.05)
-kable(t3,caption = "Overall Effects",na = "")
+results <- broom::tidy(mod1,"fixed")
+results[,2:4] <- lapply(results[,2:4],function(x) round(x,3))
+results$p.value <- format.pval(results$p.value,digits = 2,eps = 0.0001)
+results$term <- c("(Intercept)","Days Since Last Visit","Age at EncounterDate","Diabetes Duration",
+                  "Pump Use","Race: Other","Race: Hispanic","Race: Non-Hispanic Black")
 kable(results,caption = "Results",na = "")
 ```
 
 Results above presented on the log scale.
 
-Overall, age and race predicted CGM use >= 85% (p = `r t3$ProbF[sigt3[1]]` and p = `r t3$ProbF[sigt3[2]]` respectively). On average, each year increase in age resulted in a `r round((1 - exp(results$Estimate[3]))*100,2)`% decrease in the odds of successful CGM use (p = `r as.numeric(results$Probt[3])`). Also, Hispanic participants were `r round((1 - exp(results$Estimate[7]))*100,2)`% less likely to successfully use CGM compared to non-Hispanic whites (p = `r as.numeric(results$Probt[7])`). Days since last visit was not associated with successful CGM use (p = `r as.numeric(results$Probt[2])`).
+On average, each year increase in age resulted in a `r (1 - exp(results$estimate[3]))*100`% decrease in the odds of successful CGM use (p = `r as.numeric(results$p.value[3])`). Also, Hispanic participants were `r (1 - exp(results$estimate[7]))*100`% less likely to successfully use CGM compared to non-Hispanic whites (p = `r as.numeric(results$p.value[7])`). Days since last visit was not associated with successful CGM use (p = `r as.numeric(results$p.value[2])`).
+
+### CGM and Pump Use
+
+```{r echo=FALSE}
+results <- broom::tidy(mod2,"fixed")
+results[,2:4] <- lapply(results[,2:4],function(x) round(x,3))
+results$p.value <- format.pval(results$p.value,digits = 2,eps = 0.0001)
+results$term <- c("(Intercept)","Days Since Last Visit","Age at EncounterDate","Diabetes Duration",
+                  "CGM and Pump Use","Race: Other","Race: Hispanic","Race: Non-Hispanic Black")
+kable(results,caption = "Results",na = "")
+```
+
+Technology status was not associated with successful CGM use (p = `r as.numeric(results$p.value[5])`).
 
 # Distribution of CGM % Use
 
