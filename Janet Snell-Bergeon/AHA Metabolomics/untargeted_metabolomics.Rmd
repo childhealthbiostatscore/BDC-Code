@@ -7,11 +7,13 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant")
+knitr::opts_knit$set(root.dir = "/Volumes/Tim/metabolomics")
 library(tableone)
 library(skimr)
 library(knitr)
 library(sas7bdat)
+library(NormalizeMets)
+library(RRmix)
 library(mixOmics)
 library(tidyverse)
 ```
@@ -69,6 +71,7 @@ df <- df %>% select(GlobalSampleID,gender,age,sex,race,CACp,GROUP,sex_and_group,
 metabolites <- setdiff(names(df),c("GlobalSampleID","gender","age","sex","race","CACp","GROUP","sex_and_group","Batch"))
 df[,metabolites] <- lapply(df[,metabolites], function(x) as.numeric(as.character(x)))
 df$sex_and_group[df$GROUP == "QC"] <- "QC"
+df_qc <- df
 df <- df[df$GROUP != "QC",]
 X <- df %>% select(-GlobalSampleID,-gender,-age,-sex,-race,-CACp,-GROUP,-sex_and_group,-Batch)
 X <- as.matrix(X)
@@ -78,6 +81,9 @@ class(X) <- "numeric"
 # PCA
 
 ```{r}
+X <- apply(X,2,function(x){
+  x <- x - median(x)
+})
 # Try PCA 
 pca <- pca(X,ncomp=5,center=T,scale=T)
 plot(pca)
@@ -270,3 +276,30 @@ anova_results <- anova_results %>% arrange(p.value)
 anova_results$p.value <- p.adjust(anova_results$p.value,"fdr")
 kable(anova_results[which(anova_results$p.value < 0.05),])
 ```
+
+## Normalization
+
+```{r normalization,echo=FALSE}
+# Metabolite data
+featuredata <- df_qc[,9:(ncol(df_qc)-1)]
+rownames(featuredata) <- df_qc$GlobalSampleID
+# Injection order
+sampledata <- read.csv("./Data_Cleaned/injection_seq.csv",stringsAsFactors = F) %>%
+  select(Injection,SampleName,Position) %>%
+  filter(Injection %in% rownames(featuredata))
+sampledata$batch <- sapply(strsplit(sampledata$SampleName,"_"),`[`,2)
+sampledata$batch[nrow(sampledata)] <- sampledata$batch[(nrow(sampledata)-1)]
+sampledata$batch <- sub("Batch0","",sampledata$batch)
+sampledata <- sampledata %>% fill(batch,.direction = "up") %>%
+  mutate(order = 1:n())
+rownames(sampledata) <- sampledata$GlobalSampleID
+sampledata$class <- ifelse(grepl("QC",sampledata$Injection),0,1)
+featuredata <- featuredata[match(sampledata$Injection,rownames(featuredata)),]
+featuredata <- as.data.frame(featuredata)
+rownames(sampledata) <- sampledata$Injection
+sampledata <- sampledata %>% select(batch,class,order) %>% as.data.frame()
+# Normalize
+normalized <- NormQcsamples(featuredata, sampledata, method = c("rlsc"), span = 0,
+  deg = 2, lg = TRUE, saveoutput = FALSE)
+```
+
