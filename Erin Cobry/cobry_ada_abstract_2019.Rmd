@@ -11,6 +11,7 @@ knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/
 library(arsenal)
 library(car)
 library(skimr)
+library(Hmisc)
 library(knitr)
 library(lme4)
 library(nlme)
@@ -19,6 +20,14 @@ library(tidyverse)
 ```
 
 ```{r data import and clean,echo=FALSE}
+# Import Cari's data
+source("/Users/timvigers/Documents/GitHub/BDC-Code/Erin Cobry/AdvancedClosedLoopCl_R_2020-01-05_1101.r")
+# Demographics
+demographics <- data %>% 
+  filter(redcap_event_name %in% c("baseline_arm_1","baseline_arm_2"),
+         !is.na(child_ya))
+# ID to match Erin's - clean Erin's then demographics
+demographics$id <- paste0(demographics$record_id,demographics$demographics_initals)
 # Read in (manually converted to long format from Erin's Excel spreadsheet)
 overnight_alarms <- read.csv("./Data_Cleaned/Overnight Alarm Data.csv",
                              na.strings = c("","No Data"))
@@ -43,6 +52,33 @@ overnight_alarms$timepoint <- factor(overnight_alarms$timepoint,
 overnight_alarms$numeric_time <- 
   car::recode(overnight_alarms$timepoint,
               "'Baseline' = 0;'2 weeks' = 0.5;'T1' = 3;'T2' = 6;'T3' = 9;'T4' = 12")
+# Get Erin's participants 
+demographics <- demographics[which(demographics$id %in% overnight_alarms$id),]
+# Combine CGM and pump hx levels
+levels(demographics$demographics_cgmhx.factor) <-
+  c("< 1 month","> 1 month","> 1 month","> 1 month","> 1 month","> 1 month")
+levels(demographics$demographics_pumphx.factor) <-
+  c("< 1 month","> 1 month","> 1 month","> 1 month","> 1 month","> 1 month")
+```
+
+# Table 1: Descriptive Characteristics
+
+```{r echo=FALSE,results='asis'}
+# Median for numerics
+controls  <- tableby.control(numeric.stats=c("median", "q1q3"))
+# Labels
+labels <- list(demographics_t1d_duration = "Diabetes Dur. (years)", 
+               demographics_ethnicity.factor = "Ethnicity",
+               demographics_sex.factor = "Sex",
+               demographics_cgmhx.factor = "CGM History", 
+               demographics_pumphx.factor = "Pump History")
+# Table 1
+t1 <- tableby(~ demographics_age + demographics_t1d_duration + 
+                demographics_sex.factor + demographics_ethnicity.factor +
+                demographics_cgmhx.factor + demographics_pumphx.factor,
+              data = demographics,control = controls)
+# Print
+summary(t1,labelTranslations = labels)
 ```
 
 # Longitudinal Analysis
