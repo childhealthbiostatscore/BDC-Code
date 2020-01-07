@@ -68,6 +68,10 @@ reverse<-function(x){
 }
 dat$Baseline_5<-reverse(dat$Baseline_5)
 dat$Baseline_7<-reverse(dat$Baseline_7)
+dat$post2m_5<-reverse(dat$post2m_5)
+dat$post2m_7<-reverse(dat$post2m_7)
+dat$post4m_5<-reverse(dat$post4m_5)
+dat$post4m_7<-reverse(dat$post4m_7)
 dat$mid_5<-reverse(dat$mid_5)
 dat$mid_7<-reverse(dat$mid_7)
 dat$post6m_5<-reverse(dat$post6m_5)
@@ -78,6 +82,16 @@ dat$baseline_factor1<-NA
 dat$baseline_factor1<-rowMeans(dat[,c(which(colnames(dat)=="Baseline_1"):
                                       which(colnames(dat)=="Baseline_7"))],na.rm=T)
 label(dat$baseline_factor1)<-"Baseline: Factor 1 Benefit"
+
+dat$post2m_factor1<-NA
+dat$post2m_factor1<-rowMeans(dat[,c(which(colnames(dat)=="post2m_1"):
+                                   which(colnames(dat)=="post2m_7"))],na.rm=T)
+label(dat$post2m_factor1)<-"Post 2m: Factor 1 Benefit"
+
+dat$post4m_factor1<-NA
+dat$post4m_factor1<-rowMeans(dat[,c(which(colnames(dat)=="post4m_1"):
+                                      which(colnames(dat)=="post4m_7"))],na.rm=T)
+label(dat$post4m_factor1)<-"Post 4m: Factor 1 Benefit"
 
 dat$mid_factor1<-NA
 dat$mid_factor1<-rowMeans(dat[,c(which(colnames(dat)=="mid_1"):
@@ -94,6 +108,16 @@ dat$baseline_factor2<-NA
 dat$baseline_factor2<-rowMeans(dat[,c(which(colnames(dat)=="Baseline_8"):
                                         which(colnames(dat)=="Baseline_11"))],na.rm=T)
 label(dat$baseline_factor2)<-"Baseline: Factor 2 Burden"
+
+dat$post2m_factor2<-NA
+dat$post2m_factor2<-rowMeans(dat[,c(which(colnames(dat)=="post2m_8"):
+                                   which(colnames(dat)=="post2m_11"))],na.rm=T)
+label(dat$post2m_factor2)<-"Post 2m: Factor 2 Burden"
+
+dat$post4m_factor2<-NA
+dat$post4m_factor2<-rowMeans(dat[,c(which(colnames(dat)=="post4m_8"):
+                                      which(colnames(dat)=="post4m_11"))],na.rm=T)
+label(dat$post4m_factor2)<-"Post 4m: Factor 2 Burden"
 
 dat$mid_factor2<-NA
 dat$mid_factor2<-rowMeans(dat[,c(which(colnames(dat)=="mid_8"):
