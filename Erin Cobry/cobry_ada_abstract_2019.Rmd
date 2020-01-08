@@ -19,7 +19,7 @@ library(MASS)
 library(tidyverse)
 ```
 
-```{r data import and clean,echo=FALSE}
+```{r data import and clean,echo=FALSE,include=FALSE}
 # Import Cari's data
 source("/Users/timvigers/Documents/GitHub/BDC-Code/Erin Cobry/AdvancedClosedLoopCl_R_2020-01-05_1101.r")
 # Demographics
@@ -28,22 +28,24 @@ demographics <- data %>%
          !is.na(child_ya))
 # ID to match Erin's - clean Erin's then demographics
 demographics$id <- paste0(demographics$record_id,demographics$demographics_initals)
+# remove missing
+no_data <- c("27","30LR","38SR","41SW")
+demographics <- demographics %>% filter(!(id %in% no_data))
+overnight_alarms <- overnight_alarms %>% filter(!(id %in% no_data))
+# Manually corrected a few dates in CSV file.
 # Read in (manually converted to long format from Erin's Excel spreadsheet)
 overnight_alarms <- read.csv("./Data_Cleaned/Overnight Alarm Data.csv",
                              na.strings = c("","No Data"))
-# Format
-colnames(overnight_alarms) <- c("id","timepoint","dates","num_nights",
+# Column names
+colnames(overnight_alarms) <- c("id","timepoint","start_date","end_date","num_nights",
                                 "num_alarms","num_alarms_in_AM","perc_time_in_AM")
-# Split date column
-overnight_alarms$dates <- as.character(overnight_alarms$dates)
-overnight_alarms$start_date <- as.character(map(strsplit(overnight_alarms$dates," "),1))
-overnight_alarms$end_date <- as.character(map(strsplit(overnight_alarms$dates," "),3))
-overnight_alarms$end_date[overnight_alarms$end_date == "NULL"] <- NA
+# Format date columns
+overnight_alarms[,c("start_date","end_date")] <- 
+  lapply(overnight_alarms[,c("start_date","end_date")], 
+         function(x) {lubridate::mdy(as.character(x))})
 # Calculate number of nights 
 overnight_alarms$nights <- 
-  difftime(as.POSIXct(overnight_alarms$end_date,format = "%m-%d",tz = "UTC"),
-           as.POSIXct(overnight_alarms$start_date,format = "%m-%d",tz = "UTC"),
-           units = "days")
+  difftime(overnight_alarms$end_date,overnight_alarms$start_date,units = "days")
 # Order timepoints
 overnight_alarms$timepoint <- factor(overnight_alarms$timepoint,
                                      levels = c("Baseline","2 weeks",
@@ -62,6 +64,8 @@ levels(demographics$demographics_pumphx.factor) <-
 ```
 
 # Table 1: Descriptive Characteristics
+
+Excluding participants with no CGM data (27,30,38,41).
 
 ```{r echo=FALSE,results='asis'}
 # Median for numerics
@@ -104,19 +108,20 @@ alarms_over_time
 # Use alarms per day once Erin sends the date information
 
 ```{r echo=FALSE, message=FALSE}
-# Random intercept (not enough data for a random slope)
-mod_ri_car1 <- glmmPQL(num_alarms ~ timepoint + perc_time_in_AM,random = ~1|id,
-               data = overnight_alarms,family = "poisson",
-               correlation = corCAR1())
-results <- broom::tidy(mod_ri_car1,"fixed")
-results$term <- c("(Intercept)","2 weeks","T1","T2","T3","T4","% Time in AM" )
-results[,2:4] <- lapply(results[,2:4],function(x) round(x,3))
-results$p.value <- format.pval(results$p.value,eps = 0.001)
-kable(results)
+# # Random intercept (not enough data for a random slope)
+# mod_ri_car1 <- glmmPQL(num_alarms ~ timepoint + perc_time_in_AM,random = ~1|id,
+#                data = overnight_alarms,family = "poisson",
+#                correlation = corCAR1())
+# results <- broom::tidy(mod_ri_car1,"fixed")
+# results$term <- c("(Intercept)","2 weeks","T1","T2","T3","T4","% Time in AM" )
+# results[,2:4] <- lapply(results[,2:4],function(x) round(x,3))
+# results$p.value <- format.pval(results$p.value,eps = 0.001)
+# kable(results)
 ```
 
-The number of alarms does not change over time. For each 1 percentage point increase in AM use, the number of alarms increases by `r results$estimate[7]`
+
 
 # Questions
 
 1. Did 39RS really have alarms in the 90s?
+2. 8EG T3 - can I flip the dates?
