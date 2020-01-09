@@ -44,8 +44,9 @@ overnight_alarms[,c("start_date","end_date")] <-
   lapply(overnight_alarms[,c("start_date","end_date")], 
          function(x) {lubridate::mdy(as.character(x))})
 # Calculate number of nights 
-overnight_alarms$num_nights <- 
-  difftime(overnight_alarms$end_date,overnight_alarms$start_date,units = "days")
+overnight_alarms$num_nights <- as.numeric(difftime(overnight_alarms$end_date,
+                                                   overnight_alarms$start_date,
+                                                   units = "days"))
 # Order timepoints
 overnight_alarms$timepoint <- factor(overnight_alarms$timepoint,
                                      levels = c("Baseline","week 2",
@@ -87,6 +88,87 @@ t1 <- tableby(~ demographics_age + demographics_t1d_duration +
 summary(t1,labelTranslations = labels)
 ```
 
+# CGM Metrics
+
+```{r echo=FALSE,include=FALSE,eval=FALSE}
+# Files
+cgm_files <- list.files("./Data_Raw/Project 2 - HCL Overnight Data Project_Zip/Project 2 - HCL Overnight Data Project",
+                        recursive = T,full.names = T)
+all_cgm <- data.frame()
+# Clean all CGM files - this is extremely slow but only needs to be run once
+for (file in cgm_files) {
+  # Get ID
+  id <- strsplit(file,"/")[[1]][5]
+  if (id %in% no_data){
+    next()
+  }
+  # Clean data
+  table <- read.csv(file,stringsAsFactors = F,na.strings = "")
+  sensor <- which(table$Patient.ID == "Sensor")[1]
+  if (is.na(sensor)) {
+    next()
+  }
+  table <- table[sensor:nrow(table),]
+  colnames(table) <- as.character(table[2,])
+  table <- table[which(!is.na(table$`Sensor Glucose (mg/dL)`) & 
+                         table$Index != "Index"),]
+  if (nrow(table) == 0) {
+    next()
+  }
+  # Format columns
+  table$timestamp <- lubridate::mdy_hms(paste(table$Date,table$Time))
+  table$sensorglucose <- as.numeric(as.character(table$`Sensor Glucose (mg/dL)`))
+  table$subjectid <- id
+  table <- table[,c("subjectid","timestamp","sensorglucose")]
+  table$timepoint <- NA
+  # Get timepoints
+  dates <- overnight_alarms[which(overnight_alarms$id == id),]
+  # Baseline 
+  start <- dates$start_date[dates$timepoint == "Baseline"]
+  end <- dates$end_date[dates$timepoint == "Baseline"]
+  table$timepoint[which(table$timestamp > start & table$timestamp <= end)] <- "Baseline"
+  # week 2 
+  start <- dates$start_date[dates$timepoint == "week 2"]
+  end <- dates$end_date[dates$timepoint == "week 2"]
+  table$timepoint[which(table$timestamp > start & table$timestamp <= end)] <- "week 2"
+  # T1 
+  start <- dates$start_date[dates$timepoint == "T1"]
+  end <- dates$end_date[dates$timepoint == "T1"]
+  table$timepoint[which(table$timestamp > start & table$timestamp <= end)] <- "T1"
+  # T2 
+  start <- dates$start_date[dates$timepoint == "T2"]
+  end <- dates$end_date[dates$timepoint == "T2"]
+  table$timepoint[which(table$timestamp > start & table$timestamp <= end)] <- "T2"
+  # T3 
+  start <- dates$start_date[dates$timepoint == "T3"]
+  end <- dates$end_date[dates$timepoint == "T3"]
+  table$timepoint[which(table$timestamp > start & table$timestamp <= end)] <- "T3"
+  # T4 
+  start <- dates$start_date[dates$timepoint == "T4"]
+  end <- dates$end_date[dates$timepoint == "T4"]
+  table$timepoint[which(table$timestamp > start & table$timestamp <= end)] <- "T4"
+  # Remove readings with no time period
+  table <- table[!is.na(table$timepoint),]
+  # Add to big dataframe
+  all_cgm <- rbind(all_cgm,table)
+}
+# Remove duplicates
+all_cgm <- unique(all_cgm)
+# Split and write CSVs
+temp <- split(all_cgm,list(all_cgm$subjectid,all_cgm$timepoint))
+
+
+
+lapply(all_cgm,function(x){
+  x <- split(x,x$timepoint)
+  lapply(x, function(y){
+    y <- as.data.frame(y)
+    filename <- paste0("./Data_Cleaned/",y$subjectid[1],"_",y$timepoint[1],".csv")
+    write.csv()
+    })
+})
+```
+
 # Longitudinal Analysis
 
 ## Histogram of Number of Alarms Per Day
@@ -108,15 +190,12 @@ alarms_over_time
 
 ## Model Results
 
-# Use alarms per day once Erin sends the date information
-
 ```{r echo=FALSE, message=FALSE}
 # Random intercept (not enough data for a random slope)
-mod_ri_car1 <- glmmPQL(alarms_per_day ~ timepoint + perc_time_in_AM,random = ~1|id,
-               data = overnight_alarms,family = "poisson",correlation = corCAR1())
-mod <- lme(log ~ numeric_time + perc_time_in_AM,random = ~1|id,
-               data = overnight_alarms,
-           na.action = na.omit,correlation = corCAR1())
+mod_ri_car1 <- glmmPQL(num_alarms ~ timepoint + perc_time_in_AM + offset(log(num_nights)),
+                       random = ~1|id,data = overnight_alarms,
+                       family = "poisson",correlation = corCAR1())
+
 results <- broom::tidy(mod_ri_car1,"fixed")
 results$term <- c("(Intercept)","2 weeks","T1","T2","T3","T4","% Time in AM" )
 results[,2:4] <- lapply(results[,2:4],function(x) round(x,3))
