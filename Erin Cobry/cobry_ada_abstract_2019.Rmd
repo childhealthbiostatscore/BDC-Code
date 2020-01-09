@@ -63,8 +63,6 @@ levels(demographics$demographics_cgmhx.factor) <-
   c("< 1 month","> 1 month","> 1 month","> 1 month","> 1 month","> 1 month")
 levels(demographics$demographics_pumphx.factor) <-
   c("< 1 month","> 1 month","> 1 month","> 1 month","> 1 month","> 1 month")
-# Write to CSV for SAS
-write.csv(overnight_alarms,file = "./Data_Cleaned/alarms.csv",row.names = F,na = "")
 ```
 
 # Table 1: Descriptive Characteristics
@@ -88,8 +86,6 @@ t1 <- tableby(~ demographics_age + demographics_t1d_duration +
 # Print
 summary(t1,labelTranslations = labels)
 ```
-
-# CGM Metrics
 
 ```{r clean CGM files,echo=FALSE,include=FALSE,eval=FALSE}
 # Merge files and write CSVs with correct dates
@@ -175,12 +171,14 @@ cgm$id <- sapply(strsplit(cgm$subject_id,"_"),`[[`,1)
 cgm$timepoint <- sapply(strsplit(cgm$subject_id,"_"),`[[`,2)
 cgm$timepoint <- factor(cgm$timepoint,levels = c("Baseline","week 2","T1","T2","T3","T4"))
 # Select columns
-cgm <- cgm %>% select(id,timepoint,
-                      daytime_avg_sensor_glucose,percent_time_70_180_day,
-                      nighttime_avg_sens_glucose,percent_time_under_70_night)
+cgm <- cgm %>% select(id,timepoint,nighttime_avg_sens_glucose,
+                      percent_time_70_180_night,percent_time_under_70_night)
 # Merge
 overnight_alarms$id <- as.character(overnight_alarms$id)
-temp <- left_join(overnight_alarms,cgm,by = c("id","timepoint"))
+overnight_alarms <- left_join(overnight_alarms,cgm,by = c("id","timepoint"))
+# Write to CSV for SAS
+overnight_alarms$log_num_nights <- log(overnight_alarms$num_nights)
+write.csv(overnight_alarms,file = "./Data_Cleaned/alarms.csv",row.names = F,na = "")
 ```
 
 # Longitudinal Analysis
@@ -206,9 +204,11 @@ alarms_over_time
 
 ```{r echo=FALSE, message=FALSE}
 # Random intercept (not enough data for a random slope)
-mod_ri_car1 <- glmmPQL(num_alarms ~ timepoint + perc_time_in_AM + offset(log(num_nights)),
+mod_ri_car1 <- glmmPQL(num_alarms ~ timepoint + perc_time_in_AM + 
+                         offset(log(num_nights)),
                        random = ~1|id,data = overnight_alarms,
-                       family = "poisson",correlation = corCAR1())
+                       family = "poisson",
+                       correlation = corCAR1(form = ~numeric_time))
 
 results <- broom::tidy(mod_ri_car1,"fixed")
 results$term <- c("(Intercept)","2 weeks","T1","T2","T3","T4","% Time in AM" )
