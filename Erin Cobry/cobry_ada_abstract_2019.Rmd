@@ -31,7 +31,6 @@ demographics$id <- paste0(demographics$record_id,demographics$demographics_inita
 # remove missing
 no_data <- c("27","30LR","38SR","41SW")
 demographics <- demographics %>% filter(!(id %in% no_data))
-overnight_alarms <- overnight_alarms %>% filter(!(id %in% no_data))
 # Manually corrected a few dates in CSV file.
 # Read in (manually converted to long format from Erin's Excel spreadsheet)
 overnight_alarms <- read.csv("./Data_Cleaned/Overnight Alarm Data.csv",
@@ -39,21 +38,22 @@ overnight_alarms <- read.csv("./Data_Cleaned/Overnight Alarm Data.csv",
 # Column names
 colnames(overnight_alarms) <- c("id","timepoint","start_date","end_date","num_nights",
                                 "num_alarms","num_alarms_in_AM","perc_time_in_AM")
+overnight_alarms <- overnight_alarms %>% filter(!(id %in% no_data))
 # Format date columns
 overnight_alarms[,c("start_date","end_date")] <- 
   lapply(overnight_alarms[,c("start_date","end_date")], 
          function(x) {lubridate::mdy(as.character(x))})
 # Calculate number of nights 
-overnight_alarms$nights <- 
+overnight_alarms$num_nights <- 
   difftime(overnight_alarms$end_date,overnight_alarms$start_date,units = "days")
 # Order timepoints
 overnight_alarms$timepoint <- factor(overnight_alarms$timepoint,
-                                     levels = c("Baseline","2 weeks",
+                                     levels = c("Baseline","week 2",
                                                 "T1","T2","T3","T4" ))
 # Numeric timepoints in months
 overnight_alarms$numeric_time <- 
   car::recode(overnight_alarms$timepoint,
-              "'Baseline' = 0;'2 weeks' = 0.5;'T1' = 3;'T2' = 6;'T3' = 9;'T4' = 12")
+              "'Baseline' = 0;'week 2' = 0.5;'T1' = 3;'T2' = 6;'T3' = 9;'T4' = 12")
 # Get Erin's participants 
 demographics <- demographics[which(demographics$id %in% overnight_alarms$id),]
 # Combine CGM and pump hx levels
@@ -61,6 +61,8 @@ levels(demographics$demographics_cgmhx.factor) <-
   c("< 1 month","> 1 month","> 1 month","> 1 month","> 1 month","> 1 month")
 levels(demographics$demographics_pumphx.factor) <-
   c("< 1 month","> 1 month","> 1 month","> 1 month","> 1 month","> 1 month")
+# Write to CSV for SAS
+write.csv(overnight_alarms,file = "./Data_Cleaned/alarms.csv",row.names = F,na = "")
 ```
 
 # Table 1: Descriptive Characteristics
@@ -87,10 +89,11 @@ summary(t1,labelTranslations = labels)
 
 # Longitudinal Analysis
 
-## Histogram of Number of Alarms 
+## Histogram of Number of Alarms Per Day
 
 ```{r echo=FALSE}
-hist(overnight_alarms$num_alarms,main = "",xlab = "Number of Alarms")
+overnight_alarms$alarms_per_day <- overnight_alarms$num_alarms / as.numeric(overnight_alarms$num_nights)
+hist(overnight_alarms$alarms_per_day,main = "",xlab = "Number of Alarms")
 # This looks very much like a Poisson distribution
 ```
 
@@ -98,7 +101,7 @@ hist(overnight_alarms$num_alarms,main = "",xlab = "Number of Alarms")
 
 ```{r echo=FALSE,warning=FALSE}
 alarms_over_time <- 
-  ggplot(overnight_alarms,aes(x = timepoint, y = num_alarms,group = id)) + 
+  ggplot(overnight_alarms,aes(x = timepoint, y = alarms_per_day,group = id)) + 
   geom_line() + theme_bw()
 alarms_over_time
 ```
@@ -108,15 +111,17 @@ alarms_over_time
 # Use alarms per day once Erin sends the date information
 
 ```{r echo=FALSE, message=FALSE}
-# # Random intercept (not enough data for a random slope)
-# mod_ri_car1 <- glmmPQL(num_alarms ~ timepoint + perc_time_in_AM,random = ~1|id,
-#                data = overnight_alarms,family = "poisson",
-#                correlation = corCAR1())
-# results <- broom::tidy(mod_ri_car1,"fixed")
-# results$term <- c("(Intercept)","2 weeks","T1","T2","T3","T4","% Time in AM" )
-# results[,2:4] <- lapply(results[,2:4],function(x) round(x,3))
-# results$p.value <- format.pval(results$p.value,eps = 0.001)
-# kable(results)
+# Random intercept (not enough data for a random slope)
+mod_ri_car1 <- glmmPQL(alarms_per_day ~ timepoint + perc_time_in_AM,random = ~1|id,
+               data = overnight_alarms,family = "poisson",correlation = corCAR1())
+mod <- lme(log ~ numeric_time + perc_time_in_AM,random = ~1|id,
+               data = overnight_alarms,
+           na.action = na.omit,correlation = corCAR1())
+results <- broom::tidy(mod_ri_car1,"fixed")
+results$term <- c("(Intercept)","2 weeks","T1","T2","T3","T4","% Time in AM" )
+results[,2:4] <- lapply(results[,2:4],function(x) round(x,3))
+results$p.value <- format.pval(results$p.value,eps = 0.001)
+kable(results)
 ```
 
 
