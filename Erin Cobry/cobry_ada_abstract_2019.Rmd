@@ -9,6 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/670g obs sleep")
 library(arsenal)
+library(cgmanalysis)
 library(car)
 library(skimr)
 library(Hmisc)
@@ -70,7 +71,7 @@ write.csv(overnight_alarms,file = "./Data_Cleaned/alarms.csv",row.names = F,na =
 
 Excluding participants with no CGM data (27,30,38,41).
 
-```{r echo=FALSE,results='asis'}
+```{r table 1,echo=FALSE,results='asis'}
 # Median for numerics
 controls  <- tableby.control(numeric.stats=c("median", "q1q3"))
 # Labels
@@ -90,7 +91,8 @@ summary(t1,labelTranslations = labels)
 
 # CGM Metrics
 
-```{r echo=FALSE,include=FALSE,eval=FALSE}
+```{r clean CGM files,echo=FALSE,include=FALSE,eval=FALSE}
+# Merge files and write CSVs with correct dates
 # Files
 cgm_files <- list.files("./Data_Raw/Project 2 - HCL Overnight Data Project_Zip/Project 2 - HCL Overnight Data Project",
                         recursive = T,full.names = T)
@@ -155,18 +157,30 @@ for (file in cgm_files) {
 # Remove duplicates
 all_cgm <- unique(all_cgm)
 # Split and write CSVs
-temp <- split(all_cgm,list(all_cgm$subjectid,all_cgm$timepoint))
-
-
-
+all_cgm <- split(all_cgm,list(all_cgm$subjectid,all_cgm$timepoint))
 lapply(all_cgm,function(x){
-  x <- split(x,x$timepoint)
-  lapply(x, function(y){
-    y <- as.data.frame(y)
-    filename <- paste0("./Data_Cleaned/",y$subjectid[1],"_",y$timepoint[1],".csv")
-    write.csv()
-    })
+  x <- as.data.frame(x)
+  filename <- paste0("./Data_Cleaned/Cleaned CGM/",x$subjectid[1],"_",x$timepoint[1],".csv")
+  write.csv(x,file = filename,row.names = F,na = "")
 })
+# CGM variables
+cgmvariables("./Data_Cleaned/Cleaned CGM/","./Data_Cleaned",id_filename = T,outputname = "cgm_variables")
+```
+
+```{r cgm data,echo=FALSE,include=FALSE}
+# Read in CGM data
+cgm <- read.csv("./Data_Cleaned/cgm_variables.csv",stringsAsFactors = F)
+# ID and timepoint
+cgm$id <- sapply(strsplit(cgm$subject_id,"_"),`[[`,1)
+cgm$timepoint <- sapply(strsplit(cgm$subject_id,"_"),`[[`,2)
+cgm$timepoint <- factor(cgm$timepoint,levels = c("Baseline","week 2","T1","T2","T3","T4"))
+# Select columns
+cgm <- cgm %>% select(id,timepoint,
+                      daytime_avg_sensor_glucose,percent_time_70_180_day,
+                      nighttime_avg_sens_glucose,percent_time_under_70_night)
+# Merge
+overnight_alarms$id <- as.character(overnight_alarms$id)
+temp <- left_join(overnight_alarms,cgm,by = c("id","timepoint"))
 ```
 
 # Longitudinal Analysis
