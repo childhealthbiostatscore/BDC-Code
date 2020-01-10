@@ -2,7 +2,7 @@
 title: "HCL Overnight Analysis"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: html_document
+output: word_document
 ---
 
 ```{r setup, include=FALSE}
@@ -189,7 +189,7 @@ write.csv(overnight_alarms,file = "./Data_Cleaned/alarms.csv",row.names = F,na =
 
 ## Alarms per Day By Timepoint
 
-```{r alarm plot,echo=FALSE,warning=FALSE}
+```{r alarm plot,echo=FALSE,warning=FALSE,dpi=600}
 overnight_alarms$alarms_per_day <- overnight_alarms$num_alarms / overnight_alarms$num_nights
 alarms_over_time <- 
   ggplot(overnight_alarms,aes(x = timepoint, y = alarms_per_day,group = id)) + 
@@ -217,7 +217,7 @@ For each timepoint, the "estimate" column in the table above represents the aver
 
 ## Nighttime % TIR by Timepoint
 
-```{r tir plot, echo=FALSE,warning=FALSE}
+```{r tir plot, echo=FALSE,warning=FALSE,dpi=600}
 tir_over_time <- 
   ggplot(overnight_alarms,aes(x = timepoint, y = percent_time_70_180_night,group = id)) + 
   geom_line() + theme_bw() + xlab("Timepoint") + ylab("Nighttime % TIR")
@@ -241,26 +241,28 @@ kable(results)
 
 After adjusting for percent time in AM, nighttime %TIR was lower at each timepoint compared to baseline. On average, for a participant with 0% time in AM, nighttime %TIR changed by `r results$estimate[results$term == "Week 2"]` at week 2 compared to baseline (p = `r results$p.value[results$term == "Week 2"]`). The interpretation for other timepoints is similar. Also, for each percentage point increase in time spent spent in AM, nighttime %TIR increased on average by `r results$estimate[results$term == "% Time in AM"]` percentage points (p = `r results$p.value[results$term == "% Time in AM"]`). 
 
-## Nighttime % Time < 70 by Timepoint
+## Nighttime Mean Glucose by Timepoint
 
-```{r under 70 plot, echo=FALSE,warning=FALSE}
-under_70_over_time <- 
-  ggplot(overnight_alarms,aes(x = timepoint, y = percent_time_under_70_night,group = id)) + 
-  geom_line() + theme_bw() + xlab("Timepoint") + ylab("% Time <70")
-under_70_over_time
+```{r mean bg plot, echo=FALSE,warning=FALSE,dpi=600}
+mean_bg_over_time <- 
+  ggplot(overnight_alarms,aes(x = timepoint, y = nighttime_avg_sens_glucose,group = id)) + 
+  geom_line() + theme_bw() + xlab("Timepoint") + ylab("Nighttime Mean Glucose")
+mean_bg_over_time
 ```
 
-## Nighttime % TIR Model Results
+## Nighttime Mean Glucose Model Results
 
 ```{r under70 model,echo=FALSE, message=FALSE}
-# Random intercept (not enough data for a random slope)
-mod_ri_car1 <- glmmPQL(num_alarms ~ timepoint + perc_time_in_AM,
-                       random = ~1|id,data = overnight_alarms,
-                       family = "poisson",
-                       correlation = corCAR1(form = ~numeric_time))
+# The outcome looks pretty normal again so we can use a LMM with RI and spatial power
+mod_ri_car1 <- lme(nighttime_avg_sens_glucose ~ timepoint + perc_time_in_AM,
+                   random = ~1|id,data = overnight_alarms,na.action = na.omit,
+                   correlation = corCAR1(form = ~numeric_time))
+
 results <- broom::tidy(mod_ri_car1,"fixed")
 results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" )
 results[,2:4] <- lapply(results[,2:4],function(x) round(x,3))
 results$p.value <- format.pval(results$p.value,eps = 0.0001,digits = 3)
 kable(results)
 ```
+
+There was an overall effect of timepoint on nighttime mean glucose (p = 0.0174). After adjusting for percent time in AM, nighttime mean glucose was higher at each timepoint compared to baseline (although the difference was not statistically significant at T3 or T4). On average, for a participant with 0% time in AM, nighttime mean glucose increased by `r results$estimate[results$term == "Week 2"]` at week 2 compared to baseline (p = `r results$p.value[results$term == "Week 2"]`). The interpretation for other timepoints is similar. Also, for each percentage point increase in time spent spent in AM, nighttime mean glucose changed by `r results$estimate[results$term == "% Time in AM"]` on average (p = `r results$p.value[results$term == "% Time in AM"]`). 
