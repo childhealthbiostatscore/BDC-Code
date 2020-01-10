@@ -54,14 +54,6 @@ proc sort data = alarms;
 by id numeric_time;
 run;
 
-proc genmod data = alarms;
-class id timepoint(ref = "Baseline");
-model num_alarms = timepoint perc_time_in_AM / offset = num_nights distribution = poisson;
-random intercept / subject=id;
-run;
-
-
-
 proc glimmix data = alarms;
 class id timepoint(ref = "Baseline");
 model num_alarms = timepoint perc_time_in_AM / solution distribution = poisson offset = log_num_nights;
