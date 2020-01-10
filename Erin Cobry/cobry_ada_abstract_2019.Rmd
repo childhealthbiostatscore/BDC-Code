@@ -2,7 +2,7 @@
 title: "HCL Overnight Analysis"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: word_document
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
@@ -54,6 +54,11 @@ overnight_alarms$numeric_time <-
               "'Baseline' = 0;'Week 2' = 0.5;'T1' = 3;'T2' = 6;'T3' = 9;'T4' = 12")
 # Percent AM time
 overnight_alarms$perc_time_in_AM <- overnight_alarms$perc_time_in_AM * 100
+# Alarms per day
+overnight_alarms$alarms_per_day <- 
+  overnight_alarms$num_alarms / overnight_alarms$num_nights
+overnight_alarms$alarms_AM_per_day <- 
+  overnight_alarms$num_alarms_in_AM / overnight_alarms$num_nights
 # Get Erin's participants 
 demographics <- demographics[which(demographics$id %in% overnight_alarms$id),]
 # Combine CGM and pump hx levels
@@ -68,8 +73,6 @@ levels(demographics$demographics_pumphx.factor) <-
 Excluding participants with no CGM data (27,30,38,41).
 
 ```{r table 1,echo=FALSE,results='asis'}
-# Median for numerics
-controls  <- tableby.control(numeric.stats=c("median", "q1q3"))
 # Labels
 labels <- list(demographics_t1d_duration = "Diabetes Dur. (years)", 
                demographics_ethnicity.factor = "Ethnicity",
@@ -77,10 +80,11 @@ labels <- list(demographics_t1d_duration = "Diabetes Dur. (years)",
                demographics_cgmhx.factor = "CGM History", 
                demographics_pumphx.factor = "Pump History")
 # Table 1
-t1 <- tableby(~ demographics_age + demographics_t1d_duration + 
+t1 <- tableby(~ hba1c + kwt(demographics_age,"median","q1q3") + 
+                kwt(demographics_t1d_duration,"median","q1q3") + 
                 demographics_sex.factor + demographics_ethnicity.factor +
                 demographics_cgmhx.factor + demographics_pumphx.factor,
-              data = demographics,control = controls)
+              data = demographics)
 # Print
 summary(t1,labelTranslations = labels)
 ```
@@ -185,12 +189,20 @@ overnight_alarms$log_num_nights <- log(overnight_alarms$num_nights)
 write.csv(overnight_alarms,file = "./Data_Cleaned/alarms.csv",row.names = F,na = "")
 ```
 
+# Table 2: Alarm Frequency
+
+```{r alarm table,echo=FALSE}
+alarm_table <- overnight_alarms %>% group_by(timepoint) %>%
+  summarise(`Mean Alarms per Night` = round(mean(alarms_per_day,na.rm=T),3),
+            `Mean Alarms in AM per Night` = round(mean(alarms_AM_per_day,na.rm=T),3))
+kable(alarm_table)
+```
+
 # Longitudinal Analysis
 
 ## Alarms per Day By Timepoint
 
 ```{r alarm plot,echo=FALSE,warning=FALSE,dpi=600}
-overnight_alarms$alarms_per_day <- overnight_alarms$num_alarms / overnight_alarms$num_nights
 alarms_over_time <- 
   ggplot(overnight_alarms,aes(x = timepoint, y = alarms_per_day,group = id)) + 
   geom_line() + theme_bw() + xlab("Timepoint") + ylab("Alarms per Day")
