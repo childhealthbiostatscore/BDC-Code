@@ -48,14 +48,12 @@ overnight_alarms[,c("start_date","end_date")] <-
 overnight_alarms$num_nights <- as.numeric(difftime(overnight_alarms$end_date,
                                                    overnight_alarms$start_date,
                                                    units = "days"))
-# Order timepoints
-overnight_alarms$timepoint <- factor(overnight_alarms$timepoint,
-                                     levels = c("Baseline","week 2",
-                                                "T1","T2","T3","T4" ))
 # Numeric timepoints in months
 overnight_alarms$numeric_time <- 
   car::recode(overnight_alarms$timepoint,
-              "'Baseline' = 0;'week 2' = 0.5;'T1' = 3;'T2' = 6;'T3' = 9;'T4' = 12")
+              "'Baseline' = 0;'Week 2' = 0.5;'T1' = 3;'T2' = 6;'T3' = 9;'T4' = 12")
+# Percent AM time
+overnight_alarms$perc_time_in_AM <- overnight_alarms$perc_time_in_AM * 100
 # Get Erin's participants 
 demographics <- demographics[which(demographics$id %in% overnight_alarms$id),]
 # Combine CGM and pump hx levels
@@ -125,7 +123,7 @@ for (file in cgm_files) {
   start <- dates$start_date[dates$timepoint == "Baseline"]
   end <- dates$end_date[dates$timepoint == "Baseline"]
   table$timepoint[which(table$timestamp > start & table$timestamp <= end)] <- "Baseline"
-  # week 2 
+  # Week 2 
   start <- dates$start_date[dates$timepoint == "week 2"]
   end <- dates$end_date[dates$timepoint == "week 2"]
   table$timepoint[which(table$timestamp > start & table$timestamp <= end)] <- "week 2"
@@ -176,6 +174,12 @@ cgm <- cgm %>% select(id,timepoint,nighttime_avg_sens_glucose,
 # Merge
 overnight_alarms$id <- as.character(overnight_alarms$id)
 overnight_alarms <- left_join(overnight_alarms,cgm,by = c("id","timepoint"))
+# Order timepoints
+overnight_alarms$timepoint <- factor(overnight_alarms$timepoint,
+                                     levels = c("Baseline","week 2",
+                                                "T1","T2","T3","T4" ))
+levels(overnight_alarms$timepoint) <- c("Baseline","Week 2",
+                                        "T1","T2","T3","T4" )
 # Write to CSV for SAS
 overnight_alarms$log_num_nights <- log(overnight_alarms$num_nights)
 write.csv(overnight_alarms,file = "./Data_Cleaned/alarms.csv",row.names = F,na = "")
@@ -183,43 +187,80 @@ write.csv(overnight_alarms,file = "./Data_Cleaned/alarms.csv",row.names = F,na =
 
 # Longitudinal Analysis
 
-## Histogram of Number of Alarms Per Day
+## Alarms per Day By Timepoint
 
-```{r echo=FALSE}
-overnight_alarms$alarms_per_day <- overnight_alarms$num_alarms / as.numeric(overnight_alarms$num_nights)
-hist(overnight_alarms$alarms_per_day,main = "",xlab = "Number of Alarms")
-# This looks very much like a Poisson distribution
-```
-
-## Plot
-
-```{r echo=FALSE,warning=FALSE}
+```{r alarm plot,echo=FALSE,warning=FALSE}
+overnight_alarms$alarms_per_day <- overnight_alarms$num_alarms / overnight_alarms$num_nights
 alarms_over_time <- 
   ggplot(overnight_alarms,aes(x = timepoint, y = alarms_per_day,group = id)) + 
-  geom_line() + theme_bw()
+  geom_line() + theme_bw() + xlab("Timepoint") + ylab("Alarms per Day")
 alarms_over_time
 ```
 
-## Model Results
+## Number of Alarms per Day Model Results
 
-```{r echo=FALSE, message=FALSE}
+```{r alarm model,echo=FALSE, message=FALSE}
 # Random intercept (not enough data for a random slope)
 mod_ri_car1 <- glmmPQL(num_alarms ~ timepoint + perc_time_in_AM + 
                          offset(log(num_nights)),
                        random = ~1|id,data = overnight_alarms,
                        family = "poisson",
                        correlation = corCAR1(form = ~numeric_time))
-
 results <- broom::tidy(mod_ri_car1,"fixed")
-results$term <- c("(Intercept)","2 weeks","T1","T2","T3","T4","% Time in AM" )
+results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" )
 results[,2:4] <- lapply(results[,2:4],function(x) round(x,3))
-results$p.value <- format.pval(results$p.value,eps = 0.001)
+results$p.value <- format.pval(results$p.value,eps = 0.0001,digits = 3)
 kable(results)
 ```
 
+For each timepoint, the "estimate" column in the table above represents the average difference from baseline after adjusting for percent time in AM. All four timepoints had a significantly lower number of alarms per day than baseline. Also, for each percentage point increase in time spent spent in AM, the number of alarms per day increased on average by `r results$estimate[results$term == "% Time in AM"]` (p = `r results$p.value[results$term == "% Time in AM"]`).
 
+## Nighttime % TIR by Timepoint
 
-# Questions
+```{r tir plot, echo=FALSE,warning=FALSE}
+tir_over_time <- 
+  ggplot(overnight_alarms,aes(x = timepoint, y = percent_time_70_180_night,group = id)) + 
+  geom_line() + theme_bw() + xlab("Timepoint") + ylab("Nighttime % TIR")
+tir_over_time
+```
 
-1. Did 39RS really have alarms in the 90s?
-2. 8EG T3 - can I flip the dates?
+## Nighttime % TIR Model Results
+
+```{r tir model,echo=FALSE, message=FALSE}
+# The outcome looks pretty normal so we can use a LMM with RI and spatial power
+mod_ri_car1 <- lme(percent_time_70_180_night ~ timepoint + perc_time_in_AM,
+                   random = ~1|id,data = overnight_alarms,na.action = na.omit,
+                   correlation = corCAR1(form = ~numeric_time))
+# Residuals look good!
+results <- broom::tidy(mod_ri_car1,"fixed")
+results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" )
+results[,2:4] <- lapply(results[,2:4],function(x) round(x,3))
+results$p.value <- format.pval(results$p.value,eps = 0.0001,digits = 3)
+kable(results)
+```
+
+After adjusting for percent time in AM, nighttime %TIR was lower at each timepoint compared to baseline. On average, for a participant with 0% time in AM, nighttime %TIR changed by `r results$estimate[results$term == "Week 2"]` at week 2 compared to baseline (p = `r results$p.value[results$term == "Week 2"]`). The interpretation for other timepoints is similar. Also, for each percentage point increase in time spent spent in AM, nighttime %TIR increased on average by `r results$estimate[results$term == "% Time in AM"]` percentage points (p = `r results$p.value[results$term == "% Time in AM"]`). 
+
+## Nighttime % Time < 70 by Timepoint
+
+```{r under 70 plot, echo=FALSE,warning=FALSE}
+under_70_over_time <- 
+  ggplot(overnight_alarms,aes(x = timepoint, y = percent_time_under_70_night,group = id)) + 
+  geom_line() + theme_bw() + xlab("Timepoint") + ylab("% Time <70")
+under_70_over_time
+```
+
+## Nighttime % TIR Model Results
+
+```{r under70 model,echo=FALSE, message=FALSE}
+# Random intercept (not enough data for a random slope)
+mod_ri_car1 <- glmmPQL(num_alarms ~ timepoint + perc_time_in_AM,
+                       random = ~1|id,data = overnight_alarms,
+                       family = "poisson",
+                       correlation = corCAR1(form = ~numeric_time))
+results <- broom::tidy(mod_ri_car1,"fixed")
+results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" )
+results[,2:4] <- lapply(results[,2:4],function(x) round(x,3))
+results$p.value <- format.pval(results$p.value,eps = 0.0001,digits = 3)
+kable(results)
+```
