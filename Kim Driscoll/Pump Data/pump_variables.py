@@ -56,6 +56,8 @@ total_bwp_above_400 = 0
 for r in range(data.shape[0]):
 	# Count BG checks in various ranges
     bg = data.loc[r,"Sensor Calibration BG (mg/dL)"]
+    if math.isnan(bg):
+    	continue
     if bg < 70:
         total_piu_70 += 1
         total_bwp_70 += 1
@@ -94,6 +96,7 @@ for r in range(data.shape[0]):
 	if math.isnan(bolus):
 		continue
 	bol_time = data.loc[r,"Timestamp"]
-	bol_period_end = bol_time + dt.timedelta(minutes=15)
 	# Check for additional boluses within 15 minutes
+	bol_period_end = bol_time + dt.timedelta(minutes=15)
+	
 	
