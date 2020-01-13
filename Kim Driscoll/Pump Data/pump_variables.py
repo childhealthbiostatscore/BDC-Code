@@ -15,17 +15,17 @@ import collections
 import math
 
 # List of files
-path = "/Users/timvigers/Desktop/Pump Files Original/"
+path = "/Users/timvigers/Desktop/square bolus test/"
 files = os.listdir(path)
 files = [path + f for f in files]
 
 # Read in data
-data = pd.read_csv(files[1])
+data = pd.read_csv(files[0])
 # Sort
 data = data.sort_index()
 # Make timestamp column, sort by it 
 data["Timestamp"] = data["Date"] + " " + data["Time"]
-all_times = [dt.datetime.strptime(str(t),"%m/%d/%Y %H:%M:%S") for t in data["Timestamp"]]
+all_times = [dt.datetime.strptime(str(t),"%m/%d/%y %H:%M:%S") for t in data["Timestamp"]]
 data["Timestamp"] = all_times
 data = data.sort_values(by = "Timestamp")
 # reset the index
@@ -38,6 +38,7 @@ days = (max(all_times) - min(all_times)).days
 bg_reading_times = data.loc[data["Sensor Calibration BG (mg/dL)"] > 0,"Timestamp"]
 bg_reading_weekday = [dt.datetime.weekday(t) for t in bg_reading_times]
 # Basic BG variables
+bgs = data.loc[data["Sensor Calibration BG (mg/dL)"] > 0,"Sensor Calibration BG (mg/dL)"]
 total_readings = len(bg_reading_times)
 readings_per_day = total_readings / days
 readings_per_weekday = len([i for i in bg_reading_weekday if i <= 4]) / days
@@ -90,13 +91,22 @@ perc_days_3_more_carbs = len([i for i in carb_date_counts.values() if i >3]) / d
 bolus_times = data.loc[data["Bolus Volume Delivered (U)"] > 0,"Timestamp"]
 # Bolus counters
 total_bolus = 0
+double_bolus = 0
+bolus_within_15_70 = 0
+bolus_within_15_70_149 = 0
+
+last_bg_times = list()
+last_bg = list()
 # Iterate through rows - bolus as anchor
 for r in range(data.shape[0]):
 	# Get bolus value and time
 	bolus = data.loc[r,"Bolus Volume Delivered (U)"]
-	# If NaN, next
-	if math.isnan(bolus):
+	# If NaN or 0, next
+	if math.isnan(bolus) or bolus == 0:
 		continue
+	# Check for square bolus
+	#if data.loc[r,"Bolus Type"] == "Dual (normal part)":
+		
 	bol_time = data.loc[r,"Timestamp"]
 	# Check for additional boluses within 15 minutes, if so next row
 	bol_period_forw = bol_time + dt.timedelta(minutes=15)
@@ -105,7 +115,27 @@ for r in range(data.shape[0]):
 	# If there are boluses within 15 minutes before, add them
 	bol_period_back = bol_time - dt.timedelta(minutes=15)
 	if len([i for i in bolus_times if ((i >= bol_period_back) & (i < bol_time))]) > 0:
-		bolus_vol
+		double_bolus += 1
+	# Find time from last BG and last BG value
+	for b in range(r,0,-1):
+		bg = data.loc[b,"Sensor Calibration BG (mg/dL)"]
+		if math.isfinite(bg):
+			bg_time = data.loc[b,"Timestamp"]
+			time_diff = bol_time - bg_time
+			last_bg_times.append(time_diff.seconds)
+			last_bg.append(bg)
+			break
 
-	
+# Loop through last BG check times and classify based on BG level
+for t in range(len(last_bg_times)):
+	if last_bg_times[t] <= (15 * 60):
+		if last_bg[t] < 70:
+			bolus_within_15_70 += 1
+		if 70 <= last_bg[t] <= 149:
+			bolus_within_15_70_149 += 1
+		if 70 <= last_bg[t] <= 180:
+			bolus_within_15_70_180 += 1
+
+
+
 	
