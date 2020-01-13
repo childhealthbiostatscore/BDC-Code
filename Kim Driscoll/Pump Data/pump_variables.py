@@ -88,6 +88,8 @@ carb_date_counts = collections.Counter(carb_dates)
 perc_days_3_more_carbs = len([i for i in carb_date_counts.values() if i >3]) / days
 # Boluses
 bolus_times = data.loc[data["Bolus Volume Delivered (U)"] > 0,"Timestamp"]
+# Bolus counters
+total_bolus = 0
 # Iterate through rows - bolus as anchor
 for r in range(data.shape[0]):
 	# Get bolus value and time
@@ -96,7 +98,14 @@ for r in range(data.shape[0]):
 	if math.isnan(bolus):
 		continue
 	bol_time = data.loc[r,"Timestamp"]
-	# Check for additional boluses within 15 minutes
-	bol_period_end = bol_time + dt.timedelta(minutes=15)
+	# Check for additional boluses within 15 minutes, if so next row
+	bol_period_forw = bol_time + dt.timedelta(minutes=15)
+	if len([i for i in bolus_times if ((i > bol_time) & (i <= bol_period_forw))]) > 0:
+		continue
+	# If there are boluses within 15 minutes before, add them
+	bol_period_back = bol_time - dt.timedelta(minutes=15)
+	if len([i for i in bolus_times if ((i >= bol_period_back) & (i < bol_time))]) > 0:
+		bolus_vol
+
 	
 	
