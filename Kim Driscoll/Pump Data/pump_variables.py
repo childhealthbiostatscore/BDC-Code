@@ -9,15 +9,14 @@
 # import_or_install("pandas")
 # Load packages
 import pandas as pd
-import os
 import datetime as dt
+import os
+import collections
 
 # List of files
 path = "/Users/timvigers/Desktop/Pump Files Original/"
 files = os.listdir(path)
 files = [path + f for f in files]
-
-# Variable function 
 
 # Read in data
 data = pd.read_csv(files[1])
@@ -67,13 +66,18 @@ for r in range(data.shape[0]):
             total_bwp_251_400 += 1
         elif bg > 400:
             total_bwp_above_400 += 1
-# Carbs
 # Get carb times and convert to datetime
 carb_times = data.loc[data["BWZ Carb Input (grams)"] > 0,"Timestamp"]
 carb_times = [dt.datetime.strptime(str(t),"%m/%d/%Y %H:%M:%S") for t in carb_times]
 carb_weekday = [dt.datetime.weekday(t) for t in carb_times]
-# Basic carb variables
+carb_dates = [dt.datetime.date(t) for t in carb_times]
+# Carb variables
 total_carbs = len(carb_times)
 carbs_per_day = total_carbs / days
 carbs_per_weekday = len([i for i in carb_weekday if i <= 4]) / days
 carbs_per_weekend = len([i for i in carb_weekday if i >= 5]) / days
+carb_date_counts = collections.Counter(carb_dates)
+perc_days_3_more_carbs = len([i for i in carb_date_counts.values() if i >3]) / days
+# Iterate through rows - bolus as anchor
+for r in range(data.shape[0]):
+	
