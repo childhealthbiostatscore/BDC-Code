@@ -27,7 +27,6 @@ output = pd.DataFrame()
 for f in files:
 	if ".DS_Store" in f:
 		continue
-	print(f)
 	# Get ID
 	subject_id = os.path.basename(str(f))
 	subject_id = subject_id.replace("_pump.csv']","")
