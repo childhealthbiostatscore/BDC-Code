@@ -14,8 +14,9 @@ import os
 import collections
 import math
 import pprint
+from dateutil.parser import parse
 # List of files
-path = "/Users/timvigers/Desktop/square bolus test/"
+path = "/Users/timvigers/Desktop/Pump Files Original/"
 files = os.listdir(path)
 files = [path + f for f in files]
 # Empty results dictionary
@@ -30,7 +31,7 @@ data = pd.read_csv(files[0])
 data = data.sort_index()
 # Make timestamp column, sort by it 
 data["Timestamp"] = data["Date"] + " " + data["Time"]
-all_times = [dt.datetime.strptime(str(t),"%m/%d/%y %H:%M:%S") for t in data["Timestamp"]]
+all_times = [parse(str(t)) for t in data["Timestamp"]]
 data["Timestamp"] = all_times
 data = data.sort_values(by = "Timestamp")
 # reset the index
