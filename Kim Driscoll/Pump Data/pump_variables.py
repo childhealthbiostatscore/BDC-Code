@@ -55,39 +55,8 @@ for i in range(1,len(bg_times_reindex)):
 	tdiff = bg_times_reindex[i] - bg_times_reindex[i-1]
 	if tdiff.seconds > (60*60*6):
 		days_reading_6_hours += 1
-# BG counters
-total_piu_70 = 0
-total_piu_70_149 = 0
-total_piu_150_249 = 0
-total_piu_above_250 = 0
-total_bwp_70 = 0
-total_bwp_70_180 = 0
-total_bwp_181_250 = 0
-total_bwp_251_400 = 0
-total_bwp_above_400 = 0
-# Iterate through rows - BG as anchor
-for r in range(data.shape[0]):
-	# Count BG checks in various ranges
-    bg = data.loc[r,"Sensor Calibration BG (mg/dL)"]
-    if math.isnan(bg):
-    	continue
-    if bg < 70:
-        total_piu_70 += 1
-        total_bwp_70 += 1
-    if 70 <= bg <= 149:
-        total_piu_70_149 += 1
-    if 70 <= bg <= 180:
-        total_bwp_70_180 += 1
-    if 150 <= bg <= 249:
-        total_piu_150_249 += 1
-    if 181 <= bg <= 250:
-        total_bwp_181_250 += 1
-    if bg > 250:
-        total_piu_above_250 += 1
-        if bg <= 400:
-            total_bwp_251_400 += 1
-        elif bg > 400:
-            total_bwp_above_400 += 1
+# Bolus times
+bolus_times = data.loc[data["Bolus Volume Delivered (U)"] > 0,"Timestamp"]
 # Get carb times and convert to datetime
 carb_times = data.loc[data["BWZ Carb Input (grams)"] > 0,"Timestamp"]
 carb_weekday = [dt.datetime.weekday(t) for t in carb_times]
@@ -99,8 +68,93 @@ carbs_per_weekday = len([i for i in carb_weekday if i <= 4]) / days
 carbs_per_weekend = len([i for i in carb_weekday if i >= 5]) / days
 carb_date_counts = collections.Counter(carb_dates)
 perc_days_3_more_carbs = len([i for i in carb_date_counts.values() if i > 3]) / days
-# Boluses
-bolus_times = data.loc[data["Bolus Volume Delivered (U)"] > 0,"Timestamp"]
+# BG counters
+# Totals in range
+total_70 = 0
+total_70_149 = 0
+total_150_249 = 0
+total_above_250 = 0
+total_70_180 = 0
+total_181_250 = 0
+total_251_400 = 0
+total_above_400 = 0
+# Number in range followed by bolus alone or bolus and carb
+bg_70_followed_by_bolus = 0
+bg_70_149_followed_by_bolus = 0
+bg_70_180_followed_by_bolus = 0
+bg_150_249_followed_by_bolus = 0
+bg_181_250_followed_by_bolus = 0
+bg_above_250_followed_by_bolus = 0
+bg_251_400_followed_by_bolus = 0
+bg_above_400_followed_by_bolus = 0
+bg_70_followed_by_bolus_and_carb = 0
+bg_70_149_followed_by_bolus_and_carb = 0
+bg_70_180_followed_by_bolus_and_carb = 0
+bg_150_249_followed_by_bolus_and_carb = 0
+bg_181_250_followed_by_bolus_and_carb = 0
+bg_above_250_followed_by_bolus_and_carb = 0
+bg_251_400_followed_by_bolus_and_carb = 0
+bg_above_400_followed_by_bolus_and_carb = 0
+# Iterate through rows - BG as anchor
+for r in range(data.shape[0]):
+	# Count BG checks in various ranges
+    bg = data.loc[r,"Sensor Calibration BG (mg/dL)"]
+    if math.isnan(bg):
+    	continue
+    if bg < 70:
+        total_70 += 1
+    if 70 <= bg <= 149:
+        total_70_149 += 1
+    if 70 <= bg <= 180:
+        total_70_180 += 1
+    if 150 <= bg <= 249:
+        total_150_249 += 1
+    if 181 <= bg <= 250:
+        total_181_250 += 1
+    if bg > 250:
+        total_above_250 += 1
+        if bg <= 400:
+            total_251_400 += 1
+        elif bg > 400:
+            total_above_400 += 1
+    # Check for boluses and carbs within 15 minutes
+    bg_time = data.loc[r,"Timestamp"]
+    bg_period_forw = bg_time + dt.timedelta(minutes=15)
+    if len([i for i in bolus_times if ((i > bg_time) & (i <= bg_period_forw))]) > 0:
+        if bg < 70:
+            bg_70_followed_by_bolus += 1
+        if 70 <= bg <= 149:
+            bg_70_149_followed_by_bolus += 1
+        if 70 <= bg <= 180:
+            bg_70_180_followed_by_bolus += 1
+        if 150 <= bg <= 249:
+            bg_150_249_followed_by_bolus += 1
+        if 181 <= bg <= 250:
+            bg_181_250_followed_by_bolus += 1
+        if bg > 250:
+            bg_above_250_followed_by_bolus += 1
+            if bg <= 400:
+                bg_251_400_followed_by_bolus += 1
+            elif bg > 400:
+                bg_above_400_followed_by_bolus += 1
+        if len([i for i in carb_times if ((i > bg_time) & (i <= bg_period_forw))]) > 0:
+            if bg < 70:
+                bg_70_followed_by_bolus_and_carb += 1
+            if 70 <= bg <= 149:
+                bg_70_149_followed_by_bolus_and_carb += 1
+            if 70 <= bg <= 180:
+                bg_70_180_followed_by_bolus_and_carb += 1
+            if 150 <= bg <= 249:
+                bg_150_249_followed_by_bolus_and_carb += 1
+            if 181 <= bg <= 250:
+                bg_181_250_followed_by_bolus_and_carb += 1
+            if bg > 250:
+                bg_above_250_followed_by_bolus_and_carb += 1
+                if bg <= 400:
+                    bg_251_400_followed_by_bolus_and_carb += 1
+                elif bg > 400:
+                    bg_above_400_followed_by_bolus_and_carb += 1
+print(total_70_149,bg_70_149_followed_by_bolus_and_carb,bg_70_149_followed_by_bolus)
 # Bolus counters
 total_bolus = 0
 double_bolus = 0
