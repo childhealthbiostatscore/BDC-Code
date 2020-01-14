@@ -94,6 +94,28 @@ total_bolus = 0
 double_bolus = 0
 bolus_within_15_70 = 0
 bolus_within_15_70_149 = 0
+bolus_within_15_70_180 = 0
+bolus_within_15_150_249 = 0
+bolus_within_15_181_250 = 0
+bolus_within_15_above_250 = 0
+bolus_within_15_251_400 = 0
+bolus_within_15_above_400 = 0
+bolus_within_30_70 = 0
+bolus_within_30_70_149 = 0
+bolus_within_30_70_180 = 0
+bolus_within_30_150_249 = 0
+bolus_within_30_181_250 = 0
+bolus_within_30_above_250 = 0
+bolus_within_30_251_400 = 0
+bolus_within_30_above_400 = 0
+bolus_within_5_70 = 0
+bolus_within_5_70_149 = 0
+bolus_within_5_70_180 = 0
+bolus_within_5_150_249 = 0
+bolus_within_5_181_250 = 0
+bolus_within_5_above_250 = 0
+bolus_within_5_251_400 = 0
+bolus_within_5_above_400 = 0
 
 last_bg_times = list()
 last_bg = list()
@@ -128,6 +150,7 @@ for r in range(data.shape[0]):
 
 # Loop through last BG check times and classify based on BG level
 for t in range(len(last_bg_times)):
+	# 15 minutes
 	if last_bg_times[t] <= (15 * 60):
 		if last_bg[t] < 70:
 			bolus_within_15_70 += 1
@@ -135,6 +158,56 @@ for t in range(len(last_bg_times)):
 			bolus_within_15_70_149 += 1
 		if 70 <= last_bg[t] <= 180:
 			bolus_within_15_70_180 += 1
+		if 150 <= last_bg[t] <= 249:
+			bolus_within_15_150_249 += 1
+		if 181 <= last_bg[t] <= 250:
+			bolus_within_15_181_250 += 1
+		if last_bg[t] > 250:
+			bolus_within_15_above_250 += 1
+			if last_bg[t] <= 400:
+				bolus_within_15_251_400 += 1
+			if last_bg[t] > 400:
+				bolus_within_15_above_400 += 1
+	# 30 minutes
+	if last_bg_times[t] <= (30 * 60):
+		if last_bg[t] < 70:
+			bolus_within_30_70 += 1
+		if 70 <= last_bg[t] <= 149:
+			bolus_within_30_70_149 += 1
+		if 70 <= last_bg[t] <= 180:
+			bolus_within_30_70_180 += 1
+		if 150 <= last_bg[t] <= 249:
+			bolus_within_30_150_249 += 1
+		if 181 <= last_bg[t] <= 250:
+			bolus_within_30_181_250 += 1
+		if last_bg[t] > 250:
+			bolus_within_30_above_250 += 1
+			if last_bg[t] <= 400:
+				bolus_within_30_251_400 += 1
+			if last_bg[t] > 400:
+				bolus_within_30_above_400 += 1
+	# 5 minutes
+	if last_bg_times[t] <= (5 * 60):
+		if last_bg[t] < 70:
+			bolus_within_5_70 += 1
+		if 70 <= last_bg[t] <= 149:
+			bolus_within_5_70_149 += 1
+		if 70 <= last_bg[t] <= 180:
+			bolus_within_5_70_180 += 1
+		if 150 <= last_bg[t] <= 249:
+			bolus_within_5_150_249 += 1
+		if 181 <= last_bg[t] <= 250:
+			bolus_within_5_181_250 += 1
+		if last_bg[t] > 250:
+			bolus_within_5_above_250 += 1
+			if last_bg[t] <= 400:
+				bolus_within_5_251_400 += 1
+			if last_bg[t] > 400:
+				bolus_within_5_above_400 += 1
+
+
+
+
 
 
 
