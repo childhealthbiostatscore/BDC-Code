@@ -13,12 +13,17 @@ import datetime as dt
 import os
 import collections
 import math
-
+import pprint
 # List of files
 path = "/Users/timvigers/Desktop/square bolus test/"
 files = os.listdir(path)
 files = [path + f for f in files]
-
+# Empty results dictionary
+results = collections.OrderedDict()
+# Get ID
+subject_id = os.path.basename(str(files))
+subject_id = subject_id.replace("_pump.csv']","")
+results["Subject ID"] = subject_id
 # Read in data
 data = pd.read_csv(files[0])
 # Sort
@@ -34,6 +39,7 @@ data.reset_index(inplace=True)
 data["Weekday"] = [dt.datetime.weekday(t) for t in all_times]
 # Total days of data
 days = (max(all_times) - min(all_times)).days + 1
+results["Total Days"] = days
 # Count weekdays and weekends
 weekdays = data.loc[data["Weekday"] <= 4,"Date"]
 weekdays = len(set(weekdays))
@@ -46,11 +52,16 @@ bg_reading_dates = [dt.datetime.date(t) for t in bg_reading_times]
 # Basic BG variables
 bgs = data.loc[data["Sensor Calibration BG (mg/dL)"] > 0,"Sensor Calibration BG (mg/dL)"]
 total_readings = len(bg_reading_times)
+results["Total Readings"] = total_readings
 readings_per_day = total_readings / days
+results["Readings per Day"] = readings_per_day
 readings_per_weekday = len([i for i in bg_reading_weekday if i <= 4]) / weekdays
+results["Readings per Weekday"] = readings_per_weekday
 readings_per_weekend = len([i for i in bg_reading_weekday if i >= 5]) / weekends
+results["Readings per Weekend"] = readings_per_weekend
 readings_date_counts = collections.Counter(bg_reading_dates)
 perc_days_4_more_readings = len([i for i in readings_date_counts.values() if i > 4]) / days
+results["Perc. of Days with >= 4 Readings"] = perc_days_4_more_readings
 # Days with readings >= 6 hours apart
 bg_times_reindex = bg_reading_times.reset_index(drop = True)
 days_reading_6_hours = 0
@@ -60,6 +71,7 @@ for i in range(1,len(bg_times_reindex)):
 	tdiff = bg_times_reindex[i] - bg_times_reindex[i-1]
 	if tdiff.seconds > (60*60*6):
 		days_reading_6_hours += 1
+results["Days with >= 6 Hours Between Readings"] = days_reading_6_hours
 # Bolus times
 bolus_times = data.loc[data["Bolus Volume Delivered (U)"] > 0,"Timestamp"]
 # Get carb times and convert to datetime
@@ -68,11 +80,16 @@ carb_weekday = [dt.datetime.weekday(t) for t in carb_times]
 carb_dates = [dt.datetime.date(t) for t in carb_times]
 # Carb variables
 total_carbs = len(carb_times)
+results["Total Carb Inputs"] = total_carbs
 carbs_per_day = total_carbs / days
+results["Carb Inputs per Day"] = carbs_per_day
 carbs_per_weekday = len([i for i in carb_weekday if i <= 4]) / weekdays
+results["Carb Inputs per Weekday"] = carbs_per_weekday
 carbs_per_weekend = len([i for i in carb_weekday if i >= 5]) / weekends
+results["Carb Inputs per Weekend"] = carbs_per_weekend
 carb_date_counts = collections.Counter(carb_dates)
 perc_days_3_more_carbs = len([i for i in carb_date_counts.values() if i > 3]) / days
+results["Perc. Days With >= 3 Carb Inputs"] = perc_days_3_more_carbs
 # BG counters
 # Totals in range
 total_70 = 0
@@ -162,6 +179,32 @@ for r in range(data.shape[0]):
                     bg_251_400_followed_by_bolus_and_carb += 1
                 elif bg > 400:
                     bg_above_400_followed_by_bolus_and_carb += 1
+results.update({
+	"Total BG Readings < 70":total_70,
+	"Total BG Readings < 70 Followed by Bolus":bg_70_followed_by_bolus,
+	"Total BG Readings < 70 Followed by Bolus and Carb":bg_70_followed_by_bolus_and_carb,
+	"Total BG Readings 70 - 149":total_70_149,
+	"Total BG Readings 70 - 149 Followed by Bolus":bg_70_149_followed_by_bolus,
+	"Total BG Readings 70 - 149 Followed by Bolus and Carb":bg_70_149_followed_by_bolus_and_carb,
+	"Total BG Readings 70 - 180":total_70_180,
+	"Total BG Readings 70 - 180 Followed by Bolus":bg_70_180_followed_by_bolus,
+	"Total BG Readings 70 - 180 Followed by Bolus and Carb":bg_70_180_followed_by_bolus_and_carb,
+	"Total BG Readings 150 - 249":total_150_249,
+	"Total BG Readings 150 - 249 Followed by Bolus":bg_150_249_followed_by_bolus,
+	"Total BG Readings 150 - 249 Followed by Bolus and Carb":bg_150_249_followed_by_bolus_and_carb,
+	"Total BG Readings 181 - 250":total_181_250,
+	"Total BG Readings 181 - 250 Followed by Bolus":bg_181_250_followed_by_bolus,
+	"Total BG Readings 181 - 250 Followed by Bolus and Carb":bg_181_250_followed_by_bolus_and_carb,
+	"Total BG Readings 250+":total_above_250,
+	"Total BG Readings 250+ Followed by Bolus":bg_above_250_followed_by_bolus,
+	"Total BG Readings 250+ Followed by Bolus and Carb":bg_above_250_followed_by_bolus_and_carb,
+	"Total BG Readings 251 - 400":total_251_400,
+	"Total BG Readings 251 - 400 Followed by Bolus":bg_251_400_followed_by_bolus,
+	"Total BG Readings 251 - 400 Followed by Bolus and Carb":bg_251_400_followed_by_bolus_and_carb,
+	"Total BG Readings 400+":total_above_400,
+	"Total BG Readings 400+ Followed by Bolus":bg_above_400_followed_by_bolus,
+	"Total BG Readings 400+ Followed by Bolus and Carb":bg_above_400_followed_by_bolus_and_carb,
+	})
 # Bolus counters
 total_bolus = 0
 double_bolus = 0
@@ -273,4 +316,49 @@ for t in range(len(last_bg_times)):
 				bolus_within_5_251_400 += 1
 			if last_bg[t] > 400:
 				bolus_within_5_above_400 += 1
-print(bg_70_149_followed_by_bolus,bg_70_149_followed_by_bolus_and_carb,total_70_149)
+results.update({
+	"Total Boluses":total_bolus,
+	"Total Double Boluses":double_bolus,
+	"Boluses Within 15 minutes of BG < 70":bolus_within_15_70,
+	"Boluses Within 15 minutes of BG 70 - 149":bolus_within_15_70_149,
+	"Boluses Within 15 minutes of BG 70 - 180":bolus_within_15_70_180,
+	"Boluses Within 15 minutes of BG 150 - 249":bolus_within_15_150_249,
+	"Boluses Within 15 minutes of BG 181 - 250":bolus_within_15_181_250,
+	"Boluses Within 15 minutes of BG 250+":bolus_within_15_above_250,
+	"Boluses Within 15 minutes of BG 251 - 400":bolus_within_15_251_400,
+	"Boluses Within 15 minutes of BG 400+":bolus_within_15_above_400,
+	"Boluses Within 30 minutes of BG < 70":bolus_within_30_70,
+	"Boluses Within 30 minutes of BG 70 - 149":bolus_within_30_70_149,
+	"Boluses Within 30 minutes of BG 70 - 180":bolus_within_30_70_180,
+	"Boluses Within 30 minutes of BG 150 - 249":bolus_within_30_150_249,
+	"Boluses Within 30 minutes of BG 181 - 250":bolus_within_30_181_250,
+	"Boluses Within 30 minutes of BG 250+":bolus_within_30_above_250,
+	"Boluses Within 30 minutes of BG 251 - 400":bolus_within_30_251_400,
+	"Boluses Within 30 minutes of BG 400+":bolus_within_30_above_400,
+	"Boluses Within 5 minutes of BG < 70":bolus_within_5_70,
+	"Boluses Within 5 minutes of BG 70 - 149":bolus_within_5_70_149,
+	"Boluses Within 5 minutes of BG 70 - 180":bolus_within_5_70_180,
+	"Boluses Within 5 minutes of BG 150 - 249":bolus_within_5_150_249,
+	"Boluses Within 5 minutes of BG 181 - 250":bolus_within_5_181_250,
+	"Boluses Within 5 minutes of BG 250+":bolus_within_5_above_250,
+	"Boluses Within 5 minutes of BG 251 - 400":bolus_within_5_251_400,
+	"Boluses Within 5 minutes of BG 400+":bolus_within_5_above_400,
+	})
+# Rebound BGs
+rebound_bgs = 0
+over_300_times = data.loc[data["Sensor Calibration BG (mg/dL)"] >= 300,"Timestamp"]
+under_70_times = data.loc[data["Sensor Calibration BG (mg/dL)"] < 70,"Timestamp"]
+for r in range(0,len(data["Sensor Calibration BG (mg/dL)"])):
+	if data.loc[r,"Sensor Calibration BG (mg/dL)"] >= 70:
+		continue
+	elif data.loc[r,"Sensor Calibration BG (mg/dL)"] < 70:
+		time = data.loc[r,"Timestamp"]
+		time_forw = time + dt.timedelta(hours = 24)
+		for t in over_300_times:
+			if t > time and t <= time_forw:
+				rebound_bgs += 1
+				continue
+results["Rebound BGs"] = rebound_bgs
+# Print
+print(len(results))
+pprint.pprint(results)
