@@ -33,16 +33,28 @@ data.reset_index(inplace=True)
 # Weekday column
 data["Weekday"] = [dt.datetime.weekday(t) for t in all_times]
 # Total days of data
-days = (max(all_times) - min(all_times)).days
+days = (max(all_times) - min(all_times)).days + 1
 # Get BG reading times and convert to datetime
 bg_reading_times = data.loc[data["Sensor Calibration BG (mg/dL)"] > 0,"Timestamp"]
 bg_reading_weekday = [dt.datetime.weekday(t) for t in bg_reading_times]
+bg_reading_dates = [dt.datetime.date(t) for t in bg_reading_times]
 # Basic BG variables
 bgs = data.loc[data["Sensor Calibration BG (mg/dL)"] > 0,"Sensor Calibration BG (mg/dL)"]
 total_readings = len(bg_reading_times)
 readings_per_day = total_readings / days
 readings_per_weekday = len([i for i in bg_reading_weekday if i <= 4]) / days
 readings_per_weekend = len([i for i in bg_reading_weekday if i >= 5]) / days
+readings_date_counts = collections.Counter(bg_reading_dates)
+perc_days_4_more_readings = len([i for i in readings_date_counts.values() if i > 4]) / days
+# Days with readings >= 6 hours apart
+bg_times_reindex = bg_reading_times.reset_index(drop = True)
+days_reading_6_hours = 0
+for i in range(1,len(bg_times_reindex)):
+	if dt.datetime.date(bg_times_reindex[i]) != dt.datetime.date(bg_times_reindex[i-1]):
+		continue
+	tdiff = bg_times_reindex[i] - bg_times_reindex[i-1]
+	if tdiff.seconds > (60*60*6):
+		days_reading_6_hours += 1
 # BG counters
 total_piu_70 = 0
 total_piu_70_149 = 0
@@ -86,7 +98,7 @@ carbs_per_day = total_carbs / days
 carbs_per_weekday = len([i for i in carb_weekday if i <= 4]) / days
 carbs_per_weekend = len([i for i in carb_weekday if i >= 5]) / days
 carb_date_counts = collections.Counter(carb_dates)
-perc_days_3_more_carbs = len([i for i in carb_date_counts.values() if i >3]) / days
+perc_days_3_more_carbs = len([i for i in carb_date_counts.values() if i > 3]) / days
 # Boluses
 bolus_times = data.loc[data["Bolus Volume Delivered (U)"] > 0,"Timestamp"]
 # Bolus counters
@@ -126,9 +138,6 @@ for r in range(data.shape[0]):
 	# If NaN or 0, next
 	if math.isnan(bolus) or bolus == 0:
 		continue
-	# Check for square bolus
-	#if data.loc[r,"Bolus Type"] == "Dual (normal part)":
-		
 	bol_time = data.loc[r,"Timestamp"]
 	# Check for additional boluses within 15 minutes, if so next row
 	bol_period_forw = bol_time + dt.timedelta(minutes=15)
@@ -204,11 +213,3 @@ for t in range(len(last_bg_times)):
 				bolus_within_5_251_400 += 1
 			if last_bg[t] > 400:
 				bolus_within_5_above_400 += 1
-
-
-
-
-
-
-
-	
