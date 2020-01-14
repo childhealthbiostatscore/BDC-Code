@@ -34,6 +34,11 @@ data.reset_index(inplace=True)
 data["Weekday"] = [dt.datetime.weekday(t) for t in all_times]
 # Total days of data
 days = (max(all_times) - min(all_times)).days + 1
+# Count weekdays and weekends
+weekdays = data.loc[data["Weekday"] <= 4,"Date"]
+weekdays = len(set(weekdays))
+weekends = data.loc[data["Weekday"] >= 5,"Date"]
+weekends = len(set(weekends))
 # Get BG reading times and convert to datetime
 bg_reading_times = data.loc[data["Sensor Calibration BG (mg/dL)"] > 0,"Timestamp"]
 bg_reading_weekday = [dt.datetime.weekday(t) for t in bg_reading_times]
@@ -42,8 +47,8 @@ bg_reading_dates = [dt.datetime.date(t) for t in bg_reading_times]
 bgs = data.loc[data["Sensor Calibration BG (mg/dL)"] > 0,"Sensor Calibration BG (mg/dL)"]
 total_readings = len(bg_reading_times)
 readings_per_day = total_readings / days
-readings_per_weekday = len([i for i in bg_reading_weekday if i <= 4]) / days
-readings_per_weekend = len([i for i in bg_reading_weekday if i >= 5]) / days
+readings_per_weekday = len([i for i in bg_reading_weekday if i <= 4]) / weekdays
+readings_per_weekend = len([i for i in bg_reading_weekday if i >= 5]) / weekends
 readings_date_counts = collections.Counter(bg_reading_dates)
 perc_days_4_more_readings = len([i for i in readings_date_counts.values() if i > 4]) / days
 # Days with readings >= 6 hours apart
@@ -64,8 +69,8 @@ carb_dates = [dt.datetime.date(t) for t in carb_times]
 # Carb variables
 total_carbs = len(carb_times)
 carbs_per_day = total_carbs / days
-carbs_per_weekday = len([i for i in carb_weekday if i <= 4]) / days
-carbs_per_weekend = len([i for i in carb_weekday if i >= 5]) / days
+carbs_per_weekday = len([i for i in carb_weekday if i <= 4]) / weekdays
+carbs_per_weekend = len([i for i in carb_weekday if i >= 5]) / weekends
 carb_date_counts = collections.Counter(carb_dates)
 perc_days_3_more_carbs = len([i for i in carb_date_counts.values() if i > 3]) / days
 # BG counters
@@ -101,6 +106,11 @@ for r in range(data.shape[0]):
     bg = data.loc[r,"Sensor Calibration BG (mg/dL)"]
     if math.isnan(bg):
     	continue
+    bg_time = data.loc[r,"Timestamp"]
+    bg_period_forw = bg_time + dt.timedelta(minutes=15)
+    # Check for BG checks in the next 15 minutes
+    if len([i for i in bg_reading_times if ((i > bg_time) & (i <= bg_period_forw))]) > 0:
+        continue
     if bg < 70:
         total_70 += 1
     if 70 <= bg <= 149:
@@ -118,8 +128,6 @@ for r in range(data.shape[0]):
         elif bg > 400:
             total_above_400 += 1
     # Check for boluses and carbs within 15 minutes
-    bg_time = data.loc[r,"Timestamp"]
-    bg_period_forw = bg_time + dt.timedelta(minutes=15)
     if len([i for i in bolus_times if ((i > bg_time) & (i <= bg_period_forw))]) > 0:
         if bg < 70:
             bg_70_followed_by_bolus += 1
@@ -154,7 +162,6 @@ for r in range(data.shape[0]):
                     bg_251_400_followed_by_bolus_and_carb += 1
                 elif bg > 400:
                     bg_above_400_followed_by_bolus_and_carb += 1
-print(total_70_149,bg_70_149_followed_by_bolus_and_carb,bg_70_149_followed_by_bolus)
 # Bolus counters
 total_bolus = 0
 double_bolus = 0
@@ -182,7 +189,7 @@ bolus_within_5_181_250 = 0
 bolus_within_5_above_250 = 0
 bolus_within_5_251_400 = 0
 bolus_within_5_above_400 = 0
-
+# Lists of last BG prior to bolus and the time difference
 last_bg_times = list()
 last_bg = list()
 # Iterate through rows - bolus as anchor
@@ -194,13 +201,14 @@ for r in range(data.shape[0]):
 		continue
 	bol_time = data.loc[r,"Timestamp"]
 	# Check for additional boluses within 15 minutes, if so next row
-	bol_period_forw = bol_time + dt.timedelta(minutes=15)
+	bol_period_forw = bol_time + dt.timedelta(minutes=20)
 	if len([i for i in bolus_times if ((i > bol_time) & (i <= bol_period_forw))]) > 0:
 		continue
 	# If there are boluses within 15 minutes before, add them
 	bol_period_back = bol_time - dt.timedelta(minutes=15)
 	if len([i for i in bolus_times if ((i >= bol_period_back) & (i < bol_time))]) > 0:
 		double_bolus += 1
+	total_bolus += 1
 	# Find time from last BG and last BG value
 	for b in range(r,0,-1):
 		bg = data.loc[b,"Sensor Calibration BG (mg/dL)"]
@@ -210,10 +218,8 @@ for r in range(data.shape[0]):
 			last_bg_times.append(time_diff.seconds)
 			last_bg.append(bg)
 			break
-
 # Loop through last BG check times and classify based on BG level
 for t in range(len(last_bg_times)):
-	# 15 minutes
 	if last_bg_times[t] <= (15 * 60):
 		if last_bg[t] < 70:
 			bolus_within_15_70 += 1
@@ -267,3 +273,4 @@ for t in range(len(last_bg_times)):
 				bolus_within_5_251_400 += 1
 			if last_bg[t] > 400:
 				bolus_within_5_above_400 += 1
+print(bg_70_149_followed_by_bolus,bg_70_149_followed_by_bolus_and_carb,total_70_149)
