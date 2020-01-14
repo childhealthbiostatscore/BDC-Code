@@ -61,9 +61,15 @@ for f in files:
 	results["Total Readings"] = total_readings
 	readings_per_day = total_readings / days
 	results["Readings per Day"] = readings_per_day
-	readings_per_weekday = len([i for i in bg_reading_weekday if i <= 4]) / weekdays
+	if weekdays != 0:
+		readings_per_weekday = len([i for i in bg_reading_weekday if i <= 4]) / weekdays
+	elif weekdays == 0:
+		readings_per_weekday = float('Inf')
 	results["Readings per Weekday"] = readings_per_weekday
-	readings_per_weekend = len([i for i in bg_reading_weekday if i >= 5]) / weekends
+	if weekends != 0:
+		readings_per_weekend = len([i for i in bg_reading_weekday if i >= 5]) / weekends
+	elif weekends == 0:
+		readings_per_weekend = float('Inf')
 	results["Readings per Weekend"] = readings_per_weekend
 	readings_date_counts = collections.Counter(bg_reading_dates)
 	perc_days_4_more_readings = len([i for i in readings_date_counts.values() if i > 4]) / days
@@ -89,9 +95,15 @@ for f in files:
 	results["Total Carb Inputs"] = total_carbs
 	carbs_per_day = total_carbs / days
 	results["Carb Inputs per Day"] = carbs_per_day
-	carbs_per_weekday = len([i for i in carb_weekday if i <= 4]) / weekdays
+	if weekdays != 0:
+		carbs_per_weekday = len([i for i in carb_weekday if i <= 4]) / weekdays
+	elif weekdays == 0:
+		carbs_per_weekday = float('Inf')
 	results["Carb Inputs per Weekday"] = carbs_per_weekday
-	carbs_per_weekend = len([i for i in carb_weekday if i >= 5]) / weekends
+	if weekends != 0:
+		carbs_per_weekend = len([i for i in carb_weekday if i >= 5]) / weekends
+	elif weekends == 0:
+		carbs_per_weekend = float('Inf')
 	results["Carb Inputs per Weekend"] = carbs_per_weekend
 	carb_date_counts = collections.Counter(carb_dates)
 	perc_days_3_more_carbs = len([i for i in carb_date_counts.values() if i > 3]) / days
