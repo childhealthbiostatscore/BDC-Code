@@ -29,7 +29,7 @@ for f in files:
 		continue
 	# Get ID
 	subject_id = os.path.basename(str(f))
-	subject_id = subject_id.replace("_pump.csv']","")
+	subject_id = subject_id.replace("_cleaned.csv","")
 	results["Subject ID"] = subject_id
 	# Read in data
 	data = pd.read_csv(f)
@@ -63,12 +63,12 @@ for f in files:
 	if weekdays != 0:
 		readings_per_weekday = len([i for i in bg_reading_weekday if i <= 4]) / weekdays
 	elif weekdays == 0:
-		readings_per_weekday = float('Inf')
+		readings_per_weekday = float('NaN')
 	results["Readings per Weekday"] = readings_per_weekday
 	if weekends != 0:
 		readings_per_weekend = len([i for i in bg_reading_weekday if i >= 5]) / weekends
 	elif weekends == 0:
-		readings_per_weekend = float('Inf')
+		readings_per_weekend = float('NaN')
 	results["Readings per Weekend"] = readings_per_weekend
 	readings_date_counts = collections.Counter(bg_reading_dates)
 	perc_days_4_more_readings = len([i for i in readings_date_counts.values() if i > 4]) / days
@@ -97,12 +97,12 @@ for f in files:
 	if weekdays != 0:
 		carbs_per_weekday = len([i for i in carb_weekday if i <= 4]) / weekdays
 	elif weekdays == 0:
-		carbs_per_weekday = float('Inf')
+		carbs_per_weekday = float('NaN')
 	results["Carb Inputs per Weekday"] = carbs_per_weekday
 	if weekends != 0:
 		carbs_per_weekend = len([i for i in carb_weekday if i >= 5]) / weekends
 	elif weekends == 0:
-		carbs_per_weekend = float('Inf')
+		carbs_per_weekend = float('NaN')
 	results["Carb Inputs per Weekend"] = carbs_per_weekend
 	carb_date_counts = collections.Counter(carb_dates)
 	perc_days_3_more_carbs = len([i for i in carb_date_counts.values() if i > 3]) / days
@@ -142,7 +142,7 @@ for f in files:
 	    	continue
 	    bg_time = data.loc[r,"Timestamp"]
 	    bg_period_forw = bg_time + dt.timedelta(minutes=15)
-	    # Check for BG checks in the next 15 minutes
+	    # Look for BG checks in the next 15 minutes
 	    if len([i for i in bg_reading_times if ((i > bg_time) & (i <= bg_period_forw))]) > 0:
 	        continue
 	    if bg < 70:
@@ -260,12 +260,20 @@ for f in files:
 		if math.isnan(bolus) or bolus == 0:
 			continue
 		bol_time = data.loc[r,"Timestamp"]
-		# Check for additional boluses within 15 minutes, if so next row
+		# Check for additional boluses within 20 minutes, if so next row
 		bol_period_forw = bol_time + dt.timedelta(minutes=20)
 		if len([i for i in bolus_times if ((i > bol_time) & (i <= bol_period_forw))]) > 0:
 			continue
-		# If there are boluses within 15 minutes before, add them
-		bol_period_back = bol_time - dt.timedelta(minutes=15)
+		# See if there are boluses within 20 minutes before, get earliest 
+		for b in range(r,0,-1):
+			bol = data.loc[b,"Bolus Volume Delivered (U)"]
+			if math.isnan(bol) or bol == 0:
+				continue
+			bol_start = data.loc[b,"Timestamp"]
+			bol_period_back = bol_start - dt.timedelta(minutes=20)
+			prev_boluses = [i for i in bolus_times if ((i >= bol_period_back) & (i < bol_start))]
+			if len(prev_boluses) == 0:
+				break
 		if len([i for i in bolus_times if ((i >= bol_period_back) & (i < bol_time))]) > 0:
 			double_bolus += 1
 		total_bolus += 1
@@ -274,7 +282,7 @@ for f in files:
 			bg = data.loc[b,"Sensor Calibration BG (mg/dL)"]
 			if math.isfinite(bg):
 				bg_time = data.loc[b,"Timestamp"]
-				time_diff = bol_time - bg_time
+				time_diff = bol_start - bg_time
 				last_bg_times.append(time_diff.seconds)
 				last_bg.append(bg)
 				break
@@ -334,32 +342,32 @@ for f in files:
 				if last_bg[t] > 400:
 					bolus_within_5_above_400 += 1
 	results.update({
-		"Total Boluses":total_bolus,
+		"Total Bolus Actions":total_bolus,
 		"Total Double Boluses":double_bolus,
-		"Boluses Within 15 minutes of BG < 70":bolus_within_15_70,
-		"Boluses Within 15 minutes of BG 70 - 149":bolus_within_15_70_149,
-		"Boluses Within 15 minutes of BG 70 - 180":bolus_within_15_70_180,
-		"Boluses Within 15 minutes of BG 150 - 249":bolus_within_15_150_249,
-		"Boluses Within 15 minutes of BG 181 - 250":bolus_within_15_181_250,
-		"Boluses Within 15 minutes of BG 250+":bolus_within_15_above_250,
-		"Boluses Within 15 minutes of BG 251 - 400":bolus_within_15_251_400,
-		"Boluses Within 15 minutes of BG 400+":bolus_within_15_above_400,
-		"Boluses Within 30 minutes of BG < 70":bolus_within_30_70,
-		"Boluses Within 30 minutes of BG 70 - 149":bolus_within_30_70_149,
-		"Boluses Within 30 minutes of BG 70 - 180":bolus_within_30_70_180,
-		"Boluses Within 30 minutes of BG 150 - 249":bolus_within_30_150_249,
-		"Boluses Within 30 minutes of BG 181 - 250":bolus_within_30_181_250,
-		"Boluses Within 30 minutes of BG 250+":bolus_within_30_above_250,
-		"Boluses Within 30 minutes of BG 251 - 400":bolus_within_30_251_400,
-		"Boluses Within 30 minutes of BG 400+":bolus_within_30_above_400,
-		"Boluses Within 5 minutes of BG < 70":bolus_within_5_70,
-		"Boluses Within 5 minutes of BG 70 - 149":bolus_within_5_70_149,
-		"Boluses Within 5 minutes of BG 70 - 180":bolus_within_5_70_180,
-		"Boluses Within 5 minutes of BG 150 - 249":bolus_within_5_150_249,
-		"Boluses Within 5 minutes of BG 181 - 250":bolus_within_5_181_250,
-		"Boluses Within 5 minutes of BG 250+":bolus_within_5_above_250,
-		"Boluses Within 5 minutes of BG 251 - 400":bolus_within_5_251_400,
-		"Boluses Within 5 minutes of BG 400+":bolus_within_5_above_400,
+		"Boluses With BG < 70 15 Minutes Prior":bolus_within_15_70,
+		"Boluses With BG 70 - 149 15 Minutes Prior":bolus_within_15_70_149,
+		"Boluses With BG 70 - 180 15 Minutes Prior":bolus_within_15_70_180,
+		"Boluses With BG 150 - 249 15 Minutes Prior":bolus_within_15_150_249,
+		"Boluses With BG 181 - 250 15 Minutes Prior":bolus_within_15_181_250,
+		"Boluses With BG 250+ 15 Minutes Prior":bolus_within_15_above_250,
+		"Boluses With BG 251 - 400 15 Minutes Prior":bolus_within_15_251_400,
+		"Boluses With BG 400+ 15 Minutes Prior":bolus_within_15_above_400,
+		"Boluses With BG < 70 30 Minutes Prior":bolus_within_30_70,
+		"Boluses With BG 70 - 149 30 Minutes Prior":bolus_within_30_70_149,
+		"Boluses With BG 70 - 180 30 Minutes Prior":bolus_within_30_70_180,
+		"Boluses With BG 150 - 249 30 Minutes Prior":bolus_within_30_150_249,
+		"Boluses With BG 181 - 250 30 Minutes Prior":bolus_within_30_181_250,
+		"Boluses With BG 250+ 30 Minutes Prior":bolus_within_30_above_250,
+		"Boluses With BG 251 - 400 30 Minutes Prior":bolus_within_30_251_400,
+		"Boluses With BG 400+ 30 Minutes Prior":bolus_within_30_above_400,
+		"Boluses With BG < 70 5 Minutes Prior":bolus_within_5_70,
+		"Boluses With BG 70 - 149 5 Minutes Prior":bolus_within_5_70_149,
+		"Boluses With BG 70 - 180 5 Minutes Prior":bolus_within_5_70_180,
+		"Boluses With BG 150 - 249 5 Minutes Prior":bolus_within_5_150_249,
+		"Boluses With BG 181 - 250 5 Minutes Prior":bolus_within_5_181_250,
+		"Boluses With BG 250+ 5 Minutes Prior":bolus_within_5_above_250,
+		"Boluses With BG 251 - 400 5 Minutes Prior":bolus_within_5_251_400,
+		"Boluses With BG 400+ 5 Minutes Prior":bolus_within_5_above_400,
 		})
 	# Rebound BGs
 	rebound_bgs = 0
