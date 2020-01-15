@@ -69,7 +69,7 @@ for f in files:
 		readings_per_weekend = len([i for i in bg_reading_weekday if i >= 5]) / weekends
 	elif weekends == 0:
 		readings_per_weekend = float('NaN')
-	results["Readings per Weekend"] = readings_per_weekend
+	results["Readings per Weekend Day"] = readings_per_weekend
 	readings_date_counts = collections.Counter(bg_reading_dates)
 	perc_days_4_more_readings = len([i for i in readings_date_counts.values() if i > 4]) / days
 	results["Perc. of Days with >= 4 Readings"] = perc_days_4_more_readings
@@ -103,7 +103,7 @@ for f in files:
 		carbs_per_weekend = len([i for i in carb_weekday if i >= 5]) / weekends
 	elif weekends == 0:
 		carbs_per_weekend = float('NaN')
-	results["Carb Inputs per Weekend"] = carbs_per_weekend
+	results["Carb Inputs per Weekend Day"] = carbs_per_weekend
 	carb_date_counts = collections.Counter(carb_dates)
 	perc_days_3_more_carbs = len([i for i in carb_date_counts.values() if i > 3]) / days
 	results["Perc. Days With >= 3 Carb Inputs"] = perc_days_3_more_carbs
@@ -225,6 +225,8 @@ for f in files:
 	# Bolus counters
 	total_bolus = 0
 	double_bolus = 0
+	weekday_bolus = 0
+	weekend_bolus = 0
 	bolus_within_15_70 = 0
 	bolus_within_15_70_149 = 0
 	bolus_within_15_70_180 = 0
@@ -277,6 +279,10 @@ for f in files:
 		if len([i for i in bolus_times if ((i >= bol_period_back) & (i < bol_time))]) > 0:
 			double_bolus += 1
 		total_bolus += 1
+		if data.loc[r,"Weekday"] >= 5:
+			weekend_bolus += 1
+		elif data.loc[r,"Weekday"] < 5:
+			weekday_bolus += 1
 		# Find time from last BG and last BG value
 		for b in range(r,0,-1):
 			bg = data.loc[b,"Sensor Calibration BG (mg/dL)"]
@@ -341,9 +347,21 @@ for f in files:
 					bolus_within_5_251_400 += 1
 				if last_bg[t] > 400:
 					bolus_within_5_above_400 += 1
+	if weekdays != 0:
+		bolus_per_weekday = weekday_bolus / weekdays
+	elif weekdays == 0:
+		bolus_per_weekday = float('NaN')
+	if weekends != 0:
+		bolus_per_weekend = weekend_bolus / weekends
+	elif weekends == 0:
+		bolus_per_weekend = float('NaN')
 	results.update({
 		"Total Bolus Actions":total_bolus,
 		"Total Double Boluses":double_bolus,
+		"Total Weekday Boluses":weekday_bolus,
+		"Total Weekend Boluses":weekend_bolus,
+		"Boluses per Weekday":bolus_per_weekday,
+		"Boluses per Weekend Day":bolus_per_weekend,
 		"Boluses With BG < 70 15 Minutes Prior":bolus_within_15_70,
 		"Boluses With BG 70 - 149 15 Minutes Prior":bolus_within_15_70_149,
 		"Boluses With BG 70 - 180 15 Minutes Prior":bolus_within_15_70_180,
