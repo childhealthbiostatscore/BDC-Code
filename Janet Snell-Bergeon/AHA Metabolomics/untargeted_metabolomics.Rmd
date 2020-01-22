@@ -44,16 +44,16 @@ clinical <- read.csv("./Data_Cleaned/targeted.csv",stringsAsFactors = F)
 cac_groups <- read.table("./Data_Raw/CAC Trajectories 3 groups.txt",sep = "\t",
                          header = T)
 # CAC progression - increase in square root calcium volume >= 2.5 between baseline and visit 3
-clinical$CACp <- as.factor(ifelse(clinical$c3 - clinical$c1 >= 2.5,"Progression","No Progression"))
+clinical$CACp <- 
+  as.factor(ifelse(clinical$c3 - clinical$c1 >= 2.5,"Progression","No Progression"))
 # New CAC groups
 clinical <- left_join(clinical,cac_groups[,c("StudyID","GROUP")],by = "StudyID")
 samples <- read.csv("./Data_Cleaned/sample_list.csv")
 # Match sample number to subject ID
 clinical$GlobalSampleID <- as.character(samples$Injection[match(clinical$StudyID,samples$SampleID)])
-clinical$Batch <- samples$Batch[match(clinical$StudyID,samples$SampleID)]
 # Relevant columns
 clinical <- clinical %>%
-  select(GlobalSampleID,age,sex,race,CACp,GROUP,Batch) %>%
+  select(GlobalSampleID,age,sex,race,CACp,GROUP) %>%
   filter(!is.na(GlobalSampleID))
 # Names
 names <- data$compound
@@ -65,29 +65,49 @@ colnames(data) <- names
 data$GlobalSampleID <- as.character(rownames(data))
 # Add clinical data
 data <- left_join(data,clinical,by = "GlobalSampleID")
-data <- data %>% select(GlobalSampleID:Batch,everything())
+data <- data %>% select(GlobalSampleID:GROUP,everything())
 data$GROUP[grepl("QC",data$GlobalSampleID)] <- "QC"
 data$GROUP <- as.factor(data$GROUP)
+# QC batch info
+# Injection order
+sampledata <- read.csv("./Data_Cleaned/injection_seq.csv",stringsAsFactors = F)
+sampledata$batch <- sapply(strsplit(sampledata$SampleName,"_"),`[`,2)
+sampledata$batch[nrow(sampledata)] <- sampledata$batch[(nrow(sampledata)-1)]
+sampledata$batch <- sub("Batch0","",sampledata$batch)
+sampledata <- sampledata %>% fill(batch,.direction = "up") %>%
+  mutate(order = 1:n())
+# Merge
+data <- left_join(data,sampledata[,c("GlobalSampleID","batch")],by = "GlobalSampleID")
+data$batch <- as.factor(data$batch)
+# Order columns
+data <- data %>% select(GlobalSampleID:GROUP,batch,everything())
 # Remove QC
-X <- data %>% select(GlobalSampleID,age:Batch,everything()) %>% 
-  filter(!(grepl("QC",GlobalSampleID)))
+X <- data %>% filter(!(grepl("QC",GlobalSampleID)))
 # Column formats
 X[,c("GlobalSampleID","sex","race")] <- lapply(X[,c("GlobalSampleID","sex","race")],as.factor)
 # Check distributions - log transform
 logged <- X
 logged[,8:ncol(logged)] <- lapply(logged[,8:ncol(logged)], log)
-skim(logged)
+#skim(logged)
+```
+
+# Normalization
+
+```{r mixnorm,echo=FALSE,eval=FALSE,cache=TRUE}
+# Metabolite list
+Y = colnames(X)[8:ncol(X)]
+# Normalize
+MetabNorm <- mixnorm(Y, batch="batch",
+                     cData=data[grepl("QC",data$GlobalSampleID),],
+                     data=X)
 ```
 
 # Mixture Models
 
 ```{r cache=TRUE}
-# Try mixture model with first two metabolites
 # Basic models
-fullModel <- ~ GROUP|GROUP + age + sex + race + Batch
-reducedModel <- ~ 1|age + sex + race + Batch
-# Metabolites
-Y = colnames(X)[8:ncol(X)]
+fullModel <- ~ GROUP + sex + race + batch|GROUP + age
+reducedModel <- ~ sex + race + batch|age
 # Full model results
 fullModelResults <- mxtrmod(ynames=Y,mxtrModel=fullModel,data=logged)
 # Reduced model results
@@ -99,39 +119,3 @@ raw_results <- raw_results[order(raw_results$p),]
 kable(raw_results,row.names = F)
 ```
 
-## Normalization
-
-```{r mixnorm,echo=FALSE,eval=FALSE}
-
-```
-
-```{r normalizemets,echo=FALSE,eval=FALSE}
-# Metabolite data
-featuredata <- df_qc[,9:(ncol(df_qc)-1)]
-rownames(featuredata) <- df_qc$GlobalSampleID
-# Injection order
-sampledata <- read.csv("./Data_Cleaned/injection_seq.csv",stringsAsFactors = F) %>%
-  select(Injection,SampleName,Position) %>%
-  filter(Injection %in% rownames(featuredata))
-# Format sample data
-sampledata$batch <- sapply(strsplit(sampledata$SampleName,"_"),`[`,2)
-sampledata$batch[nrow(sampledata)] <- sampledata$batch[(nrow(sampledata)-1)]
-sampledata$batch <- sub("Batch0","",sampledata$batch)
-sampledata <- sampledata %>% fill(batch,.direction = "up") %>%
-  mutate(order = 1:n())
-rownames(sampledata) <- sampledata$GlobalSampleID
-sampledata$class <- df_qc$GROUP[match(sampledata$Injection,df_qc$GlobalSampleID)]
-sampledata$class[sampledata$class == "QC"] <- 0
-# Match sample and feature data, set rownames
-featuredata <- featuredata[match(sampledata$Injection,rownames(featuredata)),]
-featuredata <- as.data.frame(featuredata)
-rownames(sampledata) <- sampledata$Injection
-sampledata <- sampledata %>% select(batch,class,order) %>% as.data.frame()
-# Normalize - saves output in working directory
-normalized <- NormQcsamples(featuredata, sampledata, method = c("rlsc"), span = 0,
-  deg = 2, lg = TRUE, saveoutput = T)
-```
-
-```{r combat,echo=FALSE,eval=FALSE}
-
-```
