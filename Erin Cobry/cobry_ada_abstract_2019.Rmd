@@ -2,7 +2,7 @@
 title: "HCL Overnight Analysis"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: word_document
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
@@ -70,7 +70,7 @@ levels(demographics$demographics_pumphx.factor) <-
 
 # Table 1: Descriptive Characteristics
 
-Excluding participants with no CGM data (27,30,38,41).
+Excluding participants with no CGM data (IDs 27, 30, 38, and 41).
 
 ```{r table 1,echo=FALSE,results='asis'}
 # Labels
@@ -218,14 +218,18 @@ mod_ri_car1 <- glmmPQL(num_alarms ~ timepoint + perc_time_in_AM +
                        random = ~1|id,data = overnight_alarms,
                        family = "poisson",
                        correlation = corCAR1(form = ~numeric_time))
-results <- broom::tidy(mod_ri_car1,"fixed")
+results <- broom::tidy(mod_ri_car1,effects = "fixed")
 results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" )
-results[,2:4] <- lapply(results[,2:4],function(x) round(x,3))
 results$p.value <- format.pval(results$p.value,eps = 0.0001,digits = 3)
-kable(results)
+results$estimate <- exp(results$estimate)
+conf_int <- as.data.frame(intervals(mod_ri_car1)$fixed)
+results$lower_ci <- exp(conf_int$lower)
+results$upper_ci <- exp(conf_int$upper)
+results$estimate <- exp(conf_int$est.)
+kable(results[,c("term","estimate","lower_ci","upper_ci","p.value")])
 ```
 
-For each timepoint, the "estimate" column in the table above represents the average difference from baseline after adjusting for percent time in AM. All four timepoints had a significantly lower number of alarms per day than baseline. Also, for each percentage point increase in time spent spent in AM, the number of alarms per day increased on average by `r results$estimate[results$term == "% Time in AM"]` (p = `r results$p.value[results$term == "% Time in AM"]`).
+For each timepoint, the "estimate" column in the table above represents the factor by which the rate of alarms changed from baseline, after adjusting for percent time in AM. All four timepoints had a significantly lower rates of alarms per day compared to baseline. Also, for each percentage point increase in time spent spent in AM, the rate of alarms per day was on average `r results$estimate[results$term == "% Time in AM"]` times higher (p = `r results$p.value[results$term == "% Time in AM"]`). So, a 10% increase in AM use would on average result in a `r (results$estimate[results$term == "% Time in AM"] - 1)*100*10`% increase in the rate of alarms.
 
 ## Nighttime % TIR by Timepoint
 
@@ -244,11 +248,14 @@ mod_ri_car1 <- lme(percent_time_70_180_night ~ timepoint + perc_time_in_AM,
                    random = ~1|id,data = overnight_alarms,na.action = na.omit,
                    correlation = corCAR1(form = ~numeric_time))
 # Residuals look good!
-results <- broom::tidy(mod_ri_car1,"fixed")
+results <- broom::tidy(mod_ri_car1,"fixed",confi = T)
 results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" )
-results[,2:4] <- lapply(results[,2:4],function(x) round(x,3))
 results$p.value <- format.pval(results$p.value,eps = 0.0001,digits = 3)
-kable(results)
+conf_int <- as.data.frame(intervals(mod_ri_car1)$fixed)
+results$lower_ci <- conf_int$lower
+results$upper_ci <- conf_int$upper
+results$estimate <- conf_int$est.
+kable(results[,c("term","estimate","lower_ci","upper_ci","p.value")])
 ```
 
 After adjusting for percent time in AM, nighttime %TIR was lower at each timepoint compared to baseline. On average, for a participant with 0% time in AM, nighttime %TIR changed by `r results$estimate[results$term == "Week 2"]` at week 2 compared to baseline (p = `r results$p.value[results$term == "Week 2"]`). The interpretation for other timepoints is similar. Also, for each percentage point increase in time spent spent in AM, nighttime %TIR increased on average by `r results$estimate[results$term == "% Time in AM"]` percentage points (p = `r results$p.value[results$term == "% Time in AM"]`). 
@@ -272,9 +279,13 @@ mod_ri_car1 <- lme(nighttime_avg_sens_glucose ~ timepoint + perc_time_in_AM,
 
 results <- broom::tidy(mod_ri_car1,"fixed")
 results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" )
-results[,2:4] <- lapply(results[,2:4],function(x) round(x,3))
 results$p.value <- format.pval(results$p.value,eps = 0.0001,digits = 3)
-kable(results)
+results$p.value <- format.pval(results$p.value,eps = 0.0001,digits = 3)
+conf_int <- as.data.frame(intervals(mod_ri_car1,which = "fixed")$fixed)
+results$lower_ci <- conf_int$lower
+results$upper_ci <- conf_int$upper
+results$estimate <- conf_int$est.
+kable(results[,c("term","estimate","lower_ci","upper_ci","p.value")])
 ```
 
 There was an overall effect of timepoint on nighttime mean glucose (p = 0.0174). After adjusting for percent time in AM, nighttime mean glucose was higher at each timepoint compared to baseline (although the difference was not statistically significant at T3 or T4). On average, for a participant with 0% time in AM, nighttime mean glucose increased by `r results$estimate[results$term == "Week 2"]` at week 2 compared to baseline (p = `r results$p.value[results$term == "Week 2"]`). The interpretation for other timepoints is similar. Also, for each percentage point increase in time spent spent in AM, nighttime mean glucose changed by `r results$estimate[results$term == "% Time in AM"]` on average (p = `r results$p.value[results$term == "% Time in AM"]`). 
