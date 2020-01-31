@@ -1,0 +1,140 @@
+---
+title: "Disglycemia in BMT Patients"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
+library(redcapAPI)
+library(AGD)
+library(arsenal)
+library(skimr)
+library(knitr)
+library(tidyverse)
+```
+
+```{r data import,echo=FALSE,cache=TRUE}
+# REDCap API data import
+api <- read.table("./Jenna Sopfe/api_token.txt",header = T,sep = "\t")
+rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
+                         token = as.character(api[1,1]))
+data_full <- exportRecords(rcon)
+# Remove participant 10
+data_full <- data_full %>% filter(study_id != "10")
+```
+
+```{r data cleaning,echo=FALSE}
+# Get CGM data
+cgm_data <- data_full %>% filter(is.na(redcap_repeat_instrument)) %>%
+  select(study_id,date_of_tx,
+         sens1_place,plt1,transfuse1,bleed1,sens1_remove,sens1_reason,
+         sens2_place,plt2,transfuse2,bleed2,sens2_remove,sens2_reason,
+         sens3_place,plt3,transfuse3,bleed3,sens3_remove,sens3_reason,
+         sens4_place,plt4,transfuse4,bleed4,sens4_remove,sens4_reason,
+         sens5_place,plt5,transfuse5,bleed5,sens5_remove,sens5_reason,
+         sens6_place,plt6,transfuse6,bleed6,sens6_remove,sens6_reason)
+
+colnames(cgm_data) <- c("study_id","date_of_tx",
+                        "sens_place.1","plt.1","transfuse.1","bleed.1",
+                        "sens_remove.1","sens_reason.1",
+                        "sens_place.2","plt.2","transfuse.2","bleed.2",
+                        "sens_remove.2","sens_reason.2",
+                        "sens_place.3","plt.3","transfuse.3","bleed.3",
+                        "sens_remove.3","sens_reason.3",
+                        "sens_place.4","plt.4","transfuse.4","bleed.4",
+                        "sens_remove.4","sens_reason.4",
+                        "sens_place.5","plt.5","transfuse.5","bleed.5",
+                        "sens_remove.5","sens_reason.5",
+                        "sens_place.6","plt.6","transfuse.6","bleed.6",
+                        "sens_remove.6","sens_reason.6")
+
+# Wide to long
+cgm_data <- reshape(cgm_data,idvar = c("study_id","date_of_tx"),
+                varying = colnames(cgm_data)[3:ncol(cgm_data)],
+                direction = "long")
+# Remove blank rows based on sensor placement date, format DF, calculate days of CGM wear
+cgm_data <- cgm_data %>% filter(!is.na(sens_place)) %>% 
+  arrange(as.numeric(study_id)) %>%
+  mutate(days_worn_total = round(as.numeric(difftime(sens_remove,sens_place,units = 'days'))),
+         days_worn_pre_tx = 
+           pmax(days_worn_total - pmax(round(as.numeric(difftime(sens_remove,date_of_tx,
+                                                                 units = 'days'))),0),0),
+         days_worn_post_tx = 
+           pmax(days_worn_total - pmax(round(as.numeric(difftime(date_of_tx,sens_place,
+                                                                 units = 'days'))),0),0))
+# Platelet count variables
+cgm_data$plt <- as.numeric(cgm_data$plt)
+cgm_data$plt[cgm_data$transfuse == "Yes"] <- NA # Remove those with transfusion = "yes"
+cgm_data$plt_bleed <- ifelse(cgm_data$bleed == "Yes",cgm_data$plt,NA)
+cgm_data$plt_no_bleed <- ifelse(cgm_data$bleed == "No",cgm_data$plt,NA)
+```
+
+```{r demographics,echo=FALSE,cache=TRUE}
+demographics <- data_full %>% filter(is.na(redcap_repeat_instrument))
+# Combine separate race columns into one
+levels(demographics$race___0) <- c(NA,"AI or AN")
+levels(demographics$race___1) <- c(NA,"Asian")
+levels(demographics$race___2) <- c(NA,"African American")
+levels(demographics$race___3) <- c(NA,"NH or PI")
+levels(demographics$race___4) <- c(NA,"White")
+levels(demographics$race___5) <- c(NA,"Hispanic")
+levels(demographics$race___6) <- c(NA,"Other")
+demographics <- demographics %>% unite("Race",race___0,race___1,race___2,race___3,race___4,race___5,race___6)
+demographics$Race <- gsub("NA","",demographics$Race)
+demographics$Race <- gsub("_","",demographics$Race)
+demographics$Race[which(demographics$race_multi == "yes")] <- "Multiple"
+demographics$Race[which(demographics$Race == "")] <- "Unknown"
+# Calculate age at transplant
+demographics$AgeTx <- as.numeric(difftime(demographics$date_of_tx,
+                                          demographics$date_of_birth,
+                                          units = "days")) / 365.25
+# Format/calculate variables for BMI calculation
+demographics$sex <- demographics$gender
+levels(demographics$sex) <- c("F","M")
+# Calculate BMI and BMI percentile
+demographics$bmi <- as.numeric(demographics$weight) / 
+  ((as.numeric(demographics$height)/100)^2)
+demographics$bmi_z <- y2z(demographics$bmi,x = demographics$AgeTx,
+                          sex = demographics$sex,ref = get("cdc.bmi"))
+demographics$bmi_percentile <- round(pnorm(demographics$bmi_z) * 100,3)
+# BMI percentile groups
+demographics$bmi_percentile_group <- cut(demographics$bmi_percentile,
+                                         breaks = c(0,85,95,100),
+                                         labels = c("<85th %ile","85th-95th %ile",
+                                                    ">= 95th %ile"),
+                                         right = F)
+# Infer Tanner stage
+demographics$tanner_stage[demographics$AgeTx >= 18] <- "5"
+demographics$tanner_stage[demographics$AgeTx <= 3] <- "1"
+```
+
+# Table 1: Descriptive Characteristics
+
+Patients aged 2 - 3 years were assumed to be Tanner stage 1, and patients aged 18+ were assumed to be Tanner stage 5. Particpant 10 was excluded from all analyses.
+
+```{r table 1,echo=FALSE,results='asis'}
+table_one <- tableby(~ notest(AgeTx,"median","q1q3") + gender + tanner_stage + 
+                       bmi_percentile_group + tx_type + primary_dx_cat + spec_dx_cat, 
+                     data = demographics)
+newlabels <- list(AgeTx = "Age at HSCT",Gender = "Sex",
+                  bmi_percentile_group = "BMI Percentile",
+                  `Transplant Type` = "HSCT Type",
+                  `Primary Diagnosis Category` = "Primary Diagnosis",
+                  `Specific Diagnosis Category` = "Specific Diagnosis")
+summary(table_one,labelTranslations = newlabels,digits = 2)
+```
+
+# Figure 1: Days from HSCT With CGM Data
+
+```{r echo=FALSE}
+temp <- data_full %>% filter(!is.na(date_of_tx)) %>%
+  select(study_id,date_of_tx,sens1_place,sens1_remove,
+         sens2_place,sens2_remove,sens3_place,sens3_remove,sens4_place,
+         sens4_remove,sens5_place,sens5_remove,sens6_place,sens6_remove)
+l <- apply(temp[,3:ncol(temp)],1,function(x){
+  return(x)
+})
+```
