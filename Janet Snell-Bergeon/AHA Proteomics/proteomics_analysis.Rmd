@@ -11,19 +11,83 @@ knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/
 library(arsenal)
 library(skimr)
 library(knitr)
+library(mixOmics)
 library(tidyverse)
-library(MSstats)
 ```
 
 ```{r data import and clean,echo=FALSE}
 # Protein abundance
 abundance <- read.csv("./Data_Cleaned/peptide_abundance.csv")
-# Remove and format columns
-abundance$Master.Protein.Accessions <- NULL
-abundance$Sample.ID <- as.factor(abundance$Sample.ID)
+# List protein names
+proteins <- colnames(abundance)[3:ncol(abundance)]
+# Add CAC group and demographic info 
+demographics <- read.csv("./Data_Cleaned/demographics.csv")
+cac_group <- read.csv("./Data_Cleaned/cac_groups.csv")
+abundance <- left_join(abundance,demographics,by = "StudyID")
+abundance <- left_join(abundance,cac_group[,c("StudyID","GROUP")],by = "StudyID")
+abundance$CACprog <- ifelse(abundance$c3 - abundance$c1 >= 2.5,
+                                         "Progression","No Progression")
+abundance$CACprog[is.na(abundance$CACprog)] <- "Unknown"
+# Remove, format, and order columns
+abundance$StudyID <- as.factor(abundance$StudyID)
+abundance <- abundance %>% 
+  dplyr::select(StudyID,gender,age,race,GROUP,CACprog,all_of(proteins))
 # Peptide sequences
 sequence <- read.csv("./Data_Cleaned/peptide_sequence.csv")
 # Sample injection order
 sample_order <- read.csv("./Data_Cleaned/sample_acquisition.csv")
-skim(abundance)
 ```
+
+# PCA
+
+```{r pca,echo=FALSE,cache=TRUE}
+# Abundances only (no ID)
+X <- abundance[,proteins]
+# Through PC4 explains ~95% of variance
+result <- pca(X, ncomp = 4, center = T, scale = T)
+plotIndiv(result,ind.names = F,group = abundance$GROUP,legend = T,pch = 20,
+          title = "PCA by CAC Group")
+```
+
+# PLS-DA
+
+```{r plsda,echo=FALSE,cache=TRUE}
+# Sex
+Y <- as.factor(abundance$gender)
+# 5 components
+plsda.res <- plsda(X, Y, ncomp = 5) 
+plotIndiv(plsda.res,ind.names = F,pch = 20,ellipse = T,legend = T,
+          title = "PLS-DA by Sex")
+# Race
+Y <- as.factor(abundance$race)
+# 5 components
+plsda.res <- plsda(X, Y, ncomp = 5) 
+plotIndiv(plsda.res,ind.names = F,pch = 20,ellipse = T,legend = T,
+          title = "PLS-DA by Race")
+# CAC progression
+Y <- as.factor(abundance$CACprog)
+# 5 components
+plsda.res <- plsda(X, Y, ncomp = 5) 
+plotIndiv(plsda.res,ind.names = F,pch = 20,ellipse = T,legend = T,
+          title = "PLS-DA by CAC Progression")
+# CAC group
+Y <- as.factor(abundance$GROUP)
+# 5 components
+plsda.res <- plsda(X, Y, ncomp = 5) 
+plotIndiv(plsda.res,ind.names = F,pch = 20,ellipse = T,legend = T,
+          title = "PLS-DA by CAC Group")
+```
+
+# sPLS-DA
+
+```{r splsda,echo=FALSE,cache=TRUE}
+# CAC group
+Y <- as.factor(abundance$GROUP)
+tune.splsda <- tune.splsda(X, Y, ncomp = 5, validation = 'loo',cpus = 4) 
+choice.keepX <- tune.splsda$choice.keepX[1:2]
+## sPLS-DA function
+splsda.res <- splsda(X, Y, ncomp = 2, keepX = choice.keepX)
+plotIndiv(splsda.res)
+```
+
+# Are there issues with the CAC measurements?
