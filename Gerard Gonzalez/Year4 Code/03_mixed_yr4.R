@@ -9,6 +9,10 @@ length(unique(dat$MRN))
 dat$yeargrouping<-factor(dat$yeargrouping,levels=c("Year4","Base1","Year1","Year2","Year3"))
 
 ####A1c: overall cohort####
+dat$technology_yn<-"Yes"
+dat$technology_yn[dat$technology_type_inyear=="No CGM or Pump"]<-"No"
+
+
 a1c_mod_toyear4<-lme(a1c_last_in_year~baseline_a1c+factor(yeargrouping)+group+factor(trt_grp)+
                        factor(yeargrouping)*factor(trt_grp)+duration_of_diagnosis+technology_type_inyear
                      ,random=~1|MRN/yeargrouping,data=dat)
@@ -22,7 +26,7 @@ year4_sum$`p-value`<-round(year4_sum$`p-value`,3)
 anova_a1c_mod_toyear4<-anova(a1c_mod_toyear4)
 
 #test for differences between groups at each time point:
-ref_test <- lsmeans(a1c_mod_toyear4, c("technology_type_inyear", "yeargrouping","trt_grp"))
+#ref_test <- lsmeans(a1c_mod_toyear4, c("technology_type_inyear", "yeargrouping","trt_grp"))
 
 ref_4 <- lsmeans(a1c_mod_toyear4, c("trt_grp", "yeargrouping"))
 
@@ -57,12 +61,113 @@ c_across_year$p.value<-round(c_across_year$p.value,3)
 c_across_year_grp <- list(grp_base_1 = c(0, 0, -1, 1, 1, -1, 0, 0, 0, 0),
                           grp_1_2 = c(0, 0, 0, 0, -1, 1, 1, -1, 0, 0),
                           grp_2_3 = c(0, 0, 0, 0, 0, 0, -1, 1, 1, -1),
-                          grp_3_4 = c(-1, 1, 0, 0, 0, 0, 0, 0, 1, -1))
+                          grp_3_4 = c(-1, 1, 0, 0, 0, 0, 0, 0, 1, -1),
+                          grp_3_4 = c(-1, 1, 1, -1, 0, 0, 0, 0, 0, 0))
 c_across_year_grp<-summary(contrast(ref_4, c_across_year_grp))
 c_across_year_grp<-c_across_year_grp[,c(1,2,3,6)]
 c_across_year_grp$estimate<-round(c_across_year_grp$estimate,3)
 c_across_year_grp$SE<-round(c_across_year_grp$SE,3)
 c_across_year_grp$p.value<-round(c_across_year_grp$p.value,3)
+
+##PLOT
+dat.temp<-as.data.frame(ref_4)
+dat.temp$time<-c(4,4,0,0,1,1,2,2,3,3)
+dat.temp<-dat.temp[order(dat.temp$trt_grp,dat.temp$time),]
+plot(c(0,4),c(8.5,11),type="n",xlab="Year in Study",ylab="Estimated A1c (%)",main="Estimated Changes in A1c Over Study Period")
+points(dat.temp$time[dat.temp$trt_grp=="LP"],dat.temp$lsmean[dat.temp$trt_grp=="LP"],pch=19,
+       col="red")
+lines(dat.temp$time[dat.temp$trt_grp=="LP"],dat.temp$lsmean[dat.temp$trt_grp=="LP"],
+      col="red")
+points(dat.temp$time[dat.temp$trt_grp=="Control"],dat.temp$lsmean[dat.temp$trt_grp=="Control"],pch=19,
+       col="blue")
+lines(dat.temp$time[dat.temp$trt_grp=="Control"],dat.temp$lsmean[dat.temp$trt_grp=="Control"],
+      col="blue")
+legend('topright',c("LP","Control"),col=c("red","blue"),lty=c(1,1),pch=c(19,19))
+
+
+###examine changes in technology:
+dat.lp<-subset(dat,dat$trt_grp=="LP")
+a1c_mod_tech<-lme(a1c_last_in_year~baseline_a1c+factor(yeargrouping)+group+
+                       factor(yeargrouping)+duration_of_diagnosis+technology_yn*factor(yeargrouping)
+                     ,random=~1|MRN/yeargrouping,data=dat.lp)
+summary(a1c_mod_tech)
+
+ref_2 <- lsmeans(a1c_mod_tech, c("yeargrouping","technology_yn"))
+# 
+# c_within_year <- list(c_base1 = c(0, 0, -1, 1, 0, 0, 0, 0, 0, 0),
+#                       c_year1 = c(0, 0, 0, 0, -1, 1, 0, 0, 0, 0),
+#                       c_year2 = c(0, 0, 0, 0, 0, 0, -1, 1, 0, 0),
+#                       c_year3 = c(0, 0, 0, 0, 0, 0, 0, 0, -1, 1),
+#                       c_year4 = c(-1, 1, 0, 0, 0, 0, 0, 0, 0, 0))
+# con_within_yr<-summary(contrast(ref_2, c_within_year))
+# con_within_yr<-con_within_yr[,c(1,2,3,6)]
+# con_within_yr$estimate<-round(con_within_yr$estimate,3)
+# con_within_yr$SE<-round(con_within_yr$SE,3)
+# con_within_yr$p.value<-round(con_within_yr$p.value,3)
+# 
+# c_across_year <- list(lp_base_1 = c(0, 0, 0, 1, 0, -1, 0, 0, 0, 0),
+#                       c_base_1 = c(0, 0, 1, 0, -1, 0, 0, 0, 0, 0),
+#                       lp_1_2 = c(0, 0, 0, 0, 0, 1, 0, -1, 0, 0),
+#                       c_1_2 = c(0, 0, 0, 0, 1, 0, -1, 0, 0, 0),
+#                       lp_2_3 = c(0, 0, 0, 0, 0, 0, 0, 1, 0, -1),
+#                       c_2_3 = c(0, 0, 0, 0, 0, 0, 1, 0, -1, 0),
+#                       lp_3_4 = c(0, -1, 0, 0, 0, 0, 0, 0, 0, 1),
+#                       c_3_4 = c(-1, 0, 0, 0, 0, 0, 0, 0, 1, 0),
+#                       lp_base_4 = c(0, -1, 0, 1, 0, 0, 0, 0, 0, 0),
+#                       c_base_4 = c(-1, 0, 1, 0, 0, 0, 0, 0, 0, 0)
+# )
+# c_across_year<-summary(contrast(ref_2, c_across_year))
+# c_across_year<-c_across_year[,c(1,2,3,6)]
+# c_across_year$estimate<-round(c_across_year$estimate,3)
+# c_across_year$SE<-round(c_across_year$SE,3)
+# c_across_year$p.value<-round(c_across_year$p.value,3)
+# 
+# c_across_year_grp <- list(grp_base_1 = c(0, 0, -1, 1, 1, -1, 0, 0, 0, 0),
+#                           grp_1_2 = c(0, 0, 0, 0, -1, 1, 1, -1, 0, 0),
+#                           grp_2_3 = c(0, 0, 0, 0, 0, 0, -1, 1, 1, -1),
+#                           grp_3_4 = c(-1, 1, 0, 0, 0, 0, 0, 0, 1, -1),
+#                           grp_3_4 = c(-1, 1, 1, -1, 0, 0, 0, 0, 0, 0))
+# c_across_year_grp<-summary(contrast(ref_2, c_across_year_grp))
+# c_across_year_grp<-c_across_year_grp[,c(1,2,3,6)]
+# c_across_year_grp$estimate<-round(c_across_year_grp$estimate,3)
+# c_across_year_grp$SE<-round(c_across_year_grp$SE,3)
+# c_across_year_grp$p.value<-round(c_across_year_grp$p.value,3)
+
+dat.temp<-as.data.frame(ref_2)
+dat.temp$time<-c(4,0,1,2,3,4,0,1,2,3)
+dat.temp<-dat.temp[order(dat.temp$time),]
+plot(c(0,4),c(8.5,11.5),type="n",xlab="Year in Study",ylab="Estimated A1c (%)",main="Estimated Changes in A1c Over Study Period")
+points(dat.temp$time[dat.temp$technology_yn=="Yes"],
+       dat.temp$lsmean[dat.temp$technology_yn=="Yes"],pch=19,
+       col="red")
+lines(dat.temp$time[dat.temp$technology_yn=="Yes"],
+      dat.temp$lsmean[dat.temp$technology_yn=="Yes"],
+      col="red")
+
+points(dat.temp$time[dat.temp$technology_yn=="No"],
+       dat.temp$lsmean[dat.temp$technology_yn=="No"],pch=19,
+       col="blue")
+lines(dat.temp$time[dat.temp$technology_yn=="No"],
+      dat.temp$lsmean[dat.temp$technology_yn=="No"],
+      col="blue")
+
+legend('topright',c("Technology","No Technology"),col=c("red","blue"),
+       lty=c(1,1),pch=c(19,19))
+
+
+table(dat$technology_type_inyear)
+dat$technology_yn<-"Yes"
+dat$technology_yn[dat$technology_type_inyear=="No CGM or Pump"]<-"No"
+
+# lines(dat.temp$time[dat.temp$trt_grp=="LP"],dat.temp$lower.CL[dat.temp$trt_grp=="LP"],
+#       col="red",lty=2)
+# lines(dat.temp$time[dat.temp$trt_grp=="LP"],dat.temp$upper.CL[dat.temp$trt_grp=="LP"],
+#       col="red",lty=2)
+# lines(dat.temp$time[dat.temp$trt_grp=="Control"],dat.temp$lower.CL[dat.temp$trt_grp=="Control"],
+#       col="blue",lty=2)
+# lines(dat.temp$time[dat.temp$trt_grp=="Control"],dat.temp$upper.CL[dat.temp$trt_grp=="Control"],
+#       col="blue",lty=2)
+
 # 
 # #####A1c in older cohort
 # dat.old<-subset(dat,dat$group=="greater than or equal to 12")
