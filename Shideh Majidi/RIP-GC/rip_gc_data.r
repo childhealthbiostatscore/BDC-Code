@@ -46,6 +46,7 @@ demographics$Insurance = factor(demographics$Insurance,levels = c(0:2),
 demographics$RiskCategory_coded = factor(demographics$RiskCategory_coded,
                                          levels = c(0:2),
                                          labels = c("Low","Moderate","High"))
+levels(demographics$DKA) = c("No","No","Yes","Yes")
 
 roc_data$cgm_use = factor(roc_data$cgm_use,levels = c(0,1),
                           labels = c("No","Yes"))
@@ -61,6 +62,9 @@ demographics$Initial_A1c <-
   suppressWarnings(as.numeric(as.character(demographics$Initial_A1c)))
 
 cgm_pump$VisitDate <- lubridate::mdy(cgm_pump$VisitDate)
+
+# DKA
+roc_data <- left_join(roc_data,demographics[,c("ID","DKA")],by = "ID")
 
 # Labels
 labels(demographics) <- c(RaceEthnicity_combined="Race/Ethnicity",
