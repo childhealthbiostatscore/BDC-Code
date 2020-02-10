@@ -23,8 +23,6 @@ roc_data <- left_join(roc_data,
 # NaN and -Inf to NA
 roc_data[is.na(roc_data)] <- NA
 roc_data[roc_data == -Inf] <- NA
-# RIPGC as factor
-roc_data$ripgc <- as.factor(roc_data$ripgc)
 # Factors
 demographics$Sex = factor(demographics$Sex,levels=c(1,0),
                           labels = c("Male","Female"))
