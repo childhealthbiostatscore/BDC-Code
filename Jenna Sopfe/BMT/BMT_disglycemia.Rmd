@@ -24,6 +24,8 @@ rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
 data_full <- exportRecords(rcon)
 # Remove participant 10
 data_full <- data_full %>% filter(study_id != "10")
+# Fill down Tx date
+data_full <- data_full %>% group_by(study_id) %>% fill(date_of_tx)
 ```
 
 ```{r data cleaning,echo=FALSE}
@@ -50,7 +52,7 @@ colnames(cgm_data) <- c("study_id","date_of_tx",
                         "sens_remove.5","sens_reason.5",
                         "sens_place.6","plt.6","transfuse.6","bleed.6",
                         "sens_remove.6","sens_reason.6")
-
+cgm_data <- as.data.frame(cgm_data)
 # Wide to long
 cgm_data <- reshape(cgm_data,idvar = c("study_id","date_of_tx"),
                 varying = colnames(cgm_data)[3:ncol(cgm_data)],
@@ -133,6 +135,7 @@ summary(table_one,labelTranslations = newlabels,digits = 2)
 # Filter out those with no removal or placement date
 wear_plot_data <- cgm_data %>% filter(!is.na(sens_place) & !is.na(sens_remove))
 # For each CGM wear, get the dates of each day the cgm was worn
+wear_plot_data$dates <- NA
 for (r in 1:nrow(wear_plot_data)) {
   wear_plot_data$dates[r] <- 
     paste0(seq(wear_plot_data$sens_place[r],wear_plot_data$sens_remove[r],by = "days"),
@@ -160,3 +163,36 @@ ggplot(wear_plot_data,aes(x = diff,y = study_id,group = study_id)) +
 ```
 
 Each point indicates that the participant has CGM on a given day. Blank space indicates no CGM data.
+
+```{r infection joint data,echo=FALSE}
+# Import CGM
+cgm <- read.csv("./Jenna Sopfe/CGM Accuracy in BMT/Data_Cleaned/Prospective HSCT CGM Data Updated 6.24.19 FULL DATA SET.csv")
+# Format columns
+colnames(cgm)[1] <- "study_id"
+cgm$Time <- lubridate::mdy_hm(cgm$Time)
+cgm$Tx_date <- lubridate::mdy(cgm$Tx_date)
+# Get earliest infection for each participant and censoring info
+events <- data_full %>% group_by(study_id) %>% 
+  summarise(date_of_tx = date_of_tx[1],
+            infxn_date = suppressWarnings(min(infxn_date,na.rm = T)),
+            first_cgm = sens1_place[1],
+            censor_date = followup[1])
+events$event <- pmin(events$infxn_date,events$censor_date)
+events$infection <- ifelse(!is.na(as.character(events$infxn_date)),1,0)
+events$study_id <- as.numeric(as.character(events$study_id))
+events <- events %>% arrange(study_id)
+# Truncate CGM date at infection
+cgm <- left_join(cgm,events[,c("study_id","event")],by = "study_id")
+cgm <- cgm %>% filter(Time <= event)
+# Time from Tx and first CGM value
+cgm <- cgm %>% group_by(study_id) %>% 
+  mutate(time_from_tx = difftime(Time,Tx_date,units = "mins"),
+         time_from_cgm_start = difftime(Time,Time[1],units = "mins"))
+events <- events %>%
+  mutate(time_to_event_from_tx = difftime(event,date_of_tx,units = "mins"),
+         time_to_event_from_cgm_start = difftime(event,first_cgm,units = "mins"),
+         time_first_cgm_to_tx = difftime(date_of_tx,first_cgm,units = "mins"))
+# Write to CSV
+write.csv(cgm,file = "/Users/timvigers/Desktop/BMT/cgm.csv",row.names = F,na = "")
+write.csv(events,file = "/Users/timvigers/Desktop/BMT/events.csv",row.names = F,na = "")
+```
