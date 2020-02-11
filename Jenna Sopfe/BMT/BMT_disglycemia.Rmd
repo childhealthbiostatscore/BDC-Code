@@ -13,6 +13,7 @@ library(AGD)
 library(arsenal)
 library(skimr)
 library(knitr)
+library(JM)
 library(tidyverse)
 ```
 
@@ -26,6 +27,10 @@ data_full <- exportRecords(rcon)
 data_full <- data_full %>% filter(study_id != "10")
 # Fill down Tx date
 data_full <- data_full %>% group_by(study_id) %>% fill(date_of_tx)
+# Format dates
+data_full[,c("date_death","date_of_tx","infxn_date","sens1_place","followup")] <- 
+  lapply(data_full[,c("date_death","date_of_tx","infxn_date","sens1_place","followup")],
+         lubridate::ymd)
 ```
 
 ```{r data cleaning,echo=FALSE}
@@ -138,7 +143,7 @@ wear_plot_data <- cgm_data %>% filter(!is.na(sens_place) & !is.na(sens_remove))
 wear_plot_data$dates <- NA
 for (r in 1:nrow(wear_plot_data)) {
   wear_plot_data$dates[r] <- 
-    paste0(seq(wear_plot_data$sens_place[r],wear_plot_data$sens_remove[r],by = "days"),
+    paste0(seq(as.Date(wear_plot_data$sens_place[r]),as.Date(wear_plot_data$sens_remove[r]),by = "days"),
            collapse = ",")
 }
 # Split up each list of dates and make a new row for each day the CGM was worn
@@ -164,26 +169,31 @@ ggplot(wear_plot_data,aes(x = diff,y = study_id,group = study_id)) +
 
 Each point indicates that the participant has CGM on a given day. Blank space indicates no CGM data.
 
+# Joint Models
+
 ```{r infection joint data,echo=FALSE}
 # Import CGM
 cgm <- read.csv("./Jenna Sopfe/CGM Accuracy in BMT/Data_Cleaned/Prospective HSCT CGM Data Updated 6.24.19 FULL DATA SET.csv")
 # Format columns
 colnames(cgm)[1] <- "study_id"
-cgm$Time <- lubridate::mdy_hm(cgm$Time)
-cgm$Tx_date <- lubridate::mdy(cgm$Tx_date)
+cgm$Time <- lubridate::mdy_hm(cgm$Time,tz = "UTC")
+cgm$Tx_date <- lubridate::mdy(cgm$Tx_date,tz = "UTC")
 # Get earliest infection for each participant and censoring info
 events <- data_full %>% group_by(study_id) %>% 
   summarise(date_of_tx = date_of_tx[1],
             infxn_date = suppressWarnings(min(infxn_date,na.rm = T)),
             first_cgm = sens1_place[1],
-            censor_date = followup[1])
+            censor_date = followup[1],
+            sex = gender[1])
 events$event <- pmin(events$infxn_date,events$censor_date)
 events$infection <- ifelse(!is.na(as.character(events$infxn_date)),1,0)
 events$study_id <- as.numeric(as.character(events$study_id))
+# Order
 events <- events %>% arrange(study_id)
+cgm <- cgm %>% arrange(study_id)
 # Truncate CGM date at infection
-cgm <- left_join(cgm,events[,c("study_id","event")],by = "study_id")
-cgm <- cgm %>% filter(Time <= event)
+cgm <- left_join(cgm,events[,c("study_id","event","sex")],by = "study_id")
+cgm <- cgm %>% filter(Time < event)
 # Time from Tx and first CGM value
 cgm <- cgm %>% group_by(study_id) %>% 
   mutate(time_from_tx = difftime(Time,Tx_date,units = "mins"),
@@ -192,7 +202,19 @@ events <- events %>%
   mutate(time_to_event_from_tx = difftime(event,date_of_tx,units = "mins"),
          time_to_event_from_cgm_start = difftime(event,first_cgm,units = "mins"),
          time_first_cgm_to_tx = difftime(date_of_tx,first_cgm,units = "mins"))
-# Write to CSV
-write.csv(cgm,file = "/Users/timvigers/Desktop/BMT/cgm.csv",row.names = F,na = "")
-write.csv(events,file = "/Users/timvigers/Desktop/BMT/events.csv",row.names = F,na = "")
+# Scale time to days
+cgm$time_from_cgm_start <- cgm$time_from_cgm_start / 60
+events$time_to_event_from_cgm_start <- events$time_to_event_from_cgm_start / 60
+```
+
+```{r infection joint models,echo=FALSE}
+# Random intercept and random slope
+mixfit <- lme(Historic_Glucose ~ time_from_cgm_start + time_from_cgm_start:sex,
+              random = ~time_from_cgm_start|study_id,data = cgm)
+# Basic time to infection model
+survfit <- coxph(Surv(time_to_event_from_cgm_start,infection)~sex,
+                   data = events,x=T)
+# Joint fit
+jointFit <- jointModel(mixfit, survfit, timeVar = "time_from_cgm_start",
+                       method = "spline-PH-aGH",iter.EM = 200)
 ```
