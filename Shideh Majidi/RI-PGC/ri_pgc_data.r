@@ -62,7 +62,7 @@ demographics$Initial_A1c <-
 cgm_pump$VisitDate <- lubridate::mdy(cgm_pump$VisitDate)
 
 # DKA
-roc_data <- left_join(roc_data,demographics[,c("ID","DKA")],by = "ID")
+roc_data <- left_join(roc_data,demographics[,c("ID","DKA","Endorsed_SI")],by = "ID")
 
 # Labels
 labels(demographics) <- c(RaceEthnicity_combined="Race/Ethnicity",
