@@ -196,25 +196,27 @@ cgm <- left_join(cgm,events[,c("study_id","event","sex")],by = "study_id")
 cgm <- cgm %>% filter(Time < event)
 # Time from Tx and first CGM value
 cgm <- cgm %>% group_by(study_id) %>% 
-  mutate(time_from_tx = difftime(Time,Tx_date,units = "mins"),
-         time_from_cgm_start = difftime(Time,Time[1],units = "mins"))
+  mutate(time_from_tx = difftime(Time,Tx_date,units = "days"),
+         time_from_cgm_start = difftime(Time,Time[1],units = "days"))
 events <- events %>%
-  mutate(time_to_event_from_tx = difftime(event,date_of_tx,units = "mins"),
-         time_to_event_from_cgm_start = difftime(event,first_cgm,units = "mins"),
-         time_first_cgm_to_tx = difftime(date_of_tx,first_cgm,units = "mins"))
-# Scale time to days
-cgm$time_from_cgm_start <- cgm$time_from_cgm_start / 60
-events$time_to_event_from_cgm_start <- events$time_to_event_from_cgm_start / 60
+  mutate(time_to_event_from_tx = difftime(event,date_of_tx,units = "days"),
+         time_to_event_from_cgm_start = difftime(event,first_cgm,units = "days"),
+         time_first_cgm_to_tx = difftime(date_of_tx,first_cgm,units = "days"))
+# Average glucose by hour
+cgm$date_hour <- lubridate::date(cgm$Time)
+cgm <- cgm %>% group_by(study_id,date_hour) %>%
+  summarise(sg = mean(Historic_Glucose,na.rm = T)) %>%
+  mutate(time_from_cgm_start = difftime(date_hour,date_hour[1],units = "days"))
 ```
 
 ```{r infection joint models,echo=FALSE}
 # Random intercept and random slope
-mixfit <- lme(Historic_Glucose ~ time_from_cgm_start + time_from_cgm_start:sex,
+mixfit <- lme(sg ~ time_from_cgm_start,
               random = ~1|study_id,data = cgm,method = "ML")
 # Basic time to infection model
-survfit <- coxph(Surv(time_to_event_from_cgm_start,infection)~sex,
+survfit <- coxph(Surv(time_to_event_from_cgm_start,infection)~1,
                    data = events,x=T)
 # Joint fit
 jointFit <- jointModel(mixfit, survfit, timeVar = "time_from_cgm_start",
-                       method = "piecewise-PH-aGH")
+                       method = "weibull-PH-aGH")
 ```
