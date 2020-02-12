@@ -191,22 +191,23 @@ events$study_id <- as.numeric(as.character(events$study_id))
 # Order
 events <- events %>% arrange(study_id)
 cgm <- cgm %>% arrange(study_id)
-# Truncate CGM date at infection
+# Get event date and sex
 cgm <- left_join(cgm,events[,c("study_id","event","sex")],by = "study_id")
-cgm <- cgm %>% filter(Time < event)
 # Time from Tx and first CGM value
 cgm <- cgm %>% group_by(study_id) %>% 
-  mutate(time_from_tx = difftime(Time,Tx_date,units = "days"),
-         time_from_cgm_start = difftime(Time,Time[1],units = "days"))
+  mutate(time_from_tx = difftime(Time,Tx_date,units = "hours"),
+         time_from_cgm_start = difftime(Time,Time[1],units = "hours"))
 events <- events %>%
-  mutate(time_to_event_from_tx = difftime(event,date_of_tx,units = "days"),
-         time_to_event_from_cgm_start = difftime(event,first_cgm,units = "days"),
-         time_first_cgm_to_tx = difftime(date_of_tx,first_cgm,units = "days"))
-# Average glucose by hour
-cgm$date_hour <- lubridate::date(cgm$Time)
-cgm <- cgm %>% group_by(study_id,date_hour) %>%
-  summarise(sg = mean(Historic_Glucose,na.rm = T)) %>%
-  mutate(time_from_cgm_start = difftime(date_hour,date_hour[1],units = "days"))
+  mutate(time_to_event_from_tx = difftime(event,date_of_tx,units = "hours"),
+         time_to_event_from_cgm_start = difftime(event,first_cgm,units = "hours"),
+         time_first_cgm_to_tx = difftime(date_of_tx,first_cgm,units = "hours"))
+# Average glucose by interval, filter truncate CGM data at event
+cgm$interval <- lubridate::round_date(cgm$Time,unit = "12 hour")
+cgm <- cgm %>% group_by(study_id,interval) %>%
+  summarise(sg = mean(Historic_Glucose,na.rm = T),sex = sex[1],
+            event = event[1]) %>%
+  mutate(time_from_cgm_start = difftime(interval,interval[1],units = "hours")) %>%
+  filter(interval < event)
 ```
 
 ```{r infection joint models,echo=FALSE}
@@ -214,7 +215,7 @@ cgm <- cgm %>% group_by(study_id,date_hour) %>%
 mixfit <- lme(sg ~ time_from_cgm_start,
               random = ~1|study_id,data = cgm,method = "ML")
 # Basic time to infection model
-survfit <- coxph(Surv(time_to_event_from_cgm_start,infection)~1,
+survfit <- coxph(Surv(time_to_event_from_cgm_start,infection)~sex,
                    data = events,x=T)
 # Joint fit
 jointFit <- jointModel(mixfit, survfit, timeVar = "time_from_cgm_start",
