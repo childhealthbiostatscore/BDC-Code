@@ -99,6 +99,54 @@ for (f in 1:length(files)) {
       }
     }
   }
+  skip <- c()
+  # Count bolus behaviors
+  table$Bolus.Volume.Delivered..U.[table$Bolus.Volume.Delivered..U. == 0] <- NA
+  # Bolus counters
+  total_bolus = 0
+  weekday_bolus = 0
+  weekend_bolus = 0
+  bolus_dates = NULL
+  for (r in 1:nrow(table)) {
+    # Skip NAs or blackout window
+    if (is.na(table$Bolus.Volume.Delivered..U.[r]) | r %in% skip) {next()}
+    skip <- c()
+    # Total readings and by day
+    total_bolus <- total_bolus + 1
+    if (table$weekday[r] %in% c(2:6)) {weekday_bolus <- weekday_bolus + 1}
+    if (table$weekday[r] %in% c(1,7)) {weekend_bolus <- weekend_bolus + 1}
+    # Dates
+    bolus_dates <- c(bolus_dates,table$Date[r])
+    # BWZ check
+    estimate = c()
+    total_delivered = c()
+    # Look forward for estimate and delivery
+    for (b in r:nrow(table)) {
+      if (is.na(table$BWZ.Estimate..U.[b]) & is.na(table$Bolus.Volume.Delivered..U.[b])) {next()}
+      if (table$datetime[b] > (table$datetime[r] + 120)) {next()}
+      if (table$datetime[b] <= (table$datetime[r] + 120)) {
+        estimate <- c(estimate, table$BWZ.Estimate..U.[b])
+        total_delivered <- c(total_delivered, table$Bolus.Volume.Delivered..U.[b])
+      }
+    }
+    # Look backward for estimate and delivery
+    for (b in nrow(table):1) {
+      if (is.na(table$BWZ.Estimate..U.[b]) & is.na(table$Bolus.Volume.Delivered..U.[b])) {next()}
+      if (table$datetime[b] >= table$datetime[r] | table$datetime[b] < (table$datetime[r] - 120)) {next()}
+      if (table$datetime[b] > (table$datetime[r] - 120)) {
+        estimate <- c(estimate, table$BWZ.Estimate..U.[b])
+        total_delivered <- c(total_delivered, table$Bolus.Volume.Delivered..U.[b])
+      }
+    }
+    # "Blackout" window
+    bolus_time <- table$datetime[r]
+    next_time <- table$datetime[r] + 15*60
+    for (s in r:nrow(table)) {
+      if (table$datetime[s] >= bolus_time & table$datetime[s] <= next_time) {
+        skip <- c(skip,s)
+      }
+    }
+  }
   # Fill in summary df
   # Subject
   summary[f,"subject_id"] <- id
@@ -123,4 +171,9 @@ for (f in 1:length(files)) {
   summary[f,"weekday_carbs"] <- (weekday_carbs/weekdays)*100
   summary[f,"weekend_carbs"] <- (weekend_carbs/weekends)*100
   summary[f,"perc_days_3_carbs"] <- (length(which(table(carb_dates)>=3)) / days)*100
+  # Boluses
+  summary[f,"total_bolus"] <- total_bolus
+  summary[f,"weekday_bolus"] <- (weekday_bolus/weekdays)*100
+  summary[f,"weekend_bolus"] <- (weekend_bolus/weekends)*100
+  summary[f,"perc_days_3_bolus"] <- (length(which(table(bolus_dates)>=3)) / days)*100
 }
