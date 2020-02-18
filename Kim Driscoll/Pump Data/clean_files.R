@@ -33,7 +33,14 @@ for (f in files) {
     start <- dates$T4_Date[which(dates$ID == id_no_timepoint)]
     end <- dates$T5_Date[which(dates$ID == id_no_timepoint)] + 1
   }
+  # Exclude incorrect times
+  table <- table %>% filter(Date >= start & Date <= end) %>%
+    arrange(Date,Time)
+  # Full days only
+  start <- table$Date[1] + 1
+  end <- tail(table$Date,1) - 1
   table <- table %>% filter(Date >= start & Date <= end)
+  # Write file
   filename <- paste0("/Users/timvigers/Desktop/cleaned/",id,"_cleaned.csv")
   write.csv(table,file = filename,row.names = F,na="")
 }
