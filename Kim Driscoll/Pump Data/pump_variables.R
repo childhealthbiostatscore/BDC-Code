@@ -1,13 +1,13 @@
 library(tidyverse)
 # Import data
-indir <- "/Users/timvigers/Desktop/cleaned"
-outdir <- "/Users/timvigers/Desktop"
+indir <- "/Users/timvigers/Desktop/PIU/cleaned"
+outdir <- "/Users/timvigers/Desktop/PIU"
 files <- list.files(indir,full.names = T)
 # Make a summary variables table.
 summary <- data.frame(matrix(nrow = length(files),ncol = 0))
 # Iterate through each file
 for (f in 1:length(files)) {
-  # Read in
+  # Read in\\
   table <- read.csv(files[f],header = T,stringsAsFactors = FALSE,na.strings = "")
   # ID and visit
   id <- sub("_cleaned.csv","",basename(files[f]))
@@ -106,7 +106,12 @@ for (f in 1:length(files)) {
   total_bolus = 0
   weekday_bolus = 0
   weekend_bolus = 0
+  bolus_equal_bwz = 0
+  bolus_lower_bwz = 0
+  bolus_higher_bwz = 0
   bolus_dates = NULL
+  lower_dates = NULL
+  higher_dates = NULL
   for (r in 1:nrow(table)) {
     # Skip NAs or blackout window
     if (is.na(table$Bolus.Volume.Delivered..U.[r]) | r %in% skip) {next()}
@@ -132,12 +137,30 @@ for (f in 1:length(files)) {
     # Look backward for estimate and delivery
     for (b in nrow(table):1) {
       if (is.na(table$BWZ.Estimate..U.[b]) & is.na(table$Bolus.Volume.Delivered..U.[b])) {next()}
+      if (!(grepl("Dual",table$Bolus.Type[b]))) {next()}
       if (table$datetime[b] >= table$datetime[r] | table$datetime[b] < (table$datetime[r] - 120)) {next()}
       if (table$datetime[b] > (table$datetime[r] - 120)) {
         estimate <- c(estimate, table$BWZ.Estimate..U.[b])
         total_delivered <- c(total_delivered, table$Bolus.Volume.Delivered..U.[b])
       }
     }
+    if (table$Bolus.Type[r] == "Normal") {
+      total_delivered <- unique(na.omit(total_delivered))
+      estimate <- unique(na.omit(estimate))
+    } else {
+      total_delivered <- sum(total_delivered,na.rm = T)
+      estimate <- sum(estimate,na.rm = T)
+    }
+    # Compare delivery to BWZ
+    if (total_delivered == estimate) {
+      bolus_equal_bwz <- bolus_equal_bwz + 1
+    } else if (total_delivered < estimate) {
+      bolus_lower_bwz <- bolus_lower_bwz + 1
+      lower_dates <- c(lower_dates,as.character(table$datetime[r]))
+    } else if (total_delivered > estimate) {
+      bolus_higher_bwz <- bolus_higher_bwz + 1
+      higher_dates <- c(higher_dates,as.character(table$datetime[r]))
+      }
     # "Blackout" window
     bolus_time <- table$datetime[r]
     next_time <- table$datetime[r] + 15*60
@@ -154,9 +177,9 @@ for (f in 1:length(files)) {
   summary[f,"days_worn"] <- days
   # BG readings
   summary[f,"total_readings"] <- total_readings
-  summary[f,"readings_per_day"] <- (total_readings/days)*100
-  summary[f,"weekday_readings"] <- (weekday_readings/weekdays)*100
-  summary[f,"weekend_readings"] <- (weekend_readings/weekends)*100
+  summary[f,"readings_per_day"] <- (total_readings/days)
+  summary[f,"weekday_readings"] <- (weekday_readings/weekdays)
+  summary[f,"weekend_readings"] <- (weekend_readings/weekends)
   summary[f,"perc_days_4_bgs"] <- (length(which(table(bg_dates)>=4)) / days)*100
   summary[f,"total_70"] <- total_70
   summary[f,"total_70_149"] <- total_70_149
@@ -168,12 +191,15 @@ for (f in 1:length(files)) {
   summary[f,"total_above_400"] <- total_above_400
   # Carbs
   summary[f,"total_carbs"] <- total_carbs
-  summary[f,"weekday_carbs"] <- (weekday_carbs/weekdays)*100
-  summary[f,"weekend_carbs"] <- (weekend_carbs/weekends)*100
+  summary[f,"weekday_carbs"] <- (weekday_carbs/weekdays)
+  summary[f,"weekend_carbs"] <- (weekend_carbs/weekends)
   summary[f,"perc_days_3_carbs"] <- (length(which(table(carb_dates)>=3)) / days)*100
   # Boluses
   summary[f,"total_bolus"] <- total_bolus
-  summary[f,"weekday_bolus"] <- (weekday_bolus/weekdays)*100
-  summary[f,"weekend_bolus"] <- (weekend_bolus/weekends)*100
+  summary[f,"weekday_bolus"] <- (weekday_bolus/weekdays)
+  summary[f,"weekend_bolus"] <- (weekend_bolus/weekends)
   summary[f,"perc_days_3_bolus"] <- (length(which(table(bolus_dates)>=3)) / days)*100
+  summary[f,"bolus_equal_bwz"] <- bolus_equal_bwz
+  summary[f,"bolus_lower_bwz"] <- bolus_lower_bwz
+  summary[f,"bolus_higher_bwz"] <- bolus_higher_bwz
 }
