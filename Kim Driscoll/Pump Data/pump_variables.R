@@ -128,8 +128,8 @@ for (f in 1:length(files)) {
     # Look forward for estimate and delivery
     for (b in r:nrow(table)) {
       if (is.na(table$BWZ.Estimate..U.[b]) & is.na(table$Bolus.Volume.Delivered..U.[b])) {next()}
-      if (table$datetime[b] > (table$datetime[r] + 120)) {next()}
-      if (table$datetime[b] <= (table$datetime[r] + 120)) {
+      if (table$datetime[b] > (table$datetime[r] + 180)) {next()}
+      if (table$datetime[b] <= (table$datetime[r] + 180)) {
         estimate <- c(estimate, table$BWZ.Estimate..U.[b])
         total_delivered <- c(total_delivered, table$Bolus.Volume.Delivered..U.[b])
       }
@@ -138,8 +138,8 @@ for (f in 1:length(files)) {
     for (b in nrow(table):1) {
       if (is.na(table$BWZ.Estimate..U.[b]) & is.na(table$Bolus.Volume.Delivered..U.[b])) {next()}
       if (!(grepl("Dual",table$Bolus.Type[b]))) {next()}
-      if (table$datetime[b] >= table$datetime[r] | table$datetime[b] < (table$datetime[r] - 120)) {next()}
-      if (table$datetime[b] > (table$datetime[r] - 120)) {
+      if (table$datetime[b] >= table$datetime[r] | table$datetime[b] < (table$datetime[r] - 180)) {next()}
+      if (table$datetime[b] > (table$datetime[r] - 180)) {
         estimate <- c(estimate, table$BWZ.Estimate..U.[b])
         total_delivered <- c(total_delivered, table$Bolus.Volume.Delivered..U.[b])
       }
