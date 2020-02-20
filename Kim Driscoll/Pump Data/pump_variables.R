@@ -91,6 +91,7 @@ for (f in 1:length(files)) {
   weekday_carbs = 0
   weekend_carbs = 0
   carb_dates = NULL
+  carb_datetimes = NULL
   for (r in 1:nrow(table)) {
     # Skip NAs or blackout window
     if (is.na(table$BWZ.Carb.Input..grams.[r]) | r %in% skip) {next()}
@@ -100,6 +101,7 @@ for (f in 1:length(files)) {
     if (table$weekday[r] %in% c(2:6)) {weekday_carbs <- weekday_carbs + 1}
     if (table$weekday[r] %in% c(1,7)) {weekend_carbs <- weekend_carbs + 1}
     # Dates
+    carb_datetimes <- c(carb_datetimes,as.character(table$datetime[r]))
     carb_dates <- c(carb_dates,table$Date[r])
     # "Blackout" window
     carb_time <- table$datetime[r]
@@ -120,6 +122,17 @@ for (f in 1:length(files)) {
   bolus_equal_bwz = 0
   bolus_lower_bwz = 0
   bolus_higher_bwz = 0
+  bolus_with_carb = 0
+  bolus_with_carb_70 = 0
+  bolus_with_carb_70_149 = 0
+  bolus_with_carb_150_249 = 0
+  bolus_with_carb_above_250 = 0
+  bolus_without_carb = 0
+  bolus_without_carb_70 = 0
+  bolus_without_carb_70_149 = 0
+  bolus_without_carb_150_249 = 0
+  bolus_without_carb_above_250 = 0
+  bolus_within_15_of_bg = 0
   bolus_dates = NULL
   bolus_datetimes = NULL
   lower_dates = NULL
@@ -135,7 +148,26 @@ for (f in 1:length(files)) {
     # Dates
     bolus_datetimes <- c(bolus_datetimes,as.character(table$datetime[r]))
     bolus_dates <- c(bolus_dates,table$Date[r])
-    # Check for BG and carb within 15 minutes
+    # Check for BG within 15 minutes
+    bg_time <- bg_datetimes[which(lubridate::ymd_hms(bg_datetimes) %in% table$datetime[r]:(table$datetime[r] - 15*60))]
+    bg <- unique(table$bg[which(table$datetime == lubridate::ymd_hms(bg_time))])
+    if (length(bg_time) > 0){
+      bolus_within_15_of_bg = bolus_within_15_of_bg + 1
+      # Check for carb with 15 minutes
+      if (any(lubridate::ymd_hms(carb_datetimes) %in% table$datetime[r]:(table$datetime[r] + 15*60))) {
+        bolus_with_carb = bolus_with_carb + 1
+        if (bg < 70) {bolus_with_carb_70 = bolus_with_carb_70 + 1} 
+        else if (bg %in% 70:149) {bolus_with_carb_70_149 = bolus_with_carb_70_149 + 1}
+        else if (bg %in% 150:249) {bolus_with_carb_150_249 = bolus_with_carb_150_249 + 1}
+        else if (bg > 250) {bolus_with_carb_above_250 = bolus_with_carb_above_250 + 1}
+      } else {
+        bolus_without_carb = bolus_without_carb + 1
+        if (bg < 70) {bolus_without_carb_70 = bolus_without_carb_70 + 1} 
+        else if (bg %in% 70:149) {bolus_without_carb_70_149 = bolus_without_carb_70_149 + 1}
+        else if (bg %in% 150:249) {bolus_without_carb_150_249 = bolus_without_carb_150_249 + 1}
+        else if (bg > 250) {bolus_without_carb_above_250 = bolus_without_carb_above_250 + 1}
+      }
+    }
     # BWZ check
     estimate = c()
     total_delivered = c()
