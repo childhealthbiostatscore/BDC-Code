@@ -43,6 +43,7 @@ for (f in 1:length(files)) {
   total_251_400 = 0
   total_above_400 = 0
   bg_dates = NULL
+  bg_datetimes = NULL
   skip <- c()
   for (r in 1:nrow(table)) {
     # Skip NAs or blackout window
@@ -53,6 +54,7 @@ for (f in 1:length(files)) {
     if (table$weekday[r] %in% c(2:6)) {weekday_readings <- weekday_readings + 1}
     if (table$weekday[r] %in% c(1,7)) {weekend_readings <- weekend_readings + 1}
     # Dates
+    bg_datetimes <- c(bg_datetimes,as.character(table$datetime[r]))
     bg_dates <- c(bg_dates,table$Date[r])
     # Count by BG range
     if (table$bg[r] < 70) {total_70 = total_70 + 1} 
@@ -73,6 +75,15 @@ for (f in 1:length(files)) {
     }
   }
   skip <- c()
+  # Get dates with bg gaps >= 6 hours
+  bg_time_df <- as.data.frame(bg_datetimes)
+  bg_time_df$date <- as.Date(bg_time_df$bg_datetimes)
+  bg_time_df$time <- lubridate::hour(bg_time_df$bg_datetimes)
+  bg_time_df$bg_datetimes <- lubridate::ymd_hms(bg_time_df$bg_datetimes)
+  bg_time_df <- bg_time_df %>%
+    mutate(diff = (bg_datetimes - lag(bg_datetimes))/60)
+  bg_time_df <- bg_time_df[bg_time_df$time %in% c(6:11),]
+  bg_time_df <- bg_time_df %>% group_by(date) %>% summarise(m = max(diff,na.rm = T))
   # Count carb behaviors
   table$BWZ.Carb.Input..grams.[table$BWZ.Carb.Input..grams. == 0] <- NA
   # Carb counters
@@ -173,6 +184,15 @@ for (f in 1:length(files)) {
       }
     }
   }
+  # Get dates with bolus gaps >= 6 hours
+  bolus_time_df <- as.data.frame(bolus_datetimes)
+  bolus_time_df$date <- as.Date(bolus_time_df$bolus_datetimes)
+  bolus_time_df$time <- lubridate::hour(bolus_time_df$bolus_datetimes)
+  bolus_time_df$bolus_datetimes <- lubridate::ymd_hms(bolus_time_df$bolus_datetimes)
+  bolus_time_df <- bolus_time_df %>%
+    mutate(diff = (bolus_datetimes - lag(bolus_datetimes))/60)
+  bolus_time_df <- bolus_time_df[bolus_time_df$time %in% c(6:11),]
+  bolus_time_df <- bolus_time_df %>% group_by(date) %>% summarise(m = max(diff,na.rm = T))
   # Fill in summary df
   # Subject
   summary[f,"subject_id"] <- id
@@ -192,6 +212,7 @@ for (f in 1:length(files)) {
   summary[f,"total_251_400"] <- total_251_400
   summary[f,"total_above_250"] <- total_above_250
   summary[f,"total_above_400"] <- total_above_400
+  summary[f,"days_bg_>=6_hours"] <- length(which(bg_time_df$m >= 6))
   # Carbs
   summary[f,"total_carbs"] <- total_carbs
   summary[f,"weekday_carbs"] <- (weekday_carbs/weekdays)
@@ -205,4 +226,5 @@ for (f in 1:length(files)) {
   summary[f,"bolus_equal_bwz"] <- bolus_equal_bwz
   summary[f,"bolus_lower_bwz"] <- bolus_lower_bwz
   summary[f,"bolus_higher_bwz"] <- bolus_higher_bwz
+  summary[f,"days_bolus_>=6_hours"] <- length(which(bolus_time_df$m >= 6))
 }
