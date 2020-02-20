@@ -110,6 +110,7 @@ for (f in 1:length(files)) {
   bolus_lower_bwz = 0
   bolus_higher_bwz = 0
   bolus_dates = NULL
+  bolus_datetimes = NULL
   lower_dates = NULL
   higher_dates = NULL
   for (r in 1:nrow(table)) {
@@ -121,7 +122,9 @@ for (f in 1:length(files)) {
     if (table$weekday[r] %in% c(2:6)) {weekday_bolus <- weekday_bolus + 1}
     if (table$weekday[r] %in% c(1,7)) {weekend_bolus <- weekend_bolus + 1}
     # Dates
-    bolus_dates <- c(bolus_dates,as.character(table$datetime[r]))
+    bolus_datetimes <- c(bolus_datetimes,as.character(table$datetime[r]))
+    bolus_dates <- c(bolus_dates,table$Date[r])
+    # Check for BG and carb within 15 minutes
     # BWZ check
     estimate = c()
     total_delivered = c()
