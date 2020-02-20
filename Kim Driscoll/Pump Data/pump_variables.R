@@ -7,7 +7,7 @@ files <- list.files(indir,full.names = T)
 summary <- data.frame(matrix(nrow = length(files),ncol = 0))
 # Iterate through each file
 for (f in 1:length(files)) {
-  # Read in\\
+  # Read in
   table <- read.csv(files[f],header = T,stringsAsFactors = FALSE,na.strings = "")
   # ID and visit
   id <- sub("_cleaned.csv","",basename(files[f]))
@@ -121,7 +121,7 @@ for (f in 1:length(files)) {
     if (table$weekday[r] %in% c(2:6)) {weekday_bolus <- weekday_bolus + 1}
     if (table$weekday[r] %in% c(1,7)) {weekend_bolus <- weekend_bolus + 1}
     # Dates
-    bolus_dates <- c(bolus_dates,table$Date[r])
+    bolus_dates <- c(bolus_dates,as.character(table$datetime[r]))
     # BWZ check
     estimate = c()
     total_delivered = c()
@@ -137,7 +137,7 @@ for (f in 1:length(files)) {
     # Look backward for estimate and delivery
     for (b in nrow(table):1) {
       if (is.na(table$BWZ.Estimate..U.[b]) & is.na(table$Bolus.Volume.Delivered..U.[b])) {next()}
-      if (!(grepl("Dual",table$Bolus.Type[b]))) {next()}
+      if (!is.na(table$Bolus.Type[b]) & !(grepl("Dual",table$Bolus.Type[b]))) {next()}
       if (table$datetime[b] >= table$datetime[r] | table$datetime[b] < (table$datetime[r] - 180)) {next()}
       if (table$datetime[b] > (table$datetime[r] - 180)) {
         estimate <- c(estimate, table$BWZ.Estimate..U.[b])
@@ -146,7 +146,7 @@ for (f in 1:length(files)) {
     }
     if (table$Bolus.Type[r] == "Normal") {
       total_delivered <- unique(na.omit(total_delivered))
-      estimate <- unique(na.omit(estimate))
+      estimate <- na.omit(estimate)[1]
     } else {
       total_delivered <- sum(total_delivered,na.rm = T)
       estimate <- sum(estimate,na.rm = T)
