@@ -37,7 +37,7 @@ for (f in files) {
     end <- dates$T5_Date[which(dates$ID == id_no_timepoint)] 
   }
   # Exclude incorrect times
-  table <- table %>% filter(datetime >= start & datetime <= end) %>%
+  table <- table %>% filter(datetime >= start & datetime < end) %>%
     arrange(datetime)
   # Write file
   filename <- paste0("/Users/timvigers/Desktop/PIU/cleaned/",id,"_cleaned.csv")
