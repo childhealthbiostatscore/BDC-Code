@@ -44,6 +44,7 @@ for (f in 1:length(files)) {
   total_above_400 = 0
   bg_dates = NULL
   bg_datetimes = NULL
+  bg_values = NULL
   skip <- c()
   for (r in 1:nrow(table)) {
     # Skip NAs or blackout window
@@ -56,6 +57,8 @@ for (f in 1:length(files)) {
     # Dates
     bg_datetimes <- c(bg_datetimes,as.character(table$datetime[r]))
     bg_dates <- c(bg_dates,table$Date[r])
+    # Value
+    bg_values <- c(bg_values,table$bg[r])
     # Count by BG range
     if (table$bg[r] < 70) {total_70 = total_70 + 1} 
     if (table$bg[r] >= 70 & table$bg[r] <= 149) {total_70_149 = total_70_149 + 1} 
@@ -127,6 +130,10 @@ for (f in 1:length(files)) {
   bg_with_bolus_70_149 = 0
   bg_with_bolus_150_249 = 0
   bg_with_bolus_above_250 = 0
+  bg_with_carb_70 = 0
+  bg_with_carb_70_149 = 0
+  bg_with_carb_150_249 = 0
+  bg_with_carb_above_250 = 0
   bg_with_carb_bolus_70 = 0
   bg_with_carb_bolus_70_149 = 0
   bg_with_carb_bolus_150_249 = 0
@@ -212,17 +219,28 @@ for (f in 1:length(files)) {
   for (bgt in bg_datetimes) {
     # Check for a carb input within 15 minutes
     bg <- unique(table$bg[which(table$datetime == bgt)])
-    time.range.15 <- (bgt:(bgt+40*60))
-    if (any(bolus_datetimes %in% time.range.15)) {
+    time.range <- (bgt:(bgt+15*60))
+    # Count boluses with no carbs
+    if (any(bolus_datetimes %in% time.range) & !any(carb_datetimes %in% time.range)) {
       # Count by BG level
-      if (bg < 70) {bg_with_bolus_70 <- bg_with_bolus_70 + 1}
-      if (bg < 70 & (any(carb_datetimes %in% time.range.15))) {bg_with_carb_bolus_70 <- bg_with_carb_bolus_70 + 1}
-      if (bg %in% 70:149) {bg_with_bolus_70_149 <- bg_with_bolus_70_149 + 1}
-      if (bg %in% 70:149 & (any(carb_datetimes %in% time.range.15))) {bg_with_carb_bolus_70_149 <- bg_with_carb_bolus_70_149 + 1}
-      if (bg %in% 150:249) {bg_with_bolus_150_249 <- bg_with_bolus_150_249 + 1}
-      if (bg %in% 150:249 & (any(carb_datetimes %in% time.range.15))) {bg_with_carb_bolus_150_249 <- bg_with_carb_bolus_150_249 + 1}
-      if (bg >= 250) {bg_with_bolus_above_250 <- bg_with_bolus_above_250 + 1}
-      if (bg >= 250 & (any(carb_datetimes %in% time.range.15))) {bg_with_carb_bolus_above_250 <- bg_with_carb_bolus_above_250 + 1}
+      if (bg < 70) {bg_with_carb_70 <- bg_with_carb_70 + 1}
+      if (bg %in% 70:149) {bg_with_carb_70_149 <- bg_with_carb_70_149 + 1}
+      if (bg %in% 150:249) {bg_with_carb_150_249 <- bg_with_carb_150_249 + 1}
+      if (bg >= 250) {bg_with_carb_above_250 <- bg_with_carb_above_250 + 1}
+    }
+    # Count carbs with no boluses
+    if (any(carb_datetimes %in% time.range) & !any(bolus_datetimes %in% time.range)) {
+      if (bg < 70) {bg_with_carb_70 <- bg_with_carb_70 + 1}
+      if (bg %in% 70:149) {bg_with_carb_70_149 <- bg_with_carb_70_149 + 1}
+      if (bg %in% 150:249) {bg_with_carb_150_249 <- bg_with_carb_150_249 + 1}
+      if (bg >= 250) {bg_with_carb_above_250 <- bg_with_carb_above_250 + 1}
+    }
+    # Count carbs and boluses
+    if (any(bolus_datetimes %in% time.range) & any(carb_datetimes %in% time.range)) {
+      if (bg < 70) {bg_with_carb_bolus_70 <- bg_with_carb_bolus_70 + 1}
+      if (bg %in% 70:149) {bg_with_carb_bolus_70_149 <- bg_with_carb_bolus_70_149 + 1}
+      if (bg %in% 150:249) {bg_with_carb_bolus_150_249 <- bg_with_carb_bolus_150_249 + 1}
+      if (bg >= 250) {bg_with_carb_bolus_above_250 <- bg_with_carb_bolus_above_250 + 1}
     }
   }
   # Fill in summary df
@@ -260,18 +278,19 @@ for (f in 1:length(files)) {
   summary[f,"bolus_higher_bwz"] <- bolus_higher_bwz
   summary[f,"days_bolus_>=6_hours"] <- length(which(bolus_time_df$m >= 6))
   # Link behaviors
-  summary[f,"lowBG_without_carb_with_bolus"] <- (lowBG_followed_by_bolus/(lowBGcount-lowBG_with_carb))*100
-  summary[f,"lowBG_with_carb_and_bolus"] <- (lowBG_with_carb_bolus/lowBG_with_carb)*100
-
-  summary[f,"intargetBG_without_carb_with_bolus"] <- (intargetBG_followed_by_bolus/(intargetBGcount-intargetBG_with_carb))*100
-  summary[f,"intargetBG_with_carb_and_bolus"] <- (intargetBG_with_carb_bolus/intargetBG_with_carb)*100
-
-  summary[f,"highBG_without_carb_with_bolus"] <- (highBG_followed_by_bolus/(highBGcount-highBG_with_carb))*100
-  summary[f,"highBG_with_carb_and_bolus"] <- (highBG_with_carb_bolus/highBG_with_carb)*100
-
-  summary[f,"veryhighBG_without_carb_with_bolus"] <- (veryhighBG_followed_by_bolus/(veryhighBGcount-veryhighBG_with_carb))*100
-  summary[f,"veryhighBG_with_carb_and_bolus"] <- (veryhighBG_with_carb_bolus/veryhighBG_with_carb)*100
-
-  summary[f,"extremeBG_without_carb_with_bolus"] <- (extremeBG_followed_by_bolus/(extremeBGcount-extremeBG_with_carb))*100
-  summary[f,"extremeBG_with_carb_and_bolus"] <- (extremeBG_with_carb_bolus/extremeBG_with_carb)*100
+  summary[f,"bg_under_70_with_bolus_only"] <- bg_with_bolus_70
+  summary[f,"bg_under_70_with_carb_only"] <- bg_with_carb_70
+  summary[f,"bg_under_70_with_bolus_carb"] <- bg_with_carb_bolus_70
+  
+  summary[f,"bg_70_149_with_bolus_only"] <- bg_with_bolus_70_149
+  summary[f,"bg_70_149_with_carb_only"] <- bg_with_carb_70_149
+  summary[f,"bg_70_149_with_bolus_carb"] <- bg_with_carb_bolus_70_149
+  
+  summary[f,"bg_150_249_with_bolus_only"] <- bg_with_bolus_150_249
+  summary[f,"bg_150_249_with_carb_only"] <- bg_with_carb_150_249
+  summary[f,"bg_150_249_with_bolus_carb"] <- bg_with_carb_bolus_150_249
+  
+  summary[f,"bg_above_250_with_bolus_only"] <- bg_with_bolus_above_250
+  summary[f,"bg_above_250_with_carb_only"] <- bg_with_carb_above_250
+  summary[f,"bg_above_250_with_bolus_carb"] <- bg_with_carb_bolus_above_250
 }
