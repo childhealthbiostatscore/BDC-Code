@@ -248,12 +248,14 @@ for (f in 1:length(files)) {
   summary[f,"subject_id"] <- id
   summary[f,"StudyVisit"] <- timepoint
   summary[f,"days_worn"] <- days
+  summary[f,"weekday_days"] <- weekdays
+  summary[f,"weekend_days"] <- weekends
   # BG readings
   summary[f,"total_readings"] <- total_readings
   summary[f,"readings_per_day"] <- (total_readings/days)
-  summary[f,"weekday_readings"] <- (weekday_readings/weekdays)
-  summary[f,"weekend_readings"] <- (weekend_readings/weekends)
-  summary[f,"perc_days_4_bgs"] <- (length(which(table(bg_dates)>=4)) / days)*100
+  summary[f,"weekday_readings"] <- weekday_readings
+  summary[f,"weekend_readings"] <- weekend_readings
+  summary[f,"days_4_bgs"] <- length(which(table(bg_dates)>=4))
   summary[f,"total_70"] <- total_70
   summary[f,"total_70_149"] <- total_70_149
   summary[f,"total_70_180"] <- total_70_180
@@ -265,14 +267,14 @@ for (f in 1:length(files)) {
   summary[f,"days_bg_>=6_hours"] <- length(which(bg_time_df$m >= 6))
   # Carbs
   summary[f,"total_carbs"] <- total_carbs
-  summary[f,"weekday_carbs"] <- (weekday_carbs/weekdays)
-  summary[f,"weekend_carbs"] <- (weekend_carbs/weekends)
-  summary[f,"perc_days_3_carbs"] <- (length(which(table(carb_dates)>=3)) / days)*100
+  summary[f,"weekday_carbs"] <- weekday_carbs
+  summary[f,"weekend_carbs"] <- weekend_carbs
+  summary[f,"days_3_carbs"] <- length(which(table(carb_dates)>=3))
   # Boluses
   summary[f,"total_bolus"] <- total_bolus
-  summary[f,"weekday_bolus"] <- (weekday_bolus/weekdays)
-  summary[f,"weekend_bolus"] <- (weekend_bolus/weekends)
-  summary[f,"perc_days_3_bolus"] <- (length(which(table(bolus_dates)>=3)) / days)*100
+  summary[f,"weekday_bolus"] <- weekday_bolus
+  summary[f,"weekend_bolus"] <- weekend_bolus
+  summary[f,"days_3_bolus"] <- length(which(table(bolus_dates)>=3))
   summary[f,"bolus_equal_bwz"] <- bolus_equal_bwz
   summary[f,"bolus_lower_bwz"] <- bolus_lower_bwz
   summary[f,"bolus_higher_bwz"] <- bolus_higher_bwz
