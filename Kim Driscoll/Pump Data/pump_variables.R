@@ -254,10 +254,8 @@ for (f in 1:length(files)) {
   summary[f,"weekend_days"] <- weekends
   # BG readings
   summary[f,"total_readings"] <- total_readings
-  summary[f,"readings_per_day"] <- (total_readings/days)
   summary[f,"weekday_readings"] <- weekday_readings
   summary[f,"weekend_readings"] <- weekend_readings
-  summary[f,"days_4_bgs"] <- length(which(table(bg_dates)>=4))
   summary[f,"total_70"] <- total_70
   summary[f,"total_70_149"] <- total_70_149
   summary[f,"total_70_180"] <- total_70_180
@@ -266,6 +264,7 @@ for (f in 1:length(files)) {
   summary[f,"total_251_400"] <- total_251_400
   summary[f,"total_above_250"] <- total_above_250
   summary[f,"total_above_400"] <- total_above_400
+  summary[f,"days_4_bgs"] <- length(which(table(bg_dates)>=4))
   summary[f,"days_bg_>=6_hours"] <- length(which(bg_time_df$m >= 6))
   # Carbs
   summary[f,"total_carbs"] <- total_carbs
