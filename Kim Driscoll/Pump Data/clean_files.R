@@ -1,9 +1,9 @@
 library(tidyverse)
 # Study dates
-dates <- read.csv("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/PumpItUp_Appt Times.csv")
+dates <- read.csv("/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/PumpItUp_Appt Times.csv")
 dates[,2:ncol(dates)] <- lapply(dates[,2:ncol(dates)],lubridate::mdy)
 # Original files
-files <- list.files("/Users/timvigers/Desktop/PIU/Pump Files Original",full.names = T)
+files <- list.files("/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Original/",full.names = T)
 # Clean
 for (f in files) {
   id <- sub("_pump.csv","",basename(f))
@@ -15,8 +15,8 @@ for (f in files) {
   }
   start <- which(table[,1] == "Index")
   if (length(start) > 0) {
-    colnames(table) <- table[start,]
-    table <- table[-c(1:(start+2)),]
+    colnames(table) <- table[start[1],]
+    table <- table[-c(1:(start[1]+2)),]
   }
   # Date time column
   table$datetime <- paste(table$Date,table$Time)
@@ -40,6 +40,6 @@ for (f in files) {
   table <- table %>% filter(datetime >= start & datetime < end) %>%
     arrange(datetime)
   # Write file
-  filename <- paste0("/Users/timvigers/Desktop/PIU/cleaned/",id,"_cleaned.csv")
+  filename <- paste0("/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Cleaned/",id,"_cleaned.csv")
   write.csv(table,file = filename,row.names = F,na="")
 }
