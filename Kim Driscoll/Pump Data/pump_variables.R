@@ -1,12 +1,13 @@
 library(tidyverse)
 # Import data
-indir <- "/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Cleaned/"
-outdir <- "/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/"
+indir <- "/Users/timvigers/Pump Files Cleaned/"
+outdir <- "/Users/timvigers/"
 files <- list.files(indir,full.names = T)
 # Make a summary variables table.
 summary <- data.frame(matrix(nrow = length(files),ncol = 0))
 # Iterate through each file
 for (f in 1:length(files)) {
+  print(f)
   # Read in
   table <- read.csv(files[f],header = T,stringsAsFactors = FALSE,na.strings = "")
   # ID and visit
@@ -178,7 +179,7 @@ for (f in 1:length(files)) {
       delivered <- c(delivered,table$Bolus.Volume.Delivered..U.[b])
     }
     # Backwards
-    for (b in (r-1):1) {
+    for (b in max((r-1),1):1) {
       if (table$datetime[b] < table$datetime[r] - (15*60)) {next()}
       if (is.na(table$Bolus.Volume.Delivered..U.[b])) {next()}
       delivered <- c(delivered,table$Bolus.Volume.Delivered..U.[b])
@@ -221,6 +222,7 @@ for (f in 1:length(files)) {
   for (bgt in bg_datetimes) {
     # Check for a carb input within 15 minutes
     bg <- unique(table$bg[which(table$datetime == bgt)])
+    bg <- bg[!is.na(bg)]
     time.range <- (bgt:(bgt+15*60))
     # Count boluses with no carbs
     if (any(bolus_datetimes %in% time.range) & !any(carb_datetimes %in% time.range)) {
