@@ -154,50 +154,49 @@ for (f in 1:length(files)) {
     # Dates
     bolus_datetimes <- c(bolus_datetimes,as.character(table$datetime[r]))
     bolus_dates <- c(bolus_dates,table$Date[r])
-    # BWZ check
-    estimate = c()
-    total_delivered = c()
-    # Look forward for estimate and delivery
-    for (b in r:nrow(table)) {
-      if (is.na(table$BWZ.Estimate..U.[b]) & is.na(table$Bolus.Volume.Delivered..U.[b])) {next()}
-      if (table$datetime[b] > (table$datetime[r] + 180)) {next()}
-      if (table$datetime[b] <= (table$datetime[r] + 180)) {
-        estimate <- c(estimate, table$BWZ.Estimate..U.[b])
-        total_delivered <- c(total_delivered, table$Bolus.Volume.Delivered..U.[b])
-      }
-    }
-    # Look backward for estimate and delivery
-    for (b in nrow(table):1) {
-      if (is.na(table$BWZ.Estimate..U.[b]) & is.na(table$Bolus.Volume.Delivered..U.[b])) {next()}
-      if (!is.na(table$Bolus.Type[b]) & !(grepl("Dual",table$Bolus.Type[b]))) {next()}
-      if (table$datetime[b] >= table$datetime[r] | table$datetime[b] < (table$datetime[r] - 180)) {next()}
-      if (table$datetime[b] > (table$datetime[r] - 180)) {
-        estimate <- c(estimate, table$BWZ.Estimate..U.[b])
-        total_delivered <- c(total_delivered, table$Bolus.Volume.Delivered..U.[b])
-      }
-    }
-    if (table$Bolus.Type[r] == "Normal") {
-      total_delivered <- unique(na.omit(total_delivered))
-      estimate <- na.omit(estimate)[1]
-    } else {
-      total_delivered <- sum(total_delivered,na.rm = T)
-      estimate <- sum(estimate,na.rm = T)
-    }
-    # Compare delivery to BWZ
-    if (total_delivered == estimate) {
-      bolus_equal_bwz <- bolus_equal_bwz + 1
-    } else if (total_delivered < estimate) {
-      bolus_lower_bwz <- bolus_lower_bwz + 1
-      lower_dates <- c(lower_dates,as.character(table$datetime[r]))
-    } else if (total_delivered > estimate) {
-      bolus_higher_bwz <- bolus_higher_bwz + 1
-      higher_dates <- c(higher_dates,as.character(table$datetime[r]))
-    }
     # "Blackout" window
     bolus_time <- table$datetime[r]
     next_time <- table$datetime[r] + 15*60
     for (s in r:nrow(table)) {
       if (table$datetime[s] >= bolus_time & table$datetime[s] <= next_time) {
+        skip <- c(skip,s)
+      }
+    }
+  }
+  # BWZ check
+  for (r in 1:nrow(table)) {
+    if (is.na(table$BWZ.Estimate..U.[r])) {next()}
+    estimate <- table$BWZ.Estimate..U.[r]
+    delivered <- c()
+    skip <- c()
+    # Check rows going forwards
+    for (b in r:nrow(table)) {
+      if (table$datetime[b] > table$datetime[r] + (15*60)) {next()}
+      if (is.na(table$Bolus.Volume.Delivered..U.[b])) {next()}
+      delivered <- c(delivered,table$Bolus.Volume.Delivered..U.[b])
+    }
+    # Backwards
+    for (b in r:1) {
+      if (table$datetime[b] < table$datetime[r] - (15*60)) {next()}
+      if (is.na(table$Bolus.Volume.Delivered..U.[b])) {next()}
+      delivered <- c(delivered,table$Bolus.Volume.Delivered..U.[b])
+    }
+    delivered <- sum(delivered,na.rm = T)
+    # Compare delivery to BWZ
+    if (delivered == estimate) {
+      bolus_equal_bwz <- bolus_equal_bwz + 1
+    } else if (delivered < estimate) {
+      bolus_lower_bwz <- bolus_lower_bwz + 1
+      lower_dates <- c(lower_dates,as.character(table$datetime[r]))
+    } else if (delivered > estimate) {
+      bolus_higher_bwz <- bolus_higher_bwz + 1
+      higher_dates <- c(higher_dates,as.character(table$datetime[r]))
+    }
+    # "Blackout" window
+    estimate_time <- table$datetime[r]
+    next_time <- table$datetime[r] + 15*60
+    for (s in r:nrow(table)) {
+      if (table$datetime[s] >= estimate_time & table$datetime[s] <= next_time) {
         skip <- c(skip,s)
       }
     }
