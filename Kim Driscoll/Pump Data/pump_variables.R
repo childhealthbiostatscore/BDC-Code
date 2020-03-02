@@ -141,6 +141,7 @@ for (f in 1:length(files)) {
   bolus_within_15_of_bg = 0
   bolus_dates = NULL
   bolus_datetimes = NULL
+  equal_dates = NULL
   lower_dates = NULL
   higher_dates = NULL
   for (r in 1:nrow(table)) {
@@ -163,9 +164,10 @@ for (f in 1:length(files)) {
       }
     }
   }
+  skip <- c()
   # BWZ check
   for (r in 1:nrow(table)) {
-    if (is.na(table$BWZ.Estimate..U.[r])) {next()}
+    if (is.na(table$BWZ.Estimate..U.[r]) | r %in% skip) {next()}
     estimate <- table$BWZ.Estimate..U.[r]
     delivered <- c()
     skip <- c()
@@ -176,7 +178,7 @@ for (f in 1:length(files)) {
       delivered <- c(delivered,table$Bolus.Volume.Delivered..U.[b])
     }
     # Backwards
-    for (b in r:1) {
+    for (b in (r-1):1) {
       if (table$datetime[b] < table$datetime[r] - (15*60)) {next()}
       if (is.na(table$Bolus.Volume.Delivered..U.[b])) {next()}
       delivered <- c(delivered,table$Bolus.Volume.Delivered..U.[b])
@@ -185,6 +187,7 @@ for (f in 1:length(files)) {
     # Compare delivery to BWZ
     if (delivered == estimate) {
       bolus_equal_bwz <- bolus_equal_bwz + 1
+      equal_dates <- c(equal_dates,as.character(table$datetime[r]))
     } else if (delivered < estimate) {
       bolus_lower_bwz <- bolus_lower_bwz + 1
       lower_dates <- c(lower_dates,as.character(table$datetime[r]))
