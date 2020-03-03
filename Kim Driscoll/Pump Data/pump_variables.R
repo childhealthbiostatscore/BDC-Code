@@ -34,6 +34,7 @@ for (f in f:length(files)) {
   table <- table %>% select(Date,datetime,weekday,bg,BWZ.Carb.Input..grams.,
                             BWZ.Estimate..U.,Bolus.Volume.Delivered..U.)
   table <- table[rowSums(is.na(table)) < 4,]
+  table <- unique(table)
   # Count BG check behaviors
   # BG counters
   total_readings = 0
@@ -76,11 +77,9 @@ for (f in f:length(files)) {
     # "Blackout" window
     bg_time <- table$datetime[r]
     next_time <- table$datetime[r] + 15*60
-    for (s in r:nrow(table)) {
-      if (table$datetime[s] >= bg_time & table$datetime[s] <= next_time) {
-        skip <- c(skip,s)
-      }
-    }
+    skip <- which(table$datetime >= bg_time & 
+                    table$datetime <= next_time)
+    skip <- skip[skip > r]
   }
   skip <- c()
   # Get dates with bg gaps >= 6 hours
@@ -115,11 +114,9 @@ for (f in f:length(files)) {
     # "Blackout" window
     carb_time <- table$datetime[r]
     next_time <- table$datetime[r] + 15*60
-    for (s in r:nrow(table)) {
-      if (table$datetime[s] >= carb_time & table$datetime[s] <= next_time) {
-        skip <- c(skip,s)
-      }
-    }
+    skip <- which(table$datetime >= carb_time & 
+                    table$datetime <= next_time)
+    skip <- skip[skip > r]
   }
   skip <- c()
   # Count bolus behaviors
@@ -163,11 +160,9 @@ for (f in f:length(files)) {
     # "Blackout" window
     bolus_time <- table$datetime[r]
     next_time <- table$datetime[r] + 15*60
-    for (s in r:nrow(table)) {
-      if (table$datetime[s] >= bolus_time & table$datetime[s] <= next_time) {
-        skip <- c(skip,s)
-      }
-    }
+    skip <- which(table$datetime >= bolus_time & 
+                    table$datetime <= next_time)
+    skip <- skip[skip > r]
   }
   skip <- c()
   # BWZ check
@@ -176,16 +171,10 @@ for (f in f:length(files)) {
     estimate <- table$BWZ.Estimate..U.[r]
     delivered <- c()
     skip <- c()
-    # Check rows going forwards
-    for (b in r:nrow(table)) {
+    # Check rows going forwards and backwards
+    for (b in which(!is.na(table$Bolus.Volume.Delivered..U.))) {
       if (table$datetime[b] > table$datetime[r] + (15*60)) {next()}
-      if (is.na(table$Bolus.Volume.Delivered..U.[b])) {next()}
-      delivered <- c(delivered,table$Bolus.Volume.Delivered..U.[b])
-    }
-    # Backwards
-    for (b in max((r-1),1):1) {
       if (table$datetime[b] < table$datetime[r] - (15*60)) {next()}
-      if (is.na(table$Bolus.Volume.Delivered..U.[b])) {next()}
       delivered <- c(delivered,table$Bolus.Volume.Delivered..U.[b])
     }
     delivered <- sum(delivered,na.rm = T)
@@ -203,11 +192,9 @@ for (f in f:length(files)) {
     # "Blackout" window
     estimate_time <- table$datetime[r]
     next_time <- table$datetime[r] + 15*60
-    for (s in r:nrow(table)) {
-      if (table$datetime[s] >= estimate_time & table$datetime[s] <= next_time) {
-        skip <- c(skip,s)
-      }
-    }
+    skip <- which(table$datetime >= estimate_time & 
+                    table$datetime <= next_time)
+    skip <- skip[skip > r]
   }
   # Get dates with bolus gaps >= 6 hours
   bolus_time_df <- as.data.frame(bolus_datetimes)
