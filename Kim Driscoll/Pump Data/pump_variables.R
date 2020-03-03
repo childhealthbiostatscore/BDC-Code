@@ -1,12 +1,12 @@
 library(tidyverse)
 # Import data
-indir <- "/Users/timvigers/Pump Files Cleaned/"
-outdir <- "/Users/timvigers/"
+indir <- "/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Cleaned/"
+outdir <- "/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/"
 files <- list.files(indir,full.names = T)
 # Make a summary variables table.
 # summary <- data.frame(matrix(nrow = length(files),ncol = 0))
 # Iterate through each file
-for (f in f:length(files)) {
+for (f in 1:length(files)) {
   print(f)
   # Read in
   table <- read.csv(files[f],header = T,stringsAsFactors = FALSE,na.strings = "")
@@ -212,7 +212,7 @@ for (f in f:length(files)) {
   carb_datetimes <- lubridate::ymd_hms(carb_datetimes)
   bolus_datetimes <- lubridate::ymd_hms(bolus_datetimes)
   bg_datetimes <- lubridate::ymd_hms(bg_datetimes)
-  for (bgt in bg_datetimes) {
+  for (bgt in bg_datetimes[!is.na(bg_datetimes)]) {
     # Check for a carb input within 15 minutes
     bg <- unique(table$bg[which(table$datetime == bgt)])
     bg <- bg[!is.na(bg)][[1]]
@@ -292,9 +292,6 @@ for (f in f:length(files)) {
   summary[f,"bg_above_250_with_bolus_only"] <- bg_with_bolus_above_250
   summary[f,"bg_above_250_with_carb_only"] <- bg_with_carb_above_250
   summary[f,"bg_above_250_with_bolus_carb"] <- bg_with_carb_bolus_above_250
-  
-  # Save summary data
-  # save(summary,file = "/Users/timvigers/summary_progress.Rdata")
 }
 # Write summary variables
 filename <- paste0(outdir,"summary.csv")
