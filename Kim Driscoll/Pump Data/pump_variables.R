@@ -4,7 +4,7 @@ indir <- "/Users/timvigers/Pump Files Cleaned/"
 outdir <- "/Users/timvigers/"
 files <- list.files(indir,full.names = T)
 # Make a summary variables table.
-summary <- data.frame(matrix(nrow = length(files),ncol = 0))
+# summary <- data.frame(matrix(nrow = length(files),ncol = 0))
 # Iterate through each file
 for (f in f:length(files)) {
   print(f)
@@ -128,6 +128,7 @@ for (f in f:length(files)) {
   bolus_equal_bwz = 0
   bolus_lower_bwz = 0
   bolus_higher_bwz = 0
+  total_estimates = 0
   bg_with_bolus_70 = 0
   bg_with_bolus_70_149 = 0
   bg_with_bolus_150_249 = 0
@@ -169,6 +170,7 @@ for (f in f:length(files)) {
   for (r in which(!is.na(table$BWZ.Estimate..U.))) {
     if (r %in% skip) {next()}
     estimate <- table$BWZ.Estimate..U.[r]
+    total_estimates <- total_estimates + 1
     delivered <- c()
     skip <- c()
     # Check rows going forwards and backwards
@@ -218,10 +220,10 @@ for (f in f:length(files)) {
     # Count boluses with no carbs
     if (any(bolus_datetimes %in% time.range) & !any(carb_datetimes %in% time.range)) {
       # Count by BG level
-      if (bg < 70) {bg_with_carb_70 <- bg_with_carb_70 + 1}
-      if (bg %in% 70:149) {bg_with_carb_70_149 <- bg_with_carb_70_149 + 1}
-      if (bg %in% 150:249) {bg_with_carb_150_249 <- bg_with_carb_150_249 + 1}
-      if (bg >= 250) {bg_with_carb_above_250 <- bg_with_carb_above_250 + 1}
+      if (bg < 70) {bg_with_bolus_70 <- bg_with_bolus_70 + 1}
+      if (bg %in% 70:149) {bg_with_bolus_70_149 <- bg_with_bolus_70_149 + 1}
+      if (bg %in% 150:249) {bg_with_bolus_150_249 <- bg_with_bolus_150_249 + 1}
+      if (bg >= 250) {bg_with_bolus_above_250 <- bg_with_bolus_above_250 + 1}
     }
     # Count carbs with no boluses
     if (any(carb_datetimes %in% time.range) & !any(bolus_datetimes %in% time.range)) {
@@ -269,6 +271,7 @@ for (f in f:length(files)) {
   summary[f,"weekday_bolus"] <- weekday_bolus
   summary[f,"weekend_bolus"] <- weekend_bolus
   summary[f,"days_3_bolus"] <- length(which(table(bolus_dates)>=3))
+  summary[f,"total_BWZ_estimates"] <- total_estimates
   summary[f,"bolus_equal_bwz"] <- bolus_equal_bwz
   summary[f,"bolus_lower_bwz"] <- bolus_lower_bwz
   summary[f,"bolus_higher_bwz"] <- bolus_higher_bwz
@@ -289,6 +292,9 @@ for (f in f:length(files)) {
   summary[f,"bg_above_250_with_bolus_only"] <- bg_with_bolus_above_250
   summary[f,"bg_above_250_with_carb_only"] <- bg_with_carb_above_250
   summary[f,"bg_above_250_with_bolus_carb"] <- bg_with_carb_bolus_above_250
+  
+  # Save summary data
+  # save(summary,file = "/Users/timvigers/summary_progress.Rdata")
 }
 # Write summary variables
 filename <- paste0(outdir,"summary.csv")
