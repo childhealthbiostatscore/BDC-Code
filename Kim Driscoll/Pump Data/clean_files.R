@@ -39,8 +39,6 @@ for (f in files) {
   # Exclude incorrect times
   table <- table %>% filter(datetime >= start & datetime < end) %>%
     arrange(datetime)
-  # Remove rows without important data
-  table <- table[rowSums(is.na(table)) < 29,]
   # Write file
   filename <- paste0("/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Cleaned/",id,"_cleaned.csv")
   write.csv(table,file = filename,row.names = F,na="")

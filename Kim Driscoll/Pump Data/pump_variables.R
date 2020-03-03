@@ -6,7 +6,7 @@ files <- list.files(indir,full.names = T)
 # Make a summary variables table.
 summary <- data.frame(matrix(nrow = length(files),ncol = 0))
 # Iterate through each file
-for (f in 1:length(files)) {
+for (f in f:length(files)) {
   print(f)
   # Read in
   table <- read.csv(files[f],header = T,stringsAsFactors = FALSE,na.strings = "")
@@ -30,6 +30,10 @@ for (f in 1:length(files)) {
   table$bg <- pmax(table$BG.Reading..mg.dL.,table$BWZ.BG.Input..mg.dL.,na.rm = T)
   table$bg <- pmax(table$bg,table$Sensor.Calibration.BG..mg.dL.,na.rm = T)
   table$bg[table$bg == 0] <- NA
+  # Simplify table
+  table <- table %>% select(Date,datetime,weekday,bg,BWZ.Carb.Input..grams.,
+                            BWZ.Estimate..U.,Bolus.Volume.Delivered..U.)
+  table <- table[rowSums(is.na(table)) < 4,]
   # Count BG check behaviors
   # BG counters
   total_readings = 0
@@ -47,9 +51,9 @@ for (f in 1:length(files)) {
   bg_datetimes = NULL
   bg_values = NULL
   skip <- c()
-  for (r in 1:nrow(table)) {
+  for (r in which(!is.na(table$bg))) {
     # Skip NAs or blackout window
-    if (is.na(table$bg[r]) | r %in% skip) {next()}
+    if (r %in% skip) {next()}
     skip <- c()
     # Total readings and by day
     total_readings <- total_readings + 1
@@ -97,9 +101,9 @@ for (f in 1:length(files)) {
   weekend_carbs = 0
   carb_dates = NULL
   carb_datetimes = NULL
-  for (r in 1:nrow(table)) {
+  for (r in which(!is.na(table$BWZ.Carb.Input..grams.))) {
     # Skip NAs or blackout window
-    if (is.na(table$BWZ.Carb.Input..grams.[r]) | r %in% skip) {next()}
+    if (r %in% skip) {next()}
     skip <- c()
     # Total readings and by day
     total_carbs <- total_carbs + 1
@@ -145,9 +149,9 @@ for (f in 1:length(files)) {
   equal_dates = NULL
   lower_dates = NULL
   higher_dates = NULL
-  for (r in 1:nrow(table)) {
+  for (r in which(!is.na(table$Bolus.Volume.Delivered..U.))) {
     # Skip NAs or blackout window
-    if (is.na(table$Bolus.Volume.Delivered..U.[r]) | r %in% skip) {next()}
+    if (r %in% skip) {next()}
     skip <- c()
     # Total readings and by day
     total_bolus <- total_bolus + 1
@@ -167,8 +171,8 @@ for (f in 1:length(files)) {
   }
   skip <- c()
   # BWZ check
-  for (r in 1:nrow(table)) {
-    if (is.na(table$BWZ.Estimate..U.[r]) | r %in% skip) {next()}
+  for (r in which(!is.na(table$BWZ.Estimate..U.))) {
+    if (r %in% skip) {next()}
     estimate <- table$BWZ.Estimate..U.[r]
     delivered <- c()
     skip <- c()
@@ -222,7 +226,7 @@ for (f in 1:length(files)) {
   for (bgt in bg_datetimes) {
     # Check for a carb input within 15 minutes
     bg <- unique(table$bg[which(table$datetime == bgt)])
-    bg <- bg[!is.na(bg)]
+    bg <- bg[!is.na(bg)][[1]]
     time.range <- (bgt:(bgt+15*60))
     # Count boluses with no carbs
     if (any(bolus_datetimes %in% time.range) & !any(carb_datetimes %in% time.range)) {
