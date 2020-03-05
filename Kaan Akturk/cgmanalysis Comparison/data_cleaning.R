@@ -22,10 +22,10 @@ for (f in 1:length(files)) {
   colnames(dat)[which(colnames(dat)=="Glucose.Value..mg.dL.")] <- "sensorglucose"
   dat <- dat[which(!is.na(dat$timestamp)),
              c("subjectid","timestamp","sensorglucose")]
-  dat$subjectid[1] <- id
   dat <- dat[which(dat$timestamp >= start & dat$timestamp <= end),]
   filename <- paste0(outdir,"/",id,".csv")
   if (nrow(dat) > 10) {
+    dat$subjectid[1] <- id
     write.csv(dat,file = filename,row.names = F,na = "")
   }
 }
@@ -53,10 +53,10 @@ for (f in 1:length(files)) {
   colnames(dat)[5] <- "sensorglucose"
   dat <- dat[which(!is.na(dat$timestamp)),
              c("subjectid","timestamp","sensorglucose")]
-  dat$subjectid[1] <- id
   dat <- dat[which(dat$timestamp >= start & dat$timestamp <= end),]
   filename <- paste0(outdir,"/",id,".csv")
   if (nrow(dat) > 10) {
+    dat$subjectid[1] <- id
     write.csv(dat,file = filename,row.names = F,na = "")
   }
 }
@@ -87,10 +87,10 @@ for (f in 1:length(files)) {
   colnames(dat)[which(colnames(dat)=="Sensor Glucose (mg/dL)")] <- "sensorglucose"
   dat <- dat[which(!is.na(dat$timestamp)),
              c("subjectid","timestamp","sensorglucose")]
-  dat$subjectid[1] <- id
   dat <- dat[which(dat$timestamp >= start & dat$timestamp <= end),]
   filename <- paste0(outdir,"/",id,".csv")
   if (nrow(dat) > 10) {
+    dat$subjectid[1] <- id
     write.csv(dat,file = filename,row.names = F,na = "")
   }
 }
