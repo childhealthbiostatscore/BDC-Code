@@ -20,7 +20,8 @@ library(patchwork)
 # Get cgmanalysis variables
 cgmvariables("Cleaned/Dexcom","Cleaned/",outputname = "dexcom_results")
 cgmvariables("Cleaned/Libre","Cleaned/",outputname = "libre_results")
-cgmvariables("Cleaned/Medtronic","Cleaned/",outputname = "medtronic_results")
+cgmvariables("Cleaned/Medtronic","Cleaned/",outputname = "medtronic_results",
+             customintervals = list(c(40,50),c(50,70),c(180,250),c(250,400)))
 ```
 
 # Dexcom
@@ -43,7 +44,7 @@ dexcom_package <- dexcom_package %>% select(subject_id,
                                             percent_time_over_250,X.250,
                                             cv,CV,
                                             standard_deviation,SD)
-# Dvide software CV by 100, round all columns
+# Divide software CV by 100, round all columns
 dexcom_package$CV <- dexcom_package$CV / 100
 dexcom_package[,2:ncol(dexcom_package)] <- 
   lapply(dexcom_package[,2:ncol(dexcom_package)],function(x) round(x,1))
@@ -51,7 +52,7 @@ dexcom_package[,2:ncol(dexcom_package)] <-
 
 ## Plots
 
-```{r dexcom plots,echo=FALSE}
+```{r dexcom plots,echo=FALSE,fig.width=8,fig.height=6}
 # Make plots
 under_54 <- ggplot(dexcom_package,aes(x = percent_time_under_54,y = X.54)) +
   geom_point() + theme_bw() + geom_abline() + 
@@ -120,7 +121,7 @@ libre_package <- libre_package %>% select(subject_id,
                                             percent_time_over_250,X.250,
                                             cv,CV,
                                             standard_deviation,SD)
-# Dvide software CV by 100, round all columns
+# Divide software CV by 100, round all columns
 libre_package$CV <- libre_package$CV / 100
 libre_package[,2:ncol(libre_package)] <- 
   lapply(libre_package[,2:ncol(libre_package)],function(x) round(x,1))
@@ -128,7 +129,7 @@ libre_package[,2:ncol(libre_package)] <-
 
 ## Plots
 
-```{r libre plots,echo=FALSE}
+```{r libre plots,echo=FALSE,fig.width=8,fig.height=6}
 # Make plots
 under_54 <- ggplot(libre_package,aes(x = percent_time_under_54,y = X.54)) +
   geom_point() + theme_bw() + geom_abline() + 
@@ -176,3 +177,73 @@ libre_table <- tableby(~ `Diff. in % Time Under 54` + `Diff. in % Time Under 70`
                      data = libre_package)
 summary(libre_table)
 ```
+
+# Medtronic
+
+```{r compare results medtronic,echo=FALSE}
+# Read in results from Medtronic, format name
+medtronic_software <- read.csv("Medtronic/Patient Sheet_Medtronic.csv",stringsAsFactors = F)
+medtronic_software$Name <- tolower(medtronic_software$Name)
+colnames(medtronic_software)[2] <- "subject_id"
+# Read in results from package, multiply
+medtronic_package <- read.csv("Cleaned/medtronic_results.csv",stringsAsFactors = F)
+# Merge
+medtronic_package <- left_join(medtronic_package,medtronic_software,by = "subject_id")
+medtronic_package <- medtronic_package[complete.cases(medtronic_package),]
+# Select columns
+medtronic_package <- medtronic_package %>% select(subject_id,
+                                            percent_time_40_50,X.40.50.,
+                                            percent_time_50_70,X.50.70.,
+                                            percent_time_70_180,X.70.180.TIR,
+                                            percent_time_180_250,X.180.250.,
+                                            percent_time_250_400,X.250.400.)
+# Divide software CV by 100, round all columns
+medtronic_package[,2:ncol(medtronic_package)] <- 
+  lapply(medtronic_package[,2:ncol(medtronic_package)],round)
+```
+
+## Plots
+
+```{r medtronic plots,echo=FALSE,fig.width=8,fig.height=6}
+# Make plots
+tir_40_50 <- ggplot(medtronic_package,aes(x = percent_time_40_50,y = X.40.50.)) +
+  geom_point() + theme_bw() + geom_abline() + 
+  xlab("cgmanalysis Package") + ylab("Medtronic Software") + 
+  ggtitle("% Time 40 - 50 mg/dL")
+tir_50_70 <- ggplot(medtronic_package,aes(x = percent_time_50_70,y = X.50.70.)) +
+  geom_point() + theme_bw() + geom_abline() + 
+  xlab("cgmanalysis Package") + ylab("Medtronic Software") + 
+  ggtitle("% Time 50 - 70 mg/dL")
+tir_70_180 <- ggplot(medtronic_package,aes(x = percent_time_70_180,y = X.70.180.TIR)) +
+  geom_point() + theme_bw() + geom_abline() + 
+  xlab("cgmanalysis Package") + ylab("Medtronic Software") + 
+  ggtitle("% Time 70 - 180 mg/dL")
+tir_180_250 <- ggplot(medtronic_package,aes(x = percent_time_180_250,y = X.180.250.)) +
+  geom_point() + theme_bw() + geom_abline() + 
+  xlab("cgmanalysis Package") + ylab("Medtronic Software") + 
+  ggtitle("% Time 180 - 250 mg/dL")
+tir_250_400 <- ggplot(medtronic_package,aes(x = percent_time_250_400,y = X.250.400.)) +
+  geom_point() + theme_bw() + geom_abline() + 
+  xlab("cgmanalysis Package") + ylab("Medtronic Software") + 
+  ggtitle("% Time 250 - 400 mg/dL")
+
+(tir_40_50 | tir_50_70 | tir_70_180) / (tir_180_250 | tir_250_400)
+```
+
+## Differences
+
+```{r present medtronic,echo=FALSE,results='asis'}
+# Calculate differences
+medtronic_package <- medtronic_package %>%
+  mutate(`Diff. in % Time 40 - 50` = X.40.50. - percent_time_40_50,
+         `Diff. in % Time 50 - 70` = X.50.70. - percent_time_50_70,
+         `Diff. in % Time 70 - 180` = X.70.180.TIR - percent_time_70_180,
+         `Diff. in % Time 180 - 250` = X.180.250. - percent_time_180_250,
+         `Diff. in % Time 250 - 400` = X.250.400. - percent_time_250_400)
+# Results table
+medtronic_table <- tableby(~ `Diff. in % Time 40 - 50` + `Diff. in % Time 50 - 70` + 
+                       `Diff. in % Time 70 - 180` + `Diff. in % Time 180 - 250` + 
+                       `Diff. in % Time 250 - 400`,data = medtronic_package)
+summary(medtronic_table)
+```
+
