@@ -1,5 +1,5 @@
 #Read Data
-data=read.csv('/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/670g obs sleep/Data_Cleaned/AdvancedClosedLoopCl_DATA_2020-01-05_1101.csv')
+data=read.csv('/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/670g obs sleep/Data_Cleaned/AdvancedClosedLoopCl_DATA_2020-01-05_1101.csv')
 #Setting Labels
 
 label(data$record_id)="Record ID"

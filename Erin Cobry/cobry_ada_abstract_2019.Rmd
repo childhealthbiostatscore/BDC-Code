@@ -7,7 +7,7 @@ output: word_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/670g obs sleep")
+knitr::opts_knit$set(root.dir = "/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/670g obs sleep")
 library(arsenal)
 library(cgmanalysis)
 library(car)
@@ -22,7 +22,7 @@ library(tidyverse)
 
 ```{r data import and clean,echo=FALSE,include=FALSE}
 # Import Cari's data
-source("/Users/timvigers/Documents/GitHub/BDC-Code/Erin Cobry/AdvancedClosedLoopCl_R_2020-01-05_1101.r")
+source("/Users/timvigers/GitHub/BDC-Code/Erin Cobry/AdvancedClosedLoopCl_R_2020-01-05_1101.r")
 # Demographics
 demographics <- data %>% 
   filter(redcap_event_name %in% c("baseline_arm_1","baseline_arm_2"),
@@ -97,8 +97,7 @@ summary(t1,labelTranslations = labels)
 ```{r clean CGM files,echo=FALSE,include=FALSE,eval=FALSE}
 # Merge files and write CSVs with correct dates
 # Files
-cgm_files <- list.files("./Data_Raw/Project 2 - HCL Overnight Data Project_Zip/Project 2 - HCL Overnight Data Project",
-                        recursive = T,full.names = T)
+cgm_files <- list.files("./Data_Raw/Project 2 - HCL Overnight Data Project_Zip/Project 2 - HCL Overnight Data Project",recursive = T,full.names = T)
 all_cgm <- data.frame()
 # Clean all CGM files - this is extremely slow but only needs to be run once
 for (file in cgm_files) {
@@ -182,6 +181,12 @@ cgm <- cgm %>% select(id,timepoint,nighttime_avg_sens_glucose,
                       percent_time_70_180_night,percent_time_under_70_night)
 # Merge
 overnight_alarms <- left_join(overnight_alarms,cgm,by = c("id","timepoint"))
+# Read in corrected AM data
+am_correct <- read.csv("./Data_Cleaned/REDCap AM Data.csv")
+am_correct$id <- as.character(am_correct$id)
+# Add to overnight alarms
+overnight_alarms$id <- gsub("[^0-9.-]", "", overnight_alarms$id)
+overnight_alarms <- left_join(overnight_alarms,am_correct)
 # Order timepoints
 overnight_alarms$timepoint <- factor(overnight_alarms$timepoint,
                                      levels = c("Baseline","week 2",
@@ -197,8 +202,11 @@ overnight_alarms_cgm <- overnight_alarms %>% filter(cgm_use == "Y")
 ```{r alarm table,echo=FALSE}
 alarm_table <- overnight_alarms_cgm %>% group_by(timepoint) %>%
   summarise(`Median Alarms per Night` = round(median(alarms_per_day,na.rm=T),3),
-            `Median Alarms in AM per Night` = round(median(alarms_AM_per_day,na.rm=T),3),
-            `Median Actual Time in AM` = round(median(actual_time_am,na.rm=T),3))
+            `Median Alarms in AM per Night` = 
+              round(median(alarms_AM_per_day,na.rm=T),3),
+            `Median Time in AM` = 
+              round(median(time_am,na.rm=T),3),
+            `Median Sensor Wear (%)` = round(median(sensor_wear,na.rm=T),3))
 kable(alarm_table)
 ```
 
@@ -215,11 +223,35 @@ alarms_over_time <-
 alarms_over_time
 ```
 
-### Model Results
+### Model Results - Unadjusted
+
+```{r alarm model unadj,echo=FALSE,message=FALSE}
+# Random intercept (not enough data for a random slope)
+mod_ri_car1 <- glmmPQL(num_alarms ~ timepoint + offset(log(num_nights)),
+                       random = ~1|id,data = overnight_alarms_cgm,
+                       family = "poisson",
+                       correlation = corCAR1(form = ~numeric_time))
+results <- broom::tidy(mod_ri_car1,effects = "fixed")
+results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4")
+results$p.value <- format.pval(results$p.value,eps = 0.0001,digits = 3)
+results$estimate <- exp(results$estimate)
+conf_int <- as.data.frame(intervals(mod_ri_car1)$fixed)
+results$lower_ci <- exp(conf_int$lower)
+results$upper_ci <- exp(conf_int$upper)
+results$estimate <- exp(conf_int$est.)
+# Anova
+an_res <- as.data.frame(Anova(mod_ri_car1))
+# Print
+kable(results[,c("term","estimate","lower_ci","upper_ci","p.value")])
+```
+
+There was no effect of timepoint on the rate of alarms per night (overall p = `r round(an_res["timepoint",3],3)`).
+
+### Model Results - Adjusted for Time in AM
 
 ```{r alarm model,echo=FALSE,message=FALSE}
 # Random intercept (not enough data for a random slope)
-mod_ri_car1 <- glmmPQL(num_alarms ~ timepoint + actual_time_am + 
+mod_ri_car1 <- glmmPQL(num_alarms ~ timepoint + time_am + 
                          offset(log(num_nights)),
                        random = ~1|id,data = overnight_alarms_cgm,
                        family = "poisson",
@@ -232,10 +264,13 @@ conf_int <- as.data.frame(intervals(mod_ri_car1)$fixed)
 results$lower_ci <- exp(conf_int$lower)
 results$upper_ci <- exp(conf_int$upper)
 results$estimate <- exp(conf_int$est.)
+# Anova
+an_res <- as.data.frame(Anova(mod_ri_car1))
+# Print
 kable(results[,c("term","estimate","lower_ci","upper_ci","p.value")])
 ```
 
-There was no effect of timepoint on the rate of alarms per night after adjusting for actual time in AM. There was also no effect of actual time in AM on the rate of alarms per night.
+There was no effect of timepoint on the rate of alarms per night after adjusting for actual time in AM (overall p = `r round(an_res["timepoint",3],3)`). There was also no effect of time in AM on the rate of alarms per night.
 
 ### Number of Observations at Each Timepoint
 
@@ -259,7 +294,7 @@ tir_over_time
 
 ```{r tir model,echo=FALSE, message=FALSE}
 # The outcome looks pretty normal so we can use a LMM with RI and spatial power
-mod_ri_car1 <- lme(percent_time_70_180_night ~ timepoint + actual_time_am,
+mod_ri_car1 <- lme(percent_time_70_180_night ~ timepoint + time_am,
                    random = ~1|id,data = overnight_alarms_cgm,na.action = na.omit,
                    correlation = corCAR1(form = ~numeric_time))
 # Residuals look good!
@@ -299,7 +334,7 @@ mean_bg_over_time
 
 ```{r under70 model,echo=FALSE, message=FALSE}
 # The outcome looks pretty normal again so we can use a LMM with RI and spatial power
-mod_ri_car1 <- lme(nighttime_avg_sens_glucose ~ timepoint + actual_time_am,
+mod_ri_car1 <- lme(nighttime_avg_sens_glucose ~ timepoint + time_am,
                    random = ~1|id,data = overnight_alarms_cgm,na.action = na.omit,
                    correlation = corCAR1(form = ~numeric_time))
 results <- broom::tidy(mod_ri_car1,"fixed")
