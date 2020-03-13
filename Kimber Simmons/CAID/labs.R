@@ -41,6 +41,9 @@ label(dat$ZN_pos_neg)<-"ZnT8RW Result"
 labs<-read.csv("S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Data/CAID_Labs_V4b_07192019_KateEdits_csv.csv")
 labs_ref<-read.csv("S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Data/CAID_Labs_refranges.csv")
 
+#ONSET DATE:
+dat.onset<-dat[,c(1,3)]
+labs<-merge(labs,dat.onset,by="EPICMRN",all.x=T)
 labs$age_years<-as.numeric(as.POSIXct(labs$ResultDate,format="%m/%d/%Y")- as.POSIXct(labs$DOB,format="%m/%d/%Y"))/365
 
 #only keep labs we are interested in:
@@ -186,13 +189,16 @@ labs$pos_neg[labs$LabSubGroupName=="TPO Ab" & labs$ResultingAgency=="LABCORP - D
 labs$pos_neg[labs$LabSubGroupName=="TPO Ab" & labs$ResultingAgency=="LABCORP - DENVER" & labs$age_years>19 & 
                labs$OrderValue<=34]<-"NEG"
 
-#TODO: summarize how many pts are positive at any time, and timing of positivity (relative to diabetes onset and CAIDs)
+# summarize how many pts are positive at any time, and timing of positivity (relative to diabetes onset and CAIDs)
+#3/13/2020: add positive/negative around onset (6mo)
 labs<-labs[,c(which(colnames(labs)=="EPICMRN"),
+              which(colnames(labs)=="OnsetDate"),
               which(colnames(labs)=="ResultDate"),
               which(colnames(labs)=="LabSubGroupName"),
               which(colnames(labs)=="pos_neg"))]
 labs$ResultDate<-as.POSIXct(labs$ResultDate,format="%m/%d/%Y")
-
+labs$OnsetDate<-as.POSIXct(labs$OnsetDate,format="%m/%d/%Y")
+labs$onset_to_lab<-difftime(labs$ResultDate,labs$OnsetDate,units='days')
 # dat.long<-merge(dat,labs,by="EPICMRN",all=T)
 # dat.long$years_labs_minus_onset<-as.numeric((dat.long$ResultDate-dat.long$OnsetDate)/60/60/24/365)
 
@@ -201,7 +207,7 @@ by_pt<-function(ID,data){
   temp<-lapply(unique(ID), function(x){
     
     dat.temp <- subset(data, ID == x)
-    # dat.temp <- subset(labs,labs$EPICMRN==904592)
+    # dat.temp <- subset(labs,labs$EPICMRN==617672)
     
     ###for each patient and for each lab, calculate pos/neg and timing of pos
     by_lab<-function(ID,data){
@@ -209,7 +215,7 @@ by_pt<-function(ID,data){
       temp2<-lapply(unique(ID), function(x){
         
         dat.temp2 <- subset(data, ID == x)
-        # dat.temp2<-subset(dat.temp,dat.temp$LabSubGroupName=="TTG IgA")
+        # dat.temp2<-subset(dat.temp,dat.temp$LabSubGroupName=="TPO Ab")
         dat.temp2<-dat.temp2[order(dat.temp2$ResultDate),]
         
         dat.temp2$lab_row_num<-rep(1:nrow(dat.temp2)) #count of repeat visits per patient
@@ -220,7 +226,19 @@ by_pt<-function(ID,data){
         if (dat.temp2$lab_num_pos[1]>0){
           dat.temp2$lab_date_pos<-dat.temp2$ResultDate[dat.temp2$pos_neg=="POS"][1]
         }
-        
+        ###added 3/13: baseline pos/neg:
+        closest<-min(abs(dat.temp2$onset_to_lab),na.rm=T)[1]
+        dat.temp2$lab_baseline<-NA
+        if (is.na(closest)){
+          dat.temp2$lab_baseline<-"lab not measured"
+        }
+        if (closest>=6*30.4167){
+          dat.temp2$lab_baseline<-"closest outside of 6mo window"
+        }
+        if (!is.na(closest) & closest<6*30.4167){
+          closest_posneg<-dat.temp2$pos_neg[abs(dat.temp2$onset_to_lab)==closest][1]
+          dat.temp2$lab_baseline<-closest_posneg
+        }
         dat.temp2
         #print(dat.temp2$MRN)
         #print(dat.temp2$yeargrouping)
@@ -230,6 +248,7 @@ by_pt<-function(ID,data){
       dat<-do.call(rbind,temp2)
     }
     dat.temp<-by_lab(dat.temp$LabSubGroupName,dat.temp)
+    #print(dat.temp$EPICMRN)
     #print(dat.temp$lab_date_pos)
     dat.temp})
   
@@ -240,20 +259,32 @@ labs<-by_pt(labs$EPICMRN,labs)
 labs.one<-subset(labs,labs$lab_row_num==1)
 
 labs.tpo<-subset(labs.one,labs.one$LabSubGroupName=="TPO Ab")
-labs.tpo<-labs.tpo[,c(1,4,8)]
-colnames(labs.tpo)<-c("EPICMRN","pos_tpo","date_tpo")
+labs.tpo<-labs.tpo[,c(which(colnames(labs.tpo)=="EPICMRN"),
+                      which(colnames(labs.tpo)=="pos_neg"),
+                      which(colnames(labs.tpo)=="lab_date_pos"),
+                      which(colnames(labs.tpo)=="lab_baseline"))]
+colnames(labs.tpo)<-c("EPICMRN","pos_tpo","date_tpo","baseline_tpo")
 
 labs.21<-subset(labs.one,labs.one$LabSubGroupName=="21-OH")
-labs.21<-labs.21[,c(1,4,8)]
-colnames(labs.21)<-c("EPICMRN","pos_21","date_21")
+labs.21<-labs.21[,c(which(colnames(labs.21)=="EPICMRN"),
+                    which(colnames(labs.21)=="pos_neg"),
+                    which(colnames(labs.21)=="lab_date_pos"),
+                    which(colnames(labs.21)=="lab_baseline"))]
+colnames(labs.21)<-c("EPICMRN","pos_21","date_21","baseline_21")
 
 labs.thy<-subset(labs.one,labs.one$LabSubGroupName=="Thyroglobulin Ab")
-labs.thy<-labs.thy[,c(1,4,8)]
-colnames(labs.thy)<-c("EPICMRN","pos_thy","date_thy")
+labs.thy<-labs.thy[,c(which(colnames(labs.thy)=="EPICMRN"),
+                      which(colnames(labs.thy)=="pos_neg"),
+                      which(colnames(labs.thy)=="lab_date_pos"),
+                      which(colnames(labs.thy)=="lab_baseline"))]
+colnames(labs.thy)<-c("EPICMRN","pos_thy","date_thy","baseline_thy")
 
 labs.ttg<-subset(labs.one,labs.one$LabSubGroupName=="TTG IgA")
-labs.ttg<-labs.ttg[,c(1,4,8)]
-colnames(labs.ttg)<-c("EPICMRN","pos_ttg","date_ttg")
+labs.ttg<-labs.ttg[,c(which(colnames(labs.ttg)=="EPICMRN"),
+                      which(colnames(labs.ttg)=="pos_neg"),
+                      which(colnames(labs.ttg)=="lab_date_pos"),
+                      which(colnames(labs.ttg)=="lab_baseline"))]
+colnames(labs.ttg)<-c("EPICMRN","pos_ttg","date_ttg","baseline_ttg")
 
 labs.final<-merge(labs.tpo,labs.21,by="EPICMRN",all=T)
 labs.final<-merge(labs.final,labs.thy,by="EPICMRN",all=T)
@@ -376,7 +407,10 @@ label(dat$timing_thy_thy)<-"Thyroglobulin Ab: Timing vs. Thyroid Disease"
 # dat$timing_21[dat$pos_21=="POS" & dat$addison_yn==1 & dat$months_onset_to_21<dat$addison_months_if_yes
 #               & ]<-"Before Addison Dx"
 # dat$timing_21[dat$pos_21=="POS" & dat$addison_yn==1 & dat$years_onset_to_21==dat$addison_months_if_yes]<-"At Addison Dx"
-
+dat$pos_21[is.na(dat$pos_21)]<-"never tested"
+dat$pos_thy[is.na(dat$pos_thy)]<-"never tested"
+dat$pos_tpo[is.na(dat$pos_tpo)]<-"never tested"
+dat$pos_ttg[is.na(dat$pos_ttg)]<-"never tested"
 
 dat$pos_21<-as.factor(dat$pos_21)
 dat$pos_thy<-as.factor(dat$pos_thy)
@@ -387,5 +421,15 @@ label(dat$pos_21)<-"21-OH: Ever Positive"
 label(dat$pos_thy)<-"Thyroglobulin Ab: Ever Positive"
 label(dat$pos_tpo)<-"TPO Ab: Ever Positive"
 label(dat$pos_ttg)<-"TTG IgA: Ever Positive"
+
+dat$baseline_21[is.na(dat$baseline_21)]<-"never tested"
+dat$baseline_thy[is.na(dat$baseline_thy)]<-"never tested"
+dat$baseline_tpo[is.na(dat$baseline_tpo)]<-"never tested"
+dat$baseline_ttg[is.na(dat$baseline_ttg)]<-"never tested"
+
+label(dat$baseline_21)<-"21-OH: Baseline Positive"
+label(dat$baseline_thy)<-"Thyroglobulin Ab: Baseline Positive"
+label(dat$baseline_tpo)<-"TPO Ab: Baseline Positive"
+label(dat$baseline_ttg)<-"TTG IgA: Baseline Positive"
 
 
