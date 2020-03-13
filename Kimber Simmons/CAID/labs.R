@@ -1,5 +1,5 @@
 #########LABS##########
-#source("C:/Users/campbkri/Documents/GitHub/BDC-Code/Kimber Simmons/CAID/data_prep.R")
+source("C:/Users/campbkri/Documents/GitHub/BDC-Code/Kimber Simmons/CAID/data_prep.R")
 #1. Eisenbarth labs:
 
 #located in the patient level report, only measured once per pt
@@ -41,8 +41,12 @@ label(dat$ZN_pos_neg)<-"ZnT8RW Result"
 labs<-read.csv("S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Data/CAID_Labs_V4b_07192019_KateEdits_csv.csv")
 labs_ref<-read.csv("S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Data/CAID_Labs_refranges.csv")
 
-#ONSET DATE:
-dat.onset<-dat[,c(1,3)]
+#ONSET DATE & disease dates:
+dat.onset<-dat[,c(which(colnames(dat)=="EPICMRN"),
+                  which(colnames(dat)=="OnsetDate"),
+                  which(colnames(dat)=="ThyroidDisease_DxDate"),
+                  which(colnames(dat)=="AddisonsDisease_DxDate"),
+                  which(colnames(dat)=="CeliacDisease_DxDate"))]
 labs<-merge(labs,dat.onset,by="EPICMRN",all.x=T)
 labs$age_years<-as.numeric(as.POSIXct(labs$ResultDate,format="%m/%d/%Y")- as.POSIXct(labs$DOB,format="%m/%d/%Y"))/365
 
@@ -52,6 +56,18 @@ labs<-subset(labs,labs$LabSubGroupName %in% c("TTG IgA","21-OH","TPO Ab","Thyrog
 dat.mrns<-unique(dat$EPICMRN)
 labs<-subset(labs,labs$EPICMRN %in% dat.mrns)
 
+#remove labs after diagnosis of each disease:
+labs$AddisonsDisease_DxDate<-as.POSIXct(labs$AddisonsDisease_DxDate)
+labs$CeliacDisease_DxDate<-as.POSIXct(labs$CeliacDisease_DxDate)
+labs$ThyroidDisease_DxDate<-as.POSIXct(labs$ThyroidDisease_DxDate)
+labs$ResultDate<-as.POSIXct(labs$ResultDate,format="%m/%d/%Y")
+
+labs$after_caid<-0
+labs$after_caid[labs$LabSubGroupName=="21-OH" & labs$ResultDate>=labs$AddisonsDisease_DxDate]<-1
+labs$after_caid[labs$LabSubGroupName=="TTG IgA" & labs$ResultDate>=labs$CeliacDisease_DxDate]<-1
+labs$after_caid[labs$LabSubGroupName=="TPO Ab" & labs$ResultDate>=labs$ThyroidDisease_DxDate]<-1
+labs$after_caid[labs$LabSubGroupName=="Thyroglobulin Ab" & labs$ResultDate>=labs$ThyroidDisease_DxDate]<-1
+labs<-subset(labs,labs$after_caid==0)
 #options(max.print=999999)
 #Convert OrderValue into a numeric:
 #a.if "<" in the order value, it's negative. if ">" is in orderval, then positive
@@ -256,6 +272,9 @@ by_pt<-function(ID,data){
 }
 
 labs<-by_pt(labs$EPICMRN,labs)
+
+labs.ttg.all<-subset(labs,labs$LabSubGroupName=="TTG IgA")
+
 labs.one<-subset(labs,labs$lab_row_num==1)
 
 labs.tpo<-subset(labs.one,labs.one$LabSubGroupName=="TPO Ab")
@@ -292,6 +311,39 @@ labs.final<-merge(labs.final,labs.ttg,by="EPICMRN",all=T)
 labs.final$which<-"labs"
 
 dat<-merge(dat,labs.final,by="EPICMRN",all=T)
+
+
+####TTG - want more summary stats on number of tests (pos/neg):
+ttg_bypt<-function(ID,data){
+  
+  temp<-lapply(unique(ID), function(x){
+    
+    dat.temp <- subset(data, ID == x)
+    # dat.temp <- subset(labs.ttg.all,labs.ttg.all$EPICMRN==617672)
+    
+    ###for each patient and for each lab, calculate pos/neg and timing of pos
+    dat.temp<-dat.temp[order(dat.temp$ResultDate),]
+    dat.temp$num_ttg<-nrow(dat.temp)
+    dat.temp$length_testing<-NA
+    dat.temp$avg_testing<-NA
+    if (dat.temp$num_ttg[1]>=2){
+      first<-dat.temp$ResultDate[1]
+      last<-dat.temp$ResultDate[dat.temp$lab_row_num==dat.temp$num_ttg]
+      dat.temp$length_testing<-difftime(last,first,unit='days')
+      dat.temp$avg_testing<-dat.temp$length_testing/dat.temp$num_pos_ttg
+    }
+    #print(dat.temp$EPICMRN)
+    #print(dat.temp$lab_date_pos)
+    dat.temp})
+  
+  dat<-do.call(rbind,temp)
+}
+
+labs.ttg<-ttg_bypt(labs.ttg.all$EPICMRN,labs.ttg.all)
+
+labs.ttg<-subset(labs.ttg,labs.ttg$lab_row_num==1)
+###########PICK UP HERE WITH TTG: SUMMARIZE THESE VALUES: LAB_NUM_POS, LAB_NUM_NEG, NUM_TTG, LENGTH TESTING, AVG_TESING
+
 
 dat$months_onset_to_21<-(dat$date_21-dat$OnsetDate)/60/60/24/30.6
 dat$timing_21<-NA
