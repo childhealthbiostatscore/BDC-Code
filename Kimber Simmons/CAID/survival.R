@@ -2,6 +2,8 @@
 library(survival)
 library(RColorBrewer)
 source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Kimber Simmons/CAID/data_prep.R')
+source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Kimber Simmons/CAID/labs.R')
+
 options(scipen=999)
 #########ANY CAID TIME-TO-EVENT#############
 dat.any<-subset(dat,!is.na(dat$time_to_any))
@@ -127,6 +129,68 @@ logrank<-coxph(Surv(dat.thy$time_to_thyroid, dat.thy$thyroid_yn) ~ dat.thy$age_c
 logrank_sum<-summary(logrank)
 text(3,.88,paste0("p=",round(logrank_sum$coefficients[1,5],3)),cex=1.5)
 
+###THRYOID BY LAB POS/NEG AT BASELINE:
+par(mfrow=c(1,3))
+dat.thy$baseline_tpo<-as.factor(dat.thy$baseline_tpo)
+dat.thy.tpo<-subset(dat.thy,dat.thy$baseline_tpo %in% c("POS","NEG"))
+km_fit_tpo <- survfit(Surv(dat.thy.tpo$time_to_thyroid, dat.thy.tpo$thyroid_yn) ~ dat.thy.tpo$baseline_tpo,
+                      data=dat.thy.tpo)
+summary(km_fit_tpo)
+plot(km_fit_tpo,xlab="Years from Diabetes Onset",ylab="Percent Thyroid Disease-Free",
+     main="By TPO Ab at Baseline",lwd=3,ylim=c(0,1),col=brewer.pal(3,"Set1"),cex.main=1.5,
+     cex.axis=1.5,cex.lab=1.5)
+
+legend("bottomleft",c("NEG","POS"),col=brewer.pal(3,"Set1"),
+       bty="n",lwd=c(3,3),cex=1.5)
+
+logrank<-coxph(Surv(dat.thy.tpo$time_to_thyroid, dat.thy.tpo$thyroid_yn) ~ dat.thy.tpo$baseline_tpo, 
+               data=dat.thy.tpo)
+logrank_sum<-summary(logrank)
+text(2.3,.9,paste0("p<0.0001"),cex=1.5)
+
+dat.thy$baseline_thy<-as.factor(dat.thy$baseline_thy)
+dat.thy.thy<-subset(dat.thy,dat.thy$baseline_thy %in% c("POS","NEG"))
+km_fit_thy <- survfit(Surv(dat.thy.thy$time_to_thyroid, dat.thy.thy$thyroid_yn) ~ dat.thy.thy$baseline_thy,
+                      data=dat.thy.thy)
+summary(km_fit_thy)
+plot(km_fit_thy,xlab="Years from Diabetes Onset",ylab="Percent Thyroid Disease-Free",
+     main="By Thyroglobulin at Baseline",lwd=3,ylim=c(0,1),col=brewer.pal(3,"Set1"),cex.main=1.5,
+     cex.axis=1.5,cex.lab=1.5)
+
+legend("bottomleft",c("NEG","POS"),col=brewer.pal(3,"Set1"),
+       bty="n",lwd=c(3,3),cex=1.5)
+
+logrank<-coxph(Surv(dat.thy.thy$time_to_thyroid, dat.thy.thy$thyroid_yn) ~ dat.thy.thy$baseline_thy, 
+               data=dat.thy.thy)
+logrank_sum<-summary(logrank)
+text(2.3,.9,paste0("p<0.0001"),cex=1.5)
+
+#combined:
+dat.thy$baseline_tpo_thy<-NA
+dat.thy$baseline_tpo_thy[dat.thy$baseline_tpo=="NEG" & dat.thy$baseline_thy=="NEG"]<-"Both NEG"
+dat.thy$baseline_tpo_thy[dat.thy$baseline_tpo=="POS" & dat.thy$baseline_thy=="POS"]<-"Both POS"
+dat.thy$baseline_tpo_thy[dat.thy$baseline_tpo=="NEG" & dat.thy$baseline_thy=="POS"]<-"TPO NEG, Thy POS"
+dat.thy$baseline_tpo_thy[dat.thy$baseline_tpo=="POS" & dat.thy$baseline_thy=="NEG"]<-"TPO POS, Thy NEG"
+
+dat.thy.comb<-subset(dat.thy,!is.na(dat.thy$baseline_tpo_thy))
+dat.thy.comb$baseline_tpo_thy<-as.factor(dat.thy.comb$baseline_tpo_thy)
+
+km_fit_thy.comb <- survfit(Surv(dat.thy.comb$time_to_thyroid, dat.thy.comb$thyroid_yn) ~ dat.thy.comb$baseline_tpo_thy,
+                      data=dat.thy.comb)
+
+plot(km_fit_thy.comb,xlab="Years from Diabetes Onset",ylab="Percent Thyroid Disease-Free",
+     main="By TPO/Thyroglobulin at Baseline",lwd=3,ylim=c(0,1),col=brewer.pal(4,"Set1"),cex.main=1.5,
+     cex.axis=1.5,cex.lab=1.5)
+
+legend("bottomleft",levels(dat.thy.comb$baseline_tpo_thy),col=brewer.pal(4,"Set1"),
+       bty="n",lwd=c(3,3),cex=1.5)
+
+logrank<-coxph(Surv(dat.thy.comb$time_to_thyroid, dat.thy.comb$thyroid_yn) ~ dat.thy.comb$baseline_tpo_thy, 
+               data=dat.thy.comb)
+# logrank_sum<-summary(logrank)
+# text(2.3,.9,paste0("p<0.0001"),cex=1.5)
+
+
 #########CELIAC TIME-TO-EVENT#############
 ###time to celiac:
 dat.cel<-subset(dat,!(dat$celiac_timing %in% c("At Diabetes Onset",
@@ -196,20 +260,57 @@ logrank<-coxph(Surv(dat.cel$time_to_celiac, dat.cel$celiac_yn) ~ dat.cel$age_cat
 logrank_sum<-summary(logrank)
 text(2.5,.9,paste0("p=",round(logrank_sum$coefficients[1,5],4)),cex=1.5)
 
+
+###CELIAC BY LAB POS/NEG AT BASELINE:
+#par(mfrow=c(1,3))
+dat.cel$baseline_ttg<-as.factor(dat.cel$baseline_ttg)
+dat.cel.ttg<-subset(dat.cel,dat.cel$baseline_ttg %in% c("POS","NEG"))
+km_fit_ttg <- survfit(Surv(dat.cel.ttg$time_to_celiac, dat.cel.ttg$celiac_yn) ~ dat.cel.ttg$baseline_ttg,
+                      data=dat.cel.ttg)
+summary(km_fit_ttg)
+plot(km_fit_ttg,xlab="Years from Diabetes Onset",ylab="Percent Celiac Disease-Free",
+     main="By TTG at Baseline",lwd=3,ylim=c(0,1),col=brewer.pal(3,"Set1"),cex.main=1.5,
+     cex.axis=1.5,cex.lab=1.5)
+
+legend("bottomleft",c("NEG","POS"),col=brewer.pal(3,"Set1"),
+       bty="n",lwd=c(3,3),cex=1.5)
+
+logrank<-coxph(Surv(dat.cel.ttg$time_to_celiac, dat.cel.ttg$celiac_yn) ~ dat.cel.ttg$baseline_ttg,
+               data=dat.cel.ttg)
+logrank_sum<-summary(logrank)
+text(2.3,.9,paste0("p<0.0001"),cex=1.5)
+
 #########ADDISON TIME-TO-EVENT#############
 ###time to addison:
-# dat.add<-subset(dat,!(dat$addison_timing %in% c("At Diabetes Onset",
-#                                                "Before Diabetes Onset")))
-# 
-# dat.add$time_to_addison<-as.numeric(dat.add$time_to_addison)
-# dat.add$addison_yn<-as.numeric(dat.add$addison_yn)
-# dat.add<-dat.add[order(dat.add$time_to_addison),]
-# km_fit <- survfit(Surv(dat.add$time_to_addison, dat.add$addison_yn) ~ 1, data=dat.add)
-# 
-# summary(km_fit)
-# plot(km_fit,xlab="Years from Diabetes Onset",ylab="Percent addison Disease-Free",
-#      main="Time-to-addison Disease",lwd=2,ylim=c(0.8,1))
-# 
+dat.add<-subset(dat,!(dat$addison_timing %in% c("At Diabetes Onset",
+                                               "Before Diabetes Onset")))
+
+dat.add$time_to_addison<-as.numeric(dat.add$time_to_addison)
+dat.add$addison_yn<-as.numeric(dat.add$addison_yn)
+dat.add<-dat.add[order(dat.add$time_to_addison),]
+km_fit <- survfit(Surv(dat.add$time_to_addison, dat.add$addison_yn) ~ 1, data=dat.add)
+
+summary(km_fit)
+plot(km_fit,xlab="Years from Diabetes Onset",ylab="Percent addison Disease-Free",
+     main="Time-to-addison Disease",lwd=2,ylim=c(0.8,1))
+
+dat.add$baseline_21<-as.factor(dat.add$baseline_21)
+dat.add.21<-subset(dat.add,dat.add$baseline_21 %in% c("POS","NEG"))
+km_fit_21 <- survfit(Surv(dat.add.21$time_to_addison, dat.add.21$addison_yn) ~ dat.add.21$baseline_21,
+                      data=dat.add.21)
+summary(km_fit_21)
+plot(km_fit_21,xlab="Years from Diabetes Onset",ylab="Percent Addison Disease-Free",
+     main="By 21-OH at Baseline",lwd=3,ylim=c(0.5,1),col=brewer.pal(3,"Set1"),cex.main=1.5,
+     cex.axis=1.5,cex.lab=1.5)
+
+legend("bottomleft",c("NEG","POS"),col=brewer.pal(3,"Set1"),
+       bty="n",lwd=c(3,3),cex=1.5)
+
+logrank<-coxph(Surv(dat.add.21$time_to_addison, dat.add.21$addison_yn) ~ dat.add.21$baseline_21,
+               data=dat.add.21)
+logrank_sum<-summary(logrank)
+text(2.3,.9,paste0("p<0.0001"),cex=1.5)
+
 # # BY GENDER
 # km_fit_2 <- survfit(Surv(dat.add$time_to_addison, dat.add$addison_yn) ~ dat.add$Gender, data=dat.add)
 # 
