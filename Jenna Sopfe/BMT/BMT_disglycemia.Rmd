@@ -7,15 +7,14 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
-#knitr::opts_knit$set(root.dir = "S:/Shared Projects/Laura/BDC/Projects")
-
+knitr::opts_knit$set(root.dir = "/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
 library(redcapAPI)
 library(AGD)
 library(arsenal)
 library(skimr)
 library(knitr)
 library(JM)
+library(patchwork)
 library(tidyverse)
 ```
 
@@ -180,21 +179,27 @@ cgm <- read.csv("./Jenna Sopfe/CGM Accuracy in BMT/Data_Cleaned/Prospective HSCT
 colnames(cgm)[1] <- "study_id"
 cgm$Time <- lubridate::mdy_hm(cgm$Time,tz = "UTC")
 cgm$Tx_date <- lubridate::mdy(cgm$Tx_date,tz = "UTC")
-# Get earliest infection for each participant and censoring info
+# Get earliest infection for each participant, censoring info, and covariates
 events <- data_full %>% group_by(study_id) %>% 
   summarise(date_of_tx = date_of_tx[1],
             infxn_date = suppressWarnings(min(infxn_date,na.rm = T)),
             first_cgm = sens1_place[1],
-            censor_date = followup[1],
-            sex = gender[1])
+            censor_date = followup[1])
 events$event <- pmin(events$infxn_date,events$censor_date)
 events$infection <- ifelse(!is.na(as.character(events$infxn_date)),1,0)
+# Exogenous variables
 events$study_id <- as.numeric(as.character(events$study_id))
+demographics$study_id <- as.numeric(as.character(demographics$study_id))
+dem_cov = c("sex","Race","AgeTx")
+events = left_join(events,demographics[,c("study_id",dem_cov)],
+                   by = "study_id")
+# Combine race
+events$Race <- ifelse(events$Race == "White","White","Non-white")
 # Order
 events <- events %>% arrange(study_id)
 cgm <- cgm %>% arrange(study_id)
 # Get event date and sex
-cgm <- left_join(cgm,events[,c("study_id","event","sex")],by = "study_id")
+cgm <- left_join(cgm,events[,c("study_id","event",dem_cov)],by = "study_id")
 # Time from Tx and first CGM value
 cgm <- cgm %>% group_by(study_id) %>% 
   mutate(time_from_tx = difftime(Time,Tx_date,units = "hours"),
@@ -206,20 +211,43 @@ events <- events %>%
 # Average glucose by interval, filter truncate CGM data at event
 cgm$interval <- lubridate::round_date(cgm$Time,unit = "12 hour")
 cgm <- cgm %>% group_by(study_id,interval) %>%
-  summarise(sg = mean(Historic_Glucose,na.rm = T),sex = sex[1],
-            event = event[1]) %>%
+  summarise(sg = mean(Historic_Glucose,na.rm = T),event = event[1]) %>%
   mutate(time_from_cgm_start = difftime(interval,interval[1],units = "hours")) %>%
   filter(interval < event)
 ```
 
+### 12-hour Mean Glucose Over Time
+
+```{r echo=FALSE,warning=FALSE}
+ggplot(cgm,aes(x = time_from_cgm_start, y = sg,group = study_id)) + 
+  geom_line() + 
+  theme_bw()
+```
+
 ```{r infection joint models,echo=FALSE}
 # Random intercept and random slope
-mixfit <- lme(sg ~ time_from_cgm_start,
-              random = ~1|study_id,data = cgm,method = "ML")
-# Basic time to infection model
-survfit <- coxph(Surv(time_to_event_from_cgm_start,infection)~sex,
+# Tested polynomial models, but quadratic did not add to straight line model
+# Random slope better than random slope and intercept
+mixfit <- lme(sg ~ time_from_cgm_start,data = cgm,method = "ML",
+              random = ~time_from_cgm_start|study_id)
+# qqnorm(resid(mixfit)) looks pretty good, although the residuals aren't perfect
+# Survival part
+survfit <- coxph(Surv(time_to_event_from_cgm_start,infection)~sex + Race + AgeTx,
                    data = events,x=T)
 # Joint fit
 jointFit <- jointModel(mixfit, survfit, timeVar = "time_from_cgm_start",
                        method = "weibull-PH-aGH")
+```
+
+### Diagnostics
+
+```{r echo=FALSE}
+plot(jointFit)
+```
+
+### Model Results
+
+```{r echo=FALSE}
+kable(summary(jointFit)$`CoefTable-Long`,caption = "Longitudinal Process")
+kable(summary(jointFit)$`CoefTable-Event`,caption = "Event Process")
 ```
