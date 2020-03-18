@@ -1,10 +1,10 @@
 library(tidyverse)
 # Import data
-indir <- "/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Cleaned/"
-outdir <- "/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/"
+indir <- "/Users/timvigers/Desktop/PIU/cleaned"
+outdir <- "/Users/timvigers/Desktop/"
 files <- list.files(indir,full.names = T)
 # Make a summary variables table.
-# summary <- data.frame(matrix(nrow = length(files),ncol = 0))
+summary <- data.frame(matrix(nrow = length(files),ncol = 0))
 # Iterate through each file
 for (f in 1:length(files)) {
   print(f)
@@ -144,6 +144,7 @@ for (f in 1:length(files)) {
   bolus_within_15_of_bg = 0
   bolus_dates = NULL
   bolus_datetimes = NULL
+  estimate_dates = NULL
   equal_dates = NULL
   lower_dates = NULL
   higher_dates = NULL
@@ -171,6 +172,7 @@ for (f in 1:length(files)) {
     if (r %in% skip) {next()}
     estimate <- table$BWZ.Estimate..U.[r]
     total_estimates <- total_estimates + 1
+    estimate_dates <- c(estimate_dates,as.character(table$datetime[r]))
     delivered <- c()
     skip <- c()
     # Check rows going forwards and backwards
@@ -194,7 +196,7 @@ for (f in 1:length(files)) {
     # "Blackout" window
     estimate_time <- table$datetime[r]
     next_time <- table$datetime[r] + 15*60
-    skip <- which(table$datetime >= estimate_time & 
+    skip <- which(table$datetime >= estimate_time &
                     table$datetime <= next_time)
     skip <- skip[skip > r]
   }
