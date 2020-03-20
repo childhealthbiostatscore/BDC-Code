@@ -1,5 +1,6 @@
 ######## Kimber Simmons #########
 library(Hmisc)
+
 #pt level data:
 dat<-read.csv('S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Data/CAID_PatientLevelRport_V1_07091029_Cleaned.csv',na.strings="NULL")
 #remove celiac disease data from this original dataset:
@@ -181,7 +182,8 @@ dat$time_to_any<-NA
 dat$time_to_any<-pmin(dat$thyroid_months_if_yes,dat$celiac_months_if_yes,
                                        dat$addison_months_if_yes,na.rm=T) #pmin results in months
 dat$time_to_any[dat$any_caid==0 & !is.na(dat$any_caid)]<-
-  difftime(dat$LastVisitDate[dat$any_caid==0 & !is.na(dat$any_caid)],dat$OnsetDate[dat$any_caid==0 & !is.na(dat$any_caid)],unit='days')
+  difftime(dat$LastVisitDate[dat$any_caid==0 & !is.na(dat$any_caid)],
+           dat$OnsetDate[dat$any_caid==0 & !is.na(dat$any_caid)],unit='days')*0.0328767
 dat$time_to_any<-as.numeric(dat$time_to_any)
 label(dat$time_to_any)<-"Months from Onset to First CAID"
 
