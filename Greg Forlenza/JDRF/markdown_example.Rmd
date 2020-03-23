@@ -2,30 +2,33 @@
 title: "Markdown"
 author: "Greg"
 date: "12/20/2019"
-output: word_document
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(skimr)
-library(tidyverse)
+library(knitr)
 library(arsenal)
 library(lme4)
 library(nlme)
+library(Hmisc)
+library(tidyverse)
 ```
 
 ```{r data import,include=FALSE}
-source("C:/Users/forlenzg/Dropbox/JDRF ECPODRA - HCL Modeling and Interventions/Study Analysis Fall 2019 (Pyle and Vigers)/AdvancedClosedLoopCl_R_2019-12-12_1535.r")
+source("/Users/timvigers/GitHub/BDC-Code/Greg Forlenza/JDRF/ClinicalObservationC_R_2020-03-23_1201.r")
 ```
 
 # Table 1
 
-```{r eda}
+```{r eda,results='asis'}
 # Demographics only
 demographics <- data %>%
-  filter(redcap_event_name == "baseline_arm_1" | redcap_event_name == "baseline_arm_2") %>%
+  filter(redcap_event_name == "baseline_arm_1" | 
+           redcap_event_name == "baseline_arm_2") %>%
   select(record_id,demographics_age,demographics_t1d_duration,
-         demographics_ethnicity.factor:demographics_cgmhx.factor,hba1c_baseline)
+         demographics_ethnicity.factor:demographics_cgmhx.factor,hba1c)
 # Basic table
 table_one <- tableby(demographics_sex.factor ~ demographics_age + demographics_pumphx.factor + 
                  demographics_cgmhx.factor,data = demographics)
@@ -40,29 +43,61 @@ summary(table_one,labelTranslations = newlabels,digits = 2)
 
 ## Plots
 
-```{r lm plots}
+```{r lm plots,warning=FALSE,message=FALSE}
 # Simple linear
-plot <- ggplot(data = demographics,aes(x = demographics$demographics_age,y = demographics$hba1c_baseline)) +
+plot <- ggplot(data = demographics,aes(x = as.numeric(demographics_age),y = hba1c)) +
   geom_point()
 plot + geom_smooth(method='lm',se = F)
 plot + geom_smooth()
 # Mixed
 mixed_mod_data <- data %>%
   group_by(record_id) %>%
-  fill(child_ya.factor) %>%
-  filter(child_ya.factor == "Child (0-17 years)")
+  fill(child_ya.factor,demographics_dob,demographics_sex.factor) %>%
+  filter(child_ya.factor == "Child (0-17 years)") %>%
+  select(record_id,redcap_event_name,demographics_dob,date_visit,
+         demographics_sex.factor,hba1c)
 mixed_mod_data$redcap_event_name <- 
-  factor(mixed_mod_data$redcap_event_name,
-         levels = c("baseline_arm_1","1_arm_1","3_arm_1","4_arm_1","5_arm_1"))
+  factor(mixed_mod_data$redcap_event_name,levels = 
+           c("baseline_arm_1","1_arm_1","2_arm_1","3_arm_1","4_arm_1","5_arm_1"))
 mixed_plot <- ggplot(data = mixed_mod_data,aes(x = redcap_event_name, y = hba1c, 
-                                               group = record_id)) + 
-  geom_line()
+                                               group = record_id))
+mixed_plot + geom_line() + theme_bw()
 ```
 
-## Models
+## Model Selection
 
 ```{r model selection}
+# Create age variable
+mixed_mod_data$age = 
+  as.numeric(difftime(mixed_mod_data$date_visit,mixed_mod_data$demographics_dob,
+                      units = "days"))
+temp = mixed_mod_data[complete.cases(mixed_mod_data),]
 # Random intercept
-mixed_mod <- lme(hba1c ~ redcap_event_name,data = mixed_mod_data,
-                 random = ~1|record_id,na.action = na.omit)
+mixed_mod_ri <- lme(hba1c ~ redcap_event_name,data = temp,
+                 random = ~1|record_id,na.action = na.omit,method = "ML")
+# Add age
+mod_age <- update(mixed_mod_ri,.~.+age)
+# Compare residuals
+qqnorm(resid(mixed_mod_ri))
+qqline(resid(mixed_mod_ri))
+qqnorm(resid(mod_age))
+qqline(resid(mod_age))
+# Partial F test
+anova(mixed_mod_ri,mod_age)
+# AIC
+kable(AIC(mixed_mod_ri,mod_age))
+# Add sex
+mod_age_sex = update(mod_age,.~.+demographics_sex.factor)
+qqnorm(resid(mod_age_sex))
+qqline(resid(mod_age_sex))
+# Partial F test
+anova(mixed_mod_ri,mod_age_sex)
+# AIC all three
+kable(AIC(mixed_mod_ri,mod_age,mod_age_sex))
+# AIC can also test non-nested models
+mod_sex <- lme(hba1c ~ redcap_event_name + demographics_sex.factor,data = temp,
+                 random = ~1|record_id,na.action = na.omit,method = "ML")
+kable(AIC(mod_age,mod_sex))
+# R will do the correct tests when you use the anova command
+anova(mod_sex,mod_age)
 ```
