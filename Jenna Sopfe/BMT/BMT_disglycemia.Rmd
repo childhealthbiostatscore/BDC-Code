@@ -239,12 +239,15 @@ mixfit <- lme(sg ~ time_from_cgm_start,data = cgm,method = "ML",
 knots_time = quantile(cgm$time_from_cgm_start,probs=c(.25, .5, .75))
 mixfit_spline <- lme(sg ~ ns(time_from_cgm_start,df = 4),
                      data = cgm,method = "ML",random = ~time_from_cgm_start|study_id)
+# Polynomial model
+mixfit_poly <- lme(sg ~ poly(time_from_cgm_start,3),data = cgm,method = "ML",
+              random = ~time_from_cgm_start|study_id)
 # Survival part
 survfit <- coxph(Surv(time_to_event_from_cgm_start,infection)~sex + Race + AgeTx,
                    data = events,x=T)
 # Joint fit
 jointFit <- jointModel(mixfit_spline, survfit, timeVar = "time_from_cgm_start",
-                       method = "weibull-PH-aGH")
+                       method = "piecewise-PH-GH")
 ```
 
 ## Diagnostic Plots
@@ -253,7 +256,7 @@ jointFit <- jointModel(mixfit_spline, survfit, timeVar = "time_from_cgm_start",
 
 ```{r echo=FALSE}
 time_grid = seq(from = 0,to = max(cgm$time_from_cgm_start))
-plot(cgm$time_from_cgm_start,cgm$sg,col="grey",
+plot(cgm$time_from_cgm_start,cgm$sg,col="grey",main="Knots at Q1, Q2, and Q3",
      xlab = "Hours from CGM Start",ylab = "SG")
 points(time_grid,
        predict(mixfit_spline,level = 0,
@@ -262,7 +265,23 @@ points(time_grid,
 abline(v=knots_time,lty=2,col="darkgreen")
 ```
 
+### Polynomial (Cubic)
+
+```{r echo=FALSE}
+time_grid = seq(from = 0,to = max(cgm$time_from_cgm_start))
+plot(cgm$time_from_cgm_start,cgm$sg,col="grey",main="Cubic Model",
+     xlab = "Hours from CGM Start",ylab = "SG")
+points(time_grid,
+       predict(mixfit_poly,level = 0,
+               newdata = list(time_from_cgm_start=time_grid)),
+       col="darkblue",lwd=2,type="l")
+```
+
 ### Joint Model
+
+Model code:
+
+`r jointFit$call`
 
 ```{r echo=FALSE}
 plot(jointFit)
@@ -270,9 +289,10 @@ plot(jointFit)
 
 ## Model Results
 
-### Joint Model
-
 ```{r echo=FALSE}
 kable(summary(jointFit)$`CoefTable-Long`,caption = "Longitudinal Process")
+```
+
+```{r echo=FALSE}
 kable(summary(jointFit)$`CoefTable-Event`,caption = "Event Process")
 ```
