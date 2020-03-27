@@ -7,6 +7,7 @@ source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Kimber Simmons/CAID/data_pre
 source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Kimber Simmons/CAID/labs.R')
 
 options(scipen=999)
+options(max.print=1000000)
 #########ANY CAID TIME-TO-EVENT#############
 dat.any<-subset(dat,!is.na(dat$time_to_any))
 
@@ -21,7 +22,8 @@ label(dat.any$age_cat)<-"Age, categorized by median"
 
 any <- survfit(Surv(dat.any$time_to_any, dat.any$any_caid) ~ 1, data=dat.any)
 
-summary(km_fit)
+summary( any, times=c(2,8))
+
 jpeg("S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Results/plots/any_overall.jpeg",
      height=6,width=6,units='in',res=300)
 jskm(any,xlab="Years from Diabetes Onset",ylab="Percent CAID-Free",table=T,
@@ -38,7 +40,7 @@ any_gen_plot<-jskm(any_gen,xlab="Years from Diabetes Onset",ylab="Percent CAID-F
 # BY RACE/ETHNICITY
 any_race <- survfit(Surv(dat.any$time_to_any, dat.any$any_caid) ~ dat.any$RaceEthinicity_cat, data=dat.any)
 any_race_plot<-jskm(any_race,xlab="Years from Diabetes Onset",ylab="Percent CAID-Free",table=T,
-             main="Any CAID, by Race/Ethnicity",ylim=c(0.6,1),marks=F,linecols = 'Set1',ci=F,
+             main="Any CAID, by Race/Ethnicity",ylim=c(0.6,1),marks=F,linecols = 'Set1',ci=T,
              ystratalabs=levels(dat.any$RaceEthinicity_cat),pval=T,
              legendposition = c(0.85,0.2),ystrataname = "")       
 # BY MEDIAN AGE
@@ -61,6 +63,7 @@ dat.thy$time_to_thyroid<-as.numeric(dat.thy$time_to_thyroid)/12
 dat.thy$thyroid_yn<-as.numeric(dat.thy$thyroid_yn)
 dat.thy<-dat.thy[order(dat.thy$time_to_thyroid),]
 thy <- survfit(Surv(dat.thy$time_to_thyroid, dat.thy$thyroid_yn) ~ 1, data=dat.thy)
+summary( thy, times=c(2,8))
 
 jpeg("S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Results/plots/thy_overall.jpeg",
      height=6,width=6,units='in',res=300)
@@ -79,9 +82,15 @@ thy_gen_plot<-jskm(thy_gen,xlab="Years from Diabetes Onset",ylab="Percent Thyroi
 # BY RACE/ETHNICITY
 thy_race <- survfit(Surv(dat.thy$time_to_thyroid, dat.thy$thyroid_yn) ~ dat.thy$RaceEthinicity_cat, data=dat.thy)
 thy_race_plot<-jskm(thy_race,xlab="Years from Diabetes Onset",ylab="Percent Thyroid Disease-Free",table=T,
-                    main="Thyroid Disease, by Race/Ethnicity",ylim=c(0.6,1),marks=F,linecols = 'Set1',ci=F,
+                    main="Thyroid Disease, by Race/Ethnicity",ylim=c(0.6,1),marks=F,linecols = 'Set1',ci=T,
                     ystratalabs=levels(dat.thy$RaceEthinicity_cat),pval=T,
-                    legendposition = c(0.85,0.2),ystrataname = "")       
+                    legendposition = c(0.85,0.2),ystrataname = "") 
+
+race_thy<-coxph(Surv(dat.thy$time_to_thyroid, dat.thy$thyroid_yn) ~ dat.thy$RaceEthinicity_cat, 
+               data=dat.thy)
+summary(race_thy)
+# logrank_sum<-summary(logrank)
+
 # BY MEDIAN AGE
 median_age<-median(dat.thy$Age_At_diabetes_DX)
 dat.thy$age_cat<-"<10.1"
@@ -111,12 +120,17 @@ thy_tpo_plot<-jskm(thy_tpo,xlab="Years from Diabetes Onset",ylab="Percent Thyroi
                    ystratalabs=c("NEG","POS"),pval=T,
                    legendposition = c(0.85,0.2),ystrataname = "") 
 
+table(dat.thy.tpo$baseline_tpo,dat.thy.tpo$thyroid_yn)
+summary( thy_tpo, times=c(2,8))
+
+
 dat.thy$baseline_thy<-as.factor(dat.thy$baseline_thy)
 dat.thy.thy<-subset(dat.thy,dat.thy$baseline_thy %in% c("POS","NEG"))
 thy_thy <- survfit(Surv(dat.thy.thy$time_to_thyroid, dat.thy.thy$thyroid_yn) ~ dat.thy.thy$baseline_thy,
                       data=dat.thy.thy)
+summary(thy_thy)
 thy_thy_plot<-jskm(thy_thy,xlab="Years from Diabetes Onset",ylab="Percent Thyroid Disease-Free",table=T,
-                   main="Thyroid Disease, by baseline Thyroglobulin",ylim=c(0.6,1),marks=F,linecols = 'Set1',ci=T,
+                   main="Thyroid Disease, by Thyroglobulin",ylim=c(0.6,1),marks=F,linecols = 'Set1',ci=T,
                    ystratalabs=c("NEG","POS"),pval=T,
                    legendposition = c(0.85,0.2),ystrataname = "") 
 #combined:
@@ -133,9 +147,15 @@ thy_comb <- survfit(Surv(dat.thy.comb$time_to_thyroid, dat.thy.comb$thyroid_yn) 
                       data=dat.thy.comb)
 thy_comb_plot<-jskm(thy_comb,xlab="Years from Diabetes Onset",ylab="Percent Thyroid Disease-Free",table=T,
                    main="Thyroid Disease, by both",ylim=c(0.6,1),marks=F,
-                   linecols = 'Set1',ci=F,
-                   ystratalabs=c("Both NEG","Both POS","TPO NEG, Thy POS","TPO POS, Thy NEG"),pval=T,
+                   linecols = 'Set1',ci=T,
+                   ystratalabs=c("Both NEG","Both POS","TPO NEG, Thy POS","TPO POS, Thy NEG"),pval=F,
                    legendposition = c(0.85,0.2),ystrataname = "") 
+
+comb_thy<-coxph(Surv(dat.thy.comb$time_to_thyroid, dat.thy.comb$thyroid_yn) ~ dat.thy.comb$baseline_tpo_thy,
+                data=dat.thy.comb)
+summary(comb_thy)
+anova(comb_thy)
+table(dat.thy.comb$baseline_tpo_thy,dat.thy.comb$thyroid_yn)
 
 jpeg("S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Results/plots/thy_labs.jpeg",
      height=6,width=12,units='in',res=300)
@@ -151,6 +171,7 @@ dat.cel$time_to_celiac<-as.numeric(dat.cel$time_to_celiac)/12
 dat.cel$celiac_yn<-as.numeric(dat.cel$celiac_yn)
 dat.cel<-dat.cel[order(dat.cel$time_to_celiac),]
 cel <- survfit(Surv(dat.cel$time_to_celiac, dat.cel$celiac_yn) ~ 1, data=dat.cel)
+summary( cel, times=c(2,8))
 
 jpeg("S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Results/plots/cel_overall.jpeg",
      height=6,width=6,units='in',res=300)
@@ -168,7 +189,7 @@ cel_gen_plot<-jskm(cel_gen,xlab="Years from Diabetes Onset",ylab="Percent celroi
 # BY RACE/ETHNICITY
 cel_race <- survfit(Surv(dat.cel$time_to_celiac, dat.cel$celiac_yn) ~ dat.cel$RaceEthinicity_cat, data=dat.cel)
 cel_race_plot<-jskm(cel_race,xlab="Years from Diabetes Onset",ylab="Percent celroid Disease-Free",table=T,
-                    main="Celiac Disease, by Race/Ethnicity",ylim=c(0.6,1),marks=F,linecols = 'Set1',ci=F,
+                    main="Celiac Disease, by Race/Ethnicity",ylim=c(0.6,1),marks=F,linecols = 'Set1',ci=T,
                     ystratalabs=levels(dat.cel$RaceEthinicity_cat),pval=T,
                     legendposition = c(0.85,0.2),ystrataname = "")       
 # BY MEDIAN AGE
@@ -195,6 +216,8 @@ dat.cel.ttg<-subset(dat.cel,dat.cel$baseline_ttg %in% c("POS","NEG"))
 
 cel_ttg <- survfit(Surv(dat.cel.ttg$time_to_celiac, dat.cel.ttg$celiac_yn) ~ dat.cel.ttg$baseline_ttg,
                       data=dat.cel.ttg)
+summary(cel_ttg,time=3)
+table(dat.cel.ttg$baseline_ttg, dat.cel.ttg$celiac_yn)
 jpeg("S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Results/plots/cel_labs.jpeg",
      height=6,width=6,units='in',res=300)
 
@@ -204,6 +227,10 @@ cel_ttg_plot<-jskm(cel_ttg,xlab="Years from Diabetes Onset",ylab="Percent Celiac
                    legendposition = c(0.85,0.2),ystrataname = "") 
 
 dev.off()
+
+###repeated TTG testing:
+cel_ttg <- survfit(Surv(dat.cel.ttg$time_to_celiac, dat.cel.ttg$celiac_yn) ~ dat.cel.ttg$ttg,
+                   data=dat.cel.ttg)
 
 
 # #########ADDISON TIME-TO-EVENT#############

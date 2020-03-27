@@ -316,34 +316,37 @@ dat<-merge(dat,labs.final,by="EPICMRN",all=T)
 
 
 ####TTG - want more summary stats on number of tests (pos/neg):
-# ttg_bypt<-function(ID,data){
-#   
-#   temp<-lapply(unique(ID), function(x){
-#     
-#     dat.temp <- subset(data, ID == x)
-#     # dat.temp <- subset(labs.ttg.all,labs.ttg.all$EPICMRN==617672)
-#     
-#     ###for each patient and for each lab, calculate pos/neg and timing of pos
-#     dat.temp<-dat.temp[order(dat.temp$ResultDate),]
-#     dat.temp$num_ttg<-nrow(dat.temp)
-#     dat.temp$length_testing<-NA
-#     dat.temp$avg_testing<-NA
-#     if (dat.temp$num_ttg[1]>=2){
-#       first<-dat.temp$ResultDate[1]
-#       last<-dat.temp$ResultDate[dat.temp$lab_row_num==dat.temp$num_ttg]
-#       dat.temp$length_testing<-difftime(last,first,unit='days')
-#       dat.temp$avg_testing<-dat.temp$length_testing/dat.temp$num_pos_ttg
-#     }
-#     #print(dat.temp$EPICMRN)
-#     #print(dat.temp$lab_date_pos)
-#     dat.temp})
-#   
-#   dat<-do.call(rbind,temp)
-# }
-# 
-# labs.ttg<-ttg_bypt(labs.ttg.all$EPICMRN,labs.ttg.all)
-# 
-# labs.ttg<-subset(labs.ttg,labs.ttg$lab_row_num==1)
+
+##add: number of total positive, number of total negative, number of total positive before celiac, number of 
+#total negative before celiac
+ttg_bypt<-function(ID,data){
+
+  temp<-lapply(unique(ID), function(x){
+
+    dat.temp <- subset(data, ID == x)
+    # dat.temp <- subset(labs.ttg.all,labs.ttg.all$EPICMRN==617672)
+
+    ###for each patient and for each lab, calculate pos/neg and timing of pos
+    dat.temp<-dat.temp[order(dat.temp$ResultDate),]
+    dat.temp$num_ttg<-nrow(dat.temp)
+    dat.temp$length_testing<-NA
+    dat.temp$avg_testing<-NA
+    if (dat.temp$num_ttg[1]>=2){
+      first<-dat.temp$ResultDate[1]
+      last<-dat.temp$ResultDate[dat.temp$lab_row_num==dat.temp$num_ttg]
+      dat.temp$length_testing<-difftime(last,first,unit='days')
+      dat.temp$avg_testing<-dat.temp$length_testing/dat.temp$num_pos_ttg
+    }
+    #print(dat.temp$EPICMRN)
+    #print(dat.temp$lab_date_pos)
+    dat.temp})
+
+  dat<-do.call(rbind,temp)
+}
+
+labs.ttg<-ttg_bypt(labs.ttg.all$EPICMRN,labs.ttg.all)
+
+labs.ttg<-subset(labs.ttg,labs.ttg$lab_row_num==1)
 ###########PICK UP HERE WITH TTG: SUMMARIZE THESE VALUES: LAB_NUM_POS, LAB_NUM_NEG, NUM_TTG, LENGTH TESTING, AVG_TESING
 
 
