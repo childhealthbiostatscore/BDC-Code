@@ -317,17 +317,24 @@ dat<-merge(dat,labs.final,by="EPICMRN",all=T)
 
 ####TTG - want more summary stats on number of tests (pos/neg):
 
-##add: number of total positive, number of total negative, number of total positive before celiac, number of 
-#total negative before celiac
+##add: number of total positive, number of total negative (these are before celiac by definition) (excluded after celiac above)
+
+#get celiac date:
+labs.ttg.all<-merge(labs.ttg.all,dat.onset[,c(1,5)],by="EPICMRN",all.x=T)
+labs.ttg.all$after_celiac<-0
+labs.ttg.all$after_celiac[labs.ttg.all$ResultDate>=labs.ttg.all$CeliacDisease_DxDate]<-1
+labs.ttg.all$repeat_lab<-0
+labs.ttg.all$repeat_lab[duplicated(labs.ttg.all[,c(1,3,5)])]<-1
+labs.ttg.all<-subset(labs.ttg.all,labs.ttg.all$repeat_lab==0)
 ttg_bypt<-function(ID,data){
 
   temp<-lapply(unique(ID), function(x){
 
     dat.temp <- subset(data, ID == x)
-    # dat.temp <- subset(labs.ttg.all,labs.ttg.all$EPICMRN==617672)
-
-    ###for each patient and for each lab, calculate pos/neg and timing of pos
+    # dat.temp <- subset(labs.ttg.all,labs.ttg.all$EPICMRN==1445977)
     dat.temp<-dat.temp[order(dat.temp$ResultDate),]
+    #number and frequency of tests:
+    dat.temp$lab_row_num<-rep(1:nrow(dat.temp))
     dat.temp$num_ttg<-nrow(dat.temp)
     dat.temp$length_testing<-NA
     dat.temp$avg_testing<-NA
@@ -335,10 +342,27 @@ ttg_bypt<-function(ID,data){
       first<-dat.temp$ResultDate[1]
       last<-dat.temp$ResultDate[dat.temp$lab_row_num==dat.temp$num_ttg]
       dat.temp$length_testing<-difftime(last,first,unit='days')
-      dat.temp$avg_testing<-dat.temp$length_testing/dat.temp$num_pos_ttg
+      dat.temp$avg_testing<-dat.temp$length_testing/dat.temp$num_ttg
     }
-    #print(dat.temp$EPICMRN)
-    #print(dat.temp$lab_date_pos)
+    #total pos/neg:
+    dat.temp$tot_pos_ttg<-NA
+    dat.temp$tot_neg_ttg<-NA
+    if (dat.temp$num_ttg[1]>=1){
+      dat.temp$tot_pos_ttg<-nrow(subset(dat.temp,dat.temp$pos_neg=="POS"))
+      dat.temp$tot_neg_ttg<-nrow(subset(dat.temp,dat.temp$pos_neg=="NEG"))
+    }
+    #in a row:
+    dat.temp$after_pos<-0
+    if (dat.temp$tot_pos_ttg[1]>=1){
+      sub<-subset(dat.temp,dat.temp$pos_neg=="POS")
+      row<-min(sub$lab_row_num,na.rm=T)
+      dat.temp$after_pos[dat.temp$lab_row_num>=row]<-1
+    }
+    dat.temp$tot_neg_inarow<-NA
+    if (dat.temp$tot_neg_ttg[1]>=1){
+      sub2<-subset(dat.temp,dat.temp$after_pos==0)
+      dat.temp$tot_neg_inarow<-nrow(sub2)
+    }
     dat.temp})
 
   dat<-do.call(rbind,temp)
@@ -347,123 +371,8 @@ ttg_bypt<-function(ID,data){
 labs.ttg<-ttg_bypt(labs.ttg.all$EPICMRN,labs.ttg.all)
 
 labs.ttg<-subset(labs.ttg,labs.ttg$lab_row_num==1)
-###########PICK UP HERE WITH TTG: SUMMARIZE THESE VALUES: LAB_NUM_POS, LAB_NUM_NEG, NUM_TTG, LENGTH TESTING, AVG_TESING
 
 
-dat$months_onset_to_21<-(dat$date_21-dat$OnsetDate)/60/60/24/30.6
-dat$timing_21<-NA
-dat$timing_21[dat$pos_21=="POS" & dat$months_onset_to_21>0]<-"After Diabetes Onset"
-dat$timing_21[dat$pos_21=="POS" & dat$months_onset_to_21<0]<-"Before Diabetes Onset"
-dat$timing_21[dat$pos_21=="POS" & dat$months_onset_to_21==0]<-"At Diabetes Onset"
-dat$timing_21<-as.factor(dat$timing_21)
-label(dat$timing_21)<-"21-OH: timing"
-
-#all addison's disease was after diabetes onset:
-#only 3 pts had positive OH-21 and Addison's disease
-dat$timing_add_21<-NA
-dat$timing_add_21[dat$pos_21=="POS" & dat$addison_yn==1 & 
-                    dat$months_onset_to_21>dat$addison_months_if_yes]<-"Onset -> Addison's -> OH-21 POS"
-dat$timing_add_21[dat$pos_21=="POS" & dat$addison_yn==1 & 
-                    dat$months_onset_to_21<dat$addison_months_if_yes]<-"Onset -> OH-21 POS -> Addison's"
-dat$timing_add_21<-as.factor(dat$timing_add_21)
-label(dat$timing_add_21)<-"21-OH: timing vs. addison"
-
-
-dat$months_onset_to_ttg<-(dat$date_ttg-dat$OnsetDate)/60/60/24/30.6
-dat$timing_ttg<-NA
-dat$timing_ttg[dat$pos_ttg=="POS" & dat$months_onset_to_ttg>0]<-"After Diabetes Onset"
-dat$timing_ttg[dat$pos_ttg=="POS" & dat$months_onset_to_ttg<0]<-"Before Diabetes Onset"
-dat$timing_ttg[dat$pos_ttg=="POS" & dat$months_onset_to_ttg==0]<-"At Diabetes Onset"
-dat$timing_ttg<-as.factor(dat$timing_ttg)
-label(dat$timing_ttg)<-"TTG IgA: timing"
-
-dat$timing_cel_ttg<-NA
-#scenarios where at least 2 dates are equal:
-dat$timing_cel_ttg[dat$OnsetDate==dat$date_ttg & dat$date_ttg==dat$CeliacDisease_DxDate]<-"Onset=TTG=Celiac"
-dat$timing_cel_ttg[dat$OnsetDate==dat$date_ttg & dat$date_ttg<dat$CeliacDisease_DxDate]<-"Onset=TTG->Celiac"
-dat$timing_cel_ttg[dat$CeliacDisease_DxDate<dat$OnsetDate & dat$OnsetDate==dat$date_ttg]<-"Celiac->Onset=TTG"
-dat$timing_cel_ttg[dat$OnsetDate<dat$date_ttg & dat$date_ttg==dat$CeliacDisease_DxDate]<-"Onset->TTG=Celiac"
-dat$timing_cel_ttg[dat$date_ttg==dat$CeliacDisease_DxDate & dat$CeliacDisease_DxDate<dat$OnsetDate]<-"TTG=Celiac -> Onset"
-dat$timing_cel_ttg[dat$OnsetDate==dat$CeliacDisease_DxDate & dat$CeliacDisease_DxDate<dat$date_ttg]<-"Onset=Celiac -> TTG"
-dat$timing_cel_ttg[dat$date_ttg<dat$OnsetDate & dat$OnsetDate==dat$CeliacDisease_DxDate]<-"TTG -> Onset=Celiac"
-#scenarios where all dates are different:
-dat$timing_cel_ttg[dat$OnsetDate<dat$date_ttg & dat$date_ttg<dat$CeliacDisease_DxDate]<-"Onset -> TTG -> Celiac"
-dat$timing_cel_ttg[dat$OnsetDate<dat$CeliacDisease_DxDate & dat$CeliacDisease_DxDate<dat$date_ttg]<-"Onset -> Celiac -> TTG"
-dat$timing_cel_ttg[dat$date_ttg<dat$OnsetDate & dat$OnsetDate<dat$CeliacDisease_DxDate]<-"TTG -> Onset -> Celiac"
-dat$timing_cel_ttg[dat$date_ttg<dat$CeliacDisease_DxDate & dat$CeliacDisease_DxDate<dat$OnsetDate]<-"TTG -> Celiac -> Onset"
-dat$timing_cel_ttg[dat$CeliacDisease_DxDate<dat$OnsetDate & dat$OnsetDate<dat$date_ttg]<-"Celiac -> Onset -> TTG"
-dat$timing_cel_ttg[dat$CeliacDisease_DxDate<dat$date_ttg & dat$date_ttg<dat$OnsetDate]<-"Celiac -> TTG -> Onset"
-dat$timing_cel_ttg[is.na(dat$celiac_timing)]<-NA
-dat$timing_cel_ttg[dat$pos_ttg=="NEG"]<-NA
-
-dat$timing_cel_ttg<-as.factor(dat$timing_cel_ttg)
-
-label(dat$timing_cel_ttg)<-"TTG IgA: timing vs. celiac's"
-
-dat$months_onset_to_tpo<-(dat$date_tpo-dat$OnsetDate)/60/60/24/30.6
-dat$timing_tpo<-NA
-dat$timing_tpo[dat$pos_tpo=="POS" & dat$months_onset_to_tpo>0]<-"After Diabetes Onset"
-dat$timing_tpo[dat$pos_tpo=="POS" & dat$months_onset_to_tpo<0]<-"Before Diabetes Onset"
-dat$timing_tpo[dat$pos_tpo=="POS" & dat$months_onset_to_tpo==0]<-"At Diabetes Onset"
-dat$timing_tpo<-as.factor(dat$timing_tpo)
-label(dat$timing_tpo)<-"TPO Ab: timing"
-
-dat$timing_thy_tpo<-NA
-#scenarios where at least 2 dates are equal:
-dat$timing_thy_tpo[dat$OnsetDate==dat$date_tpo & dat$date_tpo==dat$ThyroidDisease_DxDate]<-"Onset=TPO=Thyroid"
-dat$timing_thy_tpo[dat$OnsetDate==dat$date_tpo & dat$date_tpo<dat$ThyroidDisease_DxDate]<-"Onset=TPO->Thyroid"
-dat$timing_thy_tpo[dat$ThyroidDisease_DxDate<dat$OnsetDate & dat$OnsetDate==dat$date_tpo]<-"Thyroid->Onset=TPO"
-dat$timing_thy_tpo[dat$OnsetDate<dat$date_tpo & dat$date_tpo==dat$ThyroidDisease_DxDate]<-"Onset->TPO=Thyroid"
-dat$timing_thy_tpo[dat$date_tpo==dat$ThyroidDisease_DxDate & dat$ThyroidDisease_DxDate<dat$OnsetDate]<-"TPO=Thyroid -> Onset"
-dat$timing_thy_tpo[dat$OnsetDate==dat$ThyroidDisease_DxDate & dat$ThyroidDisease_DxDate<dat$date_tpo]<-"Onset=Thyroid -> TPO"
-dat$timing_thy_tpo[dat$date_tpo<dat$OnsetDate & dat$OnsetDate==dat$ThyroidDisease_DxDate]<-"TPO -> Onset=Thyroid"
-#scenarios where all dates are different:
-dat$timing_thy_tpo[dat$OnsetDate<dat$date_tpo & dat$date_tpo<dat$ThyroidDisease_DxDate]<-"Onset -> TPO -> Thyroid"
-dat$timing_thy_tpo[dat$OnsetDate<dat$ThyroidDisease_DxDate & dat$ThyroidDisease_DxDate<dat$date_tpo]<-"Onset -> Thyroid -> TPO"
-dat$timing_thy_tpo[dat$date_tpo<dat$OnsetDate & dat$OnsetDate<dat$ThyroidDisease_DxDate]<-"TPO -> Onset -> Thyroid"
-dat$timing_thy_tpo[dat$date_tpo<dat$ThyroidDisease_DxDate & dat$ThyroidDisease_DxDate<dat$OnsetDate]<-"TPO -> Thyroid -> Onset"
-dat$timing_thy_tpo[dat$ThyroidDisease_DxDate<dat$OnsetDate & dat$OnsetDate<dat$date_tpo]<-"Thyroid -> Onset -> TPO"
-dat$timing_thy_tpo[dat$ThyroidDisease_DxDate<dat$date_tpo & dat$date_tpo<dat$OnsetDate]<-"Thyroid -> TPO -> Onset"
-dat$timing_thy_tpo[is.na(dat$thyroid_timing)]<-NA
-dat$timing_thy_tpo[dat$pos_tpo=="NEG"]<-NA
-
-dat$timing_thy_tpo<-as.factor(dat$timing_thy_tpo)
-label(dat$timing_thy_tpo)<-"TPO Ab: Timing vs. Thyroid Disease"
-
-dat$months_onset_to_thy<-(dat$date_thy-dat$OnsetDate)/60/60/24/30.6
-dat$timing_thy<-NA
-dat$timing_thy[dat$pos_thy=="POS" & dat$months_onset_to_thy>0]<-"After Diabetes Onset"
-dat$timing_thy[dat$pos_thy=="POS" & dat$months_onset_to_thy<0]<-"Before Diabetes Onset"
-dat$timing_thy[dat$pos_thy=="POS" & dat$months_onset_to_thy==0]<-"At Diabetes Onset"
-dat$timing_thy<-as.factor(dat$timing_thy)
-label(dat$timing_thy)<-"Thyroglobulin Ab: timing"
-
-dat$timing_thy_thy<-NA
-#scenarios where at least 2 dates are equal:
-dat$timing_thy_thy[dat$OnsetDate==dat$date_thy & dat$date_thy==dat$ThyroidDisease_DxDate]<-"Onset=Thyroglobulin=Thyroid"
-dat$timing_thy_thy[dat$OnsetDate==dat$date_thy & dat$date_thy<dat$ThyroidDisease_DxDate]<-"Onset=Thyroglobulin->Thyroid"
-dat$timing_thy_thy[dat$ThyroidDisease_DxDate<dat$OnsetDate & dat$OnsetDate==dat$date_thy]<-"Thyroid->Onset=Thyroglobulin"
-dat$timing_thy_thy[dat$OnsetDate<dat$date_thy & dat$date_thy==dat$ThyroidDisease_DxDate]<-"Onset->Thyroglobulin=Thyroid"
-dat$timing_thy_thy[dat$date_thy==dat$ThyroidDisease_DxDate & dat$ThyroidDisease_DxDate<dat$OnsetDate]<-"Thyroglobulin=Thyroid -> Onset"
-dat$timing_thy_thy[dat$OnsetDate==dat$ThyroidDisease_DxDate & dat$ThyroidDisease_DxDate<dat$date_thy]<-"Onset=Thyroid -> Thyroglobulin"
-dat$timing_thy_thy[dat$date_thy<dat$OnsetDate & dat$OnsetDate==dat$ThyroidDisease_DxDate]<-"Thyroglobulin -> Onset=Thyroid"
-#scenarios where all dates are different:
-dat$timing_thy_thy[dat$OnsetDate<dat$date_thy & dat$date_thy<dat$ThyroidDisease_DxDate]<-"Onset -> Thyroglobulin -> Thyroid"
-dat$timing_thy_thy[dat$OnsetDate<dat$ThyroidDisease_DxDate & dat$ThyroidDisease_DxDate<dat$date_thy]<-"Onset -> Thyroid -> Thyroglobulin"
-dat$timing_thy_thy[dat$date_thy<dat$OnsetDate & dat$OnsetDate<dat$ThyroidDisease_DxDate]<-"Thyroglobulin -> Onset -> Thyroid"
-dat$timing_thy_thy[dat$date_thy<dat$ThyroidDisease_DxDate & dat$ThyroidDisease_DxDate<dat$OnsetDate]<-"Thyroglobulin -> Thyroid -> Onset"
-dat$timing_thy_thy[dat$ThyroidDisease_DxDate<dat$OnsetDate & dat$OnsetDate<dat$date_thy]<-"Thyroid -> Onset -> Thyroglobulin"
-dat$timing_thy_thy[dat$ThyroidDisease_DxDate<dat$date_thy & dat$date_thy<dat$OnsetDate]<-"Thyroid -> Thyroglobulin -> Onset"
-dat$timing_thy_thy[is.na(dat$thyroid_timing)]<-NA
-dat$timing_thy_thy[dat$pos_thy=="NEG"]<-NA
-
-dat$timing_thy_thy<-as.factor(dat$timing_thy_thy)
-label(dat$timing_thy_thy)<-"Thyroglobulin Ab: Timing vs. Thyroid Disease"
-
-# dat$timing_21[dat$pos_21=="POS" & dat$addison_yn==1 & dat$months_onset_to_21>dat$addison_months_if_yes]<-"After Addison Dx"
-# dat$timing_21[dat$pos_21=="POS" & dat$addison_yn==1 & dat$months_onset_to_21<dat$addison_months_if_yes
-#               & ]<-"Before Addison Dx"
-# dat$timing_21[dat$pos_21=="POS" & dat$addison_yn==1 & dat$years_onset_to_21==dat$addison_months_if_yes]<-"At Addison Dx"
 dat$pos_21[is.na(dat$pos_21)]<-"never tested"
 dat$pos_thy[is.na(dat$pos_thy)]<-"never tested"
 dat$pos_tpo[is.na(dat$pos_tpo)]<-"never tested"
@@ -489,4 +398,136 @@ label(dat$baseline_thy)<-"Thyroglobulin Ab: Baseline Positive"
 label(dat$baseline_tpo)<-"TPO Ab: Baseline Positive"
 label(dat$baseline_ttg)<-"TTG IgA: Baseline Positive"
 
+#add in TTG repeat testing variables:
+dat<-merge(dat,labs.ttg,by="EPICMRN",all.x=T)
+
+label(dat$num_ttg)<-"Number of TTG Tests (before Celiac Dx or End of Follow-up)"
+label(dat$length_testing)<-"Days from first to last TTG test"
+label(dat$avg_testing)<-"Average Testing Frequency"
+
+dat$tot_pos_ttg<-as.factor(dat$tot_pos_ttg)
+dat$tot_neg_ttg<-as.factor(dat$tot_neg_ttg)
+label(dat$tot_pos_ttg)<-"Total number of positive TTG"
+label(dat$tot_neg_ttg)<-"Total number of negative TTG"
+
+dat$tot_neg_inarow<-as.factor(dat$tot_neg_inarow)
+label(dat$tot_neg_inarow)<-"Total number of negative TTG in a row"
+###########PICK UP HERE WITH TTG: SUMMARIZE THESE VALUES: LAB_NUM_POS, LAB_NUM_NEG, NUM_TTG, LENGTH TESTING, AVG_TESING
+
+# 
+# dat$months_onset_to_21<-difftime(dat$date_21,dat$OnsetDate,units="days")*0.0328767
+# dat$timing_21<-NA
+# dat$timing_21[dat$pos_21=="POS" & dat$months_onset_to_21>0]<-"After Diabetes Onset"
+# dat$timing_21[dat$pos_21=="POS" & dat$months_onset_to_21<0]<-"Before Diabetes Onset"
+# dat$timing_21[dat$pos_21=="POS" & dat$months_onset_to_21==0]<-"At Diabetes Onset"
+# dat$timing_21<-as.factor(dat$timing_21)
+# label(dat$timing_21)<-"21-OH: timing"
+# 
+# #all addison's disease was after diabetes onset:
+# #only 3 pts had positive OH-21 and Addison's disease
+# dat$timing_add_21<-NA
+# dat$timing_add_21[dat$pos_21=="POS" & dat$addison_yn==1 & 
+#                     dat$months_onset_to_21>dat$addison_months_if_yes]<-"Onset -> Addison's -> OH-21 POS"
+# dat$timing_add_21[dat$pos_21=="POS" & dat$addison_yn==1 & 
+#                     dat$months_onset_to_21<dat$addison_months_if_yes]<-"Onset -> OH-21 POS -> Addison's"
+# dat$timing_add_21<-as.factor(dat$timing_add_21)
+# label(dat$timing_add_21)<-"21-OH: timing vs. addison"
+# 
+# 
+# dat$months_onset_to_ttg<-difftime(dat$date_ttg,dat$OnsetDate,units='days')*0.0328767
+# dat$timing_ttg<-NA
+# dat$timing_ttg[dat$pos_ttg=="POS" & dat$months_onset_to_ttg>0]<-"After Diabetes Onset"
+# dat$timing_ttg[dat$pos_ttg=="POS" & dat$months_onset_to_ttg<0]<-"Before Diabetes Onset"
+# dat$timing_ttg[dat$pos_ttg=="POS" & dat$months_onset_to_ttg==0]<-"At Diabetes Onset"
+# dat$timing_ttg<-as.factor(dat$timing_ttg)
+# label(dat$timing_ttg)<-"TTG IgA: timing"
+# 
+# dat$timing_cel_ttg<-NA
+# #scenarios where at least 2 dates are equal:
+# dat$timing_cel_ttg[dat$OnsetDate==dat$date_ttg & dat$date_ttg==dat$CeliacDisease_DxDate]<-"Onset=TTG=Celiac"
+# dat$timing_cel_ttg[dat$OnsetDate==dat$date_ttg & dat$date_ttg<dat$CeliacDisease_DxDate]<-"Onset=TTG->Celiac"
+# dat$timing_cel_ttg[dat$CeliacDisease_DxDate<dat$OnsetDate & dat$OnsetDate==dat$date_ttg]<-"Celiac->Onset=TTG"
+# dat$timing_cel_ttg[dat$OnsetDate<dat$date_ttg & dat$date_ttg==dat$CeliacDisease_DxDate]<-"Onset->TTG=Celiac"
+# dat$timing_cel_ttg[dat$date_ttg==dat$CeliacDisease_DxDate & dat$CeliacDisease_DxDate<dat$OnsetDate]<-"TTG=Celiac -> Onset"
+# dat$timing_cel_ttg[dat$OnsetDate==dat$CeliacDisease_DxDate & dat$CeliacDisease_DxDate<dat$date_ttg]<-"Onset=Celiac -> TTG"
+# dat$timing_cel_ttg[dat$date_ttg<dat$OnsetDate & dat$OnsetDate==dat$CeliacDisease_DxDate]<-"TTG -> Onset=Celiac"
+# #scenarios where all dates are different:
+# dat$timing_cel_ttg[dat$OnsetDate<dat$date_ttg & dat$date_ttg<dat$CeliacDisease_DxDate]<-"Onset -> TTG -> Celiac"
+# dat$timing_cel_ttg[dat$OnsetDate<dat$CeliacDisease_DxDate & dat$CeliacDisease_DxDate<dat$date_ttg]<-"Onset -> Celiac -> TTG"
+# dat$timing_cel_ttg[dat$date_ttg<dat$OnsetDate & dat$OnsetDate<dat$CeliacDisease_DxDate]<-"TTG -> Onset -> Celiac"
+# dat$timing_cel_ttg[dat$date_ttg<dat$CeliacDisease_DxDate & dat$CeliacDisease_DxDate<dat$OnsetDate]<-"TTG -> Celiac -> Onset"
+# dat$timing_cel_ttg[dat$CeliacDisease_DxDate<dat$OnsetDate & dat$OnsetDate<dat$date_ttg]<-"Celiac -> Onset -> TTG"
+# dat$timing_cel_ttg[dat$CeliacDisease_DxDate<dat$date_ttg & dat$date_ttg<dat$OnsetDate]<-"Celiac -> TTG -> Onset"
+# dat$timing_cel_ttg[is.na(dat$celiac_timing)]<-NA
+# dat$timing_cel_ttg[dat$pos_ttg=="NEG"]<-NA
+# 
+# dat$timing_cel_ttg<-as.factor(dat$timing_cel_ttg)
+# 
+# label(dat$timing_cel_ttg)<-"TTG IgA: timing vs. celiac's"
+# 
+# dat$months_onset_to_tpo<-difftime(dat$date_tpo,dat$OnsetDate,units='days')*0.0328767
+# dat$timing_tpo<-NA
+# dat$timing_tpo[dat$pos_tpo=="POS" & dat$months_onset_to_tpo>0]<-"After Diabetes Onset"
+# dat$timing_tpo[dat$pos_tpo=="POS" & dat$months_onset_to_tpo<0]<-"Before Diabetes Onset"
+# dat$timing_tpo[dat$pos_tpo=="POS" & dat$months_onset_to_tpo==0]<-"At Diabetes Onset"
+# dat$timing_tpo<-as.factor(dat$timing_tpo)
+# label(dat$timing_tpo)<-"TPO Ab: timing"
+# 
+# dat$timing_thy_tpo<-NA
+# #scenarios where at least 2 dates are equal:
+# dat$timing_thy_tpo[dat$OnsetDate==dat$date_tpo & dat$date_tpo==dat$ThyroidDisease_DxDate]<-"Onset=TPO=Thyroid"
+# dat$timing_thy_tpo[dat$OnsetDate==dat$date_tpo & dat$date_tpo<dat$ThyroidDisease_DxDate]<-"Onset=TPO->Thyroid"
+# dat$timing_thy_tpo[dat$ThyroidDisease_DxDate<dat$OnsetDate & dat$OnsetDate==dat$date_tpo]<-"Thyroid->Onset=TPO"
+# dat$timing_thy_tpo[dat$OnsetDate<dat$date_tpo & dat$date_tpo==dat$ThyroidDisease_DxDate]<-"Onset->TPO=Thyroid"
+# dat$timing_thy_tpo[dat$date_tpo==dat$ThyroidDisease_DxDate & dat$ThyroidDisease_DxDate<dat$OnsetDate]<-"TPO=Thyroid -> Onset"
+# dat$timing_thy_tpo[dat$OnsetDate==dat$ThyroidDisease_DxDate & dat$ThyroidDisease_DxDate<dat$date_tpo]<-"Onset=Thyroid -> TPO"
+# dat$timing_thy_tpo[dat$date_tpo<dat$OnsetDate & dat$OnsetDate==dat$ThyroidDisease_DxDate]<-"TPO -> Onset=Thyroid"
+# #scenarios where all dates are different:
+# dat$timing_thy_tpo[dat$OnsetDate<dat$date_tpo & dat$date_tpo<dat$ThyroidDisease_DxDate]<-"Onset -> TPO -> Thyroid"
+# dat$timing_thy_tpo[dat$OnsetDate<dat$ThyroidDisease_DxDate & dat$ThyroidDisease_DxDate<dat$date_tpo]<-"Onset -> Thyroid -> TPO"
+# dat$timing_thy_tpo[dat$date_tpo<dat$OnsetDate & dat$OnsetDate<dat$ThyroidDisease_DxDate]<-"TPO -> Onset -> Thyroid"
+# dat$timing_thy_tpo[dat$date_tpo<dat$ThyroidDisease_DxDate & dat$ThyroidDisease_DxDate<dat$OnsetDate]<-"TPO -> Thyroid -> Onset"
+# dat$timing_thy_tpo[dat$ThyroidDisease_DxDate<dat$OnsetDate & dat$OnsetDate<dat$date_tpo]<-"Thyroid -> Onset -> TPO"
+# dat$timing_thy_tpo[dat$ThyroidDisease_DxDate<dat$date_tpo & dat$date_tpo<dat$OnsetDate]<-"Thyroid -> TPO -> Onset"
+# dat$timing_thy_tpo[is.na(dat$thyroid_timing)]<-NA
+# dat$timing_thy_tpo[dat$pos_tpo=="NEG"]<-NA
+# 
+# dat$timing_thy_tpo<-as.factor(dat$timing_thy_tpo)
+# label(dat$timing_thy_tpo)<-"TPO Ab: Timing vs. Thyroid Disease"
+# 
+# dat$date_thy<-as.POSIXct(dat$date_thy)
+# dat$months_onset_to_thy<-difftime(dat$date_thy-dat$OnsetDate,units='days')*0.0328767
+# dat$timing_thy<-NA
+# dat$timing_thy[dat$pos_thy=="POS" & dat$months_onset_to_thy>0]<-"After Diabetes Onset"
+# dat$timing_thy[dat$pos_thy=="POS" & dat$months_onset_to_thy<0]<-"Before Diabetes Onset"
+# dat$timing_thy[dat$pos_thy=="POS" & dat$months_onset_to_thy==0]<-"At Diabetes Onset"
+# dat$timing_thy<-as.factor(dat$timing_thy)
+# label(dat$timing_thy)<-"Thyroglobulin Ab: timing"
+# 
+# dat$timing_thy_thy<-NA
+# #scenarios where at least 2 dates are equal:
+# dat$timing_thy_thy[dat$OnsetDate==dat$date_thy & dat$date_thy==dat$ThyroidDisease_DxDate]<-"Onset=Thyroglobulin=Thyroid"
+# dat$timing_thy_thy[dat$OnsetDate==dat$date_thy & dat$date_thy<dat$ThyroidDisease_DxDate]<-"Onset=Thyroglobulin->Thyroid"
+# dat$timing_thy_thy[dat$ThyroidDisease_DxDate<dat$OnsetDate & dat$OnsetDate==dat$date_thy]<-"Thyroid->Onset=Thyroglobulin"
+# dat$timing_thy_thy[dat$OnsetDate<dat$date_thy & dat$date_thy==dat$ThyroidDisease_DxDate]<-"Onset->Thyroglobulin=Thyroid"
+# dat$timing_thy_thy[dat$date_thy==dat$ThyroidDisease_DxDate & dat$ThyroidDisease_DxDate<dat$OnsetDate]<-"Thyroglobulin=Thyroid -> Onset"
+# dat$timing_thy_thy[dat$OnsetDate==dat$ThyroidDisease_DxDate & dat$ThyroidDisease_DxDate<dat$date_thy]<-"Onset=Thyroid -> Thyroglobulin"
+# dat$timing_thy_thy[dat$date_thy<dat$OnsetDate & dat$OnsetDate==dat$ThyroidDisease_DxDate]<-"Thyroglobulin -> Onset=Thyroid"
+# #scenarios where all dates are different:
+# dat$timing_thy_thy[dat$OnsetDate<dat$date_thy & dat$date_thy<dat$ThyroidDisease_DxDate]<-"Onset -> Thyroglobulin -> Thyroid"
+# dat$timing_thy_thy[dat$OnsetDate<dat$ThyroidDisease_DxDate & dat$ThyroidDisease_DxDate<dat$date_thy]<-"Onset -> Thyroid -> Thyroglobulin"
+# dat$timing_thy_thy[dat$date_thy<dat$OnsetDate & dat$OnsetDate<dat$ThyroidDisease_DxDate]<-"Thyroglobulin -> Onset -> Thyroid"
+# dat$timing_thy_thy[dat$date_thy<dat$ThyroidDisease_DxDate & dat$ThyroidDisease_DxDate<dat$OnsetDate]<-"Thyroglobulin -> Thyroid -> Onset"
+# dat$timing_thy_thy[dat$ThyroidDisease_DxDate<dat$OnsetDate & dat$OnsetDate<dat$date_thy]<-"Thyroid -> Onset -> Thyroglobulin"
+# dat$timing_thy_thy[dat$ThyroidDisease_DxDate<dat$date_thy & dat$date_thy<dat$OnsetDate]<-"Thyroid -> Thyroglobulin -> Onset"
+# dat$timing_thy_thy[is.na(dat$thyroid_timing)]<-NA
+# dat$timing_thy_thy[dat$pos_thy=="NEG"]<-NA
+# 
+# dat$timing_thy_thy<-as.factor(dat$timing_thy_thy)
+# label(dat$timing_thy_thy)<-"Thyroglobulin Ab: Timing vs. Thyroid Disease"
+
+# dat$timing_21[dat$pos_21=="POS" & dat$addison_yn==1 & dat$months_onset_to_21>dat$addison_months_if_yes]<-"After Addison Dx"
+# dat$timing_21[dat$pos_21=="POS" & dat$addison_yn==1 & dat$months_onset_to_21<dat$addison_months_if_yes
+#               & ]<-"Before Addison Dx"
+# dat$timing_21[dat$pos_21=="POS" & dat$addison_yn==1 & dat$years_onset_to_21==dat$addison_months_if_yes]<-"At Addison Dx"
 

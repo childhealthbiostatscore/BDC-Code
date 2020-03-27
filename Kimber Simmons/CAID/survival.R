@@ -229,8 +229,45 @@ cel_ttg_plot<-jskm(cel_ttg,xlab="Years from Diabetes Onset",ylab="Percent Celiac
 dev.off()
 
 ###repeated TTG testing:
-cel_ttg <- survfit(Surv(dat.cel.ttg$time_to_celiac, dat.cel.ttg$celiac_yn) ~ dat.cel.ttg$ttg,
+dat.cel.ttg$tot_neg_2<-NA
+dat.cel.ttg$tot_neg_2[as.numeric(as.character(dat.cel.ttg$tot_neg_inarow))>2]<-"3+ negative tests"
+dat.cel.ttg$tot_neg_2[as.numeric(as.character(dat.cel.ttg$tot_neg_inarow))==2]<-"2 negative tests"
+dat.cel.ttg$tot_neg_2[as.numeric(as.character(dat.cel.ttg$tot_neg_inarow))==1]<-"1 negative tests"
+dat.cel.ttg$tot_neg_2[as.numeric(as.character(dat.cel.ttg$tot_neg_inarow))==0]<-"0 negative tests"
+
+cel_ttg.repeat_neg <- survfit(Surv(dat.cel.ttg$time_to_celiac, dat.cel.ttg$celiac_yn) ~ dat.cel.ttg$tot_neg_2,
                    data=dat.cel.ttg)
+summary(cel_ttg.repeat_neg,time=5)
+
+jpeg("S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Results/plots/cel_repeated.jpeg",
+     height=6,width=6,units='in',res=300)
+cel_ttg_plot<-jskm(cel_ttg.repeat_neg,xlab="Years from Diabetes Onset",ylab="Percent Celiac Disease-Free",table=T,
+                   main="Celiac Disease, by Number of Negative TTG",ylim=c(0,1),marks=F,
+                   ystratalabs=c("0 Negative","1 Negative","2 Negative","3+ Negative"),
+                   linecols = 'Set1',ci=T,pval=T,
+                   legendposition = c(0.85,0.2),ystrataname = "") 
+dev.off()
+
+dat.cel.ttg$tot_neg_2_ROW<-NA
+dat.cel.ttg$tot_neg_2[dat.cel.ttg$totneg>2]<-"3+ negative tests"
+dat.cel.ttg$tot_neg_2[as.numeric(as.character(dat.cel.ttg$tot_neg_ttg))==2]<-"2 negative tests"
+dat.cel.ttg$tot_neg_2[as.numeric(as.character(dat.cel.ttg$tot_neg_ttg))==1]<-"1 negative tests"
+dat.cel.ttg$tot_neg_2[as.numeric(as.character(dat.cel.ttg$tot_neg_ttg))==0]<-"0 negative tests"
+
+cel_ttg.repeat_neg <- survfit(Surv(dat.cel.ttg$time_to_celiac, dat.cel.ttg$celiac_yn) ~ dat.cel.ttg$tot_neg_2,
+                              data=dat.cel.ttg)
+summary(cel_ttg.repeat_neg,time=5)
+
+jpeg("S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Results/plots/cel_repeated.jpeg",
+     height=6,width=6,units='in',res=300)
+cel_ttg_plot<-jskm(cel_ttg.repeat_neg,xlab="Years from Diabetes Onset",ylab="Percent Celiac Disease-Free",table=T,
+                   main="Celiac Disease, by Number of Negative TTG",ylim=c(0,1),marks=F,
+                   ystratalabs=c("0 Negative","1 Negative","2 Negative","3+ Negative"),
+                   linecols = 'Set1',ci=T,pval=T,
+                   legendposition = c(0.85,0.2),ystrataname = "") 
+dev.off()
+
+
 
 
 # #########ADDISON TIME-TO-EVENT#############
