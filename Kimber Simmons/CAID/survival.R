@@ -170,6 +170,8 @@ dat.cel<-subset(dat,!(dat$celiac_timing %in% c("At Diabetes Onset",
 dat.cel$time_to_celiac<-as.numeric(dat.cel$time_to_celiac)/12
 dat.cel$celiac_yn<-as.numeric(dat.cel$celiac_yn)
 dat.cel<-dat.cel[order(dat.cel$time_to_celiac),]
+
+
 cel <- survfit(Surv(dat.cel$time_to_celiac, dat.cel$celiac_yn) ~ 1, data=dat.cel)
 summary( cel, times=c(2,8))
 
@@ -234,6 +236,16 @@ dat.cel$tot_neg_2[as.numeric(as.character(dat.cel$tot_neg_inarow))>2]<-"3+ negat
 dat.cel$tot_neg_2[as.numeric(as.character(dat.cel$tot_neg_inarow))==2]<-"2 negative tests"
 dat.cel$tot_neg_2[as.numeric(as.character(dat.cel$tot_neg_inarow))==1]<-"1 negative tests"
 dat.cel$tot_neg_2[as.numeric(as.character(dat.cel$tot_neg_inarow))==0]<-"0 negative tests"
+
+dat.cel$tot_pos_ttg<-as.factor(dat.cel$tot_pos_ttg)
+dat.cel$tot_neg_ttg<-as.factor(dat.cel$tot_neg_ttg)
+dat.cel$length_testing_years<-dat.cel$length_testing/365
+label(dat.cel$length_testing_years)<-"Years of testing"
+tab.celiac.repeat<-final_table(dat.cel,c('num_ttg','length_testing_years','avg_testing',
+                                     'tot_pos_ttg','tot_neg_inarow'),
+                               dat.cel$EPICMRN,margin=2,single=F,2,col.names=T, summary.stat='median')
+tab.celiac.repeat
+
 
 cel_ttg.repeat_neg <- survfit(Surv(dat.cel$time_to_celiac, dat.cel$celiac_yn) ~ dat.cel$tot_neg_2,
                    data=dat.cel)
