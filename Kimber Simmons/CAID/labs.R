@@ -331,7 +331,7 @@ ttg_bypt<-function(ID,data){
   temp<-lapply(unique(ID), function(x){
 
     dat.temp <- subset(data, ID == x)
-    # dat.temp <- subset(labs.ttg.all,labs.ttg.all$EPICMRN==1445977)
+    # dat.temp <- subset(labs.ttg.all,labs.ttg.all$EPICMRN==1928783)
     dat.temp<-dat.temp[order(dat.temp$ResultDate),]
     #number and frequency of tests:
     dat.temp$lab_row_num<-rep(1:nrow(dat.temp))
@@ -362,6 +362,9 @@ ttg_bypt<-function(ID,data){
     if (dat.temp$tot_neg_ttg[1]>=1){
       sub2<-subset(dat.temp,dat.temp$after_pos==0)
       dat.temp$tot_neg_inarow<-nrow(sub2)
+    }
+    if (dat.temp$tot_neg_ttg[1]==0 & dat.temp$num_ttg[1]>=1){
+      dat.temp$tot_neg_inarow<-0
     }
     dat.temp})
 
