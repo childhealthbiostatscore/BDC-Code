@@ -249,7 +249,12 @@ tab.celiac.repeat
 
 cel_ttg.repeat_neg <- survfit(Surv(dat.cel$time_to_celiac, dat.cel$celiac_yn) ~ dat.cel$tot_neg_2,
                    data=dat.cel)
+summary(cel_ttg.repeat_neg)
 summary(cel_ttg.repeat_neg,time=7)
+
+# cel_ttg.repeat_neg.test<-coxph(Surv(dat.cel$time_to_celiac, dat.cel$celiac_yn) ~ dat.cel$tot_neg_2, 
+#                 data=dat.cel)
+# summary(cel_ttg.repeat_neg.test)
 
 jpeg("S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Results/plots/cel_repeated.jpeg",
      height=6,width=6,units='in',res=300)
@@ -260,6 +265,30 @@ cel_ttg_plot<-jskm(cel_ttg.repeat_neg,xlab="Years from Diabetes Onset",ylab="Per
                    legendposition = c(0.85,0.2),ystrataname = "") 
 dev.off()
 
+#by age and total negatives in a row:
+dat.cel$tot_neg_age<-NA
+dat.cel$tot_neg_age[as.numeric(as.character(dat.cel$tot_neg_inarow))>=2
+                    & dat.cel$age_cat=="<10.1"]<-"2+ neg & <10.1"
+dat.cel$tot_neg_age[as.numeric(as.character(dat.cel$tot_neg_inarow))>=2
+                    & dat.cel$age_cat==">=10.1"]<-"2+ neg & >10.1"
+dat.cel$tot_neg_age[as.numeric(as.character(dat.cel$tot_neg_inarow))<2
+                    & dat.cel$age_cat=="<10.1"]<-"<2 neg & <10.1"
+dat.cel$tot_neg_age[as.numeric(as.character(dat.cel$tot_neg_inarow))<2
+                    & dat.cel$age_cat==">=10.1"]<-"<2 neg & >10.1"
+dat.cel$tot_neg_age<-as.factor(dat.cel$tot_neg_age)
+cel_ttg.repeat_age <- survfit(Surv(dat.cel$time_to_celiac, dat.cel$celiac_yn) ~ dat.cel$tot_neg_age,
+                              data=dat.cel)
+summary(cel_ttg.repeat_neg,time=7)
+
+jpeg("S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Results/plots/cel_repeated_age.jpeg",
+     height=6,width=6,units='in',res=300)
+cel_ttg_plot<-jskm(cel_ttg.repeat_age,xlab="Years from Diabetes Onset",ylab="Percent Celiac Disease-Free",table=T,
+                   main="Celiac Disease, by Number of Negative TTG",ylim=c(0,1),marks=F,
+                   ystratalabs=c("<2 neg & <10.1 yr","<2 neg & >10.1 yr",
+                                 "2+ neg & <10.1 yr","2+ neg & >10.1 yr"),
+                   linecols = 'Set1',ci=T,pval=T,
+                   legendposition = c(0.85,0.2),ystrataname = "") 
+dev.off()
 
 # #########ADDISON TIME-TO-EVENT#############
 # ###time to addison:
