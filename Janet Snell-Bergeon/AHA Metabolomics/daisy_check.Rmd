@@ -1,0 +1,121 @@
+---
+title: "AHA Untargeted Metabolomics - DAISY CHECK"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant/Metabolomics")
+library(arsenal)
+library(skimr)
+library(knitr)
+library(sva)
+library(metabomxtr)
+library(mixOmics)
+library(tidyverse)
+```
+
+```{r data,echo=FALSE}
+# Read in raw data
+raw_data = read.delim("./DAISY/QEHF_NPTD_CombinedSearch_proteinGroups_PerseusProcessed_20160624_Liu.txt",stringsAsFactors = F,na.strings = c("","NaN"))
+# Format
+data = raw_data %>%
+  select(Unique.SN,Reporter.intensity.corrected.0.NP01:
+           Reporter.intensity.corrected.9.TD11)
+# Rename columns
+colnames(data) = gsub("Reporter.intensity.corrected.","",colnames(data))
+# Convert ids to metadata format
+ids = colnames(data)[2:ncol(data)]
+ids = strsplit(ids,"\\.")
+ids = unlist(lapply(ids, function(x){
+  paste(x[2],x[1],sep = "_")
+}))
+colnames(data)[2:ncol(data)] = ids
+# Transpose, fix column and row names
+data = t(data)
+colnames(data) = data[1,]
+data = data[-1,]
+# Import clinical data
+clinical = read.csv("./DAISY/DAISY2_metadata_05_07_2015_rev_kcw.csv",
+                     stringsAsFactors = F)
+
+# Match sample number to subject ID
+clinical$GlobalSampleID <- as.character(samples$Injection[match(clinical$StudyID,samples$SampleID)])
+# Relevant columns
+clinical <- clinical %>%
+  select(GlobalSampleID,age,sex,race,CACp,GROUP) %>%
+  filter(!is.na(GlobalSampleID))
+# Names
+names <- data$compound
+# Data matrix
+data <- data %>% select(QC01:S227) %>%
+  t(.) %>% as.data.frame(.) # Transpose - samples in rows
+# Format columns
+colnames(data) <- names
+data$GlobalSampleID <- as.character(rownames(data))
+# Add clinical data
+data <- left_join(data,clinical,by = "GlobalSampleID")
+data <- data %>% select(GlobalSampleID:GROUP,everything())
+data$GROUP[grepl("QC",data$GlobalSampleID)] <- "QC"
+data$GROUP <- as.factor(data$GROUP)
+# QC batch info
+# Injection order
+sampledata <- read.csv("./Data_Cleaned/injection_seq.csv",stringsAsFactors = F)
+sampledata$batch <- sapply(strsplit(sampledata$SampleName,"_"),`[`,2)
+sampledata$batch[nrow(sampledata)] <- sampledata$batch[(nrow(sampledata)-1)]
+sampledata$batch <- sub("Batch0","",sampledata$batch)
+sampledata <- sampledata %>% fill(batch,.direction = "up") %>%
+  mutate(order = 1:n())
+# Merge
+data <- left_join(data,sampledata[,c("GlobalSampleID","batch")],by = "GlobalSampleID")
+data$batch <- as.factor(data$batch)
+# Order columns
+data <- data %>% select(GlobalSampleID:GROUP,batch,everything())
+# Remove QC
+X <- data %>% filter(!(grepl("QC",GlobalSampleID)))
+# Column formats
+X[,c("GlobalSampleID","sex","race")] <- lapply(X[,c("GlobalSampleID","sex","race")],as.factor)
+# Check distributions - log transform
+logged <- X
+logged[,8:ncol(logged)] <- lapply(logged[,8:ncol(logged)], log)
+#skim(logged)
+```
+
+```{r mixnorm,echo=FALSE,cache=TRUE,warning=FALSE}
+# Metabolite list
+Y <- colnames(X)[c(8:253,255:ncol(X))] # 254 does not work, I think because too much missing data
+# Normalize
+MetabNorm <- mixnorm(Y, batch="batch",data=X,
+                       cData=data[grepl("QC",data$GlobalSampleID),])
+# Check normalization
+# plot.list <-lapply(Y, metabplot, batch="batch", raw.obs.data=X, 
+#                    raw.cont.data=data[grepl("QC",data$GlobalSampleID),],
+#                    norm.obs.data=MetabNorm$obsNorm, 
+#                    norm.cont.data=MetabNorm$ctlNorm,
+#                    cont.outlier.sd.thresh=2, norm.outlier.sd.thresh=4)
+# plot.list
+```
+
+# Mixture Models
+
+```{r cache=TRUE,eval=TRUE}
+# Normalized dataframe
+norm <- as.data.frame(MetabNorm$obsNorm)
+# Convert Inf (from batches with no QC data) to missing
+norm[norm == Inf] <- NA
+norm <- cbind(X[,1:6],norm)
+# Basic models
+fullModel <- ~ GROUP|GROUP + age + sex + race
+reducedModel <- ~ 1|age + sex + race
+# Full model results
+fullModelResults <- mxtrmod(ynames=Y,mxtrModel=fullModel,data=norm)
+# Reduced model results
+reducedModelResults<-mxtrmod(ynames=Y,mxtrModel=reducedModel,fullModel=fullModel,
+                             data=norm)
+# LRT
+raw_results <- mxtrmodLRT(fullModelResults,reducedModelResults,adj = "BH")
+raw_results <- raw_results[order(raw_results$p),]
+kable(raw_results[1:30,c(1,4:ncol(raw_results))],row.names = F)
+```
