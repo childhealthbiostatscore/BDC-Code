@@ -30,36 +30,24 @@ colnames(data) = gsub("Reporter.intensity.corrected.","",colnames(data))
 ids = colnames(data)[2:ncol(data)]
 ids = strsplit(ids,"\\.")
 ids = unlist(lapply(ids, function(x){
-  paste(x[2],x[1],sep = "_")
+  num = as.numeric(x[1]) + 1
+  paste(x[2],num,sep = "_")
 }))
+ids[grep("_10",ids)] = "commonRef"
 colnames(data)[2:ncol(data)] = ids
-# Transpose, fix column and row names
+# Transpose (samples in rows), fix column and row names
 data = t(data)
 colnames(data) = data[1,]
-data = data[-1,]
+data = as.data.frame(data[-1,])
+data$PNNLID = rownames(data)
 # Import clinical data
-clinical = read.csv("./DAISY/DAISY2_metadata_05_07_2015_rev_kcw.csv",
-                     stringsAsFactors = F)
-
-# Match sample number to subject ID
-clinical$GlobalSampleID <- as.character(samples$Injection[match(clinical$StudyID,samples$SampleID)])
+clinical = read.csv("./DAISY/DAISY2_metadata_05_07_2015_rev_kcw.csv",na.strings = "")
+clinical = clinical[clinical$PNNLID %in% rownames(data),]
 # Relevant columns
-clinical <- clinical %>%
-  select(GlobalSampleID,age,sex,race,CACp,GROUP) %>%
-  filter(!is.na(GlobalSampleID))
-# Names
-names <- data$compound
-# Data matrix
-data <- data %>% select(QC01:S227) %>%
-  t(.) %>% as.data.frame(.) # Transpose - samples in rows
-# Format columns
-colnames(data) <- names
-data$GlobalSampleID <- as.character(rownames(data))
+clinical = clinical %>% select(PNNLID,RACE,SEX)
 # Add clinical data
-data <- left_join(data,clinical,by = "GlobalSampleID")
-data <- data %>% select(GlobalSampleID:GROUP,everything())
-data$GROUP[grepl("QC",data$GlobalSampleID)] <- "QC"
-data$GROUP <- as.factor(data$GROUP)
+data = left_join(data,clinical,by = "PNNLID")
+data = data %>% select(PNNLID:SEX,everything())
 # QC batch info
 # Injection order
 sampledata <- read.csv("./Data_Cleaned/injection_seq.csv",stringsAsFactors = F)
