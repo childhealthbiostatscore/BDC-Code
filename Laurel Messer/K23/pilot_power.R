@@ -1,10 +1,11 @@
 # Lower and upper sample size limit
 n = seq(2,1000)
+# CI
+ci = 0.8
 # Standardized effect size
-effect = 0.3
+d = 0.1
 # Upper 
-t = lapply(n, function(n){
-  qt(1-0.05,n-1)/sqrt(n)
-})
+t = d * sqrt(n)/2
+p = pt(t,df = n-1)
 # Minimum sample size
-n[which.max(t <= effect)]
+max(which(p <= ci)) + 1
