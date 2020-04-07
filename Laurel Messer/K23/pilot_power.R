@@ -9,3 +9,7 @@ t = d * sqrt(n)/2
 p = pt(t,df = n-1)
 # Minimum sample size
 max(which(p <= ci)) + 1
+
+# From Cocks K, Torgerson DJ. Sample size calculations for pilot randomized 
+#  trials: a confidence interval approach. J Clin Epidemiol. 2013;66(2):197-201. 
+#  doi:10.1016/j.jclinepi.2012.09.002
