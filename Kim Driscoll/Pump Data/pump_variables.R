@@ -7,7 +7,6 @@ files <- list.files(indir,full.names = T)
 summary <- data.frame(matrix(nrow = length(files),ncol = 0))
 # Iterate through each file
 for (f in 1:length(files)) {
-  print(f)
   # Read in
   table <- read.csv(files[f],header = T,stringsAsFactors = FALSE,na.strings = "")
   # ID and visit
@@ -83,7 +82,7 @@ for (f in 1:length(files)) {
   }
   skip <- c()
   # Get dates with bg gaps >= 6 hours
-  bg_time_df <- as.data.frame(bg_datetimes)
+  bg_time_df <- as.data.frame(bg_datetimes,stringsAsFactors = F)
   bg_time_df$date <- as.Date(bg_time_df$bg_datetimes)
   bg_time_df$time <- lubridate::hour(bg_time_df$bg_datetimes)
   bg_time_df$bg_datetimes <- lubridate::ymd_hms(bg_time_df$bg_datetimes)
@@ -141,7 +140,6 @@ for (f in 1:length(files)) {
   bg_with_carb_bolus_70_149 = 0
   bg_with_carb_bolus_150_249 = 0
   bg_with_carb_bolus_above_250 = 0
-  bolus_within_15_of_bg = 0
   bolus_dates = NULL
   bolus_datetimes = NULL
   estimate_dates = NULL
@@ -201,7 +199,7 @@ for (f in 1:length(files)) {
     skip <- skip[skip > r]
   }
   # Get dates with bolus gaps >= 6 hours
-  bolus_time_df <- as.data.frame(bolus_datetimes)
+  bolus_time_df <- as.data.frame(bolus_datetimes,stringsAsFactors = F)
   bolus_time_df$date <- as.Date(bolus_time_df$bolus_datetimes)
   bolus_time_df$time <- lubridate::hour(bolus_time_df$bolus_datetimes)
   bolus_time_df$bolus_datetimes <- lubridate::ymd_hms(bolus_time_df$bolus_datetimes)
@@ -242,6 +240,13 @@ for (f in 1:length(files)) {
       if (bg >= 250) {bg_with_carb_bolus_above_250 <- bg_with_carb_bolus_above_250 + 1}
     }
   }
+  # Of all boluses given, how many a BG reading within 15 minutes prior
+  bolus_within_15_of_bg = 0
+  for (d in bolus_datetimes) {
+    if (any(bg_datetimes > (d - 15*60) & bg_datetimes < d)) {
+      bolus_within_15_of_bg = bolus_within_15_of_bg + 1
+    }
+  }
   # Fill in summary df
   # Subject
   summary[f,"subject_id"] <- id
@@ -270,6 +275,7 @@ for (f in 1:length(files)) {
   summary[f,"days_3_carbs"] <- length(which(table(carb_dates)>=3))
   # Boluses
   summary[f,"total_bolus"] <- total_bolus
+  summary[f,"bolus_within_15_of_bg"] <- bolus_within_15_of_bg
   summary[f,"weekday_bolus"] <- weekday_bolus
   summary[f,"weekend_bolus"] <- weekend_bolus
   summary[f,"days_3_bolus"] <- length(which(table(bolus_dates)>=3))
