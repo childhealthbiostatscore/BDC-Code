@@ -29,6 +29,12 @@ for (f in 1:length(files)) {
   table$bg <- pmax(table$BG.Reading..mg.dL.,table$BWZ.BG.Input..mg.dL.,na.rm = T)
   table$bg <- pmax(table$bg,table$Sensor.Calibration.BG..mg.dL.,na.rm = T)
   table$bg[table$bg == 0] <- NA
+  # Get rewind times
+  rewind_datetimes = table$datetime[!is.na(table$Rewind)]
+  rewind_diffs = as.numeric(diff(rewind_datetimes))
+  if (length(rewind_diffs) > 0) {
+    mean_rewind = mean(rewind_diffs,na.rm = T)
+    } else {mean_rewind = NA}
   # Simplify table
   table <- table %>% select(Date,datetime,weekday,bg,BWZ.Carb.Input..grams.,
                             BWZ.Estimate..U.,Bolus.Volume.Delivered..U.)
@@ -300,6 +306,8 @@ for (f in 1:length(files)) {
   summary[f,"bg_above_250_with_bolus_only"] <- bg_with_bolus_above_250
   summary[f,"bg_above_250_with_carb_only"] <- bg_with_carb_above_250
   summary[f,"bg_above_250_with_bolus_carb"] <- bg_with_carb_bolus_above_250
+  
+  summary[f,"avg_mins_btw_rewinds"] <- mean_rewind
 }
 # Write summary variables
 filename <- paste0(outdir,"summary.csv")
