@@ -1,6 +1,6 @@
 ##### Tables - Gerard Gonzalez #####
 source('S:/Shared Material/Shared Code/R/temp_table1.R')
-#source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Gerard Gonzalez/Year4 Code/00_data_yr4.R')
+source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Gerard Gonzalez/Year4 Code/00_data_yr4.R')
 
 #demographics:
 dat.base<-subset(dat,dat$yeargrouping=="Base1")
