@@ -8,6 +8,7 @@ source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Kimber Simmons/CAID/labs.R')
 
 options(scipen=999)
 options(max.print=1000000)
+dat$hispanic_yn<-as.factor(dat$hispanic_yn)
 #########ANY CAID TIME-TO-EVENT#############
 dat.any<-subset(dat,!is.na(dat$time_to_any))
 
@@ -53,6 +54,16 @@ any_age_plot<-jskm(any_age,xlab="Years from Diabetes Onset",ylab="Percent CAID-F
 jpeg("S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Results/plots/any_baseline.jpeg",
      height=6,width=12,units='in',res=300)
 grid.arrange(any_gen_plot, any_race_plot, any_age_plot, ncol = 3)
+dev.off()
+
+jpeg("S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Results/plots/any_hisp.jpeg",
+     height=6,width=6,units='in',res=300)
+any_hisp <- survfit(Surv(dat.any$time_to_any, dat.any$any_caid) ~ dat.any$hispanic_yn, data=dat.any)
+
+any_age_plot<-jskm(any_hisp,xlab="Years from Diabetes Onset",ylab="Percent CAID-Free",table=T,
+                   main="Any CAID, by Hispanic/Non-Hispanic",ylim=c(0.6,1),marks=F,linecols = 'Set1',ci=T,
+                   ystratalabs=levels(dat.any$hispanic_yn),pval=T,
+                   legendposition = c(0.85,0.2),ystrataname = "") 
 dev.off()
 
 #########THYROID TIME-TO-EVENT#############
@@ -107,6 +118,17 @@ jpeg("S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Results/plots/th
      height=6,width=12,units='in',res=300)
 grid.arrange(thy_gen_plot, thy_race_plot, thy_age_plot, ncol = 3)
 dev.off()
+
+jpeg("S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Results/plots/thy_hisp.jpeg",
+     height=6,width=6,units='in',res=300)
+thy_hisp <- survfit(Surv(dat.thy$time_to_thyroid, dat.thy$thyroid_yn) ~ dat.thy$hispanic_yn, data=dat.thy)
+
+thy_age_plot<-jskm(thy_hisp,xlab="Years from Diabetes Onset",ylab="Percent Thyroid Disease-Free",table=T,
+                   main="Thyroid Disease, by Hispanic/Non-Hispanic",ylim=c(0.6,1),marks=F,linecols = 'Set1',ci=T,
+                   ystratalabs=levels(dat.thy$hispanic_yn),pval=T,
+                   legendposition = c(0.85,0.2),ystrataname = "") 
+dev.off()
+
 
 
 ###THRYOID BY LAB POS/NEG AT BASELINE:
@@ -209,6 +231,16 @@ cel_age_plot<-jskm(cel_age,xlab="Years from Diabetes Onset",ylab="Percent celroi
 jpeg("S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Results/plots/cel_baseline.jpeg",
      height=6,width=12,units='in',res=300)
 grid.arrange(cel_gen_plot, cel_race_plot, cel_age_plot, ncol = 3)
+dev.off()
+
+jpeg("S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Results/plots/cel_hisp.jpeg",
+     height=6,width=6,units='in',res=300)
+cel_hisp <- survfit(Surv(dat.cel$time_to_celiac, dat.cel$celiac_yn) ~ dat.cel$hispanic_yn, data=dat.cel)
+
+cel_age_plot<-jskm(cel_hisp,xlab="Years from Diabetes Onset",ylab="Percent Celiac-Free",table=T,
+                   main="Celiac Disease, by Hispanic/Non-Hispanic",ylim=c(0.6,1),marks=F,linecols = 'Set1',ci=T,
+                   ystratalabs=levels(dat.cel$hispanic_yn),pval=T,
+                   legendposition = c(0.85,0.2),ystrataname = "") 
 dev.off()
 
 ###CELIAC BY LAB POS/NEG AT BASELINE:

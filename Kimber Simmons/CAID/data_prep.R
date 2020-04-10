@@ -39,7 +39,7 @@ dat$RaceEthinicity_cat<-NA
 dat$RaceEthinicity_cat[dat$RaceEthinicity=="Non-Hispanic White"]<-"Non-Hispanic White"
 dat$RaceEthinicity_cat[dat$RaceEthinicity=="Non-Hispanic Black"]<-"Non-Hispanic Black"
 dat$RaceEthinicity_cat[dat$RaceEthinicity=="Hispanic"]<-"Hispanic"
-dat$RaceEthinicity_cat[dat$RaceEthinicity=="Unknown"]<-"Unknown"
+dat$RaceEthinicity_cat[dat$RaceEthinicity=="Unknown"]<-NA
 dat$RaceEthinicity_cat[dat$RaceEthinicity %in% c("American Indian/Alaska Native",
                                                  "Asian",
                                                  "More than one Race",
@@ -47,6 +47,13 @@ dat$RaceEthinicity_cat[dat$RaceEthinicity %in% c("American Indian/Alaska Native"
                                                  "Other")]<-"Other"
 dat$RaceEthinicity_cat<-as.factor(dat$RaceEthinicity_cat)
 label(dat$RaceEthinicity_cat)<-"Race/Ethnicity"
+
+dat$hispanic_yn<-NA
+dat$hispanic_yn[dat$RaceEthinicity_cat=="Hispanic"]<-"Hispanic"
+dat$hispanic_yn[dat$RaceEthinicity_cat!="Hispanic"]<-"Non-Hispanic"
+dat$hispanic_yn[dat$RaceEthinicity_cat=="Unknown"]<-NA
+label(dat$hispanic_yn)<-"Hispanic"
+
 # dat$Height_AtDX<-as.numeric(as.character(dat$Height_AtDX))
 # dat$Weight_AtDX<-as.numeric(as.character(dat$Weight_AtDX))
 # 
@@ -205,4 +212,14 @@ label(dat$which_caid)<-"Which CAID was first"
 dat$followup<-NA
 dat$followup[dat$any_caid==0 & !is.na(dat$any_caid)]<-dat$time_to_any[dat$any_caid==0 & !is.na(dat$any_caid)]
 label(dat$followup)<-"Years of Follow-up for no CAIDs"
+
+#age at each caid:
+dat$age_at_thyroid<-as.numeric(difftime(dat$ThyroidDisease_DxDate,dat$DOB,units="days"))/365
+label(dat$age_at_thyroid)<-"Age at Thyroid Diagnosis"
+
+dat$age_at_celiac<-as.numeric(difftime(dat$CeliacDisease_DxDate,dat$DOB,units="days"))/365
+label(dat$age_at_celiac)<-"Age at Celiac Diagnosis"
+
+dat$age_at_add<-as.numeric(difftime(dat$AddisonsDisease_DxDate,dat$DOB,units="days"))/365
+label(dat$age_at_add)<-"Age at Addison Diagnosis"
 
