@@ -1,7 +1,7 @@
 library(tidyverse)
 # Import data
-indir <- "/Users/timvigers/Desktop/PIU/cleaned"
-outdir <- "/Users/timvigers/Desktop/"
+indir <- "/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Cleaned/"
+outdir <- "/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/"
 files <- list.files(indir,full.names = T)
 # Make a summary variables table.
 summary <- data.frame(matrix(nrow = length(files),ncol = 0))
@@ -37,8 +37,8 @@ for (f in 1:length(files)) {
     } else {mean_rewind = NA}
   # Simplify table
   table <- table %>% select(Date,datetime,weekday,bg,BWZ.Carb.Input..grams.,
-                            BWZ.Estimate..U.,Bolus.Volume.Delivered..U.)
-  table <- table[rowSums(is.na(table)) < 4,]
+                            BWZ.Estimate..U.,Bolus.Volume.Delivered..U.,Bolus.Type)
+  table <- table[rowSums(is.na(table)) < 5,]
   table <- unique(table)
   # Count BG check behaviors
   # BG counters
@@ -184,6 +184,7 @@ for (f in 1:length(files)) {
       if (table$datetime[b] > table$datetime[r] + (15*60)) {next()}
       if (table$datetime[b] < table$datetime[r] - (15*60)) {next()}
       delivered <- c(delivered,table$Bolus.Volume.Delivered..U.[b])
+      if (grepl("Normal",table$Bolus.Type[b])) {break()}
     }
     delivered <- sum(delivered,na.rm = T)
     # Compare delivery to BWZ
@@ -256,7 +257,9 @@ for (f in 1:length(files)) {
   # Fill in summary df
   # Subject
   summary[f,"subject_id"] <- id
-  summary[f,"StudyVisit"] <- timepoint
+  summary[f,"study_visit"] <- timepoint
+  summary[f,"start_date"] = table$Date[1]
+  summary[f,"end_date"] = table$Date[nrow(table)]
   summary[f,"days_worn"] <- days
   summary[f,"weekday_days"] <- weekdays
   summary[f,"weekend_days"] <- weekends
@@ -311,4 +314,4 @@ for (f in 1:length(files)) {
 }
 # Write summary variables
 filename <- paste0(outdir,"summary.csv")
-write.csv(summary,file = filename,row.names = F)
+write.csv(summary,file = filename,row.names = F,na = "")
