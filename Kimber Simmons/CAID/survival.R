@@ -9,6 +9,7 @@ source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Kimber Simmons/CAID/labs.R')
 options(scipen=999)
 options(max.print=1000000)
 dat$hispanic_yn<-as.factor(dat$hispanic_yn)
+dat$Age_At_diabetes_DX<-as.numeric(dat$Age_At_diabetes_DX)
 #########ANY CAID TIME-TO-EVENT#############
 dat.any<-subset(dat,!is.na(dat$time_to_any))
 
@@ -22,8 +23,11 @@ dat.any$age_cat<-as.factor(dat.any$age_cat)
 label(dat.any$age_cat)<-"Age, categorized by median"
 
 any <- survfit(Surv(dat.any$time_to_any, dat.any$any_caid) ~ 1, data=dat.any)
-
 summary( any, times=c(2,8))
+
+any_age<-coxph(Surv(dat.any$time_to_any, dat.any$any_caid) ~ dat.any$Age_At_diabetes_DX, 
+                data=dat.any)
+summary(any_age)
 
 jpeg("S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Results/plots/any_overall.jpeg",
      height=6,width=6,units='in',res=300)
@@ -83,6 +87,11 @@ jskm(thy,xlab="Years from Diabetes Onset",ylab="Percent Thyroid Disease-Free",ta
      legend=F)
 dev.off()
 
+
+thy_age<-coxph(Surv(dat.thy$time_to_thyroid, dat.thy$thyroid_yn) ~ dat.thy$Age_At_diabetes_DX, 
+               data=dat.thy)
+summary(thy_age)
+exp(confint(thy_age))
 #time to thyroid by baseline chars:
 # ANY BY BASELINE CHARS
 thy_gen <- survfit(Surv(dat.thy$time_to_thyroid, dat.thy$thyroid_yn) ~ dat.thy$Gender, data=dat.thy)
@@ -203,6 +212,12 @@ jskm(cel,xlab="Years from Diabetes Onset",ylab="Percent Celiac Disease-Free",tab
      main="Time-to-Celiac Disease",ylim=c(0.6,1),marks=F,linecols = 'black',ci=T,
      legend=F)
 dev.off()
+
+cel_age<-coxph(Surv(dat.cel$time_to_celiac, dat.cel$celiac_yn) ~ dat.cel$Age_At_diabetes_DX, 
+               data=dat.cel)
+summary(cel_age)
+exp(confint(cel_age))
+
 #time to thyroid by baseline chars:
 # ANY BY BASELINE CHARS
 cel_gen <- survfit(Surv(dat.cel$time_to_celiac, dat.cel$celiac_yn) ~ dat.cel$Gender, data=dat.cel)
