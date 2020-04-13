@@ -12,6 +12,8 @@ library(skimr)
 library(knitr)
 library(Epi)
 library(epiR)
+library(janitor)
+library(lcmm)
 library(tidyverse)
 ```
 
@@ -133,4 +135,45 @@ kable(results[,c("RI-PGC Score","sens","spec","pvp","pvn")],row.names = F)
 
 ```{r ROC SI,echo=FALSE,dpi=600}
 ROC(stat = roc_data$Endorsed_SI, test = roc_data$ripgc,plot = "roc",MI=F)
+```
+
+# Trajectory Analysis
+
+```{r traj data,echo=FALSE}
+# Add demographic data to HbA1c data
+dem_cols = c("Age","RaceEthnicity_combined","Insurance","RiskCategory_coded")
+a1cs = inner_join(a1cs,demographics[,c("ID",dem_cols)],by = "ID")
+# Convert Excel dates
+a1cs$ResultDate = excel_numeric_to_date(a1cs$ResultDate)
+# Calculate days from first A1c
+a1cs = a1cs %>% arrange(ID,ResultDate) %>% group_by(ID) %>% 
+  mutate(time = difftime(ResultDate,ResultDate[1],units = "days"),
+         visit = row_number())
+# Write CSV for SAS
+a1cs_wide = a1cs %>% pivot_wider(id_cols = ID,names_from = "visit",
+                                 values_from = c(OrderValue,time))
+a1cs_wide = inner_join(a1cs_wide,demographics[,c("ID",dem_cols)],by = "ID")
+write.csv(a1cs_wide,file = "/Users/timvigers/a1cs_wide.csv",row.names = F,na="")
+write.csv(a1cs,file = "/Users/timvigers/a1cs.csv",row.names = F,na="")
+```
+
+```{r traj plot,echo=FALSE,message=FALSE}
+ggplot(a1cs,aes(x = as.numeric(time), y = OrderValue, color = RiskCategory_coded)) + 
+  geom_point(pch = ".",alpha = 0.5) +
+  geom_smooth() + theme_bw()
+```
+
+```{r traj model,echo=FALSE,message=FALSE,include=FALSE}
+# Basic trajectory model:
+# Dependent variable = HbA1c
+# Independent = time
+a1cs = as.data.frame(a1cs)
+a1cs = a1cs[a1cs$visit <= 17,]
+mod1 = hlme(OrderValue ~ time,mixture = ~time,subject="ID",data=a1cs,ng = 3)
+# Summary
+s = summary(mod1)
+```
+
+```{r print summary,echo=FALSE}
+kable(s)
 ```

@@ -1,10 +1,10 @@
 library(tidyverse)
 # Read Data
-cgm_pump=read.csv('/Volumes/peds-1/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Shideh Majidi/RI-PGC/Data_Cleaned/pump_cgm.csv',
+cgm_pump=read.csv('/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Shideh Majidi/RI-PGC/Data_Cleaned/pump_cgm.csv',
               na.strings = c("",".","#N/A","N/A","*No day 2 - brother has T1D 10 yrs, well informed"))
-demographics=read.csv('/Volumes/peds-1/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Shideh Majidi/RI-PGC/Data_Cleaned/demographics.csv',
+demographics=read.csv('/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Shideh Majidi/RI-PGC/Data_Cleaned/demographics.csv',
                       na.strings = c("","."))
-a1cs=read.csv('/Volumes/peds-1/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Shideh Majidi/RI-PGC/Data_Cleaned/a1cs.csv')
+a1cs=read.csv('/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Shideh Majidi/RI-PGC/Data_Cleaned/a1cs.csv')
 # Summarise across all visits
 roc_data <- cgm_pump %>% group_by(ID) %>%
   summarise(cgm_use = suppressWarnings(max(OnCGM,na.rm = T)),
