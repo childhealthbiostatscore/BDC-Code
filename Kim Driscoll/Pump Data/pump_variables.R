@@ -7,6 +7,7 @@ files <- list.files(indir,full.names = T)
 summary <- data.frame(matrix(nrow = length(files),ncol = 0))
 # Iterate through each file
 for (f in 1:length(files)) {
+  print(paste0(round(f / length(files) * 100,3),"% complete"))
   # Read in
   table <- read.csv(files[f],header = T,stringsAsFactors = FALSE,na.strings = "")
   # ID and visit
