@@ -9,7 +9,7 @@ summary <- data.frame(matrix(nrow = length(files),ncol = 0))
 for (f in 1:length(files)) {
   print(paste0(round(f / length(files) * 100,3),"% complete"))
   # Read in
-  table <- read.csv(files[f],header = T,stringsAsFactors = FALSE,na.strings = "")
+  table = read.csv(files[f],header = T,stringsAsFactors = FALSE,na.strings = "")
   # ID and visit
   id <- sub("_cleaned.csv","",basename(files[f]))
   timepoint <- sub("_.*","",id)
@@ -92,7 +92,8 @@ for (f in 1:length(files)) {
   bg_time_df <- as.data.frame(bg_datetimes,stringsAsFactors = F)
   bg_time_df$date <- as.Date(bg_time_df$bg_datetimes)
   bg_time_df$time <- lubridate::hour(bg_time_df$bg_datetimes)
-  bg_time_df$bg_datetimes <- lubridate::ymd_hms(bg_time_df$bg_datetimes)
+  bg_time_df$bg_datetimes <- lubridate::parse_date_time(bg_time_df$bg_datetimes,
+                                                        c("ymd HMS","ymd"))
   bg_time_df <- bg_time_df %>%
     mutate(diff = (bg_datetimes - lag(bg_datetimes))/60)
   bg_time_df <- bg_time_df[bg_time_df$time %in% c(6:11),]
@@ -219,7 +220,7 @@ for (f in 1:length(files)) {
   # Link behaviors
   carb_datetimes <- lubridate::ymd_hms(carb_datetimes)
   bolus_datetimes <- lubridate::ymd_hms(bolus_datetimes)
-  bg_datetimes <- lubridate::ymd_hms(bg_datetimes)
+  bg_datetimes <- lubridate::parse_date_time(bg_datetimes,c("ymd HMS","ymd"))
   for (bgt in bg_datetimes[!is.na(bg_datetimes)]) {
     # Check for a carb input within 15 minutes
     bg <- unique(table$bg[which(table$datetime == bgt)])
