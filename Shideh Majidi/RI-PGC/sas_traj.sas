@@ -1,5 +1,5 @@
 /* import data */
-proc import datafile = "Desktop/a1cs.csv"
+proc import datafile = "Z:\a1cs_wide.csv"
 out = a1cs
 replace;
 run;
