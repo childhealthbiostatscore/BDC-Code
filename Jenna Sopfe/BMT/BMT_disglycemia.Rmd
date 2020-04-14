@@ -1,6 +1,6 @@
 ---
 title: "Disglycemia in BMT Patients"
-author: "Tim Vigers & Laura Pyle"
+author: "Kristen Campbell & Tim Vigers"
 date: "`r format(Sys.time(), '%d %B %Y')`"
 output: word_document
 ---
@@ -238,7 +238,6 @@ ggplot(cgm,aes(x = time_from_cgm_start, y = sg,group = study_id)) +
   xlab("Hours from CGM Start") +
   xlim(0,2000) +
   ylab("Sensor Glucose (mg/dL)") +
-  ggtitle(paste0("Sensor Glucose Averaged Every ",u,"s")) +
   theme_bw()
 ```
 
@@ -252,9 +251,7 @@ plot(s,conf.int = T, xmax = 2000,xlab = "Hours from CGM Start",
      ylab = "Survival Probability")
 ```
 
-## Joint Models
-
-### Linear Time Model
+## Joint Model Results
 
 ```{r infection jm simple,echo=FALSE}
 # Random intercept and random slope
@@ -274,48 +271,25 @@ jointFit_deriv <- jointModel(mixfit, survfit, timeVar = "time_from_cgm_start",
                        derivForm = dForm)
 ```
 
-Basic Model Results
+```{r echo=FALSE}
+long_proc = as.data.frame(summary(jointFit)$`CoefTable-Long`)
+long_proc[,1:3] = as.data.frame(lapply(long_proc[,1:3], function(x){round(x,3)}))
+long_proc[,4] = format.pval(long_proc[,4],eps = 0.001,digits = 3)
+rownames(long_proc)[2:3] = c("Hours from CGM Start", "Age")
+kable(long_proc,caption = "Longitudinal Process (Average glucose over time)")
+```
+
+Average glucose decreased over time: for every one hour after CGM start, the average glucose decreased by `r abs(long_proc[2,1])` mg/dL (p `r long_proc[2,4]`). Older age was significantly associated with higher glucose (p `r long_proc[3,4]`). 
 
 ```{r echo=FALSE}
-kable(summary(jointFit)$`CoefTable-Long`,caption = "Longitudinal Process")
+event_proc = as.data.frame(summary(jointFit)$`CoefTable-Event`)
+event_proc[,1:3] = as.data.frame(lapply(event_proc[,1:3], function(x){round(x,3)}))
+event_proc[,4] = format.pval(event_proc[,4],eps = 0.001,digits = 3)
+event_proc = event_proc[1:3,]
+rownames(event_proc)[1:2] = c("Male", "White")
+kable(event_proc,caption = "Event Process (Time to death)")
 ```
 
-```{r echo=FALSE}
-kable(summary(jointFit)$`CoefTable-Event`,caption = "Event Process")
-```
+The estimates for sex and race explain the effect of those baseline covariates on time-to-death. Since p>0.05 for both estimates, neither sex nor race were associated with time-to-death.
 
-Time-Dependent Slopes Results
-
-```{r echo=FALSE}
-kable(summary(jointFit_deriv)$`CoefTable-Long`,caption = "Longitudinal Process")
-```
-
-```{r echo=FALSE}
-kable(summary(jointFit_deriv)$`CoefTable-Event`,caption = "Event Process")
-```
-
-### Polynomial Time Model
-
-```{r infection jm poly,echo=FALSE}
-# Polynomial model
-mixfit_poly <- lme(sg ~ poly(time_from_cgm_start,3) + age,
-                   data = cgm,method = "ML",
-              random = ~time_from_cgm_start|study_id)
-# Joint fit
-jointFit <- jointModel(mixfit_poly, survfit, timeVar = "time_from_cgm_start",
-                       method = "piecewise-PH-GH")
-```
-
-Basic Model Results
-
-```{r echo=FALSE}
-kable(summary(jointFit)$`CoefTable-Long`,caption = "Longitudinal Process")
-```
-
-```{r echo=FALSE}
-kable(summary(jointFit)$`CoefTable-Event`,caption = "Event Process")
-```
-
-Time-Dependent Slopes Results
-
-Unable to get this to converge.
+The association parameter (“Assoct”) explain how the ‘true’ average glucose value effects time-to-death. Average glucose is not associated with time-to-event (p = `r event_proc[3,4]`): For every one unit increase in average glucose, the hazard of death increases by `r exp(event_proc[3,1])` (exp(`r event_proc[3,1]`)) fold.
