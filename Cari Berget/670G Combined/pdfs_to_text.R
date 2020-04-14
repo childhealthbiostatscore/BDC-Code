@@ -1,8 +1,8 @@
 library(pdftools)
 library(tidyverse)
 # List files
-indir = "/Users/timvigers/Downloads/pdfs"
-files = list.files(indir,pattern = "*pdf",full.names = T)
+dir = "/Users/timvigers/Downloads/pdfs"
+files = list.files(dir,pattern = "*pdf",full.names = T)
 # Summary dataframe
 pdf_summary = data.frame()
 # Iterate through files
@@ -59,5 +59,5 @@ for (f in 1:length(files)) {
     lapply(pdf_summary[,2:ncol(pdf_summary)],as.numeric)
 }
 # Write summary
-write.csv(pdf_summary,file = paste0(indir,"/summary.csv"),
+write.csv(pdf_summary,file = paste0(dir,"/summary.csv"),
           row.names = F)
