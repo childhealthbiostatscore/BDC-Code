@@ -15,6 +15,8 @@ library(skimr)
 library(knitr)
 library(splines)
 library(JM)
+library(survival)
+library(survminer)
 library(patchwork)
 library(tidyverse)
 ```
@@ -120,6 +122,19 @@ demographics$bmi_percentile_group <- cut(demographics$bmi_percentile,
 # Infer Tanner stage
 demographics$tanner_stage[demographics$AgeTx >= 18] <- "5"
 demographics$tanner_stage[demographics$AgeTx <= 3] <- "1"
+# Get earliest infection for each participant, censoring info, and covariates
+events <- data_full %>% group_by(study_id) %>% 
+  summarise(date_of_tx = date_of_tx[1],dob = date_of_birth[1],
+            infxn_date = suppressWarnings(min(infxn_date,na.rm = T)),
+            first_cgm = sens1_place[1],
+            censor_date = followup[1])
+events$event <- pmin(events$infxn_date,events$censor_date)
+events$infection <- ifelse(!is.na(as.character(events$infxn_date)),1,0)
+# Add to demographics
+demographics = left_join(demographics,events[,c("study_id","infection")],
+                         by = "study_id")
+demographics$infection = factor(demographics$infection,
+                                levels = 0:1,labels = c("No","Yes"))
 ```
 
 # Table 1: Descriptive Characteristics
@@ -128,13 +143,15 @@ Patients aged 2 - 3 years were assumed to be Tanner stage 1, and patients aged 1
 
 ```{r table 1,echo=FALSE,results='asis'}
 table_one <- tableby(~ notest(AgeTx,"median","q1q3") + gender + tanner_stage + 
-                       bmi_percentile_group + tx_type + primary_dx_cat + spec_dx_cat, 
+                       bmi_percentile_group + tx_type + primary_dx_cat + 
+                       spec_dx_cat + infection, 
                      data = demographics)
 newlabels <- list(AgeTx = "Age at HSCT",Gender = "Sex",
                   bmi_percentile_group = "BMI Percentile",
                   `Transplant Type` = "HSCT Type",
                   `Primary Diagnosis Category` = "Primary Diagnosis",
-                  `Specific Diagnosis Category` = "Specific Diagnosis")
+                  `Specific Diagnosis Category` = "Specific Diagnosis",
+                  infection = "Infection")
 summary(table_one,labelTranslations = newlabels,digits = 2)
 ```
 
@@ -181,14 +198,6 @@ cgm <- read.csv("./Jenna Sopfe/CGM Accuracy in BMT/Data_Cleaned/Prospective HSCT
 colnames(cgm)[1] <- "study_id"
 cgm$Time <- lubridate::mdy_hm(cgm$Time,tz = "UTC")
 cgm$Tx_date <- lubridate::mdy(cgm$Tx_date,tz = "UTC")
-# Get earliest infection for each participant, censoring info, and covariates
-events <- data_full %>% group_by(study_id) %>% 
-  summarise(date_of_tx = date_of_tx[1],dob = date_of_birth[1],
-            infxn_date = suppressWarnings(min(infxn_date,na.rm = T)),
-            first_cgm = sens1_place[1],
-            censor_date = followup[1])
-events$event <- pmin(events$infxn_date,events$censor_date)
-events$infection <- ifelse(!is.na(as.character(events$infxn_date)),1,0)
 # Exogenous variables
 events$study_id <- as.numeric(as.character(events$study_id))
 demographics$study_id <- as.numeric(as.character(demographics$study_id))
@@ -210,7 +219,8 @@ events <- events %>%
          time_to_event_from_cgm_start = difftime(event,first_cgm,units = "hours"),
          time_first_cgm_to_tx = difftime(date_of_tx,first_cgm,units = "hours"))
 # Average glucose by interval, filter truncate CGM data at event
-cgm$interval <- lubridate::round_date(cgm$Time,unit = "12 hour")
+u = "12 hour"
+cgm$interval <- lubridate::round_date(cgm$Time,unit = u)
 cgm <- cgm %>% group_by(study_id,interval) %>%
   summarise(sg = mean(Historic_Glucose,na.rm = T),event = event[1],
             dob = date_of_birth[1]) %>%
@@ -225,7 +235,21 @@ cgm <- cgm %>% group_by(study_id,interval) %>%
 ```{r echo=FALSE,dpi=600}
 ggplot(cgm,aes(x = time_from_cgm_start, y = sg,group = study_id)) + 
   geom_line() + 
+  xlab("Hours from CGM Start") +
+  xlim(0,2000) +
+  ylab("Sensor Glucose (mg/dL)") +
+  ggtitle(paste0("Sensor Glucose Averaged Every ",u,"s")) +
   theme_bw()
+```
+
+# Figure 3: Kaplan-Meier Time to Event
+
+```{r km plot,echo=FALSE,dpi=600}
+s = Surv(events$time_to_event_from_cgm_start,events$infection)
+# Survival part of model
+survfit <- coxph(s~sex + Race,data = events,x=T)
+plot(s,conf.int = T, xmax = 2000,xlab = "Hours from CGM Start",
+     ylab = "Survival Probability")
 ```
 
 ## Joint Models
@@ -239,9 +263,6 @@ ggplot(cgm,aes(x = time_from_cgm_start, y = sg,group = study_id)) +
 mixfit <- lme(sg ~ time_from_cgm_start + age,data = cgm,method = "ML",
               random = ~time_from_cgm_start|study_id)
 # qqnorm(resid(mixfit)) looks iffy
-# Survival part
-survfit <- coxph(Surv(time_to_event_from_cgm_start,infection)~sex + Race,
-                   data = events,x=T)
 # Simplest model
 # Joint fit
 jointFit <- jointModel(mixfit, survfit, timeVar = "time_from_cgm_start",
