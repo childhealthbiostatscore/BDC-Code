@@ -1,7 +1,7 @@
 library(pdftools)
 library(tidyverse)
 # List files
-dir = "/Users/timvigers/ClinicVisit_PDFs"
+dir = "/Volumes/bdc/SHARED/KAAN/670G collected PDF's/ClinicVisit_PDFs"
 files = list.files(dir,pattern = "*pdf",full.names = T)
 # Summary dataframe
 pdf_summary = data.frame()
@@ -11,46 +11,20 @@ for (f in 1:length(files)) {
   pdf = pdf_data(files[f])
   # Find correct page
   page = NULL
-  for (p in 1:2) {
-    if (dim(pdf[[p]])[1] %in% 250:365) {page = p}
+  for (p in 1:min(2,length(pdf))) {
+    if (dim(pdf[[p]])[1] %in% 240:365) {page = p}
   }
   # Page as a dataframe, sort by x and y values
   df = as.data.frame(pdf[[page]])
   df = df %>% arrange(x,y)
   # Get statistics - x column changes depending on length of text
-  percs = df[which(df$y == 349 | df$y == 364 | df$y == 378),"text"]
-  percs = percs[grep("%",percs)]
+  percs = df[which((df$y == 349 | df$y == 364 | df$y == 378) & df$x > 200),"text"]
+  gperc = grep("%",percs)
+  percs = percs[gperc]
+  ys = df$y[which((df$y == 349 | df$y == 364 | df$y == 378) & df$x > 200)]
+  ys = ys[gperc]
   percs = percs[1:3]
-  if (length(percs) < 1) {
-    percs = df[which(df$x == 634 & df$y == 349),"text"]
-  }
-  if (length(percs) < 1) {
-    percs = df[which(df$x == 604 & df$y == 349),"text"]
-  }
-  percs = c(percs,df[which(df$x == 618 & df$y == 364),"text"])
-  if (length(percs) < 2) {
-    percs = c(percs,df[which(df$x == 634 & df$y == 364),"text"])
-  }
-  if (length(percs) < 2) {
-    percs = c(percs,df[which(df$x == 629 & df$y == 364),"text"])
-  }
-  if (length(percs) < 2) {
-    percs = c(percs,df[which(df$x == 624 & df$y == 364),"text"])
-  }
-  if (length(percs) < 2) {
-    percs = c(percs,df[which(df$x == 613 & df$y == 364),"text"])
-  }
-  if (length(percs) < 2) {
-    percs = c(percs,df[which(df$x == 604 & df$y == 364),"text"])
-  }
-  percs = c(percs,df[which(df$x == 618 & df$y == 378),"text"])
-  if (length(percs) < 3) {
-    percs = c(percs,df[which(df$x == 634 & df$y == 378),"text"])
-  }
-  if (length(percs) < 3) {
-    percs = c(percs,df[which(df$x == 604 & df$y == 378),"text"])
-  }
-  if (length(percs) < 3) {stop("Something is wrong with the percentages.")}
+  percs = percs[order(ys[1:3])]
   # Remove % symbol
   percs = as.numeric(gsub("%","",percs))
   # Get reasons for AM exits
@@ -75,24 +49,16 @@ for (f in 1:length(files)) {
   if (length(exits) < 14) {stop("Something is wrong with the exits.")}
   # Order exits
   exits = exits[order(ys)]
-  # Check type of PDF for average and sd
-  if ("Low" %in% df[which(df$x == 462),"text"] &
-      "/" %in% df[which(df$x == 478),"text"] &
-      "High" %in% df[which(df$x == 482),"text"]) {
-    avg = df[which(df$x == 609),"text"]
-    sd = df[which(df$x == 631),"text"]
-  } else {
-    avg = df[which(df$x == 609 & df$y == 393),"text"]
-    sd = df[which(df$x == 631 & df$y == 393),"text"]
-    if (length(avg) < 1) {
-      avg = df[which(df$x == 596 & df$y == 393),"text"]
-      sd = df[which(df$x == 618 & df$y == 393),"text"]
+  # Average and SD
+  avg_sd = df[which(df$x > 500 & df$y == 393),"text"]
+  avg_sd = suppressWarnings(as.numeric(avg_sd))
+  avg_sd = avg_sd[!is.na(avg_sd)]
+  if (length(avg_sd) == 0){
+    avg = NA
+    sd = NA
     }
-    if (length(avg) < 1) {
-      avg = df[which(df$x == 618 & df$y == 393),"text"]
-      sd = df[which(df$x == 636 & df$y == 393),"text"]
-    }
-  }
+  avg = avg_sd[1]
+  sd= avg_sd[2]
   # Add to summary df
   pdf_summary[f,"file"] = basename(files[f])
   pdf_summary[f,"am_use"] = percs[1]
@@ -111,4 +77,4 @@ for (f in 1:length(files)) {
 }
 # Write summary
 write.csv(pdf_summary,file = paste0(dir,"/summary.csv"),
-          row.names = F)
+          row.names = F,na = "")
