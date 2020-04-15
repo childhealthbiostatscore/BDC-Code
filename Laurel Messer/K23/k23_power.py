@@ -6,17 +6,17 @@ from tableone import TableOne
 # Read in CSV 
 data = pd.read_csv("/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Laurel Messer/K award/Data_Cleaned/CGM_clinic_data.csv")
 # Summarize variables
-columns = ['70-180', 'HbA1c']
+columns = ['% time CGM wear', 'HbA1c']
 t1 = TableOne(data, columns, decimals=2)
 print(t1)
 # Linear models
 # Drop missing rows
-data_no_miss = data[data['HbA1c'].notna() & data['70-180'].notna()]
-# Add gender dummy variable and intercept (HbA1c ~ b0 + b1(70-180) + b2(gender) + e)
-X = data_no_miss[['70-180']]
-dummy = pd.get_dummies(data_no_miss[['Patient gender']],drop_first=True)
-X = X.join(dummy)
-X = sm.add_constant(X)
+data_no_miss = data[data['HbA1c'].notna() & data['% time CGM wear'].notna()]
+# Add gender dummy variable and intercept (HbA1c ~ b0 + b1(% wear) + b2(gender) + e)
+X = data_no_miss[['% time CGM wear']]
+# dummy = pd.get_dummies(data_no_miss[['Patient gender']],drop_first=True)
+# X = X.join(dummy)
+# X = sm.add_constant(X)
 
 Y = np.array(data_no_miss[['HbA1c']])
 
