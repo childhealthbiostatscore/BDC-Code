@@ -1,9 +1,9 @@
 library(tidyverse)
 # Study dates
-dates <- read.csv("/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/PumpItUp_Appt Times.csv")
+dates <- read.csv("/Users/timvigers/PumpItUp_Appt Times.csv")
 dates[,2:ncol(dates)] <- lapply(dates[,2:ncol(dates)],lubridate::mdy)
 # Original files
-files <- list.files("/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Original/",full.names = T)
+files <- list.files("/Users/timvigers/pump",full.names = T)
 # Clean
 for (f in files) {
   id <- sub("_pump.csv","",basename(f))
@@ -32,6 +32,9 @@ for (f in files) {
   } else if (grepl("T3",id) == T) {
     start <- dates$T2_Date[which(dates$ID == id_no_timepoint)]
     end <- dates$T3_Date[which(dates$ID == id_no_timepoint)] 
+  } else if (grepl("T4",id) == T) {
+    start <- dates$T3_Date[which(dates$ID == id_no_timepoint)]
+    end <- dates$T4_Date[which(dates$ID == id_no_timepoint)] 
   } else if (grepl("T5",id) == T) {
     start <- dates$T4_Date[which(dates$ID == id_no_timepoint)]
     end <- dates$T5_Date[which(dates$ID == id_no_timepoint)] 
@@ -40,6 +43,6 @@ for (f in files) {
   table <- table %>% filter(datetime >= start & datetime < end) %>%
     arrange(datetime)
   # Write file
-  filename <- paste0("/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Cleaned/",id,"_cleaned.csv")
+  filename <- paste0("/Users/timvigers/pump_cleaned/",id,"_cleaned.csv")
   write.csv(table,file = filename,row.names = F,na="")
 }

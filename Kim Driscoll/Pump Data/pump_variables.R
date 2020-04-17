@@ -1,7 +1,7 @@
 library(tidyverse)
 # Import data
-indir <- "/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/Pump Files Cleaned/"
-outdir <- "/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Baseline Pump Paper/Data_Cleaned/"
+indir <- "/Users/timvigers/pump_cleaned/"
+outdir <- "/Users/timvigers/"
 files <- list.files(indir,full.names = T)
 # Make a summary variables table.
 summary <- data.frame(matrix(nrow = length(files),ncol = 0))
@@ -312,7 +312,7 @@ for (f in 1:length(files)) {
   summary[f,"bg_above_250_with_carb_only"] <- bg_with_carb_above_250
   summary[f,"bg_above_250_with_bolus_carb"] <- bg_with_carb_bolus_above_250
   
-  summary[f,"avg_mins_btw_rewinds"] <- mean_rewind
+  summary[f,"avg_mins_btw_rewinds"] <- round(mean_rewind,3)
 }
 # Write summary variables
 filename <- paste0(outdir,"summary.csv")
