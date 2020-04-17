@@ -14,14 +14,14 @@ table(temp)
 #2) Input parameters  #
 #######################
 
-set.seed(1017) #change from development/ testing to production
+set.seed(1017) # production seed
 
 n_groups<-2 #number of study groups
 #block_size<-4
-block_size<-3  #must be a multiple of the sum of ratio of group allocation, i.e. 1:1 needs multiple of 2, 
+block_size<-6  #must be a multiple of the sum of ratio of group allocation, i.e. 1:1 needs multiple of 2, 
 #also needs to be multiple of number stratification groups, i.e. 2 sex levels x 2 age groups
 #also needs to be a factor of number of subjects in each stratification group
-n_tot<-144 #must be a multiple of the block size, inflate needed sample size to allow for additional randomizations
+n_tot<-216 #must be a multiple of the block size, inflate needed sample size to allow for additional randomizations
 
 #############################
 #3) Generate randomization  #
