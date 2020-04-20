@@ -153,27 +153,54 @@ a1cs = a1cs %>% arrange(ID,ResultDate) %>% group_by(ID) %>%
 a1cs_wide = a1cs %>% pivot_wider(id_cols = ID,names_from = "visit",
                                  values_from = c(OrderValue,time))
 a1cs_wide = inner_join(a1cs_wide,demographics[,c("ID",dem_cols)],by = "ID")
-write.csv(a1cs_wide,file = "/Users/timvigers/a1cs_wide.csv",row.names = F,na="")
-write.csv(a1cs,file = "/Users/timvigers/a1cs.csv",row.names = F,na="")
+# write.csv(a1cs_wide,file = "/Users/timvigers/Desktop/a1cs_wide.csv",
+#           row.names = F,na="")
+# write.csv(a1cs,file = "/Users/timvigers/Desktop/a1cs.csv",
+#           row.names = F,na="")
 ```
 
-```{r traj plot,echo=FALSE,message=FALSE}
-ggplot(a1cs,aes(x = as.numeric(time), y = OrderValue, color = RiskCategory_coded)) + 
-  geom_point(pch = ".",alpha = 0.5) +
-  geom_smooth() + theme_bw()
-```
-
-```{r traj model,echo=FALSE,message=FALSE,include=FALSE}
+```{r traj model,echo=FALSE,message=FALSE,include=FALSE,cache=TRUE}
 # Basic trajectory model:
 # Dependent variable = HbA1c
 # Independent = time
 a1cs = as.data.frame(a1cs)
-a1cs = a1cs[a1cs$visit <= 17,]
-mod1 = hlme(OrderValue ~ time,mixture = ~time,subject="ID",data=a1cs,ng = 3)
-# Summary
-s = summary(mod1)
+m1 = hlme(OrderValue ~ time,subject="ID",data=a1cs,ng = 1)
+mod1 = 
+  gridsearch(hlme(OrderValue ~ time,mixture = ~time,subject="ID",data=a1cs,ng = 3),
+             rep=100, maxiter=30,minit = m1)
 ```
 
-```{r print summary,echo=FALSE}
-kable(s)
+Participants were classified into 3 groups using a latent class model based on change in HbA1c over time from first visit.  
+
+```{r plot trajectories,echo=FALSE}
+plot_time = as.data.frame(seq(0,max(as.numeric(a1cs$time))))
+colnames(plot_time) = "time"
+pred <- predictY(mod1, plot_time, var.time = "time")
+```
+
+```{r assign groups,echo=FALSE,results='asis'}
+# Predicted groups based on model
+groups = as.data.frame(mod1$pprob)
+# Add to demographics
+demographics = left_join(demographics,groups[,c("ID","class")],by = "ID")
+gtable = tableby(RiskCategory_coded ~ factor(class),
+                     data = demographics)
+summary(gtable,digits = 2,
+        labelTranslations = list(`factor(class)` = "HbA1c Trajectory Class"))
+# Pairwise tests
+t = table(demographics$class,demographics$RiskCategory_coded)
+pair_chi = data.frame(matrix(nrow = 3,ncol = 1))
+colnames(pair_chi) = "p value"
+rownames(pair_chi) = c("Low vs. Moderate", "Moderate vs. High", "Low vs. High")
+pair_chi["Low vs. Moderate","p value"] = 
+  stats::chisq.test(t[,c("Low","Moderate")])$p.value
+pair_chi["Moderate vs. High","p value"] = 
+  stats::chisq.test(t[,c("Moderate","High")])$p.value
+pair_chi["Low vs. High","p value"] = 
+  stats::chisq.test(t[,c("Low","High")])$p.value
+# Adjust p value
+pair_chi$`p value` = p.adjust(pair_chi$`p value`,method = "bonferroni")
+pair_chi$`p value` = format.pval(pair_chi$`p value`,eps = 0.001,digits = 3)
+# Kable
+kable(pair_chi,row.names = T,caption = "Pairwise Risk Comparisons")
 ```
