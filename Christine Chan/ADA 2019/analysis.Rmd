@@ -1,0 +1,193 @@
+---
+title: "CGM in CF - Beta cell function outcomes"
+author: "Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(Hmisc)
+library(knitr)
+
+# read in OGTT data
+source("C:\\Users\\pylell\\Documents\\GitHub\\Chan-ADA-2019\\CGMInHealthyControls_R_2018-12-21_1936.r")
+#data <- data[c("subject_id","min_30_insulin","min_0_insulin","min_30_glucose","lab_ogtt_fasting",
+#               "min_30_c_peptide","min_0_c_peptide")]
+
+source("C:\\Users\\pylell\\Documents\\GitHub\\General-code\\temp_table1.r")
+source("C:\\Users\\pylell\\Documents\\GitHub\\General-code\\01_functions.r")
+source("C:\\Users\\pylell\\Documents\\GitHub\\General-code\\laura_functions.r")
+source("C:\\Users\\pylell\\Documents\\GitHub\\General-code\\iAUC.r")
+
+# calculate beta cell function outcomes
+data$isi <- (data$min_30_insulin - data$min_0_insulin) / (data$min_30_glucose-data$lab_ogtt_fasting)
+data$isi_cpep <- (data$min_30_c_peptide - data$min_0_c_peptide) / (data$min_30_glucose-data$lab_ogtt_fasting)
+data$odi <- (1/data$min_0_insulin) * data$isi
+data$odi_cpep <- (1/data$min_0_c_peptide) * data$isi_cpep
+
+# also need the following
+# iAUCg, iAUCins/iAUCg, iAUCcpep/iAUCg, iAUCglucagon
+#glucose
+cols_gluc = c("min_minus_10_glucose","lab_ogtt_fasting",
+         "min_10_glucose","min_20_glucose","min_30_glucose",
+         "lab_ogtt_1_hour_glucose","min_90_glucose",
+         "lab_ogtt_2_hour_glucose","min_150_glucose",
+         "min_180_glucose")
+ogttdat <- data[,c(cols_gluc,"subject_id")]
+ogttdat <- ogttdat[which(rowSums(!is.na(ogttdat[,cols_gluc]))>=4),]
+ogttdat$iaucbase_glucose <- iAUC_glucose(ogttdat,ogttdat$lab_ogtt_fasting,type = "linear")
+data <- merge(data,ogttdat,by="subject_id",all.x=TRUE,all.y=TRUE)
+
+#insulin
+cols_ins = c("min_minus_10_insulin","min_0_insulin","min_10_insulin","min_20_insulin","min_30_insulin","min_60_insulin",
+             "min_90_insulin","min_120_insulin","min_150_insulin","min_180_insulin")
+ogttdat <- data[,c(cols_ins,"subject_id")]
+ogttdat <- ogttdat[which(rowSums(!is.na(ogttdat[,cols_ins]))>=4),]
+ogttdat$iaucbase_insulin <- iAUC_insulin(ogttdat,ogttdat$min_0_insulin,type = "linear")
+data <- merge(data,ogttdat,by="subject_id",all.x=TRUE,all.y=TRUE)
+
+#C-peptide
+cols_cpep = c("min_minus_10_c_peptide","min_0_c_peptide","min_10_c_peptide","min_20_c_peptide","min_30_c_peptide","min_60_c_peptide",
+             "min_90_c_peptide","min_120_c_peptide","min_150_c_peptide","min_180_c_peptide")
+ogttdat <- data[,c(cols_cpep,"subject_id")]
+ogttdat <- ogttdat[which(rowSums(!is.na(ogttdat[,cols_cpep]))>=4),]
+ogttdat$iaucbase_cpep <- iAUC_cpep(ogttdat,ogttdat$min_0_c_peptide,type = "linear")
+data <- merge(data,ogttdat,by="subject_id",all.x=TRUE,all.y=TRUE)
+
+# glucagon
+cols_glucagon = c("min_minus_10_glucagon","min_0_glucagon","min_10_glucagon","min_20_glucagon","min_30_glucagon","min_60_glucagon",
+              "min_90_glucagon","min_120_glucagon","min_150_glucagon","min_180_glucagon")
+ogttdat <- data[,c(cols_glucagon,"subject_id")]
+ogttdat <- ogttdat[which(rowSums(!is.na(ogttdat[,cols_glucagon]))>=4),]
+ogttdat <- ogttdat[which(!is.na(ogttdat[,"min_0_glucagon"])),]
+ogttdat$iaucbase_glucagon <- iAUC_glucagon(ogttdat,ogttdat$min_0_glucagon,type = "linear")
+data <- merge(data,ogttdat,by="subject_id",all.x=TRUE,all.y=TRUE)
+
+data$iAUCins_iAUC_gluc <- data$iaucbase_insulin/data$iaucbase_glucose
+data$iAUCcpep_iAUCgluc <- data$iaucbase_cpep/data$iaucbase_glucose
+
+# read in other variables from primary outcome analysis
+alldata <- read.csv(file = "H:\\Endocrinology\\Chan\\Chan CF CGM\\Repeat primary analysis\\Data\\export_tim.csv")
+
+# merge datasets - first just figure out who is in which datasets
+a <- data[c("subject_id")]
+a$inogtt <- rep(1,nrow(a))
+b <- alldata[c("subject_id","group")]
+b$inprimary <- rep(1,nrow(b))
+ab <- merge(a,b,by="subject_id",all=TRUE)
+write.csv(ab,file="H:\\Endocrinology\\Chan\\ADA abstract 2019\\checking_ids.csv")
+ab <- ab[ab$inredcap==1 & ab$inprimary==1,]
+ab <- ab[order(ab$subject_id),] 
+
+# merge full datasets
+data$inogtt <- rep(1,nrow(data))
+alldata$inredcap <- rep(1,nrow(alldata))
+alldata <- merge(alldata,data,by="subject_id")
+# keep only those who have non-missing odi
+alldata <- alldata[which(!is.na(alldata$odi) & alldata$odi != Inf),]
+#View(alldata[c("subject_id","group","min_30_insulin","min_0_insulin","min_30_glucose","lab_ogtt_fasting","min_30_c_peptide","min#_0_c_peptide","isi","isi_cpep","odi","odi_cpep")])
+
+ogttvars <- c("isi","isi_cpep","odi","odi_cpep","iaucbase_glucose","iaucbase_insulin","iaucbase_cpep","iaucbase_glucagon","iAUCins_iAUC_gluc","iAUCcpep_iAUCgluc")
+cgmvars <- c("min_sensor","max_sensor","average_sensor","avg_auc","excursions_200","excursions_140_day",
+             "excursions_200_day","excursions_over_140","percent_time_60","percent_time_70",
+             "percent_time_spent_140","time_spent_60","time_spent_70","time_spent_200","time_spent_min_140",
+             "time_spent_min_200","total_auc","standard_deviation","mage")
+tab1vars <- c("age", "race_ethnicity","gender","a1c","g_tube_feeds","fev1_percent","fvc","cf_pancreatic","tanner","first_bmiz")
+
+# labels
+label(alldata$age)="Age"
+label(alldata$race_ethnicity)="Race/ethnicity"
+label(alldata$gender)="Gender"
+label(alldata$a1c)="HbA1c"
+label(alldata$g_tube_feeds)="G-tube feeds"
+label(alldata$fev1_percent)="FEV-1 percent"
+label(alldata$fvc)="FVC"
+label(alldata$cf_pancreatic)="Pancreatic insufficiency"
+label(alldata$tanner)="Tanner stage"
+label(alldata$first_bmiz)="First BMI-Z"
+label(alldata$isi)="ISI"
+label(alldata$isi_cpep)="ISI C-peptide"
+label(alldata$odi)="oDI"
+label(alldata$odi_cpep)="oDI C-peptide"
+label(alldata$min_sensor)="Min sensor glucose"
+label(alldata$max_sensor)="Max sensor glucose"
+label(alldata$average_sensor)="Average sensor glucose"
+label(alldata$avg_auc)="Average AUC"
+label(alldata$excursions_200)="Excursions>200"
+label(alldata$excursions_140_day)="Excursions>140/day"
+label(alldata$excursions_200_day)="Excursions>200/day"
+label(alldata$excursions_over_140)="Excursions>140"
+label(alldata$percent_time_60)="% time <60"
+label(alldata$percent_time_70)="% time <70"
+label(alldata$percent_time_spent_140)="% time >140"
+label(alldata$time_spent_60)="Time spent <60"
+label(alldata$time_spent_70)="Time spent <70"
+label(alldata$time_spent_200)="Time spent >200"
+label(alldata$time_spent_min_140)="Time spent >140"
+label(alldata$time_spent_min_200)="Time spent >200"
+label(alldata$total_auc)="Total AUC"
+label(alldata$standard_deviation)="SD"
+label(alldata$mage)="MAGE"
+label(alldata$iaucbase_glucose)="iAUC glucose"
+label(alldata$iaucbase_insulin)="iAUC insulin"
+label(alldata$iaucbase_cpep)="iAUC C-peptide"
+label(alldata$iaucbase_glucagon)="iAUC glucagon"
+label(alldata$iAUCins_iAUC_gluc)="iAUC insulin/iAUC glucose"
+label(alldata$iAUCcpep_iAUCgluc)="iAUC C-peptide/iAUC glucose"
+
+npar <- nrow(alldata)
+
+# ANALYSIS
+
+# table 1
+tab1 <- final_table(data=alldata,variables=tab1vars,group=alldata$group,margin=2,single=0,ron=2)
+
+# compare groups
+tab2 <- final_table(data=alldata,variables=c(ogttvars,cgmvars),group=alldata$group,margin=2,single=0,ron=2)
+
+# correlations
+corr <- rcorr(as.matrix(alldata[, c(ogttvars,cgmvars)]), type = "pearson")
+corr <- flattenCorrMatrix(corr$r, corr$P)
+corr <- corr[corr$row %in% ogttvars & corr$column %in% cgmvars,]
+
+```
+# Background
+
+The purpose of this analysis is to examine associations between beta cell function and CGM variables in healthy controls and participants with cystic fibrosis with normal glucose tolerance, impaired glucose tolerance, and CFRD.
+
+# Methods
+
+Participants who had both CGM data and OGTT data with 0, 30, and 120 minute timepoints available were included in this analysis. Beta cell function outcomes were calculated as follows:
+
+1) $ISI = (Insulin_{30} - Insulin_{0}) / (Glucose_{30} - Glucose_{0})$
+2) $ISI_{Cpep} = (Cpeptide_{30} - Cpeptide_{0}) / (Glucose_{30} - Glucose_{0})$
+3) $oDI = (1/Insulin_{0}) * ISI$
+4) $oDI_{Cpep} = (1/Cpeptide_{0}) * ISI_{Cpep}$
+
+Integrated AUC (iAUC) for glucose, insulin, C-peptide, and glucagon were calculated as the AUC with respect to the fasting value, using the trapezoidal method.
+
+The distributions of all variables were examined prior to analysis.  Groups were compared using ANOVA or the Wilcoxon test for continuous variables, and the chi-square or Fisher's exact test for categorical variables.  Pearson's correlation coefficient was used to test the association between beta cell function outcomes and CGM outcomes.
+
+# Results
+
+There were `r npar` participants included in this analysis.  Table 1 shows baseline descriptive statistics by treatment group.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(tab1,caption="Table 1.  Descriptive statistics by treatment group.  Statistics given are N(%), mean±SD, or median (25th %ile, 75th %ile).  * denotes that the Wilcoxon test was used, and ** denotes that Fisher's exact test was used.") 
+```
+\
+
+
+Descriptive statistics for beta cell function outcomes and CGM outcomes are shown in Table 2.
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(tab2,caption="Table 2.  Descriptive statistics for beta cell function and CGM outcomes by treatment group.  Statistics given are N(%), mean±SD, or median (25th %ile, 75th %ile).  * denotes that the Wilcoxon test was used, and ** denotes that Fisher's exact test was used.")
+```
+\
+
+Pearson correlation coefficients between beta cell function outcomes and CGM outcomes are shown in Table 2.
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(corr,caption="Table 3.  Correlation between beta cell function outcomes and CGM outcomes.")
+```
+\
