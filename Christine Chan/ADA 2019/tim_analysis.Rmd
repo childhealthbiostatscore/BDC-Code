@@ -1,0 +1,338 @@
+---
+title: "CGM in CF - Beta cell function outcomes"
+author: "Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r echo=FALSE,include=FALSE}
+library(Hmisc)
+library(knitr)
+library(rspiro)
+library(tableone)
+library(broom)
+#source('~/Documents/GitHub/Tim-and-Laura/tim_R_functions.R')
+source('C:\\Users\\pylell\\Documents\\GitHub\\Tim-and-Laura\\tim_R_functions.R')
+#pathstart <- os.check()
+```
+
+```{r include=FALSE}
+# read in OGTT data
+#source("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura Tim projects/Chan 2019 ADA abstracts/Data_Cleaned/ada_2019.R")
+source("S:\\Shared Projects\\Laura\\Laura Tim projects\\Christine Chan\\2019 ADA Abstracts\\Data_Cleaned\\ada_2019.R")
+
+# read in Laura's code
+#source("/Users/timvigers/Documents/GitHub/General-code/temp_table1.r")
+#source("/Users/timvigers/Documents/GitHub/General-code/01_functions.r")
+#source("/Users/timvigers/Documents/GitHub/General-code/laura_functions.r")
+#source("/Users/timvigers/Documents/GitHub/General-code/iAUC.r")
+
+source("C:\\Users\\pylell\\Documents\\GitHub\\General-code\\temp_table1.r")
+source("C:\\Users\\pylell\\Documents\\GitHub\\General-code\\01_functions.r")
+source("C:\\Users\\pylell\\Documents\\GitHub\\General-code\\laura_functions.r")
+source("C:\\Users\\pylell\\Documents\\GitHub\\General-code\\iAUC.r")
+
+```
+
+```{r echo=FALSE,include=FALSE}
+# tanner stage
+femtanner <- c("tanner_stage_female_breast___1","tanner_stage_female_breast___2","tanner_stage_female_breast___3","tanner_stage_female_breast___4","tanner_stage_female_breast___5" )
+maletanner <- c("tanner_stage_male_testicul___1","tanner_stage_male_testicul___2","tanner_stage_male_testicul___3","tanner_stage_male_testicul___4","tanner_stage_male_testicul___5")
+data$tanner[which(data$gender.factor == "Female")] <- 
+  as.numeric(apply(data[which(data$gender.factor == "Female"),femtanner],1,which.max))
+data$tanner[which(data$gender.factor == "Male")] <- 
+  as.numeric(apply(data[which(data$gender.factor == "Male"),maletanner],1,which.max))
+data$tanner <- as.factor(data$tanner)
+# lung function - no Asians in this data set
+# Ask Christine if height at the lung function visit should be added to REDCap
+data$race_ethnicity <- as.numeric(data$race_ethnicity)
+data$lung_race <- ifelse(data$race_ethnicity %in% 3:6,5,data$race_ethnicity)
+predGLI <- pred_GLI(data$age_at_visit_1,(data$average_height/100),data$gender,data$lung_race,param=c("FEV1","FVC"))
+data$fev_pred <- predGLI$pred.FEV1
+data$fvc_pred <- predGLI$pred.FVC
+data$fev_perc <- (data$raw_fev1/data$fev_pred)*100
+data$fvc_perc <- (data$raw_fvc/data$fvc_pred)*100
+# calculate beta cell function outcomes
+data$isi <- (data$min_30_insulin - data$min_0_insulin) / (data$min_30_glucose-data$lab_ogtt_fasting)
+data$isi_cpep <- (data$min_30_c_peptide - data$min_0_c_peptide) / (data$min_30_glucose-data$lab_ogtt_fasting)
+data$odi <- (1/data$min_0_insulin) * data$isi
+data$odi_cpep <- (1/data$min_0_c_peptide) * data$isi_cpep
+
+# also need the following
+# iAUCg, iAUCins/iAUCg, iAUCcpep/iAUCg, iAUCglucagon
+#glucose
+cols_gluc = c("min_minus_10_glucose","lab_ogtt_fasting",
+         "min_10_glucose","min_20_glucose","min_30_glucose",
+         "lab_ogtt_1_hour_glucose","min_90_glucose",
+         "lab_ogtt_2_hour_glucose","min_150_glucose",
+         "min_180_glucose")
+ogttdat <- data[,c(cols_gluc,"subject_id")]
+ogttdat <- ogttdat[which(rowSums(!is.na(ogttdat[,cols_gluc]))>=4),]
+ogttdat$iaucbase_glucose <- iAUC_glucose(ogttdat,ogttdat$lab_ogtt_fasting,type = "linear")
+data <- merge(data,ogttdat,by="subject_id",all.x=TRUE,all.y=TRUE)
+
+#insulin
+cols_ins = c("min_minus_10_insulin","min_0_insulin","min_10_insulin","min_20_insulin","min_30_insulin","min_60_insulin",
+             "min_90_insulin","min_120_insulin","min_150_insulin","min_180_insulin")
+ogttdat <- data[,c(cols_ins,"subject_id")]
+ogttdat <- ogttdat[which(rowSums(!is.na(ogttdat[,cols_ins]))>=4),]
+ogttdat$iaucbase_insulin <- iAUC_insulin(ogttdat,ogttdat$min_0_insulin,type = "linear")
+data <- merge(data,ogttdat,by="subject_id",all.x=TRUE,all.y=TRUE)
+
+#C-peptide
+cols_cpep = c("min_minus_10_c_peptide","min_0_c_peptide","min_10_c_peptide","min_20_c_peptide","min_30_c_peptide","min_60_c_peptide",
+             "min_90_c_peptide","min_120_c_peptide","min_150_c_peptide","min_180_c_peptide")
+ogttdat <- data[,c(cols_cpep,"subject_id")]
+ogttdat <- ogttdat[which(rowSums(!is.na(ogttdat[,cols_cpep]))>=4),]
+ogttdat$iaucbase_cpep <- iAUC_cpep(ogttdat,ogttdat$min_0_c_peptide,type = "linear")
+data <- merge(data,ogttdat,by="subject_id",all.x=TRUE,all.y=TRUE)
+
+# glucagon
+cols_glucagon = c("min_minus_10_glucagon","min_0_glucagon","min_10_glucagon","min_20_glucagon","min_30_glucagon","min_60_glucagon",
+              "min_90_glucagon","min_120_glucagon","min_150_glucagon","min_180_glucagon")
+ogttdat <- data[,c(cols_glucagon,"subject_id")]
+ogttdat <- ogttdat[which(rowSums(!is.na(ogttdat[,cols_glucagon]))>=4),]
+ogttdat <- ogttdat[which(!is.na(ogttdat[,"min_0_glucagon"])),]
+ogttdat$iaucbase_glucagon <- iAUC_glucagon(ogttdat,ogttdat$min_0_glucagon,type = "linear")
+data <- merge(data,ogttdat,by="subject_id",all.x=TRUE,all.y=TRUE)
+
+data$iAUCins_iAUC_gluc <- data$iaucbase_insulin/data$iaucbase_glucose
+data$iAUCcpep_iAUCgluc <- data$iaucbase_cpep/data$iaucbase_glucose
+
+# keep only those who have non-missing odi
+alldata <- data[which(!is.na(data$odi) & data$odi != Inf),]
+
+ogttvars <- c("isi","isi_cpep","odi","odi_cpep","iaucbase_glucose","iaucbase_insulin","iaucbase_cpep","iaucbase_glucagon","iAUCins_iAUC_gluc","iAUCcpep_iAUCgluc")
+cgmvars <- c("min_sensor","max_sensor","average_sensor","average_auc_per_day","excursions_over_200","avg_excur_over_140_per_day",
+             "avg_excur_over_200_per_day","excursions_over_140","percent_time_under_60","percent_time_under_70",
+             "percent_time_over_140","min_spent_under_60","min_spent_under_70","min_spent_over_200","min_spent_over_140",
+             "total_auc","standard_deviation","mean_amp_glycemic_ex")
+tab1vars <- c("age_at_visit_1", "race_ethnicity.factor","gender","poc_a1c","fev_perc","fvc_perc","g_tube_feeds","cf_pancreatic","tanner","bmi_z_score")
+#tab1vars <- c("age", "race_ethnicity","gender","poc_a1c","g_tube_feeds","fev1_percent","fvc","cf_pancreatic","tanner","first_bmiz")
+
+# make factors
+alldata$gender <- as.factor(alldata$gender)
+alldata$g_tube_feeds <- as.factor(alldata$g_tube_feeds)
+alldata$cf_pancreatic <- as.factor(alldata$cf_pancreatic)
+
+# labels
+label(alldata$age_at_visit_1)="Age"
+label(alldata$race_ethnicity.factor)="Race/ethnicity"
+label(alldata$gender)="Gender"
+label(alldata$poc_a1c)="HbA1c"
+label(alldata$g_tube_feeds)="G-tube feeds"
+label(alldata$fev_perc)="FEV-1 percent"
+label(alldata$fvc_perc)="FVC"
+label(alldata$cf_pancreatic)="Pancreatic insufficiency"
+label(alldata$tanner)="Tanner stage"
+label(alldata$bmi_z_score)="First BMI-Z"
+label(alldata$isi)="ISI"
+label(alldata$isi_cpep)="ISI C-peptide"
+label(alldata$odi)="oDI"
+label(alldata$odi_cpep)="oDI C-peptide"
+label(alldata$min_sensor)="Min sensor glucose"
+label(alldata$max_sensor)="Max sensor glucose"
+label(alldata$average_sensor)="Average sensor glucose"
+label(alldata$average_auc_per_day)="Average AUC"
+label(alldata$excursions_over_200)="Excursions>200"
+label(alldata$avg_excur_over_140_per_day)="Excursions>140/day"
+label(alldata$avg_excur_over_200_per_day)="Excursions>200/day"
+label(alldata$excursions_over_140)="Excursions>140"
+label(alldata$percent_time_under_60)="% time <60"
+label(alldata$percent_time_under_70)="% time <70"
+label(alldata$percent_time_over_140)="% time >140"
+label(alldata$min_spent_under_60)="Time spent <60"
+label(alldata$min_spent_under_70)="Time spent <70"
+label(alldata$min_spent_over_200)="Time spent >200"
+label(alldata$min_spent_over_140)="Time spent >140"
+label(alldata$total_auc)="Total AUC"
+label(alldata$standard_deviation)="SD"
+label(alldata$mean_amp_glycemic_ex)="MAGE"
+label(alldata$r_mage)="R-MAGE"
+label(alldata$iaucbase_glucose)="iAUC glucose"
+label(alldata$iaucbase_insulin)="iAUC insulin"
+label(alldata$iaucbase_cpep)="iAUC C-peptide"
+label(alldata$iaucbase_glucagon)="iAUC glucagon"
+label(alldata$iAUCins_iAUC_gluc)="iAUC insulin/iAUC glucose"
+label(alldata$iAUCcpep_iAUCgluc)="iAUC C-peptide/iAUC glucose"
+
+npar <- nrow(alldata)
+
+# ANALYSIS
+
+# table 1
+tab1 <- final_table(data=alldata,variables=tab1vars,group=alldata$group_category.factor,margin=2,single=0,ron=2)
+
+# pairwise comparisons for table 1 - HbA1c
+a1 <- aov(alldata$poc_a1c~alldata$group_category.factor)
+a1t <- TukeyHSD(a1)
+a1t <- tidy(a1t)
+a1t <- a1t[,-1]
+
+# compare groups
+tab2 <- final_table(data=alldata,variables=c(ogttvars,cgmvars),group=alldata$group_category.factor,margin=2,single=0,ron=2)
+
+# pairwise comparisons for table 2 - ISI
+a2 <- aov(alldata$isi~alldata$group_category.factor)
+a2t <- TukeyHSD(a2)
+a2t <- tidy(a2t)
+a2t <- a2t[,-1]
+
+# pairwise comparisons for table 2 - ISI C-peptide
+a3 <- aov(alldata$isi_cpep~alldata$group_category.factor)
+a3t <- tidy(TukeyHSD(a3))
+a3t <- a3t[,-1]
+
+# pairwise comparisons for table 2 - oDI
+a4 <- aov(alldata$odi~alldata$group_category.factor)
+a4t <- tidy(TukeyHSD(a4))
+a4t <- a4t[,-1]
+
+# pairwise comparisons for table 2 - oDI C-pep
+a5 <- aov(alldata$odi~alldata$group_category.factor)
+a5t <- tidy(TukeyHSD(a5))
+a5t <- a5t[,-1]
+
+# pairwise comparisons for table 2 - iAUC glucose
+a6 <- aov(alldata$iaucbase_glucose~alldata$group_category.factor)
+a6t <- tidy(TukeyHSD(a6))
+a6t <- a6t[,-1]
+
+# pairwise comparisons for table 2 - iAUC insulin/iAUC glucose
+a7 <- aov(alldata$iAUCins_iAUC_gluc~alldata$group_category.factor)
+a7t <- tidy(TukeyHSD(a7))
+a7t <- a7t[,-1]
+
+# pairwise comparisons for table 2 - iAUC C-peptide/iAUC glucose
+a8 <- aov(alldata$iAUCcpep_iAUCgluc~alldata$group_category.factor)
+a8t <- tidy(TukeyHSD(a8))
+a8t <- a8t[,-1]
+
+# pairwise comparisons for table 2 - max sensor glucose
+a9 <- aov(alldata$max_sensor~alldata$group_category.factor)
+a9t <- tidy(TukeyHSD(a9))
+a9t <- a9t[,-1]
+
+# pairwise comparisons for table 2 - excursions >140/day
+a10 <- aov(alldata$excursions_over_140~alldata$group_category.factor)
+a10t <- tidy(TukeyHSD(a10))
+a10t <- a10t[,-1]
+
+# pairwise comparisons for table 2 - excursions >140
+a11 <- aov(alldata$excursions_over_140~alldata$group_category.factor)
+a11t <- tidy(TukeyHSD(a11))
+a11t <- a11t[,-1]
+
+# pairwise comparisons for table 2 - time spent >140
+a12 <- aov(alldata$min_spent_over_140~alldata$group_category.factor)
+a12t <- tidy(TukeyHSD(a12))
+a12t <- a12t[,-1]
+
+# pairwise comparisons for table 2 - SD
+a13 <- aov(alldata$standard_deviation ~alldata$group_category.factor)
+a13t <- tidy(TukeyHSD(a13))
+a13t <- a13t[,-1]
+
+# pairwise comparisons for table 2 - MAGE
+a14 <- aov(alldata$r_mage ~alldata$group_category.factor)
+a14t <- tidy(TukeyHSD(a14))
+a14t <- a14t[,-1]
+
+# correlations
+corr <- rcorr(as.matrix(alldata[, c(ogttvars,cgmvars)]), type = "pearson")
+corr <- flattenCorrMatrix(corr$r, corr$P)
+corr <- corr[corr$row %in% ogttvars & corr$column %in% cgmvars,]
+```
+
+```{r echo=FALSE}
+# Pairwise comparisons
+sigvars <- c("poc_a1c","isi","isi_cpep","odi","odi_cpep","iaucbase_glucose","iaucbase_cpep","iAUCcpep_iAUCgluc","iAUCins_iAUC_gluc","average_sensor","standard_deviation","max_sensor","average_auc_per_day","excursions_over_200","avg_excur_over_200_per_day","min_spent_over_200","excursions_over_140","avg_excur_over_140_per_day","percent_time_over_140","min_spent_over_140","mean_amp_glycemic_ex")
+l <- list()
+for (var in sigvars) {
+  table <- TukeyHSD(aov(alldata[,var] ~ alldata$group_category.factor))
+  table <- as.data.frame(table$`alldata$group_category.factor`)
+  table <- round(table,3)
+  l[[var]] <- table
+}
+```
+
+# Background
+
+The purpose of this analysis is to examine associations between beta cell function and CGM variables in healthy controls and participants with cystic fibrosis with normal glucose tolerance, impaired glucose tolerance, and CFRD.
+
+# Methods
+
+Participants who had both CGM data and OGTT data with 0, 30, and 120 minute timepoints available were included in this analysis. Beta cell function outcomes were calculated as follows:
+
+1) $ISI = (Insulin_{30} - Insulin_{0}) / (Glucose_{30} - Glucose_{0})$
+2) $ISI_{Cpep} = (Cpeptide_{30} - Cpeptide_{0}) / (Glucose_{30} - Glucose_{0})$
+3) $oDI = (1/Insulin_{0}) * ISI$
+4) $oDI_{Cpep} = (1/Cpeptide_{0}) * ISI_{Cpep}$
+
+Integrated AUC (iAUC) for glucose, insulin, C-peptide, and glucagon were calculated as the AUC with respect to the fasting value, using the trapezoidal method.
+
+The distributions of all variables were examined prior to analysis.  Groups were compared using ANOVA or the Wilcoxon test for continuous variables, and the chi-square or Fisher's exact test for categorical variables.  Pearson's correlation coefficient was used to test the association between beta cell function outcomes and CGM outcomes.
+
+# Results
+
+There were `r npar` participants included in this analysis.  Table 1 shows baseline descriptive statistics by treatment group.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(tab1,caption="Table 1.  Descriptive statistics by treatment group.  Statistics given are N(%), mean±SD, or median (25th %ile, 75th %ile).  * denotes that the Wilcoxon test was used, and ** denotes that Fisher's exact test was used.") 
+```
+\
+
+
+Descriptive statistics for beta cell function outcomes and CGM outcomes are shown in Table 2.
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(tab2,caption="Table 2.  Descriptive statistics for beta cell function and CGM outcomes by treatment group.  Statistics given are N(%), mean±SD, or median (25th %ile, 75th %ile).  * denotes that the Wilcoxon test was used, and ** denotes that Fisher's exact test was used.")
+```
+\
+
+Pearson correlation coefficients between beta cell function outcomes and CGM outcomes are shown in Table 2.
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(corr,caption="Table 3.  Correlation between beta cell function outcomes and CGM outcomes.")
+```
+\
+
+Pairwise Comparisons using Tukey's Honestly Significant Difference
+```{r echo=FALSE}
+# Kable does not appear to work in a for loop for some reason.
+kable(l[[1]],caption = sigvars[1])
+kable(l[[2]],caption = sigvars[2])
+kable(l[[3]],caption = sigvars[3])
+kable(l[[4]],caption = sigvars[4])
+kable(l[[5]],caption = sigvars[5])
+kable(l[[6]],caption = sigvars[6])
+kable(l[[7]],caption = sigvars[7])
+kable(l[[8]],caption = sigvars[8])
+kable(l[[9]],caption = sigvars[9])
+kable(l[[10]],caption = sigvars[10])
+kable(l[[11]],caption = sigvars[11])
+kable(l[[12]],caption = sigvars[12])
+kable(l[[13]],caption = sigvars[13])
+kable(l[[14]],caption = sigvars[14])
+kable(l[[15]],caption = sigvars[15])
+kable(l[[16]],caption = sigvars[16])
+kable(l[[17]],caption = sigvars[17])
+kable(l[[18]],caption = sigvars[18])
+kable(l[[19]],caption = sigvars[19])
+kable(l[[20]],caption = sigvars[20])
+kable(l[[21]],caption = sigvars[21])
+```
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+plot(alldata$odi_cpep,alldata$max_sensor,xlab="oDI Cpep",ylab="Max sensor (mg/dL)")
+abline(lm(alldata$max_sensor~alldata$odi_cpep))
+
+plot(alldata$odi_cpep,alldata$percent_time_over_140,xlab="oDI Cpep",ylab="% time >140 mg/dL")
+abline(lm(alldata$percent_time_over_140~alldata$odi_cpep))
+
+plot(alldata$odi_cpep,alldata$r_mage,xlab="oDI Cpep",ylab="MAGE (mg/dL)")
+abline(lm(alldata$r_mage~alldata$odi_cpep))
+
+```
