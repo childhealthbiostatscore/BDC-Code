@@ -3,7 +3,7 @@ graphics.off()
 #Load Hmisc library
 library(Hmisc)
 #Read Data
-data=read.csv(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Laura Tim projects/Chan 2019 ADA abstracts/CGMInHealthyControls_DATA_2018-12-21_1936.csv"))
+data=read.csv("S:/Shared Projects/Laura/Laura Tim projects/Christine Chan/2019 ADA Abstracts/Data_Raw/CGMInHealthyControls_DATA_2018-12-21_1936.csv")
 #Setting Labels
 
 label(data$subject_id)="Subject ID"
