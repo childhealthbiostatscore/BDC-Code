@@ -2,22 +2,18 @@
 title: "Disglycemia in BMT Patients"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: word_document
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_knit$set(root.dir = "/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
 library(redcapAPI)
-library(AGD)
 library(arsenal)
 library(skimr)
 library(knitr)
-library(splines)
-library(JM)
-library(survival)
-library(survminer)
-library(patchwork)
+library(pROC)
+library(AGD)
 library(tidyverse)
 ```
 
@@ -122,14 +118,20 @@ demographics$bmi_percentile_group <- cut(demographics$bmi_percentile,
 # Infer Tanner stage
 demographics$tanner_stage[demographics$AgeTx >= 18] <- "5"
 demographics$tanner_stage[demographics$AgeTx <= 3] <- "1"
+# Numeric study id
+demographics$study_id = as.numeric(as.character(demographics$study_id))
 # Get earliest infection for each participant, censoring info, and covariates
-events <- data_full %>% group_by(study_id) %>% 
-  summarise(date_of_tx = date_of_tx[1],dob = date_of_birth[1],
-            infxn_date = suppressWarnings(min(infxn_date,na.rm = T)),
-            first_cgm = sens1_place[1],
-            censor_date = followup[1])
-events$event <- pmin(events$infxn_date,events$censor_date)
-events$infection <- ifelse(!is.na(as.character(events$infxn_date)),1,0)
+events = data_full %>% group_by(study_id) %>% 
+  summarise(infxn_date = suppressWarnings(min(infxn_date,na.rm = T)),
+            death_date = suppressWarnings(min(date_death,na.rm = T)))
+events$Infection = factor(ifelse(!is.na(as.character(events$infxn_date)),1,0),
+                             levels = 0:1,labels = c("No","Yes"))
+events$Death = factor(ifelse(!is.na(as.character(events$death_date)),1,0),
+                      levels = 0:1,labels = c("No","Yes"))
+events$study_id = as.numeric(as.character(events$study_id))
+events = events %>% arrange(study_id) %>% dplyr::select(study_id,Infection,Death)
+# Add to demographics
+demographics = left_join(demographics,events,by = "study_id")
 ```
 
 # Table 1: Descriptive Characteristics
@@ -139,20 +141,55 @@ Patients aged 2 - 3 years were assumed to be Tanner stage 1, and patients aged 1
 ```{r table 1,echo=FALSE,results='asis'}
 table_one <- tableby(~ notest(AgeTx,"median","q1q3") + gender + tanner_stage + 
                        bmi_percentile_group + tx_type + primary_dx_cat + 
-                       spec_dx_cat, 
+                       spec_dx_cat + Infection + Death, 
                      data = demographics)
 newlabels <- list(AgeTx = "Age at HSCT",Gender = "Sex",
                   bmi_percentile_group = "BMI Percentile",
                   `Transplant Type` = "HSCT Type",
                   `Primary Diagnosis Category` = "Primary Diagnosis",
-                  `Specific Diagnosis Category` = "Specific Diagnosis",
-                  infection = "Infection")
+                  `Specific Diagnosis Category` = "Specific Diagnosis")
 summary(table_one,labelTranslations = newlabels,digits = 2)
 ```
 
+# Figure 1: Days from HSCT With CGM Data
+
+```{r echo=FALSE,dpi=600}
+# Filter out those with no removal or placement date
+wear_plot_data <- cgm_data %>% filter(!is.na(sens_place) & !is.na(sens_remove))
+# For each CGM wear, get the dates of each day the cgm was worn
+wear_plot_data$dates <- NA
+for (r in 1:nrow(wear_plot_data)) {
+  wear_plot_data$dates[r] <- 
+    paste0(seq(as.Date(wear_plot_data$sens_place[r]),
+               as.Date(wear_plot_data$sens_remove[r]),by = "days"),collapse = ",")
+}
+# Split up each list of dates and make a new row for each day the CGM was worn
+dates <- strsplit(wear_plot_data$dates, split = ",")
+wear_plot_data <- data.frame(study_id = rep(wear_plot_data$study_id, sapply(dates, length)), 
+                   day = unlist(dates))
+# Format id for y axis
+wear_plot_data$study_id <- as.numeric(as.character(wear_plot_data$study_id))
+# Add in Tx date
+wear_plot_data$date_of_tx <- 
+  demographics$date_of_tx[match(wear_plot_data$study_id,
+                                as.numeric(demographics$study_id))]
+# Calculate number of days difference 
+wear_plot_data$diff <- 
+  as.numeric(difftime(wear_plot_data$day,wear_plot_data$date_of_tx,units = "days"))
+# Remove duplicate rows
+wear_plot_data <- unique(wear_plot_data)
+# Plot
+ggplot(wear_plot_data,aes(x = diff,y = study_id,group = study_id)) + 
+  geom_point() + 
+  ylab("Participant #") + xlab("Total Days From HSCT") + 
+  theme_bw()
+```
+
+Each point indicates that the participant has CGM on a given day. Blank space indicates no CGM data.
+
 # Table 2: Glycemic Control
 
-```{r echo=FALSE,results='asis'}
+```{r cgm summary,echo=FALSE,results='asis'}
 # Import CGM
 cgm = read.csv("./Jenna Sopfe/CGM Accuracy in BMT/Data_Cleaned/Prospective HSCT CGM Data Updated 6.24.19 FULL DATA SET.csv")
 # Format columns
@@ -189,4 +226,37 @@ summary(gluc_table,pfootnote = T,
                                  perc_140 = "% Time > 140 mg/dL",
                                  perc_200 = "% Time > 200 mg/dL",
                                  num_exc_140 = "Number of Excursions > 140"))
+```
+
+# ROC Analysis
+
+```{r roc data,echo=FALSE}
+# Add event data
+cgm_summ = left_join(cgm_summ,events,by = "study_id")
+# Split by timepoint
+pre_tx = cgm_summ %>% filter(time_cat == "Day -7 to -1")
+imm_post_tx = cgm_summ %>% filter(time_cat == "Days 0 to 14")
+post_tx = cgm_summ %>% filter(time_cat == "Day 14+")
+```
+
+## Infection
+
+```{r infection avg,echo=FALSE}
+# ROC curves
+pre_roc = roc(Infection ~ avg,data = pre_tx,quiet = T)
+imm_post_roc = roc(Infection ~ avg,data = imm_post_tx,quiet = T)
+post_roc = roc(Infection ~ avg,data = post_tx,quiet = T)
+# Plot
+plot(pre_roc, col = "blue")
+plot(imm_post_roc,col = "dark green",add = T)
+plot(post_roc,col = "red",add = T)
+legend(1.32, 0.95, legend=levels(cgm_summ$time_cat),
+       col=c("blue","dark green","red"), lty=1)
+ret = c("threshold","specificity","sensitivity")
+results = bind_rows(coords(pre_roc,"best",transpose = F),
+                    coords(imm_post_roc,"best",transpose = F),
+                    coords(post_roc,"best",transpose = F))
+rownames(results) = levels(cgm_summ$time_cat)
+results$auc = as.numeric(c(pre_roc$auc,imm_post_roc$auc,post_roc$auc))
+kable(round(results,2),row.names = T)
 ```
