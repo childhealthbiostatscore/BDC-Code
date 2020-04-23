@@ -1,0 +1,301 @@
+---
+title: "Disglycemia in BMT Patients"
+author: "Kristen Campbell & Tim Vigers"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
+library(redcapAPI)
+library(AGD)
+library(arsenal)
+library(skimr)
+library(knitr)
+library(splines)
+library(JM)
+library(survival)
+library(survminer)
+library(patchwork)
+library(tidyverse)
+```
+
+```{r data import,echo=FALSE,cache=TRUE}
+# REDCap API data import
+api <- read.table("./Jenna Sopfe/api_token.txt",header = T,sep = "\t")
+rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
+                         token = as.character(api[1,1]))
+data_full <- exportRecords(rcon)
+# Remove participant 10
+data_full <- data_full %>% filter(study_id != "10")
+# Fill down Tx date
+data_full <- data_full %>% group_by(study_id) %>% fill(date_of_tx)
+# Format dates
+datecols = c("date_death","date_of_tx","infxn_date","sens1_place","followup")
+data_full[,datecols] <- lapply(data_full[,datecols],lubridate::ymd)
+```
+
+```{r data cleaning,echo=FALSE}
+# Get CGM data
+cgm_data <- data_full %>% filter(is.na(redcap_repeat_instrument)) %>%
+  select(study_id,date_of_tx,
+         sens1_place,plt1,transfuse1,bleed1,sens1_remove,sens1_reason,
+         sens2_place,plt2,transfuse2,bleed2,sens2_remove,sens2_reason,
+         sens3_place,plt3,transfuse3,bleed3,sens3_remove,sens3_reason,
+         sens4_place,plt4,transfuse4,bleed4,sens4_remove,sens4_reason,
+         sens5_place,plt5,transfuse5,bleed5,sens5_remove,sens5_reason,
+         sens6_place,plt6,transfuse6,bleed6,sens6_remove,sens6_reason)
+
+colnames(cgm_data) <- c("study_id","date_of_tx",
+                        "sens_place.1","plt.1","transfuse.1","bleed.1",
+                        "sens_remove.1","sens_reason.1",
+                        "sens_place.2","plt.2","transfuse.2","bleed.2",
+                        "sens_remove.2","sens_reason.2",
+                        "sens_place.3","plt.3","transfuse.3","bleed.3",
+                        "sens_remove.3","sens_reason.3",
+                        "sens_place.4","plt.4","transfuse.4","bleed.4",
+                        "sens_remove.4","sens_reason.4",
+                        "sens_place.5","plt.5","transfuse.5","bleed.5",
+                        "sens_remove.5","sens_reason.5",
+                        "sens_place.6","plt.6","transfuse.6","bleed.6",
+                        "sens_remove.6","sens_reason.6")
+cgm_data <- as.data.frame(cgm_data)
+# Wide to long
+cgm_data <- reshape(cgm_data,idvar = c("study_id","date_of_tx"),
+                varying = colnames(cgm_data)[3:ncol(cgm_data)],
+                direction = "long")
+# Remove blank rows based on sensor placement date, format DF, calculate days of CGM wear
+cgm_data <- cgm_data %>% filter(!is.na(sens_place)) %>% 
+  arrange(as.numeric(study_id)) %>%
+  mutate(days_worn_total = round(as.numeric(difftime(sens_remove,sens_place,
+                                                     units = 'days'))),
+         days_worn_pre_tx = 
+           pmax(days_worn_total - 
+                  pmax(round(as.numeric(difftime(sens_remove,date_of_tx,
+                                                 units = 'days'))),0),0),
+         days_worn_post_tx = 
+           pmax(days_worn_total - 
+                  pmax(round(as.numeric(difftime(date_of_tx,sens_place,
+                                                 units = 'days'))),0),0))
+# Platelet count variables
+cgm_data$plt <- as.numeric(cgm_data$plt)
+cgm_data$plt[cgm_data$transfuse == "Yes"] <- NA # Remove those with transfusion = "yes"
+cgm_data$plt_bleed <- ifelse(cgm_data$bleed == "Yes",cgm_data$plt,NA)
+cgm_data$plt_no_bleed <- ifelse(cgm_data$bleed == "No",cgm_data$plt,NA)
+```
+
+```{r demographics,echo=FALSE,cache=TRUE}
+demographics <- data_full %>% filter(is.na(redcap_repeat_instrument))
+# Combine separate race columns into one
+levels(demographics$race___0) <- c(NA,"AI or AN")
+levels(demographics$race___1) <- c(NA,"Asian")
+levels(demographics$race___2) <- c(NA,"African American")
+levels(demographics$race___3) <- c(NA,"NH or PI")
+levels(demographics$race___4) <- c(NA,"White")
+levels(demographics$race___5) <- c(NA,"Hispanic")
+levels(demographics$race___6) <- c(NA,"Other")
+demographics <- demographics %>% unite("Race",race___0,race___1,race___2,race___3,race___4,race___5,race___6)
+demographics$Race <- gsub("NA","",demographics$Race)
+demographics$Race <- gsub("_","",demographics$Race)
+demographics$Race[which(demographics$race_multi == "yes")] <- "Multiple"
+demographics$Race[which(demographics$Race == "")] <- "Unknown"
+# Calculate age at transplant
+demographics$AgeTx <- as.numeric(difftime(demographics$date_of_tx,
+                                          demographics$date_of_birth,
+                                          units = "days")) / 365.25
+# Format/calculate variables for BMI calculation
+demographics$sex <- demographics$gender
+levels(demographics$sex) <- c("F","M")
+# Calculate BMI and BMI percentile
+demographics$bmi <- as.numeric(demographics$weight) / 
+  ((as.numeric(demographics$height)/100)^2)
+demographics$bmi_z <- y2z(demographics$bmi,x = demographics$AgeTx,
+                          sex = demographics$sex,ref = get("cdc.bmi"))
+demographics$bmi_percentile <- round(pnorm(demographics$bmi_z) * 100,3)
+# BMI percentile groups
+demographics$bmi_percentile_group <- cut(demographics$bmi_percentile,
+                                         breaks = c(0,85,95,100),
+                                         labels = c("<85th %ile","85th-95th %ile",
+                                                    ">= 95th %ile"),
+                                         right = F)
+# Infer Tanner stage
+demographics$tanner_stage[demographics$AgeTx >= 18] <- "5"
+demographics$tanner_stage[demographics$AgeTx <= 3] <- "1"
+# Get earliest infection for each participant, censoring info, and covariates
+events <- data_full %>% group_by(study_id) %>% 
+  summarise(date_of_tx = date_of_tx[1],dob = date_of_birth[1],
+            infxn_date = suppressWarnings(min(infxn_date,na.rm = T)),
+            first_cgm = sens1_place[1],
+            censor_date = followup[1])
+events$event <- pmin(events$infxn_date,events$censor_date)
+events$infection <- ifelse(!is.na(as.character(events$infxn_date)),1,0)
+# Add to demographics
+demographics = left_join(demographics,events[,c("study_id","infection")],
+                         by = "study_id")
+demographics$infection = factor(demographics$infection,
+                                levels = 0:1,labels = c("No","Yes"))
+```
+
+# Table 1: Descriptive Characteristics
+
+Patients aged 2 - 3 years were assumed to be Tanner stage 1, and patients aged 18+ were assumed to be Tanner stage 5. Particpant 10 was excluded from all analyses.
+
+```{r table 1,echo=FALSE,results='asis'}
+table_one <- tableby(~ notest(AgeTx,"median","q1q3") + gender + tanner_stage + 
+                       bmi_percentile_group + tx_type + primary_dx_cat + 
+                       spec_dx_cat + infection, 
+                     data = demographics)
+newlabels <- list(AgeTx = "Age at HSCT",Gender = "Sex",
+                  bmi_percentile_group = "BMI Percentile",
+                  `Transplant Type` = "HSCT Type",
+                  `Primary Diagnosis Category` = "Primary Diagnosis",
+                  `Specific Diagnosis Category` = "Specific Diagnosis",
+                  infection = "Infection")
+summary(table_one,labelTranslations = newlabels,digits = 2)
+```
+
+# Figure 1: Days from HSCT With CGM Data
+
+```{r echo=FALSE,dpi=600}
+# Filter out those with no removal or placement date
+wear_plot_data <- cgm_data %>% filter(!is.na(sens_place) & !is.na(sens_remove))
+# For each CGM wear, get the dates of each day the cgm was worn
+wear_plot_data$dates <- NA
+for (r in 1:nrow(wear_plot_data)) {
+  wear_plot_data$dates[r] <- 
+    paste0(seq(as.Date(wear_plot_data$sens_place[r]),
+               as.Date(wear_plot_data$sens_remove[r]),by = "days"),collapse = ",")
+}
+# Split up each list of dates and make a new row for each day the CGM was worn
+dates <- strsplit(wear_plot_data$dates, split = ",")
+wear_plot_data <- data.frame(study_id = rep(wear_plot_data$study_id, sapply(dates, length)), 
+                   day = unlist(dates))
+# Format id for y axis
+wear_plot_data$study_id <- as.numeric(as.character(wear_plot_data$study_id))
+# Add in Tx date
+wear_plot_data$date_of_tx <- 
+  demographics$date_of_tx[match(wear_plot_data$study_id,
+                                as.numeric(demographics$study_id))]
+# Calculate number of days difference 
+wear_plot_data$diff <- 
+  as.numeric(difftime(wear_plot_data$day,wear_plot_data$date_of_tx,units = "days"))
+# Remove duplicate rows
+wear_plot_data <- unique(wear_plot_data)
+# Plot
+ggplot(wear_plot_data,aes(x = diff,y = study_id,group = study_id)) + 
+  geom_point() + 
+  ylab("Participant #") + xlab("Total Days From HSCT") + 
+  theme_bw()
+```
+
+Each point indicates that the participant has CGM on a given day. Blank space indicates no CGM data.
+
+```{r infection joint data,echo=FALSE}
+# Import CGM
+cgm <- read.csv("./Jenna Sopfe/CGM Accuracy in BMT/Data_Cleaned/Prospective HSCT CGM Data Updated 6.24.19 FULL DATA SET.csv")
+# Format columns
+colnames(cgm)[1] <- "study_id"
+cgm$Time <- lubridate::mdy_hm(cgm$Time,tz = "UTC")
+cgm$Tx_date <- lubridate::mdy(cgm$Tx_date,tz = "UTC")
+# Exogenous variables
+events$study_id <- as.numeric(as.character(events$study_id))
+demographics$study_id <- as.numeric(as.character(demographics$study_id))
+dem_cov = c("sex","Race","AgeTx","date_of_birth")
+events = left_join(events,demographics[,c("study_id",dem_cov)],by = "study_id")
+# Combine race
+events$Race <- ifelse(events$Race == "White","White","Non-white")
+# Order
+events <- events %>% arrange(study_id)
+cgm <- cgm %>% arrange(study_id)
+# Get event date and sex
+cgm <- left_join(cgm,events[,c("study_id","event",dem_cov)],by = "study_id")
+# Time from Tx and first CGM value
+cgm <- cgm %>% group_by(study_id) %>% 
+  mutate(time_from_tx = difftime(Time,Tx_date,units = "hours"),
+         time_from_cgm_start = difftime(Time,Time[1],units = "hours"))
+events <- events %>%
+  mutate(time_to_event_from_tx = difftime(event,date_of_tx,units = "hours"),
+         time_to_event_from_cgm_start = difftime(event,first_cgm,units = "hours"),
+         time_first_cgm_to_tx = difftime(date_of_tx,first_cgm,units = "hours"))
+# Average glucose by interval, filter truncate CGM data at event
+u = "12 hour"
+cgm$interval <- lubridate::round_date(cgm$Time,unit = u)
+cgm <- cgm %>% group_by(study_id,interval) %>%
+  summarise(sg = mean(Historic_Glucose,na.rm = T),event = event[1],
+            dob = date_of_birth[1]) %>%
+  mutate(time_from_cgm_start = 
+           as.numeric(difftime(interval,interval[1],units = "hours")),
+         age = as.numeric(difftime(interval,dob,units = "days"))) %>%
+  filter(interval < event)
+# Add events for plotting
+cgm = left_join(cgm,events[,c("study_id","infection")],by = "study_id")
+cgm$infection = factor(cgm$infection,levels = 0:1,
+                       labels = c("No Infection","Infection"))
+```
+
+# Figure 2: 12-hour Mean Glucose Over Time
+
+```{r echo=FALSE,dpi=600}
+ggplot(cgm,aes(x = time_from_cgm_start, y = sg,group = study_id)) + 
+  geom_line(aes(color = factor(study_id))) + 
+  xlab("Hours from CGM Start") +
+  xlim(0,2000) +
+  ylab("Sensor Glucose (mg/dL)") +
+  theme_bw() + 
+  theme(legend.position = "none") + 
+  facet_wrap(~factor(infection))
+```
+
+# Figure 3: Kaplan-Meier Time to Event
+
+```{r km plot,echo=FALSE,dpi=600}
+s = Surv(events$time_to_event_from_cgm_start,events$infection)
+# Survival part of model
+survfit <- coxph(s~sex + Race,data = events,x=T)
+plot(s,conf.int = T, xmax = 2000,xlab = "Hours from CGM Start",
+     ylab = "Survival Probability")
+```
+
+## Joint Model Results
+
+```{r infection jm simple,echo=FALSE}
+# Random intercept and random slope
+# Tested polynomial models, but quadratic did not add to straight line model
+# Random slope better than random slope and intercept
+mixfit <- lme(sg ~ time_from_cgm_start + age,data = cgm,method = "ML",
+              random = ~time_from_cgm_start|study_id)
+# qqnorm(resid(mixfit)) looks iffy
+# Simplest model
+# Joint fit
+jointFit <- jointModel(mixfit, survfit, timeVar = "time_from_cgm_start",
+                       method = "piecewise-PH-GH")
+# Joint fit with time-dependent slopes
+dForm = list(fixed = ~ 1,indFixed = 2,random = ~1,indRandom = 2)
+jointFit_deriv <- jointModel(mixfit, survfit, timeVar = "time_from_cgm_start",
+                       method = "piecewise-PH-GH",parameterization = "both",
+                       derivForm = dForm)
+```
+
+```{r echo=FALSE}
+long_proc = as.data.frame(summary(jointFit)$`CoefTable-Long`)
+long_proc[,1:3] = as.data.frame(lapply(long_proc[,1:3], function(x){round(x,3)}))
+long_proc[,4] = format.pval(long_proc[,4],eps = 0.001,digits = 3)
+rownames(long_proc)[2:3] = c("Hours from CGM Start", "Age")
+kable(long_proc,caption = "Longitudinal Process (Average glucose over time)")
+```
+
+Average glucose decreased over time: for every one hour after CGM start, the average glucose decreased by `r abs(long_proc[2,1])` mg/dL (p `r long_proc[2,4]`). Older age was significantly associated with higher glucose (p `r long_proc[3,4]`). 
+
+```{r echo=FALSE}
+event_proc = as.data.frame(summary(jointFit)$`CoefTable-Event`)
+event_proc[,1:3] = as.data.frame(lapply(event_proc[,1:3], function(x){round(x,3)}))
+event_proc[,4] = format.pval(event_proc[,4],eps = 0.001,digits = 3)
+event_proc = event_proc[1:3,]
+rownames(event_proc)[1:2] = c("Male", "White")
+kable(event_proc,caption = "Event Process (Time to death)")
+```
+
+The estimates for sex and race explain the effect of those baseline covariates on time-to-death. Since p>0.05 for both estimates, neither sex nor race were associated with time-to-death.
+
+The association parameter (“Assoct”) explain how the ‘true’ average glucose value effects time-to-death. Average glucose is not associated with time-to-event (p = `r event_proc[3,4]`): For every one unit increase in average glucose, the hazard of death increases by `r exp(event_proc[3,1])` (exp(`r event_proc[3,1]`)) fold.
