@@ -2,7 +2,7 @@
 title: "Disglycemia in BMT Patients"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: html_document
+output: word_document
 ---
 
 ```{r setup, include=FALSE}
@@ -130,11 +130,6 @@ events <- data_full %>% group_by(study_id) %>%
             censor_date = followup[1])
 events$event <- pmin(events$infxn_date,events$censor_date)
 events$infection <- ifelse(!is.na(as.character(events$infxn_date)),1,0)
-# Add to demographics
-demographics = left_join(demographics,events[,c("study_id","infection")],
-                         by = "study_id")
-demographics$infection = factor(demographics$infection,
-                                levels = 0:1,labels = c("No","Yes"))
 ```
 
 # Table 1: Descriptive Characteristics
@@ -144,7 +139,7 @@ Patients aged 2 - 3 years were assumed to be Tanner stage 1, and patients aged 1
 ```{r table 1,echo=FALSE,results='asis'}
 table_one <- tableby(~ notest(AgeTx,"median","q1q3") + gender + tanner_stage + 
                        bmi_percentile_group + tx_type + primary_dx_cat + 
-                       spec_dx_cat + infection, 
+                       spec_dx_cat, 
                      data = demographics)
 newlabels <- list(AgeTx = "Age at HSCT",Gender = "Sex",
                   bmi_percentile_group = "BMI Percentile",
@@ -155,8 +150,43 @@ newlabels <- list(AgeTx = "Age at HSCT",Gender = "Sex",
 summary(table_one,labelTranslations = newlabels,digits = 2)
 ```
 
-# ROC Analyses
+# Table 2: Glycemic Control
 
-```{r echo=FALSE}
-
+```{r echo=FALSE,results='asis'}
+# Import CGM
+cgm = read.csv("./Jenna Sopfe/CGM Accuracy in BMT/Data_Cleaned/Prospective HSCT CGM Data Updated 6.24.19 FULL DATA SET.csv")
+# Format columns
+colnames(cgm)[1] <- "study_id"
+cgm$Time = lubridate::mdy_hm(cgm$Time,tz = "UTC")
+cgm$Tx_date = lubridate::mdy(cgm$Tx_date,tz = "UTC")
+# Days from Tx
+cgm$days_from_tx = as.numeric(difftime(as.Date(cgm$Time),cgm$Tx_date,units = "days"))
+cgm$time_cat = cut(cgm$days_from_tx,c(-Inf,-1,14,Inf),
+                   labels = c("Day -7 to -1","Days 0 to 14","Day 14+"))
+# Excursions above 140
+cgm$exc_140 = ifelse(cgm$Historic_Glucose >= 140,1,0)
+# Summary variables - excursions over 140 count if longer than 30 minutes
+cgm_summ = cgm %>% group_by(study_id,time_cat) %>%
+  summarise(avg = mean(Historic_Glucose,na.rm = T),
+            cv = avg / sd(Historic_Glucose,na.rm = T),
+            perc_70 = round(sum(Historic_Glucose < 70)/n(),3) * 100,
+            perc_70_140 = round(sum(Historic_Glucose >= 70 & 
+                                      Historic_Glucose <= 140)/n(),3) * 100,
+            perc_140 = round(sum(Historic_Glucose > 140)/n(),3) * 100,
+            perc_200 = round(sum(Historic_Glucose > 200)/n(),3) * 100,
+            num_exc_140 = 
+              length(which(rle(exc_140)$lengths[which(rle(exc_140)$values == 1)] > 6)),
+            n_obs = n())
+# Summarize summary metrics
+gluc_table = tableby(time_cat ~ avg + cv + kwt(perc_70,"median","q1q3") + 
+                       kwt(perc_70_140,"median","q1q3") + 
+                       kwt(perc_140,"median","q1q3") + kwt(perc_200,"median","q1q3") + 
+                       kwt(num_exc_140,"median","q1q3"),data = cgm_summ)
+summary(gluc_table,pfootnote = T,
+        labelTranslations = list(avg = "Mean SG (mg/dL)",cv = "CV",
+                                 perc_70 = "% Time < 70 mg/dL",
+                                 perc_70_140 = "% Time 70-140 mg/dL",
+                                 perc_140 = "% Time > 140 mg/dL",
+                                 perc_200 = "% Time > 200 mg/dL",
+                                 num_exc_140 = "Number of Excursions > 140"))
 ```
