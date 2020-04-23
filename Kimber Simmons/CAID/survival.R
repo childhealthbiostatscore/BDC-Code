@@ -193,6 +193,44 @@ jpeg("S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Results/plots/th
 grid.arrange(thy_tpo_plot, thy_thy_plot, thy_comb_plot, ncol = 3)
 dev.off()
 
+#thyroid by GADA and age 5 years:
+# dat.thy$age_5_GADA<-NA
+# dat.thy$age_5_GADA[dat.thy$Age_At_diabetes_DX<=5 & dat.thy$GADA_pos_neg=="POS"]<-"GADA+ and <=5 yrs"
+# dat.thy$age_5_GADA[dat.thy$Age_At_diabetes_DX>5 & dat.thy$GADA_pos_neg=="POS"]<-"GADA+ and >5 yrs"
+# dat.thy$age_5_GADA[dat.thy$Age_At_diabetes_DX<=5 & dat.thy$GADA_pos_neg=="NEG"]<-"GADA- and <=5 yrs"
+# dat.thy$age_5_GADA[dat.thy$Age_At_diabetes_DX>5 & dat.thy$GADA_pos_neg=="NEG"]<-"GADA- and >5 yrs"
+# dat.thy$age_5_GADA<-as.factor(dat.thy$age_5_GADA)
+thy_gada <- survfit(Surv(dat.thy$time_to_thyroid, dat.thy$thyroid_yn) ~ dat.thy$GADA_pos_neg,
+                    data=dat.thy)
+dat.thy.5<-subset(dat.thy,dat.thy$Age_At_diabetes_DX<=5)
+thy_gada_age <- survfit(Surv(dat.thy.5$time_to_thyroid, dat.thy.5$thyroid_yn) ~ dat.thy.5$GADA_pos_neg,
+                    data=dat.thy.5)
+dat.thy.over5<-subset(dat.thy,dat.thy$Age_At_diabetes_DX>5)
+
+thy_gada_overage <- survfit(Surv(dat.thy.over5$time_to_thyroid, dat.thy.over5$thyroid_yn) ~ dat.thy.over5$GADA_pos_neg,
+                        data=dat.thy.over5)
+
+thy_gada_plot<-jskm(thy_gada,xlab="Years from Diabetes Onset",ylab="Percent Thyroid Disease-Free",table=T,
+                    main="Thyroid Disease, by GADA",ylim=c(0.6,1),marks=F,
+                    linecols = 'Set1',ci=T,
+                    ystratalabs=c("GADA - neg","GADA - pos"),pval=T,
+                    legendposition = c(0.85,0.2),ystrataname = "") 
+thy_gada_age_plot<-jskm(thy_gada_age,xlab="Years from Diabetes Onset",ylab="Percent Thyroid Disease-Free",table=T,
+                    main="<=5 Years at Onset",ylim=c(0.6,1),marks=F,
+                    linecols = 'Set2',ci=T,
+                    ystratalabs=c("GADA - neg","GADA - pos"),pval=T,
+                    legendposition = c(0.85,0.2),ystrataname = "") 
+thy_gada_overage_plot<-jskm(thy_gada_overage,xlab="Years from Diabetes Onset",ylab="Percent Thyroid Disease-Free",table=T,
+                        main=">5 Years at Onset",ylim=c(0.6,1),marks=F,
+                        linecols = 'Set2',ci=T,
+                        ystratalabs=c("GADA - neg","GADA - pos"),pval=T,
+                        legendposition = c(0.85,0.2),ystrataname = "") 
+
+jpeg("S:/Shared Projects/Laura/BDC/Projects/Kimber Simmons/CAID/Results/plots/thy_gada.jpeg",
+     height=6,width=12,units='in',res=300)
+grid.arrange(thy_gada_plot, thy_gada_age_plot, thy_gada_overage_plot, ncol = 3)
+dev.off()
+
 #########CELIAC TIME-TO-EVENT#############
 ###time to celiac:
 dat.cel<-subset(dat,!(dat$celiac_timing %in% c("At Diabetes Onset",
@@ -337,6 +375,47 @@ cel_ttg_plot<-jskm(cel_ttg.repeat_age,xlab="Years from Diabetes Onset",ylab="Per
                    legendposition = c(0.85,0.2),ystrataname = "") 
 dev.off()
 
+#look only at TTG- and Celiac+:
+cel.sub<-subset(dat.cel,dat.cel$celiac_yn==2 & dat.cel$baseline_ttg=="NEG")
+quantile(cel.sub$time_to_celiac)
+
+###TTG and age:
+dat.cel.4<-subset(dat.cel.ttg,dat.cel.ttg$Age_At_diabetes_DX>=4)
+cel_ttg.4 <- survfit(Surv(dat.cel.4$time_to_celiac, dat.cel.4$celiac_yn) ~ dat.cel.4$baseline_ttg,
+                     data=dat.cel.4)
+dat.cel.5<-subset(dat.cel.ttg,dat.cel.ttg$Age_At_diabetes_DX>=5)
+cel_ttg.5 <- survfit(Surv(dat.cel.5$time_to_celiac, dat.cel.5$celiac_yn) ~ dat.cel.5$baseline_ttg,
+                     data=dat.cel.5)
+dat.cel.6<-subset(dat.cel.ttg,dat.cel.ttg$Age_At_diabetes_DX>=6)
+cel_ttg.6 <- survfit(Surv(dat.cel.6$time_to_celiac, dat.cel.6$celiac_yn) ~ dat.cel.6$baseline_ttg,
+                     data=dat.cel.6)
+dat.cel.7<-subset(dat.cel.ttg,dat.cel.ttg$Age_At_diabetes_DX>=7)
+cel_ttg.7 <- survfit(Surv(dat.cel.7$time_to_celiac, dat.cel.7$celiac_yn) ~ dat.cel.7$baseline_ttg,
+                     data=dat.cel.7)
+dat.cel.8<-subset(dat.cel.ttg,dat.cel.ttg$Age_At_diabetes_DX>=8)
+cel_ttg.8 <- survfit(Surv(dat.cel.8$time_to_celiac, dat.cel.8$celiac_yn) ~ dat.cel.8$baseline_ttg,
+                     data=dat.cel.8)
+dat.cel.9<-subset(dat.cel.ttg,dat.cel.ttg$Age_At_diabetes_DX>=9)
+cel_ttg.9 <- survfit(Surv(dat.cel.9$time_to_celiac, dat.cel.9$celiac_yn) ~ dat.cel.9$baseline_ttg,
+                     data=dat.cel.9)
+dat.cel.10<-subset(dat.cel.ttg,dat.cel.ttg$Age_At_diabetes_DX>=10)
+cel_ttg.10 <- survfit(Surv(dat.cel.10$time_to_celiac, dat.cel.10$celiac_yn) ~ dat.cel.10$baseline_ttg,
+                     data=dat.cel.10)
+dat.cel.11<-subset(dat.cel.ttg,dat.cel.ttg$Age_At_diabetes_DX>=11)
+cel_ttg.11 <- survfit(Surv(dat.cel.11$time_to_celiac, dat.cel.11$celiac_yn) ~ dat.cel.11$baseline_ttg,
+                      data=dat.cel.11)
+dat.cel.12<-subset(dat.cel.ttg,dat.cel.ttg$Age_At_diabetes_DX>=12)
+cel_ttg.12 <- survfit(Surv(dat.cel.12$time_to_celiac, dat.cel.12$celiac_yn) ~ dat.cel.12$baseline_ttg,
+                      data=dat.cel.12)
+dat.cel.13<-subset(dat.cel.ttg,dat.cel.ttg$Age_At_diabetes_DX>=13)
+cel_ttg.13 <- survfit(Surv(dat.cel.13$time_to_celiac, dat.cel.13$celiac_yn) ~ dat.cel.13$baseline_ttg,
+                      data=dat.cel.13)
+dat.cel.14<-subset(dat.cel.ttg,dat.cel.ttg$Age_At_diabetes_DX>=14)
+cel_ttg.14 <- survfit(Surv(dat.cel.14$time_to_celiac, dat.cel.14$celiac_yn) ~ dat.cel.14$baseline_ttg,
+                      data=dat.cel.14)
+dat.cel.15<-subset(dat.cel.ttg,dat.cel.ttg$Age_At_diabetes_DX>=15)
+cel_ttg.15 <- survfit(Surv(dat.cel.15$time_to_celiac, dat.cel.15$celiac_yn) ~ dat.cel.15$baseline_ttg,
+                      data=dat.cel.15)
 # #########ADDISON TIME-TO-EVENT#############
 # ###time to addison:
 # dat.add<-subset(dat,!(dat$addison_timing %in% c("At Diabetes Onset",
