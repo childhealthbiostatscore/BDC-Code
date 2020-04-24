@@ -2,7 +2,7 @@
 title: "Disglycemia in BMT Patients"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: html_document
+output: word_document
 ---
 
 ```{r setup, include=FALSE}
@@ -134,14 +134,29 @@ events = events %>% arrange(study_id) %>% dplyr::select(study_id,Infection,Death
 demographics = left_join(demographics,events,by = "study_id")
 ```
 
-# Table 1: Descriptive Characteristics
+# Table 1a: Descriptive Characteristics by Event Status - Infection
 
 Patients aged 2 - 3 years were assumed to be Tanner stage 1, and patients aged 18+ were assumed to be Tanner stage 5. Particpant 10 was excluded from all analyses.
 
-```{r table 1,echo=FALSE,results='asis'}
-table_one <- tableby(~ notest(AgeTx,"median","q1q3") + gender + tanner_stage + 
-                       bmi_percentile_group + tx_type + primary_dx_cat + 
-                       spec_dx_cat + Infection + Death, 
+```{r table 1a,echo=FALSE,results='asis'}
+table_one <- tableby(Infection ~ notest(AgeTx,"median","q1q3") + gender + 
+                       tanner_stage + bmi_percentile_group + tx_type + 
+                       primary_dx_cat + spec_dx_cat, 
+                     data = demographics)
+newlabels <- list(AgeTx = "Age at HSCT",Gender = "Sex",
+                  bmi_percentile_group = "BMI Percentile",
+                  `Transplant Type` = "HSCT Type",
+                  `Primary Diagnosis Category` = "Primary Diagnosis",
+                  `Specific Diagnosis Category` = "Specific Diagnosis")
+summary(table_one,labelTranslations = newlabels,digits = 2)
+```
+
+# Table 1a: Descriptive Characteristics by Event Status - Death
+
+```{r table 1b,echo=FALSE,results='asis'}
+table_one <- tableby(Death ~ notest(AgeTx,"median","q1q3") + gender + 
+                       tanner_stage + bmi_percentile_group + tx_type + 
+                       primary_dx_cat + spec_dx_cat, 
                      data = demographics)
 newlabels <- list(AgeTx = "Age at HSCT",Gender = "Sex",
                   bmi_percentile_group = "BMI Percentile",
@@ -243,25 +258,89 @@ imm_post_tx = cgm_summ %>% filter(time_cat == "Days 0 to 14")
 post_tx = cgm_summ %>% filter(time_cat == "Day 14+")
 ```
 
+```{r roc function,echo=FALSE}
+roc_func = function(outcome,predictor,predictor_name,
+                    leg_x = 1.32,leg_y = 0.95,best = "youden",
+                    ret = c("threshold","specificity","sensitivity")){
+  form = as.formula(paste0(outcome,"~",predictor))
+  # ROC curves
+  pre_roc = roc(form,data = pre_tx,quiet = T)
+  imm_post_roc = roc(form,data = imm_post_tx,quiet = T)
+  post_roc = roc(form,data = post_tx,quiet = T)
+  # Plot
+  plot(pre_roc, col = "blue",main = predictor_name)
+  plot(imm_post_roc,col = "dark green",add = T)
+  plot(post_roc,col = "red",add = T)
+  legend(leg_x,leg_y,legend=levels(cgm_summ$time_cat),
+         col=c("blue","dark green","red"), lty=1)
+  # Format results
+  res_pre = coords(pre_roc,"best",transpose = F,best.method = best)
+  res_pre$time = levels(cgm_summ$time_cat)[1]
+  res_pre$auc = as.numeric(pre_roc$auc)
+  res_imm_post = coords(imm_post_roc,"best",transpose = F,best.method = best)
+  res_imm_post$time = levels(cgm_summ$time_cat)[2]
+  res_imm_post$auc = as.numeric(imm_post_roc$auc)
+  res_post = coords(post_roc,"best",transpose = F,best.method = best)
+  res_post$time = levels(cgm_summ$time_cat)[3]
+  res_post$auc = as.numeric(post_roc$auc)
+  results = bind_rows(res_pre,res_imm_post,res_post)
+  results = results[,c("time","threshold","specificity","sensitivity","auc")]
+  results[,2:5] = lapply(results[,2:5],function(x){round(x,2)})
+  kable(results,row.names = T)
+}
+```
+
 ## Infection
 
-```{r infection avg,echo=FALSE}
-# ROC curves
-#************************************* MAKE THIS A FUNCTION********************
-pre_roc = roc(Infection ~ avg,data = pre_tx,quiet = T)
-imm_post_roc = roc(Infection ~ avg,data = imm_post_tx,quiet = T)
-post_roc = roc(Infection ~ avg,data = post_tx,quiet = T)
-# Plot
-plot(pre_roc, col = "blue",main = "Average SG (mg/dL)")
-plot(imm_post_roc,col = "dark green",add = T)
-plot(post_roc,col = "red",add = T)
-legend(1.32, 0.95, legend=levels(cgm_summ$time_cat),
-       col=c("blue","dark green","red"), lty=1)
-ret = c("threshold","specificity","sensitivity")
-results = bind_rows(coords(pre_roc,"best",transpose = F),
-                    coords(imm_post_roc,"best",transpose = F),
-                    coords(post_roc,"best",transpose = F))
-rownames(results) = levels(cgm_summ$time_cat)
-results$auc = as.numeric(c(pre_roc$auc,imm_post_roc$auc,post_roc$auc))
-kable(round(results,2),row.names = T)
+Optimal cutoffs for each CGM metric...
+
+```{r infection roc,echo=FALSE}
+# ROC for infection and each CGM metric
+roc_func(outcome = "Infection",predictor = "avg",
+         predictor_name = "Average SG (mg/dL)")
+
+roc_func(outcome = "Infection",predictor = "cv",
+         predictor_name = "CV")
+
+roc_func(outcome = "Infection",predictor = "perc_70",
+         predictor_name = "% Time < 70 mg/dL")
+
+roc_func(outcome = "Infection",predictor = "perc_70_140",
+         predictor_name = "% Time 70-140 mg/dL")
+
+roc_func(outcome = "Infection",predictor = "perc_140",
+         predictor_name = "% Time > 140 mg/dL")
+
+roc_func(outcome = "Infection",predictor = "perc_200",
+         predictor_name = "% Time > 200 mg/dL")
+
+roc_func(outcome = "Infection",predictor = "num_exc_140",
+         predictor_name = "Number of Excursions > 140")
 ```
+
+## Death
+
+```{r death roc,echo=FALSE}
+# ROC for death and each CGM metric
+roc_func(outcome = "Death",predictor = "avg",
+         predictor_name = "Average SG (mg/dL)")
+
+roc_func(outcome = "Death",predictor = "cv",
+         predictor_name = "CV")
+
+roc_func(outcome = "Death",predictor = "perc_70",
+         predictor_name = "% Time < 70 mg/dL")
+
+roc_func(outcome = "Death",predictor = "perc_70_140",
+         predictor_name = "% Time 70-140 mg/dL")
+
+roc_func(outcome = "Death",predictor = "perc_140",
+         predictor_name = "% Time > 140 mg/dL")
+
+roc_func(outcome = "Death",predictor = "perc_200",
+         predictor_name = "% Time > 200 mg/dL")
+
+roc_func(outcome = "Death",predictor = "num_exc_140",
+         predictor_name = "Number of Excursions > 140")
+```
+
