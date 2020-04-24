@@ -14,6 +14,7 @@ library(skimr)
 library(knitr)
 library(pROC)
 library(AGD)
+library(flextable)
 library(tidyverse)
 ```
 
@@ -139,23 +140,23 @@ demographics = left_join(demographics,events,by = "study_id")
 Patients aged 2 - 3 years were assumed to be Tanner stage 1, and patients aged 18+ were assumed to be Tanner stage 5. Particpant 10 was excluded from all analyses.
 
 ```{r table 1a,echo=FALSE,results='asis'}
-table_one <- tableby(Infection ~ notest(AgeTx,"median","q1q3") + gender + 
-                       tanner_stage + bmi_percentile_group + tx_type + 
-                       primary_dx_cat + spec_dx_cat, 
+table_one <- tableby(Infection ~ kwt(AgeTx,"median","q1q3") + gender + 
+                       fe(tanner_stage) + bmi_percentile_group + tx_type + 
+                       primary_dx_cat + spec_dx_cat,
                      data = demographics)
 newlabels <- list(AgeTx = "Age at HSCT",Gender = "Sex",
                   bmi_percentile_group = "BMI Percentile",
                   `Transplant Type` = "HSCT Type",
                   `Primary Diagnosis Category` = "Primary Diagnosis",
                   `Specific Diagnosis Category` = "Specific Diagnosis")
-summary(table_one,labelTranslations = newlabels,digits = 2)
+summary(table_one,labelTranslations = newlabels,digits = 2,pfootnote = T)
 ```
 
-# Table 1a: Descriptive Characteristics by Event Status - Death
+# Table 1b: Descriptive Characteristics by Event Status - Death
 
 ```{r table 1b,echo=FALSE,results='asis'}
-table_one <- tableby(Death ~ notest(AgeTx,"median","q1q3") + gender + 
-                       tanner_stage + bmi_percentile_group + tx_type + 
+table_one <- tableby(Death ~ kwt(AgeTx,"median","q1q3") + gender + 
+                       fe(tanner_stage) + bmi_percentile_group + tx_type + 
                        primary_dx_cat + spec_dx_cat, 
                      data = demographics)
 newlabels <- list(AgeTx = "Age at HSCT",Gender = "Sex",
@@ -163,7 +164,7 @@ newlabels <- list(AgeTx = "Age at HSCT",Gender = "Sex",
                   `Transplant Type` = "HSCT Type",
                   `Primary Diagnosis Category` = "Primary Diagnosis",
                   `Specific Diagnosis Category` = "Specific Diagnosis")
-summary(table_one,labelTranslations = newlabels,digits = 2)
+summary(table_one,labelTranslations = newlabels,digits = 2,pfootnote = T)
 ```
 
 # Figure 1: Days from HSCT With CGM Data
@@ -260,7 +261,7 @@ post_tx = cgm_summ %>% filter(time_cat == "Day 14+")
 
 ```{r roc function,echo=FALSE}
 roc_func = function(outcome,predictor,predictor_name,
-                    leg_x = 1.32,leg_y = 0.95,best = "youden",
+                    leg_x = 0.3,leg_y = 0.3,best = "youden",
                     ret = c("threshold","specificity","sensitivity")){
   form = as.formula(paste0(outcome,"~",predictor))
   # ROC curves
@@ -272,7 +273,7 @@ roc_func = function(outcome,predictor,predictor_name,
   plot(imm_post_roc,col = "dark green",add = T)
   plot(post_roc,col = "red",add = T)
   legend(leg_x,leg_y,legend=levels(cgm_summ$time_cat),
-         col=c("blue","dark green","red"), lty=1)
+         col=c("blue","dark green","red"), lty=1,cex = 0.8)
   # Format results
   res_pre = coords(pre_roc,"best",transpose = F,best.method = best)
   res_pre$time = levels(cgm_summ$time_cat)[1]
@@ -286,15 +287,15 @@ roc_func = function(outcome,predictor,predictor_name,
   results = bind_rows(res_pre,res_imm_post,res_post)
   results = results[,c("time","threshold","specificity","sensitivity","auc")]
   results[,2:5] = lapply(results[,2:5],function(x){round(x,2)})
-  kable(results,row.names = T)
+  kable(results)
 }
 ```
 
 ## Infection
 
-Optimal cutoffs for each CGM metric...
+Optimal cutoffs for each CGM metric determined by Youden Index.
 
-```{r infection roc,echo=FALSE}
+```{r infection roc,echo=FALSE,dpi=600}
 # ROC for infection and each CGM metric
 roc_func(outcome = "Infection",predictor = "avg",
          predictor_name = "Average SG (mg/dL)")
@@ -320,7 +321,7 @@ roc_func(outcome = "Infection",predictor = "num_exc_140",
 
 ## Death
 
-```{r death roc,echo=FALSE}
+```{r death roc,echo=FALSE,dpi=600}
 # ROC for death and each CGM metric
 roc_func(outcome = "Death",predictor = "avg",
          predictor_name = "Average SG (mg/dL)")
@@ -343,4 +344,3 @@ roc_func(outcome = "Death",predictor = "perc_200",
 roc_func(outcome = "Death",predictor = "num_exc_140",
          predictor_name = "Number of Excursions > 140")
 ```
-
