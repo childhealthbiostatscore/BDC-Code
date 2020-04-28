@@ -14,6 +14,7 @@ library(knitr)
 library(tidyverse)
 library(magrittr)
 library(dplyr)
+library(sjlabelled)
 ```
 
 ```{r define functions,include=FALSE}
@@ -46,17 +47,17 @@ data$hba1c_baseline <- as.numeric(as.character(data$hba1c_baseline))
 # Survey data
 # Young adults
 # PAID
-ya_paid <- data %>% select(record_id,redcap_event_name,ya_paid1:ya_paid20)
+ya_paid <- data %>% dplyr::select(record_id,redcap_event_name,ya_paid1:ya_paid20)
 ya_paid <- fill_NAs(ya_paid,0.75,1:2)
 # Score
 ya_paid$paid_score <- apply(ya_paid[,3:ncol(ya_paid)],1,sum)*1.25
 
 # HFS scores (baseline and followup)
-ya_hfs_b <- data %>% select(record_id,redcap_event_name,
+ya_hfs_b <- data %>% dplyr::select(record_id,redcap_event_name,
                             ya_hfs_b_behave1:ya_hfs_b_behave15,
                             ya_hfs_b_worry16:ya_hfs_b_worry33) %>% 
   filter(redcap_event_name == "baseline_arm_2")
-ya_hfs_f <- data %>% select(record_id,redcap_event_name,
+ya_hfs_f <- data %>% dplyr::select(record_id,redcap_event_name,
                             ya_hfs_f_behave1:ya_hfs_f_behave15,
                             ya_hfs_f_worry16:ya_hfs_f_worry33) %>%
   filter(redcap_event_name != "baseline_arm_2")
@@ -66,10 +67,10 @@ colnames(ya_hfs_f) <- gsub("f_","",colnames(ya_hfs_f))
 # Bind
 ya_hfs <- rbind(ya_hfs_b,ya_hfs_f)
 # Split by HFS subscale, fill NAs
-ya_hfs_behave <- ya_hfs %>% select(record_id,redcap_event_name,
+ya_hfs_behave <- ya_hfs %>% dplyr::select(record_id,redcap_event_name,
                                    ya_hfs_behave1:ya_hfs_behave15)
 ya_hfs_behave <- fill_NAs(ya_hfs_behave,0.75,1:2)
-ya_hfs_worry <- ya_hfs %>% select(record_id,redcap_event_name,
+ya_hfs_worry <- ya_hfs %>% dplyr::select(record_id,redcap_event_name,
                                    ya_hfs_worry16:ya_hfs_worry33)
 ya_hfs_worry <- fill_NAs(ya_hfs_worry,0.75,1:2)
 # Score
@@ -79,9 +80,13 @@ ya_hfs_worry$worry_score <- apply(ya_hfs_worry[,3:ncol(ya_hfs_worry)],1,sum)
 ya_hfs_behave$behave_score_z <- (ya_hfs_behave$behave_score - mean(ya_hfs_behave$behave_score,na.rm=T)) / sd(ya_hfs_behave$behave_score,na.rm=T)
 ya_hfs_worry$worry_score_z <- (ya_hfs_worry$worry_score - mean(ya_hfs_worry$worry_score,na.rm=T)) / sd(ya_hfs_worry$worry_score,na.rm=T)
 
+# which behaviors had the highest scores
+ya_hfs_behave_means <- as.data.frame(t(apply(ya_hfs_b[,3:35],2,mean, na.rm=T)))
+set_label(ya_hfs_behave_means) <- get_label(ya_hfs_b[,3:35])
+
 # Child
 # PAID Peds still needs 1 subtracted from each score (coded as 1-5 instead of 0-4)
-child_paid <- data %>% select(record_id,redcap_event_name,c_paid1:c_paid20)
+child_paid <- data %>% dplyr::select(record_id,redcap_event_name,c_paid1:c_paid20)
 child_paid[,3:ncol(child_paid)] <- lapply(child_paid[,3:ncol(child_paid)],function(x) x-1)
 # Fill NAs
 child_paid <- fill_NAs(child_paid,0.75,1:2)
@@ -89,8 +94,8 @@ child_paid <- fill_NAs(child_paid,0.75,1:2)
 child_paid$paid_score <- apply(child_paid[,3:ncol(child_paid)],1,sum)*1.25
 
 # HFS
-child_hfs_behave <- data %>% select(record_id,redcap_event_name,c_hfs_behave1:c_hfs_behave10)
-child_hfs_worry <- data %>% select(record_id,redcap_event_name,c_hfs_worry11:c_hfs_worry25)
+child_hfs_behave <- data %>% dplyr::select(record_id,redcap_event_name,c_hfs_behave1:c_hfs_behave10)
+child_hfs_worry <- data %>% dplyr::select(record_id,redcap_event_name,c_hfs_worry11:c_hfs_worry25)
 # Fill NAs
 child_hfs_behave <- fill_NAs(child_hfs_behave,0.75,1:2)
 child_hfs_worry <- fill_NAs(child_hfs_worry,0.75,1:2)
@@ -100,6 +105,10 @@ child_hfs_worry$worry_score <- apply(child_hfs_worry[,3:ncol(child_hfs_worry)],1
 # calculate Z-score
 child_hfs_behave$behave_score_z <- (child_hfs_behave$behave_score - mean(child_hfs_behave$behave_score,na.rm=T)) / sd(child_hfs_behave$behave_score,na.rm=T)
 child_hfs_worry$worry_score_z <- (child_hfs_worry$worry_score - mean(child_hfs_worry$worry_score,na.rm=T)) / sd(child_hfs_worry$worry_score,na.rm=T)
+
+# which behaviors had the highest scores
+child_hfs_behave_means <- as.data.frame(t(apply(child_hfs_behave[,3:12],2,mean, na.rm=T)))
+set_label(child_hfs_behave_means) <- get_label(child_hfs_behave[,3:12])
 
 # Combine, put back into full dataframe
 paid <- rbind(ya_paid[,c("record_id","redcap_event_name","paid_score")],
@@ -412,6 +421,16 @@ kable(t14, caption="Table 14. Descriptive statistics for PAID scores and AM time
 ```
 
 
+Table 15. Average scores for child HFS-Behavior by item. 
+
+```{r echo=FALSE, include=TRUE}
+child_hfs_behave_means
+```
+
+Table 16. Average scores for young adult HFS-Behavior by item.
+```{r echo=FALSE, include=TRUE}
+ya_hfs_behave_means
+```
 
 
 
