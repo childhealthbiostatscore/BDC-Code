@@ -1,5 +1,5 @@
 # Get T1D status from Laura's data
-original = read.csv("/Users/timvigers/Desktop/original_scale.csv",
+original = read.csv("/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/CACTI/Metabolon insulin resistance pilot/Data_clean/original_scale.csv",
                     na.strings = "",stringsAsFactors = F)
 cats = read.csv("/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/CACTI/Metabolon insulin resistance pilot/Data_clean/Metaboanalyst T1D vs control.csv",
                 na.strings = "",stringsAsFactors = F)
@@ -33,4 +33,4 @@ l[,1] = sapply(l[,1], function(x){
 l = l[complete.cases(l),]
 colnames(l) = c("m.z","p.value","t.score")
 #
-write.csv(l,file = "/Users/timvigers/Desktop/Metaboanalyst T1D t tests.csv",row.names = F,na = "")
+write.csv(l,file = "/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/CACTI/Metabolon insulin resistance pilot/Data_clean/Metaboanalyst T1D t tests.csv",row.names = F,na = "")
