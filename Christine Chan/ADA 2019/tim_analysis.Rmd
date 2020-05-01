@@ -15,6 +15,7 @@ library(knitr)
 library(rspiro)
 library(tableone)
 library(broom)
+library(pROC)
 #source('~/Documents/GitHub/Tim-and-Laura/tim_R_functions.R')
 #source('C:\\Users\\pylell\\Documents\\GitHub\\Tim-and-Laura\\tim_R_functions.R')
 #pathstart <- os.check()
@@ -61,6 +62,14 @@ data$isi <- (data$min_30_insulin - data$min_0_insulin) / (data$min_30_glucose-da
 data$isi_cpep <- (data$min_30_c_peptide - data$min_0_c_peptide) / (data$min_30_glucose-data$lab_ogtt_fasting)
 data$odi <- (1/data$min_0_insulin) * data$isi
 data$odi_cpep <- (1/data$min_0_c_peptide) * data$isi_cpep
+glucvars <- c("lab_ogtt_fasting","min_10_glucose","min_20_glucose","min_30_glucose","min_90_glucose",
+                    "min_150_glucose","min_180_glucose")
+data$glucmean <- rowMeans(data[,glucvars])
+insvars <- c("min_0_insulin","min_10_insulin","min_20_insulin","min_30_insulin","min_90_insulin",
+             "min_150_insulin","min_180_insulin")
+data$insmean <- rowMeans(data[,insvars])
+data$matsuda <- 10000/(sqrt(data$lab_ogtt_fasting*data$min_0_insulin*data$glucmean*data$insmean))
+data$homa_ir <- (data$lab_ogtt_fasting*data$min_0_insulin)/22.5
 
 # also need the following
 # iAUCg, iAUCins/iAUCg, iAUCcpep/iAUCg, iAUCglucagon
@@ -107,10 +116,16 @@ data <- merge(data,ogttdat,by="subject_id",all.x=TRUE,all.y=TRUE)
 data$iAUCins_iAUC_gluc <- data$iaucbase_insulin/data$iaucbase_glucose
 data$iAUCcpep_iAUCgluc <- data$iaucbase_cpep/data$iaucbase_glucose
 
+# add in CGM variables that were left out of the original dataset
+extra <- read.csv("S:\\Shared Projects\\Laura\\Laura Tim projects\\Christine Chan\\2019 ADA Abstracts\\Data_Raw\\CGMInHealthyControls-CGMVariables_DATA_2020-04-30_1347.csv")
+extra <- extra[,c("subject_id","percent_time_over_180","percent_time_over_200","cov")]
+data <- merge(data,extra,by="subject_id",all.x=TRUE,all.y=FALSE)
+
 # keep only those who have non-missing odi
 alldata <- data[which(!is.na(data$odi) & data$odi != Inf),]
 
-ogttvars <- c("isi","isi_cpep","odi","odi_cpep","iaucbase_glucose","iaucbase_insulin","iaucbase_cpep","iaucbase_glucagon","iAUCins_iAUC_gluc","iAUCcpep_iAUCgluc")
+ogttvars <- c("isi","isi_cpep","odi","odi_cpep","matsuda","homa_ir","iaucbase_glucose","iaucbase_insulin","iaucbase_cpep",
+              "iaucbase_glucagon","iAUCins_iAUC_gluc","iAUCcpep_iAUCgluc","Calprotectin","C.Reactive.Protein")
 cgmvars <- c("min_sensor","max_sensor","average_sensor","average_auc_per_day","excursions_over_200","avg_excur_over_140_per_day",
              "avg_excur_over_200_per_day","excursions_over_140","percent_time_under_60","percent_time_under_70",
              "percent_time_over_140","min_spent_under_60","min_spent_under_70","min_spent_over_200","min_spent_over_140",
@@ -166,6 +181,13 @@ label(alldata$iAUCcpep_iAUCgluc)="iAUC C-peptide/iAUC glucose"
 
 # create new variable for diabetes vs. no diabetes
 alldata$diabetes <- ifelse(alldata$group_category.factor=="Cystic Fibrosis Related Diabetes",1,0)
+
+# read in calprotectin and CRP
+crp <- read.csv("S:\\Shared Projects\\Laura\\Laura Tim projects\\Christine Chan\\2019 ADA Abstracts\\Data_Raw\\CGMInHealthyControls-CalprotectinAndCRP_DATA_LABELS_2020-04-30_1855.csv")
+crp$subject_id <- crp$Subject.ID
+crp$Subject.ID <- NULL
+alldata <- merge(alldata,crp,by="subject_id",all.x=TRUE,all.y=FALSE)
+alldata$Calprotectin <- as.numeric(as.character(alldata$Calprotectin))
 
 npar <- nrow(alldata)
 
@@ -271,6 +293,51 @@ for (var in sigvars) {
 # ROC analysis for diabetes
 # use these variables: percent_time_over_140 percent_time_over_180 percent_time_over_200 excursions_over_200 average_sensor
 # max_sensor standard_deviation cv r_mage
+pct140_roc <- roc(diabetes~percent_time_over_140,data=alldata,quiet=T)
+pct140_res <- coords(pct140_roc,"best",transpose=F,best.method = "closest.topleft")
+pct140_res$auc <- as.numeric(pct140_roc$auc)
+pct140_res <- apply(pct140_res,2,function(x){round(x,2)})
+
+pct180_roc <- roc(diabetes~percent_time_over_180,data=alldata,quiet=T)
+pct180_res <- coords(pct180_roc,"best",transpose=F,best.method = "closest.topleft")
+pct180_res$auc <- as.numeric(pct180_roc$auc)
+pct180_res <- apply(pct180_res,2,function(x){round(x,2)})
+
+pct200_roc <- roc(diabetes~percent_time_over_200,data=alldata,quiet=T)
+pct200_res <- coords(pct200_roc,"best",transpose=F,best.method = "closest.topleft")
+pct200_res$auc <- as.numeric(pct200_roc$auc)
+pct200_res <- apply(pct200_res,2,function(x){round(x,2)})
+
+ex200_roc <- roc(diabetes~excursions_over_200,data=alldata,quiet=T)
+ex200_res <- coords(ex200_roc,"best",transpose=F,best.method = "closest.topleft")
+ex200_res$auc <- as.numeric(ex200_roc$auc)
+ex200_res <- apply(ex200_res,2,function(x){round(x,2)})
+
+average_roc <- roc(diabetes~average_sensor,data=alldata,quiet=T)
+average_res <- coords(average_roc,"best",transpose=F,best.method = "closest.topleft")
+average_res$auc <- as.numeric(average_roc$auc)
+average_res <- apply(average_res,2,function(x){round(x,2)})
+
+max_roc <- roc(diabetes~max_sensor,data=alldata,quiet=T)
+max_res <- coords(max_roc,"best",transpose=F,best.method = "closest.topleft")
+max_res$auc <- as.numeric(max_roc$auc)
+max_res <- apply(max_res,2,function(x){round(x,2)})
+
+sd_roc <- roc(diabetes~standard_deviation,data=alldata,quiet=T)
+sd_res <- coords(sd_roc,"best",transpose=F,best.method = "closest.topleft")
+sd_res$auc <- as.numeric(sd_roc$auc)
+sd_res <- apply(sd_res,2,function(x){round(x,2)})
+
+cv_roc <- roc(diabetes~cov,data=alldata,quiet=T)
+cv_res <- coords(cv_roc,"best",transpose=F,best.method = "closest.topleft")
+cv_res$auc <- as.numeric(cv_roc$auc)
+cv_res <- apply(cv_res,2,function(x){round(x,2)})
+
+mage_roc <- roc(diabetes~r_mage,data=alldata,quiet=T)
+mage_res <- coords(mage_roc,"best",transpose=F,best.method = "closest.topleft")
+mage_res$auc <- as.numeric(mage_roc$auc)
+mage_res <- apply(mage_res,2,function(x){round(x,2)})
+
 
 ```
 
@@ -291,6 +358,8 @@ Integrated AUC (iAUC) for glucose, insulin, C-peptide, and glucagon were calcula
 
 The distributions of all variables were examined prior to analysis.  Groups were compared using ANOVA or the Wilcoxon test for continuous variables, and the chi-square or Fisher's exact test for categorical variables.  Pearson's correlation coefficient was used to test the association between beta cell function outcomes and CGM outcomes.
 
+ROC analysis was used to examine CGM variables associated with diabetes and to determine the cutoff that best discriminates between participants with and without CFRD.  Optimal cutoffs for each CGM metric determined by "closest to top left" algorithm:  $min((1 - sensitivities)^2 + (1 - specificities)^2)$.
+
 # Results
 
 There were `r npar` participants included in this analysis.  Table 1 shows baseline descriptive statistics by treatment group.
@@ -298,20 +367,20 @@ There were `r npar` participants included in this analysis.  Table 1 shows basel
 ```{r, results='asis',tidy=TRUE, echo=FALSE}
 kable(tab1,caption="Table 1.  Descriptive statistics by treatment group.  Statistics given are N(%), mean±SD, or median (25th %ile, 75th %ile).  * denotes that the Wilcoxon test was used, and ** denotes that Fisher's exact test was used.") 
 ```
-\
+<br>
 
 
 Descriptive statistics for beta cell function outcomes and CGM outcomes are shown in Table 2.
 ```{r, results='asis',tidy=TRUE, echo=FALSE}
 kable(tab2,caption="Table 2.  Descriptive statistics for beta cell function and CGM outcomes by treatment group.  Statistics given are N(%), mean±SD, or median (25th %ile, 75th %ile).  * denotes that the Wilcoxon test was used, and ** denotes that Fisher's exact test was used.")
 ```
-\
+<br>
 
 Pearson correlation coefficients between beta cell function outcomes and CGM outcomes are shown in Table 2.
 ```{r, results='asis',tidy=TRUE, echo=FALSE}
 kable(corr,caption="Table 3.  Correlation between beta cell function outcomes and CGM outcomes.")
 ```
-\
+<br>
 
 Pairwise Comparisons using Tukey's Honestly Significant Difference
 ```{r echo=FALSE}
@@ -350,3 +419,82 @@ plot(alldata$odi_cpep,alldata$r_mage,xlab="oDI Cpep",ylab="MAGE (mg/dL)")
 abline(lm(alldata$r_mage~alldata$odi_cpep))
 
 ```
+
+ROC analysis for % time >140 is shown below.
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+plot(pct140_roc)
+kable(pct140_res) 
+
+```
+<br>
+
+ROC analysis for % time >180 is shown below.
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+plot(pct180_roc)
+kable(pct180_res)
+
+```
+<br>
+
+ROC analysis for % time >200 is shown below.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+plot(pct200_roc)
+kable(pct200_res)
+
+```
+<br>
+
+ROC analysis for excursions >200 is shown below.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+plot(ex200_roc)
+kable(ex200_res)
+
+```
+<br>
+
+ROC analysis for average sensor glucose is shown below.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+plot(average_roc)
+kable(average_res)
+
+```
+<br>
+
+ROC analysis for maximum sensor glucose is shown below.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+plot(max_roc)
+kable(max_res)
+
+```
+<br>
+
+ROC analysis for SD is shown below.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+plot(sd_roc)
+kable(sd_res)
+
+```
+<br>
+
+ROC analysis for CV is shown below.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+plot(cv_roc)
+kable(cv_res)
+
+```
+<br>
+
+ROC analysis for MAGE is shown below.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+plot(mage_roc)
+kable(mage_res)
+
+```
+<br>
