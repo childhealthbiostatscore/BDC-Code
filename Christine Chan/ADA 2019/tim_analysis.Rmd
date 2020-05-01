@@ -16,12 +16,14 @@ library(rspiro)
 library(tableone)
 library(broom)
 library(pROC)
+library(dplyr)
+library(sjlabelled)
 #source('~/Documents/GitHub/Tim-and-Laura/tim_R_functions.R')
 #source('C:\\Users\\pylell\\Documents\\GitHub\\Tim-and-Laura\\tim_R_functions.R')
 #pathstart <- os.check()
 ```
 
-```{r include=FALSE}
+```{r echo=FALSE, include=FALSE}
 # read in OGTT data
 #source("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura Tim projects/Chan 2019 ADA abstracts/Data_Cleaned/ada_2019.R")
 source("S:\\Shared Projects\\Laura\\Laura Tim projects\\Christine Chan\\2019 ADA Abstracts\\Data_Cleaned\\ada_2019.R")
@@ -37,9 +39,6 @@ source("C:\\Users\\pylell\\Documents\\GitHub\\General-code\\01_functions.r")
 source("C:\\Users\\pylell\\Documents\\GitHub\\General-code\\laura_functions.r")
 source("C:\\Users\\pylell\\Documents\\GitHub\\General-code\\iAUC.r")
 
-```
-
-```{r echo=FALSE,include=FALSE}
 # tanner stage
 femtanner <- c("tanner_stage_female_breast___1","tanner_stage_female_breast___2","tanner_stage_female_breast___3","tanner_stage_female_breast___4","tanner_stage_female_breast___5" )
 maletanner <- c("tanner_stage_male_testicul___1","tanner_stage_male_testicul___2","tanner_stage_male_testicul___3","tanner_stage_male_testicul___4","tanner_stage_male_testicul___5")
@@ -120,6 +119,8 @@ data$iAUCcpep_iAUCgluc <- data$iaucbase_cpep/data$iaucbase_glucose
 extra <- read.csv("S:\\Shared Projects\\Laura\\Laura Tim projects\\Christine Chan\\2019 ADA Abstracts\\Data_Raw\\CGMInHealthyControls-CGMVariables_DATA_2020-04-30_1347.csv")
 extra <- extra[,c("subject_id","percent_time_over_180","percent_time_over_200","cov")]
 data <- merge(data,extra,by="subject_id",all.x=TRUE,all.y=FALSE)
+# calculate delta BG
+data$delta_bg <- data$max_sensor-data$min_sensor
 
 # keep only those who have non-missing odi
 alldata <- data[which(!is.na(data$odi) & data$odi != Inf),]
@@ -128,7 +129,8 @@ ogttvars <- c("isi","isi_cpep","odi","odi_cpep","matsuda","homa_ir","iaucbase_gl
               "iaucbase_glucagon","iAUCins_iAUC_gluc","iAUCcpep_iAUCgluc","Calprotectin","C.Reactive.Protein")
 cgmvars <- c("min_sensor","max_sensor","average_sensor","average_auc_per_day","excursions_over_200","avg_excur_over_140_per_day",
              "avg_excur_over_200_per_day","excursions_over_140","percent_time_under_60","percent_time_under_70",
-             "percent_time_over_140","min_spent_under_60","min_spent_under_70","min_spent_over_200","min_spent_over_140",
+             "percent_time_over_140","percent_time_over_180","percent_time_over_200",
+             "min_spent_under_60","min_spent_under_70","min_spent_over_200","min_spent_over_140",
              "total_auc","standard_deviation","mean_amp_glycemic_ex")
 tab1vars <- c("age_at_visit_1", "race_ethnicity.factor","gender","poc_a1c","fev_perc","fvc_perc","g_tube_feeds","cf_pancreatic","tanner","bmi_z_score")
 #tab1vars <- c("age", "race_ethnicity","gender","poc_a1c","g_tube_feeds","fev1_percent","fvc","cf_pancreatic","tanner","first_bmiz")
@@ -168,6 +170,8 @@ label(alldata$min_spent_under_60)="Time spent <60"
 label(alldata$min_spent_under_70)="Time spent <70"
 label(alldata$min_spent_over_200)="Time spent >200"
 label(alldata$min_spent_over_140)="Time spent >140"
+label(alldata$percent_time_over_180)="% time >180"
+label(alldata$percent_time_over_200)="% time >200"
 label(alldata$total_auc)="Total AUC"
 label(alldata$standard_deviation)="SD"
 label(alldata$mean_amp_glycemic_ex)="MAGE"
@@ -188,6 +192,13 @@ crp$subject_id <- crp$Subject.ID
 crp$Subject.ID <- NULL
 alldata <- merge(alldata,crp,by="subject_id",all.x=TRUE,all.y=FALSE)
 alldata$Calprotectin <- as.numeric(as.character(alldata$Calprotectin))
+set_label(alldata$Calprotectin) <- "Calprotectin"
+set_label(alldata$C.Reactive.Protein) <- "CRP"
+
+# create tertiles of CV, MAGE, and delta BG
+alldata$cov_tertile <- ntile(alldata$cov,3)
+alldata$mage_tertile <- ntile(alldata$r_mage,3)
+alldata$delta_bg_tertile <- ntile(alldata$delta_bg,3)
 
 npar <- nrow(alldata)
 
@@ -271,6 +282,16 @@ a14 <- aov(alldata$r_mage ~alldata$group_category.factor)
 a14t <- tidy(TukeyHSD(a14))
 a14t <- a14t[,-1]
 
+# pairwise comparisons for table 2 - % time > 180
+a15 <- aov(alldata$percent_time_over_180 ~alldata$group_category.factor)
+a15t <- tidy(TukeyHSD(a15))
+a15t <- a15t[,-1]
+
+# pairwise comparisons for table 2 - % time > 200
+a16 <- aov(alldata$percent_time_over_200 ~alldata$group_category.factor)
+a16t <- tidy(TukeyHSD(a16))
+a16t <- a16t[,-1]
+
 # correlations
 corr <- rcorr(as.matrix(alldata[, c(ogttvars,cgmvars)]), type = "pearson")
 corr <- flattenCorrMatrix(corr$r, corr$P)
@@ -279,7 +300,7 @@ corr <- corr[corr$row %in% ogttvars & corr$column %in% cgmvars,]
 
 ```{r echo=FALSE}
 # Pairwise comparisons
-sigvars <- c("poc_a1c","isi","isi_cpep","odi","odi_cpep","iaucbase_glucose","iaucbase_cpep","iAUCcpep_iAUCgluc","iAUCins_iAUC_gluc","average_sensor","standard_deviation","max_sensor","average_auc_per_day","excursions_over_200","avg_excur_over_200_per_day","min_spent_over_200","excursions_over_140","avg_excur_over_140_per_day","percent_time_over_140","min_spent_over_140","mean_amp_glycemic_ex")
+sigvars <- c("poc_a1c","isi","isi_cpep","odi","odi_cpep","iaucbase_glucose","iaucbase_cpep","iAUCcpep_iAUCgluc","iAUCins_iAUC_gluc","average_sensor","standard_deviation","max_sensor","average_auc_per_day","excursions_over_200","avg_excur_over_200_per_day","min_spent_over_200","excursions_over_140","avg_excur_over_140_per_day","percent_time_over_140","min_spent_over_140","mean_amp_glycemic_ex","percent_time_over_180","percent_time_over_200")
 l <- list()
 for (var in sigvars) {
   table <- TukeyHSD(aov(alldata[,var] ~ alldata$group_category.factor))
@@ -338,6 +359,16 @@ mage_res <- coords(mage_roc,"best",transpose=F,best.method = "closest.topleft")
 mage_res$auc <- as.numeric(mage_roc$auc)
 mage_res <- apply(mage_res,2,function(x){round(x,2)})
 
+# compare calprotectin and CRP in upper and lower tertiles
+tab_cal_crp_cov <-  CreateTableOne(vars = c("Calprotectin","C.Reactive.Protein"),strata="cov_tertile", 
+                               data = alldata[alldata$cov_tertile==1 | alldata$cov_tertile==3,])
+tab_cal_crp_cov <- print(tab_cal_crp_cov,printToggle = F)
+tab_cal_crp_mage <-  CreateTableOne(vars = c("Calprotectin","C.Reactive.Protein"),strata="mage_tertile", 
+                               data = alldata[alldata$mage_tertile==1 | alldata$mage_tertile==3,])
+tab_cal_crp_mage <- print(tab_cal_crp_mage,printToggle = F)
+tab_cal_crp_delta <-  CreateTableOne(vars = c("Calprotectin","C.Reactive.Protein"),strata="delta_bg_tertile", 
+                               data = alldata[alldata$delta_bg_tertile==1 | alldata$delta_bg_tertile==3,])
+tab_cal_crp_delta <- print(tab_cal_crp_delta,printToggle = F)
 
 ```
 
@@ -376,13 +407,7 @@ kable(tab2,caption="Table 2.  Descriptive statistics for beta cell function and 
 ```
 <br>
 
-Pearson correlation coefficients between beta cell function outcomes and CGM outcomes are shown in Table 2.
-```{r, results='asis',tidy=TRUE, echo=FALSE}
-kable(corr,caption="Table 3.  Correlation between beta cell function outcomes and CGM outcomes.")
-```
-<br>
-
-Pairwise Comparisons using Tukey's Honestly Significant Difference
+Pairwise Comparisons for Table 2 using Tukey's Honestly Significant Difference
 ```{r echo=FALSE}
 # Kable does not appear to work in a for loop for some reason.
 kable(l[[1]],caption = sigvars[1])
@@ -406,7 +431,15 @@ kable(l[[18]],caption = sigvars[18])
 kable(l[[19]],caption = sigvars[19])
 kable(l[[20]],caption = sigvars[20])
 kable(l[[21]],caption = sigvars[21])
+kable(l[[22]],caption = sigvars[22])
+kable(l[[23]],caption = sigvars[23])
 ```
+
+Pearson correlation coefficients between beta cell function outcomes and CGM outcomes are shown in Table 3.
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(corr,caption="Table 3.  Correlation between beta cell function outcomes and CGM outcomes.")
+```
+<br>
 
 ```{r, results='asis',tidy=TRUE, echo=FALSE}
 plot(alldata$odi_cpep,alldata$max_sensor,xlab="oDI Cpep",ylab="Max sensor (mg/dL)")
@@ -418,9 +451,53 @@ abline(lm(alldata$percent_time_over_140~alldata$odi_cpep))
 plot(alldata$odi_cpep,alldata$r_mage,xlab="oDI Cpep",ylab="MAGE (mg/dL)")
 abline(lm(alldata$r_mage~alldata$odi_cpep))
 
+plot(alldata$Calprotectin,alldata$r_mage,xlab="Calprotectin",ylab="MAGE (mg/dL)")
+abline(lm(alldata$r_mage~alldata$Calprotectin))
+
+plot(alldata$Calprotectin,alldata$cov,xlab="Calprotectin",ylab="CV",
+     xlim = c(0,max(alldata$Calprotectin,na.rm = T)),
+     ylim = c(0,max(alldata$cov,na.rm = T)))
+abline(lm(alldata$cov~alldata$Calprotectin))
+
+plot(alldata$Calprotectin,alldata$delta_bg,xlab="Calprotectin",ylab="Delta BG")
+abline(lm(alldata$delta_bg~alldata$Calprotectin))
+
+plot(alldata$C.Reactive.Protein,alldata$r_mage,xlab="CRP",ylab="MAGE (mg/dL)")
+abline(lm(alldata$r_mage~alldata$C.Reactive.Protein))
+
+plot(alldata$C.Reactive.Protein,alldata$cv,xlab="CRP",ylab="CV")
+abline(lm(alldata$cov~alldata$C.Reactive.Protein))
+
+plot(alldata$C.Reactive.Protein,alldata$delta_bg,xlab="CRP",ylab="Delta BG")
+abline(lm(alldata$delta_bg~alldata$C.Reactive.Protein))
+
+plot(alldata$homa_ir,alldata$max_sensor,xlab="HOMA-IR",ylab="Max sensor")
+abline(lm(alldata$max_sensor~alldata$homa_ir))
+
+plot(alldata$homa_ir,alldata$average_sensor,xlab="HOMA-IR",ylab="Mean sensor")
+abline(lm(alldata$average_sensor~alldata$homa_ir))
+
+plot(alldata$homa_ir,alldata$avg_excur_over_200_per_day,xlab="HOMA-IR",ylab="Average excursions >200 per day")
+abline(lm(alldata$avg_excur_over_200_per_day~alldata$homa_ir))
+
+plot(alldata$homa_ir,alldata$percent_time_over_140,xlab="HOMA-IR",ylab="% time >140")
+abline(lm(alldata$percent_time_over_140~alldata$homa_ir))
+
+plot(alldata$homa_ir,alldata$percent_time_over_180,xlab="HOMA-IR",ylab="% time >180")
+abline(lm(alldata$percent_time_over_180~alldata$homa_ir))
+
+plot(alldata$homa_ir,alldata$percent_time_over_200,xlab="HOMA-IR",ylab="% time >200")
+abline(lm(alldata$percent_time_over_200~alldata$homa_ir))
+
+plot(alldata$homa_ir,alldata$standard_deviation,xlab="HOMA-IR",ylab="SD")
+abline(lm(alldata$standard_deviation~alldata$homa_ir))
+
+plot(alldata$homa_ir,alldata$r_mage,xlab="HOMA-IR",ylab="MAGE")
+abline(lm(alldata$r_mage~alldata$homa_ir))
+
 ```
 
-ROC analysis for % time >140 is shown below.
+ROC analysis for % time >140 vs. CFRD is shown below.
 ```{r, results='asis',tidy=TRUE, echo=FALSE}
 plot(pct140_roc)
 kable(pct140_res) 
@@ -428,7 +505,7 @@ kable(pct140_res)
 ```
 <br>
 
-ROC analysis for % time >180 is shown below.
+ROC analysis for % time >180 vs. CFRD  is shown below.
 ```{r, results='asis',tidy=TRUE, echo=FALSE}
 plot(pct180_roc)
 kable(pct180_res)
@@ -436,7 +513,7 @@ kable(pct180_res)
 ```
 <br>
 
-ROC analysis for % time >200 is shown below.
+ROC analysis for % time >200 vs. CFRD  is shown below.
 
 ```{r, results='asis',tidy=TRUE, echo=FALSE}
 plot(pct200_roc)
@@ -445,7 +522,7 @@ kable(pct200_res)
 ```
 <br>
 
-ROC analysis for excursions >200 is shown below.
+ROC analysis for excursions >200  vs. CFRD is shown below.
 
 ```{r, results='asis',tidy=TRUE, echo=FALSE}
 plot(ex200_roc)
@@ -454,7 +531,7 @@ kable(ex200_res)
 ```
 <br>
 
-ROC analysis for average sensor glucose is shown below.
+ROC analysis for average sensor glucose vs. CFRD  is shown below.
 
 ```{r, results='asis',tidy=TRUE, echo=FALSE}
 plot(average_roc)
@@ -463,7 +540,7 @@ kable(average_res)
 ```
 <br>
 
-ROC analysis for maximum sensor glucose is shown below.
+ROC analysis for maximum sensor glucose  vs. CFRD is shown below.
 
 ```{r, results='asis',tidy=TRUE, echo=FALSE}
 plot(max_roc)
@@ -472,7 +549,7 @@ kable(max_res)
 ```
 <br>
 
-ROC analysis for SD is shown below.
+ROC analysis for SD vs. CFRD is shown below.
 
 ```{r, results='asis',tidy=TRUE, echo=FALSE}
 plot(sd_roc)
@@ -481,7 +558,7 @@ kable(sd_res)
 ```
 <br>
 
-ROC analysis for CV is shown below.
+ROC analysis for CV vs. CFRD  is shown below.
 
 ```{r, results='asis',tidy=TRUE, echo=FALSE}
 plot(cv_roc)
@@ -490,7 +567,7 @@ kable(cv_res)
 ```
 <br>
 
-ROC analysis for MAGE is shown below.
+ROC analysis for MAGE  vs. CFRD is shown below.
 
 ```{r, results='asis',tidy=TRUE, echo=FALSE}
 plot(mage_roc)
@@ -498,3 +575,22 @@ kable(mage_res)
 
 ```
 <br>
+
+The tables below compare calprotectin and CRP in the lowest and highest tertiles of CV, MAGE, and delta BG.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(tab_cal_crp_cov,caption = "Calprotectin and CRP in the lowest (1) and highest (3) tertiles of CV.")
+```
+<br>
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(tab_cal_crp_mage,caption = "Calprotectin and CRP in the lowest (1) and highest (3) tertiles of MAGE.")
+```
+<br>
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(tab_cal_crp_delta,caption = "Calprotectin and CRP in the lowest (1) and highest (3) tertiles of delta BG.")
+```
+<br>
+
+
