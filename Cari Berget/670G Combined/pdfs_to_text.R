@@ -1,7 +1,7 @@
 library(pdftools)
 library(tidyverse)
 # List files
-dir = "/Volumes/bdc/SHARED/KAAN/670G collected PDF's/PDFs"
+dir = "/Volumes/bdc/SHARED/KAAN/670G collected PDF's/New PDFS/Medtronic downloads"
 files = list.files(dir,pattern = "*pdf",full.names = T)
 # Summary dataframe
 pdf_summary = data.frame()
