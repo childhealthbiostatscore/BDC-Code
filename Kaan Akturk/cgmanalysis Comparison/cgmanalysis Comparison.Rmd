@@ -17,7 +17,7 @@ library(blandr)
 library(patchwork)
 ```
 
-```{r cgmanalysis, echo=FALSE,eval=FALSE,warning=FALSE}
+```{r cgmanalysis,echo=FALSE,eval=FALSE,warning=FALSE}
 # Get cgmanalysis variables
 cgmvariables("Cleaned/Dexcom","Cleaned/",outputname = "dexcom_results")
 cgmvariables("Cleaned/Libre","Cleaned/",outputname = "libre_results")
@@ -29,11 +29,11 @@ cgmvariables("Cleaned/Medtronic","Cleaned/",outputname = "medtronic_results",
 
 ```{r compare results dexcom,echo=FALSE}
 # Read in results from Dexcom, format name
-dexcom_software <- read.csv("Dexcom/Patient List_Dexcom.csv",stringsAsFactors = F)
+dexcom_software <- read.csv("./Dexcom/Patient List_Dexcom.csv",stringsAsFactors = F)
 dexcom_software$Patient.Name <- tolower(dexcom_software$Patient.Name)
 colnames(dexcom_software)[2] <- "subject_id"
 # Read in results from package, multiply
-dexcom_package <- read.csv("Cleaned/dexcom_results.csv",stringsAsFactors = F)
+dexcom_package <- read.csv("./Cleaned/dexcom_results.csv",stringsAsFactors = F)
 # Merge
 dexcom_package <- left_join(dexcom_package,dexcom_software,by = "subject_id")
 # Select columns
@@ -90,17 +90,23 @@ sd <- ggplot(dexcom_package,aes(x = standard_deviation,y = SD)) +
 ```{r dexcom b-a plot,echo=FALSE,warning=F,fig.width=8,fig.height=6}
 # Make plots
 under_54 <- blandr.draw(dexcom_package$percent_time_under_54,dexcom_package$X.54,
-                        ciDisplay = F) + theme_bw() + ggtitle("% Time Under 54 mg/dL")
+                        ciDisplay = F,y.plot.mode = "proportion") + 
+  theme_bw() + ggtitle("% Time Under 54 mg/dL")
 under_70 <- blandr.draw(dexcom_package$percent_time_under_70,dexcom_package$X.70,
-                        ciDisplay = F) + theme_bw() + ggtitle("% Time Under 70 mg/dL")
+                        ciDisplay = F,y.plot.mode = "proportion") + 
+  theme_bw() + ggtitle("% Time Under 70 mg/dL")
 tir_70_180 <- blandr.draw(dexcom_package$percent_time_70_180,dexcom_package$X70.180,
-                        ciDisplay = F) + theme_bw() + ggtitle("% Time 70 - 180 mg/dL")
+                        ciDisplay = F,y.plot.mode = "proportion") + 
+  theme_bw() + ggtitle("% Time 70 - 180 mg/dL")
 over_180 <- blandr.draw(dexcom_package$percent_time_over_180,dexcom_package$X.180,
-                        ciDisplay = F) + theme_bw() + ggtitle("% Time Over 180 mg/dL")
+                        ciDisplay = F,y.plot.mode = "proportion") + 
+  theme_bw() + ggtitle("% Time Over 180 mg/dL")
 over_250 <- blandr.draw(dexcom_package$percent_time_over_250,dexcom_package$X.250,
-                        ciDisplay = F) + theme_bw() + ggtitle("% Time Over 250 mg/dL")
+                        ciDisplay = F,y.plot.mode = "proportion") + 
+  theme_bw() + ggtitle("% Time Over 250 mg/dL")
 sd <- blandr.draw(dexcom_package$standard_deviation,dexcom_package$SD,
-                        ciDisplay = F) + theme_bw() + ggtitle("Standard Deviation")
+                        ciDisplay = F,y.plot.mode = "proportion") + 
+  theme_bw() + ggtitle("Standard Deviation")
 # Layout
 (under_54 | under_70 | tir_70_180) / (over_180 | over_250 | sd)
 ```
@@ -122,6 +128,99 @@ dex_table <- tableby(~ `Diff. in % Time Under 54` + `Diff. in % Time Under 70` +
                        `Diff. in % Time Over 250` + `Diff. in CV` + `Diff. in SD`,
                      data = dexcom_package)
 summary(dex_table)
+```
+
+# Dexcom vs. Tandem vs. cgmanalysis
+
+```{r dex tandem data,echo=FALSE}
+dexcom_tandem = read.csv("./tandem_dex_pdfs.csv",stringsAsFactors = F)
+dexcom_tandem = round(dexcom_tandem)
+```
+
+```{r dex tandem package data,echo=FALSE,eval=FALSE}
+dexcom_tandem_package = read.csv("./tandem_dex_package.csv",stringsAsFactors = F)
+dexcom_tandem_package = dexcom_tandem_package %>% 
+  select(id,percent_time_under_54,percent_time_under_70,
+         percent_time_70_180,percent_time_over_180,percent_time_over_250,
+         standard_deviation)
+# Get device and separate out id
+dexcom_tandem_package$device = 
+  ifelse(grepl("Dexcom",dexcom_tandem_package$id),"dex","tandem")
+dexcom_tandem_package$id = 
+  as.numeric(sapply(strsplit(dexcom_tandem_package$id,"-"),"[[",1))
+# To wider
+dexcom_tandem_package = dexcom_tandem_package %>%
+  pivot_wider(id_cols = "id",names_from = "device",
+              values_from = c("percent_time_under_54","percent_time_under_70",
+                              "percent_time_70_180","percent_time_over_180",
+                              "percent_time_over_250","standard_deviation"))
+colnames(dexcom_tandem_package) = 
+  gsub("standard_deviation","sd",colnames(dexcom_tandem_package))
+# Round
+dexcom_tandem_package = round(dexcom_tandem_package)
+# Combine all three
+dexcom_tandem_package = inner_join(dexcom_tandem,dexcom_tandem_package,by = "id")
+# write for manual editing to long
+# write.csv(dexcom_tandem_package,file = "/Volumes/bdc/SHARED/KAAN/Medtronic, Dexcom, Libre/tandem_dex_package_long_temp.csv",row.names = F)
+```
+
+```{r echo=FALSE,results='asis'}
+dexcom_tandem_package_long = read.csv("./tandem_dex_package_long.csv",
+                                      stringsAsFactors = F)
+t = tableby(device ~ perc_u54+perc_u70+perc_70_180+perc_a180+perc_a250+sd,
+            data = dexcom_tandem_package_long,control = list(total = F,test = F))
+summary(t)
+```
+
+## Plots
+
+### Linear Models
+
+```{r dexcom vs. tandem lm plots,echo=FALSE,fig.width=8,fig.height=6}
+# Make plots
+under_54 <- ggplot(dexcom_tandem,aes(x = tandem_u54,y = dex_u54)) +
+  geom_point() + theme_bw() + geom_abline() + 
+  xlab("Tandem Software") + ylab("Dexcom Software") + 
+  ggtitle("% Time Under 54 mg/dL")
+under_70 <- ggplot(dexcom_tandem,aes(x = tandem_u70,y = dex_u70)) +
+  geom_point() + theme_bw() + geom_abline() + 
+  xlab("Tandem Software") + ylab("Dexcom Software") + 
+  ggtitle("% Time Under 70 mg/dL")
+tir_70_180 <- ggplot(dexcom_tandem,aes(x = tandem_70_180,y = dex_70_180)) +
+  geom_point() + theme_bw() + geom_abline() + 
+  xlab("Tandem Software") + ylab("Dexcom Software") + 
+  ggtitle("% Time 70 - 180 mg/dL")
+over_180 <- ggplot(dexcom_tandem,aes(x = tandem_a180,y = dex_a180)) +
+  geom_point() + theme_bw() + geom_abline() + 
+  xlab("Tandem Software") + ylab("Dexcom Software") + 
+  ggtitle("% Time Over 180 mg/dL")
+over_250 <- ggplot(dexcom_tandem,aes(x = tandem_a250,y = dex_a250)) +
+  geom_point() + theme_bw() + geom_abline() + 
+  xlab("Tandem Software") + ylab("Dexcom Software") + 
+  ggtitle("% Time Over 250 mg/dL")
+sd <- ggplot(dexcom_tandem,aes(x = tandem_sd,y = dex_sd)) +
+  geom_point() + theme_bw() + geom_abline() + 
+  xlab("Tandem Software") + ylab("Dexcom Software") + 
+  ggtitle("Standard Deviation")
+# Layout
+(under_54 | under_70 | tir_70_180) / (over_180 | over_250 | sd)
+```
+
+```{r present dex vs. tandem,echo=FALSE,results='asis'}
+# Calculate differences
+dexcom_tandem <- dexcom_tandem %>%
+  mutate(`Diff. in % Time Under 54` = dex_u54 - tandem_u54,
+         `Diff. in % Time Under 70` = dex_u70 - tandem_u70,
+         `Diff. in % Time 70 - 180` = dex_70_180 - tandem_70_180,
+         `Diff. in % Time Over 180` = dex_a180 - tandem_a180,
+         `Diff. in % Time Over 250` = dex_a250 - tandem_a250,
+         `Diff. in SD` = dex_sd - tandem_sd)
+# Results table
+dex_tan_table <- tableby(~ `Diff. in % Time Under 54` + `Diff. in % Time Under 70` + 
+                       `Diff. in % Time 70 - 180` + `Diff. in % Time Over 180` + 
+                       `Diff. in % Time Over 250` + `Diff. in SD`,
+                       data = dexcom_tandem,control = list(test = T))
+summary(dex_tan_table)
 ```
 
 # Libre
@@ -189,17 +288,23 @@ sd <- ggplot(libre_package,aes(x = standard_deviation,y = SD)) +
 ```{r libre b-a plot,echo=FALSE,warning=F,fig.width=8,fig.height=6}
 # Make plots
 under_54 <- blandr.draw(libre_package$percent_time_under_54,libre_package$X.54,
-                        ciDisplay = F) + theme_bw() + ggtitle("% Time Under 54 mg/dL")
+                        ciDisplay = F,y.plot.mode = "proportion") + 
+  theme_bw() + ggtitle("% Time Under 54 mg/dL")
 under_70 <- blandr.draw(libre_package$percent_time_under_70,libre_package$X.70,
-                        ciDisplay = F) + theme_bw() + ggtitle("% Time Under 70 mg/dL")
+                        ciDisplay = F,y.plot.mode = "proportion") + 
+  theme_bw() + ggtitle("% Time Under 70 mg/dL")
 tir_70_180 <- blandr.draw(libre_package$percent_time_70_180,libre_package$X70.180,
-                        ciDisplay = F) + theme_bw() + ggtitle("% Time 70 - 180 mg/dL")
+                        ciDisplay = F,y.plot.mode = "proportion") + 
+  theme_bw() + ggtitle("% Time 70 - 180 mg/dL")
 over_180 <- blandr.draw(libre_package$percent_time_over_180,libre_package$X.180,
-                        ciDisplay = F) + theme_bw() + ggtitle("% Time Over 180 mg/dL")
+                        ciDisplay = F,y.plot.mode = "proportion") + 
+  theme_bw() + ggtitle("% Time Over 180 mg/dL")
 over_250 <- blandr.draw(libre_package$percent_time_over_250,libre_package$X.250,
-                        ciDisplay = F) + theme_bw() + ggtitle("% Time Over 250 mg/dL")
+                        ciDisplay = F,y.plot.mode = "proportion") + 
+  theme_bw() + ggtitle("% Time Over 250 mg/dL")
 sd <- blandr.draw(libre_package$standard_deviation,libre_package$SD,
-                        ciDisplay = F) + theme_bw() + ggtitle("Standard Deviation")
+                        ciDisplay = F,y.plot.mode = "proportion") + 
+  theme_bw() + ggtitle("Standard Deviation")
 # Layout
 (under_54 | under_70 | tir_70_180) / (over_180 | over_250 | sd)
 ```
@@ -227,7 +332,8 @@ summary(libre_table)
 
 ```{r compare results medtronic,echo=FALSE}
 # Read in results from Medtronic, format name
-medtronic_software <- read.csv("Medtronic/Patient Sheet_Medtronic.csv",stringsAsFactors = F)
+medtronic_software <- read.csv("Medtronic/Patient Sheet_Medtronic.csv",
+                               stringsAsFactors = F)
 medtronic_software$Name <- tolower(medtronic_software$Name)
 colnames(medtronic_software)[2] <- "subject_id"
 # Read in results from package, multiply
@@ -281,16 +387,26 @@ tir_250_400 <- ggplot(medtronic_package,aes(x = percent_time_250_400,y = X.250.4
 
 ```{r medtronic b-a plot,echo=FALSE,warning=F,fig.width=8,fig.height=6}
 # Make plots
-tir_40_50 <- blandr.draw(medtronic_package$percent_time_40_50,medtronic_package$X.40.50.,
-                        ciDisplay = F) + theme_bw() + ggtitle("% Time 40 - 50 mg/dL")
-tir_50_70 <- blandr.draw(medtronic_package$percent_time_50_70,medtronic_package$X.50.70.,
-                        ciDisplay = F) + theme_bw() + ggtitle("% Time 50 - 70 mg/dL")
-tir_70_180 <- blandr.draw(medtronic_package$percent_time_70_180,medtronic_package$X.70.180.TIR,
-                        ciDisplay = F) + theme_bw() + ggtitle("% Time 70 - 180 mg/dL")
-tir_180_250 <- blandr.draw(medtronic_package$percent_time_180_250,medtronic_package$X.180.250.,
-                        ciDisplay = F) + theme_bw() + ggtitle("% Time 180 - 250 mg/dL")
-tir_250_400 <- blandr.draw(medtronic_package$percent_time_250_400,medtronic_package$X.250.400.,
-                        ciDisplay = F) + theme_bw() + ggtitle("% Time 250 - 400 mg/dL")
+tir_40_50 <- blandr.draw(medtronic_package$percent_time_40_50,
+                         medtronic_package$X.40.50.,
+                         ciDisplay = F,y.plot.mode = "proportion") + 
+  theme_bw() + ggtitle("% Time 40 - 50 mg/dL")
+tir_50_70 <- blandr.draw(medtronic_package$percent_time_50_70,
+                         medtronic_package$X.50.70.,
+                         ciDisplay = F,y.plot.mode = "proportion") + 
+  theme_bw() + ggtitle("% Time 50 - 70 mg/dL")
+tir_70_180 <- blandr.draw(medtronic_package$percent_time_70_180,
+                          medtronic_package$X.70.180.TIR,
+                          ciDisplay = F,y.plot.mode = "proportion") + 
+  theme_bw() + ggtitle("% Time 70 - 180 mg/dL")
+tir_180_250 <- blandr.draw(medtronic_package$percent_time_180_250,
+                           medtronic_package$X.180.250.,
+                           ciDisplay = F,y.plot.mode = "proportion") + 
+  theme_bw() + ggtitle("% Time 180 - 250 mg/dL")
+tir_250_400 <- blandr.draw(medtronic_package$percent_time_250_400,
+                           medtronic_package$X.250.400.,
+                           ciDisplay = F,y.plot.mode = "proportion") + 
+  theme_bw() + ggtitle("% Time 250 - 400 mg/dL")
 # Layout
 (tir_40_50 | tir_50_70 | tir_70_180) / (tir_180_250 | tir_250_400)
 ```
@@ -311,4 +427,3 @@ medtronic_table <- tableby(~ `Diff. in % Time 40 - 50` + `Diff. in % Time 50 - 7
                        `Diff. in % Time 250 - 400`,data = medtronic_package)
 summary(medtronic_table)
 ```
-
