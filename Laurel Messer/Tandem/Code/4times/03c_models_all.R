@@ -49,17 +49,6 @@ num_measures<-function(ID,data){
 }
 dat.long<-num_measures(dat.long$ExternalReference,dat.long)
 
-dat.long.full<-subset(dat.long,dat.long$num_factor1==4)
-dat.long.missing<-subset(dat.long,dat.long$num_factor1!=4)
-
-Spaghetti.Plot(dat.long.full, factor1, time, ExternalReference)
-Spaghetti.Plot(dat.long.missing, factor1, time, ExternalReference)
-
-dat.long.full.2<-subset(dat.long,dat.long$num_factor2==4)
-dat.long.missing.2<-subset(dat.long,dat.long$num_factor2!=4)
-
-Spaghetti.Plot(dat.long.full.2, factor2, time, ExternalReference)
-Spaghetti.Plot(dat.long.missing.2, factor2, time, ExternalReference)        
 
 
 #####FACTOR 1 - not normal

@@ -13,6 +13,45 @@ run;
 proc univariate data=kc.data1;
 var factor1 factor1_beta;
 run;
+*spaghetti plot;
+*complete data;
+data complete;
+	set kc.data1;
+	where num_factor1=4;
+run;
+proc sgplot data=complete;
+   series x=time y=factor1 / group=Exter_lReference;
+run;
+data missing;
+	set kc.data1;
+	where num_factor1<4;
+run;
+proc sgplot data=missing;
+   series x=time y=factor1 / group=Exter_lReference;
+run;
+
+data missing1;
+	set kc.data1;
+	where num_factor1=3;
+run;
+proc sgplot data=missing1;
+   series x=time y=factor1 / group=Exter_lReference;
+run;
+data missing2;
+	set kc.data1;
+	where num_factor1=2;
+run;
+proc sgplot data=missing2;
+   series x=time y=factor1 / group=Exter_lReference;
+run;
+data missing3;
+	set kc.data1;
+	where num_factor1=1;
+run;
+proc sgplot data=missing3;
+   series x=time y=factor1 / group=Exter_lReference;
+run;
+
 
 data kc.data1;
 	set kc.data1;
@@ -26,7 +65,6 @@ run;
 proc freq data=kc.data1;
 	table factor1_10*time;
 run;
-
 
 data kc.data1;
 	set kc.data1;
