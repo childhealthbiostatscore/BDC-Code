@@ -16,6 +16,20 @@ run;
 
 data kc.data1;
 	set kc.data1;
+	factor1_10=.;
+	if factor1=10 then factor1_10=1;
+	if factor1<10 then factor1_10=0;
+run;
+
+*this is the issue - almost 20% of the data is 10;
+*do we just model whether it's 10 at each time point?;
+proc freq data=kc.data1;
+	table factor1_10*time;
+run;
+
+
+data kc.data1;
+	set kc.data1;
 	factor1_trans=factor1_beta;
 	if factor1_beta=1 then factor1_trans=0.995;
 	if factor1_beta=0 then factor1_trans=0.005;
@@ -26,12 +40,24 @@ var factor1_beta factor1_trans;
 run;
 
 *Mixed beta model;
-proc glimmix data=kc.data1 method=quad;
+proc glimmix data=kc.data1 method=quad plots=residualpanel(conditional marginal);
 	class Exter_lReference time(ref="baseline") method_cat cgm_yn B_RESPONDENT;
-	model factor1_beta_ex = factor1_baseline time method_cat time*method_cat cgm_yn Baseline_A1C BaselineAGE B_RESPONDENT/ dist=beta s ddfm=bw;
+	model factor1_trans = factor1_baseline time method_cat time*method_cat cgm_yn Baseline_A1C BaselineAGE B_RESPONDENT/ dist=beta s ddfm=bw;
+	*model factor1_trans = time method_cat time*method_cat / dist=beta s ddfm=bw;
 	random intercept / subject=Exter_lReference;
-	lsmeans time*method_cat /ilink cl;
+	*lsmeans time*method_cat /ilink cl;
 run;
+
+*Mixed logistic model;
+proc glimmix data=kc.data1 method=quad plots=residualpanel(conditional marginal);
+	class Exter_lReference time(ref="baseline") method_cat cgm_yn B_RESPONDENT;
+	model factor1_10(ref="0") = factor1_baseline time method_cat time*method_cat Baseline_A1C BaselineAGE B_RESPONDENT/ dist=binary s ddfm=bw;
+	*model factor1_10(ref="0") = time method_cat time*method_cat  / dist=binary s ddfm=bw;
+	random intercept / subject=Exter_lReference;
+	*lsmeans time*method_cat /ilink cl;
+run;
+
+
 
 *model with only diabetics;
 data kc.data1_dia;
@@ -39,9 +65,9 @@ data kc.data1_dia;
 	where B_RESPONDENT="Person with Diabetes";
 run;
 
-proc glimmix data=kc.data1_dia method=quad;
+proc glimmix data=kc.data1_dia method=quad plots=residualpanel(conditional marginal);
 	class Exter_lReference time(ref="baseline") method_cat cgm_yn;
-	model factor1_beta_ex = factor1_baseline time method_cat time*method_cat cgm_yn Baseline_A1C BaselineAGE/ dist=beta s ddfm=bw;
+	model factor1_trans = factor1_baseline time method_cat time*method_cat cgm_yn Baseline_A1C BaselineAGE/ dist=beta s ddfm=bw;
 	random intercept / subject=Exter_lReference;
 	lsmeans time*method_cat /ilink cl;
 run;
@@ -52,7 +78,7 @@ data kc.data1_care;
 	where B_RESPONDENT="A Parent/Guardian/Caregiver of someone with Diabetes";
 run;
 
-proc glimmix data=kc.data1_care method=quad;
+proc glimmix data=kc.data1_care method=quad plots=residualpanel(conditional marginal);
 	class Exter_lReference time(ref="baseline") method_cat cgm_yn;
 	model factor1_beta_ex = factor1_baseline time method_cat time*method_cat cgm_yn Baseline_A1C BaselineAGE/ dist=beta s ddfm=bw;
 	random intercept / subject=Exter_lReference;
