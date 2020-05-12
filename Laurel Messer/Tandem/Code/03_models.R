@@ -81,7 +81,7 @@ summary(change2.satis.gen)
 
 change2.satis<-lm(dat.model$change2_satis~dat.model$method_cat+dat.model$cgm_yn+dat.model$BaselineAGE
                     +dat.model$Baseline_A1C+dat.model$mid_point+dat.model$B_RESPONDENT+
-                    dat.model$mid_factor1)
+                    dat.model$baseline_factor1)
 
 summary(change2.satis)
 anova(change2.satis)
@@ -142,7 +142,7 @@ change2.burden<-lm(dat.model$change2_burden~1)
 change2.burden<-lm(dat.model$change2_burden~dat.model$method_cat+dat.model$cgm_yn)
 change2.burden<-lm(dat.model$change2_burden~dat.model$method_cat+dat.model$cgm_yn+dat.model$BaselineAGE
                     +dat.model$Gender+dat.model$Baseline_A1C+dat.model$mid_point+dat.model$B_RESPONDENT
-                   +dat.model$mid_factor2)
+                   +dat.model$baseline_factor2)
 
 summary(change2.burden)
 anova(change2.burden)

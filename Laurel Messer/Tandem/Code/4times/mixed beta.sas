@@ -97,36 +97,45 @@ run;
 *without CGM_Yn and baselinea1c:;
 proc glimmix data=kc.data1 method=quad plots=residualpanel(conditional marginal);
 	class Exter_lReference time method_cat cgm_yn B_RESPONDENT;
-	model factor1_trans = time method_cat method_cat*time cgm_yn Baseline_A1C BaselineAGE B_RESPONDENT factor1_baseline/ dist=beta s ddfm=bw;
+	model factor1_trans = time method_cat method_cat*time cgm_yn Baseline_A1C BaselineAGE B_RESPONDENT factor1_baseline/ dist=beta link=logit s ddfm=bw;
 	*model factor1_trans = time method_cat time*method_cat / dist=beta s ddfm=bw;
 	random intercept / subject=Exter_lReference;
-	*lsmeans time*method_cat /ilink adjust=bon cl plot=meanplot(sliceby=method_cat plotby=time clband ilink);
 	lsmeans time*method_cat /ilink slicediff=method_cat adjust=bon cl plot=meanplot(sliceby=method_cat plotby=time clband ilink);
 	*contrast statements for comparing differences in each group;
-/*	estimate 'Injections: baseline to 2mo' time -1 1 0 0 time*method_cat -1 0 0  1 0 0   0 0 0   0 0 0 /cl adjust=bon; */
-/*	estimate 'Injections: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  -1 0 0   1 0 0   0 0 0/cl adjust=bon;*/
-/*	estimate 'Injections: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   -1 0 0   1 0 0/cl adjust=bon; */
-/*	*estimate 'Injections: baseline to 6mo' time -1 0 0 1 time*method_cat -1 0 0  0 0 0   0 0 0   1 0 0;*/
-/*	*/
-/*	estimate 'Non-Tandem: baseline to 2mo' time -1 1 0 0 time*method_cat 0 -1 0  0 1 0   0 0 0   0 0 0/cl adjust=bon;*/
-/*	estimate 'Non-Tandem: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  0 -1 0   0 1 0   0 0 0/cl adjust=bon;*/
-/*	estimate 'Non-Tandem: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   0 -1 0   0 1 0/cl adjust=bon; */
-/*	*estimate 'Non-Tandem: baseline to 6mo' time -1 0 0 1 time*method_cat 0 -1 0  0 0 0   0 0 0   0 1 0;  */
-/**/
-/*	estimate 'Tandem: baseline to 2mo' time -1 1 0 0 time*method_cat 0 0 -1  0 0 1   0 0 0   0 0 0/cl adjust=bon; */
-/*	estimate 'Tandem: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  0 0 -1   0 0 1   0 0 0/cl adjust=bon; */
-/*	estimate 'Tandem: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   0 0 -1   0 0 1/cl adjust=bon; */
-	*estimate 'Tandem: baseline to 6mo' time -1 0 0 1 time*method_cat 0 0 -1  0 0 0   0 0 0   0 0 1;
-/*	ods output LSmeans=LSMEANS;*/
-/*	ods output Estimates=ESTIMATE;*/
+	estimate 'Injections: baseline to 2mo' time -1 1 0 0 time*method_cat -1 0 0  1 0 0   0 0 0   0 0 0 ,
+			 'Injections: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  -1 0 0   1 0 0   0 0 0,
+			 'Injections: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   -1 0 0   1 0 0,
+	 		 'Non-Tandem: baseline to 2mo' time -1 1 0 0 time*method_cat 0 -1 0  0 1 0   0 0 0   0 0 0,
+	 		 'Non-Tandem: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  0 -1 0   0 1 0   0 0 0,
+	 		 'Non-Tandem: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   0 -1 0   0 1 0,
+		 	 'Tandem: baseline to 2mo' time -1 1 0 0 time*method_cat 0 0 -1  0 0 1   0 0 0   0 0 0,
+	  		 'Tandem: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  0 0 -1   0 0 1   0 0 0,
+	 		 'Tandem: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   0 0 -1   0 0 1/cl ilink adjust=bon; 
+	ods output LSmeans=LSMEANS;
+	ods output Estimates=ESTIMATE;
 run;
 
+*LSMEANS: estiamte is in logit, so transform to Mean using exp(estimate)/(1+exp(estimate));
 *LS-means are constructed on the linked scale—that is, the scale on which the model effects are additive. 
 *For example, in a binomial model with logit link, the least squares means are predicted population margins of the logits.;
-data lsmeans;
-	set lsmeans;
-	trans_estimate=
-proc export data=data1 outfile="S:\Shared Projects\Laura\BDC\Projects\Laurel Messer\Tandem\Data\lsmeans_factor1.csv";
+
+*create table of back-transformed estimates;
+data LSMEANS;
+	set LSMEANS;
+	mu_trans=Mu*9+1;
+	muLower_trans=LowerMu*9+1;
+	muUpper_trans=UpperMu*9+1;
+run;
+
+data ESTIMATE;
+	set ESTIMATE;
+	mu_trans=Mu*9+1;
+	muLower_trans=AdjLowerMu*9+1;
+	muUpper_trans=AdjUpperMu*9+1;
+run;
+
+proc export data=LSMEANS outfile="S:\Shared Projects\Laura\BDC\Projects\Laurel Messer\Tandem\Data\lsmeans_factor1.csv"
+replace;
 run;
 
 *FACTOR 2;
@@ -145,25 +154,21 @@ run;
 proc glimmix data=kc.data2 method=quad plots=residualpanel(conditional marginal);
 	class Exter_lReference time method_cat cgm_yn B_RESPONDENT;
 	model factor2_trans = time method_cat method_cat*time cgm_yn Baseline_A1C BaselineAGE B_RESPONDENT factor2_baseline/ dist=beta s ddfm=bw;
-	*model factor1_trans = time method_cat time*method_cat / dist=beta s ddfm=bw;
+	*model factor2_trans = time method_cat time*method_cat / dist=beta s ddfm=bw;
 	random intercept / subject=Exter_lReference;
-	lsmeans time*method_cat /ilink adjust=bon cl plot=meanplot(sliceby=method_cat plotby=time clband ilink);
+	lsmeans time*method_cat /ilink slicediff=method_cat adjust=bon cl plot=meanplot(sliceby=method_cat plotby=time clband ilink);
 	*contrast statements for comparing differences in each group;
-	estimate 'Injections: baseline to 2mo' time -1 1 0 0 time*method_cat -1 0 0  1 0 0   0 0 0   0 0 0 /cl; 
-	estimate 'Injections: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  -1 0 0   1 0 0   0 0 0; 
-	estimate 'Injections: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   -1 0 0   1 0 0; 
-	estimate 'Injections: baseline to 6mo' time -1 0 0 1 time*method_cat -1 0 0  0 0 0   0 0 0   1 0 0;
-	
-	estimate 'Non-Tandem: baseline to 2mo' time -1 1 0 0 time*method_cat 0 -1 0  0 1 0   0 0 0   0 0 0; 
-	estimate 'Non-Tandem: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  0 -1 0   0 1 0   0 0 0; 
-	estimate 'Non-Tandem: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   0 -1 0   0 1 0; 
-	estimate 'Non-Tandem: baseline to 6mo' time -1 0 0 1 time*method_cat 0 -1 0  0 0 0   0 0 0   0 1 0;  
-
-	estimate 'Tandem: baseline to 2mo' time -1 1 0 0 time*method_cat 0 0 -1  0 0 1   0 0 0   0 0 0; 
-	estimate 'Tandem: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  0 0 -1   0 0 1   0 0 0; 
-	estimate 'Tandem: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   0 0 -1   0 0 1; 
-	estimate 'Tandem: baseline to 6mo' time -1 0 0 1 time*method_cat 0 0 -1  0 0 0   0 0 0   0 0 1;
-	ods output LSMEANS;
+	estimate 'Injections: baseline to 2mo' time -1 1 0 0 time*method_cat -1 0 0  1 0 0   0 0 0   0 0 0 ,
+			 'Injections: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  -1 0 0   1 0 0   0 0 0,
+			 'Injections: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   -1 0 0   1 0 0,
+	 		 'Non-Tandem: baseline to 2mo' time -1 1 0 0 time*method_cat 0 -1 0  0 1 0   0 0 0   0 0 0,
+	 		 'Non-Tandem: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  0 -1 0   0 1 0   0 0 0,
+	 		 'Non-Tandem: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   0 -1 0   0 1 0,
+		 	 'Tandem: baseline to 2mo' time -1 1 0 0 time*method_cat 0 0 -1  0 0 1   0 0 0   0 0 0,
+	  		 'Tandem: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  0 0 -1   0 0 1   0 0 0,
+	 		 'Tandem: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   0 0 -1   0 0 1/cl ilink adjust=bon; 
+	ods output LSmeans=LSMEANS;
+	ods output Estimates=ESTIMATE;
 run;
 
 
