@@ -65,7 +65,7 @@ quantile(dat.long.1$factor1_beta_ex)
 hist(dat.long.1$factor1_beta_ex)
 
 #export to SAS:
-write.csv(dat.long.1,"S:/Shared Projects/Laura/BDC/Projects/Laurel Messer/Tandem/Data/data_factor1.csv")
+write.csv(dat.long.1,"S:/Shared Projects/Laura/BDC/Projects/Laurel Messer/Tandem/Data/data_factor1_05122020.csv")
 
 
 dat.long.2<-subset(dat.long,!is.na(dat.long$factor2))
@@ -79,4 +79,4 @@ dat.long.2$factor2_beta_ex<-(dat.long.2$factor2_beta*(nrow(dat.long.2)-1)+0.5)/n
 quantile(dat.long.2$factor2_beta_ex)
 hist(dat.long.2$factor2_beta_ex)
 
-write.csv(dat.long.2,"S:/Shared Projects/Laura/BDC/Projects/Laurel Messer/Tandem/Data/data_factor2.csv")
+write.csv(dat.long.2,"S:/Shared Projects/Laura/BDC/Projects/Laurel Messer/Tandem/Data/data_factor2_05122020.csv")

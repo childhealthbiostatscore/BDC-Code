@@ -70,3 +70,15 @@ dat$post6m_factor2<-rowMeans(dat[,c(which(colnames(dat)=="post6m_8"):
                                       which(colnames(dat)=="post6m_11"))],na.rm=T)
 label(dat$post6m_factor2)<-"6 month: Factor 2 Burden"
 
+#remove incomplete survey responses (added 5/12/2020):
+dat$baseline_factor1[dat$baseline_num_complete!=12]<-NA
+dat$baseline_factor2[dat$baseline_num_complete!=12]<-NA
+
+dat$post2m_factor1[dat$post2m_num_complete!=12]<-NA
+dat$post2m_factor2[dat$post2m_num_complete!=12]<-NA
+
+dat$post4m_factor1[dat$post4m_num_complete!=12]<-NA
+dat$post4m_factor2[dat$post4m_num_complete!=12]<-NA
+
+dat$post6m_factor1[dat$post6m_num_complete!=12]<-NA
+dat$post6m_factor2[dat$post6m_num_complete!=12]<-NA
