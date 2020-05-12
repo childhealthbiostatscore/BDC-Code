@@ -269,7 +269,7 @@ dat$midpoint_num_complete<-as.factor(dat$midpoint_num_complete)
 label(dat$midpoint_num_complete)<-"Number of questions completed at midpoint"
 
 
-dat.all<-subset(dat,dat$DiabetesType=="Type 1")
+dat<-subset(dat,dat$DiabetesType=="Type 1")
 
 #COHORT FOR SURVEY ANALYSIS:
 #dat<-subset(dat.all,dat.all$cohort_complete==1)

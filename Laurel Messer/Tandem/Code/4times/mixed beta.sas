@@ -1,13 +1,13 @@
 
 libname kc "S:\Shared Projects\Laura\BDC\Projects\Laurel Messer\Tandem\Data";
 
-proc import datafile="S:\Shared Projects\Laura\BDC\Projects\Laurel Messer\Tandem\Data\data_factor1.csv"
+proc import datafile="S:\Shared Projects\Laura\BDC\Projects\Laurel Messer\Tandem\Data\data_factor1_05122020.csv"
 dbms=csv
 out=kc.data1
 REPLACE;
 run;
 
-proc import datafile="S:\Shared Projects\Laura\BDC\Projects\Laurel Messer\Tandem\Data\data_factor2.csv"
+proc import datafile="S:\Shared Projects\Laura\BDC\Projects\Laurel Messer\Tandem\Data\data_factor2_05122020.csv"
 dbms=csv
 out=kc.data2
 REPLACE;
@@ -83,33 +83,42 @@ proc univariate data=kc.data1;
 var factor1_beta factor1_trans;
 run;
 
+proc univariate data=kc.data1;
+var Baseline_A1C;
+run;
+
+proc freq data=kc.data1;
+table cgm_yn /missing;
+run;
+
 *Mixed beta model;
 *all covariates: -6623.53;
 *without CGM_yn: -6625;
 *without CGM_Yn and baselinea1c:;
 proc glimmix data=kc.data1 method=quad plots=residualpanel(conditional marginal);
 	class Exter_lReference time method_cat cgm_yn B_RESPONDENT;
-	model factor1_trans = time method_cat method_cat*time cgm_yn Baseline_A1C BaselineAGE B_RESPONDENT factor2_baseline/ dist=beta s ddfm=bw;
+	model factor1_trans = time method_cat method_cat*time cgm_yn Baseline_A1C BaselineAGE B_RESPONDENT factor1_baseline/ dist=beta s ddfm=bw;
 	*model factor1_trans = time method_cat time*method_cat / dist=beta s ddfm=bw;
 	random intercept / subject=Exter_lReference;
-	lsmeans time*method_cat /ilink adjust=bon cl plot=meanplot(sliceby=method_cat plotby=time clband ilink);
+	*lsmeans time*method_cat /ilink adjust=bon cl plot=meanplot(sliceby=method_cat plotby=time clband ilink);
+	lsmeans time*method_cat /ilink slicediff=method_cat adjust=bon cl plot=meanplot(sliceby=method_cat plotby=time clband ilink);
 	*contrast statements for comparing differences in each group;
-	estimate 'Injections: baseline to 2mo' time -1 1 0 0 time*method_cat -1 0 0  1 0 0   0 0 0   0 0 0 /cl adjust=bon; 
-	estimate 'Injections: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  -1 0 0   1 0 0   0 0 0/cl adjust=bon;
-	estimate 'Injections: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   -1 0 0   1 0 0/cl adjust=bon; 
-	*estimate 'Injections: baseline to 6mo' time -1 0 0 1 time*method_cat -1 0 0  0 0 0   0 0 0   1 0 0;
-	
-	estimate 'Non-Tandem: baseline to 2mo' time -1 1 0 0 time*method_cat 0 -1 0  0 1 0   0 0 0   0 0 0/cl adjust=bon;
-	estimate 'Non-Tandem: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  0 -1 0   0 1 0   0 0 0/cl adjust=bon;
-	estimate 'Non-Tandem: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   0 -1 0   0 1 0/cl adjust=bon; 
-	*estimate 'Non-Tandem: baseline to 6mo' time -1 0 0 1 time*method_cat 0 -1 0  0 0 0   0 0 0   0 1 0;  
-
-	estimate 'Tandem: baseline to 2mo' time -1 1 0 0 time*method_cat 0 0 -1  0 0 1   0 0 0   0 0 0/cl adjust=bon; 
-	estimate 'Tandem: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  0 0 -1   0 0 1   0 0 0/cl adjust=bon; 
-	estimate 'Tandem: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   0 0 -1   0 0 1/cl adjust=bon; 
+/*	estimate 'Injections: baseline to 2mo' time -1 1 0 0 time*method_cat -1 0 0  1 0 0   0 0 0   0 0 0 /cl adjust=bon; */
+/*	estimate 'Injections: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  -1 0 0   1 0 0   0 0 0/cl adjust=bon;*/
+/*	estimate 'Injections: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   -1 0 0   1 0 0/cl adjust=bon; */
+/*	*estimate 'Injections: baseline to 6mo' time -1 0 0 1 time*method_cat -1 0 0  0 0 0   0 0 0   1 0 0;*/
+/*	*/
+/*	estimate 'Non-Tandem: baseline to 2mo' time -1 1 0 0 time*method_cat 0 -1 0  0 1 0   0 0 0   0 0 0/cl adjust=bon;*/
+/*	estimate 'Non-Tandem: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  0 -1 0   0 1 0   0 0 0/cl adjust=bon;*/
+/*	estimate 'Non-Tandem: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   0 -1 0   0 1 0/cl adjust=bon; */
+/*	*estimate 'Non-Tandem: baseline to 6mo' time -1 0 0 1 time*method_cat 0 -1 0  0 0 0   0 0 0   0 1 0;  */
+/**/
+/*	estimate 'Tandem: baseline to 2mo' time -1 1 0 0 time*method_cat 0 0 -1  0 0 1   0 0 0   0 0 0/cl adjust=bon; */
+/*	estimate 'Tandem: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  0 0 -1   0 0 1   0 0 0/cl adjust=bon; */
+/*	estimate 'Tandem: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   0 0 -1   0 0 1/cl adjust=bon; */
 	*estimate 'Tandem: baseline to 6mo' time -1 0 0 1 time*method_cat 0 0 -1  0 0 0   0 0 0   0 0 1;
-	ods output LSmeans=LSMEANS;
-	ods output Estimates=ESTIMATE;
+/*	ods output LSmeans=LSMEANS;*/
+/*	ods output Estimates=ESTIMATE;*/
 run;
 
 *LS-means are constructed on the linked scale—that is, the scale on which the model effects are additive. 
