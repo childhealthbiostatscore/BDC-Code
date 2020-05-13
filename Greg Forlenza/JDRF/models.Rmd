@@ -30,9 +30,7 @@ data <- data %>% filter(record_id <= 115)
 # successful AP use and <60% representing unsuccessful AP use.
 df <- left_join(data %>% group_by(record_id) %>% 
                   filter(gyl_timepoint.factor =="12 Months") %>%
-                  summarise(am_12_months = time_am) %>%
-                  mutate(success = as.factor(ifelse(am_12_months >= 60,"Success",
-                                                    "Failure"))), 
+                  summarise(am_12_months = time_am), 
                 data %>% filter(grepl("baseline",redcap_event_name)) %>%
                   select(record_id,hba1c,demographics_age,demographics_t1d_duration,
                          demographics_sex.factor,demographics_insurance.factor,
@@ -46,6 +44,8 @@ df <- left_join(df,data %>%
                   filter(gyl_timepoint.factor == "Month 1/ Training F/U") %>%
                   select(record_id,sensor_wear,time_am,sensor_70_180),
                 by = "record_id")
+# Binary outcome
+df$success <- as.factor(ifelse(df$am_12_months >= 60,"Success","Failure"))
 ```
 
 # Skim
@@ -62,21 +62,25 @@ t1 <- tableby(as.formula(paste("~",t1_form)),data = df)
 summary(t1)
 ```
 
-# Describe the data
-
-```{r echo=FALSE}
-# Endpoint frequency
-
-# Distributions 
-
-# Missingness
-
-```
-
 # Models
 
 ```{r models,echo=FALSE}
+# Lasso
+# Make model matrix and outcome vector
+form <- 
+  as.formula(paste("success~",paste(colnames(df)[3:(ncol(df)-1)],
+                                    collapse = "+")))
+cc <- df[complete.cases(df),]
 
+x <- model.matrix(form,cc)[,-1]
+y <- cc$success
+# Fit
+fit <- glmnet(x,y,family = "binomial")
+plot(fit,xvar = "lambda")
+# Cross validation for lambda
+cv.fit <- cv.glmnet(x, y, alpha=1, family = "binomial")
+plot(cv.fit)
+coef(cv.fit)
 ```
 
 ### Clarifying questions for Greg
