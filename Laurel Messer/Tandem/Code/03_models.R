@@ -9,7 +9,7 @@ require(lsmeans)
 source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Laurel Messer/Tandem/Code/00_data.R')
 source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Laurel Messer/Tandem/Code/01_survey_factors.R')
 
-dat.model<-dat[,c(1,6,30,116:117,137,142:144,214,228:233)]
+dat.model<-dat[,c(1,6,30,116:117,137,142:144,215,229:238)]
 #might have to do this:
 dat.model$change1_satis<-dat.model$mid_factor1-dat.model$baseline_factor1
 dat.model$change2_satis<-dat.model$post6m_factor1-dat.model$mid_factor1
@@ -36,7 +36,8 @@ change1.satis.gen<-lm(dat.model$change1_satis~dat.model$Gender) #dont include
 summary(change1.satis.gen)
 
 change1.satis<-lm(dat.model$change1_satis~dat.model$method_cat+dat.model$cgm_yn+dat.model$Baseline_A1C+
-                      dat.model$BaselineAGE+dat.model$mid_point+dat.model$B_RESPONDENT)
+                      dat.model$BaselineAGE+dat.model$mid_point+dat.model$B_RESPONDENT+
+                    dat.model$baseline_factor1)
 
 summary(change1.satis)
 anova(change1.satis)
@@ -79,7 +80,8 @@ change2.satis.gen<-lm(dat.model$change2_satis~dat.model$Gender) #dont include
 summary(change2.satis.gen)
 
 change2.satis<-lm(dat.model$change2_satis~dat.model$method_cat+dat.model$cgm_yn+dat.model$BaselineAGE
-                    +dat.model$Baseline_A1C+dat.model$mid_point+dat.model$B_RESPONDENT)
+                    +dat.model$Baseline_A1C+dat.model$mid_point+dat.model$B_RESPONDENT+
+                    dat.model$baseline_factor1)
 
 summary(change2.satis)
 anova(change2.satis)
@@ -110,7 +112,8 @@ fac1.changes<-merge(ch1.fac1.means,ch2.fac1.means,by="Previous Method")
 change1.burden<-lm(dat.model$change1_burden~1)
 change1.burden<-lm(dat.model$change1_burden~dat.model$method_cat)
 change1.burden<-lm(dat.model$change1_burden~dat.model$method_cat+dat.model$cgm_yn+dat.model$BaselineAGE
-                    +dat.model$Baseline_A1C+dat.model$mid_point+dat.model$B_RESPONDENT)
+                    +dat.model$Baseline_A1C+dat.model$mid_point+dat.model$B_RESPONDENT+
+                     dat.model$baseline_factor2)
 
 summary(change1.burden)
 anova(change1.burden)
@@ -138,7 +141,8 @@ colnames(ch1.fac2.means)<-c("Previous Method","Change from Baseline to Mid-Point
 change2.burden<-lm(dat.model$change2_burden~1)
 change2.burden<-lm(dat.model$change2_burden~dat.model$method_cat+dat.model$cgm_yn)
 change2.burden<-lm(dat.model$change2_burden~dat.model$method_cat+dat.model$cgm_yn+dat.model$BaselineAGE
-                    +dat.model$Gender+dat.model$Baseline_A1C+dat.model$mid_point+dat.model$B_RESPONDENT)
+                    +dat.model$Gender+dat.model$Baseline_A1C+dat.model$mid_point+dat.model$B_RESPONDENT
+                   +dat.model$baseline_factor2)
 
 summary(change2.burden)
 anova(change2.burden)
@@ -168,7 +172,7 @@ fac2.changes<-merge(ch1.fac2.means,ch2.fac2.means,by="Previous Method")
 dat.diab<-subset(dat.model,dat.model$B_RESPONDENT=="Person with Diabetes")
 
 diab.change1.satis<-lm(dat.diab$change1_satis~dat.diab$method_cat+dat.diab$cgm_yn+dat.diab$Baseline_A1C+
-                      dat.diab$BaselineAGE+dat.diab$mid_point)
+                      dat.diab$BaselineAGE+dat.diab$mid_point+dat.diab$baseline_factor1)
 
 summary(diab.change1.satis)
 anova(diab.change1.satis)
@@ -192,7 +196,7 @@ diab.ch1.fac1.means<-diab.ch1.fac1.means[,-c(2:9)]
 colnames(diab.ch1.fac1.means)<-c("Previous Method","Change from Baseline to Midpoint")
 
 diab.change2.satis<-lm(dat.diab$change2_satis~dat.diab$method_cat+dat.diab$cgm_yn+dat.diab$Baseline_A1C+
-                           dat.diab$BaselineAGE+dat.diab$mid_point)
+                           dat.diab$BaselineAGE+dat.diab$mid_point+dat.diab$mid_factor1)
 
 summary(diab.change2.satis)
 anova(diab.change2.satis)
@@ -219,7 +223,7 @@ diab.fac1.changes<-merge(diab.ch1.fac1.means,diab.ch2.fac1.means,by="Previous Me
 
 
 diab.change1.burden<-lm(dat.diab$change1_burden~dat.diab$method_cat+dat.diab$cgm_yn+dat.diab$Baseline_A1C+
-                           dat.diab$BaselineAGE+dat.diab$mid_point)
+                           dat.diab$BaselineAGE+dat.diab$mid_point+dat.diab$baseline_factor2)
 
 summary(diab.change1.burden)
 anova(diab.change1.burden)
@@ -243,7 +247,7 @@ diab.ch1.fac2.means<-diab.ch1.fac2.means[,-c(2:9)]
 colnames(diab.ch1.fac2.means)<-c("Previous Method","Change from Baseline to Mid-Point")
 
 diab.change2.burden<-lm(dat.diab$change2_burden~dat.diab$method_cat+dat.diab$cgm_yn+dat.diab$Baseline_A1C+
-                           dat.diab$BaselineAGE+dat.diab$mid_point)
+                           dat.diab$BaselineAGE+dat.diab$mid_point+dat.diab$mid_factor2)
 
 summary(diab.change2.burden)
 anova(diab.change2.burden)
