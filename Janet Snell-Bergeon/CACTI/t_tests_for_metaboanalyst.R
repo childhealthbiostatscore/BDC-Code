@@ -1,5 +1,5 @@
 # Get T1D status from Laura's data
-original = read.csv("/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/CACTI/Metabolon insulin resistance pilot/Data_clean/original_scale.csv",
+original = read.csv("/home/tim/Desktop/original_scale.csv",
                     na.strings = "",stringsAsFactors = F)
 cats = read.csv("/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/CACTI/Metabolon insulin resistance pilot/Data_clean/Metaboanalyst T1D vs control.csv",
                 na.strings = "",stringsAsFactors = F)
