@@ -82,3 +82,13 @@ dat$post4m_factor2[dat$post4m_num_complete!=12]<-NA
 
 dat$post6m_factor1[dat$post6m_num_complete!=12]<-NA
 dat$post6m_factor2[dat$post6m_num_complete!=12]<-NA
+
+#get datasets ready:
+dat.all<-dat
+dat.all$in_models<-1
+dat.all$in_models[dat.all$baseline_complete_yn==0]<-0
+dat.all$in_models[is.na(dat.all$Baseline_A1C)]<-0
+dat.all$in_models<-as.factor(dat.all$in_models)
+label(dat.all$in_models)<-"In 4time Models (has baseline survey and baseline A1c)"
+
+dat<-subset(dat.all,dat.all$in_models==1)
