@@ -1,7 +1,7 @@
 library(pdftools)
 library(tidyverse)
 # List files
-dir = "/Volumes/bdc/SHARED/KAAN/670G collected PDF's/New PDFS/Medtronic downloads"
+dir = "/home/tim/Desktop/combined670g/Data_Raw/ClinicVisit_PDFs"
 files = list.files(dir,pattern = "*pdf",full.names = T)
 # Summary dataframe
 pdf_summary = data.frame()
@@ -71,10 +71,10 @@ for (f in 1:length(files)) {
                   "sensor_updating_exit","no_sg_exit","expired_exit",
                   "user_disabled_exit","alarms_exit","suspend_exit",
                   "warm_up_exit","other_exit")] = exits
-  # Convert to numeric
+  # Convert to numeric    
   pdf_summary[,2:ncol(pdf_summary)] = 
     lapply(pdf_summary[,2:ncol(pdf_summary)],as.numeric)
 }
 # Write summary
-write.csv(pdf_summary,file = paste0(dir,"/summary.csv"),
+write.csv(pdf_summary,file = "/home/tim/Desktop/combined670g/Data_Cleaned/pdf_summary.csv",
           row.names = F,na = "")
