@@ -1,12 +1,9 @@
 #Clear existing data and graphics
 rm(list=ls())
 graphics.off()
-#Load Hmisc library
-library(Hmisc)
 #Read Data
 data=read.csv('ClinicalObservationC_DATA_2020-05-19_0855.csv')
 #Setting Labels
-
 label(data$record_id)="Record ID"
 label(data$redcap_event_name)="Event Name"
 label(data$redcap_survey_identifier)="Survey Identifier"
