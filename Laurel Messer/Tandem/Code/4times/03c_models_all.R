@@ -117,10 +117,13 @@ mod2_data$mu_trans<-round(mod2_data$mu_trans,2)
 mod2_data$muUpper_trans<-round(mod2_data$muUpper_trans,2)
 mod2_data$muLower_trans<-round(mod2_data$muLower_trans,2)
 
-#Estimated plots:
-plot(c(1,4),c(7,10),type="n",xlab="Time",ylab="Estimated Satisfaction Score",xaxt="n",
-     main="Estimated Change in Satisfaction")
-axis(1,at=c(1,2,3,4),c("Baseline","Post 2mo","Post 4mo","Post 6mo"))
+#Estimated plots
+jpeg("S:/Shared Projects/Laura/BDC/Projects/Laurel Messer/Tandem/Results/DS_model.jpeg",
+     height=7,width=5,units = "in",res=300)
+
+plot(c(1,4),c(7,10),type="n",xlab="Time",ylab="Estimated Device Satisfaction (DS) Score",xaxt="n",
+     main="")
+axis(1,at=c(1,2,3,4),c("Baseline","2mo","4mo","6mo"))
 col<-col2rgb(brewer.pal(3, "Set1")[1])
 
 polygon(c(1,2,3,4,4,3,2,1),c(dat1$muLower_trans[dat1$method_cat=="Injections"],
@@ -150,13 +153,17 @@ polygon(c(1,2,3,4,4,3,2,1),c(dat1$muLower_trans[dat1$method_cat=="Tandem Pump"],
 points(c(1,2,3,4),dat1$mu_trans[dat1$method_cat=="Tandem Pump"],pch=19,col=brewer.pal(3, "Set1")[3])
 lines(c(1,2,3,4),dat1$mu_trans[dat1$method_cat=="Tandem Pump"],col=brewer.pal(3, "Set1")[3])
 
-legend("bottomright",c("Injections","Non-Tandem Pump","Tandem Pump"),
+legend("bottomright",c("MDI","Non-Tandem Pump","Tandem Pump"),
        lty=1,pch=19,col=brewer.pal(3, "Set1"),title = "Previous Insulin Method")
+dev.off()
 
 #########DIABETES BURDEN
-plot(c(1,4),c(1,6),type="n",xlab="Time",ylab="Estimated Diabetes Burden Score",xaxt="n",
-     main="Estimated Change in Diabetes Burden")
-axis(1,at=c(1,2,3,4),c("Baseline","Post 2mo","Post 4mo","Post 6mo"))
+jpeg("S:/Shared Projects/Laura/BDC/Projects/Laurel Messer/Tandem/Results/DI_model.jpeg",
+     height=7,width=5,units = "in",res=300)
+
+plot(c(1,4),c(1,6),type="n",xlab="Time",ylab="Estimated Diabetes Impact (DI) Score",xaxt="n",
+     main="")
+axis(1,at=c(1,2,3,4),c("Baseline","2mo","4mo","6mo"))
 col<-col2rgb(brewer.pal(3, "Set1")[1])
 
 polygon(c(1,2,3,4,4,3,2,1),c(dat2$muLower_trans[dat2$method_cat=="Injections"],
@@ -186,9 +193,9 @@ polygon(c(1,2,3,4,4,3,2,1),c(dat2$muLower_trans[dat2$method_cat=="Tandem Pump"],
 points(c(1,2,3,4),dat2$mu_trans[dat2$method_cat=="Tandem Pump"],pch=19,col=brewer.pal(3, "Set1")[3])
 lines(c(1,2,3,4),dat2$mu_trans[dat2$method_cat=="Tandem Pump"],col=brewer.pal(3, "Set1")[3])
 
-legend("bottomright",c("Injections","Non-Tandem Pump","Tandem Pump"),
+legend("bottomright",c("MDI","Non-Tandem Pump","Tandem Pump"),
        lty=1,pch=19,col=brewer.pal(3, "Set1"),title = "Previous Insulin Method")
-
+dev.off()
 
 ###overlaid on boxplots:
 # boxplot(dat$baseline_factor1[dat$method_cat=="Injections"],
