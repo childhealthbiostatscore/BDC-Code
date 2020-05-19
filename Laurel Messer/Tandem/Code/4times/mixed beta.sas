@@ -138,6 +138,11 @@ proc export data=LSMEANS outfile="S:\Shared Projects\Laura\BDC\Projects\Laurel M
 replace;
 run;
 
+
+proc export data=ESTIMATE outfile="S:\Shared Projects\Laura\BDC\Projects\Laurel Messer\Tandem\Data\estimate_factor1.csv"
+replace;
+run;
+
 *FACTOR 2;
 data kc.data2;
 	set kc.data2;
@@ -167,8 +172,32 @@ proc glimmix data=kc.data2 method=quad plots=residualpanel(conditional marginal)
 		 	 'Tandem: baseline to 2mo' time -1 1 0 0 time*method_cat 0 0 -1  0 0 1   0 0 0   0 0 0,
 	  		 'Tandem: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  0 0 -1   0 0 1   0 0 0,
 	 		 'Tandem: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   0 0 -1   0 0 1/cl ilink adjust=bon; 
-	ods output LSmeans=LSMEANS;
-	ods output Estimates=ESTIMATE;
+	ods output LSmeans=LSMEANS2;
+	ods output Estimates=ESTIMATE2;
+run;
+
+*create table of back-transformed estimates;
+data LSMEANS2;
+	set LSMEANS2;
+	mu_trans=Mu*9+1;
+	muLower_trans=LowerMu*9+1;
+	muUpper_trans=UpperMu*9+1;
+run;
+
+data ESTIMATE2;
+	set ESTIMATE2;
+	mu_trans=Mu*9+1;
+	muLower_trans=AdjLowerMu*9+1;
+	muUpper_trans=AdjUpperMu*9+1;
+run;
+
+proc export data=LSMEANS2 outfile="S:\Shared Projects\Laura\BDC\Projects\Laurel Messer\Tandem\Data\lsmeans_factor2.csv"
+replace;
+run;
+
+
+proc export data=ESTIMATE2 outfile="S:\Shared Projects\Laura\BDC\Projects\Laurel Messer\Tandem\Data\estimate_factor2.csv"
+replace;
 run;
 
 
@@ -178,13 +207,52 @@ data kc.data1_dia;
 	set kc.data1;
 	where B_RESPONDENT="Person with Diabetes";
 run;
-
 proc glimmix data=kc.data1_dia method=quad plots=residualpanel(conditional marginal);
-	class Exter_lReference time(ref="baseline") method_cat cgm_yn;
-	model factor1_trans = factor1_baseline time method_cat time*method_cat cgm_yn Baseline_A1C BaselineAGE/ dist=beta s ddfm=bw;
+	class Exter_lReference time method_cat cgm_yn;
+	model factor1_trans = time method_cat method_cat*time cgm_yn Baseline_A1C BaselineAGE factor1_baseline/ dist=beta link=logit s ddfm=bw;
+	*model factor1_trans = time method_cat time*method_cat / dist=beta s ddfm=bw;
 	random intercept / subject=Exter_lReference;
-	lsmeans time*method_cat /ilink cl;
+	lsmeans time*method_cat /ilink slicediff=method_cat adjust=bon cl plot=meanplot(sliceby=method_cat plotby=time clband ilink);
+	*contrast statements for comparing differences in each group;
+	estimate 'Injections: baseline to 2mo' time -1 1 0 0 time*method_cat -1 0 0  1 0 0   0 0 0   0 0 0 ,
+			 'Injections: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  -1 0 0   1 0 0   0 0 0,
+			 'Injections: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   -1 0 0   1 0 0,
+	 		 'Non-Tandem: baseline to 2mo' time -1 1 0 0 time*method_cat 0 -1 0  0 1 0   0 0 0   0 0 0,
+	 		 'Non-Tandem: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  0 -1 0   0 1 0   0 0 0,
+	 		 'Non-Tandem: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   0 -1 0   0 1 0,
+		 	 'Tandem: baseline to 2mo' time -1 1 0 0 time*method_cat 0 0 -1  0 0 1   0 0 0   0 0 0,
+	  		 'Tandem: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  0 0 -1   0 0 1   0 0 0,
+	 		 'Tandem: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   0 0 -1   0 0 1/cl ilink adjust=bon; 
+	ods output LSmeans=LSMEANS;
+	ods output Estimates=ESTIMATE;
 run;
+
+data kc.data2_dia;
+	set kc.data2;
+	where B_RESPONDENT="Person with Diabetes";
+run;
+proc glimmix data=kc.data2_dia method=quad plots=residualpanel(conditional marginal);
+	class Exter_lReference time method_cat cgm_yn;
+	model factor2_trans = time method_cat method_cat*time cgm_yn Baseline_A1C BaselineAGE factor2_baseline/ dist=beta s ddfm=bw;
+	*model factor2_trans = time method_cat time*method_cat / dist=beta s ddfm=bw;
+	random intercept / subject=Exter_lReference;
+	lsmeans time*method_cat /ilink slicediff=method_cat adjust=bon cl plot=meanplot(sliceby=method_cat plotby=time clband ilink);
+	*contrast statements for comparing differences in each group;
+	estimate 'Injections: baseline to 2mo' time -1 1 0 0 time*method_cat -1 0 0  1 0 0   0 0 0   0 0 0 ,
+			 'Injections: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  -1 0 0   1 0 0   0 0 0,
+			 'Injections: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   -1 0 0   1 0 0,
+	 		 'Non-Tandem: baseline to 2mo' time -1 1 0 0 time*method_cat 0 -1 0  0 1 0   0 0 0   0 0 0,
+	 		 'Non-Tandem: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  0 -1 0   0 1 0   0 0 0,
+	 		 'Non-Tandem: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   0 -1 0   0 1 0,
+		 	 'Tandem: baseline to 2mo' time -1 1 0 0 time*method_cat 0 0 -1  0 0 1   0 0 0   0 0 0,
+	  		 'Tandem: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  0 0 -1   0 0 1   0 0 0,
+	 		 'Tandem: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   0 0 -1   0 0 1/cl ilink adjust=bon; 
+	ods output LSmeans=LSMEANS2;
+	ods output Estimates=ESTIMATE2;
+run;
+
+
+
 
 *model with only caregivers;
 data kc.data1_care;
@@ -193,25 +261,47 @@ data kc.data1_care;
 run;
 
 proc glimmix data=kc.data1_care method=quad plots=residualpanel(conditional marginal);
-	class Exter_lReference time(ref="baseline") method_cat cgm_yn;
-	model factor1_beta_ex = factor1_baseline time method_cat time*method_cat cgm_yn Baseline_A1C BaselineAGE/ dist=beta s ddfm=bw;
+	class Exter_lReference time method_cat cgm_yn;
+	model factor1_trans = time method_cat method_cat*time cgm_yn Baseline_A1C BaselineAGE factor1_baseline/ dist=beta link=logit s ddfm=bw;
+	*model factor1_trans = time method_cat time*method_cat / dist=beta s ddfm=bw;
 	random intercept / subject=Exter_lReference;
-	lsmeans time*method_cat /ilink cl;
+	lsmeans time*method_cat /ilink slicediff=method_cat adjust=bon cl plot=meanplot(sliceby=method_cat plotby=time clband ilink);
+	*contrast statements for comparing differences in each group;
+	estimate 'Injections: baseline to 2mo' time -1 1 0 0 time*method_cat -1 0 0  1 0 0   0 0 0   0 0 0 ,
+			 'Injections: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  -1 0 0   1 0 0   0 0 0,
+			 'Injections: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   -1 0 0   1 0 0,
+	 		 'Non-Tandem: baseline to 2mo' time -1 1 0 0 time*method_cat 0 -1 0  0 1 0   0 0 0   0 0 0,
+	 		 'Non-Tandem: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  0 -1 0   0 1 0   0 0 0,
+	 		 'Non-Tandem: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   0 -1 0   0 1 0,
+		 	 'Tandem: baseline to 2mo' time -1 1 0 0 time*method_cat 0 0 -1  0 0 1   0 0 0   0 0 0,
+	  		 'Tandem: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  0 0 -1   0 0 1   0 0 0,
+	 		 'Tandem: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   0 0 -1   0 0 1/cl ilink adjust=bon; 
+	ods output LSmeans=LSMEANS;
+	ods output Estimates=ESTIMATE;
 run;
 
-
-
-*Linear mixed model;
-proc glimmix data=kc.data1 method=quad;
-class Exter_lReference time method_cat;
-model factor1_trans = time method_cat time*method_cat / dist=gaussian s ddfm=bw;
-random intercept / subject=Exter_lReference;
+data kc.data2_care;
+	set kc.data2;
+	where B_RESPONDENT="A Parent/Guardian/Caregiver of someone with Diabetes";
 run;
-*Beta GEE;
-proc glimmix data=kc.data1 empirical;
-class Exter_lReference time method_cat;
-model factor1_beta_ex = factor1_baseline time method_cat time*method_cat / dist=beta s ddfm=none covb;
-random _residual_ / subject=Exter_lReference type=cs vcorr;
-*lsmeans diab*time /ilink cl;
+
+proc glimmix data=kc.data2_care method=quad plots=residualpanel(conditional marginal);
+	class Exter_lReference time method_cat cgm_yn;
+	model factor2_trans = time method_cat method_cat*time cgm_yn Baseline_A1C BaselineAGE factor2_baseline/ dist=beta s ddfm=bw;
+	*model factor2_trans = time method_cat time*method_cat / dist=beta s ddfm=bw;
+	random intercept / subject=Exter_lReference;
+	lsmeans time*method_cat /ilink slicediff=method_cat adjust=bon cl plot=meanplot(sliceby=method_cat plotby=time clband ilink);
+	*contrast statements for comparing differences in each group;
+	estimate 'Injections: baseline to 2mo' time -1 1 0 0 time*method_cat -1 0 0  1 0 0   0 0 0   0 0 0 ,
+			 'Injections: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  -1 0 0   1 0 0   0 0 0,
+			 'Injections: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   -1 0 0   1 0 0,
+	 		 'Non-Tandem: baseline to 2mo' time -1 1 0 0 time*method_cat 0 -1 0  0 1 0   0 0 0   0 0 0,
+	 		 'Non-Tandem: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  0 -1 0   0 1 0   0 0 0,
+	 		 'Non-Tandem: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   0 -1 0   0 1 0,
+		 	 'Tandem: baseline to 2mo' time -1 1 0 0 time*method_cat 0 0 -1  0 0 1   0 0 0   0 0 0,
+	  		 'Tandem: 2mo to 4mo' time 0 -1 1 0 time*method_cat 0 0 0  0 0 -1   0 0 1   0 0 0,
+	 		 'Tandem: 4mo to 6mo' time 0 0 -1 1 time*method_cat 0 0 0  0 0 0   0 0 -1   0 0 1/cl ilink adjust=bon; 
+	ods output LSmeans=LSMEANS2;
+	ods output Estimates=ESTIMATE2;
 run;
 
