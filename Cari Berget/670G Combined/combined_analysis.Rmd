@@ -1,0 +1,87 @@
+---
+title: "670G Combined Analysis  "
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/home/tim/Desktop/combined670g")
+library(arsenal)
+library(skimr)
+library(knitr)
+library(tidyverse)
+```
+
+```{r echo=FALSE}
+source("/home/tim/Documents/GitHub/BDC-Code/Cari Berget/670G Combined/data_clean.r")
+# Remove non-670G subjects
+data <- data %>% filter(record_id <= 115)
+```
+
+```{r data clean,echo=FALSE}
+na_strings <- c("","999")
+# Kaan's data
+adult <- read.csv("./Data_Cleaned/670Excel.csv",na.strings = na_strings)
+adult_new <- read.csv("./Data_Cleaned/670Excel.new55patients.csv",
+                      na.strings = na_strings)
+adult_pump <- read.csv("./Data_Cleaned/pdf_summary.csv",
+                       na.strings = na_strings)
+# Split pump data column 1
+adult_pump$id <- sub("_.*","",adult_pump$file)
+adult_pump$id <- sub(" .*","",adult_pump$id)
+adult_pump$id <- tolower(adult_pump$id)
+adult_pump$timepoint <- sub(".pdf","",sub(".*month","M",adult_pump$file))
+# First and last names to ids
+adult_new$First.Name <- tolower(gsub(" .*","",adult_new$Name))
+adult_new$Last.Name <- tolower(gsub(".* ","",adult_new$Name))
+dups <- adult_new$Last.Name[which(duplicated(adult_new$Last.Name))]
+adult_new$id <- ifelse(adult_new$Last.Name %in% c(dups,"myers"),
+                       paste0(adult_new$Last.Name,adult_new$First.Name),
+                       adult_new$Last.Name)
+
+
+adult$First.Name <- tolower(gsub(" .*","",adult$First.Name))
+adult$Last.Name <- gsub(" .*","",adult$Last.Name)
+adult$Last.Name <- tolower(gsub(".* ","",adult$Last.Name))
+dups <- adult$Last.Name[which(duplicated(adult$Last.Name))]
+adult$id <- ifelse(adult$Last.Name %in% c(dups,"myers"),
+                       paste0(adult$Last.Name,adult$First.Name),
+                       adult$Last.Name)
+# HbA1c data wide to long
+adult <- adult %>% 
+  pivot_longer(cols = Date.M1:HbA1C.M12,
+               names_to = c(".value","timepoint"),
+               names_sep = "\\.")
+adult_new <- adult_new %>%
+  pivot_longer(HbA1c.M1:HbA1c.M12,
+               names_to = "timepoint",
+               names_prefix = ".*\\.",
+               values_to = "HbA1C")
+# Combine
+adult_pump <- left_join(adult_pump,adult[,c("id","timepoint","HbA1C")],
+                        by = c("id", "timepoint"))
+adult_pump <- left_join(adult_pump,adult_new[,c("id","timepoint","HbA1C")],
+                        by = c("id", "timepoint"))
+# Merge 
+adult_pump$hba1c <- pmax(adult_pump$HbA1C.x,adult_pump$HbA1C.y,na.rm = T)
+adult_pump$HbA1C.x <- NULL
+adult_pump$HbA1C.y <- NULL
+# Clean up
+rm(list = c("adult_new","adult"))
+adult_pump <- adult_pump %>% select(id,file,timepoint,everything())
+```
+
+# Table 1: Descriptive Characteristics
+
+```{r table 1,echo=FALSE,results='asis'}
+# Get demographics
+demographics <- data %>% filter(gyl_timepoint == 0)
+# Table 1 
+t1 <- tableby(~ demographics_age + demographics_t1d_duration + 
+          demographics_ethnicity.factor + demographics_race.factor,
+          data = demographics)
+# Print
+summary(t1)
+```

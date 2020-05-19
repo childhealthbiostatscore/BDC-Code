@@ -2,7 +2,7 @@
 rm(list=ls())
 graphics.off()
 #Read Data
-data=read.csv('ClinicalObservationC_DATA_2020-05-19_0855.csv')
+data=read.csv('/home/tim/Desktop/combined670g/Data_Cleaned/data.csv')
 #Setting Factors(will create new variable for factors)
 data$redcap_event_name.factor = factor(data$redcap_event_name,levels=c("baseline_arm_1","1_arm_1","2_arm_1","3_arm_1","4_arm_1","5_arm_1","baseline_arm_2","1_arm_2","2_arm_2","3_arm_2","4_arm_2","5_arm_2","baseline_arm_3","1_arm_3","2_arm_3","3_arm_3","4_arm_3","5_arm_3"))
 data$child_ya.factor = factor(data$child_ya,levels=c("1","2"))
