@@ -2,8 +2,8 @@
 ###AUTHOR: KRISTEN CAMPBELL
 ###DATE: 5/4/2020
 library(RColorBrewer)
-# source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Laurel Messer/Tandem/Code/4times/00_data_4times.R')
-# source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Laurel Messer/Tandem/Code/4times/01_survey_4times.R')
+source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Laurel Messer/Tandem/Code/4times/00_data_4times.R')
+source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Laurel Messer/Tandem/Code/4times/01_survey_4times.R')
 
 dat.model<-dat[,c(which(colnames(dat) %in% c("ExternalReference","B_RESPONDENT","Baseline_A1C",
                                                    "Age","Gender","BaselineAGE","duration_of_diabetes_at_baseline_years","cgm_yn","method_cat",
@@ -118,83 +118,87 @@ mod2_data$muUpper_trans<-round(mod2_data$muUpper_trans,2)
 mod2_data$muLower_trans<-round(mod2_data$muLower_trans,2)
 
 #Estimated plots
-jpeg("S:/Shared Projects/Laura/BDC/Projects/Laurel Messer/Tandem/Results/DS_model.jpeg",
+jpeg("S:/Shared Projects/Laura/BDC/Projects/Laurel Messer/Tandem/Results/DS_model_bw.jpeg",
      height=7,width=5,units = "in",res=300)
 
 plot(c(1,4),c(7,10),type="n",xlab="Time",ylab="Estimated Device Satisfaction (DS) Score",xaxt="n",
      main="")
 axis(1,at=c(1,2,3,4),c("Baseline","2mo","4mo","6mo"))
-col<-col2rgb(brewer.pal(3, "Set1")[1])
+col<-col2rgb(brewer.pal(9, "Greys")[4])
 
 polygon(c(1,2,3,4,4,3,2,1),c(dat1$muLower_trans[dat1$method_cat=="Injections"],
                              rev(dat1$muUpper_trans[dat1$method_cat=="Injections"])),
         col=rgb(col[1], col[2], col[3], max = 255, alpha = 125, names = "blue50"),
         border=NA)
 
-points(c(1,2,3,4),dat1$mu_trans[dat1$method_cat=="Injections"],pch=19,col=brewer.pal(3, "Set1")[1])
-lines(c(1,2,3,4),dat1$mu_trans[dat1$method_cat=="Injections"],col=brewer.pal(3, "Set1")[1])
+points(c(1,2,3,4),dat1$mu_trans[dat1$method_cat=="Injections"],pch=19,col=brewer.pal(9, "Greys")[4])
+lines(c(1,2,3,4),dat1$mu_trans[dat1$method_cat=="Injections"],col=brewer.pal(9, "Greys")[4])
 
-col<-col2rgb(brewer.pal(3, "Set1")[2])
+col<-col2rgb(brewer.pal(9, "Greys")[6])
 
 polygon(c(1,2,3,4,4,3,2,1),c(dat1$muLower_trans[dat1$method_cat=="Non-Tandem Pump"],
                              rev(dat1$muUpper_trans[dat1$method_cat=="Non-Tandem Pump"])),
         col=rgb(col[1], col[2], col[3], max = 255, alpha = 125, names = "blue50"),
         border=NA)
 
-points(c(1,2,3,4),dat1$mu_trans[dat1$method_cat=="Non-Tandem Pump"],pch=19,col=brewer.pal(3, "Set1")[2])
-lines(c(1,2,3,4),dat1$mu_trans[dat1$method_cat=="Non-Tandem Pump"],col=brewer.pal(3, "Set1")[2])
+points(c(1,2,3,4),dat1$mu_trans[dat1$method_cat=="Non-Tandem Pump"],pch=19,col=brewer.pal(9, "Greys")[6])
+lines(c(1,2,3,4),dat1$mu_trans[dat1$method_cat=="Non-Tandem Pump"],col=brewer.pal(9, "Greys")[6])
 
-col<-col2rgb(brewer.pal(3, "Set1")[3])
+col<-col2rgb(brewer.pal(9, "Greys")[9])
 
 polygon(c(1,2,3,4,4,3,2,1),c(dat1$muLower_trans[dat1$method_cat=="Tandem Pump"],
                              rev(dat1$muUpper_trans[dat1$method_cat=="Tandem Pump"])),
         col=rgb(col[1], col[2], col[3], max = 255, alpha = 125, names = "blue50"),
         border=NA)
-points(c(1,2,3,4),dat1$mu_trans[dat1$method_cat=="Tandem Pump"],pch=19,col=brewer.pal(3, "Set1")[3])
-lines(c(1,2,3,4),dat1$mu_trans[dat1$method_cat=="Tandem Pump"],col=brewer.pal(3, "Set1")[3])
+points(c(1,2,3,4),dat1$mu_trans[dat1$method_cat=="Tandem Pump"],pch=19,col=brewer.pal(9, "Greys")[9])
+lines(c(1,2,3,4),dat1$mu_trans[dat1$method_cat=="Tandem Pump"],col=brewer.pal(9, "Greys")[9])
 
 legend("bottomright",c("MDI","Non-Tandem Pump","Tandem Pump"),
-       lty=1,pch=19,col=brewer.pal(3, "Set1"),title = "Previous Insulin Method")
+       lty=1,pch=19,col=c(brewer.pal(9, "Greys")[4],
+                          brewer.pal(9, "Greys")[6],
+                          brewer.pal(9, "Greys")[9]),title = "Previous Insulin Method")
 dev.off()
 
 #########DIABETES BURDEN
-jpeg("S:/Shared Projects/Laura/BDC/Projects/Laurel Messer/Tandem/Results/DI_model.jpeg",
+jpeg("S:/Shared Projects/Laura/BDC/Projects/Laurel Messer/Tandem/Results/DI_model_bw.jpeg",
      height=7,width=5,units = "in",res=300)
 
 plot(c(1,4),c(1,6),type="n",xlab="Time",ylab="Estimated Diabetes Impact (DI) Score",xaxt="n",
      main="")
 axis(1,at=c(1,2,3,4),c("Baseline","2mo","4mo","6mo"))
-col<-col2rgb(brewer.pal(3, "Set1")[1])
+col<-col2rgb(brewer.pal(9, "Greys")[4])
 
 polygon(c(1,2,3,4,4,3,2,1),c(dat2$muLower_trans[dat2$method_cat=="Injections"],
                              rev(dat2$muUpper_trans[dat2$method_cat=="Injections"])),
         col=rgb(col[1], col[2], col[3], max = 255, alpha = 125, names = "blue50"),
         border=NA)
 
-points(c(1,2,3,4),dat2$mu_trans[dat2$method_cat=="Injections"],pch=19,col=brewer.pal(3, "Set1")[1])
-lines(c(1,2,3,4),dat2$mu_trans[dat2$method_cat=="Injections"],col=brewer.pal(3, "Set1")[1])
+points(c(1,2,3,4),dat2$mu_trans[dat2$method_cat=="Injections"],pch=19,col=brewer.pal(9, "Greys")[4])
+lines(c(1,2,3,4),dat2$mu_trans[dat2$method_cat=="Injections"],col=brewer.pal(9, "Greys")[4])
 
-col<-col2rgb(brewer.pal(3, "Set1")[2])
+col<-col2rgb(brewer.pal(9, "Greys")[6])
 
 polygon(c(1,2,3,4,4,3,2,1),c(dat2$muLower_trans[dat2$method_cat=="Non-Tandem Pump"],
                              rev(dat2$muUpper_trans[dat2$method_cat=="Non-Tandem Pump"])),
         col=rgb(col[1], col[2], col[3], max = 255, alpha = 125, names = "blue50"),
         border=NA)
 
-points(c(1,2,3,4),dat2$mu_trans[dat2$method_cat=="Non-Tandem Pump"],pch=19,col=brewer.pal(3, "Set1")[2])
-lines(c(1,2,3,4),dat2$mu_trans[dat2$method_cat=="Non-Tandem Pump"],col=brewer.pal(3, "Set1")[2])
+points(c(1,2,3,4),dat2$mu_trans[dat2$method_cat=="Non-Tandem Pump"],pch=19,col=brewer.pal(9, "Greys")[6])
+lines(c(1,2,3,4),dat2$mu_trans[dat2$method_cat=="Non-Tandem Pump"],col=brewer.pal(9, "Greys")[6])
 
-col<-col2rgb(brewer.pal(3, "Set1")[3])
+col<-col2rgb(brewer.pal(9, "Greys")[9])
 
 polygon(c(1,2,3,4,4,3,2,1),c(dat2$muLower_trans[dat2$method_cat=="Tandem Pump"],
                              rev(dat2$muUpper_trans[dat2$method_cat=="Tandem Pump"])),
         col=rgb(col[1], col[2], col[3], max = 255, alpha = 125, names = "blue50"),
         border=NA)
-points(c(1,2,3,4),dat2$mu_trans[dat2$method_cat=="Tandem Pump"],pch=19,col=brewer.pal(3, "Set1")[3])
-lines(c(1,2,3,4),dat2$mu_trans[dat2$method_cat=="Tandem Pump"],col=brewer.pal(3, "Set1")[3])
+points(c(1,2,3,4),dat2$mu_trans[dat2$method_cat=="Tandem Pump"],pch=19,col=brewer.pal(9, "Greys")[9])
+lines(c(1,2,3,4),dat2$mu_trans[dat2$method_cat=="Tandem Pump"],col=brewer.pal(9, "Greys")[9])
 
 legend("bottomright",c("MDI","Non-Tandem Pump","Tandem Pump"),
-       lty=1,pch=19,col=brewer.pal(3, "Set1"),title = "Previous Insulin Method")
+       lty=1,pch=19,col=c(brewer.pal(9, "Greys")[4],
+                          brewer.pal(9, "Greys")[6],
+                          brewer.pal(9, "Greys")[9]),title = "Previous Insulin Method")
 dev.off()
 
 ###overlaid on boxplots:
