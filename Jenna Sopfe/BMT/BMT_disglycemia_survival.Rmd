@@ -1,0 +1,128 @@
+---
+title: "Disglycemia in BMT Patients"
+author: "Kristen Campbell & Tim Vigers"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/home/tim/Desktop/Disglycemia in BMT")
+library(redcapAPI)
+library(AGD)
+library(arsenal)
+library(skimr)
+library(knitr)
+library(survival)
+library(survminer)
+library(patchwork)
+library(tidyverse)
+```
+
+```{r data import,echo=FALSE,cache=TRUE}
+# REDCap API data import
+api <- read.table("./api_token.txt",header = T,sep = "\t")
+rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
+                         token = as.character(api[1,1]))
+data_full <- exportRecords(rcon)
+# Remove participant 10
+data_full <- data_full %>% filter(study_id != "10")
+# Fill down Tx date
+data_full <- data_full %>% group_by(study_id) %>% fill(date_of_tx)
+# Format dates
+datecols = c("date_death","date_of_tx","infxn_date","sens1_place","followup")
+data_full[,datecols] <- lapply(data_full[,datecols],lubridate::ymd)
+```
+
+```{r df,echo=FALSE,cache=TRUE}
+df <- data_full %>% filter(is.na(redcap_repeat_instrument))
+# Combine separate race columns into one
+levels(df$race___0) <- c(NA,"AI or AN")
+levels(df$race___1) <- c(NA,"Asian")
+levels(df$race___2) <- c(NA,"African American")
+levels(df$race___3) <- c(NA,"NH or PI")
+levels(df$race___4) <- c(NA,"White")
+levels(df$race___5) <- c(NA,"Hispanic")
+levels(df$race___6) <- c(NA,"Other")
+df <- df %>% 
+  unite("Race",race___0,race___1,race___2,race___3,race___4,
+        race___5,race___6)
+df$Race <- gsub("NA","",df$Race)
+df$Race <- gsub("_","",df$Race)
+df$Race[which(df$race_multi == "yes")] <- "Multiple"
+df$Race[which(df$Race == "")] <- "Unknown"
+# Calculate age at transplant
+df$AgeTx <- as.numeric(difftime(df$date_of_tx,
+                                          df$date_of_birth,
+                                          units = "days")) / 365.25
+# Format/calculate variables for BMI calculation
+df$sex <- df$gender
+levels(df$sex) <- c("F","M")
+# Calculate BMI and BMI percentile
+df$bmi <- as.numeric(df$weight) / 
+  ((as.numeric(df$height)/100)^2)
+df$bmi_z <- y2z(df$bmi,x = df$AgeTx,
+                          sex = df$sex,ref = get("cdc.bmi"))
+df$bmi_percentile <- round(pnorm(df$bmi_z) * 100,3)
+# BMI percentile groups
+df$bmi_percentile_group <- 
+  cut(df$bmi_percentile,
+      breaks = c(0,85,95,100),
+      labels = c("<85th %ile","85th-95th %ile",">= 95th %ile"),
+      right = F)
+# Infer Tanner stage
+df$tanner_stage[df$AgeTx >= 18] <- "5"
+df$tanner_stage[df$AgeTx <= 3] <- "1"
+# Remove unnecessary columns
+df <- df %>% 
+  select(study_id,date_of_tx,AgeTx,gender,tanner_stage,Race,
+         bmi_percentile_group,tx_type,primary_dx_cat,spec_dx_cat,
+         followup,date_death)
+# Get earliest infection for each participant
+infections <- data_full %>% 
+  filter(redcap_repeat_instrument == "infections",
+         redcap_repeat_instance == 1)
+# Add to df
+df = left_join(df,infections[,c("study_id","infxn_date")],by = "study_id")
+# Event indicators
+df$death <- ifelse(!is.na(df$date_death),1,0)
+df$death <- factor(df$death,levels = 0:1,labels = c("No","Yes"))
+df$infxn <- ifelse(!is.na(df$infxn_date),1,0)
+df$infxn <- factor(df$infxn,levels = 0:1,labels = c("No","Yes"))
+# Add censoring
+df$infxn_date <- pmin(df$infxn_date,df$followup,na.rm = T)
+df$date_death <- pmin(df$date_death,df$followup,na.rm = T)
+# Time to event
+df$time_to_infxn <- as.numeric(difftime(df$infxn_date,df$date_of_tx,
+                                        units = "days"))
+df$time_to_death <- as.numeric(difftime(df$date_death,df$date_of_tx,
+                                        units = "days"))
+```
+
+# Table 1: Descriptive Characteristics
+
+Patients aged 2 - 3 years were assumed to be Tanner stage 1, and patients aged 18+ were assumed to be Tanner stage 5. Particpant 10 was excluded from all analyses.
+
+```{r table 1,echo=FALSE,results='asis'}
+table_one <- tableby(~ notest(AgeTx,"median","q1q3") + gender + 
+                       tanner_stage + bmi_percentile_group + tx_type + 
+                       primary_dx_cat + spec_dx_cat + infxn, 
+                     data = df)
+newlabels <- list(AgeTx = "Age at HSCT",Gender = "Sex",
+                  bmi_percentile_group = "BMI Percentile",
+                  `Transplant Type` = "HSCT Type",
+                  `Primary Diagnosis Category` = "Primary Diagnosis",
+                  `Specific Diagnosis Category` = "Specific Diagnosis",
+                  infxn = "Infection")
+summary(table_one,labelTranslations = newlabels,digits = 2)
+```
+
+# Survival Models
+
+## Time to First Infection
+
+```{r survival,echo=FALSE}
+s = Surv(df$time_to_infxn,df$infxn)
+# Survival part of model
+survfit <- coxph(s~sex + Race,data = events,x=T)
+```
