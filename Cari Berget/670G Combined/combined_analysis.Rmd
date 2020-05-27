@@ -7,48 +7,32 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/home/tim/Desktop/combined670g")
+knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/670G Combined")
 library(arsenal)
 library(skimr)
 library(knitr)
 library(tidyverse)
 ```
 
-```{r echo=FALSE}
-source("/home/tim/Documents/GitHub/BDC-Code/Cari Berget/670G Combined/data_clean.r")
-# Remove non-670G subjects
-data <- data %>% filter(record_id <= 115)
-```
-
-```{r data clean,echo=FALSE}
-na_strings <- c("","999")
+```{r data import and clean,echo=FALSE}
 # Kaan's data
+# Read in
+adult_demographics <- read.csv("./Data_Cleaned/adult_demographics.csv",
+                               na.strings = na_strings)
 adult <- read.csv("./Data_Cleaned/670Excel.csv",na.strings = na_strings)
 adult_new <- read.csv("./Data_Cleaned/670Excel.new55patients.csv",
                       na.strings = na_strings)
 adult_pump <- read.csv("./Data_Cleaned/pdf_summary.csv",
                        na.strings = na_strings)
-# Split pump data column 1
-adult_pump$id <- sub("_.*","",adult_pump$file)
-adult_pump$id <- sub(" .*","",adult_pump$id)
-adult_pump$id <- tolower(adult_pump$id)
-adult_pump$timepoint <- sub(".pdf","",sub(".*month","M",adult_pump$file))
-# First and last names to ids
-adult_new$First.Name <- tolower(gsub(" .*","",adult_new$Name))
-adult_new$Last.Name <- tolower(gsub(".* ","",adult_new$Name))
-dups <- adult_new$Last.Name[which(duplicated(adult_new$Last.Name))]
-adult_new$id <- ifelse(adult_new$Last.Name %in% c(dups,"myers"),
-                       paste0(adult_new$Last.Name,adult_new$First.Name),
-                       adult_new$Last.Name)
-
-
-adult$First.Name <- tolower(gsub(" .*","",adult$First.Name))
-adult$Last.Name <- gsub(" .*","",adult$Last.Name)
-adult$Last.Name <- tolower(gsub(".* ","",adult$Last.Name))
-dups <- adult$Last.Name[which(duplicated(adult$Last.Name))]
-adult$id <- ifelse(adult$Last.Name %in% c(dups,"myers"),
-                       paste0(adult$Last.Name,adult$First.Name),
-                       adult$Last.Name)
+# Format
+adult$last_name <- tolower(adult$Last.Name)
+adult$first_name <- tolower(sapply(strsplit(adult$First.Name," "),"[[",1))
+adult_new$last_name <- tolower(sapply(strsplit(adult_new$Name," "),tail,1))
+adult_new$first_name <- tolower(sapply(strsplit(adult_new$Name," "),"[[",1))
+adult_demographics$last_name <- tolower(adult_demographics$LastName)
+adult_demographics$first_name <- tolower(adult_demographics$FirstName)
+adult_demographics <- adult_demographics %>% 
+  select(first_name,last_name,Gender,DOB,Age_Diagnosis)
 # HbA1c data wide to long
 adult <- adult %>% 
   pivot_longer(cols = Date.M1:HbA1C.M12,
@@ -60,17 +44,28 @@ adult_new <- adult_new %>%
                names_prefix = ".*\\.",
                values_to = "HbA1C")
 # Combine
-adult_pump <- left_join(adult_pump,adult[,c("id","timepoint","HbA1C")],
-                        by = c("id", "timepoint"))
-adult_pump <- left_join(adult_pump,adult_new[,c("id","timepoint","HbA1C")],
-                        by = c("id", "timepoint"))
+adult_pump <- left_join(adult_pump,
+                        adult[,c("first_name","last_name","timepoint","HbA1C")],
+                        by = c("first_name","last_name","timepoint"))
+adult_pump <- left_join(adult_pump,
+                        adult_new[,c("first_name","last_name","timepoint","HbA1C")],
+                        by = c("first_name","last_name","timepoint", "timepoint"))
 # Merge 
 adult_pump$hba1c <- pmax(adult_pump$HbA1C.x,adult_pump$HbA1C.y,na.rm = T)
 adult_pump$HbA1C.x <- NULL
 adult_pump$HbA1C.y <- NULL
+# Add demographic info
+adult_pump <- left_join(adult_pump,adult_demographics,
+                        by = c("first_name","last_name"))
+# Cari's data
+source("/Users/timvigers/GitHub/BDC-Code/Cari Berget/670G Combined/data_clean.r")
+# Remove non-670G subjects and select columns
+data <- data %>% filter(record_id <= 115) %>%
+  select(record_id,gyl_timepoint.factor,time_am,time_mm,sensor_wear,sensor_mean,
+         sensor_sd,amexits,amexit_hyper,amexit_hypo,amexit_manual,amexit_manual,
+         demographics_sex.factor,demographics_dob,demographics_diabetesdx)
 # Clean up
-rm(list = c("adult_new","adult"))
-adult_pump <- adult_pump %>% select(id,file,timepoint,everything())
+rm(list = c("adult","adult_new","adult_demographics"))
 ```
 
 # Table 1: Descriptive Characteristics
