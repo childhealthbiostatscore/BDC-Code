@@ -66,6 +66,7 @@ for (f in 1:length(files)) {
   # Add to summary df
   pdf_summary[f,"first_name"] = strsplit(name," ")[[1]][1]
   pdf_summary[f,"last_name"] = strsplit(name," ")[[1]][2]
+  pdf_summary[f,"file"] = basename(files[f])
   pdf_summary[f,"am_use"] = percs[1]
   pdf_summary[f,"manual"] = percs[2]
   pdf_summary[f,"sensor_wear"] = percs[3]
