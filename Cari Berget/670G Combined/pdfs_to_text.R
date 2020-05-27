@@ -1,9 +1,9 @@
 library(pdftools)
 library(tidyverse)
 # List files
-dir = "/home/tim/Desktop/combined670g/Data_Raw/ClinicVisit_PDFs"
+dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/670G Combined/Data_Raw/ClinicVisit_PDFs"
 files = list.files(dir,pattern = "*pdf",full.names = T)
-# Summary dataframe
+# Summary data frame
 pdf_summary = data.frame()
 # Iterate through files
 for (f in 1:length(files)) {
@@ -17,6 +17,10 @@ for (f in 1:length(files)) {
   # Page as a dataframe, sort by x and y values
   df = as.data.frame(pdf[[page]])
   df = df %>% arrange(x,y)
+  # Get name
+  name = paste(gsub('[[:punct:]]','',df$text[which(df$x > 300 & df$y ==35)]),
+               gsub('[[:punct:]]','',df$text[which(df$x == 289 & df$y ==35)]))
+  name = tolower(name)
   # Get statistics - x column changes depending on length of text
   percs = df[which((df$y == 349 | df$y == 364 | df$y == 378) & df$x > 200),"text"]
   gperc = grep("%",percs)
@@ -60,7 +64,8 @@ for (f in 1:length(files)) {
   avg = avg_sd[1]
   sd= avg_sd[2]
   # Add to summary df
-  pdf_summary[f,"file"] = basename(files[f])
+  pdf_summary[f,"first_name"] = strsplit(name," ")[[1]][1]
+  pdf_summary[f,"last_name"] = strsplit(name," ")[[1]][2]
   pdf_summary[f,"am_use"] = percs[1]
   pdf_summary[f,"manual"] = percs[2]
   pdf_summary[f,"sensor_wear"] = percs[3]
@@ -72,9 +77,9 @@ for (f in 1:length(files)) {
                   "user_disabled_exit","alarms_exit","suspend_exit",
                   "warm_up_exit","other_exit")] = exits
   # Convert to numeric    
-  pdf_summary[,2:ncol(pdf_summary)] = 
-    lapply(pdf_summary[,2:ncol(pdf_summary)],as.numeric)
+  pdf_summary[,3:ncol(pdf_summary)] = 
+    suppressWarnings(lapply(pdf_summary[,3:ncol(pdf_summary)],as.numeric))
 }
 # Write summary
-write.csv(pdf_summary,file = "/home/tim/Desktop/combined670g/Data_Cleaned/pdf_summary.csv",
+write.csv(pdf_summary,file = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/670G Combined/Data_Cleaned/pdf_summary.csv",
           row.names = F,na = "")
