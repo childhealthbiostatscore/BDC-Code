@@ -60,13 +60,15 @@ for (f in 1:length(files)) {
   if (length(avg_sd) == 0){
     avg = NA
     sd = NA
-    }
+  }
   avg = avg_sd[1]
   sd= avg_sd[2]
   # Add to summary df
   pdf_summary[f,"first_name"] = strsplit(name," ")[[1]][1]
   pdf_summary[f,"last_name"] = strsplit(name," ")[[1]][2]
-  pdf_summary[f,"file"] = basename(files[f])
+  pdf_summary[f,"timepoint"] = paste0("M",
+                                      sub(".*month","",
+                                          basename(tools::file_path_sans_ext(files[f]))))
   pdf_summary[f,"am_use"] = percs[1]
   pdf_summary[f,"manual"] = percs[2]
   pdf_summary[f,"sensor_wear"] = percs[3]
@@ -78,8 +80,8 @@ for (f in 1:length(files)) {
                   "user_disabled_exit","alarms_exit","suspend_exit",
                   "warm_up_exit","other_exit")] = exits
   # Convert to numeric    
-  pdf_summary[,3:ncol(pdf_summary)] = 
-    suppressWarnings(lapply(pdf_summary[,3:ncol(pdf_summary)],as.numeric))
+  pdf_summary[,4:ncol(pdf_summary)] = 
+    suppressWarnings(lapply(pdf_summary[,4:ncol(pdf_summary)],as.numeric))
 }
 # Write summary
 write.csv(pdf_summary,file = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/670G Combined/Data_Cleaned/pdf_summary.csv",
