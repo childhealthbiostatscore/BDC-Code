@@ -14,7 +14,8 @@ library(knitr)
 library(tidyverse)
 ```
 
-```{r data import and clean,echo=FALSE}
+```{r data import and clean,echo=FALSE,cache=TRUE}
+na_strings <- c("","999","-999","NULL")
 # Kaan's data
 # Read in
 adult_demographics <- read.csv("./Data_Cleaned/adult_demographics.csv",
@@ -31,13 +32,14 @@ adult_new$last_name <- tolower(sapply(strsplit(adult_new$Name," "),tail,1))
 adult_new$first_name <- tolower(sapply(strsplit(adult_new$Name," "),"[[",1))
 adult_demographics$last_name <- tolower(adult_demographics$LastName)
 adult_demographics$first_name <- tolower(adult_demographics$FirstName)
-adult_demographics <- adult_demographics %>% 
-  select(first_name,last_name,Gender,DOB,Age_Diagnosis)
 # HbA1c data wide to long
 adult <- adult %>% 
   pivot_longer(cols = Date.M1:HbA1C.M12,
                names_to = c(".value","timepoint"),
-               names_sep = "\\.")
+               names_sep = "\\.") %>%
+  mutate(days_from_start = 
+           difftime(as.Date(Date,"%m/%d/%Y"),as.Date(start,"%m/%d/%Y"),
+                    units = "days"))
 adult_new <- adult_new %>%
   pivot_longer(HbA1c.M1:HbA1c.M12,
                names_to = "timepoint",
@@ -57,25 +59,57 @@ adult_pump$HbA1C.y <- NULL
 # Add demographic info
 adult_pump <- left_join(adult_pump,adult_demographics,
                         by = c("first_name","last_name"))
+# Combine am exit columns to match Cari's
+adult_pump <- adult_pump %>% 
+  mutate(time_am = am_use,time_mm = manual,sensor_mean = avg_sensor,
+         sensor_sd = sd_sensor,amexit_hyper = high_sg_exit,
+         amexit_manual = user_disabled_exit,cohort = "Adult",
+         record_id = group_indices(.,first_name,last_name))
+adult_pump$record_id = paste0("A",adult_pump$record_id) 
+adult_pump$amexits = 
+  rowSums(adult_pump[,c(which(colnames(adult_pump) == "no_calib_exit"):
+                          which(colnames(adult_pump) == "other_exit"))])
+# Select columns
+adult_pump <- adult_pump %>%
+  select(record_id,timepoint,hba1c,time_am,time_mm,sensor_wear,sensor_mean,sensor_sd,
+         amexits,amexit_hyper,amexit_manual,Gender,Age_Diagnosis,cohort)
 # Cari's data
 source("/Users/timvigers/GitHub/BDC-Code/Cari Berget/670G Combined/data_clean.r")
+# Timepoint
+data$timepoint = as.character(factor(data$gyl_timepoint,levels = 0:5,
+                            labels = c("Baseline","M1","M3","M6","M9","M12")))
+levels(data$demographics_sex.factor) = c("F","M")
+data$Gender = as.character(data$demographics_sex.factor)
+
 # Remove non-670G subjects and select columns
 data <- data %>% filter(record_id <= 115) %>%
-  select(record_id,gyl_timepoint.factor,time_am,time_mm,sensor_wear,sensor_mean,
-         sensor_sd,amexits,amexit_hyper,amexit_hypo,amexit_manual,amexit_manual,
-         demographics_sex.factor,demographics_dob,demographics_diabetesdx)
+  mutate(Age_Diagnosis = 
+           as.numeric(difftime(as.Date(demographics_diabetesdx),
+                               as.Date(demographics_dob),
+                               units = "days")/365.25),
+         cohort = "Pediatric") %>% 
+  group_by(record_id) %>%
+  fill(Gender,Age_Diagnosis) %>% 
+  select(record_id,timepoint,hba1c,time_am,time_mm,sensor_wear,sensor_mean,
+         sensor_sd,amexits,amexit_hyper,amexit_manual,
+         Gender,Age_Diagnosis,cohort) %>% ungroup()
+# One data frame
+df = rbind(adult_pump,data)
+factor_vars = c("record_id","timepoint","Gender","cohort")
+df[,factor_vars] <- lapply(df[,factor_vars], as.factor)
 # Clean up
-rm(list = c("adult","adult_new","adult_demographics"))
+rm(list = c("adult","adult_new","adult_pump","adult_demographics","data"))
+# Skim
+skim(df)
 ```
 
 # Table 1: Descriptive Characteristics
 
 ```{r table 1,echo=FALSE,results='asis'}
 # Get demographics
-demographics <- data %>% filter(gyl_timepoint == 0)
+demographics <- df %>% group_by(record_id) %>% filter(row_number() == 1)
 # Table 1 
-t1 <- tableby(~ demographics_age + demographics_t1d_duration + 
-          demographics_ethnicity.factor + demographics_race.factor,
+t1 <- tableby(cohort ~ Age_Diagnosis + Gender,
           data = demographics)
 # Print
 summary(t1)
