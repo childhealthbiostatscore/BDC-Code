@@ -3,7 +3,6 @@ set.seed(1017)
 # Enter randomization parameters
 block_randomize = function(total_n, groups = 2,strat_ratio = c(1,1),
                            max_block_size = 12) {
-  
   strat_levels = length(strat_ratio)
   # n for each stratification group
   strat_ns = unlist(lapply(strat_ratio, function(x){x*total_n/sum(strat_ratio)}))
