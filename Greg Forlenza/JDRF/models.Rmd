@@ -17,7 +17,7 @@ library(tidyverse)
 ```
 
 ```{r import data,echo=FALSE}
-source("/Users/timvigers/GitHub/BDC-Code/Greg Forlenza/JDRF/data_import.R")
+source("/Users/timvigers/Documents/GitHub/BDC-Code/Greg Forlenza/JDRF/data_import.R")
 # Exclude participants after 115 and those who never started AM
 exclude <- data$record_id[which(data$gyl_timepoint==0 & is.na(data$automode_start))]
 data <- data %>% filter(record_id <= 115,!(record_id %in% exclude))
@@ -118,21 +118,22 @@ $$
 logit(success) = \beta_0+\beta_1*paid+\beta_2*worry+\beta_3*behave + \epsilon
 $$
 
-So I think it's safe to exclude them from the final model
+Because of all this, surveys were excluded from the lasso model selection, in order to keep the data in one cohort and to avoid missing data problems.
 
-## Child Surveys
-
-### Without interaction terms
+## Lasso
 
 ```{r child without interact,echo=FALSE}
 # Child surveys only
-dfc <- df %>% select(-ya_paid_total,-ya_hfs_behave_total,-ya_hfs_worry_total)
+lasso <- df %>% select(-ya_paid_total,-ya_hfs_behave_total,-ya_hfs_worry_total,
+                       -c_paid_total,-c_hfs_behave_total,-c_hfs_worry_total)
 # Lasso
 # Make model matrix and outcome vector
-form <- 
-  as.formula(paste("success~",paste(colnames(dfc)[3:(ncol(dfc)-1)],
-                                    collapse = "+")))
-cc <- dfc[complete.cases(dfc),]
+form <- as.formula("success ~ hba1c + m1_sensor_wear + m1_time_am + m1_tir + 
+demographics_t1d_duration + demographics_age*demographics_sex.factor + 
+demographics_age*demographics_insurance.factor + demographics_race.factor + 
+demographics_ethnicity.factor + demographics_cgmhx.factor + 
+demographics_pumphx.factor")
+cc <- lasso[complete.cases(lasso),]
 x <- model.matrix(form,cc)[,-1]
 y <- cc$success
 # Fit
@@ -140,79 +141,10 @@ fit <- glmnet(x,y,family = "binomial")
 plot(fit,xvar = "lambda")
 # Cross validation for lambda
 cv.fit <- cv.glmnet(x, y, alpha=1, family = "binomial")
-plot(cv.fit)
 coef(cv.fit)
 ```
 
-### With interaction terms
 
-```{r child with interact,echo=FALSE}
-# Lasso
-# Make model matrix and outcome vector
-form <- as.formula("success ~ hba1c + c_paid_total + c_hfs_behave_total + 
-  c_hfs_worry_total + m1_sensor_wear + m1_time_am + m1_tir + 
-  demographics_t1d_duration + demographics_age*demographics_sex.factor + 
-  demographics_age*demographics_insurance.factor + demographics_race.factor + 
-  demographics_ethnicity.factor + demographics_cgmhx.factor + 
-  demographics_pumphx.factor")
-cc <- dfc[complete.cases(dfc),]
-x <- model.matrix(form,cc)[,-1]
-y <- cc$success
-# Fit
-fit <- glmnet(x,y,family = "binomial")
-plot(fit,xvar = "lambda")
-# Cross validation for lambda
-cv.fit <- cv.glmnet(x, y, alpha=1, family = "binomial")
-plot(cv.fit)
-coef(cv.fit)
-```
-
-## YA Surveys
-
-### Without interaction terms
-
-```{r ya without interact,echo=FALSE,warning=FALSE}
-# YA surveys only
-dfya <- df %>% select(-c_paid_total,-c_hfs_behave_total,-c_hfs_worry_total)
-# Lasso
-# Make model matrix and outcome vector
-form <- 
-  as.formula(paste("success~",paste(colnames(dfya)[3:(ncol(dfya)-1)],
-                                    collapse = "+")))
-cc <- dfya[complete.cases(dfya),]
-x <- model.matrix(form,cc)[,-1]
-y <- cc$success
-# Fit
-fit <- glmnet(x,y,family = "binomial")
-plot(fit,xvar = "lambda")
-# Cross validation for lambda
-cv.fit <- cv.glmnet(x, y, alpha=1, family = "binomial")
-plot(cv.fit)
-coef(cv.fit)
-```
-
-### With interaction terms
-
-```{r ya with interact,echo=FALSE,warning=FALSE}
-# Lasso
-# Make model matrix and outcome vector
-form <- as.formula("success ~ hba1c + ya_paid_total + ya_hfs_behave_total + 
-  ya_hfs_worry_total + m1_sensor_wear + m1_time_am + m1_tir + 
-  demographics_t1d_duration + demographics_age*demographics_sex.factor + 
-  demographics_age*demographics_insurance.factor + demographics_race.factor + 
-  demographics_ethnicity.factor + demographics_cgmhx.factor + 
-  demographics_pumphx.factor")
-cc <- dfya[complete.cases(dfya),]
-x <- model.matrix(form,cc)[,-1]
-y <- cc$success
-# Fit
-fit <- glmnet(x,y,family = "binomial")
-plot(fit,xvar = "lambda")
-# Cross validation for lambda
-cv.fit <- cv.glmnet(x, y, alpha=1, family = "binomial")
-plot(cv.fit)
-coef(cv.fit)
-```
 
 # Notes
 
