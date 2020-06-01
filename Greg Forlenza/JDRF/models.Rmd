@@ -23,7 +23,7 @@ exclude <- data$record_id[which(data$gyl_timepoint==0 & is.na(data$automode_star
 data <- data %>% filter(record_id <= 115,!(record_id %in% exclude))
 ```
 
-```{r data cleaning,echo=FALSE}
+```{r data cleaning,echo=FALSE,message=FALSE}
 # Binary endpoint and predictors
 # The primary endpoint of interest will be percent time in closed loop at 1 year 
 # captured as a continuous percentage for the 2 weeks prior to the 1 year clinical 
@@ -122,15 +122,17 @@ Because of all this, surveys were excluded from the lasso model selection, in or
 
 ## Lasso
 
-```{r child without interact,echo=FALSE}
-# Child surveys only
+### Without interaction terms
+
+```{r without interact,echo=FALSE,warning=FALSE}
+# Remove surveys
 lasso <- df %>% select(-ya_paid_total,-ya_hfs_behave_total,-ya_hfs_worry_total,
                        -c_paid_total,-c_hfs_behave_total,-c_hfs_worry_total)
 # Lasso
 # Make model matrix and outcome vector
 form <- as.formula("success ~ hba1c + m1_sensor_wear + m1_time_am + m1_tir + 
-demographics_t1d_duration + demographics_age*demographics_sex.factor + 
-demographics_age*demographics_insurance.factor + demographics_race.factor + 
+demographics_t1d_duration + demographics_age + demographics_sex.factor + 
+demographics_insurance.factor + demographics_race.factor + 
 demographics_ethnicity.factor + demographics_cgmhx.factor + 
 demographics_pumphx.factor")
 cc <- lasso[complete.cases(lasso),]
@@ -144,7 +146,41 @@ cv.fit <- cv.glmnet(x, y, alpha=1, family = "binomial")
 coef(cv.fit)
 ```
 
+### With interaction terms
 
+Because sensor wear and time in automode at month 1 are correlated, only sensor wear was included in further model selection.
+
+```{r with interact,echo=FALSE,warning=FALSE}
+# Lasso
+# Make model matrix and outcome vector
+form <- as.formula("success ~ demographics_age*hba1c + 
+demographics_age*m1_sensor_wear + demographics_age*m1_tir + 
+demographics_age*demographics_sex.factor + 
+demographics_age*demographics_ethnicity.factor + 
+demographics_age*demographics_pumphx.factor")
+cc <- lasso[complete.cases(lasso),]
+x <- model.matrix(form,cc)[,-1]
+y <- cc$success
+# Fit
+fit <- glmnet(x,y,family = "binomial")
+plot(fit,xvar = "lambda")
+# Cross validation for lambda
+cv.fit <- cv.glmnet(x, y, alpha=1, family = "binomial")
+coef(cv.fit)
+```
+
+## Figures
+
+### HbA1c by age
+
+```{r hba1c age plot,echo=FALSE}
+data <- data %>% group_by(record_id) %>% fill(demographics_dob)
+data$age <- as.numeric(difftime(as.Date(data$date_visit),
+                                as.Date(data$demographics_dob)))/365.25
+data$age_group <- cut(data$age,c(5,13,18,Inf),right = T,
+                           labels = c("6 - 13","14 - 18","18+"))
+ggplot(data,aes(x = age,y = hba1c,group = record_id)) + geom_line() + xlim(0,25)
+```
 
 # Notes
 
