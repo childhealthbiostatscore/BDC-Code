@@ -96,21 +96,7 @@ levels(df$demographics_pumphx.factor) =
     "<= 6 months")
 ```
 
-# Skim
-
-```{r echo=FALSE}
-skim(df)
-```
-
-# Table 1: Descriptive Characteristics
-
-```{r table 1,echo=FALSE,results='asis'}
-t1_form <- paste(colnames(df)[2:ncol(df)],collapse = "+")
-t1 <- tableby(as.formula(paste("~",t1_form)),data = df)
-summary(t1)
-```
-
-# Models
+# Model selection
 
 Using the lasso for model selection requires complete data, and the survey variables have a lot of missing data. The sample size of YA participants is too small to use the lasso, but none of the surveys are associated with the outcome based on simple logistic models of the form:
 
@@ -167,6 +153,56 @@ plot(fit,xvar = "lambda")
 # Cross validation for lambda
 cv.fit <- cv.glmnet(x, y, alpha=1, family = "binomial")
 coef(cv.fit)
+```
+
+## Re-fitting the model
+
+### Issues
+
+Unfortunately, several categorical variables selected by the lasso caused fitted probabilities numerically 0 or 1. In other words, there are levels of the interaction terms where there are either no successes or no failures. I assumed that the lasso would somehow pick up on this and would shrink all the categorical variables coefficients to 0, but this was clearly not the case. 
+
+Also, there is unfortunately not enough variability in pump history or ethnicity to get accurate estimates, since 73/90 (~ 80%) participants are not Hispanic with 6+ months of pump history. See the large coefficients and standard errors in the model summary below.
+
+```{r log model,echo=FALSE,results='asis'}
+full_model = as.formula("success ~ demographics_ethnicity.factor + 
+interaction(demographics_age,demographics_sex.factor) + 
+interaction(demographics_age,demographics_pumphx.factor)")
+
+t = tableby(full_model,df)
+kable(summary(t),caption = "Group Ns")
+```
+
+```{r echo=FALSE}
+no_int_model = as.formula("success ~ hba1c + m1_sensor_wear + m1_tir + 
+demographics_ethnicity.factor + demographics_age + demographics_sex.factor + 
+demographics_pumphx.factor")
+
+mod = glm(no_int_model,family = "binomial",df)
+kable(summary(mod)$coefficients,caption = "Bad model summary")
+```
+
+## Results
+
+### Table 1: Descriptive Characteristics
+
+```{r table 1,echo=FALSE,results='asis'}
+t1_form <- paste(colnames(df)[2:ncol(df)],collapse = "+")
+t1 <- tableby(as.formula(paste("~",t1_form)),data = df)
+summary(t1,labelTranslations = 
+          list(am_final = "AM Use at Final Visit",hba1c = "Baseline HbA1c",
+               c_paid_total = "PAID PEDS Baseline Score",
+               ya_paid_total = "YA PAID Baseline Score"))
+```
+
+### Final model
+
+```{r final model,echo=FALSE}
+final_model = as.formula("success ~ hba1c + m1_sensor_wear + m1_tir + demographics_age + demographics_sex.factor")
+
+mod = glm(final_model,family = "binomial",df)
+t = broom::tidy(mod,exponentiate=T)
+t$term[2:nrow(t)] = c("Baseline HbA1c","M1 Sensor Wear","M1 TIR","Baseline Age 14 - 18","Baseline Age 18+","Male")
+kable(t)
 ```
 
 ## Figures
