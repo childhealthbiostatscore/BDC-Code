@@ -12,6 +12,7 @@ library(Hmisc)
 library(arsenal)
 library(skimr)
 library(knitr)
+library(Epi)
 library(glmnet)
 library(tidyverse)
 ```
@@ -82,7 +83,8 @@ df <- left_join(df,data %>%
          demographics_race.factor,demographics_ethnicity.factor,
          demographics_cgmhx.factor,demographics_pumphx.factor)
 # Binary outcome
-df$success <- as.factor(ifelse(df$am_final >= 60,"Success","Failure"))
+df$success <- as.factor(ifelse(df$am_final >= 60,1,0))
+levels(df$success) <- c("Failure","Success")
 # Categorical variables
 df$demographics_age <- cut(df$demographics_age,c(5,13,18,Inf),right = T,
                            labels = c("6 - 13","14 - 18","18+"))
@@ -98,6 +100,20 @@ levels(df$demographics_pumphx.factor) =
 
 # Model selection
 
+## Lasso
+
+The lasso [1] is a shrinkage method of variable selection, similar to ridge regression. Shrinkage methods impose a penalty on regression coefficients, causing unimportant variables go to 0. The advantage of this approach is that "shrinkage methods are more continuous, and don’t suffer as much from high variability" [2] compared to discrete processes like backwards selection. 
+
+The lasso solves this equation:
+
+![](/Users/timvigers/Documents/GitHub/BDC-Code/Greg Forlenza/JDRF/lasso.png)
+
+but basically the only thing you need to understand is that the parameter $\lambda$ controls the amount of shrinkage applied. The higher $\lambda$ is, the more aggressively the coefficients are shrunk. So, it's important to find the optimal $\lambda$ value that results in an interpretable model without too many variables, but with good prediction error compared to the full model. 
+
+Luckily, the glmnet package [3] does pretty much all the work for us! It partitions the data set into 10 equal subsamples, reserves one for validation and uses the remaining 9 to build the model. This is repeated 10 times so that each subset is used to validate the model once. Within each "fold," multiple values of $\lambda$ are tested. Then, the average error and standard deviation of the error are computed over the folds. Finally, it picks the largest value of $\lambda$ (i.e. the smallest model) such that the error is within one SE of the minimum error. 
+
+### Lasso issues
+
 Using the lasso for model selection requires complete data, and the survey variables have a lot of missing data. The sample size of YA participants is too small to use the lasso, but none of the surveys are associated with the outcome based on simple logistic models of the form:
 
 $$
@@ -105,8 +121,6 @@ logit(success) = \beta_0+\beta_1*paid+\beta_2*worry+\beta_3*behave + \epsilon
 $$
 
 Because of all this, surveys were excluded from the lasso model selection, in order to keep the data in one cohort and to avoid missing data problems.
-
-## Lasso
 
 ### Without interaction terms
 
@@ -131,6 +145,7 @@ plot(fit,xvar = "lambda")
 cv.fit <- cv.glmnet(x, y, alpha=1, family = "binomial")
 coef(cv.fit)
 ```
+As lambda increases, the coefficients are all shrunk to 0. In the table above, the numbers themselves are not important. What matters is whether or not a coefficient was shrunk to 0 or not. The same applies to the lasso with interaction terms included.
 
 ### With interaction terms
 
@@ -157,9 +172,11 @@ coef(cv.fit)
 
 ## Re-fitting the model
 
+After applying the lasso to determine which variables are kept in the model, we re-fit a standard logistic regression (because the lasso estimates are biased by the shrinkage parameter).
+
 ### Issues
 
-Unfortunately, several categorical variables selected by the lasso caused fitted probabilities numerically 0 or 1. In other words, there are levels of the interaction terms where there are either no successes or no failures. I assumed that the lasso would somehow pick up on this and would shrink all the categorical variables coefficients to 0, but this was clearly not the case. 
+Unfortunately, several categorical variables selected by the lasso caused fitted probabilities numerically 0 or 1. In other words, there are levels of the interaction terms where there are either no successes or no failures. I assumed that the lasso would somehow pick up on this and would shrink all the categorical variables coefficients to 0, but this was clearly not the case (and in retrospect a silly assumption).
 
 Also, there is unfortunately not enough variability in pump history or ethnicity to get accurate estimates, since 73/90 (~ 80%) participants are not Hispanic with 6+ months of pump history. See the large coefficients and standard errors in the model summary below.
 
@@ -167,6 +184,7 @@ Also, there is unfortunately not enough variability in pump history or ethnicity
 full_model = as.formula("success ~ demographics_ethnicity.factor + 
 interaction(demographics_age,demographics_sex.factor) + 
 interaction(demographics_age,demographics_pumphx.factor)")
+full_mod = glm(full_model,family = "binomial",df)
 
 t = tableby(full_model,df)
 kable(summary(t),caption = "Group Ns")
@@ -177,49 +195,74 @@ no_int_model = as.formula("success ~ hba1c + m1_sensor_wear + m1_tir +
 demographics_ethnicity.factor + demographics_age + demographics_sex.factor + 
 demographics_pumphx.factor")
 
-mod = glm(no_int_model,family = "binomial",df)
-kable(summary(mod)$coefficients,caption = "Bad model summary")
+no_int_mod = glm(no_int_model,family = "binomial",df)
+kable(summary(no_int_mod)$coefficients,caption = "Bad model summary")
 ```
 
+The tables above are simply to demonstrate how these issues look in the variable counts and model results.
+
 ## Results
+
+After all that, the results below are what we'll present in the manuscript.
 
 ### Table 1: Descriptive Characteristics
 
 ```{r table 1,echo=FALSE,results='asis'}
 t1_form <- paste(colnames(df)[2:ncol(df)],collapse = "+")
-t1 <- tableby(as.formula(paste("~",t1_form)),data = df)
+t1 <- tableby(as.formula(paste("success~",t1_form)),data = df)
 summary(t1,labelTranslations = 
           list(am_final = "AM Use at Final Visit",hba1c = "Baseline HbA1c",
-               c_paid_total = "PAID PEDS Baseline Score",
-               ya_paid_total = "YA PAID Baseline Score"))
+               c_paid_total = "PAID PEDS Score",
+               ya_paid_total = "YA PAID Score",
+               c_hfs_behave_total = "Child HFS Behave Score",
+               ya_hfs_behave_total = "YA HFS Behave Score",
+               c_hfs_worry_total = "Child HFS Worry Score",
+               ya_hfs_worry_total = "YA HFS Worry Score",
+               m1_sensor_wear = "M1 Sensor Wear",m1_time_am = "M1 Time in AM",
+               m1_tir = "M1 TIR",demographics_t1d_duration = "T1D Duration",
+               demographics_age = "Age Group",demographics_sex.factor = "Sex",
+               demographics_insurance.factor = "Insurance",
+               demographics_race.factor = "Race",
+               demographics_ethnicity.factor = "Ethnicity",
+               demographics_cgmhx.factor = "CGM Hx.",
+               demographics_pumphx.factor = "Pump Hx."))
 ```
 
 ### Final model
 
 ```{r final model,echo=FALSE}
-final_model = as.formula("success ~ hba1c + m1_sensor_wear + m1_tir + demographics_age + demographics_sex.factor")
+final_model = as.formula("success ~ scale(hba1c,scale=F) + 
+                         scale(m1_sensor_wear,scale=F) + scale(m1_tir,scale=F) + 
+                         demographics_age + demographics_sex.factor")
 
-mod = glm(final_model,family = "binomial",df)
-t = broom::tidy(mod,exponentiate=T)
-t$term[2:nrow(t)] = c("Baseline HbA1c","M1 Sensor Wear","M1 TIR","Baseline Age 14 - 18","Baseline Age 18+","Male")
+final_mod = glm(final_model,family = "binomial",df)
+t = broom::tidy(final_mod,conf.int = T)
+t$term[2:nrow(t)] = c("Baseline HbA1c","M1 Sensor Wear","M1 TIR",
+                      "Baseline Age 14 - 18","Baseline Age 18+","Male")
 kable(t)
 ```
 
+The coefficients above must be exponentiated in order to interpret them. So, the interpretation is that for each 1-unit increase in sensor wear at month 1, the odds of success increase $e^\beta$ = `r exp(t$estimate[t$term == "M1 Sensor Wear"])` times. Continuous variables have been mean-centered, so the intercept is interpreted as the average odds of success for a participant with average values of continuous variables and 0 (reference group) for all categorical.
+
 ## Figures
 
-### HbA1c by age
+### ROC of final model
 
-```{r hba1c age plot,echo=FALSE}
-data <- data %>% group_by(record_id) %>% fill(demographics_dob)
-data$age <- as.numeric(difftime(as.Date(data$date_visit),
-                                as.Date(data$demographics_dob)))/365.25
-data$age_group <- cut(data$age,c(5,13,18,Inf),right = T,
-                           labels = c("6 - 13","14 - 18","18+"))
-ggplot(data,aes(x = age,y = hba1c,group = record_id)) + geom_line() + xlim(0,25)
+```{r echo=FALSE}
+r = ROC(form = final_model,data = df,MX=F,MI=F,PV=F,plot = "ROC")
 ```
 
-# Notes
+### HbA1c by age group
 
-Used largest value of lambda such that error is within 1 standard error of the minimum.
+```{r echo=FALSE}
+ggplot(df,aes(x=demographics_age,y=hba1c))+geom_boxplot() + 
+  theme_bw() + xlab("Age Group") + ylab("HbA1c (%)")
+```
 
-Deviance is the loss function used for CV (10 fold).
+# References
+
+1. 	Tibshirani R. Regression Shrinkage and Selection Via the Lasso. J R Stat Soc Ser B Methodol. 1996;58(1):267-288. doi:10.1111/j.2517-6161.1996.tb02080.x
+
+2. 	Hastie T, Tibshirani R, Friedman JH. The Elements of Statistical Learning: Data Mining, Inference, and Prediction. 2nd ed. Springer; 2009
+
+3. 	Friedman J, Hastie T, Tibshirani R. Regularization Paths for Generalized Linear Models via Coordinate Descent. J Stat Softw. 2010;33(1). doi:10.18637/jss.v033.i01
