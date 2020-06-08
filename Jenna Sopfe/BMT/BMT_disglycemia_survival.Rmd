@@ -17,7 +17,6 @@ library(survival)
 library(survminer)
 library(survivalROC)
 library(tdROC)
-library(timeROC)
 library(tidyverse)
 ```
 
@@ -121,7 +120,7 @@ summary(table_one,labelTranslations = newlabels,digits = 2)
 
 # Table 2: Glycemic Control
 
-```{r cgm summary,echo=FALSE,results='asis'}
+```{r cgm summary,echo=FALSE,results='asis',cache=TRUE,message=FALSE}
 # Import CGM
 cgm = read.csv("./Jenna Sopfe/CGM Accuracy in BMT/Data_Cleaned/Prospective HSCT CGM Data Updated 6.24.19 FULL DATA SET.csv")
 # Format columns
@@ -180,70 +179,349 @@ df$death <- as.numeric(df$death)-1
 
 # Survival Models
 
+Age and Tanner 1 vs. Tanner 2-5 appear to violate proportional hazard (PH) assumptions.
+
+```{r cutoff function and data,echo=FALSE,message=FALSE}
+# tdROC cutoff function
+opt_cutoff <- function(data = df,time = "time_to_infxn", event = "infxn",var,
+                       nboot = 0,n.grid = 1000){
+  temp <- data[,c(var,time,event)]
+  temp <- as.data.frame(temp[complete.cases(temp),])
+  if(grepl("14\\+",var)){temp <- temp[-c(which(temp[,time] <=14)),]}
+  res <- as.data.frame(matrix(ncol = 3))
+  colnames(res) <- c("Variable","Cutoff","AUC")
+  res$Variable <- var
+  if (nrow(temp) > 0) {
+    fm <- tdROC(X=temp[,var],Y=temp[,time],delta = temp[,event], 
+                tau = max(temp[,time]),n.grid = n.grid)
+    auc <- as.numeric(fm$AUC2[1])
+    fm <- as.data.frame(fm$ROC)
+    fm$youd <- fm$sens + fm$spec - 1
+    cut <- fm$grid[which(fm$youd == max(fm$youd))]
+    cut <- cut[which(is.finite(cut))]
+    res$Cutoff <- paste(round(min(cut)),"-",round(max(cut)))
+    res$AUC <- round(auc,3)
+  } else {
+    res$Cutoff <- NA
+    res$AUC <- NA
+  }
+  res
+}
+# Format data
+df$tanner_stage_binary <- as.character(df$tanner_stage)
+df$tanner_stage_binary[df$tanner_stage_binary=="unknown"] <- NA
+df$tanner_stage_binary <- as.factor(df$tanner_stage_binary)
+levels(df$tanner_stage_binary) <- c("Tanner 1","Tanner 2-5","Tanner 2-5",
+                                    "Tanner 2-5")
+```
+
 ## Time to First Infection
 
 ### Mean glucose
 
-Age appears to violate PH assumption, but Tanner stage doesn't. However, there are 0 participants with Tanner stage 2. Split Tanner into Tanner 1 vs. Tanner 2-5.
+#### Results
 
-Post-BMT steroids are strongly associated with infection. Are people put on steroids in response to infection?
-
-# FOR DAYS 14+ EXCLUDE EVENTS IN 0 - 14 DAY PERIOD
-
-```{r survival,echo=FALSE,message=FALSE,fig.height=10,fig.width=10}
-df$tanner_stage_binary <- df$tanner_stage
-levels(df$tanner_stage_binary) <- c("unknown","Tanner 1",
-                                    "Tanner 2-5","Tanner 2-5",
-                                    "Tanner 2-5","Tanner 2-5")
+```{r avg survival,echo=FALSE}
 # Cox models 
 # Days -7 to -1
 avg_pre_cox <- coxph(Surv(time_to_infxn,infxn) ~ `avg Day -7 to -1`+
-                       tx_type+post_tx_steroids+tanner_stage_binary,
+                       tx_type+post_tx_steroids,
                      data = df)
 # Diagnostics
 d <- cox.zph(avg_pre_cox)
-kable(d$table)
-ggcoxzph(d)
+#kable(d$table)
+#ggcoxzph(d)
+res <- broom::tidy(avg_pre_cox)
+res$term[2:nrow(res)] <- c("Allogeneic Tx","Post-Tx Steroids")
+kable(res)
 # Days 0 to 14
 avg_imm_post_cox <- coxph(Surv(time_to_infxn,infxn) ~ `avg Days 0 to 14`+
-                            tx_type+post_tx_steroids+tanner_stage_binary,
+                            tx_type+post_tx_steroids,
                           data = df)
 # Diagnostics
 d <- cox.zph(avg_imm_post_cox)
-kable(d$table)
-ggcoxzph(d)
+# kable(d$table)
+# ggcoxzph(d)
+res <- broom::tidy(avg_imm_post_cox)
+res$term[2:nrow(res)] <- c("Allogeneic Tx","Post-Tx Steroids")
+kable(res)
 # Days 14+
 avg_post_cox <- coxph(Surv(time_to_infxn,infxn) ~ `avg Day 14+`+
-                        tx_type+post_tx_steroids+tanner_stage_binary,
-                      data = df)
+                        tx_type+post_tx_steroids,
+                      data = df[which(df$time_to_infxn>14),])
+# Diagnostics
+d <- cox.zph(avg_post_cox)
+# kable(d$table)
+# ggcoxzph(d)
+res <- broom::tidy(avg_post_cox)
+res$term[2:nrow(res)] <- c("Allogeneic Tx","Post-Tx Steroids")
+kable(res)
+```
+
+#### Cutoffs
+
+```{r avg cuts,echo=FALSE}
+l <- lapply(c("avg Day -7 to -1","avg Days 0 to 14","avg Day 14+"), function(x){
+  opt_cutoff(var = x)
+})
+kable(do.call(rbind,l))
+```
+
+### Glucose CV
+
+#### Results
+
+```{r cv survival,echo=FALSE}
+# Cox models 
+# Days -7 to -1
+cv_pre_cox <- coxph(Surv(time_to_infxn,infxn) ~ `cv Day -7 to -1`+
+                      tx_type+post_tx_steroids,
+                    data = df)
+# Diagnostics
+d <- cox.zph(cv_pre_cox)
+#kable(d$table)
+#ggcoxzph(d)
+res <- broom::tidy(cv_pre_cox)
+res$term[2:nrow(res)] <- c("Allogeneic Tx","Post-Tx Steroids")
+kable(res)
+# Days 0 to 14
+cv_imm_post_cox <- coxph(Surv(time_to_infxn,infxn) ~ `cv Days 0 to 14`+
+                           tx_type+post_tx_steroids,
+                         data = df)
+# Diagnostics
+d <- cox.zph(cv_imm_post_cox)
+# kable(d$table)
+# ggcoxzph(d)
+res <- broom::tidy(cv_imm_post_cox)
+res$term[2:nrow(res)] <- c("Allogeneic Tx","Post-Tx Steroids")
+kable(res)
+# Days 14+
+cv_post_cox <- coxph(Surv(time_to_infxn,infxn) ~ `cv Day 14+`+
+                       tx_type+post_tx_steroids,
+                     data = df[which(df$time_to_infxn>14),])
+# Diagnostics
+d <- cox.zph(cv_post_cox)
+# kable(d$table)
+# ggcoxzph(d)
+res <- broom::tidy(cv_post_cox)
+res$term[2:nrow(res)] <- c("Allogeneic Tx","Post-Tx Steroids")
+kable(res)
+```
+
+#### Cutoffs
+
+```{r cv cuts,echo=FALSE}
+l <- lapply(c("cv Day -7 to -1","cv Days 0 to 14","cv Day 14+"), function(x){
+  opt_cutoff(var = x)
+})
+kable(do.call(rbind,l))
+```
+
+### Percent time > 140
+
+#### Results
+
+```{r perc survival,echo=FALSE}
+# Cox models 
+# Days -7 to -1
+perc_140_pre_cox <- coxph(Surv(time_to_infxn,infxn) ~ `perc_140 Day -7 to -1`+
+                            tx_type+post_tx_steroids,
+                          data = df)
+# Diagnostics
+d <- cox.zph(perc_140_pre_cox)
+#kable(d$table)
+#ggcoxzph(d)
+res <- broom::tidy(perc_140_pre_cox)
+res$term[2:nrow(res)] <- c("Allogeneic Tx","Post-Tx Steroids")
+kable(res)
+# Days 0 to 14
+perc_140_imm_post_cox <- coxph(Surv(time_to_infxn,infxn) ~ `perc_140 Days 0 to 14`+
+                                 tx_type+post_tx_steroids,
+                               data = df)
+# Diagnostics
+d <- cox.zph(perc_140_imm_post_cox)
+# kable(d$table)
+# ggcoxzph(d)
+res <- broom::tidy(perc_140_imm_post_cox)
+res$term[2:nrow(res)] <- c("Allogeneic Tx","Post-Tx Steroids")
+kable(res)
+# Days 14+
+perc_140_post_cox <- coxph(Surv(time_to_infxn,infxn) ~ `perc_140 Day 14+`+
+                             tx_type+post_tx_steroids,
+                           data = df[which(df$time_to_infxn>14),])
+# Diagnostics
+d <- cox.zph(perc_140_post_cox)
+# kable(d$table)
+# ggcoxzph(d)
+res <- broom::tidy(perc_140_post_cox)
+res$term[2:nrow(res)] <- c("Allogeneic Tx","Post-Tx Steroids")
+kable(res)
+```
+
+#### Cutoffs
+
+```{r perc cuts,echo=FALSE}
+l <- lapply(c("perc_140 Day -7 to -1","perc_140 Days 0 to 14","perc_140 Day 14+"), function(x){
+  opt_cutoff(var = x)
+})
+kable(do.call(rbind,l))
+```
+
+### Notes
+
+Mean glucose, glucose coefficient of variation, percent time above 140 mg/dL, and transplant type were not associated with increased risk of infection. Post-BMT steroids are strongly associated with infection. 
+
+## Time to Death
+
+There is not enough information to include both transplant type and steroid use in these models (the table below is simply to illustrate that there are no events in certain levels of these variables). When possible, post-transplant steroid use was kept in the model because it was associated with infection. However, it appeared to violate proportion
+
+```{r echo=FALSE,results='asis'}
+summary(tableby(death~interaction(tx_type,post_tx_steroids),df))
+```
+
+### Mean glucose
+
+#### Results
+
+```{r avg death,echo=FALSE}
+# Cox models 
+# Days -7 to -1
+avg_pre_cox <- coxph(Surv(time_to_death,death) ~ `avg Day -7 to -1`+
+                       tx_type,data = df)
+# Diagnostics
+d <- cox.zph(avg_pre_cox)
+#kable(d$table)
+#ggcoxzph(d)
+res <- broom::tidy(avg_pre_cox)
+res$term[2] <- "Allogeneic Tx"
+kable(res)
+# Days 0 to 14
+avg_imm_post_cox <- coxph(Surv(time_to_death,death) ~ `avg Days 0 to 14`+
+                            post_tx_steroids,
+                          data = df)
 # Diagnostics
 d <- cox.zph(avg_imm_post_cox)
-kable(d$table)
-ggcoxzph(d)
-# Cutoffs
-# Time dependent sensitivity and specificity
-# timeROC package
-res <- 
-  SeSpPPVNPV(cutpoint=115,
-             T=df$time_to_infxn,
-             delta=df$infxn,marker=df$`avg Day -7 to -1`,
-             cause=1,weighting="cox",
-             other_markers = as.matrix(cbind(df$tanner_stage_binary,df$tx_type)),
-             times=quantile(df$time_to_infxn,probs=seq(0.2,0.8,0.1)))
-# tdROC package
-temp <- df[,c("avg Day -7 to -1","time_to_infxn","infxn")]
-temp <- temp[complete.cases(temp),]
-fm <- tdROC(X=temp$`avg Day -7 to -1`,Y=temp$time_to_infxn, 
-            delta = temp$infxn, tau = max(temp$time_to_infxn))
-# survivalROC package
-roc = 
-  survivalROC(Stime=df$time_to_infxn,  
-              status=df$infxn,      
-              marker = df$`avg Day -7 to -1`,     
-              predict.time = 365*2,span = 0.25*nrow(df)^(-0.20))
-plot(roc$FP, roc$TP, type="l", xlim=c(0,1), ylim=c(0,1),   
-     xlab=paste( "FP", "\n", "AUC = ",round(roc$AUC,3)), 
-     ylab="TP",
-     main="Mean Glucose Days -7 to -1, Method = NNE \n  Year = 2")
-abline(0,1)
+# kable(d$table)
+# ggcoxzph(d)
+res <- broom::tidy(avg_imm_post_cox)
+res$term[2] <- "Post-Tx Steroids"
+kable(res)
+# Days 14+
+avg_post_cox <- coxph(Surv(time_to_death,death) ~ `avg Day 14+`+
+                        post_tx_steroids,
+                      data = df[which(df$time_to_death>14),])
+# Diagnostics
+d <- cox.zph(avg_post_cox)
+# kable(d$table)
+# ggcoxzph(d)
+res <- broom::tidy(avg_post_cox)
+res$term[2] <- "Post-Tx Steroids"
+kable(res)
 ```
+
+#### Cutoffs
+
+```{r avg cuts death,echo=FALSE}
+l <- lapply(c("avg Day -7 to -1","avg Days 0 to 14","avg Day 14+"), function(x){
+  opt_cutoff(var = x,time = "time_to_death", event = "death")
+})
+kable(do.call(rbind,l))
+```
+
+### Glucose CV
+
+#### Results
+
+```{r cv survival death,echo=FALSE}
+# Cox models 
+# Days -7 to -1
+cv_pre_cox <- coxph(Surv(time_to_death,death) ~ `cv Day -7 to -1`+
+                      post_tx_steroids,data = df)
+# Diagnostics
+d <- cox.zph(cv_pre_cox)
+#kable(d$table)
+#ggcoxzph(d)
+res <- broom::tidy(cv_pre_cox)
+res$term[2:nrow(res)] <- "Post-Tx Steroids"
+kable(res)
+# Days 0 to 14
+cv_imm_post_cox <- coxph(Surv(time_to_death,death) ~ `cv Days 0 to 14`+
+                           post_tx_steroids,data = df)
+# Diagnostics
+d <- cox.zph(cv_imm_post_cox)
+# kable(d$table)
+# ggcoxzph(d)
+res <- broom::tidy(cv_imm_post_cox)
+res$term[2:nrow(res)] <- "Post-Tx Steroids"
+kable(res)
+# Days 14+
+cv_post_cox <- coxph(Surv(time_to_death,death) ~ `cv Day 14+`+
+                       post_tx_steroids,data = df[which(df$time_to_death>14),])
+# Diagnostics
+d <- cox.zph(cv_post_cox)
+# kable(d$table)
+# ggcoxzph(d)
+res <- broom::tidy(cv_post_cox)
+res$term[2:nrow(res)] <- "Post-Tx Steroids"
+kable(res)
+```
+
+#### Cutoffs
+
+```{r cv cuts death,echo=FALSE}
+l <- lapply(c("cv Day -7 to -1","cv Days 0 to 14","cv Day 14+"), function(x){
+  opt_cutoff(var = x)
+})
+kable(do.call(rbind,l))
+```
+
+### Percent time > 140
+
+#### Results
+
+```{r perc survival death,echo=FALSE}
+# Cox models 
+# Days -7 to -1
+perc_140_pre_cox <- coxph(Surv(time_to_death,death) ~ `perc_140 Day -7 to -1`+
+                            post_tx_steroids,data = df)
+# Diagnostics
+d <- cox.zph(perc_140_pre_cox)
+#kable(d$table)
+#ggcoxzph(d)
+res <- broom::tidy(perc_140_pre_cox)
+res$term[2:nrow(res)] <- "Post-Tx Steroids"
+kable(res)
+# Days 0 to 14
+perc_140_imm_post_cox <- coxph(Surv(time_to_death,death) ~ `perc_140 Days 0 to 14`+
+                                 post_tx_steroids,data = df)
+# Diagnostics
+d <- cox.zph(perc_140_imm_post_cox)
+# kable(d$table)
+# ggcoxzph(d)
+res <- broom::tidy(perc_140_imm_post_cox)
+res$term[2:nrow(res)] <- "Post-Tx Steroids"
+kable(res)
+# Days 14+
+perc_140_post_cox <- coxph(Surv(time_to_death,death) ~ `perc_140 Day 14+`+
+                             post_tx_steroids,data = df[which(df$time_to_death>14),])
+# Diagnostics
+d <- cox.zph(perc_140_post_cox)
+# kable(d$table)
+# ggcoxzph(d)
+res <- broom::tidy(perc_140_post_cox)
+res$term[2:nrow(res)] <- "Post-Tx Steroids"
+kable(res)
+```
+
+#### Cutoffs
+
+```{r perc cuts death,echo=FALSE}
+l <- lapply(c("perc_140 Day -7 to -1","perc_140 Days 0 to 14","perc_140 Day 14+"), function(x){
+  opt_cutoff(var = x)
+})
+kable(do.call(rbind,l))
+```
+
+### Notes
+
+Mean glucose, glucose coefficient of variation, and percent time above 140 mg/dL were not associated with increased risk of death.
