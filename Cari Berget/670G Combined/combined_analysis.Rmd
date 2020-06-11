@@ -2,7 +2,7 @@
 title: "670G Combined Analysis  "
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: word_document
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
@@ -11,6 +11,9 @@ knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/
 library(arsenal)
 library(skimr)
 library(mice)
+library(nlme)
+library(lme4)
+library(emmeans)
 library(knitr)
 library(tidyverse)
 ```
@@ -26,13 +29,6 @@ adult_new <- read.csv("./Data_Cleaned/670Excel.new55patients.csv",
                       na.strings = na_strings)
 adult_pump <- read.csv("./Data_Cleaned/pdf_summary.csv",
                        na.strings = na_strings)
-# Remove rows with no HbA1c data
-adult <- 
-  adult[which(rowSums(is.na(adult[,c("HbA1C.M1","HbA1C.M3","HbA1C.M6",
-                                     "HbA1C.M9","HbA1C.M12")])) < 5),]
-adult_new <- 
-  adult_new[which(rowSums(is.na(adult_new[,c("HbA1c.M1","HbA1c.M3","HbA1c.M6",
-                                             "HbA1c.M9","HbA1c.M12")])) < 5),]
 # Format
 adult$last_name <- tolower(adult$Last.Name)
 adult$first_name <- tolower(sapply(strsplit(adult$First.Name," "),"[[",1))
@@ -46,8 +42,8 @@ adult <- adult %>%
                names_to = c(".value","timepoint"),
                names_sep = "\\.") %>%
   mutate(days_from_start = 
-           difftime(as.Date(Date,"%m/%d/%Y"),as.Date(start,"%m/%d/%Y"),
-                    units = "days"))
+           as.numeric(difftime(as.Date(Date,"%m/%d/%Y"),as.Date(start,"%m/%d/%Y"),
+                               units = "days")))
 adult_new <- adult_new %>%
   pivot_longer(HbA1c.M1:HbA1c.M12,
                names_to = "timepoint",
@@ -65,19 +61,24 @@ adult_pump <-
 adult_pump <- left_join(adult_pump,adult_demographics,
                         by = c("first_name","last_name"))
 # Combine am exit columns to match Cari's
-adult_pump <- adult_pump %>% 
-  mutate(time_am = am_use,time_mm = manual,sensor_mean = avg_sensor,
-         sensor_sd = sd_sensor,amexit_hyper = high_sg_exit,
-         amexit_manual = user_disabled_exit,cohort = "Adult",hba1c = HbA1C,
-         record_id = group_indices(.,first_name,last_name))
-adult_pump$record_id = paste0("A",adult_pump$record_id) 
 adult_pump$amexits = 
   rowSums(adult_pump[,c(which(colnames(adult_pump) == "no_calib_exit"):
                           which(colnames(adult_pump) == "other_exit"))])
+adult_pump <- adult_pump %>% 
+  mutate(time_am = am_use,time_mm = manual,sensor_mean = avg_sensor,
+         sensor_sd = sd_sensor,
+         amexit_hyper = high_sg_exit/amexits,
+         amexit_manual = user_disabled_exit/amexits,
+         amexits_other = other_exit/amexits,
+         amexits_day = amexits / days_worn,
+         cohort = "Adult",hba1c = HbA1C,
+         record_id = group_indices(.,first_name,last_name))
+adult_pump$record_id = paste0("A",adult_pump$record_id) 
 # Select columns
 adult_pump <- adult_pump %>%
   select(record_id,timepoint,hba1c,time_am,time_mm,sensor_wear,sensor_mean,sensor_sd,
-         amexits,amexit_hyper,amexit_manual,Gender,Age_Diagnosis,cohort,
+         amexits,amexit_hyper,amexit_manual,amexits_day,amexits_other,
+         Gender,Age_Diagnosis,cohort,
          days_from_start)
 # Cari's data
 source("/Users/timvigers/GitHub/BDC-Code/Cari Berget/670G Combined/data_clean.r")
@@ -92,6 +93,10 @@ data = data %>% group_by(record_id) %>% fill(automode_start)
 datecols = c("date_visit","automode_start")
 data[,datecols] = lapply(data[,datecols], lubridate::mdy)
 data$days_from_start = as.numeric(difftime(data$date_visit,data$automode_start))
+# AM exit percentages
+data$amexit_hyper <- data$amexit_hyper / data$amexits
+data$amexit_manual <- data$amexit_manual / data$amexits
+data$amexits_other <- data$amexits_other / data$amexits
 # Remove non-670G subjects and select columns
 data <- data %>% filter(record_id <= 115) %>%
   mutate(Age_Diagnosis = 
@@ -102,15 +107,17 @@ data <- data %>% filter(record_id <= 115) %>%
   group_by(record_id) %>%
   fill(Gender,Age_Diagnosis) %>% 
   select(record_id,timepoint,hba1c,time_am,time_mm,sensor_wear,sensor_mean,
-         sensor_sd,amexits,amexit_hyper,amexit_manual,
+         sensor_sd,amexits,amexit_hyper,amexit_manual,amexits_day,amexits_other,
          Gender,Age_Diagnosis,cohort,days_from_start) %>% ungroup()
 # One data frame
 df = rbind(adult_pump,data)
 factor_vars = c("record_id","timepoint","Gender","cohort")
 df[,factor_vars] <- lapply(df[,factor_vars], as.factor)
+# Timpoints (drop baseline since Kaan's data doesn't have it)
 df$timepoint <- factor(df$timepoint,levels = c("Baseline","M1","M3","M6","M9","M12"))
+df <- df[df$timepoint != "Baseline",]
 # Skim
-skim(df)
+#skim(df)
 ```
 
 # Table 1: Descriptive Characteristics
@@ -133,34 +140,87 @@ summary(t1)
 
 ```{r echo=FALSE,results='asis'}
 t2 <- tableby(timepoint ~ notest(days_from_start,"Nmiss","median","q1q3"),
-              total = F,
-              df[df$timepoint != "Baseline",])
+              total = F,df)
 summary(t2)
 ```
 
 # Figure 1: HbA1c Over Time by Cohort
 
-```{r echo=FALSE}
-gm = df[!is.na(df$timepoint),] %>% group_by(cohort,timepoint) %>%
-  summarise(mean = mean(hba1c,na.rm = T))
-
+```{r echo=FALSE,warning=FALSE,message=FALSE}
 ggplot(df[!is.na(df$timepoint),],aes(x = timepoint,y = hba1c)) + 
   geom_line(alpha = 0.2,aes(group = record_id,color = cohort)) + 
   geom_smooth(aes(group = cohort,color = cohort),se = F) + 
   theme_bw()
 ```
 
-# Table 3: HbA1c Model Results
+# Model Results
 
-```{r echo=FALSE}
+```{r models,echo=FALSE}
+# AR1 correlation structure better by AIC - residuals look okay in general
+hba1c_mod_ar1 <- lme(hba1c ~ timepoint*cohort,random = ~1|record_id,df,
+                     correlation=corAR1(),na.action = na.omit)
+# Same model structure for all tests
+mods <- 
+  lapply(c("time_am","sensor_mean","amexits_day"), 
+         function(x){
+           form <- as.formula(paste(x,"~timepoint*cohort"))
+           mod <- lme(form,random = ~1|record_id,df,
+                      correlation=corAR1(),na.action = na.omit)
+         })
+```
 
+```{r results, echo=FALSE}
+# HbA1c
+res <- broom::tidy(hba1c_mod_ar1,effects = "fixed")
+res$term <- gsub("timepoint|cohort","",res$term)
+res[,2:ncol(res)] <- lapply(res[,2:ncol(res)],function(x){round(x,3)})
+t3_res <- as.data.frame(anova.lme(hba1c_mod_ar1))
+t3_res[,3:4] <- lapply(t3_res[,3:4], function(x){round(x,3)})
+kable(t3_res,caption = "HbA1c Overall Results")
+kable(res,caption = "HbA1c Detailed Results")
+# AM Time
+res <- broom::tidy(mods[[1]],effects = "fixed")
+res$term <- gsub("timepoint|cohort","",res$term)
+res[,2:ncol(res)] <- lapply(res[,2:ncol(res)],function(x){round(x,3)})
+t3_res <- as.data.frame(anova.lme(mods[[1]]))
+t3_res[,3:4] <- lapply(t3_res[,3:4], function(x){round(x,3)})
+kable(t3_res,caption = "% Time AM Overall Results")
+kable(res,caption = "% Time AM Detailed Results")
+# Sensor mean
+res <- broom::tidy(mods[[2]],effects = "fixed")
+res$term <- gsub("timepoint|cohort","",res$term)
+res[,2:ncol(res)] <- lapply(res[,2:ncol(res)],function(x){round(x,3)})
+t3_res <- as.data.frame(anova.lme(mods[[2]]))
+t3_res[,3:4] <- lapply(t3_res[,3:4], function(x){round(x,3)})
+kable(t3_res,caption = "Sensor Mean Overall Results")
+kable(res,caption = "Sensor Mean Detailed Results")
+# AM exits per day
+res <- broom::tidy(mods[[3]],effects = "fixed")
+res$term <- gsub("timepoint|cohort","",res$term)
+res[,2:ncol(res)] <- lapply(res[,2:ncol(res)],function(x){round(x,3)})
+t3_res <- as.data.frame(anova.lme(mods[[3]]))
+t3_res[,3:4] <- lapply(t3_res[,3:4], function(x){round(x,3)})
+kable(t3_res,caption = "AM Exits per Day Overall Results")
+kable(res,caption = "AM Exits per Day Detailed Results")
 ```
 
 # Questions
 
-1. Lots of missing values, particularly HbA1c. How to handle this?
+1. Lots of missing values, particularly HbA1c. How to handle this? Or are mixed models okay?
 
 ```{r echo=FALSE,fig.width=8}
 md = md.pattern(df)
 kable(md)
+```
+
+2. Can we dichotomize AM time?
+
+```{r echo=FALSE}
+hist(df$time_am,main = "Time in AM (%)")
+```
+
+3. AM exits for hyperglycemia and manual AM exits are very skewed and giving me model trouble. Should I keep looking into fancier models? For example:
+
+```{r echo=FALSE}
+hist(df$amexit_manual,main = "Manual AM Exits (%)")
 ```
