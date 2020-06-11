@@ -2,7 +2,7 @@
 title: "670G Combined Analysis  "
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: html_document
+output: word_document
 ---
 
 ```{r setup, include=FALSE}
@@ -10,11 +10,12 @@ knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/670G Combined")
 library(arsenal)
 library(skimr)
+library(mice)
 library(knitr)
 library(tidyverse)
 ```
 
-```{r data import and clean,echo=FALSE,cache=TRUE}
+```{r data import and clean,echo=FALSE,cache=TRUE,warning=FALSE}
 na_strings <- c("","999","-999","NULL")
 # Kaan's data
 # Read in
@@ -25,6 +26,13 @@ adult_new <- read.csv("./Data_Cleaned/670Excel.new55patients.csv",
                       na.strings = na_strings)
 adult_pump <- read.csv("./Data_Cleaned/pdf_summary.csv",
                        na.strings = na_strings)
+# Remove rows with no HbA1c data
+adult <- 
+  adult[which(rowSums(is.na(adult[,c("HbA1C.M1","HbA1C.M3","HbA1C.M6",
+                                     "HbA1C.M9","HbA1C.M12")])) < 5),]
+adult_new <- 
+  adult_new[which(rowSums(is.na(adult_new[,c("HbA1c.M1","HbA1c.M3","HbA1c.M6",
+                                             "HbA1c.M9","HbA1c.M12")])) < 5),]
 # Format
 adult$last_name <- tolower(adult$Last.Name)
 adult$first_name <- tolower(sapply(strsplit(adult$First.Name," "),"[[",1))
@@ -32,7 +40,7 @@ adult_new$last_name <- tolower(sapply(strsplit(adult_new$Name," "),tail,1))
 adult_new$first_name <- tolower(sapply(strsplit(adult_new$Name," "),"[[",1))
 adult_demographics$last_name <- tolower(adult_demographics$LastName)
 adult_demographics$first_name <- tolower(adult_demographics$FirstName)
-# HbA1c data wide to long
+# HbA1c data wide to long, time from 670 start
 adult <- adult %>% 
   pivot_longer(cols = Date.M1:HbA1C.M12,
                names_to = c(".value","timepoint"),
@@ -46,16 +54,13 @@ adult_new <- adult_new %>%
                names_prefix = ".*\\.",
                values_to = "HbA1C")
 # Combine
-adult_pump <- left_join(adult_pump,
-                        adult[,c("first_name","last_name","timepoint","HbA1C")],
-                        by = c("first_name","last_name","timepoint"))
-adult_pump <- left_join(adult_pump,
-                        adult_new[,c("first_name","last_name","timepoint","HbA1C")],
-                        by = c("first_name","last_name","timepoint", "timepoint"))
-# Merge 
-adult_pump$hba1c <- pmax(adult_pump$HbA1C.x,adult_pump$HbA1C.y,na.rm = T)
-adult_pump$HbA1C.x <- NULL
-adult_pump$HbA1C.y <- NULL
+adult_pump <- 
+  left_join(adult_pump,adult[,c("first_name","last_name","timepoint",
+                                "HbA1C","days_from_start")],
+            by = c("first_name","last_name","timepoint"))
+adult_pump <- 
+  left_join(adult_pump,adult_new[,c("first_name","last_name","timepoint","HbA1C")],
+            by = c("first_name", "last_name", "timepoint", "HbA1C"))
 # Add demographic info
 adult_pump <- left_join(adult_pump,adult_demographics,
                         by = c("first_name","last_name"))
@@ -63,7 +68,7 @@ adult_pump <- left_join(adult_pump,adult_demographics,
 adult_pump <- adult_pump %>% 
   mutate(time_am = am_use,time_mm = manual,sensor_mean = avg_sensor,
          sensor_sd = sd_sensor,amexit_hyper = high_sg_exit,
-         amexit_manual = user_disabled_exit,cohort = "Adult",
+         amexit_manual = user_disabled_exit,cohort = "Adult",hba1c = HbA1C,
          record_id = group_indices(.,first_name,last_name))
 adult_pump$record_id = paste0("A",adult_pump$record_id) 
 adult_pump$amexits = 
@@ -72,45 +77,90 @@ adult_pump$amexits =
 # Select columns
 adult_pump <- adult_pump %>%
   select(record_id,timepoint,hba1c,time_am,time_mm,sensor_wear,sensor_mean,sensor_sd,
-         amexits,amexit_hyper,amexit_manual,Gender,Age_Diagnosis,cohort)
+         amexits,amexit_hyper,amexit_manual,Gender,Age_Diagnosis,cohort,
+         days_from_start)
 # Cari's data
 source("/Users/timvigers/GitHub/BDC-Code/Cari Berget/670G Combined/data_clean.r")
-# Timepoint
-data$timepoint = as.character(factor(data$gyl_timepoint,levels = 0:5,
-                            labels = c("Baseline","M1","M3","M6","M9","M12")))
+# Format
+data$timepoint = 
+  as.character(factor(data$gyl_timepoint,levels = 0:5,
+                      labels = c("Baseline","M1","M3","M6","M9","M12")))
 levels(data$demographics_sex.factor) = c("F","M")
 data$Gender = as.character(data$demographics_sex.factor)
-
+# Time from start
+data = data %>% group_by(record_id) %>% fill(automode_start)
+datecols = c("date_visit","automode_start")
+data[,datecols] = lapply(data[,datecols], lubridate::mdy)
+data$days_from_start = as.numeric(difftime(data$date_visit,data$automode_start))
 # Remove non-670G subjects and select columns
 data <- data %>% filter(record_id <= 115) %>%
   mutate(Age_Diagnosis = 
-           as.numeric(difftime(as.Date(demographics_diabetesdx),
-                               as.Date(demographics_dob),
+           as.numeric(difftime(lubridate::mdy(demographics_diabetesdx),
+                               lubridate::mdy(demographics_dob),
                                units = "days")/365.25),
          cohort = "Pediatric") %>% 
   group_by(record_id) %>%
   fill(Gender,Age_Diagnosis) %>% 
   select(record_id,timepoint,hba1c,time_am,time_mm,sensor_wear,sensor_mean,
          sensor_sd,amexits,amexit_hyper,amexit_manual,
-         Gender,Age_Diagnosis,cohort) %>% ungroup()
+         Gender,Age_Diagnosis,cohort,days_from_start) %>% ungroup()
 # One data frame
 df = rbind(adult_pump,data)
 factor_vars = c("record_id","timepoint","Gender","cohort")
 df[,factor_vars] <- lapply(df[,factor_vars], as.factor)
-# Clean up
-rm(list = c("adult","adult_new","adult_pump","adult_demographics","data"))
+df$timepoint <- factor(df$timepoint,levels = c("Baseline","M1","M3","M6","M9","M12"))
 # Skim
 skim(df)
 ```
 
 # Table 1: Descriptive Characteristics
 
-```{r table 1,echo=FALSE,results='asis'}
+```{r table 1,echo=FALSE,results='asis',message=FALSE}
 # Get demographics
-demographics <- df %>% group_by(record_id) %>% filter(row_number() == 1)
+demographics <- df %>% group_by(record_id) %>% 
+  summarise(hba1c = hba1c[which(!is.na(hba1c))[1]],
+            timepoint = timepoint[which(!is.na(hba1c))[1]],
+            cohort = cohort[1],
+            Age_Diagnosis = Age_Diagnosis[1],
+            Gender = Gender[1])
 # Table 1 
-t1 <- tableby(cohort ~ Age_Diagnosis + Gender,
-          data = demographics)
+t1 <- tableby(cohort ~ Age_Diagnosis + Gender,data = demographics)
 # Print
 summary(t1)
+```
+
+# Table 2: Days From AM Start by Timepoint
+
+```{r echo=FALSE,results='asis'}
+t2 <- tableby(timepoint ~ notest(days_from_start,"Nmiss","median","q1q3"),
+              total = F,
+              df[df$timepoint != "Baseline",])
+summary(t2)
+```
+
+# Figure 1: HbA1c Over Time by Cohort
+
+```{r echo=FALSE}
+gm = df[!is.na(df$timepoint),] %>% group_by(cohort,timepoint) %>%
+  summarise(mean = mean(hba1c,na.rm = T))
+
+ggplot(df[!is.na(df$timepoint),],aes(x = timepoint,y = hba1c)) + 
+  geom_line(alpha = 0.2,aes(group = record_id,color = cohort)) + 
+  geom_smooth(aes(group = cohort,color = cohort),se = F) + 
+  theme_bw()
+```
+
+# Table 3: HbA1c Model Results
+
+```{r echo=FALSE}
+
+```
+
+# Questions
+
+1. Lots of missing values, particularly HbA1c. How to handle this?
+
+```{r echo=FALSE,fig.width=8}
+md = md.pattern(df)
+kable(md)
 ```
