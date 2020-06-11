@@ -7,18 +7,20 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/home/tim/Desktop/Imputation Model/")
+knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Imputation Model")
 library(arsenal)
 library(skimr)
 library(knitr)
 library(mice)
 library(lavaan)
+library(semTools)
 library(tidyverse)
 ```
 
 ```{r data import and combine,echo=FALSE,include=FALSE}
-nastrings <- c("-999","999","NA","")
+nastrings <- c("-999","999","NA","","#N/A")
 # Child data
+# Read in and combine
 child <- read.csv("./Data_Clean/child_biological.csv",na.strings = nastrings)
 child <- left_join(child,read.csv("./Data_Clean/background.csv",
                                   na.strings = nastrings))
@@ -38,17 +40,44 @@ child <- left_join(child,read.csv("./Data_Clean/child_parent_t1d_responsibility.
 child <- left_join(child,
                    read.csv("./Data_Clean/child_parent_general_responsibility.csv",
                             na.strings = nastrings))
+# Format
+datecols <- c("Date","DateofBirth")
+child[,datecols] <- lapply(child[,datecols], lubridate::mdy)
+# Calculated variables
+child$Age <- 
+  as.numeric(difftime(as.Date(child$Date),as.Date(child$DateofBirth))/365.25)
 # Parent data
 parent <- read.csv("./Data_Clean/parent_depression.csv",na.strings = nastrings)
 parent <- left_join(parent,read.csv("./Data_Clean/parent_foh.csv",
                                     na.strings = nastrings))
 parent <- left_join(parent,read.csv("./Data_Clean/parent_qol.csv",
                                     na.strings = nastrings))
-# Write
-write.csv(child,file = "/home/tim/Desktop/Imputation Model/child.csv",
-          na="",row.names = F)
 ```
 
-```{r echo=FALSE}
+```{r skim,echo=FALSE}
 skim(child)
+skim(parent)
+```
+
+```{fiml,echo=FALSE}
+# FIML
+myModel <- ' # regressions
+             HbA1c ~ f1 + f2 + x1 + x2
+                  f1 ~ f2 + f3
+                  f2 ~ f3 + x1 + x2
+
+             # latent variables 
+               f1 =~ y1 + y2 + y3 
+               f2 =~ y4 + y5 + y6 
+               f3 =~ y7 + y8 + y9 + y10
+
+             # covariances 
+               y1 ~~ y1 
+               y1 ~~ y2 
+               f1 ~~ f2
+
+             # intercepts 
+               y1 ~ 1 
+               f1 ~ 1
+           '
 ```
