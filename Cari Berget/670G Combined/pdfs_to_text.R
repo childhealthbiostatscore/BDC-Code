@@ -1,7 +1,7 @@
 library(pdftools)
 library(tidyverse)
 # List files
-dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/670G Combined/Data_Raw/ClinicVisit_PDFs"
+dir = "/Users/timvigers/ClinicVisit_PDFs"
 files = list.files(dir,pattern = "*pdf",full.names = T)
 # Summary data frame
 pdf_summary = data.frame()
@@ -21,6 +21,11 @@ for (f in 1:length(files)) {
   name = paste(gsub('[[:punct:]]','',df$text[which(df$x > 300 & df$y ==35)]),
                gsub('[[:punct:]]','',df$text[which(df$x == 289 & df$y ==35)]))
   name = tolower(name)
+  # Dates
+  dates = df[which(df$y == 51),"text"]
+  start = lubridate::mdy(dates[1])
+  end = lubridate::mdy(dates[3])
+  days = as.numeric(difftime(end,start))
   # Get statistics - x column changes depending on length of text
   percs = df[which((df$y == 349 | df$y == 364 | df$y == 378) & df$x > 200),"text"]
   gperc = grep("%",percs)
@@ -69,6 +74,7 @@ for (f in 1:length(files)) {
   pdf_summary[f,"timepoint"] = paste0("M",
                                       sub(".*month","",
                                           basename(tools::file_path_sans_ext(files[f]))))
+  pdf_summary[f,"days_worn"] = days
   pdf_summary[f,"am_use"] = percs[1]
   pdf_summary[f,"manual"] = percs[2]
   pdf_summary[f,"sensor_wear"] = percs[3]
@@ -84,5 +90,5 @@ for (f in 1:length(files)) {
     suppressWarnings(lapply(pdf_summary[,4:ncol(pdf_summary)],as.numeric))
 }
 # Write summary
-write.csv(pdf_summary,file = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/670G Combined/Data_Cleaned/pdf_summary.csv",
+write.csv(pdf_summary,file = "/Users/timvigers/Desktop/pdf_summary.csv",
           row.names = F,na = "")
