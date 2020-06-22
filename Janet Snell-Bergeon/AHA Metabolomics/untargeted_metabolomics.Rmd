@@ -7,18 +7,13 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant/Metabolomics")
+knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant/Metabolomics")
 library(arsenal)
 library(skimr)
-library(knitr)
-library(sva)
-library(pheatmap)
-library(metabomxtr)
-library(mixOmics)
 library(tidyverse)
 ```
 
-```{r missing data,echo=FALSE}
+```{r data cleaning,echo=FALSE}
 # Read in raw data
 raw_data <- read.csv("./Data_Cleaned/metabolomics_without_imputation.csv",
                      stringsAsFactors = F,na.strings = c("","NA"))
@@ -79,91 +74,18 @@ data <- left_join(data,sampledata[,c("GlobalSampleID","batch")],by = "GlobalSamp
 data$batch <- as.factor(data$batch)
 # Order columns
 data <- data %>% select(GlobalSampleID:GROUP,batch,everything())
-# Remove QC
-X <- data %>% filter(!(grepl("QC",GlobalSampleID)))
 # Column formats
-X[,c("GlobalSampleID","sex","race")] <- lapply(X[,c("GlobalSampleID","sex","race")],as.factor)
-# Check distributions - log transform
-logged <- X
-logged[,8:ncol(logged)] <- lapply(logged[,8:ncol(logged)], log)
-#skim(logged)
+data[,c("GlobalSampleID","sex","race")] <- 
+  lapply(data[,c("GlobalSampleID","sex","race")],as.factor)
 ```
 
-# PLS-DA
-
-```{r plsda,echo=FALSE,cache=TRUE}
-# Sex
-Y = as.factor(X$sex)
-# 5 components
-plsda.res <- plsda(X[,8:ncol(X)], Y, ncomp = 5) 
-plotIndiv(plsda.res,title = "PLS-DA by Sex",
-          pch = 20,ind.names = F,ellipse = T,legend = T)
-# Race
-Y <- as.factor(X$race)
-# 5 components
-plsda.res <- plsda(X[,8:ncol(X)], Y, ncomp = 5) 
-plotIndiv(plsda.res,title = "PLS-DA by Race",
-          pch = 20,ind.names = F,ellipse = T,legend = T)
-# CAC group
-Y <- as.factor(X$GROUP)
-# 5 components
-plsda.res <- plsda(X[,8:ncol(X)], Y, ncomp = 5) 
-plotIndiv(plsda.res,title = "PLS-DA by CAC Group",
-          pch = 20,ind.names = F,ellipse = T,legend = T)
-```
-
-# sPLS-DA
-
-```{r splsda,echo=FALSE,cache=TRUE,warning=FALSE,message=FALSE}
-# Sex
-Y <- as.factor(X$sex)
-tune.splsda <- tune.splsda(X[,8:ncol(X)], Y, ncomp = 5) 
-choice.keepX <- tune.splsda$choice.keepX[1:2]
-## sPLS-DA function
-splsda.res <- splsda(X[,8:ncol(X)], Y, ncomp = 2, keepX = choice.keepX)
-plotIndiv(splsda.res,title = "sPLS-DA by Sex",
-          pch = 20,ind.names = F,ellipse = T,legend = T)
-# Race
-Y <- as.factor(X$race)
-tune.splsda <- tune.splsda(X[,8:ncol(X)], Y, ncomp = 5) 
-choice.keepX <- tune.splsda$choice.keepX[1:2]
-## sPLS-DA function
-splsda.res <- splsda(X[,8:ncol(X)], Y, ncomp = 2, keepX = choice.keepX)
-plotIndiv(splsda.res,title = "sPLS-DA by Race",
-          pch = 20,ind.names = F,ellipse = T,legend = T)
-# Group
-Y <- as.factor(X$GROUP)
-tune.splsda <- tune.splsda(X[,8:ncol(X)], Y, ncomp = 5) 
-choice.keepX <- tune.splsda$choice.keepX[1:2]
-## sPLS-DA function
-splsda.res <- splsda(X[,8:ncol(X)], Y, ncomp = 2, keepX = choice.keepX)
-plotIndiv(splsda.res,title = "sPLS-DA by CAC Group",
-          pch = 20,ind.names = F,ellipse = T,legend = T)
-```
-
-# Heatmap
-
-## PCA Associations
-
-Sex is significantly associated with PC1 and age is significantly associated with PC2 (regardless of whether or not demographic variables are included in the PCA).
+# Moderated t test
 
 ```{r echo=FALSE}
-# PCA
-temp = data.matrix(X)
-scaled = scale(X[,8:ncol(X)])
-pca.res = pca(scaled,scale = T,center = T) 
-loadings = as.data.frame(pca.res$loadings)
-# Print top 20 "most important" variables based on loadings
-#rownames(loadings)[order(abs(loadings$X.PC1))[1:20]]
-# PC association with demographic variables
-mod = lm(pca.res$x[,1] ~ X$age + X$sex + X$race + X$GROUP)
-kable(summary(mod)$coefficients,caption = "PC1 ~ age + sex + race + group") # PC1 associated with sex
-mod = lm(pca.res$x[,2] ~ X$age + X$sex + X$race + X$GROUP)
-kable(summary(mod)$coefficients,caption = "PC2 ~ age + sex + race + group") # PC2 associated with age
-# Clustered heatmap
-# Correlation matrix
-cormat = round(cor(scaled,use = "pairwise.complete.obs"),3)
-cols.cor = cor(scaled,use = "pairwise.complete.obs")
-rows.cor = cor(t(scaled),use = "pairwise.complete.obs")
-pheatmap(cormat,show_rownames = F,show_colnames = F,cluster_cols = F,cluster_rows = F)
+# Design matrix
+design <- as.data.frame(data$CACp[data$GROUP != "QC"])
+design$int <- 1
+design <- design[,c(2,1)]
+# "Expression" matrix
+
 ```
