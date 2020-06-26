@@ -23,14 +23,14 @@ raw_data <- read.csv("./Data_Cleaned/metabolomics_without_imputation.csv",
 # Format
 data <- raw_data %>% 
   mutate(compound = coalesce(HMDB.No.,LI.Library.No.),
-         neutralmass = Neutral.Mass..Da.,
+         m.z = m.z_light,
          rt = RT..s.,
          masserror = coalesce(Mass.Error..ppm.,Mass.Error..ppm..1),
          rterror = coalesce(RT.Error..s.,RT.Error..s..1)) %>%
-  select(compound,neutralmass,rt,masserror,rterror,
+  select(compound,m.z,rt,masserror,rterror,
                 IsoMS_results_QC01_190618171010_converted.csv:
                   IsoMS_results_S227_Batch07_1400_RA8_converted.csv)
-data$compound <- paste(data$compound,data$neutralmass,data$rt,sep = "")
+data$compound <- paste(data$compound,data$m.z,data$rt,sep = "_")
 # Rename columns
 colnames(data) <- gsub("IsoMS_results_","",colnames(data))
 colnames(data) <- gsub("*_.*","",colnames(data))
@@ -96,11 +96,16 @@ design[design[,2] == 1,2] <- 0
 design[design[,2] == 2,2] <- 1
 # "Expression" matrix (samples in columns) for each 
 Y[,1] <- NULL
-Y <- t(Y)
+X <- t(Y)
 # Linear model
-fit <- lmFit(Y,design)
+fit <- lmFit(X,design)
 fit <- eBayes(fit)
-kable(topTable(fit))
+# Results
+results <- topTable(fit,number = nrow(X))
+results$m.z <- sapply(strsplit(rownames(results),"_"),"[[",2)
+results$p.value <- results$P.Value
+write.csv(results[,c("m.z","p.value")],row.names = F,
+          file = "./Data_Cleaned/moderated_t_tests_CACp.csv")
 ```
 
 # WGCNA
