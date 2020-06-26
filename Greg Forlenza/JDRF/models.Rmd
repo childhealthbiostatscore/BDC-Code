@@ -42,29 +42,29 @@ df <- df[-c(which(duplicated(df$record_id))-1),]
 # PAID
 df$c_paid_total <- 
   apply(df[,which(colnames(df)=="c_paid1"):
-                  which(colnames(df)=="c_paid20")],1,
+             which(colnames(df)=="c_paid20")],1,
         function(x){mean(5-x)*25})
 df$ya_paid_total <- 
   apply(df[,which(colnames(df)=="ya_paid1"):
-                  which(colnames(df)=="ya_paid20")],1,
+             which(colnames(df)=="ya_paid20")],1,
         function(x){sum(x)*1.25})
 # HFS behave
 df$c_hfs_behave_total <- 
   apply(df[,which(colnames(df)=="c_hfs_behave1"):
-                  which(colnames(df)=="c_hfs_behave10")],1,
+             which(colnames(df)=="c_hfs_behave10")],1,
         function(x){sum(x)})
 df$ya_hfs_behave_total <- 
   apply(df[,which(colnames(df)=="ya_hfs_b_behave1"):
-                  which(colnames(df)=="ya_hfs_b_behave15")],1,
+             which(colnames(df)=="ya_hfs_b_behave15")],1,
         function(x){sum(x)})
 # HFS worry
 df$c_hfs_worry_total <- 
   apply(df[,which(colnames(df)=="c_hfs_worry11"):
-                  which(colnames(df)=="c_hfs_worry25")],1,
+             which(colnames(df)=="c_hfs_worry25")],1,
         function(x){sum(x)})
 df$ya_hfs_worry_total <- 
   apply(df[,which(colnames(df)=="ya_hfs_b_worry16"):
-                  which(colnames(df)=="ya_hfs_b_worry33")],1,
+             which(colnames(df)=="ya_hfs_b_worry33")],1,
         function(x){sum(x)})
 # Add 1 month variables, select relevant columns
 df <- left_join(df,data %>% 
@@ -201,9 +201,64 @@ kable(summary(no_int_mod)$coefficients,caption = "Bad model summary")
 
 The tables above are simply to demonstrate how these issues look in the variable counts and model results.
 
-## Results
+## Comparing AM Use to Sensor Wear
 
-After all that, the results below are what we'll present in the manuscript.
+```{r echo=FALSE}
+# Model formulas
+model_sens_form <- 
+  as.formula("success ~ scale(hba1c,scale=F) + scale(m1_sensor_wear,scale=F) +
+             scale(m1_tir,scale=F) + demographics_age + demographics_sex.factor")
+model_am_form <- 
+  as.formula("success ~ scale(hba1c,scale=F) + scale(m1_time_am,scale=F) +
+             scale(m1_tir,scale=F) + demographics_age + demographics_sex.factor")
+# Fit
+model_sens <- glm(model_sens_form,family = "binomial",df)
+model_am <- glm(model_am_form,family = "binomial",df)
+# Compare
+kable(AIC(model_am,model_sens))
+r_sens <- ROC(form = model_sens_form,data = df,MX=F,MI=F,PV=F,plot = "ROC",
+              main = "Sensor Wear Model")
+r_am <- ROC(form = model_am_form,data = df,MX=F,MI=F,PV=F,plot = "ROC",
+            main = "AM Use Model")
+```
+
+Technically the sensor wear model is better by both AIC and ROC AUC, but both appear to be good models. For now I'll continue using sensor wear
+
+## Comparing 1 month variables to 3 month variables
+
+```{r echo=FALSE}
+# Get three month data
+three_month <- data %>% 
+  filter(gyl_timepoint.factor == "3 Months") %>%
+  mutate(m3_sensor_wear = sensor_wear,
+         m3_time_am = time_am,
+         m3_tir = sensor_70_180) %>%
+  select(record_id,m3_sensor_wear,m3_time_am,m3_tir)
+# Add to df
+df <- left_join(df,three_month,by = "record_id")
+# Compare 1 month to 3 month
+model1 <- 
+  as.formula("success ~ scale(hba1c,scale=F) + scale(m1_sensor_wear,scale=F) +
+  scale(m1_tir,scale=F) + demographics_age + demographics_sex.factor")
+model3 <- 
+  as.formula("success ~ scale(hba1c,scale=F) + scale(m3_sensor_wear,scale=F) + 
+  scale(m3_tir,scale=F) + demographics_age + demographics_sex.factor")
+# Fit
+# Same observations
+temp <- df %>% filter(!is.na(m1_tir) & !is.na(m3_tir))
+model_m1 <- glm(model1,family = "binomial",temp)
+model_m3 <- glm(model3,family = "binomial",temp)
+# Compare
+kable(AIC(model_m1,model_m3))
+r_sens <- ROC(form = model1,data = df,MX=F,MI=F,PV=F,plot = "ROC",
+              main = "M1 Model")
+r_am <- ROC(form = model3,data = df,MX=F,MI=F,PV=F,plot = "ROC",
+            main = "M3 Model")
+```
+
+Interestingly, the month 1 model is better than the month 3 model. There are 75 observations with month 1 data and 63 with month 3 data, so is it possible that dropout is already having an effect? Also I have been using the 90 participants with data at 9 or 12 months, but that could mean we're excluding people who dropped out entirely. Is that okay?
+
+## Results
 
 ### Table 1: Descriptive Characteristics
 
@@ -228,21 +283,22 @@ summary(t1,labelTranslations =
                demographics_pumphx.factor = "Pump Hx."))
 ```
 
-### Final model
+### Final model (3 month variables)
 
 ```{r final model,echo=FALSE}
-final_model = as.formula("success ~ scale(hba1c,scale=F) + 
-                         scale(m1_sensor_wear,scale=F) + scale(m1_tir,scale=F) + 
-                         demographics_age + demographics_sex.factor")
+final_model <- 
+  as.formula("success ~ scale(hba1c,scale=F) + 
+  scale(m3_sensor_wear,scale=F) + scale(m3_tir,scale=F) + 
+  demographics_age + demographics_sex.factor")
 
 final_mod = glm(final_model,family = "binomial",df)
 t = broom::tidy(final_mod,conf.int = T)
-t$term[2:nrow(t)] = c("Baseline HbA1c","M1 Sensor Wear","M1 TIR",
+t$term[2:nrow(t)] = c("Baseline HbA1c","M3 Sensor Wear","M3 TIR",
                       "Baseline Age 14 - 18","Baseline Age 18+","Male")
 kable(t)
 ```
 
-The coefficients above must be exponentiated in order to interpret them. So, the interpretation is that for each 1-unit increase in sensor wear at month 1, the odds of success increase $e^\beta$ = `r exp(t$estimate[t$term == "M1 Sensor Wear"])` times. Continuous variables have been mean-centered, so the intercept is interpreted as the average odds of success for a participant with average values of continuous variables and 0 (reference group) for all categorical.
+The coefficients above must be exponentiated in order to interpret them. So, the interpretation is that for each 1-unit increase in sensor wear at month 1, the odds of success increase $e^\beta$ = `r exp(t$estimate[t$term == "M3 Sensor Wear"])` times. Continuous variables have been mean-centered, so the intercept is interpreted as the average odds of success for a participant with average values of continuous variables and 0 (reference group) for all categorical.
 
 ## Figures
 
