@@ -1,6 +1,6 @@
 ###Shideh Majidi: 
 #Clinic Team Clinic
-
+library(lubridate)
 dat<-read.csv("S:/Shared Projects/Laura/BDC/Projects/Shideh Majidi/Clinic team clinic/Data/RetrospectiveReview_062220_highlighted_coded_RDV.csv",
               na.strings=c("NULL",""))
 dat<-subset(dat,!is.na(dat$MRN)) #remove empty rows between patients
@@ -32,7 +32,9 @@ dat$InsulinPump_Use<-as.factor(dat$InsulinPump_Use)
 levels(dat$InsulinPump_Use)<-c("No","Yes")
 
 dat$VisitDate<-as.POSIXct(dat$VisitDate,format="%m/%d/%Y")
-#by patient data prep:
+####LONGITUDINAL DATASET PREPARATION:
+
+#1. REDUCE DATASET TO ONLY PATIENTS WITH >2 RTC VISITS & DELETE VISITS PRE-RTC:
 number_each<-function(ID,data){
   
   temp<-lapply(unique(ID), function(x){
@@ -61,30 +63,48 @@ number_each<-function(ID,data){
   dat<-do.call(rbind,temp)
 }
 dat<-number_each(dat$MRN,dat)
-
-#restrict to only patients with 2+ RTC:
 dat<-subset(dat,dat$total_RTC>=2)
-#remove visits before the first RTC:
 dat<-subset(dat,dat$row_num>=dat$row_num_first_RTC)
 
-#by patient:
-by_pt<-function(ID,data){
+#2. CALCULATE 1 YEAR POST-RESEARCH TEAM CLINIC:
+one_year<-function(ID,data){
   
   temp<-lapply(unique(ID), function(x){
     
     dat.temp <- subset(data, ID == x)
     # dat.temp <- subset(dat,dat$MRN==1341549)
     dat.temp<-dat.temp[order(dat.temp$VisitDate),]
-  
     
     dat.temp$row_num<-rep(1:nrow(dat.temp))
     dat.temp$row_num_last_RTC<-NA
-    if (dat.temp$total_RTC[1]>0){dat.temp$row_num_last_RTC<-max(dat.temp$row_num[dat.temp$Visit.Type=="RTC"])}
+    dat.temp$row_num_last_RTC<-max(dat.temp$row_num[dat.temp$Visit.Type=="RTC"])
+    dat.temp$date_last_RTC<-dat.temp$VisitDate[dat.temp$row_num_last_RTC==dat.temp$row_num]
+    dat.temp$date_max<-dat.temp$date_last_RTC+years(1)
+    dat.temp})
+  #print(dat.temp$MRN)
+  dat<-do.call(rbind,temp)
+}
+dat<-one_year(dat$MRN,dat)
+
+dat$after_1year<-0
+dat$after_1year[dat$VisitDate>dat$date_max]<-1
+
+#3. CREATE COHORT MEMBERSHIP AND TIME PERIODS:
+by_pt<-function(ID,data){
+  
+  temp<-lapply(unique(ID), function(x){
+    
+    dat.temp <- subset(data, ID == x)
+    # dat.temp <- subset(dat,dat$MRN==1412945)
+    dat.temp<-dat.temp[order(dat.temp$VisitDate),]
+    dat.temp$total_RTC<-nrow(subset(dat.temp,dat.temp$Visit.Type=="RTC"))
+    dat.temp$total_CTC<-nrow(subset(dat.temp,dat.temp$Visit.Type=="CTC"))
+    dat.temp$total_routine<-nrow(subset(dat.temp,dat.temp$Visit.Type=="Routine"))
+    dat.temp$row_num<-rep(1:nrow(dat.temp))
     dat.temp$row_num_first_CTC<-NA
     if (dat.temp$total_CTC[1]>0){dat.temp$row_num_first_CTC<-min(dat.temp$row_num[dat.temp$Visit.Type=="CTC"])}
     dat.temp$row_num_last_CTC<-NA
     if (dat.temp$total_CTC[1]>0){dat.temp$row_num_last_CTC<-max(dat.temp$row_num[dat.temp$Visit.Type=="CTC"])}
-    
     
     dat.temp$time_period<-NA
     dat.temp$time_period[dat.temp$row_num<=dat.temp$row_num_last_RTC[1]]<-"During RTC"
@@ -118,27 +138,63 @@ by_pt<-function(ID,data){
                                              dat.temp$VisitDate[dat.temp$row_num_last_RTC==dat.temp$row_num],units='days')
     }
     dat.temp$group[dat.temp$num_routine_post_RTC>0 & is.na(dat.temp$group)]<-"Control"
-    
-    #remove routine visits after a year post-RTC:
-    # dat.temp$time_since_last_RTC<-NA
-    # dat.temp$time_since_last_RTC[dat.temp$time_period=="Post-RTC"]<-difftime(dat.temp$VisitDate[dat.temp$time_period=="Post-RTC"],dat.temp$VisitDate[
-    #   dat.temp$row_num==dat.temp$row_num_last_RTC],units='days')
-    #total of each visit type post-RTC:
-    
-    #total of each visit type:
-    # dat.temp$total_RTC<-nrow(subset(dat.temp,dat.temp$Visit.Type=="RTC"))
-    # dat.temp$total_CTC<-nrow(subset(dat.temp,dat.temp$Visit.Type=="CTC"))
-    # dat.temp$total_routine<-nrow(subset(dat.temp,dat.temp$Visit.Type=="Routine"))
-    # 
-    
+    #if a CTC within 1st year, remove from control group:
+    dat.temp$group[dat.temp$group=="Control" & dat.temp$days_rtc_to_ctc<=365]<-"N/A - CTC within 1st year but not in CTC group"
     dat.temp})
   
   dat<-do.call(rbind,temp)
 }
 dat<-by_pt(dat$MRN,dat)
 
-#group:
+#4. REMOVE PATIENTS WITHOUT A GROUP - THESE ONLY HAD RTC AND NO FOLLOWUP:
+dat<-subset(dat,!is.na(dat$group))
+
+#5. REMOVE DATA AFTER 1 YEAR POST-RTC for control group: WHAT ABOUT RESEARCH GROUP
+dat<-subset(dat,!(dat$after_1year==1 & dat$group=="Control"))
+#5. CALCULATE USABLE STATS FOR EACH GROUP:
+# dat<-dat[,-c(which(colnames(dat)=="row_num"):which(colnames(dat)=="num_CTC_post_RTC"),
+#              which(colnames(dat)=="num_routine_post_RTC"):which(colnames(dat)=="days_rtc_to_routine"))]
+
+summary_stats<-function(ID,data){
+  
+  temp<-lapply(unique(ID), function(x){
+    
+    dat.temp <- subset(data, ID == x)
+    # dat.temp <- subset(dat,dat$MRN==1409272)
+    dat.temp<-dat.temp[order(dat.temp$VisitDate),]
+    ##TIME PERIODS:
+    dat.temp$research_period_visits<-nrow(subset(dat.temp,dat.temp$time_period=="During RTC"))
+    dat.temp$research_period_time<-difftime(max(dat.temp$VisitDate[dat.temp$time_period=="During RTC"]),
+                                            min(dat.temp$VisitDate[dat.temp$time_period=="During RTC"]))
+
+    dat.temp$post_period_visits<-nrow(subset(dat.temp,dat.temp$time_period=="Post-RTC"))
+    dat.temp$post_period_time<-difftime(max(dat.temp$VisitDate[dat.temp$time_period=="Post-RTC"]),
+                                        min(dat.temp$VisitDate[dat.temp$time_period=="Post-RTC"]))
+    if (dat.temp$group[1]=="CTC"){
+      dat.temp$time_period[dat.temp$row_num>=dat.temp$row_num_first_CTC & dat.temp$row_num<=dat.temp$row_num_last_CTC]<-"CTC"
+    }
+
+    dat.temp})
+  #print(dat.temp$MRN)
+  dat<-do.call(rbind,temp)
+}
+dat<-summary_stats(dat$MRN,dat)
+
+#REMOVE PATIENTS WITH NO POST PERIOD VISITS WITHIN 1 YEAR (ALL CONTROLS):
+dat<-subset(dat,dat$post_period_visits>0)
 dat.one<-dat[!duplicated(dat$MRN),]
 
-table(dat.one$group)
+table(dat.one$group,useNA="always")
+
+table(dat.one$research_period_visits[dat.one$group=="Control"])
+quantile(dat.one$research_period_visits[dat.one$group=="Control"],useNA="always")
+quantile(dat.one$research_period_time[dat.one$group=="Control"],useNA="always")
+quantile(dat.one$post_period_visits[dat.one$group=="Control"],useNA="always")
+quantile(dat.one$post_period_time[dat.one$group=="Control"],useNA="always")
+
+table(dat.one$research_period_visits[dat.one$group=="CTC"])
+quantile(dat.one$research_period_visits[dat.one$group=="CTC"],useNA="always")
+quantile(dat.one$research_period_time[dat.one$group=="CTC"],useNA="always")
+quantile(dat.one$post_period_visits[dat.one$group=="CTC"],useNA="always")
+quantile(dat.one$post_period_time[dat.one$group=="CTC"],useNA="always")
 
