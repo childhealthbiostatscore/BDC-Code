@@ -23,7 +23,7 @@ raw_data <- read.csv("./Data_Cleaned/metabolomics_without_imputation.csv",
 # Format
 data <- raw_data %>% 
   mutate(compound = coalesce(HMDB.No.,LI.Library.No.),
-         m.z = m.z_light,
+         m.z = Neutral.Mass..Da.+1.0078,
          rt = RT..s.,
          masserror = coalesce(Mass.Error..ppm.,Mass.Error..ppm..1),
          rterror = coalesce(RT.Error..s.,RT.Error..s..1)) %>%
@@ -46,7 +46,8 @@ clinical$CACp <-
 clinical <- left_join(clinical,cac_groups[,c("StudyID","GROUP")],by = "StudyID")
 samples <- read.csv("./Data_Cleaned/sample_list.csv")
 # Match sample number to subject ID
-clinical$GlobalSampleID <- as.character(samples$Injection[match(clinical$StudyID,samples$SampleID)])
+clinical$GlobalSampleID <- 
+  as.character(samples$Injection[match(clinical$StudyID,samples$SampleID)])
 # Relevant columns
 clinical <- clinical %>%
   select(GlobalSampleID,age,sex,race,CACp,GROUP) %>%
@@ -73,21 +74,25 @@ sampledata$batch <- sub("Batch0","",sampledata$batch)
 sampledata <- sampledata %>% fill(batch,.direction = "up") %>%
   mutate(order = 1:n())
 # Merge
-data <- left_join(data,sampledata[,c("GlobalSampleID","batch")],by = "GlobalSampleID")
+data <- left_join(data,sampledata[,c("GlobalSampleID","batch")],
+                  by = "GlobalSampleID")
 data$batch <- as.factor(data$batch)
 # Order columns
 data <- data %>% select(GlobalSampleID:GROUP,batch,everything())
 # Column formats
 data[,c("GlobalSampleID","sex","race")] <- 
-  lapply(data[,c("GlobalSampleID","sex","race")],as.factor)
+  lapply(data[,c("GlobalSampleID","sex","race")],as.factor) 
 ```
 
 # Moderated t tests
 
 ```{r echo=FALSE}
+# Non-missing outcome
 Y <- data$CACp
 Y <- cbind(Y,data[,8:ncol(data)])
 Y <- Y[!is.na(Y[,1]),]
+# Log transform
+Y[,2:ncol(Y)] <- lapply(Y[,2:ncol(Y)],log)
 # Design matrix - 0 and 1 for CAC progression
 design <- as.data.frame(Y[,1])
 design$int <- 1
@@ -104,7 +109,8 @@ fit <- eBayes(fit)
 results <- topTable(fit,number = nrow(X))
 results$m.z <- sapply(strsplit(rownames(results),"_"),"[[",2)
 results$p.value <- results$P.Value
-write.csv(results[,c("m.z","p.value")],row.names = F,
+results$t.score <- fit$coefficients[match(rownames(results),rownames(fit$t)),2]
+write.csv(results[,c("m.z","p.value","t.score")],row.names = F,
           file = "./Data_Cleaned/moderated_t_tests_CACp.csv")
 ```
 
