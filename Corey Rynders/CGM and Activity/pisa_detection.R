@@ -8,7 +8,8 @@
 # attenuations (PISA) in an artificial pancreas. Journal of Diabetes Science 
 # and Technology, 8(6), 1091–1096. https://doi.org/10.1177/1932296814553267
 
-# This function requires Kalman Filter-based estimated glucose.
+# This function requires Kalman Filter-based estimated glucose. See 
+# kalman_glucose_estimation.R function.
 
 pisa_detection <- function(data,t_pisa_max = Inf,t_dropout = 60,
                            g_p_in = -1.9,g_p_ratio = 1.2,g_p_out = -2.8) {
