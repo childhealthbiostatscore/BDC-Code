@@ -86,25 +86,58 @@ data[,c("GlobalSampleID","sex","race")] <-
 data[,8:ncol(data)] <- lapply(data[,8:ncol(data)],log)
 ```
 
-# Moderated t tests
+# T tests
 
 ```{r echo=FALSE}
 # Non-missing outcome
-Y <- data$CACp
-Y <- cbind(Y,data[,8:ncol(data)])
-Y <- Y[!is.na(Y[,1]),]
+X <- data[,c(5,6,8:ncol(data))]
+X <- X[!is.na(X[,1]),]
+X$GROUP <- as.factor(as.character(X$GROUP))
+# Test all
+ts <- lapply(colnames(X)[c(3:293,295:ncol(X))], function(x){
+  form <- as.formula(paste0(x,"~CACp"))
+  t <- t.test(form,X)
+  return(list("metabolite"=x,"p"=t$p.value))
+})
+ts <- data.frame(do.call(rbind,ts))
+ts$p <- as.numeric(ts$p)
+ts <- ts[order(ts$p),]
+ts$p.adjusted <- p.adjust(ts$p,method = "fdr")
+```
+
+# ANOVA
+
+```{r echo=FALSE}
+# Test all
+anovas <- lapply(colnames(X)[c(3:293,295:ncol(X))], function(x){
+  form <- as.formula(paste0(x,"~GROUP"))
+  mod <- lm(form,X)
+  f <- anova(mod)
+  return(list("metabolite"=x,"p"=f$`Pr(>F)`[1]))
+})
+anovas <- data.frame(do.call(rbind,anovas))
+anovas$p <- as.numeric(anovas$p)
+anovas <- anovas[order(anovas$p),]
+anovas$p.adjusted <- p.adjust(anovas$p,method = "fdr")
+```
+
+# Moderated t tests
+
+```{r echo=FALSE}
+X <- data[,c(5,8:ncol(data))]
+X <- X[!is.na(X[,1]),]
 # Design matrix - 0 and 1 for CAC progression
-design <- as.data.frame(Y[,1])
+design <- as.data.frame(X[,1])
 design$int <- 1
 design <- data.matrix(design[,c(2,1)])
 design[design[,2] == 1,2] <- 0
 design[design[,2] == 2,2] <- 1
 # "Expression" matrix (samples in columns) for each 
-Y[,1] <- NULL
-X <- t(Y)
+X[,1] <- NULL
+X <- t(X)
 # Linear model
 fit <- lmFit(X,design)
-fit <- eBayes(fit)
+fit <- eBayes(fit,proportion = 0.1)
 # Results
 results <- topTable(fit,number = nrow(X))
 results$m.z <- sapply(strsplit(rownames(results),"_"),"[[",2)
