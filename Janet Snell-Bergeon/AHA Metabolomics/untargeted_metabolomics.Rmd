@@ -124,27 +124,76 @@ anovas$p.adjusted <- p.adjust(anovas$p,method = "fdr")
 # Moderated t tests
 
 ```{r echo=FALSE}
-X <- data[,c(5,8:ncol(data))]
-X <- X[!is.na(X[,1]),]
 # Design matrix - 0 and 1 for CAC progression
-design <- as.data.frame(X[,1])
-design$int <- 1
-design <- data.matrix(design[,c(2,1)])
-design[design[,2] == 1,2] <- 0
-design[design[,2] == 2,2] <- 1
+design <- as.data.frame(as.numeric(data$CACp)-1)
+colnames(design) <- "CACp"
+design <- model.matrix(~CACp,design)
 # "Expression" matrix (samples in columns) for each 
-X[,1] <- NULL
-X <- t(X)
+X <- data[match(rownames(design),rownames(X)),8:ncol(data)]
 # Linear model
-fit <- lmFit(X,design)
-fit <- eBayes(fit,proportion = 0.1)
+fit <- lmFit(t(X),design)
+fit <- eBayes(fit)
 # Results
-results <- topTable(fit,number = nrow(X))
+results <- topTable(fit,coef = 2,number = nrow(X))
 results$m.z <- sapply(strsplit(rownames(results),"_"),"[[",2)
 results$p.value <- results$P.Value
-results$t.score <- fit$coefficients[match(rownames(results),rownames(fit$t)),2]
+results$t.score <- fit$t[match(rownames(results),rownames(fit$t)),2]
 write.csv(results[,c("m.z","p.value","t.score")],row.names = F,
           file = "./Data_Cleaned/moderated_t_tests_CACp.csv")
+```
+
+# Moderated ANOVA
+
+```{r echo=FALSE}
+# Design matrix - 0 and 1 for CAC progression
+design <- as.data.frame(data$GROUP[data$GROUP != "QC"])
+colnames(design) <- "GROUP"
+design$GROUP <- as.factor(as.numeric(design$GROUP))
+design <- model.matrix(~GROUP,design)
+# "Expression" matrix (samples in columns) for each 
+X <- data[match(rownames(design),rownames(X)),8:ncol(data)]
+# Linear model
+fit <- lmFit(t(X),design)
+fit <- eBayes(fit)
+# Results
+results <- topTable(fit,coef = c(2,3),number = nrow(X))
+results$m.z <- sapply(strsplit(rownames(results),"_"),"[[",2)
+results$p.value <- results$P.Value
+results$t.score <- fit$t[match(rownames(results),rownames(fit$t)),2]
+write.csv(results[,c("m.z","p.value","t.score")],row.names = F,
+          file = "./Data_Cleaned/moderated_anova_GROUP.csv")
+```
+
+# Metabolite classes    
+
+```{r echo=FALSE}
+# Import identified compounds. These were found by uploading moderated t test 
+# results to the peaks to pathways module in MetaboAnalyst
+kegg <- read.csv("./Data_Cleaned/mummichog_matched_compound_all.csv")
+# Add to data 
+raw_data$Query.Mass <-raw_data$Neutral.Mass..Da.+1.0078
+classes <- left_join(raw_data,kegg,by = "Query.Mass")
+# Remove unidentified metabolites
+classes <- classes[!is.na(classes$Matched.Compound),]
+# Get compound classes
+colnames(classes)[which(colnames(classes) == "Matched.Compound")] <- 
+  "KEGG"
+classes <- assign_hierarchy(classes,keep_unknowns = F,identifier = "KEGG")
+# Order by class name
+classes <- classes[order(classes$Class),]
+```
+
+# Correlation matrix (clustered by metabolite class)
+
+```{r echo=FALSE}
+# Transpose for correlation matrix
+cor_mat <- t(classes[!is.na(classes$Class),24:263])
+colnames(cor_mat) <- classes$Class[!is.na(classes$Class)]
+# Clustered heatmap
+# Correlation matrix
+cor = round(cor(cor_mat,use = "pairwise.complete.obs"),3)
+heatmap(cor,Rowv = NA,Colv = NA,main = "No Clustering")
+heatmap(cor,main = "Default Clustering")
 ```
 
 # WGCNA
