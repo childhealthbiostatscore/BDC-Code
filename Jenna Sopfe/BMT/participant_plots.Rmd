@@ -2,7 +2,7 @@
 title: "Participant Plots"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: word_document
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
@@ -41,14 +41,27 @@ cgm_data$mins_from_tx <-
 # Add events
 events <- data_full %>% group_by(study_id) %>%
   select(study_id,date_of_tx,infxn_date,time_engraft,date_death,time_gf,
-         acute_gvhd_date,ips_date,prim_icu_dates) %>%
-  fill(time_engraft,date_death,time_gf,acute_gvhd_date,ips_date,prim_icu_dates) %>%
+         acute_gvhd_date,ips_date,prim_icu_dates,steroid_dates,tpn_dates,
+         insulin_dates) %>%
+  fill(time_engraft,date_death,time_gf,acute_gvhd_date,ips_date,prim_icu_dates,
+       steroid_dates,tpn_dates,insulin_dates) %>%
   filter(row_number()>1) %>% arrange(study_id,infxn_date) %>% ungroup()
-# Get first ICU dates
+# Get first ICU, steroid, tpn, and insulin dates
 events$prim_icu_dates <- sapply(strsplit(events$prim_icu_dates,","),"[[",1)
-events <- events %>% separate(prim_icu_dates,c("icu_start","icu_end"),"-")
-events[,c("icu_start","icu_end")] <- 
-  lapply(events[,c("icu_start","icu_end")],lubridate::mdy)
+events$steroid_dates <- sapply(strsplit(events$steroid_dates,","),"[[",1)
+events$tpn_dates <- sapply(strsplit(events$tpn_dates,","),"[[",1)
+events$insulin_dates <- sapply(strsplit(events$insulin_dates,","),"[[",1)
+
+events <- events %>% separate(prim_icu_dates,c("icu_start","icu_end"),"-") %>%
+  separate(steroid_dates,c("steroid_start","steroid_end"),"-") %>%
+  separate(tpn_dates,c("tpn_start","tpn_end"),"-") %>%
+  separate(insulin_dates,c("insulin_start","insulin_end"),"-")
+
+events[,c("icu_start","icu_end","steroid_start","steroid_end",
+          "tpn_start","tpn_end","insulin_start","insulin_end")] <- 
+  lapply(events[,c("icu_start","icu_end","steroid_start","steroid_end",
+                   "tpn_start","tpn_end","insulin_start","insulin_end")],
+         lubridate::mdy)
 # Convert all dates to minutes from Tx
 events[,3:ncol(events)] <- lapply(events[,3:ncol(events)],function(x){
   as.numeric(difftime(x,events$date_of_tx,units = "mins"))
@@ -68,6 +81,12 @@ plot_events <- function(id,cgm_data,event_data,all = F){
   # Plot
   p <- ggplot(cgm,aes(x=mins_from_tx,y=Historic_Glucose)) + 
     ylim(40,400) +
+    # Add exposures
+    geom_rect(xmin = event$steroid_start[1],xmax = event$steroid_end[1],
+              ymin = 40,ymax = 400,fill="light blue",alpha=0.2,inherit.aes = F) +
+    # geom_rect(xmin = event$tpn_start[1],xmax = event$tpn_end[1],
+    #           ymin = 40,ymax = 400,fill="light green",alpha=0.2,inherit.aes = F) +
+    # CGM data
     geom_line(aes(color=factor(SensorNum))) +
     # Infections
     geom_vline(event,mapping=aes(xintercept=infxn_date),alpha=0.5) + 
@@ -97,17 +116,15 @@ plot_events <- function(id,cgm_data,event_data,all = F){
     geom_vline(event,mapping=aes(xintercept=ips_date[1]),alpha=0.5) + 
     geom_text(event,mapping=aes(x=ips_date[1],label="IPS",y = 300),
               angle=90) +
-    # Labels and formatting
     xlab("Time From Tx") + ylab("Sensor Glucose (mg/dL)") + 
     ggtitle(paste("Participant",id)) +
     scale_color_discrete(name = "Sensor Number") +
     scale_x_continuous(breaks = c(-10080,0,10080,2*10080,3*10080,4*10080),
                        limits = c(-10080,4*10080),
                        labels = c("-7 Days","Tx","7 Days","14 Days","21 Days",
-                                  "28 Days")) + 
+                                  "28 Days")) +
     theme_bw()
-  return(p)
-  }
+}
 ```
 
 ```{r plot loop,echo=FALSE,warning=FALSE}
