@@ -1,0 +1,47 @@
+---
+title: "Participant Plots"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/Volumes/som/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
+library(arsenal)
+library(skimr)
+library(knitr)
+library(tidyverse)
+```
+
+```{r data import,echo=FALSE,cache=TRUE}
+# REDCap API data import
+api <- read.table("./Jenna Sopfe/api_token.txt",header = T,sep = "\t")
+rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
+                         token = as.character(api[1,1]))
+data_full <- exportRecords(rcon)
+# Remove participant 10
+data_full <- data_full %>% filter(study_id != "10")
+# Fill down Tx date
+data_full <- data_full %>% group_by(study_id) %>% fill(date_of_tx) %>%
+  ungroup()
+# Format dates
+datecols <- c("date_death","date_of_tx","infxn_date","time_engraft")
+data_full[,datecols] <- lapply(data_full[,datecols],lubridate::ymd)
+data_full$id <- as.character(data_full$study_id)
+# Import CGM
+cgm <- read.csv("./Jenna Sopfe/CGM Accuracy in BMT/Data_Cleaned/Prospective HSCT CGM Data Updated 6.24.19 FULL DATA SET.csv")
+# Format columns
+colnames(cgm)[1] <- "id"
+cgm$id <- as.character(cgm$id)
+cgm$Time <- lubridate::mdy_hm(cgm$Time,tz = "UTC")
+cgm$Tx_date <- lubridate::mdy(cgm$Tx_date,tz = "UTC")
+# Minutes from Tx
+cgm$mins_from_tx <- 
+  as.numeric(difftime(as.Date(cgm$Time),cgm$Tx_date,units = "mins"))
+# Add events
+events <- data_full %>% 
+  filter(redcap_repeat_instrument == "infections") %>%
+  select(study_id,infxn_date)
+```
+
