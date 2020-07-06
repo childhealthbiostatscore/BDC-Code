@@ -2,12 +2,13 @@
 title: "Participant Plots"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: word_document
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_knit$set(root.dir = "/Volumes/som/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
+library(redcapAPI)
 library(arsenal)
 library(skimr)
 library(knitr)
@@ -20,28 +21,91 @@ api <- read.table("./Jenna Sopfe/api_token.txt",header = T,sep = "\t")
 rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
                          token = as.character(api[1,1]))
 data_full <- exportRecords(rcon)
+data_full$id <- as.character(data_full$study_id)
 # Remove participant 10
 data_full <- data_full %>% filter(study_id != "10")
 # Fill down Tx date
 data_full <- data_full %>% group_by(study_id) %>% fill(date_of_tx) %>%
   ungroup()
-# Format dates
-datecols <- c("date_death","date_of_tx","infxn_date","time_engraft")
-data_full[,datecols] <- lapply(data_full[,datecols],lubridate::ymd)
-data_full$id <- as.character(data_full$study_id)
 # Import CGM
-cgm <- read.csv("./Jenna Sopfe/CGM Accuracy in BMT/Data_Cleaned/Prospective HSCT CGM Data Updated 6.24.19 FULL DATA SET.csv")
+cgm_data <- read.csv("./Jenna Sopfe/CGM Accuracy in BMT/Data_Cleaned/Prospective HSCT CGM Data Updated 6.24.19 FULL DATA SET.csv")
 # Format columns
-colnames(cgm)[1] <- "id"
-cgm$id <- as.character(cgm$id)
-cgm$Time <- lubridate::mdy_hm(cgm$Time,tz = "UTC")
-cgm$Tx_date <- lubridate::mdy(cgm$Tx_date,tz = "UTC")
+colnames(cgm_data)[1] <- "id"
+cgm_data$id <- as.character(cgm_data$id)
+cgm_data$Time <- lubridate::mdy_hm(cgm_data$Time,tz = "UTC")
+cgm_data$Tx_date <- lubridate::mdy(cgm_data$Tx_date,tz = "UTC")
 # Minutes from Tx
-cgm$mins_from_tx <- 
-  as.numeric(difftime(as.Date(cgm$Time),cgm$Tx_date,units = "mins"))
+cgm_data$mins_from_tx <- 
+  as.numeric(difftime(cgm_data$Time,cgm_data$Tx_date,units = "mins"))
 # Add events
-events <- data_full %>% 
-  filter(redcap_repeat_instrument == "infections") %>%
-  select(study_id,infxn_date)
+events <- data_full %>% group_by(study_id) %>%
+  select(study_id,date_of_tx,infxn_date,time_engraft,date_death,time_gf,
+         acute_gvhd_date,ips_date,prim_icu_dates) %>%
+  fill(time_engraft,date_death,time_gf,acute_gvhd_date,ips_date,prim_icu_dates) %>%
+  filter(row_number()>1) %>% arrange(study_id,infxn_date) %>% ungroup()
+# Get first ICU dates
+events$prim_icu_dates <- sapply(strsplit(events$prim_icu_dates,","),"[[",1)
+events <- events %>% separate(prim_icu_dates,c("icu_start","icu_end"),"-")
+events[,c("icu_start","icu_end")] <- 
+  lapply(events[,c("icu_start","icu_end")],lubridate::mdy)
+# Convert all dates to minutes from Tx
+events[,3:ncol(events)] <- lapply(events[,3:ncol(events)],function(x){
+  as.numeric(difftime(x,events$date_of_tx,units = "mins"))
+})
+# Add labels
+events <- events %>% group_by(study_id) %>%
+  mutate(infxn_label=ifelse(!is.na(infxn_date),paste("Infection",row_number()),NA))
 ```
 
+# Plots
+
+```{r plot function,echo=FALSE}
+plot_events <- function(id,cgm_data,event_data){
+  # Filter data
+  cgm <- cgm_data[cgm_data$id==id,]
+  event <- event_data[event_data$study_id==id,]
+  # Plot
+  p <- ggplot(cgm,aes(x=mins_from_tx,y=Historic_Glucose)) + 
+    ylim(40,400) + 
+    # xlim(min(cgm$mins_from_tx),max(cgm$mins_from_tx)) + 
+    geom_line(aes(color=factor(SensorNum))) +
+    # Infections
+    geom_vline(event,mapping=aes(xintercept=infxn_date),alpha=0.5) + 
+    geom_text(event,mapping=aes(x=infxn_date,label=infxn_label,y = 300),
+              angle=90) + 
+    # Engraftment
+    geom_vline(event,mapping=aes(xintercept=time_engraft[1]),alpha=0.5) + 
+    geom_text(event,mapping=aes(x=time_engraft[1],label="Engraftment",y = 300),
+              angle=90) + 
+    # First ICU start
+    geom_vline(event,mapping=aes(xintercept=icu_start[1]),alpha=0.5) + 
+    geom_text(event,mapping=aes(x=icu_start[1],label="ICU Start",y = 300),
+              angle=90) + 
+    # Death
+    geom_vline(event,mapping=aes(xintercept=date_death[1]),alpha=0.5) + 
+    geom_text(event,mapping=aes(x=date_death[1],label="Death ",y = 300),
+              angle=90) + 
+    # Graft failure
+    geom_vline(event,mapping=aes(xintercept=time_gf[1]),alpha=0.5) + 
+    geom_text(event,mapping=aes(x=time_gf[1],label="Graft Failure",y = 300),
+              angle=90) +
+    # GVHD diagnosis
+    geom_vline(event,mapping=aes(xintercept=acute_gvhd_date[1]),alpha=0.5) + 
+    geom_text(event,mapping=aes(x=acute_gvhd_date[1],label="GVHD Diagnosis",y = 300),
+              angle=90) +
+    # IPS
+    geom_vline(event,mapping=aes(xintercept=ips_date[1]),alpha=0.5) + 
+    geom_text(event,mapping=aes(x=ips_date[1],label="IPS",y = 300),
+              angle=90) +
+    # Labels
+    xlab("Time From Tx") + ylab("Sensor Glucose (mg/dL)") + 
+    scale_color_discrete(name = "Sensor Number") +
+    theme_bw()
+  
+  return(p)
+}
+```
+
+```{r plot loop,echo=FALSE}
+invisible(lapply(unique(cgm_data$id), function(x){plot_events(x,cgm_data,events)}))
+```
