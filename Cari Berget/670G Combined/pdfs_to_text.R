@@ -1,7 +1,7 @@
 library(pdftools)
 library(tidyverse)
 # List files
-dir = "/Users/timvigers/ClinicVisit_PDFs"
+dir = "/Users/timvigers/New Data"
 files = list.files(dir,pattern = "*pdf",full.names = T)
 # Summary data frame
 pdf_summary = data.frame()
