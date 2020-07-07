@@ -118,12 +118,14 @@ mod2_data$muUpper_trans<-round(mod2_data$muUpper_trans,2)
 mod2_data$muLower_trans<-round(mod2_data$muLower_trans,2)
 
 #Estimated plots
-jpeg("S:/Shared Projects/Laura/BDC/Projects/Laurel Messer/Tandem/Results/DS_model_bw.jpeg",
+jpeg("S:/Shared Projects/Laura/BDC/Projects/Laurel Messer/Tandem/Results/DS_model_bw_07072020.jpeg",
      height=7,width=5,units = "in",res=300)
+par(mar=c(5.1,5,4.1,2.1))
+plot(c(1,4),c(7,10),type="n",xlab="Time",ylab="Estimated Device Satisfaction (DS) Score \n (Higher Score = Higher Satisfaction)",xaxt="n",
+     main="",frame.plot = F,yaxt="n")
+axis(1,at=c(1,2,3,4),c("Baseline","2 months","4 months","6 months"))
+axis(2,at=c(7,7.5,8,8.5,9,9.5,10),las=1)
 
-plot(c(1,4),c(7,10),type="n",xlab="Time",ylab="Estimated Device Satisfaction (DS) Score",xaxt="n",
-     main="")
-axis(1,at=c(1,2,3,4),c("Baseline","2mo","4mo","6mo"))
 col<-col2rgb(brewer.pal(9, "Greys")[4])
 
 polygon(c(1,2,3,4,4,3,2,1),c(dat1$muLower_trans[dat1$method_cat=="Injections"],
@@ -156,16 +158,19 @@ lines(c(1,2,3,4),dat1$mu_trans[dat1$method_cat=="Tandem Pump"],col=brewer.pal(9,
 legend("bottomright",c("MDI","Non-Tandem Pump","Tandem Pump"),
        lty=1,pch=19,col=c(brewer.pal(9, "Greys")[4],
                           brewer.pal(9, "Greys")[6],
-                          brewer.pal(9, "Greys")[9]),title = "Previous Insulin Method")
+                          brewer.pal(9, "Greys")[9]),title = "Previous Insulin Method",bty="n")
 dev.off()
 
 #########DIABETES BURDEN
-jpeg("S:/Shared Projects/Laura/BDC/Projects/Laurel Messer/Tandem/Results/DI_model_bw.jpeg",
+jpeg("S:/Shared Projects/Laura/BDC/Projects/Laurel Messer/Tandem/Results/DI_model_bw_07072020.jpeg",
      height=7,width=5,units = "in",res=300)
+par(mar=c(5.1,5,4.1,2.1))
 
-plot(c(1,4),c(1,6),type="n",xlab="Time",ylab="Estimated Diabetes Impact (DI) Score",xaxt="n",
-     main="")
-axis(1,at=c(1,2,3,4),c("Baseline","2mo","4mo","6mo"))
+plot(c(1,4),c(1,6),type="n",xlab="Time",ylab="Estimated Diabetes Impact (DI) Score \n (Higher Score = Higher Impact)",xaxt="n",
+     main="",frame.plot = F,yaxt="n")
+axis(1,at=c(1,2,3,4),c("Baseline","2 months","4 months","6 months"))
+axis(2,at=c(1,2,3,4,5,6),las=1)
+
 col<-col2rgb(brewer.pal(9, "Greys")[4])
 
 polygon(c(1,2,3,4,4,3,2,1),c(dat2$muLower_trans[dat2$method_cat=="Injections"],
@@ -195,10 +200,10 @@ polygon(c(1,2,3,4,4,3,2,1),c(dat2$muLower_trans[dat2$method_cat=="Tandem Pump"],
 points(c(1,2,3,4),dat2$mu_trans[dat2$method_cat=="Tandem Pump"],pch=19,col=brewer.pal(9, "Greys")[9])
 lines(c(1,2,3,4),dat2$mu_trans[dat2$method_cat=="Tandem Pump"],col=brewer.pal(9, "Greys")[9])
 
-legend("bottomright",c("MDI","Non-Tandem Pump","Tandem Pump"),
-       lty=1,pch=19,col=c(brewer.pal(9, "Greys")[4],
-                          brewer.pal(9, "Greys")[6],
-                          brewer.pal(9, "Greys")[9]),title = "Previous Insulin Method")
+legend("bottomright",c("Non-Tandem Pump","Tandem Pump","MDI"),
+       lty=1,pch=19,col=c(brewer.pal(9, "Greys")[6],
+                          brewer.pal(9, "Greys")[9],
+                          brewer.pal(9, "Greys")[4]),title = "Previous Insulin Method",bty="n")
 dev.off()
 
 ###overlaid on boxplots:
