@@ -262,25 +262,88 @@ Interestingly, the month 1 model is better than the month 3 model. There are 75 
 
 ### Table 1: Descriptive Characteristics
 
+```{r stanford,echo=FALSE,message=FALSE,warning=FALSE}
+# Read in
+stanford <- read.csv("./Data_Cleaned/stanford.csv",
+                     na.strings = c("","NA","na","N/A"),stringsAsFactors = F)
+# Format variables to match BDC data
+num_vars <- c("Baseline.A1c","Auto.Mode...1","Time.in.range.....1")
+stanford[,num_vars] <- lapply(stanford[,num_vars], as.numeric)
+# Age groups
+stanford$demographics_age <- 
+  cut(stanford$Age,c(5,13,18,Inf),right = T,
+      labels = c("6 - 13","14 - 18","18+"))
+# Insurance - combine checkboxes
+stanford$insurance <- 
+  ifelse(stanford$Insurance.Type..choice.Private.HMO. == "Checked" | 
+           stanford$Insurance.Type..choice.Private.PPO. == "Checked" |
+           stanford$Insurance.Type..choice.Other.Private. == "Checked","Private",
+         ifelse(stanford$Insurance.Type..choice.CCS. == "Checked" | 
+                  stanford$Insurance.Type..choice.MediCal. == "Checked" |
+                  stanford$Insurance.Type..choice.MediCare. == "Checked" |
+                  stanford$Insurance.Type..choice.Other.government. == "Checked",
+                "Public","Other"))
+# Race
+stanford$race <- 
+  ifelse(stanford$Race..choice.White. == "Checked","White","Non-white")
+# Get variables from appropriate time points
+stan_df <- stanford %>% group_by(Participant.ID) %>%
+  summarise(hba1c = Baseline.A1c[Event.Name=="670G Start"],
+            m3_time_am = Auto.Mode...1[Event.Name=="3 month visit"],
+            m3_tir = Time.in.range.....1[Event.Name=="3 month visit"],
+            demographics_age = demographics_age[Event.Name=="Baseline"],
+            demographics_sex.factor = Gender[Event.Name=="Baseline"],
+            demographics_t1d_duration = 
+              as.numeric(T1D.Duration[Event.Name=="Baseline"]),
+            demographics_insurance.factor = insurance[Event.Name=="Baseline"],
+            demographics_race.factor = race[Event.Name=="Baseline"],
+            demographics_ethnicity.factor = Ethnicity[Event.Name=="Baseline"]) %>%
+  filter(demographics_sex.factor != "Trans female")
+# Correct factor levels
+stan_df$demographics_sex.factor <- as.factor(stan_df$demographics_sex.factor)
+stan_df$demographics_insurance.factor <- 
+  factor(stan_df$demographics_insurance.factor,
+         levels = levels(df$demographics_insurance.factor))
+stan_df$demographics_race.factor <- 
+  factor(stan_df$demographics_race.factor,
+            levels = levels(df$demographics_race.factor))
+stan_df$demographics_ethnicity.factor <- 
+  factor(stan_df$demographics_ethnicity.factor)
+levels(stan_df$demographics_ethnicity.factor) <- 
+  levels(df$demographics_ethnicity.factor)
+# Get am use at final timepoint
+success <- stanford %>% group_by(Participant.ID) %>%
+  filter(Event.Name == "12 month visit" | 
+           Event.Name =="9 month visit") %>%
+  filter(row_number() == n()) %>%
+  summarise(am_final = Auto.Mode...1)
+# Combine covariates and success dfs
+stan_df <- left_join(stan_df,success,by = "Participant.ID")
+stan_df$success <- as.factor(ifelse(stan_df$am_final >= 60,"Success","Failure"))
+# Cohort
+stan_df$cohort <- "Stanford"
+colnames(stan_df)[1] <- "record_id"
+df$cohort <- "BDC"
+t1_df <- full_join(df,stan_df)
+```
+
 ```{r table 1,echo=FALSE,results='asis'}
-t1_form <- paste(colnames(df)[2:ncol(df)],collapse = "+")
-t1 <- tableby(as.formula(paste("success~",t1_form)),data = df)
+t1_form <- "interaction(cohort,success)~kwt(am_final)+hba1c+kwt(m1_sensor_wear)+m3_sensor_wear+m1_time_am+m3_time_am+m1_tir+m3_tir+demographics_t1d_duration+demographics_age+demographics_sex.factor+demographics_insurance.factor+demographics_race.factor+demographics_ethnicity.factor+demographics_cgmhx.factor+demographics_pumphx.factor"
+
+t1 <- tableby(as.formula(t1_form),data = t1_df)
 summary(t1,labelTranslations = 
           list(am_final = "AM Use at Final Visit",hba1c = "Baseline HbA1c",
-               c_paid_total = "PAID PEDS Score",
-               ya_paid_total = "YA PAID Score",
-               c_hfs_behave_total = "Child HFS Behave Score",
-               ya_hfs_behave_total = "YA HFS Behave Score",
-               c_hfs_worry_total = "Child HFS Worry Score",
-               ya_hfs_worry_total = "YA HFS Worry Score",
-               m1_sensor_wear = "M1 Sensor Wear",m1_time_am = "M1 Time in AM",
-               m1_tir = "M1 TIR",demographics_t1d_duration = "T1D Duration",
+               m1_sensor_wear = "M1 Sensor Wear",m3_sensor_wear = "M3 Sensor Wear",
+               m1_time_am = "M1 Time in AM",m3_time_am = "M3 Time in AM",
+               m1_tir = "M1 TIR",m3_tir = "M3 TIR",
+               demographics_t1d_duration = "T1D Duration",
                demographics_age = "Age Group",demographics_sex.factor = "Sex",
                demographics_insurance.factor = "Insurance",
                demographics_race.factor = "Race",
                demographics_ethnicity.factor = "Ethnicity",
                demographics_cgmhx.factor = "CGM Hx.",
-               demographics_pumphx.factor = "Pump Hx."))
+               demographics_pumphx.factor = "Pump Hx."),
+        pfootnote=T)
 ```
 
 ### Final model (3 month variables)
