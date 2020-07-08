@@ -118,8 +118,8 @@ mod2_data$muUpper_trans<-round(mod2_data$muUpper_trans,2)
 mod2_data$muLower_trans<-round(mod2_data$muLower_trans,2)
 
 #Estimated plots
-jpeg("S:/Shared Projects/Laura/BDC/Projects/Laurel Messer/Tandem/Results/DS_model_bw_07072020.jpeg",
-     height=7,width=5,units = "in",res=300)
+tiff("S:/Shared Projects/Laura/BDC/Projects/Laurel Messer/Tandem/Results/DS_model_bw_07082020.tiff",
+     units = 'in',width=5,height=7,res=500,compression="lzw")
 par(mar=c(5.1,5,4.1,2.1))
 plot(c(1,4),c(7,10),type="n",xlab="Time",ylab="Estimated Device Satisfaction (DS) Score \n (Higher Score = Higher Satisfaction)",xaxt="n",
      main="",frame.plot = F,yaxt="n")
@@ -162,8 +162,8 @@ legend("bottomright",c("MDI","Non-Tandem Pump","Tandem Pump"),
 dev.off()
 
 #########DIABETES BURDEN
-jpeg("S:/Shared Projects/Laura/BDC/Projects/Laurel Messer/Tandem/Results/DI_model_bw_07072020.jpeg",
-     height=7,width=5,units = "in",res=300)
+tiff("S:/Shared Projects/Laura/BDC/Projects/Laurel Messer/Tandem/Results/DI_model_bw_07082020.tiff",
+     height=7,width=5,units = "in",res=500,compression="lzw")
 par(mar=c(5.1,5,4.1,2.1))
 
 plot(c(1,4),c(1,6),type="n",xlab="Time",ylab="Estimated Diabetes Impact (DI) Score \n (Higher Score = Higher Impact)",xaxt="n",
