@@ -17,10 +17,11 @@ mean_impute <- function(x){
   return(round(x,1))
 }
 # Read in files
+# Manually changed t1 gold column names (added _t1)
 child <- read.csv("./Data_Cleaned/child_questionnaire_data.csv")
 # Manually changed questionnaire date column names
 # Also, the original file contains two T1Q columns, so manually deleted 
-# the left (incorrect) one. Also manually changed id column name
+# the left (incorrect) one. Also manually changed id column name. 
 q_dates <- read.csv("./Data_Cleaned/questionnaire_dates.csv",na.strings = "")
 child_q_dates <- q_dates[q_dates$MOTHER==0,]
 parent_q_dates <- q_dates[q_dates$MOTHER==1,]
@@ -61,13 +62,14 @@ long[,grep("child_foh1",colnames(long))] <-
   t(apply(long[,grep("child_foh1",colnames(long))],1,mean_impute))
 long[,grep("child_foh2",colnames(long))] <- 
   t(apply(long[,grep("child_foh2",colnames(long))],1,mean_impute))
-long[,grep("child_bocs1",colnames(long))] <- 
-  t(apply(long[,grep("child_bocs1",colnames(long))],1,mean_impute))
+long[,grep("^gold",colnames(long))] <- 
+  t(apply(long[,grep("^gold",colnames(long))],1,mean_impute))
 # Write CSV
 write.csv(long,file = "./Data_Cleaned/long_child_data.csv",
           row.names = F,na = '')
 # Same approach for adult data
 # Read in files
+# Manually changed t1 gold column names (added _t1)
 parent <- read.csv("./Data_Cleaned/parent_questionnaire_data.csv")
 # Delete HEA survey data
 parent[,grep("hea1",colnames(parent))] <- NULL
@@ -95,6 +97,17 @@ long <- parent %>%
                names_to = c("time",".value"),
                names_pattern = "t(.)_(.*)",
                values_drop_na = T)
+# Mean imputation
+long[,grep("gad",colnames(long))] <- 
+  t(apply(long[,grep("gad",colnames(long))],1,mean_impute))
+long[,grep("par_foh1",colnames(long))] <- 
+  t(apply(long[,grep("par_foh1",colnames(long))],1,mean_impute))
+long[,grep("par_foh2",colnames(long))] <- 
+  t(apply(long[,grep("par_foh2",colnames(long))],1,mean_impute))
+long[,grep("par_oci",colnames(long))] <- 
+  t(apply(long[,grep("par_oci",colnames(long))],1,mean_impute))
+long[,grep("^gold",colnames(long))] <- 
+  t(apply(long[,grep("^gold",colnames(long))],1,mean_impute))
 # Write CSV
 write.csv(long,file = "./Data_Cleaned/long_parent_data.csv",
           row.names = F,na = '')
