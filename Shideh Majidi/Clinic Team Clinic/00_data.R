@@ -186,13 +186,12 @@ dat$days_from_last_RTC[dat$days_from_last_RTC<=0]<-NA
 
 #REMOVE PATIENTS WITH NO POST PERIOD VISITS WITHIN 1 YEAR (ALL CONTROLS):
 dat<-subset(dat,dat$post_period_visits>0)
-dat.one<-dat[!duplicated(dat$MRN),]
-
-table(dat.one$group,useNA="always")
 
 #remove those with 1 CTC:
-dat<-subset(dat,dat$group!="N/A - CTC within 1st year but not in CTC group")
+dat<-subset(dat,dat$group!="N/A - CTC within 18 mo but not in CTC group")
 
+dat.one<-dat[!duplicated(dat$MRN),]
+table(dat.one$group,useNA="always")
 #summary stats (included in Analysis Plan):
 dat.one$research_period_visits_cat<-NA
 dat.one$research_period_visits_cat[dat.one$research_period_visits==2]<-2
@@ -213,32 +212,35 @@ quantile(dat.one$research_period_time[dat.one$group=="CTC"],useNA="always")
 quantile(dat.one$post_period_visits[dat.one$group=="CTC"],useNA="always")
 quantile(dat.one$post_period_time[dat.one$group=="CTC"],useNA="always")
 
+#final variables:
+dat.one$Race.Ethnicity<-factor(dat.one$Race.Ethnicity)
+
 #defining a threshold for time after research TC for CTC group:
-ctc<-subset(dat,dat$group=="CTC")
-table(ctc$days_from_last_RTC)
-
-ctc$after_12<-0
-ctc$after_12[ctc$days_from_last_RTC<=365.25 & ctc$time_period!="During RTC"]<-0
-ctc$after_12[ctc$days_from_last_RTC>365.25 & ctc$time_period!="During RTC"]<-1
-
-ctc$after_18<-0
-ctc$after_18[ctc$days_from_last_RTC<=547.50 & ctc$time_period!="During RTC"]<-0
-ctc$after_18[ctc$days_from_last_RTC>547.50 & ctc$time_period!="During RTC"]<-1
-
-ctc$after_24<-0
-ctc$after_24[ctc$days_from_last_RTC<=730.5 & ctc$time_period!="During RTC"]<-0
-ctc$after_24[ctc$days_from_last_RTC>730.5 & ctc$time_period!="During RTC"]<-1
-
-ctc_12<-subset(ctc,ctc$after_12!=1)
-table(ctc_12$Visit.Type)
-table(ctc_12$Visit.Type,ctc_12$MRN)
-
-ctc_18<-subset(ctc,ctc$after_18!=1)
-table(ctc_18$Visit.Type)
-table(ctc_18$Visit.Type,ctc_18$MRN)
-
-ctc_24<-subset(ctc,ctc$after_24!=1)
-table(ctc_24$Visit.Type)
-table(ctc_24$Visit.Type,ctc_24$MRN)
-
-ctc_sub<-ctc[,which(colnames(ctc) %in% c("MRN","VisitDate","Visit.Type","after_1year","time_period"))]
+# ctc<-subset(dat,dat$group=="CTC")
+# table(ctc$days_from_last_RTC)
+# 
+# ctc$after_12<-0
+# ctc$after_12[ctc$days_from_last_RTC<=365.25 & ctc$time_period!="During RTC"]<-0
+# ctc$after_12[ctc$days_from_last_RTC>365.25 & ctc$time_period!="During RTC"]<-1
+# 
+# ctc$after_18<-0
+# ctc$after_18[ctc$days_from_last_RTC<=547.50 & ctc$time_period!="During RTC"]<-0
+# ctc$after_18[ctc$days_from_last_RTC>547.50 & ctc$time_period!="During RTC"]<-1
+# 
+# ctc$after_24<-0
+# ctc$after_24[ctc$days_from_last_RTC<=730.5 & ctc$time_period!="During RTC"]<-0
+# ctc$after_24[ctc$days_from_last_RTC>730.5 & ctc$time_period!="During RTC"]<-1
+# 
+# ctc_12<-subset(ctc,ctc$after_12!=1)
+# table(ctc_12$Visit.Type)
+# table(ctc_12$Visit.Type,ctc_12$MRN)
+# 
+# ctc_18<-subset(ctc,ctc$after_18!=1)
+# table(ctc_18$Visit.Type)
+# table(ctc_18$Visit.Type,ctc_18$MRN)
+# 
+# ctc_24<-subset(ctc,ctc$after_24!=1)
+# table(ctc_24$Visit.Type)
+# table(ctc_24$Visit.Type,ctc_24$MRN)
+# 
+# ctc_sub<-ctc[,which(colnames(ctc) %in% c("MRN","VisitDate","Visit.Type","after_1year","time_period"))]
