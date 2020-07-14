@@ -1,7 +1,7 @@
 ###Shideh Majidi: 
 #Clinic Team Clinic
 library(lubridate)
-
+library(Hmisc)
 #READ IN DATA:
 setwd("S:/Shared Projects/Laura/BDC/Projects/Shideh Majidi/Clinic team clinic/Data/")
 dat<-read.csv("RetrospectiveReview_062220_highlighted_coded_RDV_SMupdated.csv",
@@ -9,26 +9,8 @@ dat<-read.csv("RetrospectiveReview_062220_highlighted_coded_RDV_SMupdated.csv",
 #remove empty rows between patients
 dat<-subset(dat,!is.na(dat$MRN)) 
 
-#ASSIGN data dictionary (using tab in original excel sheet):
-dat$Gender<-as.factor(dat$Gender)
-levels(dat$Gender)<-c("Male","Female")
-dat$Race.Ethnicity<-as.factor(dat$Race.Ethnicity)
-levels(dat$Race.Ethnicity)<-c("White",
-                      "Hispanic",
-                      "Black",
-                      "Other",
-                      "More than One",
-                      "Unknown",
-                      "Asian",
-                      "American Indian/Alaskan Native")
-dat$InsuranceType_VisitDate<-as.factor(dat$InsuranceType_VisitDate)
-levels(dat$InsuranceType_VisitDate)<-c("Private","Public","Military","TBD")
 dat$Visit.Type<-as.factor(dat$Visit.Type)
 levels(dat$Visit.Type)<-c("RTC","CTC","Routine")
-dat$CGM_Use<-as.factor(dat$CGM_Use)
-levels(dat$CGM_Use)<-c("No","Yes")
-dat$InsulinPump_Use<-as.factor(dat$InsulinPump_Use)
-levels(dat$InsulinPump_Use)<-c("No","Yes")
 dat$VisitDate<-as.POSIXct(dat$VisitDate,format="%m/%d/%Y")
 
 ####LONGITUDINAL DATASET PREPARATION####:
@@ -174,7 +156,16 @@ summary_stats<-function(ID,data){
     if (dat.temp$group[1]=="CTC"){
       dat.temp$time_period[dat.temp$row_num>=dat.temp$row_num_first_CTC & dat.temp$row_num<=dat.temp$row_num_last_CTC]<-"CTC"
     }
-    print(dat.temp$MRN)
+    #FINAL DATASET VERSION OF THESE VARIABLES:
+    dat.temp$total_RTC<-nrow(subset(dat.temp,dat.temp$Visit.Type=="RTC"))
+    dat.temp$total_CTC<-nrow(subset(dat.temp,dat.temp$Visit.Type=="CTC"))
+    dat.temp$total_routine<-nrow(subset(dat.temp,dat.temp$Visit.Type=="Routine"))
+    dat.temp$total_visits<-nrow(dat.temp)
+    
+   # print(dat.temp$MRN)
+    dat.temp$first_visit_date<-dat.temp$VisitDate[1]
+    dat.temp$first_post_visit_date<-min(dat.temp$VisitDate[dat.temp$time_period!="During RTC"],na.rm=T)
+    
     dat.temp})
   #print(dat.temp$MRN)
   dat<-do.call(rbind,temp)
@@ -184,20 +175,90 @@ dat<-summary_stats(dat$MRN,dat)
 dat$days_from_last_RTC<-as.numeric(difftime(dat$VisitDate,dat$date_last_RTC,unit="days"))
 dat$days_from_last_RTC[dat$days_from_last_RTC<=0]<-NA
 
+dat$days_from_first_visit<-as.numeric(difftime(dat$VisitDate,dat$first_visit_date,unit="days"))
+dat$days_from_first_visit_to_first_post<-as.numeric(difftime(dat$first_post_visit_date,dat$first_visit_date,unit="days"))
+
 #REMOVE PATIENTS WITH NO POST PERIOD VISITS WITHIN 1 YEAR (ALL CONTROLS):
 dat<-subset(dat,dat$post_period_visits>0)
 
 #remove those with 1 CTC:
 dat<-subset(dat,dat$group!="N/A - CTC within 18 mo but not in CTC group")
 
+#ASSIGN data dictionary (using tab in original excel sheet):
+dat$group<-as.factor(dat$group)
+label(dat$group)<-"Group"
+
+dat$Gender<-as.factor(dat$Gender)
+levels(dat$Gender)<-c("Male","Female")
+label(dat$Gender)<-"Gender"
+dat$Race.Ethnicity<-factor(dat$Race.Ethnicity)
+levels(dat$Race.Ethnicity)<-c("White",
+                              "Hispanic",
+                              "Black",
+                              "Other",
+                              "More than One",
+                              "Unknown",
+                              "Asian",
+                              "American Indian/Alaskan Native")
+label(dat$Race.Ethnicity)<-"Race/Ethnicity"
+
+dat$InsuranceType_VisitDate<-as.factor(dat$InsuranceType_VisitDate)
+levels(dat$InsuranceType_VisitDate)<-c("Private","Public","Military","TBD")
+label(dat$InsuranceType_VisitDate)<-"Insurance Type (baseline)"
+
+dat$CGM_Use<-as.factor(dat$CGM_Use)
+levels(dat$CGM_Use)<-c("No","Yes")
+label(dat$CGM_Use)<-"CGM Use (baseline)"
+
+dat$InsulinPump_Use<-as.factor(dat$InsulinPump_Use)
+levels(dat$InsulinPump_Use)<-c("No","Yes")
+label(dat$InsulinPump_Use)<-"Insulin Pump Use (baseline)"
+
+dat$OnsetDate<-as.POSIXct(dat$OnsetDate,format="%m/%d/%Y")
+dat$DOB<-as.POSIXct(dat$DOB,format="%m/%d/%Y")
+dat$DurationOfDiabetes_eachvisit<-as.numeric(difftime(dat$VisitDate,dat$OnsetDate,units="days"))/365.25
+label(dat$DurationOfDiabetes_eachvisit)<-'Duration of diabetes at baseline'
+
+dat$Age_eachvisit<-as.numeric(difftime(dat$VisitDate,dat$DOB,units="days"))/365.25
+label(dat$Age_eachvisit)<-'Age at baseline'
+
+label(dat$A1C_Value)<-"A1c"
+label(dat$Meter_BGHigh)<-"Meter BG High"
+label(dat$Meter_BGLow)<-"Meter BG Low"
+label(dat$Meter_BGOK)<-"Meter BG OK"
+
+label(dat$total_visits)<-"Total Visits in Study"
+label(dat$total_CTC)<-"Total CTC Visits"
+label(dat$total_RTC)<-"Total RTC Visits"
+label(dat$total_routine)<-"Total Routine Care Visits"
+
+dat$research_period_visits_cat<-NA
+dat$research_period_visits_cat[dat$research_period_visits==2]<-2
+dat$research_period_visits_cat[dat$research_period_visits==3]<-3
+dat$research_period_visits_cat[dat$research_period_visits==4]<-4
+dat$research_period_visits_cat[dat$research_period_visits>=5]<-"5+"
+dat$research_period_visits_cat<-as.factor(dat$research_period_visits_cat)
+
+dat$RTC_visits_cat<-NA
+dat$RTC_visits_cat[dat$total_RTC==2]<-2
+dat$RTC_visits_cat[dat$total_RTC==3]<-3
+dat$RTC_visits_cat[dat$total_RTC==4]<-4
+dat$RTC_visits_cat[dat$total_RTC>=5]<-"5+"
+dat$RTC_visits_cat<-as.factor(dat$RTC_visits_cat)
+
+label(dat$research_period_visits)<-"Research Period Visits"
+label(dat$research_period_visits_cat)<-"Research Period Visits (total)"
+label(dat$RTC_visits_cat)<-"Research Period Visits (RTC)"
+label(dat$research_period_time)<-"Research Period Time"
+label(dat$post_period_visits)<-"Post Period Visits"
+label(dat$post_period_time)<-"Post Period Time"
+
+
+
 dat.one<-dat[!duplicated(dat$MRN),]
 table(dat.one$group,useNA="always")
 #summary stats (included in Analysis Plan):
-dat.one$research_period_visits_cat<-NA
-dat.one$research_period_visits_cat[dat.one$research_period_visits==2]<-2
-dat.one$research_period_visits_cat[dat.one$research_period_visits==3]<-3
-dat.one$research_period_visits_cat[dat.one$research_period_visits==4]<-4
-dat.one$research_period_visits_cat[dat.one$research_period_visits>=5]<-"5+"
+
 
 table(dat.one$research_period_visits_cat[dat.one$group=="Control"])
 quantile(dat.one$research_period_visits[dat.one$group=="Control"],useNA="always")
@@ -212,8 +273,6 @@ quantile(dat.one$research_period_time[dat.one$group=="CTC"],useNA="always")
 quantile(dat.one$post_period_visits[dat.one$group=="CTC"],useNA="always")
 quantile(dat.one$post_period_time[dat.one$group=="CTC"],useNA="always")
 
-#final variables:
-dat.one$Race.Ethnicity<-factor(dat.one$Race.Ethnicity)
 
 #defining a threshold for time after research TC for CTC group:
 # ctc<-subset(dat,dat$group=="CTC")
