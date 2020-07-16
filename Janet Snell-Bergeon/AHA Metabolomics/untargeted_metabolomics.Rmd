@@ -28,8 +28,8 @@ data <- raw_data %>%
          masserror = coalesce(Mass.Error..ppm.,Mass.Error..ppm..1),
          rterror = coalesce(RT.Error..s.,RT.Error..s..1)) %>%
   select(compound,m.z,rt,masserror,rterror,
-                IsoMS_results_QC01_190618171010_converted.csv:
-                  IsoMS_results_S227_Batch07_1400_RA8_converted.csv)
+         IsoMS_results_QC01_190618171010_converted.csv:
+           IsoMS_results_S227_Batch07_1400_RA8_converted.csv)
 data$compound <- paste(data$compound,data$m.z,data$rt,sep = "_")
 # Rename columns
 colnames(data) <- gsub("IsoMS_results_","",colnames(data))
@@ -88,37 +88,75 @@ data[,8:ncol(data)] <- lapply(data[,8:ncol(data)],log)
 
 # T tests
 
-```{r echo=FALSE}
+## Permutation Tests
+
+Density represents the number of significant metabolites and the red line indicates the number of hits in non-permuted data.
+
+```{r echo=FALSE,cache=TRUE}
 # Non-missing outcome
 X <- data[,c(5,6,8:ncol(data))]
 X <- X[!is.na(X[,1]),]
 X$GROUP <- as.factor(as.character(X$GROUP))
-# Test all
-ts <- lapply(colnames(X)[c(3:293,295:ncol(X))], function(x){
-  form <- as.formula(paste0(x,"~CACp"))
-  t <- t.test(form,X)
-  return(list("metabolite"=x,"p"=t$p.value))
+# Permutation tests
+nsim <- 1000
+t_perms <- lapply(1:nsim,function(y){
+  df <- X
+  if(y > 1) {
+    set.seed(y)
+    df$CACp <- sample(df$CACp)
+  }
+  ts <- lapply(colnames(df)[c(3:293,295:ncol(df))], 
+               function(x){
+                 form <- as.formula(paste0(x,"~CACp"))
+                 t <- t.test(form,df)
+                 return(list("metabolite"=x,"p"=t$p.value))
+               })
+  ts <- data.frame(do.call(rbind,ts))
+  ts$p <- as.numeric(ts$p)
+  ts <- ts[order(ts$p),]
+  ts$p.adjusted <- p.adjust(ts$p,method = "fdr")
+  return(length(which(ts$p < 0.05)))
 })
-ts <- data.frame(do.call(rbind,ts))
-ts$p <- as.numeric(ts$p)
-ts <- ts[order(ts$p),]
-ts$p.adjusted <- p.adjust(ts$p,method = "fdr")
+t_perms <- as.data.frame(unlist(t_perms))
+t_perms$correct <- t_perms[1,1]
+colnames(t_perms) <- c("p","correct")
+ggplot(t_perms,aes(x=p)) + theme_bw() + 
+  geom_density() +
+  geom_vline(mapping = aes(xintercept=correct),color = "red")
 ```
 
 # ANOVA
 
-```{r echo=FALSE}
+## Permutation Tests
+
+Density represents the number of significant metabolites and the red line indicates the number of hits in non-permuted data.
+
+```{r echo=FALSE,cache=TRUE}
 # Test all
-anovas <- lapply(colnames(X)[c(3:293,295:ncol(X))], function(x){
-  form <- as.formula(paste0(x,"~GROUP"))
-  mod <- lm(form,X)
-  f <- anova(mod)
-  return(list("metabolite"=x,"p"=f$`Pr(>F)`[1]))
+anova_perms <- lapply(1:100,function(y){
+  df <- X
+  if(y > 1) {
+    set.seed(y)
+    df$GROUP <- sample(df$GROUP)
+  }
+  anovas <- lapply(colnames(df)[c(3:293,295:ncol(df))], function(x){
+    form <- as.formula(paste0(x,"~GROUP"))
+    mod <- lm(form,df)
+    f <- anova(mod)
+    return(list("metabolite"=x,"p"=f$`Pr(>F)`[1]))
+  })
+  anovas <- data.frame(do.call(rbind,anovas))
+  anovas$p <- as.numeric(anovas$p)
+  anovas <- anovas[order(anovas$p),]
+  anovas$p.adjusted <- p.adjust(anovas$p,method = "fdr")
+  return(length(which(anovas$p < 0.05)))
 })
-anovas <- data.frame(do.call(rbind,anovas))
-anovas$p <- as.numeric(anovas$p)
-anovas <- anovas[order(anovas$p),]
-anovas$p.adjusted <- p.adjust(anovas$p,method = "fdr")
+anova_perms <- as.data.frame(unlist(anova_perms))
+anova_perms$correct <- anova_perms[1,1]
+colnames(anova_perms) <- c("p","correct")
+ggplot(anova_perms,aes(x=p)) + theme_bw() + 
+  geom_density() +
+  geom_vline(mapping = aes(xintercept=correct),color = "red")
 ```
 
 # Moderated t tests
