@@ -1,0 +1,898 @@
+---
+title: "DKA"
+author: "Cameron Severn"
+date: "7/16/2020"
+output:
+  pdf_document:
+    fig_width: 10
+    fig_height: 10
+  html_document:
+    fig_width: 10
+    fig_height: 10
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/Peds Endo/Petter Bjornstad/DKA study")
+library(tidyverse)
+library(nlme)
+library(emmeans)
+library(ggpubr)
+library(Hmisc)
+library(nephro)
+library(knitr)
+library(readxl)
+```
+
+```{r}
+# data import and preprocessing
+dat <- read.csv("./Data/Full_DKA_Data Set_06-26_final.csv")
+dat$male <- 1 - dat$female
+dat$age_y <- dat$age/12
+dat$height_m <- dat$ht/100
+dat$black <- 0
+
+dat$ivinsulinstop <- strptime(dat$ivinsulinstop, format = "%m/%d/%Y %H:%M")
+dat$ivinsulin_start <- strptime(dat$ivinsulin_start, format = "%m/%d/%Y %H:%M")
+
+
+dat$ivinsulin_duration <- as.numeric(dat$ivinsulinstop - dat$ivinsulin_start)
+dat$ivinsdurtile <- cut2(dat$ivinsulin_duration, g=3)
+
+dat$severity <- ""
+
+dat$severity[((dat$vbg_1 >= 7.3) & (dat$bmp_1 >= 15))] <- "Mild"
+dat$severity[((dat$vbg_1 < 7.3) | (dat$bmp_1 < 15))] <- "Mild"
+dat$severity[((dat$vbg_1 < 7.2) | (dat$bmp_1 < 10))] <- "Moderate"
+dat$severity[((dat$vbg_1 < 7.1) | (dat$bmp_1 < 5))] <- "Severe"
+dat$severity[dat$severity == ""] <- "Unknown"
+
+
+dat_time_vars <- dat %>% select(record_id, 
+                                severity, 
+                                ivinsulin_duration,
+                                ivinsdurtile,
+                                male,
+                                age_y,
+                                black,
+                                vbg_1,
+                                bmp_1,
+                                contains("3mo"),
+                                contains("0_8"),
+                                contains("08"), 
+                                contains("12_24"),
+                                contains("1224"))
+
+
+names(dat_time_vars) <- gsub("autoab_3mo_fu___0","autoab_gada_3mo", names(dat_time_vars))
+names(dat_time_vars) <- gsub("autoab_3mo_fu___1","autoab_gad65_3mo", names(dat_time_vars))
+names(dat_time_vars) <- gsub("autoab_3mo_fu___2","autoab_miaa_3mo", names(dat_time_vars))
+names(dat_time_vars) <- gsub("autoab_3mo_fu___3","autoab_ia2_3mo", names(dat_time_vars))
+names(dat_time_vars) <- gsub("autoab_3mo_fu___4","autoab_znt8_3mo", names(dat_time_vars))
+names(dat_time_vars) <- gsub("autoab_3mo_fu___5","autoab_ica512_3mo", names(dat_time_vars))
+names(dat_time_vars) <- gsub("12_24","1224", names(dat_time_vars))
+names(dat_time_vars) <- gsub("1224hr","1224", names(dat_time_vars))
+names(dat_time_vars) <- gsub("0_8","08", names(dat_time_vars))
+names(dat_time_vars) <- gsub("08hr","08", names(dat_time_vars))
+names(dat_time_vars) <- gsub("08_hr","08", names(dat_time_vars))
+names(dat_time_vars) <- gsub("3mo_fu","3mo", names(dat_time_vars))
+
+
+threemo <- dat_time_vars %>% select(record_id, 
+                                    severity, 
+                                    ivinsulin_duration,
+                                    ivinsdurtile,
+                                    male,
+                                    age_y,
+                                    black,
+                                    vbg_1,
+                                    bmp_1,
+                                    contains("3mo"))
+zero8 <- dat_time_vars %>% select(record_id, 
+                                  severity, 
+                                  ivinsulin_duration,
+                                  ivinsdurtile,
+                                  male,
+                                  age_y,
+                                  black,
+                                  vbg_1,
+                                  bmp_1,
+                                  contains("08"))
+twelve24 <- dat_time_vars %>% select(record_id, 
+                                     severity, 
+                                     ivinsulin_duration,
+                                     ivinsdurtile,
+                                     male,
+                                     age_y,
+                                     black,
+                                     vbg_1,
+                                     bmp_1,
+                                     contains("1224"))
+
+threemo$time <- "3 months"
+zero8$time <- "0-8 hours"
+twelve24$time <- "12-24 hours"
+
+names(threemo) <- gsub("_3mo","", names(threemo))
+names(zero8) <- gsub("_08","", names(zero8))
+names(twelve24) <- gsub("_1224","", names(twelve24))
+
+merge_set <- merge(merge(zero8,twelve24, all = T),threemo, all = T)
+
+# new variable derivations
+
+merge_set$frac_ua <- (merge_set$uua * merge_set$screatinine) / (merge_set$sua * merge_set$ucreatinine)
+
+
+qcr_df <- read.csv("./Data/qcr.csv")
+
+get_eGFR <- function(age,sex,creatinine,cystatinc){
+  age_year <- floor(age)
+  qcr <- ifelse(sex == 1, qcr_df$m_qcr[qcr_df$age == age_year],qcr_df$f_qcr[qcr_df$age == age_year])
+  f1 <- creatinine/qcr
+  f2 <- 0.5
+  f3 <- cystatinc/0.82
+  fas <- 107.3 / ((0.5*f1) + (f2*f3))
+  fas
+}
+
+get_eGFR_crea <- function(age,sex,creatinine){
+  age_year <- floor(age)
+  qcr <- ifelse(sex == 1, qcr_df$m_qcr[qcr_df$age == age_year],qcr_df$f_qcr[qcr_df$age == age_year])
+  f1 <- creatinine/qcr
+  fas <- 107.3 / f1
+  fas
+}
+
+
+for (i in 1:nrow(merge_set)){
+  merge_set$eGFR[i] <- get_eGFR(merge_set$age_y[i],merge_set$male[i],merge_set$screatinine[i],merge_set$cystatinc[i])
+}
+
+
+```
+
+```{r}
+# process extended lab data
+
+var_dat <- read_excel("./data/Full 16-1403 DKA RedCap Data Key_04-24edited.xlsx")
+
+ext_vars <- var_dat$`Variable / Field Name`[var_dat$`Form Name`=='extended_lab_data_from_chco_ed_inpatient']
+
+ext_dat <- dat %>% select(record_id,
+                          severity,
+                          ivinsulin_duration,
+                          ivinsdurtile,
+                          male,
+                          age_y,
+                          ext_vars)
+
+ext_dat <- ext_dat %>% pivot_longer(-c(record_id,severity, ivinsulin_duration, ivinsdurtile, male, age_y),
+                                    names_to = c(".value", "time"),
+                                    names_pattern = "(.*)_(.*)"
+)
+
+ext_dat$gastime[ext_dat$gastime == ""] <- NA
+ext_dat$bmptime[ext_dat$bmptime == ""] <- NA
+
+ids <- unique(ext_dat$record_id)
+
+ext_proc <- NULL
+
+# get time from first measurement in hours
+
+for (id in ids){
+  id_df <- ext_dat %>% filter(record_id == id)
+  
+  id_df$gastime <- as.POSIXct(strptime(id_df$gastime, format = "%m/%d/%Y %H:%M"))
+  id_df <- id_df %>% arrange(gastime)
+  id_df$gas_bl <- id_df$gastime[1]
+  id_df$gastime_elapsed <- as.numeric(id_df$gastime - id_df$gas_bl)/3600
+  
+  id_df$bmptime <- as.POSIXct(strptime(id_df$bmptime, format = "%m/%d/%Y %H:%M"))
+  id_df <- id_df %>% arrange(bmptime)
+  id_df$bmp_bl <- id_df$bmptime[1]
+  id_df$bmptime_elapsed <- as.numeric(id_df$bmptime - id_df$bmp_bl)/3600
+  
+  ext_proc <- rbind(ext_proc, id_df)
+}
+
+for (i in 1:nrow(ext_proc)){
+  ext_proc$eGFR[i] <- get_eGFR_crea(ext_proc$age_y[i],ext_proc$male[i],ext_proc$scr[i])
+}
+
+```
+
+
+
+```{r}
+get_plot <- function(outcome, ylab, data_set = merge_set, time_var = "time", group_models = T, summary_lines = T, strata = "severity", legend_label = "DKA Severity", model_output = F){
+  summary_line_size <- 1.1
+  fml <- as.formula(paste(outcome,"~",time_var))
+  model <- lme(fml,
+               data = data_set,
+               random=~1|record_id,
+               na.action = na.omit)
+  model_means <- as.data.frame(emmeans(model,as.formula(paste("~",time_var))))
+  model_means$strata <- "All"
+  p <- ggplot(data = data_set[!is.na(data_set[outcome]),], aes_string(x=time_var,y=outcome,group="record_id", color = strata)) +
+    geom_point(alpha=0.2) +
+    geom_line(alpha=0.2) +
+    theme_bw() +
+    labs(x="",y=ylab, color = legend_label)
+  
+  if (strata == "severity"){
+    p <- p + scale_color_manual(values=c("All"="#000000", "Mild"="#008000", "Moderate"="#FF8C00", "Severe"="#FF0000", "Unknown"="#800080"))
+  }
+  else if (strata == "ivinsdurtile"){
+    p <- p + scale_color_manual(values=c("All"="#000000", "[ 1.9,12.5)"="#008000", "[12.5,18.1)"="#FF8C00", "[18.1,49.2]"="#FF0000", "Unknown"="#800080"))
+  }
+  
+  try(if (group_models == T){
+    group_fml <- as.formula(paste(outcome,"~",time_var,"*",strata))
+    group_dat <- data_set %>% filter(get(strata) != "Unknown")
+    group_model <- lme(group_fml,
+                       data = group_dat,
+                       random=~1|record_id,
+                       na.action = na.omit)
+    means_fml <- as.formula(paste("~",time_var, "|",strata))
+    group_means <- as.data.frame(emmeans(group_model,means_fml))
+    p <- p + geom_point(inherit.aes = F, data = group_means, aes_string(x = time_var, y = "emmean", color = strata)) +
+      geom_line(inherit.aes = F, data = group_means, aes_string(x = time_var, y = "emmean", color = strata, group = strata), size = summary_line_size)
+    #geom_errorbar(inherit.aes = F, data = group_means, aes(x = time_var, ymin = lower.CL, ymax = upper.CL, color = severity), width = 0.2)
+  }, silent = T)
+  
+  try(if (summary_lines == T){
+    p <- p + geom_point(inherit.aes = F, data = model_means, aes_string(x = time_var, y = "emmean", color = "strata")) +
+      geom_line(inherit.aes = F, data = model_means, aes_string(x = time_var, y = "emmean", group = 1, color = "strata"), size = summary_line_size) + 
+      geom_errorbar(inherit.aes = F, data = model_means, aes_string(x = time_var, ymin = "lower.CL", ymax = "upper.CL", color = "strata"), width = 0.2, size = summary_line_size)
+  }, silent = T)
+  
+  
+  if (model_output == T){
+    
+    try(if (T){
+      
+      model_anova <- anova(model)
+      cat('\n')
+      cat("## Ungrouped Model","\n")
+      print(kable(as.data.frame(summary(model)$tTable), caption = "t-table"))
+      cat('\n')
+      print(kable(model_anova, caption = "ANOVA"))
+      cat('\n')
+      print(kable(model_means, caption = "Time Means"))
+      cat('\n')
+    }, silent = T)
+    
+    
+    try(if (T){
+      severity_fml <- as.formula(paste(outcome,"~",time_var,"*severity"))
+      severity_model <- lme(severity_fml,
+                            data = data_set,
+                            random=~1|record_id,
+                            na.action = na.omit)
+      severity_means <- as.data.frame(emmeans(severity_model,as.formula(paste("~",time_var, "| severity"))))
+      severity_anova <- anova(severity_model)
+      cat('\n')
+      cat("## Severity Model","\n")
+      print(kable(as.data.frame(summary(severity_model)$tTable), caption = "t-table"))
+      cat('\n')
+      print(kable(severity_anova, caption = "ANOVA"))
+      cat('\n')
+      print(kable(severity_means, caption = "Group/Time Means"))
+      cat('\n')
+    }, silent = T)
+    
+    
+    try(if(T){
+      instile_fml <- as.formula(paste(outcome,"~",time_var,"*ivinsdurtile"))
+      instile_model <- lme(instile_fml,
+                           data = data_set,
+                           random=~1|record_id,
+                           na.action = na.omit)
+      instile_means <- as.data.frame(emmeans(instile_model,as.formula(paste("~",time_var, "| ivinsdurtile"))))
+      instile_anova <- anova(instile_model)
+      cat('\n')
+      cat("## Insulin Duration Model (Tertile)","\n")
+      print(kable(as.data.frame(summary(instile_model)$tTable), caption = "t-table"))
+      cat('\n')
+      print(kable(instile_anova, caption = "ANOVA"))
+      cat('\n')
+      print(kable(instile_means, caption = "Group/Time Means"))
+      cat('\n')
+    }, silent = T)
+    
+    try(if(T){
+      ins_fml <- as.formula(paste(outcome,"~",time_var,"*ivinsulin_duration"))
+      ins_model <- lme(ins_fml,
+                       data = data_set,
+                       random=~1|record_id,
+                       na.action = na.omit)
+      ins_anova <- anova(ins_model)
+      cat('\n')
+      cat("## Insulin Duration Model (Continuous)","\n")
+      print(kable(as.data.frame(summary(ins_model)$tTable), caption = "t-table"))
+      cat('\n')
+      print(kable(ins_anova, caption = "ANOVA"))
+      cat('\n')
+    }, silent = T)
+    
+    try(if(T){
+      vbg_fml <- as.formula(paste(outcome,"~",time_var,"*vbg_1"))
+      vbg_model <- lme(vbg_fml,
+                       data = data_set,
+                       random=~1|record_id,
+                       na.action = na.omit)
+      vbg_anova <- anova(vbg_model)
+      cat('\n')
+      cat("## Venous pH Model","\n")
+      print(kable(as.data.frame(summary(vbg_model)$tTable), caption = "t-table"))
+      cat('\n')
+      print(kable(vbg_anova, caption = "ANOVA"))
+      cat('\n')
+    }, silent = T)
+    
+    try(if(T){
+      bmp_fml <- as.formula(paste(outcome,"~",time_var,"*bmp_1"))
+      bmp_model <- lme(bmp_fml,
+                       data = data_set,
+                       random=~1|record_id,
+                       na.action = na.omit)
+      bmp_anova <- anova(bmp_model)
+      cat('\n')
+      cat("## HCO3 Model","\n")
+      print(kable(as.data.frame(summary(bmp_model)$tTable), caption = "t-table"))
+      cat('\n')
+      print(kable(bmp_anova, caption = "ANOVA"))
+      cat('\n')
+    }, silent = T)
+    
+    try(if(T){
+      bmp_fml <- as.formula(paste(outcome,"~",time_var,"*eGFR"))
+      bmp_model <- lme(bmp_fml,
+                       data = data_set,
+                       random=~1|record_id,
+                       na.action = na.omit)
+      bmp_anova <- anova(bmp_model)
+      cat('\n')
+      cat("## GFR Model","\n")
+      print(kable(as.data.frame(summary(bmp_model)$tTable), caption = "t-table"))
+      cat('\n')
+      print(kable(bmp_anova, caption = "ANOVA"))
+      cat('\n')
+    }, silent = T)
+    
+    
+    
+  }
+  else{
+    p
+  }
+}
+```
+
+
+
+# Introduction
+
+Visual summaries of the trajectories of each biomarker are found in the summary plots section of this report and are grouped by objective
+
+Models and individual plots of each variable follow the summary section and are best navigated using the bookmarks functionality of most pdf viewers
+
+Each biomarker plot contains a estimated trajectory for the entire cohort (black), for each strata (either DKA Severity or IV Insulin Duration) (bold colored), and for each patient (transparent colored)
+
+Error bars are included for the non-stratefied trajectory and represent the 95% confidence interval for that estimate. Error bars are not included for strata to reduce visual clutter, but CI's can be found in the model output.
+
+In cases where there was not a sufficient sample size to estimate trajectory, the trajectory visualization was omitted
+
+Similarly, models that failed to converge or had insuffienct samples were not included
+
+All models are linear mixed effects models with a random intercept for patient ID, meaning that within-patient variability is accounted for. Expected values from the mixed effects models are used to create the trajectory on the plots. 
+
+Model outputs for each biomarker include a model with time as the only predictor, and other models where an interaction between time and another predictor are considered (this gets at a difference in trajectory). 
+
+Due to the relatively small sample size of the study compared to how many variables are examined, p-values are not adjusted. That being said, it should be noted that there is a strong chance that some of the significant relationships found here happened by pure chance alone. 
+
+There is a lot of information in this report, so feel free to reach out with questions. My advise is to look for things that are interesting in the summary plots and then drill down into the specific biomarker models for more information. I tried to keep this report as focused on the research question as possible, but if more information is desired, let me know.
+
+Cameron (cameron.severn@cuanschutz.edu)
+
+
+# Summary Plots
+
+
+## Tubular injury biomarkers, copeptin, uric acid and eGFR
+
+
+```{r, warning=F,message=F}
+p1 <- get_plot("sngal", ylab = "Serum NGAL")
+p2 <- get_plot("skim1", ylab = "Serum KIM-1")
+p3 <- get_plot("smcp1", ylab = "Serum MCP-1")
+p4 <- get_plot("sykl40", ylab = "Serum YKL-40")
+p5 <- get_plot("sil18", ylab = "Serum IL-18")
+p6 <- get_plot("scopeptin", ylab = "Serum Copeptin")
+p7 <- get_plot("sua", ylab = "Serum Uric Acid")
+p8 <- get_plot("uua", ylab = "Urine Uric Acid")
+p9 <- get_plot("frac_ua", ylab = "Fractional Uric Acid")
+p10 <- get_plot("screatinine", ylab = "Serum Creatinine")
+p11 <- get_plot("ucreatinine", ylab = "Urine Creatinine")
+p12 <- get_plot("cystatinc", ylab = "Serum Cystatin-C")
+p13 <- get_plot("eGFR", ylab = "eGFR")
+
+#png("obj1.png", height = 6000, width = 10000, res = 300, pointsize = 24)
+ggarrange(p1,p2,p3,p4,p5,p6,p7,p8,p9,p10,p11,p12,p13,
+          nrow = 5, ncol = 3, align = "hv", common.legend = T, legend = "bottom")
+
+#dev.off()
+```	
+
+\newpage
+
+```{r, warning=F,message=F}
+pi1 <- get_plot("sngal", ylab = "Serum NGAL", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+pi2 <- get_plot("skim1", ylab = "Serum KIM-1", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+pi3 <- get_plot("smcp1", ylab = "Serum MCP-1", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+pi4 <- get_plot("sykl40", ylab = "Serum YKL-40", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+pi5 <- get_plot("sil18", ylab = "Serum IL-18", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+pi6 <- get_plot("scopeptin", ylab = "Serum Copeptin", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+pi7 <- get_plot("sua", ylab = "Serum Uric Acid", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+pi8 <- get_plot("uua", ylab = "Urine Uric Acid", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+pi9 <- get_plot("frac_ua", ylab = "Fractional Uric Acid", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+pi10 <- get_plot("screatinine", ylab = "Serum Creatinine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+pi11 <- get_plot("ucreatinine", ylab = "Urine Creatinine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+pi12 <- get_plot("cystatinc", ylab = "Serum Cystatin-C", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+pi13 <- get_plot("eGFR", ylab = "eGFR", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+
+#png("obj1_ins.png", height = 6000, width = 10000, res = 300, pointsize = 24)
+ggarrange(pi1,pi2,pi3,pi4,pi5,pi6,pi7,pi8,pi9,pi10,pi11,pi12,pi13,
+          nrow = 5, ncol = 3, align = "hv", common.legend = T, legend = "bottom")
+
+#dev.off()
+```	
+
+\newpage
+
+## Urine and serum amino acids  
+
+```{r, warning=F,message=F}
+# u1 <- get_plot("ala", ylab = "Urine Alanine")
+# u2 <- get_plot("gln", ylab = "Urine Glutamine")
+# u3 <- get_plot("gly", ylab = "Urine Glycine")
+# u4 <- get_plot("his", ylab = "Urine Histidine")
+# u5 <- get_plot("tau", ylab = "Urine Taurine", group_models = F, summary_lines = F)
+# u6 <- get_plot("thre", ylab = "Urine Threonine")
+# u7 <- get_plot("trp", ylab = "Urine Tryptophan")
+# u8 <- get_plot("ile", ylab = "Urine Isoleucine")
+# u9 <- get_plot("leu", ylab = "Urine Leucine")
+# u10 <- get_plot("val", ylab = "Urine Valine")
+# 
+# #png("obj2_urine.png", height = 6000, width = 8000, res = 300, pointsize = 24)
+# ggarrange(u1,u2,u3,u4,u5,u6,u7,u8,u9,u10,
+#           nrow = 5, ncol = 3, align = "hv", legend = "bottom", common.legend = T)
+# 
+# #dev.off()
+
+uc1 <- get_plot("ala_crea", ylab = "Urine Alanine/Creatinine")
+uc2 <- get_plot("gln_crea", ylab = "Urine Glutamine/Creatinine")
+uc3 <- get_plot("gly_crea", ylab = "Urine Glycine/Creatinine")
+uc4 <- get_plot("his_crea", ylab = "Urine Histidine/Creatinine")
+uc5 <- get_plot("tau_crea", ylab = "Urine Taurine/Creatinine", group_models = F, summary_lines = F)
+uc6 <- get_plot("thre_crea", ylab = "Urine Threonine/Creatinine")
+uc7 <- get_plot("trp_crea", ylab = "Urine Tryptophan/Creatinine")
+uc8 <- get_plot("ile_crea", ylab = "Urine Isoleucine/Creatinine")
+uc9 <- get_plot("leu_crea", ylab = "Urine Leucine/Creatinine")
+uc10 <- get_plot("val_crea", ylab = "Urine Valine/Creatinine")
+
+#png("obj2_urine_crea.png", height = 6000, width = 8000, res = 300, pointsize = 24)
+ggarrange(uc1,uc2,uc3,uc4,uc5,uc6,uc7,uc8,uc9,uc10,
+          nrow = 4, ncol = 3, align = "hv", legend = "bottom", common.legend = T)
+
+#dev.off()
+
+```
+
+\newpage
+
+```{r, warning=F,message=F}
+
+s1 <- get_plot("ala_s", ylab = "Serum Alanine", group_models = F)
+s2 <- get_plot("gln_s", ylab = "Serum Glutamine", group_models = F)
+s3 <- get_plot("gly_s", ylab = "Serum Glycine", group_models = F)
+s4 <- get_plot("his_s", ylab = "Serum Histidine", group_models = F)
+s5 <- get_plot("phe", ylab = "Serum Phenylalanine", group_models = F)
+s6 <- get_plot("ile_s", ylab = "Serum Isoleucine", group_models = F)
+s7 <- get_plot("leu_s", ylab = "Serum Leucine", group_models = F)
+s8 <- get_plot("val_s", ylab = "Serum Valine", group_models = F)
+
+
+
+#png("obj2_serum.png", height = 4000, width = 8000, res = 300, pointsize = 24)
+ggarrange(s1,s2,s3,s4,s5,s6,s7,s8,
+          nrow = 3, ncol = 3, align = "hv", legend = "bottom", common.legend = T)
+
+#dev.off()
+
+```
+
+
+\newpage
+
+```{r, warning=F,message=F}
+# u1 <- get_plot("ala", ylab = "Urine Alanine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+# u2 <- get_plot("gln", ylab = "Urine Glutamine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+# u3 <- get_plot("gly", ylab = "Urine Glycine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+# u4 <- get_plot("his", ylab = "Urine Histidine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+# u5 <- get_plot("tau", ylab = "Urine Taurine", group_models = F, summary_lines = F)
+# u6 <- get_plot("thre", ylab = "Urine Threonine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+# u7 <- get_plot("trp", ylab = "Urine Tryptophan", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+# u8 <- get_plot("ile", ylab = "Urine Isoleucine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+# u9 <- get_plot("leu", ylab = "Urine Leucine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+# u10 <- get_plot("val", ylab = "Urine Valine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+# 
+# #png("obj2_urine_ins.png", height = 6000, width = 8000, res = 300, pointsize = 24)
+# ggarrange(u1,u2,u3,u4,u5,u6,u7,u8,u9,u10,
+#           nrow = 5, ncol = 3, align = "hv", legend = "bottom", common.legend = T)
+# 
+# #dev.off()
+
+uc1 <- get_plot("ala_crea", ylab = "Urine Alanine/Creatinine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+uc2 <- get_plot("gln_crea", ylab = "Urine Glutamine/Creatinine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+uc3 <- get_plot("gly_crea", ylab = "Urine Glycine/Creatinine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+uc4 <- get_plot("his_crea", ylab = "Urine Histidine/Creatinine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+uc5 <- get_plot("tau_crea", ylab = "Urine Taurine/Creatinine", group_models = F, summary_lines = F)
+uc6 <- get_plot("thre_crea", ylab = "Urine Threonine/Creatinine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+uc7 <- get_plot("trp_crea", ylab = "Urine Tryptophan/Creatinine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+uc8 <- get_plot("ile_crea", ylab = "Urine Isoleucine/Creatinine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+uc9 <- get_plot("leu_crea", ylab = "Urine Leucine/Creatinine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+uc10 <- get_plot("val_crea", ylab = "Urine Valine/Creatinine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+
+#png("obj2_urine_crea_ins.png", height = 6000, width = 8000, res = 300, pointsize = 24)
+ggarrange(uc1,uc2,uc3,uc4,uc5,uc6,uc7,uc8,uc9,uc10,
+          nrow = 4, ncol = 3, align = "hv", legend = "bottom", common.legend = T)
+
+#dev.off()
+```
+
+\newpage
+
+
+```{r, warning=F, message=F}
+s1 <- get_plot("ala_s", ylab = "Serum Alanine", group_models = F, strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+s2 <- get_plot("gln_s", ylab = "Serum Glutamine", group_models = F, strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+s3 <- get_plot("gly_s", ylab = "Serum Glycine", group_models = F, strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+s4 <- get_plot("his_s", ylab = "Serum Histidine", group_models = F, strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+s5 <- get_plot("phe", ylab = "Serum Phenylalanine", group_models = F, strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+s6 <- get_plot("ile_s", ylab = "Serum Isoleucine", group_models = F, strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+s7 <- get_plot("leu_s", ylab = "Serum Leucine", group_models = F, strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+s8 <- get_plot("val_s", ylab = "Serum Valine", group_models = F, strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+
+
+
+
+#png("obj2_serum_ins.png", height = 4000, width = 8000, res = 300, pointsize = 24)
+ggarrange(s1,s2,s3,s4,s5,s6,s7,s8,
+          nrow = 3, ncol = 3, align = "hv", legend = "bottom", common.legend = T)
+
+#dev.off()
+
+```
+
+\newpage
+
+## Urine and serum glycolysis and ketogenesis related metabolites  
+
+```{r, warning=F,message=F}
+scg1 <- get_plot("citra", ylab = "Serum Citrate", group_models = F)
+scg2 <- get_plot("gluco", ylab = "Serum Glucose", group_models = F)
+scg3 <- get_plot("glyce", ylab = "Serum Glycerol", group_models = F)
+scg4 <- get_plot("lacta", ylab = "Serum Lactate", group_models = F)
+scg5 <- get_plot("pyruv", ylab = "Serum Pyruvate", group_models = F)
+scg6 <- get_plot("bohbutyrate", ylab = "Serum 3-Hydroxybutyrate", group_models = F)
+scg7 <- get_plot("aceta", ylab = "Serum Acetate", group_models = F)
+scg8 <- get_plot("acetoace", ylab = "Serum Acetoacetate", group_models = F)
+scg9 <- get_plot("aceto", ylab = "Serum Acetotone", group_models = F)
+
+#png("obj3_serum.png", height = 6000, width = 6000, res = 300, pointsize = 24)
+ggarrange(scg1, scg2, scg3, scg4, scg5, scg6, scg7, scg8, scg9,
+          nrow = 3, ncol = 3, align = "hv", legend = "bottom", common.legend = T)
+
+#dev.off()
+```
+
+\newpage
+
+```{r, warning=F,message=F}
+scg1 <- get_plot("citra", ylab = "Serum Citrate", group_models = F, strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+scg2 <- get_plot("gluco", ylab = "Serum Glucose", group_models = F, strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+scg3 <- get_plot("glyce", ylab = "Serum Glycerol", group_models = F, strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+scg4 <- get_plot("lacta", ylab = "Serum Lactate", group_models = F, strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+scg5 <- get_plot("pyruv", ylab = "Serum Pyruvate", group_models = F, strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+scg6 <- get_plot("bohbutyrate", ylab = "Serum 3-Hydroxybutyrate", group_models = F, strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+scg7 <- get_plot("aceta", ylab = "Serum Acetate", group_models = F, strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+scg8 <- get_plot("acetoace", ylab = "Serum Acetoacetate", group_models = F, strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+scg9 <- get_plot("aceto", ylab = "Serum Acetotone", group_models = F, strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+
+#png("obj3_serum_ins.png", height = 6000, width = 6000, res = 300, pointsize = 24)
+ggarrange(scg1, scg2, scg3, scg4, scg5, scg6, scg7, scg8, scg9,
+          nrow = 3, ncol = 3, align = "hv", legend = "bottom", common.legend = T)
+
+#dev.off()
+```
+
+\newpage
+
+```{r, warning=F,message=F}
+ucg1 <- get_plot("cit_crea", ylab = "Urine Citrate/Creatinine")
+ucg2 <- get_plot("glc_crea", ylab = "Urine Glucose/Creatinine")
+ucg4 <- get_plot("lac_crea", ylab = "Urine Lactate/Creatinine")
+ucg6 <- get_plot("aohibut_crea", ylab = "Urine 2-Hydroxyisobutyrate/Creatinine")
+ucg7 <- get_plot("bohival_crea", ylab = "Urine 3-Hydroxyisovalerate/Creatinine")
+ucg8 <- get_plot("ace_crea", ylab = "Urine Acetate/Creatinine")
+
+
+#png("obj3_urine_crea.png", height = 4000, width = 6000, res = 300, pointsize = 24)
+ggarrange(ucg1,ucg2,ucg4,ucg6,ucg7,ucg8,
+          nrow = 2, ncol = 3, align = "hv", legend = "bottom", common.legend = T)
+
+#dev.off()
+```
+
+\newpage
+
+```{r, warning=F,message=F}
+ucg1 <- get_plot("cit_crea", ylab = "Urine Citrate/Creatinine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+ucg2 <- get_plot("glc_crea", ylab = "Urine Glucose/Creatinine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+ucg4 <- get_plot("lac_crea", ylab = "Urine Lactate/Creatinine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+ucg6 <- get_plot("aohibut_crea", ylab = "Urine 2-Hydroxyisobutyrate/Creatinine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+ucg7 <- get_plot("bohival_crea", ylab = "Urine 3-Hydroxyisovalerate/Creatinine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+ucg8 <- get_plot("ace_crea", ylab = "Urine Acetate/Creatinine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+
+
+#png("obj3_urine_crea_ins.png", height = 4000, width = 6000, res = 300, pointsize = 24)
+ggarrange(ucg1,ucg2,ucg4,ucg6,ucg7,ucg8,
+          nrow = 2, ncol = 3, align = "hv", legend = "bottom", common.legend = T)
+
+#dev.off()
+```
+
+\newpage
+
+## Other urine metabolic markers of interest that have been implicated in kidney disease
+
+```{r, warning=F,message=F}
+umm1 <- get_plot("bohival_crea", ylab = "Urine 3-Hydroxyisovalerate/Creatinine")
+umm2 <- get_plot("form_crea", ylab = "Urine Formate/Creatinine")
+umm3 <- get_plot("tmao_crea", ylab = "Urine Trimethylamine N-oxide/Creatinine")
+umm4 <- get_plot("prgly_crea", ylab = "Urine Propylene Glycol/Creatinine")
+
+
+
+#png("obj4_crea.png", height = 4000, width = 4000, res = 300, pointsize = 24)
+ggarrange(umm1, umm2, umm3, umm4, 
+          nrow = 2, ncol = 2, align = "hv", legend = "bottom", common.legend = T)
+
+#dev.off()
+```
+
+\newpage
+
+```{r, warning=F,message=F}
+umm1 <- get_plot("bohival_crea", ylab = "Urine 3-Hydroxyisovalerate/Creatinine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+umm2 <- get_plot("form_crea", ylab = "Urine Formate/Creatinine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+umm3 <- get_plot("tmao_crea", ylab = "Urine Trimethylamine N-oxide/Creatinine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+umm4 <- get_plot("prgly_crea", ylab = "Urine Propylene Glycol/Creatinine", strata = "ivinsdurtile", legend_label = "Days IV Insulin")
+
+
+
+#png("obj4_crea_ins.png", height = 4000, width = 4000, res = 300, pointsize = 24)
+ggarrange(umm1, umm2, umm3, umm4, 
+          nrow = 2, ncol = 2, align = "hv", legend = "bottom", common.legend = T)
+
+#dev.off()
+```
+
+
+```{r}
+var_names <- c(
+  c("sngal", "Serum NGAL"),
+  c("skim1", "Serum KIM-1"),
+  c("smcp1", "Serum MCP-1"),
+  c("sykl40", "Serum YKL-40"),
+  c("sil18", "Serum IL-18"),
+  c("scopeptin", "Serum Copeptin"),
+  c("sua", "Serum Uric Acid"),
+  c("uua", "Urine Uric Acid"),
+  c("frac_ua", "Fractional Uric Acid"),
+  c("screatinine", "Serum Creatinine"),
+  c("ucreatinine", "Urine Creatinine"),
+  c("cystatinc", "Serum Cystatin-C"),
+  c("eGFR", "eGFR"),
+  c("ala_crea", "Urine Alanine/Creatinine"),
+  c("gln_crea", "Urine Glutamine/Creatinine"),
+  c("gly_crea", "Urine Glycine/Creatinine"),
+  c("his_crea", "Urine Histidine/Creatinine"),
+  c("tau_crea", "Urine Taurine/Creatinine"),
+  c("thre_crea", "Urine Threonine/Creatinine"),
+  c("trp_crea", "Urine Tryptophan/Creatinine"),
+  c("ile_crea", "Urine Isoleucine/Creatinine"),
+  c("leu_crea", "Urine Leucine/Creatinine"),
+  c("val_crea", "Urine Valine/Creatinine"),
+  c("ala_s", "Serum Alanine"),
+  c("gln_s", "Serum Glutamine"),
+  c("gly_s", "Serrum Glycine"),
+  c("his_s", "Serum Histidine"),
+  c("phe", "Serum Phenylalanine"),
+  c("ile_s", "Serum Isoleucine"),
+  c("leu_s", "Serum Leucine"),
+  c("val_s", "Serum Valine"),
+  c("citra", "Serum Citrate"),
+  c("gluco", "Serum Glucose"),
+  c("glyce", "Serum Glycerol"),
+  c("lacta", "Serum Lactate"),
+  c("pyruv", "Serum Pyruvate"),
+  c("bohbutyrate", "Serum 3-Hydroxybutyrate"),
+  c("aceta", "Serum Acetate"),
+  c("acetoace", "Serum Acetoacetate"),
+  c("aceto", "Serum Acetotone"),
+  c("cit_crea", "Urine Citrate/Creatinine"),
+  c("glc_crea", "Urine Glucose/Creatinine"),
+  c("lac_crea", "Urine Lactate/Creatinine"),
+  c("aohibut_crea", "Urine 2-Hydroxyisobutyrate/Creatinine"),
+  c("bohival_crea", "Urine 3-Hydroxyisovalerate/Creatinine"),
+  c("ace_crea", "Urine Acetate/Creatinine"),
+  c("bohival_crea", "Urine 3-Hydroxyisovalerate/Creatinine"),
+  c("form_crea", "Urine Formate/Creatinine"),
+  c("tmao_crea", "Urine Trimethylamine N-oxide/Creatinine"),
+  c("prgly_crea", "Urine Propylene Glycol/Creatinine")
+)
+outputs <- var_names[seq(1, length(var_names), 2)]
+labels <- var_names[seq(2, length(var_names), 2)]
+```
+\newpage
+
+## Interaction Significance Heatmap
+
+Read as the trajectory of *Response* is affected by *Predictor*
+
+```{r, warning=F, message=F}
+# heatmap of ANOVA interation terms
+
+comparators <- c("severity",
+                 "ivinsdurtile",
+                 "ivinsulin_duration",
+                 "vbg_1",
+                 "bmp_1",
+                 "eGFR")
+
+comparator_names <- c("DKA Severity",
+                      "IV Insulin Duration (Tertile)",
+                      "IV Insulin Duration",
+                      "Venous pH",
+                      "HCO3",
+                      "eGFR")
+
+anova_frame <- NULL
+
+for (output in outputs){
+  row_frame <- NULL
+  
+  for (comparator in comparators){
+    try(if(T){
+      fml <- as.formula(paste(output,"~time*",comparator))
+      model <- lme(fml,
+                   data = merge_set,
+                   random=~1|record_id,
+                   na.action = na.omit)
+      
+      model_anova <- anova(model)
+      row_frame <- c(row_frame,model_anova$`p-value`[4])
+    },silent = T)
+  }
+  anova_frame <- rbind(anova_frame, row_frame)
+}
+anova_frame <- as.data.frame(anova_frame, row.names = labels)
+names(anova_frame) <- comparator_names
+
+
+
+dt <- anova_frame %>%
+  rownames_to_column() %>%
+  gather(colname, value, -rowname)
+
+my_breaks = c(1, 0.5, 0.15, 0.05, 0.01,0.001,0.0001,0.0001)
+
+ggplot(dt, aes(x = colname, y = rowname, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient(name = "p-value", trans = "log", breaks = my_breaks, labels = my_breaks,low = "red", high = "white") +
+  ylab("Response") +
+  xlab("Predictor") +
+  ggtitle("Trajectory Change", subtitle = "p-values from ANOVA interaction with predictor and time")
+
+
+```
+
+
+
+```{r, results='asis',warning=F, message=F}
+# research lab models
+
+for (i in 1:length(outputs)){
+  cat('\n')
+  cat("#", labels[i], "\n")
+  cat('\n')
+  p1 <- get_plot(outputs[i], ylab = labels[i], model_output = F, strata = "severity")
+  p2 <- get_plot(outputs[i], ylab = labels[i], model_output = F, strata = "ivinsdurtile",legend_label = "Days IV Insulin")
+  print(ggarrange(p1,p2,nrow=1,ncol=2,legend = "bottom"))
+  cat('\n')
+  get_plot(outputs[i], ylab = labels[i], model_output = T)
+}
+```
+
+
+
+```{r, results='hide'}
+# # clinical lab models
+# 
+# 
+# # quartic time model with severity interaction - is quartic too much?
+# model <- lme(vbg ~ (gastime_elapsed + I(gastime_elapsed^2) + I(gastime_elapsed^3) + I(gastime_elapsed^4))*severity,
+#              data = ext_proc,
+#              random=~1|record_id,
+#              na.action = na.omit)
+# summary(model)
+# anova(model)
+# new_data_severity <- data.frame(gastime_elapsed = rep(seq(0,30),3), severity = c(rep("Mild",31),rep("Moderate",31),rep("Severe",31)))
+# new_data_severity$vbg <- predict(model, newdata = new_data_severity, level = 0)
+# 
+# # consider splines?
+```
+
+
+
+```{r}
+# Extended Labs
+# 
+# p_vbg <- ggplot(data = ext_proc[!is.na(ext_proc["vbg"]),], aes_string(x="gastime_elapsed",y="vbg",group="record_id", color = "severity")) +
+#   geom_point(alpha=0.2) +
+#   geom_line(alpha=0.2) +
+#   theme_bw() +
+#   labs(x="Hours",y=ylab,color = "DKA Severity") +
+#   geom_smooth(se= F, inherit.aes = F, aes(x=gastime_elapsed,y=vbg,color = severity)) + 
+#   geom_smooth(se= F, inherit.aes = F, aes(x=gastime_elapsed,y=vbg, color = "All")) + 
+#   scale_color_manual(values=c("All"="#000000", "Mild"="#008000", "Moderate"="#FF8C00", "Severe"="#FF0000", "Unknown"="#800080")) +
+#   ylim(min(ext_proc$vbg, na.rm = T),max(ext_proc$vbg, na.rm = T))
+# 
+# #p_vbg
+
+```
+
+
+```{r}
+
+# vars <- c("bmp","bhob","na","k","cl","scr","bun","sglu","phos","ca","eGFR")
+# 
+# labels <- c("HCO3","BHOB","Na","Potassium","Chloride","Serum Creatinine","BUN","Serum Glucose","Phosphorus","Calcium","eGFR")
+# 
+# All <- "All"
+# 
+# i <- 1
+# 
+# for (var in vars){
+#   plot_name <- paste("p",var,sep = "_")
+#   assign(plot_name, ggplot(data = ext_proc[!is.na(ext_proc[var]),], aes_string(x="bmptime_elapsed",y=var,group="record_id", color = "severity")) +
+#            geom_point(alpha=0.2) +
+#            geom_line(alpha=0.2) +
+#            theme_bw() +
+#            labs(x="Hours", color = "DKA Severity", y = labels[i]) +
+#            geom_smooth(se= F, inherit.aes = F, aes_string(x="bmptime_elapsed",y=var,color = "severity")) + 
+#            geom_smooth(se= F, inherit.aes = F, aes_string(x="bmptime_elapsed",y=var, color = "All")) + 
+#            scale_color_manual(values=c("All"="#000000", "Mild"="#008000", "Moderate"="#FF8C00", "Severe"="#FF0000", "Unknown"="#800080")))
+#   i <- i + 1
+# }
+# 
+# 
+# #png("ext_labs.png", height = 4000, width = 4000, res = 300, pointsize = 24)
+# ggarrange(p_vbg,p_bmp,p_bhob,p_na,p_k,p_cl,p_scr,p_bun,p_sglu,p_phos,p_ca,p_eGFR, ncol = 3, nrow = 4, common.legend = T, legend = "bottom", align = "hv" )
+# #dev.off()
+
+```
