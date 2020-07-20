@@ -165,7 +165,9 @@ summary_stats<-function(ID,data){
    # print(dat.temp$MRN)
     dat.temp$first_visit_date<-dat.temp$VisitDate[1]
     dat.temp$first_post_visit_date<-min(dat.temp$VisitDate[dat.temp$time_period!="During RTC"],na.rm=T)
-    
+    #a1c metrics
+    dat.temp$avg_a1c_pre<-mean(dat.temp$A1C_Value[dat.temp$time_period=="During RTC"])
+    dat.temp$avg_a1c_post<-mean(dat.temp$A1C_Value[dat.temp$time_period!="During RTC"])
     dat.temp})
   #print(dat.temp$MRN)
   dat<-do.call(rbind,temp)
@@ -222,7 +224,12 @@ label(dat$DurationOfDiabetes_eachvisit)<-'Duration of diabetes at baseline'
 dat$Age_eachvisit<-as.numeric(difftime(dat$VisitDate,dat$DOB,units="days"))/365.25
 label(dat$Age_eachvisit)<-'Age at baseline'
 
-label(dat$A1C_Value)<-"A1c"
+label(dat$A1C_Value)<-"A1c - baseline"
+label(dat$avg_a1c_pre)<-"A1c - average in pre-period"
+label(dat$avg_a1c_post)<-"A1c - average in post-period"
+dat$avg_a1c_change<-dat$avg_a1c_pre-dat$avg_a1c_post
+label(dat$avg_a1c_change)<-"A1c -  change (pre minus post)"
+
 label(dat$Meter_BGHigh)<-"Meter BG High"
 label(dat$Meter_BGLow)<-"Meter BG Low"
 label(dat$Meter_BGOK)<-"Meter BG OK"
