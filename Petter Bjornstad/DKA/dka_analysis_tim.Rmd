@@ -12,7 +12,7 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/Peds Endo/Petter Bjornstad/DKA study")
 library(tidyverse)
 library(nlme)
@@ -155,7 +155,7 @@ for (i in 1:nrow(merge_set)){
 ```{r}
 # process extended lab data
 
-var_dat <- read_excel("./data/Full 16-1403 DKA RedCap Data Key_04-24edited.xlsx")
+var_dat <- read_excel("./Data/Full 16-1403 DKA RedCap Data Key_04-24edited.xlsx")
 
 ext_vars <- var_dat$`Variable / Field Name`[var_dat$`Form Name`=='extended_lab_data_from_chco_ed_inpatient']
 
@@ -165,7 +165,7 @@ ext_dat <- dat %>% select(record_id,
                           ivinsdurtile,
                           male,
                           age_y,
-                          ext_vars)
+                          all_of(ext_vars))
 
 ext_dat <- ext_dat %>% pivot_longer(-c(record_id,severity, ivinsulin_duration, ivinsdurtile, male, age_y),
                                     names_to = c(".value", "time"),
@@ -200,7 +200,6 @@ for (id in ids){
 for (i in 1:nrow(ext_proc)){
   ext_proc$eGFR[i] <- get_eGFR_crea(ext_proc$age_y[i],ext_proc$male[i],ext_proc$scr[i])
 }
-
 ```
 
 
@@ -223,8 +222,7 @@ get_plot <- function(outcome, ylab, data_set = merge_set, time_var = "time", gro
   
   if (strata == "severity"){
     p <- p + scale_color_manual(values=c("All"="#000000", "Mild"="#008000", "Moderate"="#FF8C00", "Severe"="#FF0000", "Unknown"="#800080"))
-  }
-  else if (strata == "ivinsdurtile"){
+  } else if (strata == "ivinsdurtile"){
     p <- p + scale_color_manual(values=c("All"="#000000", "[ 1.9,12.5)"="#008000", "[12.5,18.1)"="#FF8C00", "[18.1,49.2]"="#FF0000", "Unknown"="#800080"))
   }
   
@@ -348,14 +346,15 @@ get_plot <- function(outcome, ylab, data_set = merge_set, time_var = "time", gro
     }, silent = T)
     
     try(if(T){
-      bmp_fml <- as.formula(paste(outcome,"~",time_var,"*eGFR"))
-      bmp_model <- lme(bmp_fml,
+      # instead of adjusting for eGFR, run a model where the outcome is the biomarker normalized for eGFR
+      data_set$egfr_norm_outcome <- (data_set[,outcome]*100) / data_set$eGFR
+      bmp_model <- lme(egfr_norm_outcome ~ time,
                        data = data_set,
                        random=~1|record_id,
                        na.action = na.omit)
       bmp_anova <- anova(bmp_model)
       cat('\n')
-      cat("## GFR Model","\n")
+      cat("## Normalized to eGFR Model","\n")
       print(kable(as.data.frame(summary(bmp_model)$tTable), caption = "t-table"))
       cat('\n')
       print(kable(bmp_anova, caption = "ANOVA"))
@@ -824,7 +823,7 @@ for (i in 1:length(outputs)){
   p2 <- get_plot(outputs[i], ylab = labels[i], model_output = F, strata = "ivinsdurtile",legend_label = "Days IV Insulin")
   print(ggarrange(p1,p2,nrow=1,ncol=2,legend = "bottom"))
   cat('\n')
-  get_plot(outputs[i], ylab = labels[i], model_output = T)
+  get_plot(outputs[i], ylab = labels[i], model_output = T,group_models = T)
 }
 ```
 
