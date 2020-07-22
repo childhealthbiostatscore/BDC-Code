@@ -3,7 +3,9 @@
 source("S:/Shared Material/Shared Code/R/temp_table1.R")
 
 table1<-final_table(dat.one,c("Gender","Age_eachvisit","Race.Ethnicity","InsuranceType_VisitDate",
-                              "CGM_Use","InsulinPump_Use","DurationOfDiabetes_eachvisit"),
+                              "CGM_Use","InsulinPump_Use","DurationOfDiabetes_eachvisit",
+                              "Meter_BGOK_yn_baseline","CGM_OK_yn_baseline","hosp_any",
+                              "hypo_any"),
                         dat.one$group,margin=2,single=F,2,col.names=T, summary.stat='median')
 table1
 
