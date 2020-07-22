@@ -1,12 +1,15 @@
 #!/bin/bash
-cd /Users/timvigers/simmons/biobank
+cd /Users/timvigers/Documents/OneDrive\ -\ The\ University\ of\ Colorado\ Denver/simmons_biobank/
+# Make plink2 files, move to QC directory
+plink2 --bfile Simmons_071520 --make-pgen --out qc/simmons_qc
+cd qc
 # Check missing
-plink --bfile Simmons_071520 --missing
+plink2 --pfile simmons_qc --missing
 # Delete SNPs and individuals with high levels of missingness
 # Delete SNPs
-plink --bfile Simmons_071520 --geno 0.02 --make-bed --out biobank_1
+plink --bfile simmons_qc --geno 0.02 --make-bed --out simmons_qc
 # Delete individuals
-plink --bfile biobank_1 --mind 0.02 --make-bed --out biobank_1
+plink --bfile simmons_qc --mind 0.02 --make-bed --out simmons_qc
 # Check missing post-deletion
 plink --bfile biobank_1 --missing --out miss_post_del
 # Check sex discrepancy
