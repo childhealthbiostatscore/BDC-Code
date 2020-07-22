@@ -280,6 +280,15 @@ quantile(dat.one$research_period_time[dat.one$group=="CTC"],useNA="always")
 quantile(dat.one$post_period_visits[dat.one$group=="CTC"],useNA="always")
 quantile(dat.one$post_period_time[dat.one$group=="CTC"],useNA="always")
 
+#missing data:
+dat.missing.a1c<-subset(dat,(is.na(dat$A1C_Value)))
+dat.missing.a1c<-dat.missing.a1c[,which(colnames(dat.missing.a1c) %in% c("MRN","VisitDate","Visit.Type","A1C_Value"))]
+write.csv(dat.missing.a1c,"missing_a1c.csv",row.names = F)
+
+dat.missing.cgm.pump<-subset(dat.one,(is.na(dat.one$CGM_Use)| is.na(dat.one$InsulinPump_Use)))
+dat.missing.cgm.pump<-dat.missing.cgm.pump[,which(colnames(dat.missing.cgm.pump) %in% c("MRN","VisitDate","Visit.Type","CGM_Use","InsulinPump_Use"))]
+write.csv(dat.missing.cgm.pump,"missing_cgm_pump.csv",row.names = F)
+
 
 #defining a threshold for time after research TC for CTC group:
 # ctc<-subset(dat,dat$group=="CTC")
