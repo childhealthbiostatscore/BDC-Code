@@ -168,6 +168,13 @@ summary_stats<-function(ID,data){
     #a1c metrics
     dat.temp$avg_a1c_pre<-mean(dat.temp$A1C_Value[dat.temp$time_period=="During RTC"])
     dat.temp$avg_a1c_post<-mean(dat.temp$A1C_Value[dat.temp$time_period!="During RTC"])
+    
+    dat.temp$hosp_any<-0
+    dat.temp$hosp_any[nrow(subset(dat.temp,dat.temp$HospitalizationsForDKA>0))]<-1
+    
+    dat.temp$hypo_any<-0
+    dat.temp$hypo_any[nrow(subset(dat.temp,dat.temp$SevereHypoglycemia>0))]<-1
+    
     dat.temp})
   #print(dat.temp$MRN)
   dat<-do.call(rbind,temp)
@@ -260,7 +267,18 @@ label(dat$research_period_time)<-"Research Period Time"
 label(dat$post_period_visits)<-"Post Period Visits"
 label(dat$post_period_time)<-"Post Period Time"
 
+dat$Meter_BGOK_yn_baseline<-as.factor(ifelse(is.na(dat$Meter_BGOK),"No","Yes"))
+dat$CGM_OK_yn_baseline<-as.factor(ifelse(is.na(dat$CGM_OK),"No","Yes"))
+label(dat$Meter_BGOK_yn_baseline)<-"Meter in range % (yes/no), baseline"
+label(dat$CGM_OK_yn_baseline)<-"CGM in range % (yes/no), baseline"
 
+dat$hosp_any<-as.factor(dat$hosp_any)
+label(dat$hosp_any)<-"Any Hospitalizations For DKA during Study"
+
+dat$hypo_any<-as.factor(dat$hypo_any)
+label(dat$hypo_any)<-"Any Severe Hypoglycemia during Study"
+
+#table(dat$HospitalizationsForDKA)
 
 dat.one<-dat[!duplicated(dat$MRN),]
 table(dat.one$group,useNA="always")
