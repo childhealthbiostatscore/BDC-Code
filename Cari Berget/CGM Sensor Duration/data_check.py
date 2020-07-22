@@ -1,8 +1,6 @@
 import pandas as pd
 import os
 import math
-import datetime
-import dateutil
 # Serial numbers from Cari
 sns = pd.read_excel("/Users/timvigers/Documents/OneDrive - The University of Colorado Denver/Control IQ/DCLP pump SN.xlsx")
 # SNs only
@@ -28,39 +26,39 @@ for file in control_files:
 	df = pd.read_csv(control_dir+file)
 	sn = pd.Series(df.iloc[0,0])
 	garret_sns.append(sn)
-	dates = df['pump_date']
-	dates = [dateutil.parser.parse(d) for d in dates]
+	dates = df['pump_date'].to_list()
 	if not sn.isin(sns)[0]:
 		missing_from_cari.append(float(sn))
 	elif sn.isin(sns)[0]:
 		from_cari.append(float(sn)) 
-		start.append(min(dates))
-		end.append(max(dates))
+		start.append(dates[0])
+		end.append(dates[-1])
 # IQ files
 for file in iq_files:
 	df = pd.read_csv(iq_dir+file)
 	sn = pd.Series(df.iloc[0,0])
 	garret_sns.append(sn)
-	dates = df['pump_date']
-	dates = [dateutil.parser.parse(d) for d in dates]
+	dates = df['pump_date'].to_list()
 	if not sn.isin(sns)[0]:
 		missing_from_cari.append(float(sn))
 	elif sn.isin(sns)[0]:
 		from_cari.append(float(sn)) 
-		start.append(min(dates))
-		end.append(max(dates))
+		start.append(dates[0])
+		end.append(dates[-1])
 # Find which of Cari's SNs are missing from Garret
 missing_from_garret = []
 for s in sns:
-  sn = pd.Series(s)
-  if not sn.isin(garret_sns)[0]:
-    missing_from_garret.append(s)
-# For the files from Garrett that are in Cari's document, 
-print(len(from_cari))
-print(len(start))
-# Write CSV
-temp = pd.DataFrame(missing_from_garret,
-                    columns =['Missing from Garrett'])
-temp2 = pd.DataFrame(missing_from_cari,columns = ['Missing from Cari'])
-df = pd.concat([temp,temp2],axis=1)
+	sn = pd.Series(s)
+	if not sn.isin(garret_sns)[0]:
+		missing_from_garret.append(s)
+# For the files from Garrett that are in Cari's document, write SN and dates
+sn = pd.DataFrame(from_cari,columns =['SN'])
+start = pd.DataFrame(start,columns =['Start Date'])
+end = pd.DataFrame(end,columns =['End Date'])
+df = pd.concat([sn,start,end],axis=1)
+df.to_csv("/Users/timvigers/Desktop/dates_for_cari.csv",index=False)
+# Write missing files
+garrett = pd.DataFrame(missing_from_garret,columns =['Missing from Garrett'])
+cari = pd.DataFrame(missing_from_cari,columns = ['Missing from Cari'])
+df = pd.concat([garrett,cari],axis=1)
 df.to_csv("/Users/timvigers/Desktop/python.csv",index=False)
