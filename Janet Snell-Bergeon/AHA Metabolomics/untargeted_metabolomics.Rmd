@@ -82,9 +82,33 @@ data <- data %>% select(GlobalSampleID:GROUP,batch,everything())
 # Column formats
 data[,c("GlobalSampleID","sex","race")] <- 
   lapply(data[,c("GlobalSampleID","sex","race")],as.factor) 
-# Log transform
-data[,8:ncol(data)] <- lapply(data[,8:ncol(data)],log)
 ```
+
+# Pre-processing
+
+```{r echo=FALSE}
+# Check for samples missing > 80% of compounds, remove them
+missing <- which(rowSums(is.na(data[,8:ncol(data)])) / length(8:ncol(data)) > 0.8)
+data <- data[-missing,]
+# Same for 0 instead of NA - none
+missing0 <- which(rowSums(data[,8:ncol(data)] == 0) / length(8:ncol(data)) > 0.8)
+# Check for and remove compounds with > 20% missing in research - none
+research <- which(colSums(is.na(data[!grepl("QC",data$GlobalSampleID),])) / 
+  (nrow(data))-13 > 0.2)
+# or > 80% missing in QC - none
+qc <- names(which(colSums(is.na(data[grepl("QC",data$GlobalSampleID),8:ncol(data)])) / 
+  13 > 0.2))
+data <- data[,!(names(data) %in% qc)]
+# Check for compounds with CV > 0.3 in QC samples
+qc_cv <- names(which(lapply(data[grepl("QC",data$GlobalSampleID),8:ncol(data)],function(x){
+  sd(x,na.rm = T)/mean(x,na.rm = T)
+  }) > 0.3))
+data <- data[,!(names(data) %in% qc_cv)]
+# Remove bad name compound
+data[,grep("314_",colnames(data))] <- NULL
+```
+
+Removed `r length(missing)` samples missing > 80% of compounds and `r length(missing0)` samples with > 80% of compounds equal to 0. Also removed `r length(research)` compounds with > 20% missing in research samples and `r length(qc)` compounds with > 80% missing in QC samples. Finally, removed `r length(qc_cv)` compounds with CV > 0.3 in QC samples. 
 
 # T tests
 
@@ -92,20 +116,22 @@ data[,8:ncol(data)] <- lapply(data[,8:ncol(data)],log)
 
 Density represents the number of significant metabolites and the red line indicates the number of hits in non-permuted data. P values were not adjusted for multiple comparisons.
 
-```{r echo=FALSE,cache=TRUE}
+```{r echo=FALSE}
 # Non-missing outcome
 X <- data[,c(5,6,8:ncol(data))]
 X <- X[!is.na(X[,1]),]
 X$GROUP <- as.factor(as.character(X$GROUP))
+# Log transform
+# X[,3:ncol(X)] <- lapply(X[,3:ncol(X)],function(x){log(x,base = 2)})
 # Permutation tests
-nsim <- 1000
+nsim <- 100
 t_perms <- lapply(1:nsim,function(y){
   df <- X
   if(y > 1) {
     set.seed(y)
     df$CACp <- sample(df$CACp)
   }
-  ts <- lapply(colnames(df)[c(3:293,295:ncol(df))], 
+  ts <- lapply(colnames(df)[3:ncol(df)], 
                function(x){
                  form <- as.formula(paste0(x,"~CACp"))
                  t <- t.test(form,df)
@@ -131,7 +157,7 @@ ggplot(t_perms,aes(x=p)) + theme_bw() +
 
 Density represents the number of significant metabolites and the red line indicates the number of hits in non-permuted data. P values were not adjusted for multiple comparisons.
 
-```{r echo=FALSE,cache=TRUE}
+```{r echo=FALSE}
 # Test all
 anova_perms <- lapply(1:nsim,function(y){
   df <- X
@@ -139,7 +165,7 @@ anova_perms <- lapply(1:nsim,function(y){
     set.seed(y)
     df$GROUP <- sample(df$GROUP)
   }
-  anovas <- lapply(colnames(df)[c(3:293,295:ncol(df))], function(x){
+  anovas <- lapply(colnames(df)[3:ncol(df)], function(x){
     form <- as.formula(paste0(x,"~GROUP"))
     mod <- lm(form,df)
     f <- anova(mod)
@@ -159,26 +185,26 @@ ggplot(anova_perms,aes(x=p)) + theme_bw() +
   geom_vline(mapping = aes(xintercept=correct),color = "red")
 ```
 
-<!-- # Moderated t tests -->
+# Moderated t tests
 
-<!-- ```{r echo=FALSE} -->
-<!-- # Design matrix - 0 and 1 for CAC progression -->
-<!-- design <- as.data.frame(as.numeric(data$CACp)-1) -->
-<!-- colnames(design) <- "CACp" -->
-<!-- design <- model.matrix(~CACp,design) -->
-<!-- # "Expression" matrix (samples in columns) for each  -->
-<!-- X <- data[match(rownames(design),rownames(X)),8:ncol(data)] -->
-<!-- # Linear model -->
-<!-- fit <- lmFit(t(X),design) -->
-<!-- fit <- eBayes(fit) -->
-<!-- # Results -->
-<!-- results <- topTable(fit,coef = 2,number = nrow(X)) -->
-<!-- results$m.z <- sapply(strsplit(rownames(results),"_"),"[[",2) -->
-<!-- results$p.value <- results$P.Value -->
-<!-- results$t.score <- fit$t[match(rownames(results),rownames(fit$t)),2] -->
-<!-- write.csv(results[,c("m.z","p.value","t.score")],row.names = F, -->
-<!--           file = "./Data_Cleaned/moderated_t_tests_CACp.csv") -->
-<!-- ``` -->
+```{r echo=FALSE}
+# Design matrix - 0 and 1 for CAC progression
+design <- as.data.frame(as.numeric(data$CACp)-1)
+colnames(design) <- "CACp"
+design <- model.matrix(~CACp,design)
+# "Expression" matrix (samples in columns) for each
+X <- data[match(rownames(design),rownames(X)),8:ncol(data)]
+# Linear model
+fit <- lmFit(t(X),design)
+fit <- eBayes(fit)
+# Results
+results <- topTable(fit,coef = 2,number = nrow(X))
+results$m.z <- sapply(strsplit(rownames(results),"_"),"[[",2)
+results$p.value <- results$P.Value
+results$t.score <- fit$t[match(rownames(results),rownames(fit$t)),2]
+# write.csv(results[,c("m.z","p.value","t.score")],row.names = F,
+#           file = "./Data_Cleaned/moderated_t_tests_CACp.csv")
+```
 
 <!-- # Moderated ANOVA -->
 
