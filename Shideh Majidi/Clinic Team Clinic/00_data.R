@@ -279,6 +279,21 @@ dat$hypo_any<-as.factor(dat$hypo_any)
 label(dat$hypo_any)<-"Any Severe Hypoglycemia during Study"
 
 #table(dat$HospitalizationsForDKA)
+dat$RTC_visits_cat_2<-NA
+dat$RTC_visits_cat_2[dat$RTC_visits_cat==2]<-"2-3"
+dat$RTC_visits_cat_2[dat$RTC_visits_cat==3]<-"2-3"
+dat$RTC_visits_cat_2[dat$RTC_visits_cat==4]<-"4+"
+dat$RTC_visits_cat_2[dat$RTC_visits_cat=="5+"]<-"4+"
+
+dat$Race.Ethnicity_2<-"White"
+dat$Race.Ethnicity_2[dat$Race.Ethnicity!="White"]<-"Non-White"
+
+dat$Race.Ethnicity_3<-"Other"
+dat$Race.Ethnicity_3[dat$Race.Ethnicity=="Hispanic"]<-"Hispanic"
+dat$Race.Ethnicity_3[dat$Race.Ethnicity=="White"]<-"White"
+
+dat$insurance_2<-"Private/Military"
+dat$insurance_2[dat$InsuranceType_VisitDate=="Public"]<-"Public"
 
 dat.one<-dat[!duplicated(dat$MRN),]
 table(dat.one$group,useNA="always")

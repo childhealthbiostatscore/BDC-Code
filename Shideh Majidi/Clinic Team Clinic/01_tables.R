@@ -10,7 +10,7 @@ table1<-final_table(dat.one,c("Gender","Age_eachvisit","Race.Ethnicity","Insuran
 table1
 
 table2<-final_table(dat.one,c("A1C_Value","avg_a1c_pre","avg_a1c_post","avg_a1c_change",
-                              "Meter_BGLow","Meter_BGHigh","Meter_BGOK"), 
+                              "Meter_BGLow","Meter_BGHigh","Meter_BGOK","noshow_rate_pre","noshow_rate_post","noshow_rate_change"), 
                     dat.one$group,margin=2,single=F,2,col.names=T, summary.stat='mean')
 
 table2
