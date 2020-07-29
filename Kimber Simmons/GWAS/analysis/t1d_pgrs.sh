@@ -27,5 +27,4 @@ plink --bfile qc/biobank_simmons_1kg_merge --extract qc/mergeSNP.prune.in --make
 # Delete temp files 
 rm qc/biobank_simmons_1kg_merge.bed~ qc/biobank_simmons_1kg_merge.bim~ qc/biobank_simmons_1kg_merge.fam~
 # PCA for population stratification
-plink2 --bfile analysis/final_merge --pca --out analysis/PCA
-plink2 --bfile analysis/final_merge --mds --out analysis/MDS
+plink --bfile analysis/final_merge --cluster --pca --out analysis/PCA
