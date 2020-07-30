@@ -28,6 +28,7 @@ plink2 --bfile qc/biobank_simmons_1kg_merge --indep-pairwise 50 5 0.2 --out qc/m
 plink --bfile qc/biobank_simmons_1kg_merge --extract qc/mergeSNP.prune.in --make-bed --out analysis/final_merge
 # Delete temp files 
 rm qc/biobank_simmons_1kg_merge.bed~ qc/biobank_simmons_1kg_merge.bim~ qc/biobank_simmons_1kg_merge.fam~
+rm analysis/biobank_simmons_merge.bed~ analysis/biobank_simmons_merge.bim~ analysis/biobank_simmons_merge.fam~
 # PCA for population stratification
 plink --bfile analysis/final_merge --cluster --pca --out analysis/PCA
 # Per Nick, should use the full data set for ethnic misclassifications, but re-do PCA on Simmons/Biobank alone for analysis
