@@ -1,6 +1,6 @@
 library(tidyverse)
 # Import data
-indir <- "/Users/timvigers/pump_cleaned/"
+indir <- "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Pump Variables/Data_Cleaned/Pump Files Cleaned"
 outdir <- "/Users/timvigers/"
 files <- list.files(indir,full.names = T)
 # Make a summary variables table.
