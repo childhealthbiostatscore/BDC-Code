@@ -1,7 +1,7 @@
 #!/bin/bash
 cd /Users/timvigers/Documents/OneDrive\ -\ The\ University\ of\ Colorado\ Denver/simmons/
 # Some variants are at slightly different positions between the two datasets - check they're not too far apart in R.
-# Maximum difference is 1 bp, so okay to merge.
+# Maximum difference is 1 bp, so okay to merge I think.
 # Merge Kimber's data with biobank
 plink --bfile Simmons_passed_qc --bmerge Simmons_071520 --make-bed --out qc/first_merge
 # Exclude problem variants - flipping did not seem to fix this issue
@@ -25,7 +25,7 @@ plink2 --bfile qc/biobank_simmons_1kg_merge --hwe 1e-10 --make-bed --out qc/biob
 plink2 --bfile qc/biobank_simmons_1kg_merge --make-king-table --king-table-filter 0.354
 # Prune
 plink2 --bfile qc/biobank_simmons_1kg_merge --indep-pairwise 50 5 0.2 --out qc/mergeSNP
-plink --bfile qc/biobank_simmons_1kg_merge --extract qc/mergeSNP.prune.in --make-bed --out analysis/final_merge
+plink2 --bfile qc/biobank_simmons_1kg_merge --extract qc/mergeSNP.prune.in --make-bed --out analysis/final_merge
 # Delete temp files 
 rm qc/biobank_simmons_1kg_merge.bed~ qc/biobank_simmons_1kg_merge.bim~ qc/biobank_simmons_1kg_merge.fam~
 rm analysis/biobank_simmons_merge.bed~ analysis/biobank_simmons_merge.bim~ analysis/biobank_simmons_merge.fam~
@@ -35,4 +35,15 @@ plink --bfile analysis/final_merge --cluster --pca --out analysis/PCA
 plink2 --bfile analysis/biobank_simmons_merge --geno 0.02 --make-bed --out analysis/biobank_simmons_merge
 plink2 --bfile analysis/biobank_simmons_merge --mind 0.02 --make-bed --out analysis/biobank_simmons_merge
 plink2 --bfile analysis/biobank_simmons_merge --maf 0.05 --make-bed --out analysis/biobank_simmons_merge
-plink2 --bfile analysis/biobank_simmons_merge --hwe 1e-10 --make-bed --out analysis/biobank_simmons_merge_final
+plink2 --bfile analysis/biobank_simmons_merge --hwe 1e-6 --make-bed --out analysis/biobank_simmons_merge
+plink2 --bfile analysis/biobank_simmons_merge --hwe 1e-10 --make-bed --out analysis/biobank_simmons_merge
+# Prune
+plink2 --bfile analysis/biobank_simmons_merge --indep-pairwise 50 5 0.2 --out analysis/indepSNP
+plink2 --bfile analysis/biobank_simmons_merge --extract analysis/indepSNP.prune.in --make-bed --out analysis/biobank_simmons_merge_final
+# Check for relatedness - none
+plink2 --bfile analysis/biobank_simmons_merge_final --make-king-table --king-table-filter 0.25
+# PCA
+plink2 --bfile analysis/biobank_simmons_merge_final --pca --out analysis/PCA
+# Covariate file created in R
+# Logistic regression
+plink2 --bfile analysis/biobank_simmons_merge_final --covar 'iid-only' analysis/covar.txt --logistic --out analysis/logistic_results
