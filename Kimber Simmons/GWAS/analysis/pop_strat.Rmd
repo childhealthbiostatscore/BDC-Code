@@ -14,7 +14,7 @@ library(knitr)
 library(tidyverse)
 ```
 
-```{bash}
+```{bash,eval=FALSE}
 # Change directory
 cd /Users/timvigers/Documents/OneDrive\ -\ The\ University\ of\ Colorado\ Denver/simmons/
 # Merge files
@@ -46,7 +46,7 @@ write.table(biobank$V2,file = "./qc/exclude_indels",row.names = F,
             quote = F,col.names = F)
 ```
 
-```{bash}
+```{bash,eval=FALSE}
 # Exclude problem variants and indels - flipping did not seem to fix this issue
 plink --bfile Simmons_passed_qc --make-bed --out qc/Simmons_passed_qc_trimmed --exclude qc/first_merge-merge.missnp
 plink --bfile qc/Simmons_passed_qc_trimmed --make-bed --out qc/Simmons_passed_qc_trimmed --exclude qc/exclude_indels
@@ -81,7 +81,7 @@ write.table(ex,file = "./qc/exclude_mismatch",row.names = F,
             quote = F,col.names = F)
 ```
 
-```{bash}
+```{bash,eval=FALSE}
 # Exclude mismatches
 plink --bfile qc/biobank_simmons_merge --exclude qc/exclude_mismatch --make-bed --out qc/biobank_simmons_merge
 # Find and remove duplicates
@@ -97,17 +97,24 @@ plink2 --bfile qc/biobank_simmons_merge --hwe 1e-10 --make-bed --out qc/biobank_
 # Prune
 plink2 --bfile qc/biobank_simmons_merge --indep-pairwise 50 5 0.2 --out qc/indepSNP
 plink2 --bfile qc/biobank_simmons_merge --extract qc/indepSNP.prune.in --make-bed --out analysis/biobank_simmons_merge_final
-# Delete temp files
-find . -type f -name "*~" -delete
+# Check kinship - none (good!)
+plink2 --bfile analysis/biobank_simmons_merge_final --make-king-table --king-table-filter 0.354 --out qc/biobank_simmons_kin
 ```
 
 # PCA 
+
+```{bash,eval=FALSE}
+plink2 --bfile analysis/biobank_simmons_merge_final --pca --out analysis/PCA
+```
 
 ## By Cohort
 
 There are clear batch effects between Kimber's data and the Biobank data. When PC3 is included in the logistic regression, the VIF for cohort is really high, suggesting that PC3 is primarily driven by batch. 
 
-```{r}
+```{r pca by batch}
+# Clear workspace
+rm(list = ls())
+# PCA
 PCA <- read.delim("./analysis/PCA.eigenvec")
 colnames(PCA)[1] <- "FID"
 # Get ethnicity
@@ -138,7 +145,7 @@ ggplot(PCA,aes(x=PC1,y=PC3)) +
 
 Question for Nick/Laura: It doesn't look like Hispanic vs. non-Hispanic are separating well, does that mean that the first two PCs aren't really representing population structure? Would it be better to project these samples onto the 1000 Genomes data and then adjust for PCs?
 
-```{r}
+```{r pca by ethnicity}
 ggplot(PCA,aes(x=PC1,y=PC2)) + 
   geom_point(aes(color = Ethnicity)) + scale_color_manual(values=cbPalette) + theme_bw()
 ggplot(PCA,aes(x=PC2,y=PC3)) + 
@@ -153,7 +160,24 @@ write.table(PCA[,c("FID","IID","Sex","Ethnicity","PC1","PC2","PC3")],
             file = "./analysis/covar.txt",quote = F,row.names = F)
 ```
 
+# Analysis
+
+```{bash,eval=FALSE}
+# Logistic regression
+plink2 --bfile analysis/biobank_simmons_merge_final --covar analysis/covar.txt  --logistic --out analysis/logistic_results
+# Adjusted p values
+plink2 --adjust-file analysis/logistic_results.PHENO1.glm.logistic.hybrid 'test=ADD' --out analysis/logistic_results
+```
+
 ```{r}
+# Import plink results
 logistic_results <- read.delim("./analysis/logistic_results.PHENO1.glm.logistic.hybrid")
 adjusted_results <- read.delim("./analysis/logistic_results.adjusted")
+```
+
+
+
+```{bash,eval=FALSE}
+# Delete temp files
+find . -type f -name "*~" -delete
 ```
