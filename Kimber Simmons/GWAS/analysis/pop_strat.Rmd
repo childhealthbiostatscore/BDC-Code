@@ -14,6 +14,93 @@ library(knitr)
 library(tidyverse)
 ```
 
+```{bash}
+# Change directory
+cd /Users/timvigers/Documents/OneDrive\ -\ The\ University\ of\ Colorado\ Denver/simmons/
+# Merge files
+plink --bfile Simmons_passed_qc --bmerge Simmons_071520 --make-bed --out qc/first_merge
+# This produces multiple position warnings, so try flipping 
+plink --bfile Simmons_passed_qc --flip qc/first_merge-merge.missnp --make-bed --out qc/Simmons_flipped
+# Re-merge flipped
+plink --bfile qc/Simmons_flipped --bmerge Simmons_071520 --make-bed --out qc/flip_merge
+# Flipping doesn't work, so check the positions in R
+```
+
+```{r position differences}
+# Import .bim files
+Simmons_passed_qc <- read.delim("./Simmons_passed_qc.bim", header=FALSE)
+Simmons_071520 <- read.delim("./Simmons_071520.bim", header=FALSE)
+# Get common SNPs by variant ID
+simmons <- Simmons_passed_qc[Simmons_passed_qc$V2 %in% Simmons_071520$V2,]
+simmons <- simmons[order(simmons$V2),]
+biobank <- Simmons_071520[Simmons_071520$V2 %in% Simmons_passed_qc$V2,]
+biobank <- biobank[order(biobank$V2),]
+# Check differences
+diffs <- simmons$V4-biobank$V4
+# Make tables of just SNPs that differ
+simmons <- simmons[which(diffs != 0),]
+biobank <- biobank[which(diffs != 0),]
+# These are all indels, so Per Nick exclude them for now, but he can pull the 
+# D/I alleles if necessary
+write.table(biobank$V2,file = "./qc/exclude_indels",row.names = F,
+            quote = F,col.names = F)
+```
+
+```{bash}
+# Exclude problem variants and indels - flipping did not seem to fix this issue
+plink --bfile Simmons_passed_qc --make-bed --out qc/Simmons_passed_qc_trimmed --exclude qc/first_merge-merge.missnp
+plink --bfile qc/Simmons_passed_qc_trimmed --make-bed --out qc/Simmons_passed_qc_trimmed --exclude qc/exclude_indels
+plink --bfile Simmons_071520 --make-bed --out qc/Simmons_071520_trimmed --exclude qc/first_merge-merge.missnp
+plink --bfile qc/Simmons_071520_trimmed --make-bed --out qc/Simmons_071520_trimmed --exclude qc/exclude_indels
+# Re-merge - this gives a warning about many same position SNPs with different IDs
+plink --bfile qc/Simmons_passed_qc_trimmed --bmerge qc/Simmons_071520_trimmed --make-bed --out qc/biobank_simmons_merge
+```
+
+```{r name differences}
+# Import .bim files
+Simmons_passed_qc_trimmed <- read.delim("./qc/Simmons_passed_qc_trimmed.bim", header=FALSE)
+Simmons_071520_trimmed <- read.delim("./qc/Simmons_071520_trimmed.bim", header=FALSE)
+# Check that the matching positions have the same alleles (or can be flipped to be the same)
+Simmons_passed_qc_trimmed$position <- paste(Simmons_passed_qc_trimmed$V1,Simmons_passed_qc_trimmed$V4,sep = "_")
+Simmons_071520_trimmed$position <- paste(Simmons_071520_trimmed$V1,Simmons_071520_trimmed$V4,sep = "_")
+matching <- intersect(Simmons_passed_qc_trimmed$position,Simmons_071520_trimmed$position)
+# Combine
+simmons <- Simmons_passed_qc_trimmed[Simmons_passed_qc_trimmed$position %in% matching,]
+biobank <- Simmons_071520_trimmed[Simmons_071520_trimmed$position %in% matching,]
+all <- full_join(simmons,biobank,by="position")
+# Check names
+all <- all[which(all$V2.x != all$V2.y),]
+# Check alleles
+all <- all[which(all$V5.x != all$V5.y),]
+# Check flipped
+all <- all[which(all$V5.x != all$V6.y),]
+# Remove variants that are genuinely different
+ex <- c(as.character(all$V2.x),as.character(all$V2.y))
+# Write
+write.table(ex,file = "./qc/exclude_mismatch",row.names = F,
+            quote = F,col.names = F)
+```
+
+```{bash}
+# Exclude mismatches
+plink --bfile qc/biobank_simmons_merge --exclude qc/exclude_mismatch --make-bed --out qc/biobank_simmons_merge
+# Find and remove duplicates
+plink --bfile qc/biobank_simmons_merge --list-duplicate-vars ids-only suppress-first --out qc/dups
+plink --bfile qc/biobank_simmons_merge --exclude qc/dups.dupvar --make-bed --out qc/biobank_simmons_merge
+# QC merged data
+plink2 --bfile qc/biobank_simmons_merge --geno 0.02 --make-bed --out qc/biobank_simmons_merge
+plink2 --bfile qc/biobank_simmons_merge --mind 0.02 --make-bed --out qc/biobank_simmons_merge
+plink2 --bfile qc/biobank_simmons_merge --maf 0.05 --make-bed --out qc/biobank_simmons_merge
+plink2 --bfile qc/biobank_simmons_merge --mac 20 --make-bed --out qc/biobank_simmons_merge # for GLM
+plink2 --bfile qc/biobank_simmons_merge --hwe 1e-6 --make-bed --out qc/biobank_simmons_merge
+plink2 --bfile qc/biobank_simmons_merge --hwe 1e-10 --make-bed --out qc/biobank_simmons_merge
+# Prune
+plink2 --bfile qc/biobank_simmons_merge --indep-pairwise 50 5 0.2 --out qc/indepSNP
+plink2 --bfile qc/biobank_simmons_merge --extract qc/indepSNP.prune.in --make-bed --out analysis/biobank_simmons_merge_final
+# Delete temp files
+find . -type f -name "*~" -delete
+```
+
 # PCA 
 
 ## By Cohort
