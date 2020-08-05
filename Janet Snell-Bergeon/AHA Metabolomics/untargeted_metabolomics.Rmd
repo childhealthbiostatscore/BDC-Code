@@ -11,9 +11,10 @@ knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/
 library(arsenal)
 library(skimr)
 library(knitr)
+library(mixOmics)
 library(tidyverse)
 library(limma)
-library(WGCNA)
+library(webchem)
 ```
 
 ```{r data cleaning,echo=FALSE}
@@ -94,15 +95,15 @@ data <- data[-missing,]
 missing0 <- which(rowSums(data[,8:ncol(data)] == 0) / length(8:ncol(data)) > 0.8)
 # Check for and remove compounds with > 20% missing in research - none
 research <- which(colSums(is.na(data[!grepl("QC",data$GlobalSampleID),])) / 
-  (nrow(data))-13 > 0.2)
+                    (nrow(data))-13 > 0.2)
 # or > 80% missing in QC - none
 qc <- names(which(colSums(is.na(data[grepl("QC",data$GlobalSampleID),8:ncol(data)])) / 
-  13 > 0.2))
+                    13 > 0.2))
 data <- data[,!(names(data) %in% qc)]
 # Check for compounds with CV > 0.3 in QC samples
 qc_cv <- names(which(lapply(data[grepl("QC",data$GlobalSampleID),8:ncol(data)],function(x){
   sd(x,na.rm = T)/mean(x,na.rm = T)
-  }) > 0.3))
+}) > 0.3))
 data <- data[,!(names(data) %in% qc_cv)]
 # Remove bad name compound
 data[,grep("314_",colnames(data))] <- NULL
@@ -112,9 +113,19 @@ Removed `r length(missing)` samples missing > 80% of compounds and `r length(mis
 
 # T tests
 
-## Permutation Tests
-
-Density represents the number of significant metabolites and the red line indicates the number of hits in non-permuted data. P values were not adjusted for multiple comparisons.
+```{r echo=FALSE,cache=TRUE}
+# Find the effective number of variables for multiple testing adjustment.
+# Correlation matrix between all metabolites
+mets <- data[,8:ncol(data)]
+cor_mat <- cor(mets,use = "complete.obs")
+# Get eigenvalues for correlation matrix
+values <- eigen(cor_mat)$values
+# Calculate effective M
+M <- dim(cor_mat)[1]
+meff <- 1 + (M - 1)*(1 - (var(values)/M))
+# Try Randi's method of the number of PCs needed to explain 95% of variance 
+# pca <- pca(mets,center = T,scale = T,ncomp = 100)
+```
 
 ```{r echo=FALSE}
 # Non-missing outcome
@@ -123,32 +134,20 @@ X <- X[!is.na(X[,1]),]
 X$GROUP <- as.factor(as.character(X$GROUP))
 # Log transform
 # X[,3:ncol(X)] <- lapply(X[,3:ncol(X)],function(x){log(x,base = 2)})
-# Permutation tests
-nsim <- 100
-t_perms <- lapply(1:nsim,function(y){
-  df <- X
-  if(y > 1) {
-    set.seed(y)
-    df$CACp <- sample(df$CACp)
-  }
-  ts <- lapply(colnames(df)[3:ncol(df)], 
-               function(x){
-                 form <- as.formula(paste0(x,"~CACp"))
-                 t <- t.test(form,df)
-                 return(list("metabolite"=x,"p"=t$p.value))
-               })
-  ts <- data.frame(do.call(rbind,ts))
-  ts$p <- as.numeric(ts$p)
-  ts <- ts[order(ts$p),]
-  ts$p.adjusted <- p.adjust(ts$p,method = "fdr")
-  return(length(which(ts$p < 0.05)))
-})
-t_perms <- as.data.frame(unlist(t_perms))
-t_perms$correct <- t_perms[1,1]
-colnames(t_perms) <- c("p","correct")
-ggplot(t_perms,aes(x=p)) + theme_bw() + 
-  geom_density() +
-  geom_vline(mapping = aes(xintercept=correct),color = "red")
+ts <- lapply(colnames(X)[3:ncol(X)], 
+             function(x){
+               form <- as.formula(paste0(x,"~CACp"))
+               t <- t.test(form,X)
+               return(list("metabolite"=x,"p"=t$p.value))
+             })
+ts <- data.frame(do.call(rbind,ts))
+ts$p <- as.numeric(ts$p)
+ts <- ts[order(ts$p),]
+# Sidak correction
+alpha <- 1 - (1 - 0.05)^(1/meff)
+# Randi's suggestion
+# alpha <- 0.05 / 76
+ts <- ts[which(ts$p <= alpha),]
 ```
 
 # ANOVA
@@ -157,37 +156,23 @@ ggplot(t_perms,aes(x=p)) + theme_bw() +
 
 Density represents the number of significant metabolites and the red line indicates the number of hits in non-permuted data. P values were not adjusted for multiple comparisons.
 
-```{r echo=FALSE}
-# Test all
-anova_perms <- lapply(1:nsim,function(y){
-  df <- X
-  if(y > 1) {
-    set.seed(y)
-    df$GROUP <- sample(df$GROUP)
-  }
-  anovas <- lapply(colnames(df)[3:ncol(df)], function(x){
-    form <- as.formula(paste0(x,"~GROUP"))
-    mod <- lm(form,df)
-    f <- anova(mod)
-    return(list("metabolite"=x,"p"=f$`Pr(>F)`[1]))
-  })
-  anovas <- data.frame(do.call(rbind,anovas))
-  anovas$p <- as.numeric(anovas$p)
-  anovas <- anovas[order(anovas$p),]
-  anovas$p.adjusted <- p.adjust(anovas$p,method = "fdr")
-  return(length(which(anovas$p < 0.05)))
+```{r echo=FALSE,eval=FALSE}
+anovas <- lapply(colnames(X)[3:ncol(X)], function(x){
+  form <- as.formula(paste0(x,"~GROUP"))
+  mod <- lm(form,X)
+  f <- anova(mod)
+  return(list("metabolite"=x,"p"=f$`Pr(>F)`[1]))
 })
-anova_perms <- as.data.frame(unlist(anova_perms))
-anova_perms$correct <- anova_perms[1,1]
-colnames(anova_perms) <- c("p","correct")
-ggplot(anova_perms,aes(x=p)) + theme_bw() + 
-  geom_density() +
-  geom_vline(mapping = aes(xintercept=correct),color = "red")
+anovas <- data.frame(do.call(rbind,anovas))
+anovas$p <- as.numeric(anovas$p)
+anovas <- anovas[order(anovas$p),]
+# Correct for multiple testing
+anovas <- anovas[which(anovas$p <= alpha),]
 ```
 
 # Moderated t tests
 
-```{r echo=FALSE}
+```{r echo=FALSE,cache=TRUE}
 # Design matrix - 0 and 1 for CAC progression
 design <- as.data.frame(as.numeric(data$CACp)-1)
 colnames(design) <- "CACp"
@@ -202,8 +187,13 @@ results <- topTable(fit,coef = 2,number = nrow(X))
 results$m.z <- sapply(strsplit(rownames(results),"_"),"[[",2)
 results$p.value <- results$P.Value
 results$t.score <- fit$t[match(rownames(results),rownames(fit$t)),2]
-# write.csv(results[,c("m.z","p.value","t.score")],row.names = F,
-#           file = "./Data_Cleaned/moderated_t_tests_CACp.csv")
+results$foldchange <- 2^results$logFC
+results$pvalue <- results$P.Value
+# Columns
+results <- results[,c("m.z","p.value","t.score")]
+write.csv(results,file = "/Users/timvigers/Desktop/chemrich_t_tests.csv",na="",row.names = F)
+# These results must then be uploaded to MetaboAnalyst for compound identification.
+# Once the KEGG names are obtained they can be converted using CTS, and the results uploaded to ChemRICH
 ```
 
 <!-- # Moderated ANOVA -->
