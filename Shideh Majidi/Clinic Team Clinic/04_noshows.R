@@ -17,7 +17,7 @@ dat.no<-subset(dat.no,dat.no$ApptDate<=dat.no$date_max)
 
 #test<-dat.no[,which(colnames(dat.no) %in% c("MRN","ApptDate","first_visit_date","date_max"))]
 noshow_total<-data.frame(table(dat.no$MRN))
-colnames(noshow_num)<-c("MRN","noshow_total")
+colnames(noshow_total)<-c("MRN","noshow_total")
 
 dat.no.pre<-subset(dat.no,dat.no$ApptDate<dat.no$first_post_visit_date)
 noshow_pre<-data.frame(table(dat.no.pre$MRN))
@@ -27,7 +27,7 @@ dat.no.post<-subset(dat.no,dat.no$ApptDate>=dat.no$first_post_visit_date)
 noshow_post<-data.frame(table(dat.no.post$MRN))
 colnames(noshow_post)<-c("MRN","noshow_post")
 
-noshows<-merge(noshow_num,noshow_pre,by="MRN",all=T)
+noshows<-merge(noshow_total,noshow_pre,by="MRN",all=T)
 noshows<-merge(noshows,noshow_post,by="MRN",all=T)
 
 dat.one<-merge(dat.one,noshows,by="MRN",all.x=T)

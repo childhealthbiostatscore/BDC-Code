@@ -9,6 +9,32 @@ dat<-read.csv("RetrospectiveReview_062220_highlighted_coded_RDV_SMupdated.csv",
 #remove empty rows between patients
 dat<-subset(dat,!is.na(dat$MRN)) 
 
+#update missing data:
+
+#All A1c:
+dat.a1c<-read.csv("missing A1C_shideh.csv", na.strings=c("NULL","NA"))
+#remove visit opened in error:
+dat<-subset(dat,!(dat$MRN==1027927 & dat$VisitDate=="3/24/2015"))
+dat.a1c<-dat.a1c[,c(1,2,4)]
+colnames(dat.a1c)<-c(colnames(dat.a1c)[1:2],"A1c_update")
+dat<-merge(dat,dat.a1c,by=c("MRN","VisitDate"),all.x=T)
+dat$A1C_Value[!is.na(dat$A1c_update)]<-dat$A1c_update[!is.na(dat$A1c_update)]
+
+#baseline CGM/Pump Use:
+dat.cp<-read.csv("missing_cgm_pump_shideh.csv", na.strings=c("NULL","NA"))
+dat.cp$CGM_Use_update<-NA
+dat.cp$CGM_Use_update[dat.cp$CGM_Use=="Yes"]<-1
+dat.cp$CGM_Use_update[dat.cp$CGM_Use=="No"]<-0
+dat.cp$InsulinPump_Use_update<-NA
+dat.cp$InsulinPump_Use_update[dat.cp$InsulinPump_Use=="Yes"]<-1
+dat.cp$InsulinPump_Use_update[dat.cp$InsulinPump_Use=="No"]<-0
+
+dat.cp<-dat.cp[,c(1,2,6,7)]
+
+dat<-merge(dat,dat.cp,by=c("MRN","VisitDate"),all.x=T)
+dat$CGM_Use[!is.na(dat$CGM_Use_update)]<-dat$CGM_Use_update[!is.na(dat$CGM_Use_update)]
+dat$InsulinPump_Use[!is.na(dat$InsulinPump_Use_update)]<-dat$InsulinPump_Use_update[!is.na(dat$InsulinPump_Use_update)]
+
 dat$Visit.Type<-as.factor(dat$Visit.Type)
 levels(dat$Visit.Type)<-c("RTC","CTC","Routine")
 dat$VisitDate<-as.POSIXct(dat$VisitDate,format="%m/%d/%Y")
@@ -322,6 +348,7 @@ dat.missing.cgm.pump<-subset(dat.one,(is.na(dat.one$CGM_Use)| is.na(dat.one$Insu
 dat.missing.cgm.pump<-dat.missing.cgm.pump[,which(colnames(dat.missing.cgm.pump) %in% c("MRN","VisitDate","Visit.Type","CGM_Use","InsulinPump_Use"))]
 write.csv(dat.missing.cgm.pump,"missing_cgm_pump.csv",row.names = F)
 
+table(dat.one$CGM_Use,dat.one$CGM_High)
 
 #defining a threshold for time after research TC for CTC group:
 # ctc<-subset(dat,dat$group=="CTC")
