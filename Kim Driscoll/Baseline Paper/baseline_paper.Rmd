@@ -1,0 +1,81 @@
+---
+title: "PIU! Baseline Paper"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_knit$set(root.dir = "/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
+library(arsenal)
+library(skimr)
+library(knitr)
+library(tidyverse)
+```
+
+```{r data}
+# Import questionnair and demographic data
+child <- read.csv("./Kim Driscoll/PIU Baseline Paper/Data_Cleaned/child.csv",na.strings = "")
+parent <- read.csv("./Kim Driscoll/PIU Baseline Paper/Data_Cleaned/parent.csv",na.strings = "")
+# Fill missing IDs
+child <- child %>% fill(ID,.direction = "down")
+# Pump variables
+pump <- read.csv("./Kim Driscoll/Pump Variables/Data_Cleaned/summary.csv",na.strings = "")
+colnames(pump)[which(colnames(pump)=="study_visit")] <- "Study.Visit"
+colnames(pump)[which(colnames(pump)=="subject_id")] <- "ID"
+pump$Study.Visit <- as.numeric(sub("T","",pump$Study.Visit))
+# Merge
+child <- full_join(child,pump,by = c("ID", "Study.Visit"))
+# Pump variables per day
+child <- child %>%
+  mutate(readings_per_day = total_readings / days_worn,
+         carbs_per_day = total_carbs / days_worn,
+         boluses_per_day = total_bolus / days_worn,
+         bg_150_249_perc_bolus = bg_150_249_with_bolus_only / total_150_249,
+         bg_150_249_perc_bolus_carb = bg_150_249_with_bolus_carb / total_150_249,
+         bg_above_250_perc_bolus = bg_above_250_with_bolus_only / total_above_250,
+         bg_above_250_perc_bolus_carb = bg_above_250_with_bolus_carb / total_above_250)
+```
+
+# Table 1: Self-Management Behaviors at Baseline
+
+There was only one missing value (for participant 220, who had $\frac{0}{0}$ for BG $\geq$ 250), so simple tests were used for this table. Holly, I have one additional intervention participant, any idea why that might be?
+
+```{r baseline self management,results='asis'}
+# Baseline data
+child_baseline <- child[child$Study.Visit==1,]
+# Treatment variable - make as usual the reference group
+child_baseline$Treatment <- factor(child_baseline$Treatment,levels = c("Treatment as Usual","Tailored Feedback"))
+# Variables
+smvars <- c("days_worn","carbs_per_day","boluses_per_day",
+            "bg_150_249_perc_bolus","bg_150_249_perc_bolus_carb",
+            "bg_above_250_perc_bolus","bg_above_250_perc_bolus_carb")
+# Table
+t1 <- tableby(Treatment~kwt(days_worn)+carbs_per_day+boluses_per_day+
+                bg_150_249_perc_bolus+bg_150_249_perc_bolus_carb+
+                bg_above_250_perc_bolus+bg_above_250_perc_bolus_carb,
+              data = child_baseline)
+summary(t1,pfootnote=T)
+```
+
+# Table 2: Psychosocial Variables at Baseline
+
+```{r baseline qs}
+# lavaan models function
+fiml_by_treatment <- function(outcome_name,prefix,data){
+  vars <- paste(colnames(data)[grep(prefix,colnames(data))],collapse = " + ")
+  form <- paste(outcome_name," =~ ",vars,"\n",outcome_name," ~ Treatment")
+  mod <- sem(form,data = data,meanstructure = TRUE,missing = "ML")
+  mod
+}
+
+# EM algorithm for Cronbach's alpha
+em_cronbach <- function(prefix,data){
+  # Get variable names
+  vars <- colnames(data)[grep(prefix,colnames(data))]
+  # Use pairwise deletion (PD) as a starting point 
+}
+
+
+```
