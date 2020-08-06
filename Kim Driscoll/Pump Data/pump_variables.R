@@ -1,7 +1,7 @@
 library(tidyverse)
 # Import data
 indir <- "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Pump Variables/Data_Cleaned/Pump Files Cleaned"
-outdir <- "/Users/timvigers/"
+outdir <- "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Pump Variables/Data_Cleaned"
 files <- list.files(indir,full.names = T)
 # Make a summary variables table.
 summary <- data.frame(matrix(nrow = length(files),ncol = 0))
@@ -22,7 +22,7 @@ for (f in 1:length(files)) {
   table$weekday <- lubridate::wday(table$datetime)
   # Count days and days of week
   day_table <- table %>% group_by(Date) %>%
-    summarise(day = weekday[1])
+    summarise(day = weekday[1],.groups = "drop_last")
   days <- nrow(day_table)
   weekdays <- length(which(day_table$day %in% c(2:6)))
   weekends <- length(which(day_table$day %in% c(1,7)))
@@ -98,7 +98,8 @@ for (f in 1:length(files)) {
     mutate(diff = (bg_datetimes - lag(bg_datetimes))/60)
   bg_time_df <- bg_time_df[bg_time_df$time %in% c(6:11),]
   bg_time_df <- bg_time_df %>% group_by(date) %>% 
-    summarise(m = suppressWarnings(max(diff,na.rm = T))) %>% filter(m > -Inf)
+    summarise(m = suppressWarnings(max(diff,na.rm = T)),.groups="drop_last") %>% 
+    filter(m > -Inf)
   # Count carb behaviors
   table$BWZ.Carb.Input..grams.[table$BWZ.Carb.Input..grams. == 0] <- NA
   # Carb counters
@@ -216,7 +217,8 @@ for (f in 1:length(files)) {
     mutate(diff = (bolus_datetimes - lag(bolus_datetimes))/60)
   bolus_time_df <- bolus_time_df[bolus_time_df$time %in% c(6:11),]
   bolus_time_df <- bolus_time_df %>% group_by(date) %>% 
-    summarise(m = suppressWarnings(max(diff,na.rm = T))) %>% filter(m > -Inf)
+    summarise(m = suppressWarnings(max(diff,na.rm = T)),.groups="drop_last") %>% 
+    filter(m > -Inf)
   # Link behaviors
   carb_datetimes <- lubridate::ymd_hms(carb_datetimes)
   bolus_datetimes <- lubridate::ymd_hms(bolus_datetimes)
