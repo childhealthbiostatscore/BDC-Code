@@ -56,7 +56,7 @@ lmm_slopediff<-lme(A1C_Value~a1c_baseline+days_from_first_visit+days_from_first_
             ,random=~1|MRN/days_from_first_visit,data=dat.c.all)
 #summary(lmm_slopediff)
 
-lmm_1b<-lme(A1C_Value~a1c_baseline+days_from_first_visit+RTC_visits_cat_2*time_period
+lmm_1b<-lme(A1C_Value~a1c_baseline+days_from_first_visit+RTC_visits_cat_2*time_period+dp3
             ,random=~1|MRN/days_from_first_visit,data=dat.c.all)
 
 lmm_1b_sum<-summary(lmm_1b)
@@ -120,7 +120,7 @@ lmm_1a_sum$Value<-round(lmm_1a_sum$Value,3)
 lmm_1a_sum$Std.Error<-round(lmm_1a_sum$Std.Error,3)
 lmm_1a_sum$`p-value`<-round(lmm_1a_sum$`p-value`,3)
 
-ref_1a <- lsmeans(lmm_1a, c("RTC_visits_cat_2", "time_period"))
+#ref_1a <- lsmeans(lmm_1a, c("RTC_visits_cat_2", "time_period"))
 
 # #####set up for mixed model with changepoint:
 # changepoint<-function(ID,data){

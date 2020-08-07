@@ -9,6 +9,11 @@ dat<-read.csv("RetrospectiveReview_062220_highlighted_coded_RDV_SMupdated.csv",
 #remove empty rows between patients
 dat<-subset(dat,!is.na(dat$MRN)) 
 
+#additional covariate: whether or not patients were in DP3 study (mrn in this list):
+dp3<-read.csv("DP3patients.csv")
+
+dat$dp3<-0
+dat$dp3[dat$MRN %in% dp3$MRN]<-1
 #update missing data:
 
 #All A1c:
@@ -273,6 +278,8 @@ label(dat$total_CTC)<-"Total CTC Visits"
 label(dat$total_RTC)<-"Total RTC Visits"
 label(dat$total_routine)<-"Total Routine Care Visits"
 
+dat$dp3<-as.factor(dat$dp3)
+label(dat$dp3)<-"DP3 Study Participant"
 dat$research_period_visits_cat<-NA
 dat$research_period_visits_cat[dat$research_period_visits==2]<-2
 dat$research_period_visits_cat[dat$research_period_visits==3]<-3
@@ -324,6 +331,8 @@ dat$insurance_2[dat$InsuranceType_VisitDate=="Public"]<-"Public"
 
 dat.one<-dat[!duplicated(dat$MRN),]
 table(dat.one$group,useNA="always")
+table(dat.one$dp3,useNA="always")
+
 #summary stats (included in Analysis Plan):
 
 
