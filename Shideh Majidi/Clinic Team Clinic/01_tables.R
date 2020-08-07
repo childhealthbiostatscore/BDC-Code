@@ -2,6 +2,7 @@
 ###Summary Stats###
 source("S:/Shared Material/Shared Code/R/temp_table1.R")
 
+dat.one$Race.Ethnicity<-factor(dat.one$Race.Ethnicity)
 table1<-final_table(dat.one,c("Gender","Age_eachvisit","Race.Ethnicity","InsuranceType_VisitDate",
                               "CGM_Use","InsulinPump_Use","DurationOfDiabetes_eachvisit",
                               "Meter_BGOK_yn_baseline","CGM_OK_yn_baseline","hosp_any",

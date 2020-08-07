@@ -194,6 +194,7 @@ summary_stats<-function(ID,data){
     #a1c metrics
     dat.temp$avg_a1c_pre<-mean(dat.temp$A1C_Value[dat.temp$time_period=="During RTC"])
     dat.temp$avg_a1c_post<-mean(dat.temp$A1C_Value[dat.temp$time_period!="During RTC"])
+    dat.temp$a1c_baseline<-dat.temp$A1C_Value[1]
     
     dat.temp$hosp_any<-0
     dat.temp$hosp_any[nrow(subset(dat.temp,dat.temp$HospitalizationsForDKA>0))]<-1
@@ -260,12 +261,12 @@ label(dat$Age_eachvisit)<-'Age at baseline'
 label(dat$A1C_Value)<-"A1c - baseline"
 label(dat$avg_a1c_pre)<-"A1c - average in pre-period"
 label(dat$avg_a1c_post)<-"A1c - average in post-period"
-dat$avg_a1c_change<-dat$avg_a1c_pre-dat$avg_a1c_post
+dat$avg_a1c_change<-dat$avg_a1c_pre-dat$avg_a1c_post #if +, then pre is higher than post. if - then pre is less than post
 label(dat$avg_a1c_change)<-"A1c -  change (pre minus post)"
 
-label(dat$Meter_BGHigh)<-"Meter BG High"
-label(dat$Meter_BGLow)<-"Meter BG Low"
-label(dat$Meter_BGOK)<-"Meter BG OK"
+label(dat$Meter_BGHigh)<-"Meter BG High - baseline"
+label(dat$Meter_BGLow)<-"Meter BG Low - baseline"
+label(dat$Meter_BGOK)<-"Meter BG OK - baseline"
 
 label(dat$total_visits)<-"Total Visits in Study"
 label(dat$total_CTC)<-"Total CTC Visits"

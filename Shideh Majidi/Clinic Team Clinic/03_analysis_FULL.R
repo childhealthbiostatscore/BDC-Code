@@ -19,8 +19,11 @@ lm_1a_tab$Variable<-c("Average A1c in RTC Period","4+ RTC Visits","Duration of D
 
 ####LMM APPROACH:
 dat.c.all<-subset(dat,dat$group=="Control" & !is.na(dat$A1C_Value))
+#this tests whether the slope is different pre vs post: (is not so removed from final model:
+lmm_1a_slopediff<-lme(A1C_Value~a1c_baseline+days_from_first_visit+Gender+insurance_2+Race.Ethnicity_2+time_period*days_from_first_visit
+            ,random=~1|MRN/days_from_first_visit,data=dat.c.all)
 
-lmm_1a<-lme(A1C_Value~days_from_first_visit+RTC_visits_cat_2+Gender+insurance_2+Race.Ethnicity_2+time_period
+lmm_1a<-lme(A1C_Value~a1c_baseline+days_from_first_visit+Gender+insurance_2+Race.Ethnicity_2+time_period*RTC_visits_cat_2
             ,random=~1|MRN/days_from_first_visit,data=dat.c.all)
 lmm_1a_sum<-summary(lmm_1a)
 lmm_1a_sum<-lmm_1a_sum$tTable[,c(1,2,5)]
@@ -28,6 +31,16 @@ lmm_1a_sum<-as.data.frame(lmm_1a_sum)
 lmm_1a_sum$Value<-round(lmm_1a_sum$Value,3)
 lmm_1a_sum$Std.Error<-round(lmm_1a_sum$Std.Error,3)
 lmm_1a_sum$`p-value`<-round(lmm_1a_sum$`p-value`,3)
+
+ref_1a <- lsmeans(lmm_1a, c("RTC_visits_cat_2", "time_period"))
+
+c_list_1a <- list(c_4_pre_post = c(0, -1, 0, 1),
+                  c_23_pre_post = c(-1, 0, 1, 0))
+contrasts_1a<-summary(contrast(ref_1a, c_list_1a))
+contrasts_1a<-contrasts_1a[,c(1,2,3,6)]
+contrasts_1a$estimate<-round(contrasts_1a$estimate,3)
+contrasts_1a$SE<-round(contrasts_1a$SE,3)
+contrasts_1a$p.value<-round(contrasts_1a$p.value,3)
 
 ###Aim 1b: CTC group only
 ####SIMPLE: Change from pre to post as outcome:
@@ -39,15 +52,34 @@ lm_1b_tab$Variable<-c("Average A1c in RTC Period","4+ RTC Visits")
 
 ####LMM APPROACH:
 dat.ctc.all<-subset(dat,dat$group=="CTC"  & !is.na(dat$A1C_Value))
-
-lmm_1b<-lme(A1C_Value~days_from_first_visit+RTC_visits_cat_2+time_period
+lmm_slopediff<-lme(A1C_Value~a1c_baseline+days_from_first_visit+days_from_first_visit*time_period
             ,random=~1|MRN/days_from_first_visit,data=dat.c.all)
+#summary(lmm_slopediff)
+
+lmm_1b<-lme(A1C_Value~a1c_baseline+days_from_first_visit+RTC_visits_cat_2*time_period
+            ,random=~1|MRN/days_from_first_visit,data=dat.c.all)
+
 lmm_1b_sum<-summary(lmm_1b)
 lmm_1b_sum<-lmm_1b_sum$tTable[,c(1,2,5)]
 lmm_1b_sum<-as.data.frame(lmm_1b_sum)
 lmm_1b_sum$Value<-round(lmm_1b_sum$Value,3)
 lmm_1b_sum$Std.Error<-round(lmm_1b_sum$Std.Error,3)
 lmm_1b_sum$`p-value`<-round(lmm_1b_sum$`p-value`,3)
+
+anova_a1c_1b<-anova(lmm_1b)
+
+#test for differences between 4+ group, pre and post
+ref_1b <- lsmeans(lmm_1b, c("RTC_visits_cat_2", "time_period"))
+
+c_list_1b <- list(c_4_pre_post = c(0, -1, 0, 1),
+                 c_23_pre_post = c(-1, 0, 1, 0))
+contrasts_1b<-summary(contrast(ref_1b, c_list_1b))
+contrasts_1b<-contrasts_1b[,c(1,2,3,6)]
+contrasts_1b$estimate<-round(contrasts_1b$estimate,3)
+contrasts_1b$SE<-round(contrasts_1b$SE,3)
+contrasts_1b$p.value<-round(contrasts_1b$p.value,3)
+
+
 
 ####Aim 2: CTC versus Control group: 
 lm_2<-lm(dat.one$avg_a1c_change~dat.one$avg_a1c_pre+dat.one$RTC_visits_cat_2+dat.one$group
@@ -63,7 +95,7 @@ dat.post<-subset(dat,dat$time_period!="During RTC")
 
 dat.post<-subset(dat.post,!is.na(dat.post$A1C_Value))
 
-lmm_2<-lme(A1C_Value~days_from_first_visit+RTC_visits_cat_2+group
+lmm_2<-lme(A1C_Value~a1c_baseline+days_from_first_visit+RTC_visits_cat_2+group
            ,random=~1|MRN/days_from_first_visit,data=dat.post)
 lmm_2_sum<-summary(lmm_2)
 lmm_2_sum<-lmm_2_sum$tTable[,c(1,2,5)]
@@ -72,37 +104,54 @@ lmm_2_sum$Value<-round(lmm_2_sum$Value,3)
 lmm_2_sum$Std.Error<-round(lmm_2_sum$Std.Error,3)
 lmm_2_sum$`p-value`<-round(lmm_2_sum$`p-value`,3)
 
+#################
+####what if we fit one model for all of this: (don't have the numbers to do a three way interaction)
+dat.all<-subset(dat,!is.na(dat$A1C_Value))
 
-#####set up for mixed model with changepoint:
-changepoint<-function(ID,data){
-  
-  temp<-lapply(unique(ID), function(x){
-    
-    dat.temp <- subset(data, ID == x)
-    # dat.temp <- subset(dat,dat$MRN==1409272)
-    dat.temp<-dat.temp[order(dat.temp$VisitDate),]
-    ##TIME PERIODS:
-    dat.temp$post_period<-1
-    dat.temp$post_period[dat.temp$time_period=="During RTC"]<-0
-    dat.temp$days_from_first_postvisit<-NA
-    dat.temp$days_from_first_postvisit[dat.temp$post_period==1]<-difftime(dat.temp$VisitDate[dat.temp$post_period==1],
-                                                                          dat.temp$first_post_visit_date[1],unit="days")
-    
-    dat.temp})
-  #print(dat.temp$MRN)
-  dat<-do.call(rbind,temp)
-}
-dat<-changepoint(dat$MRN,dat)
+dat.all$time_period_2<-"Post"
+dat.all$time_period_2[dat.all$time_period=="During RTC"]<-"Pre"
 
-dat<-subset(dat,!is.na(dat$A1C_Value))
+lmm_1a<-lme(A1C_Value~a1c_baseline+days_from_first_visit+time_period_2*RTC_visits_cat_2*group
+            ,random=~1|MRN/days_from_first_visit,data=dat.all)
+lmm_1a_sum<-summary(lmm_1a)
+lmm_1a_sum<-lmm_1a_sum$tTable[,c(1,2,5)]
+lmm_1a_sum<-as.data.frame(lmm_1a_sum)
+lmm_1a_sum$Value<-round(lmm_1a_sum$Value,3)
+lmm_1a_sum$Std.Error<-round(lmm_1a_sum$Std.Error,3)
+lmm_1a_sum$`p-value`<-round(lmm_1a_sum$`p-value`,3)
 
+ref_1a <- lsmeans(lmm_1a, c("RTC_visits_cat_2", "time_period"))
 
-
-dat.c.all<-subset(dat,dat$group=="Control")
-
-control_cp<-lme(A1C_Value~post_period+ days_from_first_visit+post_period*days_from_first_visit+total_RTC
-                ,random=~1|MRN/days_from_first_visit,data=dat.c.all)
-summary(control_cp)
+# #####set up for mixed model with changepoint:
+# changepoint<-function(ID,data){
+#   
+#   temp<-lapply(unique(ID), function(x){
+#     
+#     dat.temp <- subset(data, ID == x)
+#     # dat.temp <- subset(dat,dat$MRN==1409272)
+#     dat.temp<-dat.temp[order(dat.temp$VisitDate),]
+#     ##TIME PERIODS:
+#     dat.temp$post_period<-1
+#     dat.temp$post_period[dat.temp$time_period=="During RTC"]<-0
+#     dat.temp$days_from_first_postvisit<-NA
+#     dat.temp$days_from_first_postvisit[dat.temp$post_period==1]<-difftime(dat.temp$VisitDate[dat.temp$post_period==1],
+#                                                                           dat.temp$first_post_visit_date[1],unit="days")
+#     
+#     dat.temp})
+#   #print(dat.temp$MRN)
+#   dat<-do.call(rbind,temp)
+# }
+# dat<-changepoint(dat$MRN,dat)
+# 
+# dat<-subset(dat,!is.na(dat$A1C_Value))
+# 
+# 
+# 
+# dat.c.all<-subset(dat,dat$group=="Control")
+# 
+# control_cp<-lme(A1C_Value~post_period+ days_from_first_visit+post_period*days_from_first_visit+total_RTC
+#                 ,random=~1|MRN/days_from_first_visit,data=dat.c.all)
+# summary(control_cp)
 
 # data alldata;
 # set alldata;
