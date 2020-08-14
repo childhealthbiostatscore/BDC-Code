@@ -21,5 +21,5 @@ table2
 table3<-final_table(dat.one,c("total_visits","total_RTC","total_CTC","total_routine", #totals of each visit type
                               "research_period_visits","RTC_visits_cat","research_period_time",
                               "post_period_visits","post_period_time"), 
-                    dat.one$group,margin=2,single=F,2,col.names=T, summary.stat='median')
+                    dat.one$group,margin=2,single=F,0,col.names=T, summary.stat='median')
 table3

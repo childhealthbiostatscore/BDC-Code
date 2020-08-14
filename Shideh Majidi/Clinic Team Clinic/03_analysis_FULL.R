@@ -35,8 +35,7 @@ lmm_1a_sum$`p-value`<-round(lmm_1a_sum$`p-value`,3)
 ref_1a <- lsmeans(lmm_1a, c("RTC_visits_cat_2", "time_period"))
 
 c_list_1a <- list(c_4_pre_post = c(0, -1, 0, 1),
-                  c_23_pre_post = c(-1, 0, 1, 0),
-                  change_bygrp = c(1, 1, -1, -1))
+                  c_23_pre_post = c(-1, 0, 1, 0))
 contrasts_1a<-summary(contrast(ref_1a, c_list_1a))
 contrasts_1a<-contrasts_1a[,c(1,2,3,6)]
 contrasts_1a$estimate<-round(contrasts_1a$estimate,3)
@@ -63,7 +62,7 @@ lmm_slopediff<-lme(A1C_Value~a1c_baseline+days_from_first_visit+days_from_first_
             ,random=~1|MRN/days_from_first_visit,data=dat.c.all)
 #summary(lmm_slopediff)
 
-lmm_1b<-lme(A1C_Value~a1c_baseline+days_from_first_visit+RTC_visits_cat_2*time_period+dp3
+lmm_1b<-lme(A1C_Value~a1c_baseline+days_from_first_visit+RTC_visits_cat_2*time_period
             ,random=~1|MRN/days_from_first_visit,data=dat.c.all)
 
 lmm_1b_sum<-summary(lmm_1b)
@@ -79,8 +78,7 @@ anova_a1c_1b<-anova(lmm_1b)
 ref_1b <- lsmeans(lmm_1b, c("RTC_visits_cat_2", "time_period"))
 
 c_list_1b <- list(c_4_pre_post = c(0, -1, 0, 1),
-                 c_23_pre_post = c(-1, 0, 1, 0),
-                 change_bygrp = c(1, 1, -1, -1))
+                 c_23_pre_post = c(-1, 0, 1, 0))
 contrasts_1b<-summary(contrast(ref_1b, c_list_1b))
 contrasts_1b<-contrasts_1b[,c(1,2,3,6)]
 contrasts_1b$estimate<-round(contrasts_1b$estimate,3)
