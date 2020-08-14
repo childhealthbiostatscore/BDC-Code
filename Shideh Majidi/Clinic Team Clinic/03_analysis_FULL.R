@@ -35,12 +35,19 @@ lmm_1a_sum$`p-value`<-round(lmm_1a_sum$`p-value`,3)
 ref_1a <- lsmeans(lmm_1a, c("RTC_visits_cat_2", "time_period"))
 
 c_list_1a <- list(c_4_pre_post = c(0, -1, 0, 1),
-                  c_23_pre_post = c(-1, 0, 1, 0))
+                  c_23_pre_post = c(-1, 0, 1, 0),
+                  change_bygrp = c(1, 1, -1, -1))
 contrasts_1a<-summary(contrast(ref_1a, c_list_1a))
 contrasts_1a<-contrasts_1a[,c(1,2,3,6)]
 contrasts_1a$estimate<-round(contrasts_1a$estimate,3)
 contrasts_1a$SE<-round(contrasts_1a$SE,3)
 contrasts_1a$p.value<-round(contrasts_1a$p.value,3)
+
+# dat.c.meter<-subset(dat,dat$group=="Control" & !is.na(dat$Meter_BGLow))
+# lmm_1a_meter<-lme(Meter_BGLow~a1c_baseline+days_from_first_visit+Gender+insurance_2+Race.Ethnicity_2+time_period*RTC_visits_cat_2
+#             ,random=~1|MRN/days_from_first_visit,data=dat.c.meter)
+# plot(lmm_1a_meter)
+# lmm_1a_meter_sum<-summary(lmm_1a_meter)
 
 ###Aim 1b: CTC group only
 ####SIMPLE: Change from pre to post as outcome:
@@ -72,7 +79,8 @@ anova_a1c_1b<-anova(lmm_1b)
 ref_1b <- lsmeans(lmm_1b, c("RTC_visits_cat_2", "time_period"))
 
 c_list_1b <- list(c_4_pre_post = c(0, -1, 0, 1),
-                 c_23_pre_post = c(-1, 0, 1, 0))
+                 c_23_pre_post = c(-1, 0, 1, 0),
+                 change_bygrp = c(1, 1, -1, -1))
 contrasts_1b<-summary(contrast(ref_1b, c_list_1b))
 contrasts_1b<-contrasts_1b[,c(1,2,3,6)]
 contrasts_1b$estimate<-round(contrasts_1b$estimate,3)
@@ -106,19 +114,19 @@ lmm_2_sum$`p-value`<-round(lmm_2_sum$`p-value`,3)
 
 #################
 ####what if we fit one model for all of this: (don't have the numbers to do a three way interaction)
-dat.all<-subset(dat,!is.na(dat$A1C_Value))
-
-dat.all$time_period_2<-"Post"
-dat.all$time_period_2[dat.all$time_period=="During RTC"]<-"Pre"
-
-lmm_1a<-lme(A1C_Value~a1c_baseline+days_from_first_visit+time_period_2*RTC_visits_cat_2*group
-            ,random=~1|MRN/days_from_first_visit,data=dat.all)
-lmm_1a_sum<-summary(lmm_1a)
-lmm_1a_sum<-lmm_1a_sum$tTable[,c(1,2,5)]
-lmm_1a_sum<-as.data.frame(lmm_1a_sum)
-lmm_1a_sum$Value<-round(lmm_1a_sum$Value,3)
-lmm_1a_sum$Std.Error<-round(lmm_1a_sum$Std.Error,3)
-lmm_1a_sum$`p-value`<-round(lmm_1a_sum$`p-value`,3)
+# dat.all<-subset(dat,!is.na(dat$A1C_Value))
+# 
+# dat.all$time_period_2<-"Post"
+# dat.all$time_period_2[dat.all$time_period=="During RTC"]<-"Pre"
+# 
+# lmm_1a<-lme(A1C_Value~a1c_baseline+days_from_first_visit+time_period_2*RTC_visits_cat_2*group
+#             ,random=~1|MRN/days_from_first_visit,data=dat.all)
+# lmm_1a_sum<-summary(lmm_1a)
+# lmm_1a_sum<-lmm_1a_sum$tTable[,c(1,2,5)]
+# lmm_1a_sum<-as.data.frame(lmm_1a_sum)
+# lmm_1a_sum$Value<-round(lmm_1a_sum$Value,3)
+# lmm_1a_sum$Std.Error<-round(lmm_1a_sum$Std.Error,3)
+# lmm_1a_sum$`p-value`<-round(lmm_1a_sum$`p-value`,3)
 
 #ref_1a <- lsmeans(lmm_1a, c("RTC_visits_cat_2", "time_period"))
 
