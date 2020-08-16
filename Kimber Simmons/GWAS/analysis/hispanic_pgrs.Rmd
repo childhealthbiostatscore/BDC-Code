@@ -8,9 +8,8 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 knitr::opts_knit$set(root.dir = "/Users/timvigers/Documents/OneDrive - The University of Colorado Denver/simmons")
-library(arsenal)
-library(skimr)
 library(knitr)
+library(qqman)
 library(tidyverse)
 ```
 
@@ -21,7 +20,7 @@ write.table(simmons$V2[which(simmons$V5 == "I" | simmons$V5 == "D")],
             quote = F,col.names = F)
 ```
 
-```{bash}
+```{bash eval=FALSE}
 # Change directory
 cd /Users/timvigers/Documents/OneDrive\ -\ The\ University\ of\ Colorado\ Denver/simmons/
 # Remove indels and duplicates
@@ -72,7 +71,7 @@ biobankbim$V2[match(all$V2.y,biobankbim$V2)] <- all$V2.x
 write.table(biobankbim,"./qc/biobank.bim",row.names = F,quote = F,col.names = F)
 ```
 
-```{bash}
+```{bash eval=FALSE}
 # Exclude name mismatches and SNPs that are different 
 plink --bfile qc/biobank --make-bed --out qc/biobank --exclude qc/exclude_mismatch
 plink --bfile qc/biobank --make-bed --out qc/biobank --exclude qc/first_merge-merge.missnp
@@ -96,7 +95,7 @@ plink2 --bfile analysis/biobank_simmons_merge_final --make-king-table --king-tab
 
 # PCA 
 
-```{bash}
+```{bash eval=FALSE}
 plink2 --bfile analysis/biobank_simmons_merge_final --pca --out analysis/PCA
 ```
 
@@ -137,41 +136,62 @@ ggplot(PCA,aes(x=PC1,y=PC3)) +
   geom_point(aes(color = Cohort)) + scale_color_manual(values=cbPalette) + theme_bw()
 ```
 
-## By Ethnicity
-
-Question for Nick/Laura: It doesn't look like Hispanic vs. non-Hispanic are separating well, does that mean that the first two PCs aren't really representing population structure? Would it be better to project these samples onto the 1000 Genomes data and then adjust for PCs?
-
-```{r pca by ethnicity}
-ggplot(PCA,aes(x=PC1,y=PC2)) + 
-  geom_point(aes(color = Ethnicity)) + scale_color_manual(values=cbPalette) + theme_bw()
-ggplot(PCA,aes(x=PC2,y=PC3)) + 
-  geom_point(aes(color = Ethnicity)) + scale_color_manual(values=cbPalette) + theme_bw()
-ggplot(PCA,aes(x=PC1,y=PC3)) + 
-  geom_point(aes(color = Ethnicity)) + scale_color_manual(values=cbPalette) + theme_bw()
-```
-
 ```{r}
-# Make covariate txt file
-write.table(PCA[,c("FID","IID","Sex","PC1","PC2","PC3")],
+# Make covariate txt files
+write.table(PCA[,c("FID","IID","Sex","PC1","PC2")],
             file = "./analysis/covar.txt",quote = F,row.names = F)
+write.table(PCA[,c("FID","IID","Sex","PC1","PC2","PC3")],
+            file = "./analysis/covar_pc3.txt",quote = F,row.names = F)
 ```
 
 # Analysis
 
-```{bash}
+```{bash eval=FALSE}
 # Logistic regression
-plink2 --bfile analysis/biobank_simmons_merge_final --keep analysis/kimber_ids --covar analysis/covar.txt  --logistic 'firth-fallback' --out analysis/logistic_results
+plink2 --bfile analysis/biobank_simmons_merge_final --covar analysis/covar.txt  --logistic 'firth-fallback' --out analysis/logistic_results
+plink2 --bfile analysis/biobank_simmons_merge_final --covar analysis/covar_pc3.txt  --logistic 'firth-fallback' --out analysis/logistic_results_pc3
 # Adjusted p values
 plink2 --adjust-file analysis/logistic_results.PHENO1.glm.logistic.hybrid 'test=ADD' --out analysis/logistic_results
+plink2 --adjust-file analysis/logistic_results_pc3.PHENO1.glm.logistic.hybrid 'test=ADD' --out analysis/logistic_results_pc3
 ```
 
-```{r}
+# Results without adjusting for PC3 (batch effect)
+
+```{r logistic results,warning=FALSE}
 # Import plink results
 logistic_results <- read.delim("./analysis/logistic_results.PHENO1.glm.logistic.hybrid")
-adjusted_results <- read.delim("./analysis/logistic_results.adjusted")
+# Format data
+res <- logistic_results[logistic_results$TEST == "ADD",c("ID","X.CHROM","POS","P","Z_STAT")]
+colnames(res) <- c("SNP","CHR","BP","P")
+# Get SNPs of interest from Kimber
+snps_interest <- read.csv("./Variants in any T1D GRS.csv")
+# Plot
+manhattan(res,main = "Manhattan Plot",highlight = snps_interest$SNP)
+qq(res$P)
 ```
 
-```{bash}
+# Adjusted results
+
+```{r logistic pc3 results,warning=FALSE}
+# Import plink results
+logistic_results <- read.delim("./analysis/logistic_results_pc3.PHENO1.glm.logistic.hybrid")
+# Format data
+res <- logistic_results[logistic_results$TEST == "ADD",c("ID","X.CHROM","POS","P","Z_STAT")]
+colnames(res) <- c("SNP","CHR","BP","P")
+# Get SNPs of interest from Kimber
+snps_interest <- read.csv("./Variants in any T1D GRS.csv")
+# Plot
+manhattan(res,main = "Manhattan Plot",highlight = snps_interest$SNP)
+qq(res$P)
+```
+
+# HLA imputation
+
+```{bash eval=FALSE}
+csh -f ~/Documents/Work/GWAS/SNP2HLA_package_v1.0.3/SNP2HLA/SNP2HLA.csh analysis/biobank_simmons_merge_final ~/Documents/Work/GWAS/SNP2HLA_package_v1.0.3/SNP2HLA/HM_CEU_REF analysis/biobank_simmons_merge_final_imputed plink
+```
+
+```{bash eval=FALSE}
 # Delete temp files
 find . -type f -name "*~" -delete
 ```
