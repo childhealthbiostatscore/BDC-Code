@@ -1,0 +1,71 @@
+---
+title: "NOVO Transition Preliminary Analysis"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/NOVO Transition")
+library(arsenal)
+library(skimr)
+library(knitr)
+library(cgmanalysis)
+library(tidyverse)
+```
+
+```{r echo=FALSE,eval=FALSE}
+# Clean CGM data
+cleandata("./Data_Raw/randomization_cgm_files","./Data_Cleaned/full_cgm",
+          removegaps = F,gapfill = F,id_filename = T)
+# Pull first 72 hours from each
+files <- list.files("./Data_Cleaned/full_cgm",full.names = T)
+for (f in files) {
+  table <- read.csv(f,stringsAsFactors = F)
+  table$ timestamp <- lubridate::ymd_hms(table$timestamp)
+  end <- table$timestamp[1] + 72*60*60
+  table <- table[table$timestamp <= end,]
+  write.csv(table,file = paste0("./Data_Cleaned/cgm_72_hours/",basename(f)),
+            row.names = F)
+}
+# Calculate CGM variables
+cgmvariables("./Data_Cleaned/full_cgm","./Data_Cleaned",outputname = "full_cgm",
+             id_filename = T)
+cgmvariables("./Data_Cleaned/cgm_72_hours","./Data_Cleaned",outputname = "cgm_72_hours",
+             id_filename = T)
+```
+
+### TIR Data
+  
+#### Data Issues
+
+- No sensor glucose data at randomization for 004
+- 020 doesn't have much sensor data, so they were excluded
+
+```{r echo=FALSE}
+# Import group assignment and CGM summary statistics
+groups = read.csv("./Data_Raw/NOVOTransitionStudy-Group_DATA_2020-08-19_1216.csv",
+                  na.strings = "")
+cgm_data = read.csv("./Data_Cleaned/full_cgm.csv",na.strings = "")
+# First 72 hours
+cgm_data72 = read.csv("./Data_Cleaned/cgm_72_hours.csv",na.strings = "")
+# Get TIR and group assignment
+cgm_data = left_join(cgm_data,groups,by = "subject_id")
+cgm_data = left_join(cgm_data,cgm_data72,by = "subject_id") %>%
+  select(subject_id,percent_time_70_180.x,percent_time_70_180.y,randomization_group) %>%
+  arrange(subject_id)
+# Sort and print
+kable(arrange(cgm_data,as.numeric(subject_id)),
+      col.names = c("ID","% TIR","% TIR - First 72 Hours","Group"))
+```
+
+### Group Comparison
+
+```{r echo=FALSE,results='asis'}
+labels(cgm_data) = c(subject_id = "ID",percent_time_70_180.x = "% TIR",
+                     percent_time_70_180.y = "% TIR - First 72 Hours",group = "Group")
+t = tableby(randomization_group ~ kwt(percent_time_70_180.x,"median","q1q3") + 
+              kwt(percent_time_70_180.y,"median","q1q3"),cgm_data)
+summary(t)
+```
