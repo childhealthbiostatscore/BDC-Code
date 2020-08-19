@@ -50,9 +50,9 @@ age18_plus = "user_input: 1 if TRUE or 0 if FALSE"
 sex = "user_input: 1 if M or 0 if F"
 
 # M1 models
+m1_tir = "user_input: float"
 # time_am
 m1_time_am = "user_input: float"
-m1_tir = "user_input: float"
 # Inputs from user
 c = [1,hba1c,m1_time_am,m1_tir,age14_18,age18_plus,sex]
 # Model estimates and variance covariance matrix
@@ -67,6 +67,7 @@ vcov = [[0.765153944,0.084745592,-0.017734542,-0.003408186,-0.153613931,-0.22515
 # Probability
 get_prob(c,estimates,vcov)
 # sensor_wear
+m1_sensor_wear = "user_input: float"
 # Inputs from user
 c = [1,hba1c,m1_sensor_wear,m1_tir,age14_18,age18_plus,sex]
 # Model estimates and variance covariance matrix
@@ -82,9 +83,9 @@ vcov = [[1.10347701,0.109512897,-0.040021662,-0.015930244,-0.086561769,-0.544436
 get_prob(c,estimates,vcov)
 
 # M3 models
+m3_tir = "user_input: float"
 # time_am
 m3_time_am = "user_input: float"
-m3_tir = "user_input: float"
 # Inputs from user
 c = [1,hba1c,m3_time_am,m3_tir,age14_18,age18_plus,sex]
 # Model estimates and variance covariance matrix
@@ -99,6 +100,7 @@ vcov = [[0.741524163,0.228664559,-0.008626397,0.007736141,-0.154150279,-0.088315
 # Probability
 get_prob(c,estimates,vcov)
 # sensor_wear
+m3_sensor_wear = "user_input: float"
 # Inputs from user
 c = [1,hba1c,m3_sensor_wear,m3_tir,age14_18,age18_plus,sex]
 # Model estimates and variance covariance matrix
