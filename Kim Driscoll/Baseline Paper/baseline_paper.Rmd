@@ -7,12 +7,12 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
-knitr::opts_knit$set(root.dir = "/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
+knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
+library(tidyverse)
 library(arsenal)
 library(skimr)
 library(knitr)
 library(coefficientalpha)
-library(tidyverse)
 set.seed(1017)
 ```
 
@@ -38,6 +38,16 @@ child <- child %>%
          bg_150_249_perc_bolus_carb = bg_150_249_with_bolus_carb / total_150_249,
          bg_above_250_perc_bolus = bg_above_250_with_bolus_only / total_above_250,
          bg_above_250_perc_bolus_carb = bg_above_250_with_bolus_carb / total_above_250)
+# Reverse scored psych items
+# CDI
+rev_cdi <- paste0("CDI",c(2,6,7,9,10,12,14,15,17,20,23,24,26,27))
+child[,rev_cdi] <- lapply(child[,rev_cdi], function(x){2-x})
+# CES-D
+rev_ces <- paste0("CESD",c(4,8,12,16))
+parent[,rev_ces] <- lapply(parent[,rev_ces], function(x){3-x})
+# WECARE
+rev_wecare <- paste0("WECARE",c(24,25,26,27,28,29,30,31,32,35,37))
+parent[,rev_wecare] <- lapply(parent[,rev_wecare], function(x){4-x})
 ```
 
 # Table 1: Self-Management Behaviors at Baseline
@@ -63,26 +73,39 @@ summary(t1,pfootnote=T)
 
 # Table 2: Psychosocial Variables at Baseline
 
+## CDI
+
 ```{r baseline qs}
 # lavaan models function
-fiml_by_treatment <- function(outcome_name,prefix,data){
-  vars <- paste(colnames(data)[grep(prefix,colnames(data))],collapse = " + ")
-  form <- paste(outcome_name," =~ ",vars,"\n",outcome_name," ~ Treatment")
-  mod <- sem(form,data = data,meanstructure = TRUE,missing = "ML")
-  mod
+fiml_by_treatment <- function(outcome_name,prefix,data,numbers = NULL){
+  vars <- colnames(data)[grep(prefix,colnames(data))]
+  if(!is.null(numbers)){
+    vars <- paste0(prefix,numbers)
+  }
+  vars_form <- paste(vars,collapse = " + ")
+  form <- paste(outcome_name," =~ ",vars_form,"\n",
+                outcome_name," ~ Treatment")
+  # Fit SEM
+  mod <- sem(form,data = data,missing = "ML",meanstructure = T)
+  # Get mean sum of items
+  control <- rep(1,length(vars))
+  treat <- rep(1,length(vars)+1)
+  means  <- fitted(mod)$mean 
+  mean_control <- control %*% head(means,-1)
+  mean_treat <- treat %*% means
+  # Get se of item sum
+  vcov <- fitted(mod)$cov
+  se_control <- sqrt(control %*% vcov[1:length(control),1:length(control)] %*% control)
+  se_treat <- sqrt(treat %*% vcov %*% treat)
+  # Regression estimates
+  s <- as.data.frame(summary(mod)$PE)
+  p <- s[which(s$lhs == outcome_name & s$rhs == "Treatment"),"pvalue"]
+  # Use EM robust to get alpha value
+  drop <- which(rowSums(is.na(data[,vars])) == length(vars))
+  a <- coefficientalpha::alpha(data[,vars],drop = drop,test = F,varphi = 0,silent = T)
+  # Return
+  return(round(c(mean_control,se_control,mean_treat,se_treat,p,a$alpha),3))
 }
 
-a <- alpha(data[,vars],varphi = 0)
-
-# # EM algorithm for Cronbach's alpha
-# em_cronbach <- function(prefix,data){
-#   # Get variable names
-#   vars <- colnames(data)[grep(prefix,colnames(data))]
-#   # Use pairwise deletion (PD) as a starting point 
-#   covar <- cov(data[,vars],use = "pairwise.complete.obs")
-# }
-# 
-# # Imputation for alpha
-# imp <- mice(data[,vars], m = 20, print=FALSE)
-# m <- with(imp,alpha(check.keys = T))
+cdi <- fiml_by_treatment("depression","CDI",child_baseline)
 ```
