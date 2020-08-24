@@ -2,7 +2,7 @@
 title: "PIU! Baseline Paper"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: html_document
+output: word_document
 ---
 
 ```{r setup, include=FALSE}
@@ -54,7 +54,7 @@ child[,meter_cols] <- lapply(child[,meter_cols], function(x){
   x <- as.numeric(x)
   x[which(x==2)]<-0
   x
-  })
+})
 # PEDS-QL
 # Reverse score and convert to 0-100 scale
 peds_ql_cols <- colnames(child)[grep("PEDSQL",colnames(child))]
@@ -76,15 +76,24 @@ child$pedsql_c <- apply(child[,grep("PEDSQL_C",colnames(child))],1,mean)
 # Pump knowledge
 child[,c("tdk_4a","tdk_4b")] <- NULL
 child$tdk <- apply(child[,grep("tdk_",colnames(child))],1,sum)
+# Get treatment group for parents
+parent <- left_join(parent,child[,c("ID","Study.Visit","Treatment")],
+                    by = c("ID", "Study.Visit"))
+# Parent pump knowledge
+parent[,c("tdk_4a","tdk_4b")] <- NULL
+parent$tdk <- apply(parent[,grep("tdk_",colnames(parent))],1,sum)
 ```
 
 # Table 1: Self-Management Behaviors at Baseline
 
 There was only one missing value (for participant 220, who had $\frac{0}{0}$ for BG $\geq$ 250), so simple tests were used for this table. Holly, I have one additional intervention participant, any idea why that might be?
 
+## Child
+
 ```{r baseline self management,results='asis'}
 # Baseline data
 child_baseline <- child[child$Study.Visit==1,]
+parent_baseline <- parent[parent$Study.Visit==1,]
 # Treatment variable - make as usual the reference group
 child_baseline$Treatment <- factor(child_baseline$Treatment,levels = c("Treatment as Usual","Tailored Feedback"))
 # Variables
@@ -101,7 +110,10 @@ summary(t1,pfootnote=T)
 
 # Table 2: Psychosocial Variables at Baseline
 
-```{r fiml function}
+```{r fiml function,include=FALSE}
+vars <- colnames(child_baseline)[grep("CDI",colnames(child_baseline))]
+drop <- which(rowSums(is.na(child_baseline[,vars])) == length(vars))
+a <- alpha(child_baseline[,vars],drop = drop,test = F,varphi = 0,silent = T)
 # lavaan models function
 fiml_by_treatment_latent <- function(outcome_name,prefix,data,numbers = NULL){
   vars <- colnames(data)[grep(prefix,colnames(data))]
@@ -131,9 +143,11 @@ fiml_by_treatment_latent <- function(outcome_name,prefix,data,numbers = NULL){
   p <- s[which(s$lhs == outcome_name & s$rhs == "Treatment"),"pvalue"]
   # Use EM robust to get alpha value
   drop <- which(rowSums(is.na(data[,vars])) == length(vars))
-  a <- alpha(data[,vars],drop = drop,test = F,varphi = 0,silent = T)
+  try(a <- alpha(data[,vars],drop = drop,test = F,varphi = 0,silent = T))
   # Return
-  return(t(round(c(mean_control,se_control,mean_treat,se_treat,p,a$alpha),3)))
+  res <- as.data.frame(t(round(c(mean_control,se_control,mean_treat,se_treat,p,a$alpha),3)))
+  colnames(res) <- res_names
+  return(res)
 }
 fiml_by_treatment <- function(outcome,prefix,data){
   vars <- colnames(data)[grep(prefix,colnames(data))]
@@ -159,7 +173,9 @@ fiml_by_treatment <- function(outcome,prefix,data){
   drop <- as.numeric(which(rowSums(is.na(data[,vars])) == length(vars)))
   try(a <- alpha(data[,vars],drop = drop,test = F,varphi = 0,silent = T))
   # Return
-  return(t(round(c(mean_control,se_control,mean_treat,se_treat,p,a$alpha),3)))
+  res <- as.data.frame(t(round(c(mean_control,se_control,mean_treat,se_treat,p,a$alpha),3)))
+  colnames(res) <- res_names
+  return(res)
 }
 res_names <- c("Mean Treatment as Usual","SE Treatment as Usual",
                "Mean Tailored Feedback","SE Tailored Feedback","P Value",
@@ -174,13 +190,13 @@ Notes:
 - There may just be too much missing data to use FIML or MI on the BDI questionnaires. It looks like only 2 participants filled out those questionnaires at baseline.
 
 - METER8 is missing from the original dataset. 
-  - METER7 could not be included in the latent variable model because everyone answered 1 (no variance).
-  
+- METER7 could not be included in the latent variable model because everyone answered 1 (no variance).
+
 - Carb counting skills don't seem to match up with the codebook, but I'm probably confused.
 
 - Unable to estimate alpha using the EM algorithm for knowledge. Also, some items are negatively correlated with the total score.
 
-```{r models,include=FALSE}
+```{r child models,include=FALSE}
 # CDI
 cdi <- fiml_by_treatment_latent("depression","CDI",child_baseline)
 # FOH
@@ -204,40 +220,64 @@ meter <- fiml_by_treatment_latent("meter","METER",child_baseline,numbers = c(1:6
 # Pump knowledge - Delete 4a, 4b, and those without variance
 pump <- fiml_by_treatment("tdk","tdk_",child_baseline)
 # Unable to use EM algorithm on knowledge alpha - use regular one
-pump[6] <- 0.77
+pump$Alpha <- 0.77
 # BGMIPR
 bgmipr <- fiml_by_treatment_latent("bgmipr","BGMIPR",child_baseline,numbers = c(1:16))
 # DFRQ
 dfrq <- fiml_by_treatment_latent("dfrq","DFRQ",child_baseline,numbers = c(1:17))
 ```
 
-```{r results}
-# CDI
-kable(cdi,col.names = res_names,caption = "Depression (CDI2)")
-# FOH
-# Maintain
-kable(foh_maintain,col.names = res_names,caption = "FOH (CHFS) – Maintain High BG")
-# Helplessness
-kable(foh_helpless,col.names = res_names,caption = "FOH (CHFS) – Worry/Helplessness")
-# Social
-kable(foh_social,col.names = res_names,caption = "FOH (CHFS) – Worry/Social Consequences")
-# PEDS QL
-kable(peds_ql_d,col.names = res_names,caption = "PedsQL Diabetes")
-kable(peds_ql_tx1,col.names = res_names,caption = "PedsQL Treatment 1")
-kable(peds_ql_tx2,col.names = res_names,caption = "PedsQL Treatment 2")
-kable(peds_ql_w,col.names = res_names,caption = "PedsQL Worry")
-kable(peds_ql_c,col.names = res_names,caption = "PedsQL Communication")
-# PDS
-kable(pds_boys,col.names = res_names,caption = "PDS - Boys")
-kable(pds_girls,col.names = res_names,caption = "PDS - Girls")
-# Meter
-kable(meter,col.names = res_names,caption = "Meter")
-# Pump
-kable(pump,col.names = res_names,caption = "tdk")
-# BGMIPR
-kable(bgmipr,col.names = res_names,caption = "BGMIPR")
-# DFRQ
-kable(dfrq,col.names = res_names,caption = "DFRQ")
+```{r child results}
+child_results <- bind_rows(cdi,foh_maintain,foh_helpless,foh_social,
+                           peds_ql_d,peds_ql_tx1,peds_ql_tx2,peds_ql_w,peds_ql_c,
+                           pds_boys,pds_girls,meter,pump,bgmipr,dfrq)
+rownames(child_results) <- 
+  c("Depression (CDI2)","FOH (CHFS) – Maintain High BG",
+    "FOH (CHFS) – Worry/Helplessness","FOH (CHFS) – Worry/Social Consequences",
+    "PedsQL Diabetes","PedsQL Treatment 1","PedsQL Treatment 2","PedsQL Worry",
+    "PedsQL Communication","PDS - Boys","PDS - Girls","Meter","tdk","BGMIPR","DFRQ")
+kable(child_results,row.names = T)
 ```
 
 ### Parent
+
+```{r parent models,include=FALSE}
+# CESD
+cesd <- fiml_by_treatment_latent("depression","CESD",parent_baseline)
+# FOH
+# Maintain
+foh_maintain <- fiml_by_treatment_latent("maintain","FOH_P",parent_baseline,numbers = c(3,4,7))
+# Helplessness
+foh_helpless <- fiml_by_treatment_latent("helpless","FOH_P",parent_baseline,numbers = c(13,14,15 ,17,20,23,24,25,26))
+# Social
+foh_social <- fiml_by_treatment_latent("social","FOH_P",parent_baseline,numbers = c(16,18,19,21,22))
+# WECARE
+wecare_well_being <- fiml_by_treatment_latent("wellbeing","WECARE",parent_baseline,
+                                              numbers = c(1,2,4,14,15,16,17,18,19,20,21,22,23))
+wecare_satisfaction <- fiml_by_treatment_latent("satisfaction","WECARE",parent_baseline,
+                                                numbers = c(3,28,29,30,31,32,35,36,37))
+wecare_acceptance <- fiml_by_treatment_latent("ease","WECARE",parent_baseline,
+                                              numbers = c(5,6,7,8,9,10))
+wecare_ease <- fiml_by_treatment_latent("ease","WECARE",parent_baseline,
+                                        numbers = c(11,12,13,24,25,26,27,33,34))
+# Pump knowledge - Delete 4a, 4b, and those without variance
+pump <- fiml_by_treatment("tdk","tdk_",parent_baseline)
+# Unable to use EM algorithm on knowledge alpha - use regular one
+pump$Alpha <- 0.74
+# BGMIPR
+bgmipr <- fiml_by_treatment_latent("bgmipr","BGMIPR",parent_baseline,numbers = c(1:16))
+# DFRQ
+dfrq <- fiml_by_treatment_latent("dfrq","DFRQ",parent_baseline,numbers = c(1:17))
+```
+
+```{r parent results}
+parent_results <- bind_rows(cesd,foh_maintain,foh_helpless,foh_social,
+                            wecare_well_being,wecare_satisfaction,wecare_acceptance,
+                            wecare_ease,pump,bgmipr,dfrq)
+rownames(parent_results) <- 
+  c("Depression (CESD)","FOH (PHFS) – Maintain High BG",
+    "FOH (PHFS) – Worry/Helplessness","FOH (PHFS) – Worry/Social Consequences",
+    "Psychosocial well-being","Treatment satisfaction","Acceptance of insulin administration",
+    "Ease of insulin use","tdk","BGMIPR","DFRQ")
+kable(parent_results,row.names = T)
+```
