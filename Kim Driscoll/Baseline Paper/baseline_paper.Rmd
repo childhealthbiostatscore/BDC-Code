@@ -17,7 +17,7 @@ set.seed(1017)
 ```
 
 ```{r data}
-# Import questionnair and demographic data
+# Import questionnaire and demographic data
 child <- read.csv("./Kim Driscoll/PIU Baseline Paper/Data_Cleaned/child.csv",na.strings = "")
 parent <- read.csv("./Kim Driscoll/PIU Baseline Paper/Data_Cleaned/parent.csv",na.strings = "")
 # Fill missing IDs
@@ -55,6 +55,24 @@ child[,meter_cols] <- lapply(child[,meter_cols], function(x){
   x[which(x==2)]<-0
   x
   })
+# PEDS-QL
+# Reverse score and convert to 0-100 scale
+peds_ql_cols <- colnames(child)[grep("PEDSQL",colnames(child))]
+child[,peds_ql_cols] <- lapply(child[,peds_ql_cols], function(x){
+  x <- as.numeric(x)
+  x[which(x==0)]<-100
+  x[which(x==1)]<-75
+  x[which(x==2)]<-50
+  x[which(x==3)]<-25
+  x[which(x==4)]<-0
+  x
+})
+# Means
+child$pedsql_d <- apply(child[,grep("PEDSQL_D",colnames(child))],1,mean)
+child$pedsql_tx1 <- apply(child[,grep("PEDSQL_TX1",colnames(child))],1,mean)
+child$pedsql_tx2 <- apply(child[,grep("PEDSQL_TX2",colnames(child))],1,mean)
+child$pedsql_w <- apply(child[,grep("PEDSQL_W",colnames(child))],1,mean)
+child$pedsql_c <- apply(child[,grep("PEDSQL_C",colnames(child))],1,mean)
 ```
 
 # Table 1: Self-Management Behaviors at Baseline
@@ -82,7 +100,7 @@ summary(t1,pfootnote=T)
 
 ```{r fiml function}
 # lavaan models function
-fiml_by_treatment <- function(outcome_name,prefix,data,numbers = NULL){
+fiml_by_treatment_sum <- function(outcome_name,prefix,data,numbers = NULL){
   vars <- colnames(data)[grep(prefix,colnames(data))]
   if(!is.null(numbers)){
     vars <- paste0(prefix,numbers)
@@ -93,7 +111,6 @@ fiml_by_treatment <- function(outcome_name,prefix,data,numbers = NULL){
   # Fit SEM
   mod <- sem(form,data = data,missing = "fiml")
   # Get mean sum of items
-  n <- as.numeric(mod@Data@nobs)
   control <- rep(1,length(vars))
   treat <- rep(1,length(vars)+1)
   means  <- fitted(mod)$mean 
@@ -114,6 +131,32 @@ fiml_by_treatment <- function(outcome_name,prefix,data,numbers = NULL){
   # Return
   return(t(round(c(mean_control,se_control,mean_treat,se_treat,p,a$alpha),3)))
 }
+fiml_by_treatment_mean <- function(outcome,prefix,data){
+  vars <- colnames(data)[grep(prefix,colnames(data))]
+  form <- paste0(outcome,"~Treatment")
+  mod <- sem(form,data,missing = "fiml")
+  # Means by groups
+  means <- fitted(mod)$means
+  control <- c(1,0)
+  treat <- c(1,1)
+  means  <- fitted(mod)$mean 
+  mean_control <- control %*% means
+  mean_treat <- treat %*% means
+  # SE
+  covar_mat_names <- c(paste0(outcome,"~1"),paste0(outcome,"~Treatment"))
+  vcov <- vcov(mod)
+  vcov <- vcov[covar_mat_names,covar_mat_names]
+  se_control <- sqrt(control %*% vcov %*% control)
+  se_treat <- sqrt(treat %*% vcov %*% treat)
+  # Regression estimates
+  s <- as.data.frame(summary(mod)$PE)
+  p <- s[which(s$lhs == outcome & s$rhs == "Treatment"),"pvalue"]
+  # Use EM robust to get alpha value
+  drop <- which(rowSums(is.na(data[,vars])) == length(vars))
+  a <- alpha(data[,vars],drop = drop,test = F,varphi = 0,silent = T)
+  # Return
+  return(t(round(c(mean_control,se_control,mean_treat,se_treat,p,a$alpha),3)))
+}
 res_names <- c("Mean Treatment as Usual","SE Treatment as Usual",
                "Mean Tailored Feedback","SE Tailored Feedback","P Value",
                "Alpha")
@@ -122,18 +165,49 @@ res_names <- c("Mean Treatment as Usual","SE Treatment as Usual",
 ## Results
 
 Notes:
-- There may just be too much missing data to use FIML or MI on the BDI questionnaires.
+- There may just be too much missing data to use FIML or MI on the BDI questionnaires. It looks like only 2 participants filled out those questionnaires at baseline.
+
+- METER8 is missing from the original dataset. 
+  - METER7 could not be included in the latent variable model because everyone answered 1 (no variance).
+
+
 
 ```{r models,include=FALSE}
 # CDI
-cdi <- fiml_by_treatment("depression","CDI",child_baseline)
+cdi <- fiml_by_treatment_sum("depression","CDI",child_baseline)
+# FOH
+# Maintain
+foh_maintain <- fiml_by_treatment_sum("maintain","FOH_C",child_baseline,numbers = c(3,4,7))
+# Helplessness
+foh_helpless <- fiml_by_treatment_sum("helpless","FOH_C",child_baseline,numbers = c(11,12,13,14,16,18,19,22,23))
+# Social
+foh_social <- fiml_by_treatment_sum("social","FOH_C",child_baseline,numbers = c(15,17,20,21,25))
+# PEDS QL - score is a mean rather than a sum, so slightly different approach is needed
+peds_ql_d <- fiml_by_treatment_mean("pedsql_d","PEDSQL_D",child_baseline)
+peds_ql_tx1 <- fiml_by_treatment_mean("pedsql_tx1","PEDSQL_TX1",child_baseline)
+peds_ql_tx2 <- fiml_by_treatment_mean("pedsql_tx2","PEDSQL_TX2",child_baseline)
+peds_ql_w <- fiml_by_treatment_mean("pedsql_w","PEDSQL_W",child_baseline)
+peds_ql_c <- fiml_by_treatment_mean("pedsql_c","PEDSQL_C",child_baseline)
 # Meter skills
 meter <- fiml_by_treatment("meter","METER",child_baseline,numbers = c(1:6,9:18))
 ```
 
 ```{r results}
 # CDI
-kable(cdi,col.names = res_names,caption = "CDI")
+kable(cdi,col.names = res_names,caption = "Depression (CDI2)")
+# FOH
+# Maintain
+kable(foh_maintain,col.names = res_names,caption = "FOH (CHFS) – Maintain High BG")
+# Helplessness
+kable(foh_helpless,col.names = res_names,caption = "FOH (CHFS) – Worry/Helplessness")
+# Social
+kable(foh_social,col.names = res_names,caption = "FOH (CHFS) – Worry/Social Consequences")
+# PEDS QL
+kable(peds_ql_d,col.names = res_names,caption = "PedsQL Diabetes")
+kable(peds_ql_tx1,col.names = res_names,caption = "PedsQL Treatment 1")
+kable(peds_ql_tx2,col.names = res_names,caption = "PedsQL Treatment 2")
+kable(peds_ql_w,col.names = res_names,caption = "PedsQL Worry")
+kable(peds_ql_c,col.names = res_names,caption = "PedsQL Communication")
 # Meter
 kable(meter,col.names = res_names,caption = "Meter")
 ```
