@@ -73,6 +73,9 @@ child$pedsql_tx1 <- apply(child[,grep("PEDSQL_TX1",colnames(child))],1,mean)
 child$pedsql_tx2 <- apply(child[,grep("PEDSQL_TX2",colnames(child))],1,mean)
 child$pedsql_w <- apply(child[,grep("PEDSQL_W",colnames(child))],1,mean)
 child$pedsql_c <- apply(child[,grep("PEDSQL_C",colnames(child))],1,mean)
+# Pump knowledge
+child[,c("tdk_4a","tdk_4b")] <- NULL
+child$tdk <- apply(child[,grep("tdk_",colnames(child))],1,sum)
 ```
 
 # Table 1: Self-Management Behaviors at Baseline
@@ -100,11 +103,12 @@ summary(t1,pfootnote=T)
 
 ```{r fiml function}
 # lavaan models function
-fiml_by_treatment_sum <- function(outcome_name,prefix,data,numbers = NULL){
+fiml_by_treatment_latent <- function(outcome_name,prefix,data,numbers = NULL){
   vars <- colnames(data)[grep(prefix,colnames(data))]
   if(!is.null(numbers)){
     vars <- paste0(prefix,numbers)
   }
+  
   vars_form <- paste(vars,collapse = " + ")
   form <- paste(outcome_name," =~ ",vars_form,"\n",
                 outcome_name," ~ Treatment")
@@ -131,7 +135,7 @@ fiml_by_treatment_sum <- function(outcome_name,prefix,data,numbers = NULL){
   # Return
   return(t(round(c(mean_control,se_control,mean_treat,se_treat,p,a$alpha),3)))
 }
-fiml_by_treatment_mean <- function(outcome,prefix,data){
+fiml_by_treatment <- function(outcome,prefix,data){
   vars <- colnames(data)[grep(prefix,colnames(data))]
   form <- paste0(outcome,"~Treatment")
   mod <- sem(form,data,missing = "fiml")
@@ -164,32 +168,36 @@ res_names <- c("Mean Treatment as Usual","SE Treatment as Usual",
 
 ## Results
 
+### Child
+
 Notes:
 - There may just be too much missing data to use FIML or MI on the BDI questionnaires. It looks like only 2 participants filled out those questionnaires at baseline.
 
 - METER8 is missing from the original dataset. 
   - METER7 could not be included in the latent variable model because everyone answered 1 (no variance).
-
-
+  
+- Carb counting skills don't seem to match up with the codebook, but I'm probably confused.
 
 ```{r models,include=FALSE}
 # CDI
-cdi <- fiml_by_treatment_sum("depression","CDI",child_baseline)
+cdi <- fiml_by_treatment_latent("depression","CDI",child_baseline)
 # FOH
 # Maintain
-foh_maintain <- fiml_by_treatment_sum("maintain","FOH_C",child_baseline,numbers = c(3,4,7))
+foh_maintain <- fiml_by_treatment_latent("maintain","FOH_C",child_baseline,numbers = c(3,4,7))
 # Helplessness
-foh_helpless <- fiml_by_treatment_sum("helpless","FOH_C",child_baseline,numbers = c(11,12,13,14,16,18,19,22,23))
+foh_helpless <- fiml_by_treatment_latent("helpless","FOH_C",child_baseline,numbers = c(11,12,13,14,16,18,19,22,23))
 # Social
-foh_social <- fiml_by_treatment_sum("social","FOH_C",child_baseline,numbers = c(15,17,20,21,25))
+foh_social <- fiml_by_treatment_latent("social","FOH_C",child_baseline,numbers = c(15,17,20,21,25))
 # PEDS QL - score is a mean rather than a sum, so slightly different approach is needed
-peds_ql_d <- fiml_by_treatment_mean("pedsql_d","PEDSQL_D",child_baseline)
-peds_ql_tx1 <- fiml_by_treatment_mean("pedsql_tx1","PEDSQL_TX1",child_baseline)
-peds_ql_tx2 <- fiml_by_treatment_mean("pedsql_tx2","PEDSQL_TX2",child_baseline)
-peds_ql_w <- fiml_by_treatment_mean("pedsql_w","PEDSQL_W",child_baseline)
-peds_ql_c <- fiml_by_treatment_mean("pedsql_c","PEDSQL_C",child_baseline)
+peds_ql_d <- fiml_by_treatment("pedsql_d","PEDSQL_D",child_baseline)
+peds_ql_tx1 <- fiml_by_treatment("pedsql_tx1","PEDSQL_TX1",child_baseline)
+peds_ql_tx2 <- fiml_by_treatment("pedsql_tx2","PEDSQL_TX2",child_baseline)
+peds_ql_w <- fiml_by_treatment("pedsql_w","PEDSQL_W",child_baseline)
+peds_ql_c <- fiml_by_treatment("pedsql_c","PEDSQL_C",child_baseline)
 # Meter skills
-meter <- fiml_by_treatment("meter","METER",child_baseline,numbers = c(1:6,9:18))
+meter <- fiml_by_treatment_latent("meter","METER",child_baseline,numbers = c(1:6,9:18))
+# Pump knowledge - Delete 4a, 4b, and those without variance
+pump <- fiml_by_treatment("tdk","tdk_",child_baseline)
 ```
 
 ```{r results}
@@ -211,3 +219,5 @@ kable(peds_ql_c,col.names = res_names,caption = "PedsQL Communication")
 # Meter
 kable(meter,col.names = res_names,caption = "Meter")
 ```
+
+### Parent
