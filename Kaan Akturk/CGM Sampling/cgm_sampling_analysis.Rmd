@@ -7,7 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
-knitr::opts_knit$set(root.dir = "/Users/timvigers/670G real life study")
+knitr::opts_knit$set(root.dir = "/Users/timvigers/Desktop")
 library(arsenal)
 library(skimr)
 library(knitr)
@@ -17,91 +17,61 @@ library(tidyverse)
 
 ```{r import A1c data}
 # Import
-subjects <- read.csv("./Data_Cleaned/DATA Set 670 Master Updated.csv",na.strings = "")
+subjects <- read.csv("./Data_Cleaned/subject_info.csv",na.strings = c("","(-)"))
 # Names to lower case and no middle or suffixes for matching
-subjects[,c("First.Name","Last.Name")] <- 
-  lapply(subjects[,c("First.Name","Last.Name")],function(x){
+subjects[,c("FirstName","LastName")] <- 
+  lapply(subjects[,c("FirstName","LastName")],function(x){
     x <- tolower(x)
     x <- sub(" .*","",x)
   })
-subjects$name <- paste0(subjects$First.Name,subjects$Last.Name)
-# Set output directory
-outdir <- "./Data_Cleaned/cgm"
+subjects$name <- paste0(subjects$FirstName,subjects$LastName)
+subjects$name <- gsub(" ","",subjects$name)
 ```
 
 ```{r organize CGM data,eval=FALSE}
+# Set output directory
+outdir <- "./Data_Cleaned/cgm"
 # Iterate through CGM data, format, and name
-files <- list.files("./Data_Raw/Medtronic CGM Downloads",full.names = T)
+files <- list.files("./Data_Raw/Patient 90 days",full.names = T)
 for (f in files) {
-  dat <- read.csv(f,na.strings = "")
-  if (ncol(dat) > 5) {
-    name <- tolower(paste0(dat$First.Name[1],dat$Last.Name[1]))
-    m3date <- lubridate::mdy(subjects$A1c.date[match(name,subjects$name)])
-    m6date <- lubridate::mdy(subjects$A1c.date.1[match(name,subjects$name)])
-    # Format data
-    cgm_start <- which(dat[,3] == "Sensor")[1]
-    if (!is.na(cgm_start)){
-      colnames(dat) <- dat[cgm_start+1,]
-      dat <- dat[(cgm_start+2):nrow(dat),] 
-    } else {
-      colnames(dat) <- dat[3,]
-    }
-    colnames(dat)[grep("sensor glucose",tolower(colnames(dat)))] <- "sensorglucose"
-    dat$timestamp <- lubridate::mdy_hms(paste(dat$Date,dat$Time))
-    dat$subjectid <- name
-    dat <- dat[,c("subjectid","timestamp","sensorglucose")]
-  } else {
-    name <- tolower(sub("_.*","",basename(f)))
-    m3date <- lubridate::mdy(subjects$A1c.date[match(name,subjects$Last.Name)])
-    m6date <- lubridate::mdy(subjects$A1c.date.1[match(name,subjects$Last.Name)])
-    # Format data
-    colnames(dat) <- dat[1,]
-    colnames(dat)[grep("sensor glucose",tolower(colnames(dat)))] <- "sensorglucose"
-    dat <- dat[-1,]
-    dat$timestamp <- lubridate::mdy_hms(paste(dat$Date,dat$Time))
-    dat$subjectid <- name
-    dat <- dat[,c("subjectid","timestamp","sensorglucose")]
+  ext <- tools::file_ext(f)
+  if(grepl("xls",ext)){
+    dat <- readxl::read_excel(f,col_types = "text")
+    dat <- as.data.frame(dat)
+  } else if (ext == "csv"){
+    dat <- read.csv(f,na.strings = "")
   }
-  if (is.na(m3date) & is.na(m6date)){next}
-  dat$sensorglucose <- suppressWarnings(as.numeric(dat$sensorglucose))
-  dat <- dat[complete.cases(dat),]
-  # Month 3
-  if (!is.na(m3date)){
-    m3day14 <- dat[dat$timestamp <= m3date & dat$timestamp >= (m3date-14),]
-    m3day30 <- dat[dat$timestamp <= m3date & dat$timestamp >= (m3date-30),]
-    m3day90 <- dat[dat$timestamp <= m3date & dat$timestamp >= (m3date-90),]
-    # Write CSV files
-    if (nrow(m3day14 > 0)){write.csv(m3day14,paste0(outdir,"/month3/day14/",name,"m3day14.csv"),na = "",row.names = F)}
-    if (nrow(m3day30 > 0)){write.csv(m3day30,paste0(outdir,"/month3/day30/",name,"m3day30.csv"),na = "",row.names = F)}
-    if (nrow(m3day90 > 0)){write.csv(m3day90,paste0(outdir,"/month3/day90/",name,"m3day90.csv"),na = "",row.names = F)}
-  }
-  # Month 6
-  if (!is.na(m6date)){
-    m6day14 <- dat[dat$timestamp <= m6date & dat$timestamp >= (m6date-14),]
-    m6day30 <- dat[dat$timestamp <= m6date & dat$timestamp >= (m6date-30),]
-    m6day90 <- dat[dat$timestamp <= m6date & dat$timestamp >= (m6date-90),]
-    # Write CSV files
-    if (nrow(m6day14 > 0)){write.csv(m6day14,paste0(outdir,"/month6/day14/",name,"m6day14.csv"),na = "",row.names = F)}
-    if (nrow(m6day30 > 0)){write.csv(m6day30,paste0(outdir,"/month6/day30/",name,"m6day30.csv"),na = "",row.names = F)}
-    if (nrow(m6day90 > 0)){write.csv(m6day90,paste0(outdir,"/month6/day90/",name,"m6day90.csv"),na = "",row.names = F)}
-  }
+  name <- sub(" *\\ ","",tolower(paste0(dat[1,5],dat[2,5])))
+  name <- gsub("[[:digit:]]","",name)
+  name <- gsub(" ","",name)
+  date <- lubridate::mdy(subjects$MostRecentVisitDate[match(name,subjects$name)])
+  if(is.na(date)){stop(paste("No date:",f))}
+  # Format data
+  colnames(dat)[grep("glucose",tolower(colnames(dat)))] <- "sensorglucose"
+  colnames(dat)[grep("timestamp",tolower(colnames(dat)))] <- "timestamp"
+  dat$timestamp <- lubridate::ymd_hms(sub("T"," ",dat$timestamp))
+  dat <- dat[-c(1:min(which(!is.na(dat$timestamp)))),]
+  dat$subjectid <- name
+  dat <- dat[,c("subjectid","timestamp","sensorglucose")]
+  
+  day14 <- dat[dat$timestamp <= date & dat$timestamp >= (date-14),]
+  day30 <- dat[dat$timestamp <= date & dat$timestamp >= (date-30),]
+  day90 <- dat[dat$timestamp <= date & dat$timestamp >= (date-90),]
+  # Write CSV files
+  if (nrow(day14 > 0)){write.csv(day14,paste0(outdir,"/day14/",name,"day14.csv"),na = "",row.names = F)}
+  if (nrow(day30 > 0)){write.csv(day30,paste0(outdir,"/day30/",name,"day30.csv"),na = "",row.names = F)}
+  if (nrow(day90 > 0)){write.csv(day90,paste0(outdir,"/day90/",name,"day90.csv"),na = "",row.names = F)}
 }
 ```
 
 ```{r cgmvariables,eval=FALSE}
 # CGM variables on each folder
-cgmvariables("./Data_Cleaned/cgm/month3/day14","./Data_Cleaned/cgm/month3",
-             outputname = "m3day14variables")
-cgmvariables("./Data_Cleaned/cgm/month3/day30","./Data_Cleaned/cgm/month3",
-             outputname = "m3day30variables")
-cgmvariables("./Data_Cleaned/cgm/month3/day90","./Data_Cleaned/cgm/month3",
-             outputname = "m3day90variables")
-cgmvariables("./Data_Cleaned/cgm/month6/day14","./Data_Cleaned/cgm/month6",
-             outputname = "m6day14variables")
-cgmvariables("./Data_Cleaned/cgm/month6/day30","./Data_Cleaned/cgm/month6",
-             outputname = "m6day30variables")
-cgmvariables("./Data_Cleaned/cgm/month6/day90","./Data_Cleaned/cgm/month6",
-             outputname = "m6day90variables")
+cgmvariables("./Data_Cleaned/cgm/day14","./Data_Cleaned/",
+             outputname = "day14variables",printname=T)
+cgmvariables("./Data_Cleaned/cgm/day30","./Data_Cleaned",
+             outputname = "day30variables")
+cgmvariables("./Data_Cleaned/cgm/day90","./Data_Cleaned",
+             outputname = "day90variables")
 ```
 
 ```{r combine data}
