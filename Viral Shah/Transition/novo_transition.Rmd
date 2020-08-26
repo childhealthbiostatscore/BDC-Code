@@ -6,16 +6,17 @@ output: word_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE,dpi = 600)
-knitr::opts_knit$set(root.dir = "/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/NOVO Transition")
+knitr::opts_chunk$set(echo = FALSE,dpi = 600)
+knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/NOVO Transition/")
 library(arsenal)
 library(skimr)
 library(knitr)
 library(cgmanalysis)
 library(tidyverse)
+library(Hmisc)
 ```
 
-```{r echo=FALSE,eval=FALSE}
+```{r eval=FALSE}
 # Clean CGM data
 cleandata("./Data_Raw/randomization_cgm_files","./Data_Cleaned/full_cgm",
           removegaps = F,gapfill = F,id_filename = T)
@@ -36,45 +37,71 @@ cgmvariables("./Data_Cleaned/cgm_72_hours","./Data_Cleaned",outputname = "cgm_72
              id_filename = T)
 ```
 
-### TIR Data
-  
-#### Data Issues
+## Results
 
-- No sensor glucose data at randomization for 004
-- 020 doesn't have much sensor data, so they were excluded
+### Table 1: Descriptive Characteristics
 
-
-```{r echo=FALSE}
-# Import group assignment and CGM summary statistics
-groups = read.csv("./Data_Raw/NOVOTransitionStudy-Group_DATA_2020-08-19_1216.csv",
-                  na.strings = "")
+```{r results='asis'}
+# Import group assignment and demographics
+source("/Users/timvigers/Documents/GitHub/BDC-Code/Viral Shah/Transition/NOVOTransitionStudy-Table1_R_2020-08-26_0912.r")
 cgm_data = read.csv("./Data_Cleaned/full_cgm.csv",na.strings = "")
+# Format
+data$subject_id <- as.numeric(data$record_id + 1)
+data <- data[data$subject_id %in% cgm_data$subject_id,]
+# Combine insurance fields
+data$insurance_medicaid.factor[is.na(data$insurance_medicaid.factor)] <- "No"
+data$insurance_medical.factor[is.na(data$insurance_medical.factor)] <- "No"
+data$insurance_medicare.factor[is.na(data$insurance_medicare.factor)] <- "No"
+data$insurance_private.factor[is.na(data$insurance_private.factor)] <- "No"
+data$insurance_no_answer.factor[is.na(data$insurance_no_answer.factor)] <- "No"
+data$Insurance <- 
+  ifelse(data$insurance_private.factor == "Yes","Private",
+         ifelse(data$insurance_medicare.factor == "Yes","Medicare",
+                ifelse(data$insurance_medicaid.factor == "Yes","Medicaid",
+                       ifelse(data$insurance_medical.factor == "Yes","Medical","No Answer"))))
+data$Insurance <- as.factor(data$Insurance)
+# Drop empty levels
+drops <- c("gender.factor","insulin_pump.factor","education.factor")
+data[,drops] <- lapply(data[,drops], droplevels)
 # First 72 hours
 cgm_data72 = read.csv("./Data_Cleaned/cgm_72_hours.csv",na.strings = "")
 # Get TIR and group assignment
-cgm_data = left_join(cgm_data,groups,by = "subject_id")
-cgm_data = left_join(cgm_data,cgm_data72,by = "subject_id") %>%
-  select(subject_id,percent_time_70_180.x,percent_time_70_180.y,randomization_group) %>%
+cgm_data = left_join(cgm_data,data,by = "subject_id")
+cgm_data = left_join(cgm_data,cgm_data72,by = "subject_id") %>% 
+  select(subject_id,randomization_group,
+         percent_time_70_180.x,percent_time_70_180.y,
+         percent_time_under_70.x,percent_time_under_70.y,
+         percent_time_over_180.x,percent_time_over_180.y,
+         percent_time_over_250.x,percent_time_over_250.y) %>%
   arrange(subject_id)
-# Sort and print
-kable(arrange(cgm_data,as.numeric(subject_id)),
-      col.names = c("ID","% TIR","% TIR - First 72 Hours","Group"))
+# Table 1
+t1 <- 
+  tableby(randomization_group~age+a1c+diabetes_duration+bmi+fe(gender.factor)+
+            fe(insulin_pump.factor)+fe(cgm.factor)+fe(education.factor)+fe(Insurance),
+          data)
+summary(t1,pfootnote = T,
+        labelTranslations = 
+          list(gender.factor = "Gender",insulin_pump.factor = "Insulin Pump",
+               cgm.factor = "CGM",education.factor = "Education"))
 ```
 
 ### Group Comparison
 
-```{r echo=FALSE,results='asis'}
-labels(cgm_data) = c(subject_id = "ID",percent_time_70_180.x = "% TIR",
-                     percent_time_70_180.y = "% TIR - First 72 Hours",group = "Group")
-t = tableby(randomization_group ~ kwt(percent_time_70_180.x,"median","q1q3") + 
-              kwt(percent_time_70_180.y,"median","q1q3"),cgm_data)
+```{r results='asis'}
+labels(cgm_data) = c(subject_id = "ID",group = "Group",
+                     percent_time_70_180.x = "% TIR",
+                     percent_time_70_180.y = "% TIR - First 72 Hours",
+                     percent_time_under_70.x = "% Time < 70",
+                     percent_time_under_70.y = "% Time < 70 - First 72 Hours",
+                     percent_time_over_180.x = "% Time > 180",
+                     percent_time_over_180.y = "% Time > 180 - First 72 Hours",
+                     percent_time_over_250.x = "% Time > 250",
+                     percent_time_over_250.y = "% Time > 250 - First 72 Hours")
+t = 
+  tableby(randomization_group ~ percent_time_70_180.x + percent_time_70_180.y + 
+            percent_time_under_70.x + percent_time_under_70.y + 
+            percent_time_over_180.x + percent_time_over_180.y + 
+            percent_time_over_250.x + percent_time_over_250.y,
+            cgm_data)
 summary(t,pfootnote=T)
-
-ggplot(cgm_data,aes(x = factor(randomization_group),y = percent_time_70_180.x)) + 
-  geom_boxplot() + theme_bw() +
-  xlab("Group") + ylab("% TIR") + ggtitle("Randomization Period")
-
-ggplot(cgm_data,aes(x = factor(randomization_group),y = percent_time_70_180.y)) + 
-  geom_boxplot() + theme_bw() +
-  xlab("Group") + ylab("% TIR") +ggtitle("First 72 Hours")
 ```
