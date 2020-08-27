@@ -25,21 +25,24 @@ na_strings <- c("","999","-999","NULL"," ")
 adult_demographics <- read.csv("./Data_Cleaned/adult_demographics.csv",
                                na.strings = na_strings)
 adult <- read.csv("./Data_Cleaned/670Excel.csv",na.strings = na_strings)
-adult_2 <- read.csv("./Data_Cleaned/Data set 670 Master.csv")
+adult_2 <- read.csv("./Data_Cleaned/Data set 670 Master.csv",na.strings = na_strings)
 adult_new <- read.csv("./Data_Cleaned/670Excel.new55patients.csv",
                       na.strings = na_strings)
 adult_pump <- read.csv("./Data_Cleaned/pdf_summary.csv",
                        na.strings = na_strings)
 # Format and combine
-adult <- adult %>% select(Patient.ID,contains("HbA1C"))
-adult_2 <- adult_2 %>% select(Patient.ID,Ethnicity,Insurance,contains("HbA1C"))
+adult <- adult %>% select(Patient.ID,start.date,contains("HbA1C"))
+adult_2 <- adult_2 %>% select(Patient.ID,start.date,Ethnicity,Insurance,contains("HbA1C"))
 adult <- full_join(adult,adult_2)
-adult_new <- adult_new %>% select(Patient.ID,Ethnicity,Insurance,contains("HbA1C"))
+adult_new <- adult_new %>% select(Patient.ID,start.date,Ethnicity,Insurance,contains("HbA1C"))
 adult <- full_join(adult,adult_new) 
-adult <- adult %>% select(Patient.ID,Ethnicity,Insurance,HbA1C.Baseline,everything())
+adult <- adult %>% select(Patient.ID,start.date,Ethnicity,Insurance,HbA1C.Baseline,everything())
 # Get demographic data
 adult <- adult %>% filter(!is.na(HbA1C.Baseline))
 adult <- left_join(adult,adult_demographics,by = "Patient.ID")
+adult$age <- 
+  as.numeric(difftime(as.Date(adult$start.date,format = "%m/%d/%Y"),
+                      as.Date(adult$DOB,format = "%m/%d/%Y"),units = "days")/365.25)
 # Get pdf data
 adult$last_name <- tolower(sapply(strsplit(adult$LastName," "),"[[",1))
 adult$first_name <- tolower(sapply(strsplit(adult$FirstName," "),"[[",1))
@@ -51,7 +54,8 @@ adult <- left_join(adult,adult_pump,by = c("last_name", "first_name", "timepoint
 adult <- adult %>% group_by(Patient.ID) %>% 
   mutate(hba1c_baseline = HbA1C[timepoint == "Baseline"]) %>% ungroup()
 # Delete rows without PDF information
-remove_rows <- which(rowSums(is.na(adult[,16:(ncol(adult)-1)]))==20)
+pdf_start <- which(colnames(adult)=="days_worn")
+remove_rows <- which(rowSums(is.na(adult[,pdf_start:(pdf_start+20)]))==20)
 adult <- adult[-c(remove_rows),]
 # Combine am exit columns to match Cari's
 adult$amexits = 
@@ -65,9 +69,9 @@ adult <- adult %>%
          amexits_other = other_exit/amexits,
          amexits_day = amexits / days_worn,
          cohort = "Adult",hba1c = HbA1C,
-         record_id = Patient.ID,age = Age_05212020,race = Ethnicity,
+         record_id = Patient.ID,race = Ethnicity,
          insurance = Insurance,sex = Gender)
-# Relevel factors
+# Re-level factors
 adult$race <- as.factor(adult$race)
 levels(adult$race) <- c("Non-white","Non-white","White","White","Non-white","Non-white","Non-white","More Than One Race","More Than One Race","Unknown / Not Reported")
 adult$race <- as.character(adult$race)
@@ -90,19 +94,22 @@ data$timepoint =
   as.character(factor(data$gyl_timepoint,levels = 0:5,
                       labels = c("Baseline","M1","M3","M6","M9","M12")))
 levels(data$demographics_sex.factor) = c("F","M")
+# Age
+data$age <- as.numeric(difftime(as.Date(data$automode_start,"%Y-%m-%d"),
+                               as.Date(data$demographics_dob,"%Y-%m-%d"),
+                                   units = "days"))/365.25
 # Baseline A1c
 data <- data %>% filter(!is.na(timepoint)) %>% group_by(record_id) %>% 
-  mutate(hba1c_baseline = hba1c[which(timepoint == "Baseline")]) %>% ungroup()
+  mutate(hba1c_baseline = hba1c[timepoint == "Baseline"],
+         age = age[timepoint == "Baseline"]) %>% ungroup()
 # Make, fill down and select columns
 data <- data %>%
   fill(demographics_dob,demographics_insurance.factor,demographics_sex.factor,
        demographics_race.factor) %>%
-  mutate(age = as.numeric(difftime(as.Date("5/21/2020","%m/%d/%Y"),as.Date(demographics_dob,"%Y-%m-%d"),
-                               units = "days"))/365.25,
-    race = demographics_race.factor,sex = as.character(demographics_sex.factor),
-    insurance = demographics_insurance.factor,amexit_hyper = amexit_hyper / amexits,
-    amexit_manual = amexit_manual / amexits,amexits_other = amexits_other / amexits,
-    gmi = 3.31 + (sensor_mean * 0.02392),) %>%
+  mutate(race = demographics_race.factor,sex = as.character(demographics_sex.factor),
+         insurance = demographics_insurance.factor,amexit_hyper = amexit_hyper / amexits,
+         amexit_manual = amexit_manual / amexits,amexits_other = amexits_other / amexits,
+         gmi = 3.31 + (sensor_mean * 0.02392),) %>%
   select(all_of(vars))
 # One data frame
 df = rbind(adult,data)
@@ -114,124 +121,84 @@ df[,factor_vars] <- lapply(df[,factor_vars], as.factor)
 skim(df)
 ```
 
-# Table 1: Descriptive Characteristics
+<!-- # Table 1: Descriptive Characteristics -->
 
-```{r table 1,echo=FALSE,results='asis',message=FALSE}
-# Get demographics
-demographics <- df %>% group_by(record_id) %>%
-  summarise(hba1c = hba1c[which(!is.na(hba1c))[1]],
-            timepoint = timepoint[which(!is.na(hba1c))[1]],
-            cohort = cohort[1],
-            Age_Diagnosis = Age_Diagnosis[1],
-            Gender = Gender[1])
-# Table 1
-t1 <- tableby(cohort ~ Age_Diagnosis + Gender,data = demographics)
-# Print
-summary(t1)
-```
+<!-- ```{r table 1,echo=FALSE,results='asis',message=FALSE} -->
 
-# Table 2: Days From AM Start by Timepoint
+<!-- # Table 1 -->
+<!-- t1 <- tableby(cohort ~ Age_Diagnosis + Gender,data = demographics) -->
+<!-- # Print -->
+<!-- summary(t1) -->
+<!-- ``` -->
 
-```{r echo=FALSE,results='asis'}
-t2 <- tableby(timepoint ~ notest(days_from_start,"Nmiss","median","q1q3"),
-              total = F,df)
-summary(t2)
-```
+<!-- # Table 2: Days From AM Start by Timepoint -->
 
-# Figure 1: HbA1c Over Time by Cohort
+<!-- ```{r echo=FALSE,results='asis'} -->
+<!-- t2 <- tableby(timepoint ~ notest(days_from_start,"Nmiss","median","q1q3"), -->
+<!--               total = F,df) -->
+<!-- summary(t2) -->
+<!-- ``` -->
 
-```{r echo=FALSE,warning=FALSE,message=FALSE}
-ggplot(df[!is.na(df$timepoint),],aes(x = timepoint,y = hba1c)) +
-  geom_line(alpha = 0.2,aes(group = record_id,color = cohort)) +
-  geom_smooth(aes(group = cohort,color = cohort),se = F) +
-  theme_bw()
-```
+<!-- # Figure 1: HbA1c Over Time by Cohort -->
 
-# Model Results
+<!-- ```{r echo=FALSE,warning=FALSE,message=FALSE} -->
+<!-- ggplot(df[!is.na(df$timepoint),],aes(x = timepoint,y = hba1c)) + -->
+<!--   geom_line(alpha = 0.2,aes(group = record_id,color = cohort)) + -->
+<!--   geom_smooth(aes(group = cohort,color = cohort),se = F) + -->
+<!--   theme_bw() -->
+<!-- ``` -->
 
-```{r models,echo=FALSE}
-# AR1 correlation structure better by AIC - residuals look okay in general
-hba1c_mod_ar1 <- lme(hba1c ~ timepoint*cohort,random = ~1|record_id,df,
-                     correlation=corAR1(),na.action = na.omit)
-# Same model structure for all tests
-mods <-
-  lapply(c("time_am","sensor_mean","amexits_day"),
-         function(x){
-           form <- as.formula(paste(x,"~timepoint*cohort"))
-           mod <- lme(form,random = ~1|record_id,df,
-                      correlation=corAR1(),na.action = na.omit)
-         })
-```
+<!-- # Model Results -->
 
-```{r results, echo=FALSE}
-# HbA1c
-res <- broom::tidy(hba1c_mod_ar1,effects = "fixed")
-res$term <- gsub("timepoint|cohort","",res$term)
-res[,2:ncol(res)] <- lapply(res[,2:ncol(res)],function(x){round(x,3)})
-t3_res <- as.data.frame(anova.lme(hba1c_mod_ar1))
-t3_res[,3:4] <- lapply(t3_res[,3:4], function(x){round(x,3)})
-kable(t3_res,caption = "HbA1c Overall Results")
-kable(res,caption = "HbA1c Detailed Results")
-# AM Time
-res <- broom::tidy(mods[[1]],effects = "fixed")
-res$term <- gsub("timepoint|cohort","",res$term)
-res[,2:ncol(res)] <- lapply(res[,2:ncol(res)],function(x){round(x,3)})
-t3_res <- as.data.frame(anova.lme(mods[[1]]))
-t3_res[,3:4] <- lapply(t3_res[,3:4], function(x){round(x,3)})
-kable(t3_res,caption = "% Time AM Overall Results")
-kable(res,caption = "% Time AM Detailed Results")
-# Sensor mean
-res <- broom::tidy(mods[[2]],effects = "fixed")
-res$term <- gsub("timepoint|cohort","",res$term)
-res[,2:ncol(res)] <- lapply(res[,2:ncol(res)],function(x){round(x,3)})
-t3_res <- as.data.frame(anova.lme(mods[[2]]))
-t3_res[,3:4] <- lapply(t3_res[,3:4], function(x){round(x,3)})
-kable(t3_res,caption = "Sensor Mean Overall Results")
-kable(res,caption = "Sensor Mean Detailed Results")
-# AM exits per day
-res <- broom::tidy(mods[[3]],effects = "fixed")
-res$term <- gsub("timepoint|cohort","",res$term)
-res[,2:ncol(res)] <- lapply(res[,2:ncol(res)],function(x){round(x,3)})
-t3_res <- as.data.frame(anova.lme(mods[[3]]))
-t3_res[,3:4] <- lapply(t3_res[,3:4], function(x){round(x,3)})
-kable(t3_res,caption = "AM Exits per Day Overall Results")
-kable(res,caption = "AM Exits per Day Detailed Results")
-```
+<!-- ```{r models,echo=FALSE} -->
+<!-- # AR1 correlation structure better by AIC - residuals look okay in general -->
+<!-- hba1c_mod_ar1 <- lme(hba1c ~ timepoint*cohort,random = ~1|record_id,df, -->
+<!--                      correlation=corAR1(),na.action = na.omit) -->
+<!-- # Same model structure for all tests -->
+<!-- mods <- -->
+<!--   lapply(c("time_am","sensor_mean","amexits_day"), -->
+<!--          function(x){ -->
+<!--            form <- as.formula(paste(x,"~timepoint*cohort")) -->
+<!--            mod <- lme(form,random = ~1|record_id,df, -->
+<!--                       correlation=corAR1(),na.action = na.omit) -->
+<!--          }) -->
+<!-- ``` -->
 
-# Questions
+<!-- ```{r results, echo=FALSE} -->
+<!-- # HbA1c -->
+<!-- res <- broom::tidy(hba1c_mod_ar1,effects = "fixed") -->
+<!-- res$term <- gsub("timepoint|cohort","",res$term) -->
+<!-- res[,2:ncol(res)] <- lapply(res[,2:ncol(res)],function(x){round(x,3)}) -->
+<!-- t3_res <- as.data.frame(anova.lme(hba1c_mod_ar1)) -->
+<!-- t3_res[,3:4] <- lapply(t3_res[,3:4], function(x){round(x,3)}) -->
+<!-- kable(t3_res,caption = "HbA1c Overall Results") -->
+<!-- kable(res,caption = "HbA1c Detailed Results") -->
+<!-- # AM Time -->
+<!-- res <- broom::tidy(mods[[1]],effects = "fixed") -->
+<!-- res$term <- gsub("timepoint|cohort","",res$term) -->
+<!-- res[,2:ncol(res)] <- lapply(res[,2:ncol(res)],function(x){round(x,3)}) -->
+<!-- t3_res <- as.data.frame(anova.lme(mods[[1]])) -->
+<!-- t3_res[,3:4] <- lapply(t3_res[,3:4], function(x){round(x,3)}) -->
+<!-- kable(t3_res,caption = "% Time AM Overall Results") -->
+<!-- kable(res,caption = "% Time AM Detailed Results") -->
+<!-- # Sensor mean -->
+<!-- res <- broom::tidy(mods[[2]],effects = "fixed") -->
+<!-- res$term <- gsub("timepoint|cohort","",res$term) -->
+<!-- res[,2:ncol(res)] <- lapply(res[,2:ncol(res)],function(x){round(x,3)}) -->
+<!-- t3_res <- as.data.frame(anova.lme(mods[[2]])) -->
+<!-- t3_res[,3:4] <- lapply(t3_res[,3:4], function(x){round(x,3)}) -->
+<!-- kable(t3_res,caption = "Sensor Mean Overall Results") -->
+<!-- kable(res,caption = "Sensor Mean Detailed Results") -->
+<!-- # AM exits per day -->
+<!-- res <- broom::tidy(mods[[3]],effects = "fixed") -->
+<!-- res$term <- gsub("timepoint|cohort","",res$term) -->
+<!-- res[,2:ncol(res)] <- lapply(res[,2:ncol(res)],function(x){round(x,3)}) -->
+<!-- t3_res <- as.data.frame(anova.lme(mods[[3]])) -->
+<!-- t3_res[,3:4] <- lapply(t3_res[,3:4], function(x){round(x,3)}) -->
+<!-- kable(t3_res,caption = "AM Exits per Day Overall Results") -->
+<!-- kable(res,caption = "AM Exits per Day Detailed Results") -->
+<!-- ``` -->
 
-1. Lots of missing values, particularly HbA1c. How to handle this? Or are mixed models okay?
+<!-- # Questions/Notes -->
 
-```{r echo=FALSE,fig.width=8}
-md = md.pattern(df)
-kable(md)
-
-# Missing data report for Cari
-peds_missing <-
-  data.frame(matrix(nrow = length(unique(df$record_id[df$cohort == "Pediatric"]))*6))
-peds_missing$record_id <-
-  rep(unique(df$record_id[df$cohort == "Pediatric"]),each = 6)
-peds_missing$timepoint <- rep(levels(df$timepoint))
-peds_missing[,1] <- NULL
-peds_missing <- left_join(peds_missing,df,by = c("record_id", "timepoint"))
-
-peds_missing <- peds_missing %>%
-  pivot_wider(id_cols = record_id,names_from = timepoint,
-              values_from = c(hba1c,time_am,sensor_wear))
-write.csv(peds_missing,file = "/Users/timvigers/Desktop/missing.csv",
-          row.names = F,na = "")
-```
-
-2. Can we dichotomize AM time?
-
-```{r echo=FALSE}
-hist(df$time_am,main = "Time in AM (%)")
-```
-
-3. AM exits for hyperglycemia and manual AM exits are very skewed and giving me model trouble. Should I keep looking into fancier models? For example:
-
-```{r echo=FALSE}
-hist(df$amexit_manual,main = "Manual AM Exits (%)")
-```
-
-4. Based on these preliminary results, what contrasts do we want to look at? For example, comparing pediatric to adult at a specific timepoint?
+<!-- 1. There are no dates for Kaan's 55 new patients' A1c values, but  -->
