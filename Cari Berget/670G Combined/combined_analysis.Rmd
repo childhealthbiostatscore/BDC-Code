@@ -52,10 +52,13 @@ adult <- adult %>%
                names_sep = "\\.")
 adult <- left_join(adult,adult_pump,by = c("last_name", "first_name", "timepoint"))
 adult <- adult %>% group_by(Patient.ID) %>% 
-  mutate(hba1c_baseline = HbA1C[timepoint == "Baseline"]) %>% ungroup()
+  mutate(hba1c_baseline = HbA1C[timepoint == "Baseline"],
+         days_from_start = as.numeric(difftime(as.Date(cgm_start,format = "%m/%d/%Y"),
+                                    as.Date(start.date,format = "%m/%d/%Y"),
+                                    units = "days"))) %>% ungroup()
 # Delete rows without PDF information
 pdf_start <- which(colnames(adult)=="days_worn")
-remove_rows <- which(rowSums(is.na(adult[,pdf_start:(pdf_start+20)]))==20)
+remove_rows <- which(rowSums(is.na(adult[,pdf_start:(pdf_start+19)]))==20)
 adult <- adult[-c(remove_rows),]
 # Combine am exit columns to match Cari's
 adult$amexits = 
@@ -79,24 +82,28 @@ adult$insurance <- as.factor(adult$insurance)
 levels(adult$insurance) <- c("Other","Public","Private")
 adult$insurance <- as.character(adult$insurance)
 # Select columns
-vars <- c("record_id","cohort","timepoint","age","sex","race","insurance",
-          "hba1c_baseline","hba1c","gmi","time_am","time_mm","sensor_wear",
-          "sensor_mean","sensor_sd","amexits","amexit_hyper","amexit_manual",
-          "amexits_day","amexits_other")
+vars <- c("record_id","cohort","timepoint","days_from_start","age","sex","race",
+          "insurance","hba1c_baseline","hba1c","gmi","time_am","time_mm",
+          "sensor_wear","sensor_mean","sensor_sd","amexits","amexit_hyper",
+          "amexit_manual","amexits_day","amexits_other")
 adult <- adult %>%
   select(all_of(vars))
 # Cari's data
 source("/Users/timvigers/Documents/GitHub/BDC-Code/Cari Berget/670G Combined/data_clean.r")
+# Exclude non-670G and those who never started
 data <- data[as.numeric(as.character(data$record_id)) < 116,]
-data$cohort <- "Peds"
+never_started <- data %>% group_by(record_id) %>% 
+  filter(gyl_timepoint.factor == "Baseline",is.na(automode_start)) %>% .$record_id
+data <- data[!(data$record_id %in% never_started),]
 # Format
+data$cohort <- "Peds"
 data$timepoint = 
   as.character(factor(data$gyl_timepoint,levels = 0:5,
                       labels = c("Baseline","M1","M3","M6","M9","M12")))
 levels(data$demographics_sex.factor) = c("F","M")
 # Age
-data$age <- as.numeric(difftime(as.Date(data$automode_start,"%Y-%m-%d"),
-                               as.Date(data$demographics_dob,"%Y-%m-%d"),
+data$age <- as.numeric(difftime(as.Date(data$automode_start,"%m/%d/%Y"),
+                               as.Date(data$demographics_dob,"%m/%d/%Y"),
                                    units = "days"))/365.25
 # Baseline A1c
 data <- data %>% filter(!is.na(timepoint)) %>% group_by(record_id) %>% 
@@ -105,39 +112,48 @@ data <- data %>% filter(!is.na(timepoint)) %>% group_by(record_id) %>%
 # Make, fill down and select columns
 data <- data %>%
   fill(demographics_dob,demographics_insurance.factor,demographics_sex.factor,
-       demographics_race.factor) %>%
+       demographics_race.factor,automode_start) %>%
   mutate(race = demographics_race.factor,sex = as.character(demographics_sex.factor),
          insurance = demographics_insurance.factor,amexit_hyper = amexit_hyper / amexits,
          amexit_manual = amexit_manual / amexits,amexits_other = amexits_other / amexits,
-         gmi = 3.31 + (sensor_mean * 0.02392),) %>%
+         gmi = 3.31 + (sensor_mean * 0.02392),
+         days_from_start = as.numeric(difftime(as.Date(date_visit,"%m/%d/%Y"),
+                               as.Date(automode_start,"%m/%d/%Y"),
+                                   units = "days"))) %>%
   select(all_of(vars))
+# Remove rows with no pump data
+pdf_start <- which(colnames(data)=="time_am")
+remove_rows <- which(rowSums(is.na(data[,pdf_start:(pdf_start+9)]))==10)
 # One data frame
 df = rbind(adult,data)
-factor_vars = c("record_id","timepoint","sex","race","insurance","cohort")
+factor_vars = c("record_id","sex","race","insurance","cohort")
 df[,factor_vars] <- lapply(df[,factor_vars], as.factor)
+# Order timepoints
+df$timepoint <- factor(df$timepoint,levels = c("Baseline","M1","M3","M6","M9","M12"))
+# Create age groups
+df$age_group <- cut(df$age)
 ```
 
 ```{r}
 skim(df)
 ```
 
-<!-- # Table 1: Descriptive Characteristics -->
+Pediatric participants with no automode start date and adult participants with no baseline HbA1c value were excluded from this analysis.
 
-<!-- ```{r table 1,echo=FALSE,results='asis',message=FALSE} -->
+# Table 1: Descriptive Characteristics
 
-<!-- # Table 1 -->
-<!-- t1 <- tableby(cohort ~ Age_Diagnosis + Gender,data = demographics) -->
-<!-- # Print -->
-<!-- summary(t1) -->
-<!-- ``` -->
-
-<!-- # Table 2: Days From AM Start by Timepoint -->
-
-<!-- ```{r echo=FALSE,results='asis'} -->
-<!-- t2 <- tableby(timepoint ~ notest(days_from_start,"Nmiss","median","q1q3"), -->
-<!--               total = F,df) -->
-<!-- summary(t2) -->
-<!-- ``` -->
+```{r table 1,echo=FALSE,results='asis',message=FALSE}
+demographics <- df %>% group_by(record_id) %>% filter(row_number()==1)
+# Table 1
+t1 <- tableby(cohort ~ hba1c_baseline + age + age_group + sex + race + insurance,
+              data = demographics)
+# Print
+summary(t1,pfootnote = T,
+        labelTranslations = list(age = "Age (years) at HCL Start",
+                                 sex = "Sex",race = "Race",
+                                 insurance = "Insurance",
+                                 hba1c_baseline = "HbA1c (%) at Baseline"))
+```
 
 <!-- # Figure 1: HbA1c Over Time by Cohort -->
 
@@ -201,4 +217,6 @@ skim(df)
 
 <!-- # Questions/Notes -->
 
-<!-- 1. There are no dates for Kaan's 55 new patients' A1c values, but  -->
+<!-- 1. Some of the later participants in the peds cohort don't have an AM start date in REDCap, so they were counted as never started. Is that correct? -->
+
+<!-- 2. Some of the PDFs appear to be the wrong dates for Kaan's group. Should we just exclude any that are from prior to the given start date? -->

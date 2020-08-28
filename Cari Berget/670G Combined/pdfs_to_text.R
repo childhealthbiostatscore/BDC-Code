@@ -1,7 +1,7 @@
 library(pdftools)
 library(tidyverse)
 # List files
-dir = "/Users/timvigers/New Data"
+dir = "/Users/timvigers/Desktop/670G Combined/Data_Raw/ClinicVisit_PDFs"
 files = list.files(dir,pattern = "*pdf",full.names = T)
 # Summary data frame
 pdf_summary = data.frame()
@@ -71,9 +71,9 @@ for (f in 1:length(files)) {
   # Add to summary df
   pdf_summary[f,"first_name"] = strsplit(name," ")[[1]][1]
   pdf_summary[f,"last_name"] = strsplit(name," ")[[1]][2]
-  pdf_summary[f,"timepoint"] = paste0("M",
-                                      sub(".*month","",
-                                          basename(tools::file_path_sans_ext(files[f]))))
+  pdf_summary[f,"timepoint"] = 
+    paste0("M",sub(".*month","",basename(tools::file_path_sans_ext(files[f]))))
+  pdf_summary[f,"cgm_start"] = start
   pdf_summary[f,"days_worn"] = days
   pdf_summary[f,"am_use"] = percs[1]
   pdf_summary[f,"manual"] = percs[2]
@@ -86,8 +86,8 @@ for (f in 1:length(files)) {
                   "user_disabled_exit","alarms_exit","suspend_exit",
                   "warm_up_exit","other_exit")] = exits
   # Convert to numeric    
-  pdf_summary[,4:ncol(pdf_summary)] = 
-    suppressWarnings(lapply(pdf_summary[,4:ncol(pdf_summary)],as.numeric))
+  pdf_summary[,5:ncol(pdf_summary)] = 
+    suppressWarnings(lapply(pdf_summary[,5:ncol(pdf_summary)],as.numeric))
 }
 # Write summary
 write.csv(pdf_summary,file = "/Users/timvigers/Desktop/pdf_summary.csv",

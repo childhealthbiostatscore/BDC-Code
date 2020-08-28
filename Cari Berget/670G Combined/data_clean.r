@@ -12,6 +12,7 @@ label(data$demographics_race)="Race"
 label(data$demographics_ethnicity)="Ethnicity"
 label(data$demographics_insurance)="Insurance"
 label(data$gyl_timepoint)="Time Point"
+label(data$date_visit)="Date of Clinic Visit "
 label(data$hba1c)="HbA1c "
 label(data$time_am)="Time in Closed Loop (CL) (%)"
 label(data$time_mm)="Time in Manual Mode (%)"
@@ -28,6 +29,7 @@ label(data$amexit_hyper)="# of auto mode exits related to hyperglycemia  "
 label(data$amexit_manual)="# of exits due to patient manually disabling auto mode"
 label(data$amexits_day)="Average # of auto mode exits per day "
 label(data$amexits_other)="All auto mode exits other than hyper, hypo and manual"
+label(data$automode_start)="Date of Closed Loop (CL) Start"
 #Setting Units
 
 
@@ -44,7 +46,7 @@ levels(data$redcap_event_name.factor)=c("Baseline (Arm 1: Child)","1 (Arm 1: Chi
 levels(data$demographics_hcl.factor)=c("670G","Control IQ")
 levels(data$demographics_sex.factor)=c("Female","Male")
 #levels(data$demographics_race.factor)=c("American Indian/Alaska Native","Asian","Native Hawaiian or Other Pacific Islander","Black or African American","White","More Than One Race","Unknown / Not Reported")
-levels(data$demographics_race.factor)=c("Non-white","Non-white","Non-white","Non-White","White","More Than One Race","Unknown / Not Reported")
+levels(data$demographics_race.factor)=c("Non-white","Non-white","Non-white","Non-white","White","More Than One Race","Unknown / Not Reported")
 levels(data$demographics_ethnicity.factor)=c("Hispanic or Latino","NOT Hispanic or Latino","Unknown / Not Reported")
 levels(data$demographics_insurance.factor)=c("Public","Private","Other")
 levels(data$gyl_timepoint.factor)=c("Baseline","Month 1/ Training F/U","3 Months","6 Months","9 Months","12 Months")
