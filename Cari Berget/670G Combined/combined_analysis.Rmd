@@ -58,7 +58,8 @@ adult <- adult %>% group_by(Patient.ID) %>%
                                     units = "days"))) %>% ungroup()
 # Delete rows without PDF information
 pdf_start <- which(colnames(adult)=="days_worn")
-remove_rows <- which(rowSums(is.na(adult[,pdf_start:(pdf_start+19)]))==20)
+remove_rows <- which(rowSums(is.na(adult[,pdf_start:(pdf_start+19)]))==20 &
+                       adult$timepoint != "Baseline")
 adult <- adult[-c(remove_rows),]
 # Combine am exit columns to match Cari's
 adult$amexits = 
@@ -131,11 +132,8 @@ df[,factor_vars] <- lapply(df[,factor_vars], as.factor)
 # Order timepoints
 df$timepoint <- factor(df$timepoint,levels = c("Baseline","M1","M3","M6","M9","M12"))
 # Create age groups
-df$age_group <- cut(df$age)
-```
-
-```{r}
-skim(df)
+df$age_group <- cut(df$age,breaks = c(0,18,26,50,Inf),right = F)
+levels(df$age_group) <- c("Pediatric","Young Adult","Adult","Older Adult")
 ```
 
 Pediatric participants with no automode start date and adult participants with no baseline HbA1c value were excluded from this analysis.
@@ -150,73 +148,87 @@ t1 <- tableby(cohort ~ hba1c_baseline + age + age_group + sex + race + insurance
 # Print
 summary(t1,pfootnote = T,
         labelTranslations = list(age = "Age (years) at HCL Start",
+                                 age_group = "Age Group at HCL Start",
                                  sex = "Sex",race = "Race",
                                  insurance = "Insurance",
                                  hba1c_baseline = "HbA1c (%) at Baseline"))
 ```
 
-<!-- # Figure 1: HbA1c Over Time by Cohort -->
+# Figure 1: HbA1c Over Time by Cohort
 
-<!-- ```{r echo=FALSE,warning=FALSE,message=FALSE} -->
-<!-- ggplot(df[!is.na(df$timepoint),],aes(x = timepoint,y = hba1c)) + -->
-<!--   geom_line(alpha = 0.2,aes(group = record_id,color = cohort)) + -->
-<!--   geom_smooth(aes(group = cohort,color = cohort),se = F) + -->
-<!--   theme_bw() -->
-<!-- ``` -->
+```{r warning=FALSE,message=FALSE}
+ggplot(df,aes(x = timepoint,y = hba1c)) +
+  geom_line(alpha = 0.2,aes(group = record_id,color = cohort)) +
+  geom_smooth(aes(group = cohort,color = cohort),se = F) +
+  theme_bw() + xlab("Timepoint") + ylab("HbA1c (%)")
+```
 
-<!-- # Model Results -->
+# Figure 2: HbA1c Over Time by Age Group
 
-<!-- ```{r models,echo=FALSE} -->
-<!-- # AR1 correlation structure better by AIC - residuals look okay in general -->
-<!-- hba1c_mod_ar1 <- lme(hba1c ~ timepoint*cohort,random = ~1|record_id,df, -->
-<!--                      correlation=corAR1(),na.action = na.omit) -->
-<!-- # Same model structure for all tests -->
-<!-- mods <- -->
-<!--   lapply(c("time_am","sensor_mean","amexits_day"), -->
-<!--          function(x){ -->
-<!--            form <- as.formula(paste(x,"~timepoint*cohort")) -->
-<!--            mod <- lme(form,random = ~1|record_id,df, -->
-<!--                       correlation=corAR1(),na.action = na.omit) -->
-<!--          }) -->
-<!-- ``` -->
+```{r warning=FALSE,message=FALSE}
+ggplot(df,aes(x = timepoint,y = hba1c)) +
+  geom_line(alpha = 0.2,aes(group = record_id,color = age_group)) +
+  geom_smooth(aes(group = age_group,color = age_group),se = F) +
+  theme_bw() + xlab("Timepoint") + ylab("HbA1c (%)")
+```
 
-<!-- ```{r results, echo=FALSE} -->
-<!-- # HbA1c -->
-<!-- res <- broom::tidy(hba1c_mod_ar1,effects = "fixed") -->
-<!-- res$term <- gsub("timepoint|cohort","",res$term) -->
-<!-- res[,2:ncol(res)] <- lapply(res[,2:ncol(res)],function(x){round(x,3)}) -->
-<!-- t3_res <- as.data.frame(anova.lme(hba1c_mod_ar1)) -->
-<!-- t3_res[,3:4] <- lapply(t3_res[,3:4], function(x){round(x,3)}) -->
-<!-- kable(t3_res,caption = "HbA1c Overall Results") -->
-<!-- kable(res,caption = "HbA1c Detailed Results") -->
-<!-- # AM Time -->
-<!-- res <- broom::tidy(mods[[1]],effects = "fixed") -->
-<!-- res$term <- gsub("timepoint|cohort","",res$term) -->
-<!-- res[,2:ncol(res)] <- lapply(res[,2:ncol(res)],function(x){round(x,3)}) -->
-<!-- t3_res <- as.data.frame(anova.lme(mods[[1]])) -->
-<!-- t3_res[,3:4] <- lapply(t3_res[,3:4], function(x){round(x,3)}) -->
-<!-- kable(t3_res,caption = "% Time AM Overall Results") -->
-<!-- kable(res,caption = "% Time AM Detailed Results") -->
-<!-- # Sensor mean -->
-<!-- res <- broom::tidy(mods[[2]],effects = "fixed") -->
-<!-- res$term <- gsub("timepoint|cohort","",res$term) -->
-<!-- res[,2:ncol(res)] <- lapply(res[,2:ncol(res)],function(x){round(x,3)}) -->
-<!-- t3_res <- as.data.frame(anova.lme(mods[[2]])) -->
-<!-- t3_res[,3:4] <- lapply(t3_res[,3:4], function(x){round(x,3)}) -->
-<!-- kable(t3_res,caption = "Sensor Mean Overall Results") -->
-<!-- kable(res,caption = "Sensor Mean Detailed Results") -->
-<!-- # AM exits per day -->
-<!-- res <- broom::tidy(mods[[3]],effects = "fixed") -->
-<!-- res$term <- gsub("timepoint|cohort","",res$term) -->
-<!-- res[,2:ncol(res)] <- lapply(res[,2:ncol(res)],function(x){round(x,3)}) -->
-<!-- t3_res <- as.data.frame(anova.lme(mods[[3]])) -->
-<!-- t3_res[,3:4] <- lapply(t3_res[,3:4], function(x){round(x,3)}) -->
-<!-- kable(t3_res,caption = "AM Exits per Day Overall Results") -->
-<!-- kable(res,caption = "AM Exits per Day Detailed Results") -->
-<!-- ``` -->
+# Model Results
 
-<!-- # Questions/Notes -->
+```{r models,echo=FALSE}
+hba1c_mod_ar1 <- lme(log(hba1c) ~ timepoint*cohort,random = ~1|record_id,df,
+                     correlation=corAR1(),na.action = na.omit)
 
-<!-- 1. Some of the later participants in the peds cohort don't have an AM start date in REDCap, so they were counted as never started. Is that correct? -->
 
-<!-- 2. Some of the PDFs appear to be the wrong dates for Kaan's group. Should we just exclude any that are from prior to the given start date? -->
+# AR1 correlation structure better by AIC - residuals look okay in general
+hba1c_mod_ar1 <- lme(hba1c ~ timepoint*cohort,random = ~1|record_id,df,
+                     correlation=corAR1(),na.action = na.omit)
+# Same model structure for all tests
+mods <-
+  lapply(c("time_am","sensor_mean","amexits_day"),
+         function(x){
+           form <- as.formula(paste(x,"~timepoint*cohort"))
+           mod <- lme(form,random = ~1|record_id,df,
+                      correlation=corAR1(),na.action = na.omit)
+         })
+```
+
+```{r results, echo=FALSE}
+# HbA1c
+res <- broom::tidy(hba1c_mod_ar1,effects = "fixed")
+res$term <- gsub("timepoint|cohort","",res$term)
+res[,2:ncol(res)] <- lapply(res[,2:ncol(res)],function(x){round(x,3)})
+t3_res <- as.data.frame(anova.lme(hba1c_mod_ar1))
+t3_res[,3:4] <- lapply(t3_res[,3:4], function(x){round(x,3)})
+kable(t3_res,caption = "HbA1c Overall Results")
+kable(res,caption = "HbA1c Detailed Results")
+# AM Time
+res <- broom::tidy(mods[[1]],effects = "fixed")
+res$term <- gsub("timepoint|cohort","",res$term)
+res[,2:ncol(res)] <- lapply(res[,2:ncol(res)],function(x){round(x,3)})
+t3_res <- as.data.frame(anova.lme(mods[[1]]))
+t3_res[,3:4] <- lapply(t3_res[,3:4], function(x){round(x,3)})
+kable(t3_res,caption = "% Time AM Overall Results")
+kable(res,caption = "% Time AM Detailed Results")
+# Sensor mean
+res <- broom::tidy(mods[[2]],effects = "fixed")
+res$term <- gsub("timepoint|cohort","",res$term)
+res[,2:ncol(res)] <- lapply(res[,2:ncol(res)],function(x){round(x,3)})
+t3_res <- as.data.frame(anova.lme(mods[[2]]))
+t3_res[,3:4] <- lapply(t3_res[,3:4], function(x){round(x,3)})
+kable(t3_res,caption = "Sensor Mean Overall Results")
+kable(res,caption = "Sensor Mean Detailed Results")
+# AM exits per day
+res <- broom::tidy(mods[[3]],effects = "fixed")
+res$term <- gsub("timepoint|cohort","",res$term)
+res[,2:ncol(res)] <- lapply(res[,2:ncol(res)],function(x){round(x,3)})
+t3_res <- as.data.frame(anova.lme(mods[[3]]))
+t3_res[,3:4] <- lapply(t3_res[,3:4], function(x){round(x,3)})
+kable(t3_res,caption = "AM Exits per Day Overall Results")
+kable(res,caption = "AM Exits per Day Detailed Results")
+```
+
+# Questions/Notes
+
+1. Some of the later participants in the peds cohort don't have an AM start date in REDCap, so they were counted as never started. Is that correct?
+
+2. Some of the PDFs appear to be the wrong dates for Kaan's group. Should we just exclude any that are from prior to the given start date?
