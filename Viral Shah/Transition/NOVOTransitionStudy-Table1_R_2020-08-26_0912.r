@@ -34,7 +34,7 @@ data$insurance_medical.factor = factor(data$insurance_medical,levels=c("1","2"))
 data$insurance_no_answer.factor = factor(data$insurance_no_answer,levels=c("1","2"))
 data$diabetes_meds.factor = factor(data$diabetes_meds,levels=c("1","0"))
 
-levels(data$randomization_group.factor)=c("One to One Ratio","Delayed Transition")
+levels(data$randomization_group.factor)=c("SOC","OLS")
 levels(data$gender.factor)=c("Male","Female","Other")
 levels(data$insulin_pump.factor)=c("Medtronic insulin pump","Tandem insulin pump","Omnipod","Animas insulin pump","Other insulin pump")
 levels(data$cgm.factor)=c("Yes","No")
