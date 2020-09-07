@@ -68,6 +68,17 @@ for (f in 1:length(files)) {
   }
   avg = avg_sd[1]
   sd= avg_sd[2]
+  # Time in range
+  tirs = df[which((df$y %in% c(300:530)) & (df$x %in% c(41:46))),"text"]
+  ys = df[which((df$y %in% c(300:530)) & (df$x %in% c(41:46))),"y"]
+  tirs = tirs[order(ys,decreasing = T)]
+  tirs = as.numeric(gsub("%","",tirs))
+  tir_ind = which.max(tirs)
+  tir_70 = sum(tirs[1:(tir_ind-1)])
+  if(tir_ind == 1){tir_70 = NA}
+  tir_70_180 = tirs[tir_ind]
+  tir_180 = sum(tirs[(tir_ind+1):length(tirs)])
+  tir_250 = tirs[(tir_ind+2)]
   # Add to summary df
   pdf_summary[f,"first_name"] = strsplit(name," ")[[1]][1]
   pdf_summary[f,"last_name"] = strsplit(name," ")[[1]][2]
@@ -85,6 +96,10 @@ for (f in 1:length(files)) {
                   "sensor_updating_exit","no_sg_exit","expired_exit",
                   "user_disabled_exit","alarms_exit","suspend_exit",
                   "warm_up_exit","other_exit")] = exits
+  pdf_summary[f,"tir_under_70"] = tir_70
+  pdf_summary[f,"tir_70_180"] = tir_70_180
+  pdf_summary[f,"tir_over_180"] = tir_180
+  pdf_summary[f,"tir_over_250"] = tir_250
   # Convert to numeric    
   pdf_summary[,5:ncol(pdf_summary)] = 
     suppressWarnings(lapply(pdf_summary[,5:ncol(pdf_summary)],as.numeric))
