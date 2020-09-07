@@ -99,85 +99,33 @@ for (d in days) {
   if(d == days[1]){cgm <- dat} else {cgm <- rbind(cgm,dat)}
 }
 rm(dat)
+# Add Hba1c data
+cgm <- left_join(cgm,subjects[,c("name","MostRecentA1C")],by = c("subject_id" = "name"))
 # Iterate through CGM sampling percentages
 for (s in sampling){
-  plot <- cgm[cgm$percent_cgm_wear >= s,]
-  
+  lim <- cgm[cgm$percent_cgm_wear >= s,]
+  c <- split.data.frame(lim,lim$sample_days)
+  r <- tail(c,1)
+  r <- as.data.frame(r[[1]])
+  c <- head(c,-1)
+  c <- lapply(c, function(x){
+    x <- as.data.frame(x)
+    d <- x$sample_days[1]
+    n <- intersect(x$subject_id,r$subject_id)
+    x <- x[x$subject_id %in% n,]
+    r <- r[r$subject_id %in% n,]
+    x <- x[order(x$subject_id),]
+    r <- r[order(r$subject_id),]
+    co <- cor(x[,vars],r[,vars])
+    m_a1c <- cor(x$average_sensor,r$MostRecentA1C)
+    all <- as.numeric(c(d,s,c(diag(co),m_a1c)^2))
+    names(all) <- c("sample_days","sample_percentage",vars,"mean_hba1c")
+    return(all)
+  }) 
+  c <- do.call(rbind,c)
+  if (s == sampling[1]){plot <- c} else {plot <- rbind(plot,c)}
 }
-
-
-corr_analysis <- function(df14,df30,df90,cgm_perc = 75){
-  # Remove low percentage wear
-  df14 <- df14[which(df14$percent_cgm_wear>=cgm_perc),]
-  df30 <- df30[which(df30$percent_cgm_wear>=cgm_perc),]
-  df90 <- df90[which(df90$percent_cgm_wear>=cgm_perc),]
-  # Correlations
-  df1 <- cor(df14[,3:ncol(df14)])
-  df2 <- cor(df30[,3:ncol(df30)])
-  df3 <- cor(df90[,3:ncol(df90)])
-  df <- bind_rows(df1[1:7,8],df2[1:7,8],df3[1:7,8])
-  df <- df^2
-  df$time <- c(14,30,90)
-  long <- df %>% pivot_longer(-time)
-  p <- ggplot(long,aes(x = time,y = value,color = name)) + geom_line() + geom_point() +
-    ylim(0,1) + theme_bw() + xlab("Days in Sampling Period") + ylab("R^2") +
-    scale_color_discrete(breaks = vars,labels = var_names,name = "") +
-    scale_x_continuous(breaks = c(14,30,90))
-  print(p)
-  df$n <- c(nrow(df14),nrow(df30),nrow(df90))
-  res <- df %>% select(time,n,all_of(vars))
-  kable(res,col.names = c("Days of CGM Wear","n",var_names),caption = "R^2 for Correlation with HbA1c",digits = 3)}
 ```
 
 # Results
-
-Each participant's CGM data was cleaned and split into time periods of 14, 30, and 90 days priors to most recent HbA1c reading. CGM summary statistics were calculated for each time period using the cgmanalysis R package. Here we report the $R^2$ for the correlation between CGM metrics and HbA1c, given 14, 30, or 90 days of CGM data prior to HbA1c reading. These $R^2$ values are also reported at various levels of percent CGM wear.
-
-## 60% CGM Wear
-
-```{r results 60}
-corr_analysis(day14,day30,day90,60)
-```
-
-## 65% CGM Wear
-
-```{r results 65}
-corr_analysis(day14,day30,day90,65)
-```
-
-## 70% CGM Wear
-
-```{r results 70}
-corr_analysis(day14,day30,day90,70)
-```
-
-## 75% CGM Wear
-
-```{r results 75}
-corr_analysis(day14,day30,day90,75)
-```
-
-## 80% CGM Wear
-
-```{r results 80}
-corr_analysis(day14,day30,day90,80)
-```
-
-## 85% CGM Wear
-
-```{r results 85}
-corr_analysis(day14,day30,day90,85)
-```
-
-## 90% CGM Wear
-
-```{r results 90}
-corr_analysis(day14,day30,day90,90)
-```
-
-## 95% CGM Wear
-
-```{r results 95}
-corr_analysis(day14,day30,day90,95)
-```
 
