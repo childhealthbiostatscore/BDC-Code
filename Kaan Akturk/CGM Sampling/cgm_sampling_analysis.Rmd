@@ -7,7 +7,7 @@ output: word_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE,dpi = 600)
-knitr::opts_knit$set(root.dir = "/Users/timvigers/Desktop")
+knitr::opts_knit$set(root.dir = "/Users/timvigers/Desktop/CGM Sampling")
 library(arsenal)
 library(skimr)
 library(knitr)
@@ -26,6 +26,9 @@ subjects[,c("FirstName","LastName")] <-
   })
 subjects$name <- paste0(subjects$FirstName,subjects$LastName)
 subjects$name <- gsub(" ","",subjects$name)
+# Set days and sampling percentages
+days <- seq(7,91,by = 7)
+sampling <- seq(50,95,by = 5)
 ```
 
 ```{r organize CGM data,eval=FALSE}
@@ -58,24 +61,28 @@ for (f in files) {
   dat <- dat[-which(dat$sensorglucose=="Low"),]
   dat$sensorglucose <- suppressWarnings(as.numeric(dat$sensorglucose))
   
-  day14 <- dat[dat$timestamp <= date & dat$timestamp >= (date-14),]
-  day30 <- dat[dat$timestamp <= date & dat$timestamp >= (date-30),]
-  day90 <- dat[dat$timestamp <= date & dat$timestamp >= (date-90),]
-  # Write CSV files
-  if (nrow(day14 > 0)){write.csv(day14,paste0(outdir,"/day14/",name,"day14.csv"),na = "",row.names = F)}
-  if (nrow(day30 > 0)){write.csv(day30,paste0(outdir,"/day30/",name,"day30.csv"),na = "",row.names = F)}
-  if (nrow(day90 > 0)){write.csv(day90,paste0(outdir,"/day90/",name,"day90.csv"),na = "",row.names = F)}
+  for(d in days){
+    dat_name <- paste0("day",d)
+    # Create new dataframe
+    dir <- paste0(outdir,"/day",d)
+    assign(dat_name,dat[dat$timestamp <= date & dat$timestamp >= (date-d),])
+    # Make new directory
+    dir.create(dir,showWarnings = F)
+    # Write
+    if (nrow(get(dat_name)) > 0){
+      write.csv(get(dat_name),paste0(dir,"/",name,dat_name,".csv"),
+                na = "",row.names = F)
+    }
+  }
 }
 ```
 
 ```{r cgmvariables,eval=FALSE}
 # CGM variables on each folder
-cgmvariables("./Data_Cleaned/cgm/day14","./Data_Cleaned/",
-             outputname = "day14variables")
-cgmvariables("./Data_Cleaned/cgm/day30","./Data_Cleaned",
-             outputname = "day30variables")
-cgmvariables("./Data_Cleaned/cgm/day90","./Data_Cleaned",
-             outputname = "day90variables")
+for (d in days) {
+  cgmvariables(paste0(outdir,"/",paste0("day",d)),"./Data_Cleaned/",
+               outputname = paste0("day",d,"variables"))
+}
 ```
 
 ```{r combine data}
@@ -83,25 +90,22 @@ vars <- c("percent_time_70_180","percent_time_over_180","percent_time_over_250",
           "percent_time_under_70","percent_time_under_54","cv","average_sensor")
 var_names <- c("% TIR 70-180","% Time > 180","% Time > 250",
                "% Time < 70","% Time < 54","CV","Mean Glucose")
-# Import cgm variables - limit to those with > 10 days of data
-day14 <- read.csv("./Data_Cleaned/day14variables.csv") %>%
-  filter(percent_cgm_wear <=100) %>% 
-  select(subject_id,percent_cgm_wear,all_of(vars)) %>% 
-  left_join(subjects[,c("name","MostRecentA1C")],by = c("subject_id" = "name"))
-labels(day14[,vars]) <- var_names
-day30 <- read.csv("./Data_Cleaned/day30variables.csv") %>%
-  filter(percent_cgm_wear <=100) %>% 
-  select(subject_id,percent_cgm_wear,all_of(vars)) %>% 
-  left_join(subjects[,c("name","MostRecentA1C")],by = c("subject_id" = "name"))
-labels(day30[,vars]) <- var_names
-day90 <- read.csv("./Data_Cleaned/day90variables.csv") %>%
-  filter(percent_cgm_wear <=100) %>% 
-  select(subject_id,percent_cgm_wear,all_of(vars)) %>% 
-  left_join(subjects[,c("name","MostRecentA1C")],by = c("subject_id" = "name"))
-labels(day90[,vars]) <- var_names
-```
+# Import cgm variables by days from HbA1c
+for (d in days) {
+  filename <- paste0("day",d,"variables",".csv")
+  dat <- read.csv(paste0("./Data_Cleaned/",filename))
+  dat <- dat[,c("subject_id","percent_cgm_wear",vars)]
+  dat$sample_days <- d
+  if(d == days[1]){cgm <- dat} else {cgm <- rbind(cgm,dat)}
+}
+rm(dat)
+# Iterate through CGM sampling percentages
+for (s in sampling){
+  plot <- cgm[cgm$percent_cgm_wear >= s,]
+  
+}
 
-```{r analysis}
+
 corr_analysis <- function(df14,df30,df90,cgm_perc = 75){
   # Remove low percentage wear
   df14 <- df14[which(df14$percent_cgm_wear>=cgm_perc),]
@@ -122,8 +126,7 @@ corr_analysis <- function(df14,df30,df90,cgm_perc = 75){
   print(p)
   df$n <- c(nrow(df14),nrow(df30),nrow(df90))
   res <- df %>% select(time,n,all_of(vars))
-  kable(res,col.names = c("Days of CGM Wear","n",var_names),caption = "R^2 for Correlation with HbA1c",digits = 3)
-}
+  kable(res,col.names = c("Days of CGM Wear","n",var_names),caption = "R^2 for Correlation with HbA1c",digits = 3)}
 ```
 
 # Results
