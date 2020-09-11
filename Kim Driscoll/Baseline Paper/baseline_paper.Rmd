@@ -2,12 +2,12 @@
 title: "PIU! Baseline Paper"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: word_document
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
-knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
+knitr::opts_knit$set(root.dir = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
 library(tidyverse)
 library(arsenal)
 library(skimr)
@@ -18,12 +18,15 @@ set.seed(1017)
 
 ```{r data}
 # Import questionnaire and demographic data
-child <- read.csv("./Kim Driscoll/PIU Baseline Paper/Data_Cleaned/child.csv",na.strings = "")
-parent <- read.csv("./Kim Driscoll/PIU Baseline Paper/Data_Cleaned/parent.csv",na.strings = "")
+child <- read.csv("./Kim Driscoll/PIU Baseline Paper/Data_Cleaned/child.csv",
+                  na.strings = "")
+parent <- read.csv("./Kim Driscoll/PIU Baseline Paper/Data_Cleaned/parent.csv",
+                   na.strings = "")
 # Fill missing IDs
 child <- child %>% fill(ID,.direction = "down")
 # Pump variables
-pump <- read.csv("./Kim Driscoll/Pump Variables/Data_Cleaned/summary.csv",na.strings = "")
+pump <- read.csv("./Kim Driscoll/Pump Variables/Data_Cleaned/summary.csv",
+                 na.strings = "")
 colnames(pump)[which(colnames(pump)=="study_visit")] <- "Study.Visit"
 colnames(pump)[which(colnames(pump)=="subject_id")] <- "ID"
 pump$Study.Visit <- as.numeric(sub("T","",pump$Study.Visit))
@@ -80,7 +83,10 @@ child$tdk <- apply(child[,grep("tdk_",colnames(child))],1,sum)
 parent <- left_join(parent,child[,c("ID","Study.Visit","Treatment")],
                     by = c("ID", "Study.Visit"))
 # Parent pump knowledge
-parent[,c("tdk_4a","tdk_4b")] <- NULL
+parent[,c("tdk_4a","tdk_4b","tdk_1e","tdk_2d","tdk_3d","tdk_5e","tdk_6e", 
+          "tdk_7d","tdk_8d","tdk_9e","tdk_10d","tdk_11d","tdk_12d",
+          "tdk_13e","tdk_14d","tdk_15d","tdk_16e","tdk_17e","tdk_18e", 
+          "tdk_19e","tdk_20d","tdk_21d")] <- NULL
 parent$tdk <- apply(parent[,grep("tdk_",colnames(parent))],1,sum)
 ```
 
@@ -114,7 +120,7 @@ summary(t1,pfootnote=T)
 vars <- colnames(child_baseline)[grep("CDI",colnames(child_baseline))]
 drop <- which(rowSums(is.na(child_baseline[,vars])) == length(vars))
 a <- alpha(child_baseline[,vars],drop = drop,test = F,varphi = 0,silent = T)
-# lavaan models function
+# lavaan models functions
 fiml_by_treatment_latent <- function(outcome_name,prefix,data,numbers = NULL){
   vars <- colnames(data)[grep(prefix,colnames(data))]
   if(!is.null(numbers)){
@@ -141,11 +147,22 @@ fiml_by_treatment_latent <- function(outcome_name,prefix,data,numbers = NULL){
   # Regression estimates
   s <- as.data.frame(summary(mod)$PE)
   p <- s[which(s$lhs == outcome_name & s$rhs == "Treatment"),"pvalue"]
+  # Overall
+  form <- paste(outcome_name," =~ ",vars_form)
+  mod <- sem(form,data,missing = "fiml")
+  overall <- rep(1,length(vars))
+  mean_overall <- overall %*% fitted(mod)$mean
+  covar_mat_names <- c(paste0(vars,"~1"))
+  vcov <- vcov(mod)
+  vcov <- vcov[covar_mat_names,covar_mat_names]
+  se_overall <- sqrt(overall %*% vcov %*% overall)
   # Use EM robust to get alpha value
   drop <- which(rowSums(is.na(data[,vars])) == length(vars))
   try(a <- alpha(data[,vars],drop = drop,test = F,varphi = 0,silent = T))
   # Return
-  res <- as.data.frame(t(round(c(mean_control,se_control,mean_treat,se_treat,p,a$alpha),3)))
+  res <- c(mean_overall,se_overall,mean_control,se_control,
+           mean_treat,se_treat,p,a$alpha)
+  res <- as.data.frame(t(res))
   colnames(res) <- res_names
   return(res)
 }
@@ -154,7 +171,6 @@ fiml_by_treatment <- function(outcome,prefix,data){
   form <- paste0(outcome,"~Treatment")
   mod <- sem(form,data,missing = "fiml")
   # Means by groups
-  means <- fitted(mod)$means
   control <- c(1,0)
   treat <- c(1,1)
   means  <- fitted(mod)$mean 
@@ -169,32 +185,35 @@ fiml_by_treatment <- function(outcome,prefix,data){
   # Regression estimates
   s <- as.data.frame(summary(mod)$PE)
   p <- s[which(s$lhs == outcome & s$rhs == "Treatment"),"pvalue"]
+  # Overall
+  form <- paste0(outcome,"~1")
+  mod <- sem(form,data,missing = "fiml")
+  mean_overall <- fitted(mod)$mean
+  covar_mat_names <- paste0(outcome,"~1")
+  vcov <- vcov(mod)
+  vcov <- vcov[covar_mat_names,covar_mat_names]
+  se_overall <- sqrt(1 %*% vcov %*% 1)
   # Use EM robust to get alpha value
   drop <- as.numeric(which(rowSums(is.na(data[,vars])) == length(vars)))
   try(a <- alpha(data[,vars],drop = drop,test = F,varphi = 0,silent = T))
   # Return
-  res <- as.data.frame(t(round(c(mean_control,se_control,mean_treat,se_treat,p,a$alpha),3)))
+  res <- c(mean_overall,se_overall,mean_control,se_control,
+           mean_treat,se_treat,p,a$alpha)
+  res <- as.data.frame(t(res))
   colnames(res) <- res_names
   return(res)
 }
-res_names <- c("Mean Treatment as Usual","SE Treatment as Usual",
-               "Mean Tailored Feedback","SE Tailored Feedback","P Value",
-               "Alpha")
+res_names <- c("Mean Overall","SE Overall",
+               "Mean Treatment as Usual","SE Treatment as Usual",
+               "Mean Tailored Feedback","SE Tailored Feedback",
+               "P Value","Alpha")
 ```
 
 ## Results
 
-### Child
+### By Treatment Group
 
-Notes:
-- There may just be too much missing data to use FIML or MI on the BDI questionnaires. It looks like only 2 participants filled out those questionnaires at baseline.
-
-- METER8 is missing from the original dataset. 
-- METER7 could not be included in the latent variable model because everyone answered 1 (no variance).
-
-- Carb counting skills don't seem to match up with the codebook, but I'm probably confused.
-
-- Unable to estimate alpha using the EM algorithm for knowledge. Also, some items are negatively correlated with the total score.
+#### Child
 
 ```{r child models,include=FALSE}
 # CDI
@@ -236,10 +255,10 @@ rownames(child_results) <-
     "FOH (CHFS) – Worry/Helplessness","FOH (CHFS) – Worry/Social Consequences",
     "PedsQL Diabetes","PedsQL Treatment 1","PedsQL Treatment 2","PedsQL Worry",
     "PedsQL Communication","PDS - Boys","PDS - Girls","Meter","tdk","BGMIPR","DFRQ")
-kable(child_results,row.names = T)
+kable(child_results,row.names = T,digits = 3)
 ```
 
-### Parent
+#### Parent
 
 ```{r parent models,include=FALSE}
 # CESD
@@ -262,12 +281,13 @@ wecare_ease <- fiml_by_treatment_latent("ease","WECARE",parent_baseline,
                                         numbers = c(11,12,13,24,25,26,27,33,34))
 # Pump knowledge - Delete 4a, 4b, and those without variance
 pump <- fiml_by_treatment("tdk","tdk_",parent_baseline)
-# Unable to use EM algorithm on knowledge alpha - use regular one
-pump$Alpha <- 0.74
 # BGMIPR
 bgmipr <- fiml_by_treatment_latent("bgmipr","BGMIPR",parent_baseline,numbers = c(1:16))
 # DFRQ
 dfrq <- fiml_by_treatment_latent("dfrq","DFRQ",parent_baseline,numbers = c(1:17))
+# Remove participant 216
+child <- child[child$ID != 216,]
+parent <- parent[parent$ID != 216,]
 ```
 
 ```{r parent results}
@@ -278,6 +298,8 @@ rownames(parent_results) <-
   c("Depression (CESD)","FOH (PHFS) – Maintain High BG",
     "FOH (PHFS) – Worry/Helplessness","FOH (PHFS) – Worry/Social Consequences",
     "Psychosocial well-being","Treatment satisfaction","Acceptance of insulin administration",
-    "Ease of insulin use","tdk","BGMIPR","DFRQ")
-kable(parent_results,row.names = T)
+    "Ease of insulin use","Pump Knowledge","BGMIPR","DFRQ")
+kable(parent_results,row.names = T,digits = 3)
 ```
+### By Site
+
