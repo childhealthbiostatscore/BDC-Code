@@ -18,12 +18,18 @@ set.seed(1017)
 
 ```{r data}
 # Import questionnaire and demographic data
-child <- read.csv("./Kim Driscoll/PIU Baseline Paper/Data_Cleaned/child.csv",
-                  na.strings = "")
+child <- read.csv("./Kim Driscoll/PIU Baseline Paper/Data_Cleaned/child.csv",na.strings = "")
 parent <- read.csv("./Kim Driscoll/PIU Baseline Paper/Data_Cleaned/parent.csv",
                    na.strings = "")
 # Fill missing IDs
 child <- child %>% fill(ID,.direction = "down")
+# FL vs. CO
+child$Site <- NA
+child$Site[child$ID < 300] <- "FL"
+child$Site[child$ID >= 300] <- "CO"
+parent$Site <- NA
+parent$Site[parent$ID < 300] <- "FL"
+parent$Site[parent$ID >= 300] <- "CO"
 # Pump variables
 pump <- read.csv("./Kim Driscoll/Pump Variables/Data_Cleaned/summary.csv",
                  na.strings = "")
@@ -41,6 +47,9 @@ child <- child %>%
          bg_150_249_perc_bolus_carb = bg_150_249_with_bolus_carb / total_150_249,
          bg_above_250_perc_bolus = bg_above_250_with_bolus_only / total_above_250,
          bg_above_250_perc_bolus_carb = bg_above_250_with_bolus_carb / total_above_250)
+# Remove participant 216
+child <- child[child$ID != 216,]
+parent <- parent[parent$ID != 216,]
 # Reverse scored psych items
 # CDI
 rev_cdi <- paste0("CDI",c(2,6,7,9,10,12,14,15,17,20,23,24,26,27))
@@ -76,17 +85,22 @@ child$pedsql_tx1 <- apply(child[,grep("PEDSQL_TX1",colnames(child))],1,mean)
 child$pedsql_tx2 <- apply(child[,grep("PEDSQL_TX2",colnames(child))],1,mean)
 child$pedsql_w <- apply(child[,grep("PEDSQL_W",colnames(child))],1,mean)
 child$pedsql_c <- apply(child[,grep("PEDSQL_C",colnames(child))],1,mean)
+child$pds_boys <- apply(child[,paste0("PDS",1:5)],1,mean)
+child$pds_girls <- apply(child[,paste0("PDS",c(1:3,6,7))],1,mean)
 # Pump knowledge
-child[,c("tdk_4a","tdk_4b")] <- NULL
+pump_delete <- c("tdk_1d","tdk_1e","tdk_2d","tdk_3c","tdk_3d",
+                 "tdk_4a",
+                 "tdk_4b","tdk_5b","tdk_5e","tdk_6e","tdk_7d","tdk_8d",
+                 "tdk_9e","tdk_10d","tdk_11d","tdk_12d","tdk_13e",
+                 "tdk_14d","tdk_15d","tdk_16e","tdk_17a","tdk_17b",
+                 "tdk_17e","tdk_18e","tdk_19e","tdk_20d","tdk_21d")
+child[,pump_delete] <- NULL
 child$tdk <- apply(child[,grep("tdk_",colnames(child))],1,sum)
 # Get treatment group for parents
 parent <- left_join(parent,child[,c("ID","Study.Visit","Treatment")],
                     by = c("ID", "Study.Visit"))
 # Parent pump knowledge
-parent[,c("tdk_4a","tdk_4b","tdk_1e","tdk_2d","tdk_3d","tdk_5e","tdk_6e", 
-          "tdk_7d","tdk_8d","tdk_9e","tdk_10d","tdk_11d","tdk_12d",
-          "tdk_13e","tdk_14d","tdk_15d","tdk_16e","tdk_17e","tdk_18e", 
-          "tdk_19e","tdk_20d","tdk_21d")] <- NULL
+parent[,pump_delete] <- NULL
 parent$tdk <- apply(parent[,grep("tdk_",colnames(parent))],1,sum)
 ```
 
@@ -117,11 +131,10 @@ summary(t1,pfootnote=T)
 # Table 2: Psychosocial Variables at Baseline
 
 ```{r fiml function,include=FALSE}
-vars <- colnames(child_baseline)[grep("CDI",colnames(child_baseline))]
-drop <- which(rowSums(is.na(child_baseline[,vars])) == length(vars))
-a <- alpha(child_baseline[,vars],drop = drop,test = F,varphi = 0,silent = T)
+a <- list("alpha"=NA)
 # lavaan models functions
-fiml_by_treatment_latent <- function(outcome_name,prefix,data,numbers = NULL){
+fiml_latent <- function(outcome_name,prefix,data,
+                        numbers = NULL,by = "Treatment"){
   vars <- colnames(data)[grep(prefix,colnames(data))]
   if(!is.null(numbers)){
     vars <- paste0(prefix,numbers)
@@ -129,7 +142,7 @@ fiml_by_treatment_latent <- function(outcome_name,prefix,data,numbers = NULL){
   
   vars_form <- paste(vars,collapse = " + ")
   form <- paste(outcome_name," =~ ",vars_form,"\n",
-                outcome_name," ~ Treatment")
+                outcome_name," ~ ",by)
   # Fit SEM
   mod <- sem(form,data = data,missing = "fiml")
   # Get mean sum of items
@@ -139,14 +152,18 @@ fiml_by_treatment_latent <- function(outcome_name,prefix,data,numbers = NULL){
   mean_control <- control %*% head(means,-1)
   mean_treat <- treat %*% means
   # Get se of item sum
-  covar_mat_names <- c(paste0(vars,"~1"),paste0(outcome_name,"~Treatment"))
+  covar_mat_names <- c(paste0(vars,"~1"),
+                       paste0(outcome_name,"~",by))
   vcov <- vcov(mod)
   vcov <- vcov[covar_mat_names,covar_mat_names]
-  se_control <- sqrt(control %*% vcov[1:length(control),1:length(control)] %*% control)
-  se_treat <- sqrt(treat %*% vcov[1:length(treat),1:length(treat)] %*% treat)
+  se_control <- sqrt(control %*% 
+                       vcov[1:length(control),1:length(control)] %*% 
+                       control)
+  se_treat <- sqrt(treat %*% vcov[1:length(treat),1:length(treat)] %*% 
+                     treat)
   # Regression estimates
   s <- as.data.frame(summary(mod)$PE)
-  p <- s[which(s$lhs == outcome_name & s$rhs == "Treatment"),"pvalue"]
+  p <- s[which(s$lhs == outcome_name & s$rhs == by),"pvalue"]
   # Overall
   form <- paste(outcome_name," =~ ",vars_form)
   mod <- sem(form,data,missing = "fiml")
@@ -158,7 +175,12 @@ fiml_by_treatment_latent <- function(outcome_name,prefix,data,numbers = NULL){
   se_overall <- sqrt(overall %*% vcov %*% overall)
   # Use EM robust to get alpha value
   drop <- which(rowSums(is.na(data[,vars])) == length(vars))
-  try(a <- alpha(data[,vars],drop = drop,test = F,varphi = 0,silent = T))
+  if(length(drop)>0){
+    try(a <- alpha(data[,vars],test = F,drop = drop,varphi = 0,
+                   silent = T))
+  } else {
+    try(a <- alpha(data[,vars],test = F,varphi = 0,silent = T))
+  }
   # Return
   res <- c(mean_overall,se_overall,mean_control,se_control,
            mean_treat,se_treat,p,a$alpha)
@@ -166,9 +188,13 @@ fiml_by_treatment_latent <- function(outcome_name,prefix,data,numbers = NULL){
   colnames(res) <- res_names
   return(res)
 }
-fiml_by_treatment <- function(outcome,prefix,data){
+fiml <- function(outcome,prefix,data,
+                 by = "Treatment",numbers=NULL){
   vars <- colnames(data)[grep(prefix,colnames(data))]
-  form <- paste0(outcome,"~Treatment")
+  if(!is.null(numbers)){
+    vars <- paste0(prefix,numbers)
+  }
+  form <- paste0(outcome,"~",by)
   mod <- sem(form,data,missing = "fiml")
   # Means by groups
   control <- c(1,0)
@@ -177,14 +203,14 @@ fiml_by_treatment <- function(outcome,prefix,data){
   mean_control <- control %*% means
   mean_treat <- treat %*% means
   # SE
-  covar_mat_names <- c(paste0(outcome,"~1"),paste0(outcome,"~Treatment"))
+  covar_mat_names <- c(paste0(outcome,"~1"),paste0(outcome,"~",by))
   vcov <- vcov(mod)
   vcov <- vcov[covar_mat_names,covar_mat_names]
   se_control <- sqrt(control %*% vcov %*% control)
   se_treat <- sqrt(treat %*% vcov %*% treat)
   # Regression estimates
   s <- as.data.frame(summary(mod)$PE)
-  p <- s[which(s$lhs == outcome & s$rhs == "Treatment"),"pvalue"]
+  p <- s[which(s$lhs == outcome & s$rhs == by),"pvalue"]
   # Overall
   form <- paste0(outcome,"~1")
   mod <- sem(form,data,missing = "fiml")
@@ -195,7 +221,12 @@ fiml_by_treatment <- function(outcome,prefix,data){
   se_overall <- sqrt(1 %*% vcov %*% 1)
   # Use EM robust to get alpha value
   drop <- as.numeric(which(rowSums(is.na(data[,vars])) == length(vars)))
-  try(a <- alpha(data[,vars],drop = drop,test = F,varphi = 0,silent = T))
+  if(length(drop)>0){
+    try(a <- alpha(data[,vars],test = F,drop = drop,varphi = 0,
+                   silent = T))
+  } else {
+    try(a <- alpha(data[,vars],test = F,varphi = 0,silent = T))
+  }
   # Return
   res <- c(mean_overall,se_overall,mean_control,se_control,
            mean_treat,se_treat,p,a$alpha)
@@ -203,58 +234,74 @@ fiml_by_treatment <- function(outcome,prefix,data){
   colnames(res) <- res_names
   return(res)
 }
-res_names <- c("Mean Overall","SE Overall",
-               "Mean Treatment as Usual","SE Treatment as Usual",
-               "Mean Tailored Feedback","SE Tailored Feedback",
-               "P Value","Alpha")
 ```
 
 ## Results
+
+Questions 1D, 3C, 5B, and 17A were excluded from the child TDK analysis due to 0 variance. 
 
 ### By Treatment Group
 
 #### Child
 
 ```{r child models,include=FALSE}
+res_names <- c("Mean Overall","SE Overall",
+               "Mean Treatment as Usual","SE Treatment as Usual",
+               "Mean Tailored Feedback","SE Tailored Feedback",
+               "P Value","Alpha")
 # CDI
-cdi <- fiml_by_treatment_latent("depression","CDI",child_baseline)
+cdi <- fiml_latent("depression","CDI",child_baseline)
 # FOH
 # Maintain
-foh_maintain <- fiml_by_treatment_latent("maintain","FOH_C",child_baseline,numbers = c(3,4,7))
+foh_maintain <- 
+  fiml_latent("maintain","FOH_C",child_baseline,
+              numbers = c(3,4,7))
 # Helplessness
-foh_helpless <- fiml_by_treatment_latent("helpless","FOH_C",child_baseline,numbers = c(11,12,13,14,16,18,19,22,23))
+foh_helpless <- 
+  fiml_latent("helpless","FOH_C",child_baseline,
+              numbers = c(11,12,13,14,16,18,19,22,23))
 # Social
-foh_social <- fiml_by_treatment_latent("social","FOH_C",child_baseline,numbers = c(15,17,20,21,25))
+foh_social <- 
+  fiml_latent("social","FOH_C",child_baseline,
+              numbers = c(15,17,20,21,25))
 # PEDS QL - score is a mean rather than a sum, so slightly different approach is needed
-peds_ql_d <- fiml_by_treatment("pedsql_d","PEDSQL_D",child_baseline)
-peds_ql_tx1 <- fiml_by_treatment("pedsql_tx1","PEDSQL_TX1",child_baseline)
-peds_ql_tx2 <- fiml_by_treatment("pedsql_tx2","PEDSQL_TX2",child_baseline)
-peds_ql_w <- fiml_by_treatment("pedsql_w","PEDSQL_W",child_baseline)
-peds_ql_c <- fiml_by_treatment("pedsql_c","PEDSQL_C",child_baseline)
+peds_ql_d <- fiml("pedsql_d","PEDSQL_D",child_baseline)
+peds_ql_tx1 <- fiml("pedsql_tx1","PEDSQL_TX1",
+                    child_baseline)
+peds_ql_tx2 <- fiml("pedsql_tx2","PEDSQL_TX2",
+                    child_baseline)
+peds_ql_w <- fiml("pedsql_w","PEDSQL_W",child_baseline)
+peds_ql_c <- fiml("pedsql_c","PEDSQL_C",child_baseline)
 # PDS
-pds_boys <- fiml_by_treatment_latent("pds","PDS",child_baseline[child_baseline$Sex==1,],numbers = c(1:5))
-pds_girls <- fiml_by_treatment_latent("pds","PDS",child_baseline[child_baseline$Sex==0,],numbers = c(1:3,6,7))
+pds_boys <- fiml("pds_boys","PDS",numbers = c(1:5),
+                 child_baseline[child_baseline$Sex==1,])
+pds_girls <- fiml("pds_girls","PDS",numbers = c(1:3,6,7),
+                  child_baseline[child_baseline$Sex==0,])
 # Meter skills
-meter <- fiml_by_treatment_latent("meter","METER",child_baseline,numbers = c(1:6,9:18))
+meter <- fiml_latent("meter","METER",
+                     child_baseline,numbers = c(1:6,9:18))
 # Pump knowledge - Delete 4a, 4b, and those without variance
-pump <- fiml_by_treatment("tdk","tdk_",child_baseline)
-# Unable to use EM algorithm on knowledge alpha - use regular one
-pump$Alpha <- 0.77
+pump <- fiml("tdk","tdk_",child_baseline)
 # BGMIPR
-bgmipr <- fiml_by_treatment_latent("bgmipr","BGMIPR",child_baseline,numbers = c(1:16))
+bgmipr <- fiml_latent("bgmipr","BGMIPR",
+                      child_baseline,numbers = c(1:16))
 # DFRQ
-dfrq <- fiml_by_treatment_latent("dfrq","DFRQ",child_baseline,numbers = c(1:17))
+dfrq <- fiml_latent("dfrq","DFRQ",
+                    child_baseline,numbers = c(1:17))
 ```
 
 ```{r child results}
-child_results <- bind_rows(cdi,foh_maintain,foh_helpless,foh_social,
-                           peds_ql_d,peds_ql_tx1,peds_ql_tx2,peds_ql_w,peds_ql_c,
-                           pds_boys,pds_girls,meter,pump,bgmipr,dfrq)
+child_results <- 
+  bind_rows(cdi,foh_maintain,foh_helpless,foh_social, 
+            peds_ql_d,peds_ql_tx1,peds_ql_tx2,peds_ql_w,peds_ql_c,
+            pds_boys,pds_girls,meter,pump,bgmipr,dfrq)
 rownames(child_results) <- 
   c("Depression (CDI2)","FOH (CHFS) – Maintain High BG",
-    "FOH (CHFS) – Worry/Helplessness","FOH (CHFS) – Worry/Social Consequences",
-    "PedsQL Diabetes","PedsQL Treatment 1","PedsQL Treatment 2","PedsQL Worry",
-    "PedsQL Communication","PDS - Boys","PDS - Girls","Meter","tdk","BGMIPR","DFRQ")
+    "FOH (CHFS) – Worry/Helplessness",
+    "FOH (CHFS) – Worry/Social Consequences",
+    "PedsQL Diabetes","PedsQL Treatment 1","PedsQL Treatment 2",
+    "PedsQL Worry","PedsQL Communication","PDS - Boys",
+    "PDS - Girls","Meter","tdk","BGMIPR","DFRQ")
 kable(child_results,row.names = T,digits = 3)
 ```
 
@@ -262,35 +309,156 @@ kable(child_results,row.names = T,digits = 3)
 
 ```{r parent models,include=FALSE}
 # CESD
-cesd <- fiml_by_treatment_latent("depression","CESD",parent_baseline)
+cesd <- fiml_latent("depression","CESD",parent_baseline)
 # FOH
 # Maintain
-foh_maintain <- fiml_by_treatment_latent("maintain","FOH_P",parent_baseline,numbers = c(3,4,7))
+foh_maintain <- fiml_latent("maintain","FOH_P",parent_baseline,
+                            numbers = c(3,4,7))
 # Helplessness
-foh_helpless <- fiml_by_treatment_latent("helpless","FOH_P",parent_baseline,numbers = c(13,14,15 ,17,20,23,24,25,26))
+foh_helpless <- fiml_latent("helpless","FOH_P",parent_baseline,
+                            numbers = c(13,14,15 ,17,20,23,24,25,26))
 # Social
-foh_social <- fiml_by_treatment_latent("social","FOH_P",parent_baseline,numbers = c(16,18,19,21,22))
+foh_social <- fiml_latent("social","FOH_P",parent_baseline,
+                          numbers = c(16,18,19,21,22))
 # WECARE
-wecare_well_being <- fiml_by_treatment_latent("wellbeing","WECARE",parent_baseline,
-                                              numbers = c(1,2,4,14,15,16,17,18,19,20,21,22,23))
-wecare_satisfaction <- fiml_by_treatment_latent("satisfaction","WECARE",parent_baseline,
-                                                numbers = c(3,28,29,30,31,32,35,36,37))
-wecare_acceptance <- fiml_by_treatment_latent("ease","WECARE",parent_baseline,
-                                              numbers = c(5,6,7,8,9,10))
-wecare_ease <- fiml_by_treatment_latent("ease","WECARE",parent_baseline,
-                                        numbers = c(11,12,13,24,25,26,27,33,34))
+wecare_well_being <- 
+  fiml_latent("wellbeing","WECARE",
+              parent_baseline,
+              numbers = c(1,2,4,14,15,16,17,18,19,20,21,22,23))
+wecare_satisfaction <- 
+  fiml_latent("satisfaction","WECARE",
+              parent_baseline,numbers = c(3,28,29,30,31,32,35,36,37))
+wecare_acceptance <- fiml_latent("ease","WECARE",parent_baseline,
+                                 numbers = c(5,6,7,8,9,10))
+wecare_ease <- fiml_latent("ease","WECARE",parent_baseline,
+                           numbers = c(11,12,13,24,25,26,27,33,34))
 # Pump knowledge - Delete 4a, 4b, and those without variance
-pump <- fiml_by_treatment("tdk","tdk_",parent_baseline)
+pump <- fiml("tdk","tdk_",parent_baseline)
 # BGMIPR
-bgmipr <- fiml_by_treatment_latent("bgmipr","BGMIPR",parent_baseline,numbers = c(1:16))
+bgmipr <- fiml_latent("bgmipr","BGMIPR",parent_baseline,
+                      numbers = c(1:16))
 # DFRQ
-dfrq <- fiml_by_treatment_latent("dfrq","DFRQ",parent_baseline,numbers = c(1:17))
-# Remove participant 216
-child <- child[child$ID != 216,]
-parent <- parent[parent$ID != 216,]
+dfrq <- fiml_latent("dfrq","DFRQ",parent_baseline,numbers = c(1:17))
 ```
 
 ```{r parent results}
+parent_results <- 
+  bind_rows(cesd,foh_maintain,foh_helpless,foh_social,
+            wecare_well_being,wecare_satisfaction,wecare_acceptance,
+            wecare_ease,pump,bgmipr,dfrq)
+rownames(parent_results) <- 
+  c("Depression (CESD)","FOH (PHFS) – Maintain High BG",
+    "FOH (PHFS) – Worry/Helplessness","FOH (PHFS) – Worry/Social Consequences",
+    "Psychosocial well-being","Treatment satisfaction","Acceptance of insulin administration",
+    "Ease of insulin use","Pump Knowledge","BGMIPR","DFRQ")
+kable(parent_results,row.names = T,digits = 3)
+```
+
+### By Site
+
+Meter 5 was excluded for children due to lack of variability.
+
+#### Child
+
+```{r child models by site,include=FALSE}
+res_names <- c("Mean Overall","SE Overall",
+               "Mean Colorado","SE Colorado",
+               "Mean Florida","SE Florida",
+               "P Value","Alpha")
+# CDI
+cdi <- fiml_latent("depression","CDI",child_baseline,by = "Site")
+# FOH
+# Maintain
+foh_maintain <- 
+  fiml_latent("maintain","FOH_C",child_baseline,by = "Site",
+              numbers = c(3,4,7))
+# Helplessness
+foh_helpless <- 
+  fiml_latent("helpless","FOH_C",child_baseline,by = "Site",
+              numbers = c(11,12,13,14,16,18,19,22,23))
+# Social
+foh_social <- 
+  fiml_latent("social","FOH_C",child_baseline,by = "Site",
+              numbers = c(15,17,20,21,25))
+# PEDS QL - score is a mean rather than a sum, so slightly different approach is needed
+peds_ql_d <- fiml("pedsql_d","PEDSQL_D",child_baseline,by = "Site")
+peds_ql_tx1 <- fiml("pedsql_tx1","PEDSQL_TX1",child_baseline,by = "Site")
+peds_ql_tx2 <- fiml("pedsql_tx2","PEDSQL_TX2",child_baseline,by = "Site")
+peds_ql_w <- fiml("pedsql_w","PEDSQL_W",child_baseline,by = "Site")
+peds_ql_c <- fiml("pedsql_c","PEDSQL_C",child_baseline,by = "Site")
+# PDS
+pds_boys <- fiml("pds_boys","PDS",child_baseline[child_baseline$Sex==1,],
+                 numbers = c(1:5),by = "Site")
+pds_girls <- fiml("pds_girls","PDS",
+                  child_baseline[child_baseline$Sex==0,],
+                  numbers = c(1:3,6,7),by = "Site")
+# Meter skills
+meter <- fiml_latent("meter","METER",child_baseline,
+                     numbers = c(1:4,6,9:18),by = "Site")
+# Pump knowledge - Delete 4a, 4b, and those without variance
+pump <- fiml("tdk","tdk_",child_baseline,by = "Site")
+# BGMIPR
+bgmipr <- fiml_latent("bgmipr","BGMIPR",child_baseline,
+                      by = "Site",numbers = c(1:16))
+# DFRQ
+dfrq <- fiml_latent("dfrq","DFRQ",child_baseline,
+                    numbers = c(1:17),by = "Site")
+```
+
+```{r child results by site}
+child_results <- 
+  bind_rows(cdi,foh_maintain,foh_helpless,foh_social, 
+            peds_ql_d,peds_ql_tx1,peds_ql_tx2,peds_ql_w,peds_ql_c,
+            pds_boys,pds_girls,meter,pump,bgmipr,dfrq)
+rownames(child_results) <- 
+  c("Depression (CDI2)","FOH (CHFS) – Maintain High BG",
+    "FOH (CHFS) – Worry/Helplessness",
+    "FOH (CHFS) – Worry/Social Consequences",
+    "PedsQL Diabetes","PedsQL Treatment 1","PedsQL Treatment 2",
+    "PedsQL Worry","PedsQL Communication","PDS - Boys",
+    "PDS - Girls","Meter","tdk","BGMIPR","DFRQ")
+kable(child_results,row.names = T,digits = 3)
+```
+
+#### Parent
+
+```{r parent models by site,include=FALSE}
+# CESD
+cesd <- fiml_latent("depression","CESD",parent_baseline,by = "Site")
+# FOH
+# Maintain
+foh_maintain <- fiml_latent("maintain","FOH_P",parent_baseline,
+                            numbers = c(3,4,7),by = "Site")
+# Helplessness
+foh_helpless <- fiml_latent("helpless","FOH_P",
+                            parent_baseline,by = "Site",
+                            numbers = c(13,14,15,17,20,23,24,25,26))
+# Social
+foh_social <- fiml_latent("social","FOH_P",parent_baseline,
+                          numbers = c(16,18,19,21,22),by = "Site")
+# WECARE
+wecare_well_being <- 
+  fiml_latent("wellbeing","WECARE",parent_baseline,by = "Site",
+              numbers = c(1,2,4,14,15,16,17,18,19,20,21,22,23))
+wecare_satisfaction <- 
+  fiml_latent("satisfaction","WECARE",parent_baseline,by = "Site",
+              numbers = c(3,28,29,30,31,32,35,36,37))
+wecare_acceptance <- fiml_latent("ease","WECARE",
+                                 parent_baseline,by = "Site",
+                                 numbers = c(5,6,7,8,9,10))
+wecare_ease <- fiml_latent("ease","WECARE",parent_baseline,by = "Site",
+                           numbers = c(11,12,13,24,25,26,27,33,34))
+# Pump knowledge - Delete 4a, 4b, and those without variance
+pump <- fiml("tdk","tdk_",parent_baseline,by = "Site")
+# BGMIPR
+bgmipr <- fiml_latent("bgmipr","BGMIPR",parent_baseline,by = "Site",
+                      numbers = c(1:16))
+# DFRQ
+dfrq <- fiml_latent("dfrq","DFRQ",parent_baseline,by = "Site",
+                    numbers = c(1:17))
+```
+
+```{r parent results by site}
 parent_results <- bind_rows(cesd,foh_maintain,foh_helpless,foh_social,
                             wecare_well_being,wecare_satisfaction,wecare_acceptance,
                             wecare_ease,pump,bgmipr,dfrq)
@@ -301,5 +469,3 @@ rownames(parent_results) <-
     "Ease of insulin use","Pump Knowledge","BGMIPR","DFRQ")
 kable(parent_results,row.names = T,digits = 3)
 ```
-### By Site
-
