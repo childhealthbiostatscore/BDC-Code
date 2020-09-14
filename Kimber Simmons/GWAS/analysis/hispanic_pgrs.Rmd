@@ -7,9 +7,10 @@ output: word_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE,dpi = 600)
-knitr::opts_knit$set(root.dir = "/Users/timvigers/Documents/simmons")
+knitr::opts_knit$set(root.dir = "C:/Users/timbv/Desktop/simmons")
 library(knitr)
 library(qqman)
+library(biomaRt)
 library(tidyverse)
 ```
 
@@ -17,9 +18,16 @@ library(tidyverse)
 
 All sample quality control steps were performed using plink version 2.0 (http://www.cog-genomics.org/plink/2.0/) unless otherwise specified, and all merge steps were performed using plink version 1.9 (http://www.cog-genomics.org/plink/1.9/). Duplicate variants and indels were deleted from each dataset separately prior to merging, because the Biobank dataset included allele information from indels, whereas the Simmons data did not. After these steps, there were 515,855 variants remaining in the Simmons dataset and 1,844,663 in the Biobank dataset (the discrepancy in the total number of variants is due to the fact that the Simmons data had already passed some quality control steps for preliminary analyses).
 
-A first attempt to merge the datasets  revealed 231,289 variants with three or more alleles. After flipping these variants, there remained 1,125 positions with different variant IDs in the two datasets. Variant IDs, position, and alleles were checked using the programming language R version 4.0.2 (https://www.r-project.org/). 524 variants appeared to be genuinely different between the two datasets, so these SNPs were excluded. The remaining variants were re-named in the Biobank dataset to match the Simmons data naming conventions.
+A first attempt to merge the datasets revealed 231,289 variants with inconsistent alleles between the two datasets. After strand-flipping these variants, there remained 1,125 genomic positions with inconsistent variants. Variant IDs, position, and alleles were manually checked using the programming language R version 4.0.2 (https://www.r-project.org/). 524 variants appeared to be genuinely different between the two datasets, and all other variants were the same but with listed positions off by a single base pair. The 524 different variants were excluded from further analyses, while the remaining variants were re-named in the Biobank dataset to match the Simmons data naming conventions.
 
 After resolving the naming and position discrepancies, the two datasets were successfully merged and the unified dataset underwent sample quality control. Quality control measures included a call rate (< 0.02), discrepancy between reported and genotype-inferred sex, minor allele frequency (MAF) > 0.95, Hardy-Weinberg equilibrium in controls (P > $10^{-10}$), and sample heterozygosity. Samples were also checked for relatedness using the KING-robust kinship coefficient, although no individuals were excluded due to relatedness. After quality control measures, 100,365 SNPs in 667 cases and 968 controls remained.
+
+## Quality Control Steps
+
+1. 15 people excluded due to missing genotype data (723 remaining after this)
+2. 36 participants excluded due to sec check discrepancies (687 remaining)
+3. 20 participants excluded due to heterozygosity rate (667 remaining). Heterozygosity rate is the number of SNPs for which an individual has two different alleles. High heterozygosity rate suggests that the sample was low quality.
+
 
 ```{r indels}
 simmons <- read.delim("./Simmons_passed_qc.bim",header = F)
@@ -41,7 +49,7 @@ plink --bfile qc/biobank --list-duplicate-vars ids-only suppress-first --out qc/
 plink --bfile qc/biobank --exclude qc/biobank.dupvar --make-bed --out qc/biobank
 # Merge files
 plink --bfile qc/simmons --bmerge qc/biobank --make-bed --out qc/first_merge
-# This produces multiple position warnings, so try flipping 
+# This produces multiple position warnings, so try flipping
 plink --bfile qc/simmons --flip qc/first_merge-merge.missnp --make-bed --out qc/simmons_flipped
 # Re-merge flipped
 plink --bfile qc/simmons_flipped --bmerge qc/biobank --make-bed --out qc/flip_merge
@@ -80,7 +88,7 @@ write.table(biobankbim,"./qc/biobank.bim",row.names = F,quote = F,col.names = F)
 ```
 
 ```{bash eval=FALSE}
-# Exclude name mismatches and SNPs that are different 
+# Exclude name mismatches and SNPs that are different
 plink --bfile qc/biobank --make-bed --out qc/biobank --exclude qc/exclude_mismatch
 plink --bfile qc/biobank --make-bed --out qc/biobank --exclude qc/first_merge-merge.missnp
 plink --bfile qc/simmons --make-bed --out qc/simmons --exclude qc/exclude_mismatch
@@ -101,7 +109,21 @@ plink2 --bfile qc/biobank_simmons_merge --extract qc/indepSNP.prune.in --make-be
 plink2 --bfile analysis/biobank_simmons_merge_final --make-king-table --king-table-filter 0.354 --out qc/biobank_simmons_kin
 ```
 
-# PCA 
+```{r ensembl,cache=FALSE}
+# Check how many of the SNPs of interest are in the final merge
+merged_snps <- read.delim("./qc/biobank_simmons_merge.bim", 
+                          header=FALSE)
+snps_interest <- read.csv("./Variants in any T1D GRS.csv",
+                          stringsAsFactors = F)
+# Ensembl
+snp_mart = useMart(biomart="ENSEMBL_MART_SNP", host="grch37.ensembl.org",
+                   dataset="hsapiens_snp")
+bm <- getBM(attributes = c('refsnp_id', 'allele', 'chrom_start',
+                           'chrom_strand'), filters = c("snp_filter"),
+            values = merged_snps$V2,mart = snp_mart)
+```
+
+# PCA
 
 ```{bash eval=FALSE}
 plink2 --bfile analysis/biobank_simmons_merge_final --pca --out analysis/PCA
@@ -109,7 +131,7 @@ plink2 --bfile analysis/biobank_simmons_merge_final --pca --out analysis/PCA
 
 ## By Cohort
 
-There are clear batch effects between Kimber's data and the Biobank data. When PC3 is included in the logistic regression, the VIF for cohort is really high, suggesting that PC3 is primarily driven by batch. 
+There are clear batch effects between Kimber's data and the Biobank data. When PC3 is included in the logistic regression, the VIF for cohort is really high, suggesting that PC3 is primarily driven by batch.
 
 ```{r pca by batch}
 # Clear workspace
@@ -136,11 +158,11 @@ PCA$Sex <- as.factor(PCA$Sex)
 levels(PCA$Sex) <- c("F", "F", "M", "M")
 # Plot (colorblind friendly)
 cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
-ggplot(PCA,aes(x=PC1,y=PC2)) + 
+ggplot(PCA,aes(x=PC1,y=PC2)) +
   geom_point(aes(color = Cohort)) + scale_color_manual(values=cbPalette) + theme_bw()
-ggplot(PCA,aes(x=PC2,y=PC3)) + 
+ggplot(PCA,aes(x=PC2,y=PC3)) +
   geom_point(aes(color = Cohort)) + scale_color_manual(values=cbPalette) + theme_bw()
-ggplot(PCA,aes(x=PC1,y=PC3)) + 
+ggplot(PCA,aes(x=PC1,y=PC3)) +
   geom_point(aes(color = Cohort)) + scale_color_manual(values=cbPalette) + theme_bw()
 ```
 
