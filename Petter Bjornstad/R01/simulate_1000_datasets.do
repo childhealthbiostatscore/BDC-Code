@@ -16,7 +16,7 @@ generate sim = 1
 
 save temp, replace
 
-forvalues i=2/5{
+forvalues i=2/1000{
     aldsim, totn(40) cn(4) ci(1) pn(3) pi(1) agelb(8) ageub(14) intsd(1) slpsd(1) slpintcor(-0.1) resid(2.236068) effsize(0.5)
 	generate group = "lean"
 	replace id = id + 0.2
