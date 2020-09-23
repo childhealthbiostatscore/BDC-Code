@@ -196,59 +196,71 @@ ggplot(df[!is.na(df$age_group),],aes(x = timepoint,y = gmi)) +
 
 ```{r contrasts}
 # Peds
-base_peds <- c(1,rep(0,23))
-m1_peds <- c(rep(0,1),1,rep(0,22))
-m3_peds <- c(rep(0,2),1,rep(0,21))
-m6_peds <- c(rep(0,3),1,rep(0,20))
-m9_peds <- c(rep(0,4),1,rep(0,19))
-m12_peds <- c(rep(0,5),1,rep(0,18))
+m1_peds <- c(1,rep(0,19))
+m3_peds <- c(rep(0,1),1,rep(0,18))
+m6_peds <- c(rep(0,2),1,rep(0,17))
+m9_peds <- c(rep(0,3),1,rep(0,16))
+m12_peds <- c(rep(0,4),1,rep(0,15))
 # YA
-base_ya <- c(rep(0,6),1,rep(0,17))
-m1_ya <- c(rep(0,7),1,rep(0,16))
-m3_ya <- c(rep(0,8),1,rep(0,15))
-m6_ya <- c(rep(0,9),1,rep(0,14))
-m9_ya <- c(rep(0,10),1,rep(0,13))
-m12_ya <- c(rep(0,11),1,rep(0,12))
+m1_ya <- c(rep(0,5),1,rep(0,14))
+m3_ya <- c(rep(0,6),1,rep(0,13))
+m6_ya <- c(rep(0,7),1,rep(0,12))
+m9_ya <- c(rep(0,8),1,rep(0,11))
+m12_ya <- c(rep(0,9),1,rep(0,10))
 # Adult
-base_adult <- c(rep(0,12),1,rep(0,11))
-m1_adult <- c(rep(0,13),1,rep(0,10))
-m3_adult <- c(rep(0,14),1,rep(0,9))
-m6_adult <- c(rep(0,15),1,rep(0,8))
-m9_adult <- c(rep(0,16),1,rep(0,7))
-m12_adult <- c(rep(0,17),1,rep(0,6))
+m1_adult <- c(rep(0,10),1,rep(0,9))
+m3_adult <- c(rep(0,11),1,rep(0,8))
+m6_adult <- c(rep(0,12),1,rep(0,7))
+m9_adult <- c(rep(0,13),1,rep(0,6))
+m12_adult <- c(rep(0,14),1,rep(0,5))
 # Older adult
-base_older <- c(rep(0,18),1,rep(0,5))
-m1_older <- c(rep(0,19),1,rep(0,4))
-m3_older <- c(rep(0,20),1,rep(03))
-m6_older <- c(rep(0,21),1,rep(0,2))
-m9_older <- c(rep(0,22),1,rep(0,1))
-m12_older <- c(rep(0,23),1)
+m1_older <- c(rep(0,15),1,rep(0,4))
+m3_older <- c(rep(0,16),1,rep(0,3))
+m6_older <- c(rep(0,17),1,rep(0,2))
+m9_older <- c(rep(0,18),1,rep(0,1))
+m12_older <- c(rep(0,19),1)
+# List
+contr <- 
+  list("M3 Peds vs. M1 Peds" = m3_peds - m1_peds,
+       "M6 Peds vs. M1 Peds" = m6_peds - m1_peds,
+       "M9 Peds vs. M1 Peds" = m9_peds - m1_peds,
+       "M12 Peds vs. M1 Peds" = m12_peds - m1_peds,
+       "M3 YA vs. M1 YA" = m3_ya - m1_ya,
+       "M6 YA vs. M1 YA" = m6_ya - m1_ya,
+       "M9 YA vs. M1 YA" = m9_ya - m1_ya,
+       "M12 YA vs. M1 YA" = m12_ya - m1_ya,
+       "M3 Adult vs. M1 Adult" = m3_adult - m1_adult,
+       "M6 Adult vs. M1 Adult" = m6_adult - m1_adult,
+       "M9 Adult vs. M1 Adult" = m9_adult - m1_adult,
+       "M12 Adult vs. M1 Adult" = m12_adult - m1_adult,
+       "M3 Older vs. M1 Older" = m3_older - m1_older,
+       "M6 Older vs. M1 Older" = m6_older - m1_older,
+       "M9 Older vs. M1 Older" = m9_older - m1_older,
+       "M12 Older vs. M1 Older" = m12_older - m1_older)
 ```
 
 ```{r model function}
 # Based on preliminary analyses, an AR1 model with random intercept is best for most variables.
-ar1_mod_func <- function(outcome,outcome_label,data = df,
-                         log_transform=F){
-  if(log_transform==T){
-    form <- as.formula(paste0("log(",outcome,")~","timepoint*age_group"))
-  } else {
-    form <- as.formula(paste0(outcome,"~","timepoint*age_group"))
-  }
+ar1_mod_func <- function(outcome,outcome_label,data = df){
+  data <- data[data$timepoint != "Baseline",]
+  form <- as.formula(paste0(outcome,"~","timepoint*age_group"))
   # Try model with interaction
   mod <- lme(form,random = ~1|record_id,data=data,
              correlation=corAR1(),na.action = na.omit)
+  res <- summary(mod)$tTable
   ano <- as.data.frame(anova(mod))
-  # If not significant, re-fit without it
-  if(ano["timepoint:age_group","p-value"] >= 0.05){
-    form <- update.formula(form,~timepoint+age_group)
-    mod <- lme(form,random = ~1|record_id,data=data,
-               correlation=corAR1(),na.action = na.omit)
-    ano <- as.data.frame(anova(mod))
-  }
-  
+  # Format results
+  rownames(res) <- gsub("timepoint","",rownames(res))
+  rownames(res) <- gsub("age_group","",rownames(res))
+  rownames(ano) <- gsub("timepoint","Timepoint",rownames(ano))
+  rownames(ano) <- gsub("age_group","Age Group",rownames(ano))
+  # Contrasts
+  combined <- emmeans(mod,~timepoint)
   emm <- emmeans(mod,~timepoint*age_group)
-  contrast(emm, 
-           method = list("peds1 vs. peds3" = m1_peds - m3_peds))
+  c <- contrast(emm,method = contr)
+  print(kable(ano))
+  print(kable(emm))
+  print(kable(c))
 }
 ```
 
