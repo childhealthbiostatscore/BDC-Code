@@ -7,7 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE,dpi = 600)
-knitr::opts_knit$set(root.dir = "/Users/timvigers/Desktop/670G Combined")
+knitr::opts_knit$set(root.dir = "C:/Users/timbv/Dropbox/Documents/Work/670G Combined")
 library(Hmisc)
 library(arsenal)
 library(skimr)
@@ -90,7 +90,7 @@ vars <- c("record_id","cohort","timepoint","days_from_start","age","sex","race",
 adult <- adult %>%
   select(all_of(vars))
 # Cari's data
-source("/Users/timvigers/Documents/GitHub/BDC-Code/Cari Berget/670G Combined/data_clean.r")
+source("C:/Users/timbv/Documents/GitHub/BDC-Code/Cari Berget/670G Combined/data_clean.r")
 # Exclude non-670G and those who never started
 data <- data[as.numeric(as.character(data$record_id)) < 116,]
 never_started <- data %>% group_by(record_id) %>% 
@@ -193,6 +193,64 @@ ggplot(df[!is.na(df$age_group),],aes(x = timepoint,y = gmi)) +
 ```
 
 # Model Results
+
+```{r contrasts}
+# Peds
+base_peds <- c(1,rep(0,23))
+m1_peds <- c(rep(0,1),1,rep(0,22))
+m3_peds <- c(rep(0,2),1,rep(0,21))
+m6_peds <- c(rep(0,3),1,rep(0,20))
+m9_peds <- c(rep(0,4),1,rep(0,19))
+m12_peds <- c(rep(0,5),1,rep(0,18))
+# YA
+base_ya <- c(rep(0,6),1,rep(0,17))
+m1_ya <- c(rep(0,7),1,rep(0,16))
+m3_ya <- c(rep(0,8),1,rep(0,15))
+m6_ya <- c(rep(0,9),1,rep(0,14))
+m9_ya <- c(rep(0,10),1,rep(0,13))
+m12_ya <- c(rep(0,11),1,rep(0,12))
+# Adult
+base_adult <- c(rep(0,12),1,rep(0,11))
+m1_adult <- c(rep(0,13),1,rep(0,10))
+m3_adult <- c(rep(0,14),1,rep(0,9))
+m6_adult <- c(rep(0,15),1,rep(0,8))
+m9_adult <- c(rep(0,16),1,rep(0,7))
+m12_adult <- c(rep(0,17),1,rep(0,6))
+# Older adult
+base_older <- c(rep(0,18),1,rep(0,5))
+m1_older <- c(rep(0,19),1,rep(0,4))
+m3_older <- c(rep(0,20),1,rep(03))
+m6_older <- c(rep(0,21),1,rep(0,2))
+m9_older <- c(rep(0,22),1,rep(0,1))
+m12_older <- c(rep(0,23),1)
+```
+
+```{r model function}
+# Based on preliminary analyses, an AR1 model with random intercept is best for most variables.
+ar1_mod_func <- function(outcome,outcome_label,data = df,
+                         log_transform=F){
+  if(log_transform==T){
+    form <- as.formula(paste0("log(",outcome,")~","timepoint*age_group"))
+  } else {
+    form <- as.formula(paste0(outcome,"~","timepoint*age_group"))
+  }
+  # Try model with interaction
+  mod <- lme(form,random = ~1|record_id,data=data,
+             correlation=corAR1(),na.action = na.omit)
+  ano <- as.data.frame(anova(mod))
+  # If not significant, re-fit without it
+  if(ano["timepoint:age_group","p-value"] >= 0.05){
+    form <- update.formula(form,~timepoint+age_group)
+    mod <- lme(form,random = ~1|record_id,data=data,
+               correlation=corAR1(),na.action = na.omit)
+    ano <- as.data.frame(anova(mod))
+  }
+  
+  emm <- emmeans(mod,~timepoint*age_group)
+  contrast(emm, 
+           method = list("peds1 vs. peds3" = m1_peds - m3_peds))
+}
+```
 
 ## By Age Group at HCL Start
 
@@ -360,7 +418,7 @@ mean_mod <-
       na.action = na.omit)
 # No overall effect of the interaction term, so re-fit without it.
 final_mean_mod <- lme(sensor_mean ~ timepoint+hba1c_group,random = ~1|record_id,df,
-      correlation=corAR1(),na.action = na.omit)
+                      correlation=corAR1(),na.action = na.omit)
 # Results
 a <- anova(final_mean_mod)
 rownames(a) <- c("(Intercept)","Timepoint","HbA1c Group")
