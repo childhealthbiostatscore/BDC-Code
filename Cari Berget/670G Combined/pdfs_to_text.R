@@ -1,7 +1,7 @@
 library(pdftools)
 library(tidyverse)
 # List files
-dir = "/Users/timvigers/Desktop/670G Combined/Data_Raw/ClinicVisit_PDFs"
+dir = "C:/Users/timbv/Dropbox/Documents/Work/670G Combined/Data_Raw/ClinicVisit_PDFs"
 files = list.files(dir,pattern = "*pdf",full.names = T)
 # Summary data frame
 pdf_summary = data.frame()
@@ -26,6 +26,12 @@ for (f in 1:length(files)) {
   start = lubridate::mdy(dates[1])
   end = lubridate::mdy(dates[3])
   days = as.numeric(difftime(end,start))
+  # BG checks per day
+  ys = df$y[which(df$text=="Calibration")]
+  y = ys[which(ys %in% df$y[which(df$text=="(per")])]
+  bg = df[which(df$y == y & df$x > 640),"text"]
+  bg = suppressWarnings(as.numeric(bg))
+  bg = bg[which(!is.na(bg))[1]]
   # Get statistics - x column changes depending on length of text
   percs = df[which((df$y == 349 | df$y == 364 | df$y == 378) & df$x > 200),"text"]
   gperc = grep("%",percs)
@@ -86,6 +92,7 @@ for (f in 1:length(files)) {
     paste0("M",sub(".*month","",basename(tools::file_path_sans_ext(files[f]))))
   pdf_summary[f,"cgm_start"] = start
   pdf_summary[f,"days_worn"] = days
+  pdf_summary[f,"bg_checks"] = bg
   pdf_summary[f,"am_use"] = percs[1]
   pdf_summary[f,"manual"] = percs[2]
   pdf_summary[f,"sensor_wear"] = percs[3]
@@ -105,5 +112,5 @@ for (f in 1:length(files)) {
     suppressWarnings(lapply(pdf_summary[,5:ncol(pdf_summary)],as.numeric))
 }
 # Write summary
-write.csv(pdf_summary,file = "/Users/timvigers/Desktop/pdf_summary.csv",
+write.csv(pdf_summary,file = "C:/Users/timbv/Dropbox/Documents/Work/670G Combined/Data_Cleaned/pdf_summary.csv",
           row.names = F,na = "")

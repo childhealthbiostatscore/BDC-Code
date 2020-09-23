@@ -2,7 +2,7 @@
 title: "670G Combined Analysis  "
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: html_document
+output: word_document
 ---
 
 ```{r setup, include=FALSE}
@@ -22,27 +22,35 @@ library(tidyverse)
 na_strings <- c("","999","-999","NULL"," ")
 # Kaan's data
 # Read in
-adult_demographics <- read.csv("./Data_Cleaned/adult_demographics.csv",
-                               na.strings = na_strings)
-adult <- read.csv("./Data_Cleaned/670Excel.csv",na.strings = na_strings)
-adult_2 <- read.csv("./Data_Cleaned/Data set 670 Master.csv",na.strings = na_strings)
+adult_demographics <- 
+  read.csv("./Data_Cleaned/adult_demographics.csv",
+           na.strings = na_strings,stringsAsFactors = F)
+adult <- 
+  read.csv("./Data_Cleaned/670Excel.csv",na.strings = na_strings,
+           stringsAsFactors = F)
+adult_2 <- read.csv("./Data_Cleaned/Data set 670 Master.csv",
+                    na.strings = na_strings,stringsAsFactors = F)
 adult_new <- read.csv("./Data_Cleaned/670Excel.new55patients.csv",
-                      na.strings = na_strings)
+                      na.strings = na_strings,stringsAsFactors = F)
 adult_pump <- read.csv("./Data_Cleaned/pdf_summary.csv",
-                       na.strings = na_strings)
+                       na.strings = na_strings,stringsAsFactors = F)
 # Format and combine
 adult <- adult %>% select(Patient.ID,start.date,contains("HbA1C"))
-adult_2 <- adult_2 %>% select(Patient.ID,start.date,Ethnicity,Insurance,contains("HbA1C"))
+adult_2 <- adult_2 %>% 
+  select(Patient.ID,start.date,Ethnicity,Insurance,contains("HbA1C"))
 adult <- full_join(adult,adult_2)
-adult_new <- adult_new %>% select(Patient.ID,start.date,Ethnicity,Insurance,contains("HbA1C"))
+adult_new <- adult_new %>% 
+  select(Patient.ID,start.date,Ethnicity,Insurance,contains("HbA1C"))
 adult <- full_join(adult,adult_new) 
-adult <- adult %>% select(Patient.ID,start.date,Ethnicity,Insurance,HbA1C.Baseline,everything())
+adult <- adult %>% select(Patient.ID,start.date,Ethnicity,Insurance,
+                          HbA1C.Baseline,everything())
 # Get demographic data
 adult <- adult %>% filter(!is.na(HbA1C.Baseline))
 adult <- left_join(adult,adult_demographics,by = "Patient.ID")
 adult$age <- 
   as.numeric(difftime(as.Date(adult$start.date,format = "%m/%d/%Y"),
-                      as.Date(adult$DOB,format = "%m/%d/%Y"),units = "days")/365.25)
+                      as.Date(adult$DOB,format = "%m/%d/%Y"),
+                      units = "days")/365.25)
 # Get pdf data
 adult$last_name <- tolower(sapply(strsplit(adult$LastName," "),"[[",1))
 adult$first_name <- tolower(sapply(strsplit(adult$FirstName," "),"[[",1))
@@ -50,16 +58,19 @@ adult <- adult %>%
   pivot_longer(cols = contains("HbA1C"),
                names_to = c(".value","timepoint"),
                names_sep = "\\.")
-adult <- left_join(adult,adult_pump,by = c("last_name", "first_name", "timepoint"))
+adult <- left_join(adult,adult_pump,
+                   by = c("last_name", "first_name", "timepoint"))
 adult <- adult %>% group_by(Patient.ID) %>% 
   mutate(hba1c_baseline = HbA1C[timepoint == "Baseline"],
-         days_from_start = as.numeric(difftime(as.Date(cgm_start,format = "%m/%d/%Y"),
-                                               as.Date(start.date,format = "%m/%d/%Y"),
-                                               units = "days"))) %>% ungroup()
+         days_from_start = 
+           as.numeric(difftime(as.Date(cgm_start,format = "%Y-%m-%d"),
+                               as.Date(start.date,format = "%m/%d/%Y"),
+                               units = "days"))) %>% ungroup()
 # Delete rows without PDF information
 pdf_start <- which(colnames(adult)=="days_worn")
-remove_rows <- which(rowSums(is.na(adult[,pdf_start:(pdf_start+19)]))==20 &
-                       adult$timepoint != "Baseline")
+remove_rows <- 
+  which(rowSums(is.na(adult[,pdf_start:(pdf_start+19)]))==20 &
+          adult$timepoint != "Baseline")
 adult <- adult[-c(remove_rows),]
 # Combine am exit columns to match Cari's
 adult$amexits = 
@@ -74,19 +85,26 @@ adult <- adult %>%
          amexits_day = amexits / days_worn,
          cohort = "Adult",hba1c = HbA1C,
          record_id = Patient.ID,race = Ethnicity,
-         insurance = Insurance,sex = Gender)
+         insurance = Insurance,sex = Gender,
+         sensor_70_180 = tir_70_180,sensor_g250 = tir_over_250,
+         sensor_181_250 = tir_over_180 - tir_over_250)
 # Re-level factors
 adult$race <- as.factor(adult$race)
-levels(adult$race) <- c("Non-white","Non-white","White","White","Non-white","Non-white","Non-white","More Than One Race","More Than One Race","Unknown / Not Reported")
+levels(adult$race) <- 
+  c("Non-white","Non-white","White","White","Non-white","Non-white",
+    "Non-white","More Than One Race","More Than One Race",
+    "Unknown / Not Reported")
 adult$race <- as.character(adult$race)
 adult$insurance <- as.factor(adult$insurance)
-levels(adult$insurance) <- c("Other","Public","Private")
+levels(adult$insurance) <- c("Public","Private")
 adult$insurance <- as.character(adult$insurance)
 # Select columns
-vars <- c("record_id","cohort","timepoint","days_from_start","age","sex","race",
-          "insurance","hba1c_baseline","hba1c","gmi","time_am","time_mm",
-          "sensor_wear","sensor_mean","sensor_sd","amexits","amexit_hyper",
-          "amexit_manual","amexits_day","amexits_other")
+vars <- c("record_id","cohort","timepoint","days_from_start","age",
+          "sex","race","insurance","hba1c_baseline","hba1c","gmi",
+          "bg_checks","time_am","time_mm","sensor_wear","sensor_mean",
+          "sensor_sd","sensor_70_180","sensor_181_250",
+          "sensor_g250","amexits","amexit_hyper","amexit_manual",
+          "amexits_day","amexits_other")
 adult <- adult %>%
   select(all_of(vars))
 # Cari's data
@@ -112,15 +130,20 @@ data <- data %>% filter(!is.na(timepoint)) %>% group_by(record_id) %>%
          age = age[timepoint == "Baseline"]) %>% ungroup()
 # Make, fill down and select columns
 data <- data %>%
-  fill(demographics_dob,demographics_insurance.factor,demographics_sex.factor,
-       demographics_race.factor,automode_start) %>%
-  mutate(race = demographics_race.factor,sex = as.character(demographics_sex.factor),
-         insurance = demographics_insurance.factor,amexit_hyper = amexit_hyper / amexits,
-         amexit_manual = amexit_manual / amexits,amexits_other = amexits_other / amexits,
+  fill(demographics_dob,demographics_insurance.factor,
+       demographics_sex.factor,demographics_race.factor,
+       automode_start) %>%
+  mutate(race = demographics_race.factor,
+         sex = as.character(demographics_sex.factor),
+         insurance = demographics_insurance.factor,
+         amexit_hyper = amexit_hyper / amexits,
+         amexit_manual = amexit_manual / amexits,
+         amexits_other = amexits_other / amexits,
          gmi = 3.31 + (sensor_mean * 0.02392),
-         days_from_start = as.numeric(difftime(as.Date(date_visit,"%m/%d/%Y"),
-                                               as.Date(automode_start,"%m/%d/%Y"),
-                                               units = "days"))) %>%
+         days_from_start = 
+           as.numeric(difftime(as.Date(date_visit,"%m/%d/%Y"),
+                               as.Date(automode_start,"%m/%d/%Y"),
+                               units = "days"))) %>%
   select(all_of(vars))
 # Remove rows with no pump data
 pdf_start <- which(colnames(data)=="time_am")
@@ -148,17 +171,18 @@ demographics <- df %>% group_by(record_id) %>% filter(row_number()==1)
 t1 <- tableby(cohort ~ hba1c_baseline + hba1c_group + age + age_group + sex + 
                 race + insurance,data = demographics)
 # Print
-summary(t1,pfootnote = T,
-        labelTranslations = list(age = "Age (years) at HCL Start",
-                                 age_group = "Age Group at HCL Start",
-                                 sex = "Sex",race = "Race",
-                                 insurance = "Insurance",
-                                 hba1c_baseline = "HbA1c (%) at Baseline"))
+summary(t1,pfootnote = T,labelTranslations = 
+          list(age = "Age (years) at HCL Start",
+               age_group = "Age Group at HCL Start",
+               sex = "Sex",race = "Race",
+               insurance = "Insurance",
+               hba1c_baseline = "HbA1c (%) at Baseline",
+               hba1c_group = "HbA1c Group"))
 ```
 
 # Figure 1: HbA1c Over Time by Cohort
 
-```{r warning=FALSE,message=FALSE,eval=FALSE}
+```{r warning=FALSE,message=FALSE,cache=TRUE}
 ggplot(df,aes(x = timepoint,y = hba1c)) +
   geom_line(alpha = 0.2,aes(group = record_id,color = cohort)) +
   geom_smooth(aes(group = cohort,color = cohort),se = F) +
@@ -167,7 +191,7 @@ ggplot(df,aes(x = timepoint,y = hba1c)) +
 
 # Figure 2: HbA1c Over Time by Age Group
 
-```{r warning=FALSE,message=FALSE,eval=FALSE}
+```{r warning=FALSE,message=FALSE,cache=TRUE}
 ggplot(df[!is.na(df$age_group),],aes(x = timepoint,y = hba1c)) +
   geom_line(alpha = 0.2,aes(group = record_id,color = age_group)) +
   geom_smooth(aes(group = age_group,color = age_group),se = F) +
@@ -176,7 +200,7 @@ ggplot(df[!is.na(df$age_group),],aes(x = timepoint,y = hba1c)) +
 
 # Figure 3: GMI Over Time by Cohort
 
-```{r warning=FALSE,message=FALSE,eval=FALSE}
+```{r warning=FALSE,message=FALSE,cache=TRUE}
 ggplot(df,aes(x = timepoint,y = gmi)) +
   geom_line(alpha = 0.2,aes(group = record_id,color = cohort)) +
   geom_smooth(aes(group = cohort,color = cohort),se = F) +
@@ -185,7 +209,7 @@ ggplot(df,aes(x = timepoint,y = gmi)) +
 
 # Figure 4: GMI Over Time by Age Group
 
-```{r warning=FALSE,message=FALSE,eval=FALSE}
+```{r warning=FALSE,message=FALSE,cache=TRUE}
 ggplot(df[!is.na(df$age_group),],aes(x = timepoint,y = gmi)) +
   geom_line(alpha = 0.2,aes(group = record_id,color = age_group)) +
   geom_smooth(aes(group = age_group,color = age_group),se = F) +
@@ -193,6 +217,8 @@ ggplot(df[!is.na(df$age_group),],aes(x = timepoint,y = gmi)) +
 ```
 
 # Model Results
+
+Data were analyzed using a linear mixed effects model with random intercept for subject and an AR1 correlation structure to account for repeated measures. For each outcome there is a histogram of the data followed by an ANOVA table and the mixed model results. The ANOVA table shows whether a covariate in the model was significant overall, with "Timepoint:Age Group" referring to the interaction term. The mixed model table includes the results of linear contrasts to test for differences between timepoints within a group (e.g. comparing month 3 to month 1 in the pediatric cohort). P values are adjusted for multiple comparisons using the FDR method. 
 
 ```{r contrasts}
 # Peds
@@ -259,7 +285,8 @@ ar1_mod_func <- function(outcome,data = df,diagnostics=F){
   rownames(ano) <- gsub("timepoint","Timepoint",rownames(ano))
   rownames(ano) <- gsub("age_group","Age Group",rownames(ano))
   # Without age group
-  mod <- lme(hba1c~timepoint,random = ~1|record_id,data=data,
+  form <- update.formula(form,~timepoint)
+  mod <- lme(form,random = ~1|record_id,data=data,
              correlation=corAR1(),na.action = na.omit)
   emm <- suppressWarnings(emmeans(mod,~timepoint))
   combined_means <- as.data.frame(emm)[,2:3]
@@ -293,6 +320,7 @@ ar1_mod_func <- function(outcome,data = df,diagnostics=F){
   age_groups <- bind_rows(peds,ya,adult,older)
   colnames(age_groups) <- outnames
   final <- bind_rows(combined_means,age_groups)
+  final[,3] <- p.adjust(final[,3],"fdr")
   # Print
   print(kable(ano,digits = 3))
   print(kable(final,digits = 3))
@@ -302,7 +330,72 @@ ar1_mod_func <- function(outcome,data = df,diagnostics=F){
 }
 ```
 
+## HbA1c
+
 ```{r results='asis'}
+hist(df$hba1c)
 ar1_mod_func(outcome = "hba1c",data = df,diagnostics = T)
+```
+
+## % Time in AM
+
+```{r results='asis'}
+hist(df$time_am)
+ar1_mod_func(outcome = "time_am",data = df,diagnostics = T)
+```
+
+## % CGM Wear
+
+```{r results='asis'}
+hist(df$sensor_wear)
+ar1_mod_func(outcome = "sensor_wear",data = df,diagnostics = T)
+```
+
+## AM Exits per Day
+
+```{r results='asis'}
+hist(df$amexits_day)
+ar1_mod_func(outcome = "amexits_day",data = df,diagnostics = T)
+```
+
+## BG Checks per Day
+
+The peds cohort has quite a few people with BG checks in the 10-25 range whereas the maximum in the adult cohort is 6.6. Is this correct?
+
+```{r results='asis'}
+hist(df$bg_checks)
+ar1_mod_func(outcome = "bg_checks",data = df,diagnostics = T)
+```
+
+## Sensor Mean
+
+```{r results='asis'}
+hist(df$sensor_mean)
+ar1_mod_func(outcome = "sensor_mean",data = df,diagnostics = T)
+```
+
+## % TIR 70 - 180 mg/dL
+
+```{r results='asis'}
+hist(df$sensor_70_180)
+ar1_mod_func(outcome = "sensor_70_180",data = df,diagnostics = T)
+```
+
+## % TIR 181 - 250 mg/dL
+
+Did the peds cohort really have such high % TIR 180-250? The 15 highest percentages in the data are peds and one had 86%!
+
+```{r results='asis'}
+hist(df$sensor_181_250[df$cohort=="Peds"])
+ar1_mod_func(outcome = "sensor_181_250",data = df,diagnostics = T)
+```
+
+## % TIR 250+ mg/dL
+
+This may require some more complicated models if the data are correct, because the distribution is so skewed (the means reported here are LS means from the models, so the negative values are sign that the model isn't great). The highest percentage among the adults is 34%, but many of the peds values are in the 40s and above, with the highest being 65%. Is this correct? 
+
+```{r results='asis'}
+hist(df$sensor_g250)
+ar1_mod_func(outcome = "scale(sensor_g250)",data = df,diagnostics = T)
 ```
 

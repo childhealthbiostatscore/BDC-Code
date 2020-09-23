@@ -30,6 +30,7 @@ label(data$amexit_manual)="# of exits due to patient manually disabling auto mod
 label(data$amexits_day)="Average # of auto mode exits per day "
 label(data$amexits_other)="All auto mode exits other than hyper, hypo and manual"
 label(data$automode_start)="Date of Closed Loop (CL) Start"
+label(data$bg_checks)="Average BG checks per day"
 #Setting Units
 
 
