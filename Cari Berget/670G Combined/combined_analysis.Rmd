@@ -158,7 +158,7 @@ summary(t1,pfootnote = T,
 
 # Figure 1: HbA1c Over Time by Cohort
 
-```{r warning=FALSE,message=FALSE}
+```{r warning=FALSE,message=FALSE,eval=FALSE}
 ggplot(df,aes(x = timepoint,y = hba1c)) +
   geom_line(alpha = 0.2,aes(group = record_id,color = cohort)) +
   geom_smooth(aes(group = cohort,color = cohort),se = F) +
@@ -167,7 +167,7 @@ ggplot(df,aes(x = timepoint,y = hba1c)) +
 
 # Figure 2: HbA1c Over Time by Age Group
 
-```{r warning=FALSE,message=FALSE}
+```{r warning=FALSE,message=FALSE,eval=FALSE}
 ggplot(df[!is.na(df$age_group),],aes(x = timepoint,y = hba1c)) +
   geom_line(alpha = 0.2,aes(group = record_id,color = age_group)) +
   geom_smooth(aes(group = age_group,color = age_group),se = F) +
@@ -176,7 +176,7 @@ ggplot(df[!is.na(df$age_group),],aes(x = timepoint,y = hba1c)) +
 
 # Figure 3: GMI Over Time by Cohort
 
-```{r warning=FALSE,message=FALSE}
+```{r warning=FALSE,message=FALSE,eval=FALSE}
 ggplot(df,aes(x = timepoint,y = gmi)) +
   geom_line(alpha = 0.2,aes(group = record_id,color = cohort)) +
   geom_smooth(aes(group = cohort,color = cohort),se = F) +
@@ -185,7 +185,7 @@ ggplot(df,aes(x = timepoint,y = gmi)) +
 
 # Figure 4: GMI Over Time by Age Group
 
-```{r warning=FALSE,message=FALSE}
+```{r warning=FALSE,message=FALSE,eval=FALSE}
 ggplot(df[!is.na(df$age_group),],aes(x = timepoint,y = gmi)) +
   geom_line(alpha = 0.2,aes(group = record_id,color = age_group)) +
   geom_smooth(aes(group = age_group,color = age_group),se = F) +
@@ -237,281 +237,72 @@ contr <-
        "M6 Older vs. M1 Older" = m6_older - m1_older,
        "M9 Older vs. M1 Older" = m9_older - m1_older,
        "M12 Older vs. M1 Older" = m12_older - m1_older)
+m1 <- c(1,0,0,0,0)
+contr_overall <- 
+  list("M3 vs. M1 " = c(0,1,0,0,0)-m1,
+       "M6 vs. M1 " = c(0,0,1,0,0)-m1,
+       "M9 vs. M1 " = c(0,0,0,1,0)-m1,
+       "M12 vs. M1 " = c(0,0,0,0,1)-m1)
+# Results column names
+outnames <- c("LS Mean","SE","p value vs. M1")
 ```
 
 ```{r model function}
 # Based on preliminary analyses, an AR1 model with random intercept is best for most variables.
-ar1_mod_func <- function(outcome,outcome_label,data = df){
+ar1_mod_func <- function(outcome,data = df,diagnostics=F){
   data <- data[data$timepoint != "Baseline",]
   form <- as.formula(paste0(outcome,"~","timepoint*age_group"))
-  # Try model with interaction
-  mod <- lme(form,random = ~1|record_id,data=data,
-             correlation=corAR1(),na.action = na.omit)
-  res <- summary(mod)$tTable
-  ano <- as.data.frame(anova(mod))
-  # Format results
-  rownames(res) <- gsub("timepoint","",rownames(res))
-  rownames(res) <- gsub("age_group","",rownames(res))
+  # Model with interaction
+  mod_int <- lme(form,random = ~1|record_id,data=data,
+                 correlation=corAR1(),na.action = na.omit)
+  ano <- anova(mod_int)
   rownames(ano) <- gsub("timepoint","Timepoint",rownames(ano))
   rownames(ano) <- gsub("age_group","Age Group",rownames(ano))
+  # Without age group
+  mod <- lme(hba1c~timepoint,random = ~1|record_id,data=data,
+             correlation=corAR1(),na.action = na.omit)
+  emm <- suppressWarnings(emmeans(mod,~timepoint))
+  combined_means <- as.data.frame(emm)[,2:3]
+  c <- as.data.frame(contrast(emm,method = contr_overall))
+  combined_means$p <- c(NA,c$p.value)
+  rownames(combined_means) <- paste0("Overall M",c(1,3,6,9,12))
+  colnames(combined_means) <- outnames
+  # Means by age group
+  emm <- suppressWarnings(emmeans(mod_int,~timepoint*age_group))
   # Contrasts
-  combined <- emmeans(mod,~timepoint)
-  emm <- emmeans(mod,~timepoint*age_group)
-  c <- contrast(emm,method = contr)
-  print(kable(ano))
-  print(kable(emm))
-  print(kable(c))
+  c <- as.data.frame(contrast(emm,method = contr))
+  # Get values
+  emm <- as.data.frame(emm)
+  peds_means <- emm[1:5,3:4]
+  ps <- c(NA,c$p.value[1:4])
+  peds <- cbind(peds_means,ps)
+  rownames(peds) <- paste0("Peds M",c(1,3,6,9,12))
+  ya_means <- emm[6:10,3:4]
+  ps <- c(NA,c$p.value[5:8])
+  ya <- cbind(ya_means,ps)
+  rownames(ya) <- paste0("YAs M",c(1,3,6,9,12))
+  adult_means <- emm[11:15,3:4]
+  ps <- c(NA,c$p.value[9:12])
+  adult <- cbind(adult_means,ps)
+  rownames(adult) <- paste0("Adults M",c(1,3,6,9,12))
+  older_means <- emm[16:20,3:4]
+  ps <- c(NA,c$p.value[13:16])
+  older <- cbind(older_means,ps)
+  rownames(older) <- paste0("Older Adults M",c(1,3,6,9,12))
+  # Final results table
+  age_groups <- bind_rows(peds,ya,adult,older)
+  colnames(age_groups) <- outnames
+  final <- bind_rows(combined_means,age_groups)
+  # Print
+  print(kable(ano,digits = 3))
+  print(kable(final,digits = 3))
+  if(diagnostics==T){
+    invisible(car::qqPlot(resid(mod_int)))
+  }
 }
 ```
 
-## By Age Group at HCL Start
-
-### HbA1c
-
-HbA1c was log-transformed for normality. Interaction effects between timepoint and age group were not significant (p = 0.9368), and therefore not included in the final model.
-
-```{r}
-# Residuals look much better with HbA1c log transformed. AR1 model better by AIC.
-hba1c_mod_ar1 <- lme(log(hba1c) ~ timepoint*age_group,random = ~1|record_id,df,
-                     correlation=corAR1(),na.action = na.omit)
-hba1c_mod <- lme(log(hba1c) ~ timepoint*age_group,random = ~1|record_id,df,
-                 na.action = na.omit)
-# No overall effect of the interaction term, so re-fit without it.
-final_hba1c_mod <- lme(log(hba1c) ~ timepoint+age_group,random = ~1|record_id,df,
-                       correlation=corAR1(),na.action = na.omit)
-# Results
-a <- anova(final_hba1c_mod)
-rownames(a) <- c("(Intercept)","Timepoint","Age Group" )
-kable(a,caption = "HbA1c by Timepoint and Age Group - Overall Effects")
-
-res <- summary(final_hba1c_mod)$tTable
-rownames(res) <- sub("timepoint*","",rownames(res))
-rownames(res) <- sub("age_group*","",rownames(res))
-kable(res,caption = "HbA1c by Timepoint and Age Group")
-# Means
-kable(emmeans(final_hba1c_mod,~timepoint*age_group),
-      caption = "emmeans")
+```{r results='asis'}
+ar1_mod_func(outcome = "hba1c",data = df,diagnostics = T)
 ```
 
-There was an overall effect of both time and age group on HbA1c. The "emmean" tables above are currently on the log scale, but I can transform them to regular HbA1c once we know what to report. I was assuming that the age group mean at each timepoint would be most useful.
-
-### GMI
-
-```{r}
-# About the same by AIC, so use AR1 for consistency.
-# Overall effect of the interaction term, so no need to re-fit .
-gmi_mod_ar1 <- 
-  lme(gmi ~ timepoint*age_group,random = ~1|record_id,df[df$timepoint != "Baseline",],
-      correlation=corAR1(),na.action = na.omit)
-gmi_mod <- 
-  lme(gmi ~ timepoint*age_group,random = ~1|record_id,df[df$timepoint != "Baseline",],
-      na.action = na.omit)
-# Results
-a <- anova(gmi_mod_ar1)
-rownames(a) <- c("(Intercept)","Timepoint","Age Group","Timepoint:Age Group")
-kable(a,caption = "GMI by Timepoint and Age Group - Overall Effects")
-
-res <- as.data.frame(summary(gmi_mod_ar1)$tTable)
-rownames(res) <- sub("timepoint*","",rownames(res))
-rownames(res) <- sub("age_group*","",rownames(res))
-kable(res,caption = "GMI by Timepoint and Age Group")
-# Means
-kable(emmeans(gmi_mod_ar1,~timepoint*age_group,
-              data = df[df$timepoint != "Baseline",]),
-      caption = "emmeans")
-```
-
-There were overall effects of timepoint, age group, and their interaction on GMI. The "emmeans" table shows the mean GMI for each age group at each timepoint. The "GMI by Timepoint and Age Group" table uses the pediatric group at M1 as the reference group, and everything else is in comparison to that group. So for example, the older adult group at month 3 was different by `r res$Value[which(rownames(res) == "M3:Older Adult")]` on average, and this difference was significant (p = `r res[which(rownames(res) == "M3:Older Adult"),"p-value"]`)
-
-### Mean Sensor
-
-```{r}
-# About the same by AIC, so use AR1 for consistency.
-# Overall effect of the interaction term, so no need to re-fit .
-mean_mod_ar1 <- 
-  lme(sensor_mean ~ timepoint*age_group,random = ~1|record_id,df[df$timepoint != "Baseline",],
-      correlation=corAR1(),na.action = na.omit)
-mean_mod <- 
-  lme(sensor_mean ~ timepoint*age_group,random = ~1|record_id,df[df$timepoint != "Baseline",],
-      na.action = na.omit)
-# Results
-a <- anova(mean_mod_ar1)
-rownames(a) <- c("(Intercept)","Timepoint","Age Group","Timepoint:Age Group")
-kable(a,caption = "Mean Sensor by Timepoint and Age Group - Overall Effects")
-
-res <- as.data.frame(summary(mean_mod_ar1)$tTable)
-rownames(res) <- sub("timepoint*","",rownames(res))
-rownames(res) <- sub("age_group*","",rownames(res))
-kable(res,caption = "Mean Sensor by Timepoint and Age Group")
-# Means
-kable(emmeans(mean_mod_ar1,~timepoint|age_group,
-              data = df[df$timepoint != "Baseline",]),
-      caption = "emmeans")
-```
-
-There were overall effects of timepoint and age group on average sensor, but their interaction was not significant. The "emmeans" table shows the mean sensor for each age group at each timepoint. The "Mean Sensor by Timepoint and Age Group" table uses the pediatric group at M1 as the reference group, and everything else is in comparison to that group.
-
-### Time in AM
-
-The residuals for this model are not great. Are there other variables we could include to see if they help the fit?
-
-```{r}
-# About the same by AIC, so use AR1 for consistency.
-# Overall effect of the interaction term, so no need to re-fit .
-am_mod_ar1 <- 
-  lme(time_am ~ timepoint*age_group,random = ~1|record_id,df[df$timepoint != "Baseline",],
-      correlation=corAR1(),na.action = na.omit)
-am_mod <- 
-  lme(time_am ~ timepoint*age_group,random = ~1|record_id,df[df$timepoint != "Baseline",],
-      na.action = na.omit)
-# Results
-a <- anova(am_mod_ar1)
-rownames(a) <- c("(Intercept)","Timepoint","Age Group","Timepoint:Age Group")
-kable(a,caption = "Time in AM by Timepoint and Age Group - Overall Effects")
-
-res <- as.data.frame(summary(am_mod_ar1)$tTable)
-rownames(res) <- sub("timepoint*","",rownames(res))
-rownames(res) <- sub("age_group*","",rownames(res))
-kable(res,caption = "Time in AM by Timepoint and Age Group")
-# Means
-kable(emmeans(am_mod_ar1,~timepoint|age_group,
-              data = df[df$timepoint != "Baseline",]),
-      caption = "emmeans")
-```
-
-There were overall effects of timepoint, age group, and their interaction on time in AM. The "emmeans" table shows the mean time in AM for each age group at each timepoint. The "Time in AM by Timepoint and Age Group" table uses the pediatric group at M1 as the reference group, and everything else is in comparison to that group. So for example, the older adult group at month 3 was different by `r res$Value[which(rownames(res) == "M3:Older Adult")]` on average, and this difference was significant (p = `r res[which(rownames(res) == "M3:Older Adult"),"p-value"]`)
-
-### AM Exits per Day
-
-```{r}
-# About the same by AIC, so use AR1 for consistency.
-# Overall effect of the interaction term, so no need to re-fit .
-amexits_mod_ar1 <- 
-  lme(amexits_day ~ timepoint*age_group,random = ~1|record_id,df[df$timepoint != "Baseline",],
-      correlation=corAR1(),na.action = na.omit)
-amexits_mod <- 
-  lme(amexits_day ~ timepoint*age_group,random = ~1|record_id,df[df$timepoint != "Baseline",],
-      na.action = na.omit)
-# No overall effect of timepoint or interaction, so re-fit
-amexits_mod_ar1 <- 
-  lme(amexits_day ~ age_group,random = ~1|record_id,df[df$timepoint != "Baseline",],
-      correlation=corAR1(),na.action = na.omit)
-# Results
-a <- anova(amexits_mod_ar1)
-rownames(a) <- c("(Intercept)","Age Group")
-kable(a,caption = "Time in AM by Age Group - Overall Effects")
-
-res <- as.data.frame(summary(amexits_mod_ar1)$tTable)
-rownames(res) <- sub("age_group*","",rownames(res))
-kable(res,caption = "AM Exits per Day by Age Group")
-# Means
-kable(emmeans(amexits_mod_ar1,~age_group,
-              data = df[df$timepoint != "Baseline",]),
-      caption = "emmeans")
-```
-
-There were no overall effects of timepoint on AM exits per day. The "emmeans" table shows the mean AM exits per day for each age group. The "Time in AM by Age Group" table uses the pediatric group as the reference group, and everything else is in comparison to that group. So for example, the older adult group was different by `r res$Value[which(rownames(res) == "Older Adult")]` on average, and this difference was significant (p = `r res[which(rownames(res) == "Older Adult"),"p-value"]`)
-
-## By Baseline HbA1c Group
-
-Does it make sense to look at GMI by HbA1c group when GMI and HbA1c are highly correlated? 
-
-### Mean Sensor
-
-```{r}
-# Residuals look much better with HbA1c log transformed. 
-# Same by AIC, so use AR1 for consistency.
-# Overall effect of the interaction term, so no need to re-fit .
-mean_mod_ar1 <- 
-  lme(sensor_mean ~ timepoint*hba1c_group,random = ~1|record_id,df,
-      correlation=corAR1(),na.action = na.omit)
-mean_mod <- 
-  lme(sensor_mean ~ timepoint*hba1c_group,random = ~1|record_id,df,
-      na.action = na.omit)
-# No overall effect of the interaction term, so re-fit without it.
-final_mean_mod <- lme(sensor_mean ~ timepoint+hba1c_group,random = ~1|record_id,df,
-                      correlation=corAR1(),na.action = na.omit)
-# Results
-a <- anova(final_mean_mod)
-rownames(a) <- c("(Intercept)","Timepoint","HbA1c Group")
-kable(a,caption = "Mean Sensor by Timepoint and HbA1c Group - Overall Effects")
-
-res <- as.data.frame(summary(final_mean_mod)$tTable)
-rownames(res) <- sub("timepoint*","",rownames(res))
-rownames(res) <- sub("hba1c_group*","HbA1c ",rownames(res))
-kable(res,caption = "Mean Sensor by Timepoint and Age Group")
-# Means
-kable(emmeans(final_mean_mod,~timepoint),
-      caption = "emmeans")
-kable(emmeans(final_mean_mod,~hba1c_group),
-      caption = "emmeans")
-```
-
-There were overall effects of timepoint and HbA1c group on average sensor, but their interaction was not significant. The "emmeans" table shows the mean sensor for each HbA1c group and each timepoint. The "Mean Sensor by Timepoint and HbA1c Group" table uses the low HbA1c group at baseline as the reference group, and everything else is in comparison to that group.
-
-### Time in AM
-
-The residuals for this model are not great either. Are there other variables we could include to see if they help the fit?
-
-```{r}
-# AR1 better by AIC, so use AR1 for consistency.
-# Overall effect of the interaction term, so no need to re-fit .
-am_mod_ar1 <- 
-  lme(time_am ~ timepoint*hba1c_group,random = ~1|record_id,df[df$timepoint != "Baseline",],
-      correlation=corAR1(),na.action = na.omit)
-am_mod <- 
-  lme(time_am ~ timepoint*hba1c_group,random = ~1|record_id,df[df$timepoint != "Baseline",],
-      na.action = na.omit)
-# Results
-a <- anova(am_mod_ar1)
-rownames(a) <- c("(Intercept)","Timepoint","HbA1c Group","Timepoint:HbA1c Group")
-kable(a,caption = "Time in AM by Timepoint and HbA1c Group - Overall Effects")
-
-res <- as.data.frame(summary(am_mod_ar1)$tTable)
-rownames(res) <- sub("timepoint*","",rownames(res))
-rownames(res) <- sub("hba1c_group*","HbA1c ",rownames(res))
-kable(res,caption = "Time in AM by Timepoint and Age Group")
-# Means
-kable(emmeans(am_mod_ar1,~timepoint|hba1c_group,
-              data = df[df$timepoint != "Baseline",]),
-      caption = "emmeans")
-```
-
-There were overall effects of timepoint, HbA1c group, and their interaction on time in AM. The "emmeans" table shows the mean time in AM for each group at each timepoint. The "Time in AM by Timepoint and HbA1c Group" table uses the pediatric group at M1 as the reference group, and everything else is in comparison to that group. So for example, the high HbA1c group at month 6 was different by `r res$Value[which(rownames(res) == "M6:HbA1c >= 9%")]` on average, and this difference was significant (p = `r res[which(rownames(res) == "M6:HbA1c >= 9%"),"p-value"]`)
-
-### AM Exits per Day
-
-```{r}
-# About the same by AIC, so use AR1 for consistency.
-# Overall effect of the interaction term, so no need to re-fit .
-amexits_mod_ar1 <- 
-  lme(amexits_day ~ timepoint*hba1c_group,random = ~1|record_id,df[df$timepoint != "Baseline",],
-      correlation=corAR1(),na.action = na.omit)
-amexits_mod <- 
-  lme(amexits_day ~ timepoint*hba1c_group,random = ~1|record_id,df[df$timepoint != "Baseline",],
-      na.action = na.omit)
-# No overall effect of timepoint or interaction, so re-fit
-amexits_mod_ar1 <- 
-  lme(amexits_day ~ hba1c_group,random = ~1|record_id,df[df$timepoint != "Baseline",],
-      correlation=corAR1(),na.action = na.omit)
-# Results
-a <- anova(amexits_mod_ar1)
-rownames(a) <- c("(Intercept)","HbA1c Group")
-kable(a,caption = "Time in AM by HbA1c Group - Overall Effects")
-
-res <- as.data.frame(summary(amexits_mod_ar1)$tTable)
-rownames(res) <- sub("hba1c_group*","HbA1c ",rownames(res))
-kable(res,caption = "AM Exits per Day by HbA1c Group")
-# Means
-kable(emmeans(amexits_mod_ar1,~hba1c_group,
-              data = df[df$timepoint != "Baseline",]),
-      caption = "emmeans")
-```
-
-There were no overall effects of timepoint on AM exits per day. The "emmeans" table shows the mean AM exits per day for each HbA1c group. The "Time in AM by HbA1c Group" table uses the low HbA1c group as the reference, and everything else is in comparison to that group. So for example, the high HbA1c group was different by `r res$Value[which(rownames(res) == "HbA1c >= 9%")]` on average, and this difference was significant (p = `r res[which(rownames(res) == "HbA1c >= 9%"),"p-value"]`)
-
-# Questions/Notes
-
-1. Some of the later participants in the peds cohort don't have an AM start date in REDCap, so they were counted as never started. Is that correct?
-
-2. Some of the PDFs appear to be the wrong dates for Kaan's group. Should we just exclude any that are from prior to the given start date?
