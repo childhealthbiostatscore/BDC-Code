@@ -168,8 +168,8 @@ Pediatric participants with no automode start date and adult participants with n
 ```{r table 1,results='asis',message=FALSE}
 demographics <- df %>% group_by(record_id) %>% filter(row_number()==1)
 # Table 1
-t1 <- tableby(cohort ~ hba1c_baseline + hba1c_group + age + age_group + sex + 
-                race + insurance,data = demographics)
+t1 <- tableby(cohort ~ hba1c_baseline + hba1c_group + age + age_group + 
+                sex + race + insurance,data = demographics)
 # Print
 summary(t1,pfootnote = T,labelTranslations = 
           list(age = "Age (years) at HCL Start",
@@ -328,34 +328,35 @@ ar1_mod_func <- function(outcome,data = df,diagnostics=F){
     invisible(car::qqPlot(resid(mod_int)))
   }
 }
+model_df <- df %>% filter(time_am > 10)
 ```
 
 ## HbA1c
 
 ```{r results='asis'}
-hist(df$hba1c)
-ar1_mod_func(outcome = "hba1c",data = df,diagnostics = T)
+hist(model_df$hba1c)
+ar1_mod_func(outcome = "hba1c",data = model_df,diagnostics = T)
 ```
 
 ## % Time in AM
 
 ```{r results='asis'}
-hist(df$time_am)
-ar1_mod_func(outcome = "time_am",data = df,diagnostics = T)
+hist(model_df$time_am)
+ar1_mod_func(outcome = "time_am",data = model_df,diagnostics = T)
 ```
 
 ## % CGM Wear
 
 ```{r results='asis'}
-hist(df$sensor_wear)
-ar1_mod_func(outcome = "sensor_wear",data = df,diagnostics = T)
+hist(model_df$sensor_wear)
+ar1_mod_func(outcome = "sensor_wear",data = model_df,diagnostics = T)
 ```
 
 ## AM Exits per Day
 
 ```{r results='asis'}
-hist(df$amexits_day)
-ar1_mod_func(outcome = "amexits_day",data = df,diagnostics = T)
+hist(model_df$amexits_day)
+ar1_mod_func(outcome = "amexits_day",data = model_df,diagnostics = T)
 ```
 
 ## BG Checks per Day
@@ -363,22 +364,22 @@ ar1_mod_func(outcome = "amexits_day",data = df,diagnostics = T)
 The peds cohort has quite a few people with BG checks in the 10-25 range whereas the maximum in the adult cohort is 6.6. Is this correct?
 
 ```{r results='asis'}
-hist(df$bg_checks)
-ar1_mod_func(outcome = "bg_checks",data = df,diagnostics = T)
+hist(model_df$bg_checks)
+ar1_mod_func(outcome = "bg_checks",data = model_df,diagnostics = T)
 ```
 
 ## Sensor Mean
 
 ```{r results='asis'}
-hist(df$sensor_mean)
-ar1_mod_func(outcome = "sensor_mean",data = df,diagnostics = T)
+hist(model_df$sensor_mean)
+ar1_mod_func(outcome = "sensor_mean",data = model_df,diagnostics = T)
 ```
 
 ## % TIR 70 - 180 mg/dL
 
 ```{r results='asis'}
-hist(df$sensor_70_180)
-ar1_mod_func(outcome = "sensor_70_180",data = df,diagnostics = T)
+hist(model_df$sensor_70_180)
+ar1_mod_func(outcome = "sensor_70_180",data = model_df,diagnostics = T)
 ```
 
 ## % TIR 181 - 250 mg/dL
@@ -386,8 +387,8 @@ ar1_mod_func(outcome = "sensor_70_180",data = df,diagnostics = T)
 Did the peds cohort really have such high % TIR 180-250? The 15 highest percentages in the data are peds and one had 86%!
 
 ```{r results='asis'}
-hist(df$sensor_181_250[df$cohort=="Peds"])
-ar1_mod_func(outcome = "sensor_181_250",data = df,diagnostics = T)
+hist(model_df$sensor_181_250[model_df$cohort=="Peds"])
+ar1_mod_func(outcome = "sensor_181_250",data = model_df,diagnostics = T)
 ```
 
 ## % TIR 250+ mg/dL
@@ -395,7 +396,28 @@ ar1_mod_func(outcome = "sensor_181_250",data = df,diagnostics = T)
 This may require some more complicated models if the data are correct, because the distribution is so skewed (the means reported here are LS means from the models, so the negative values are sign that the model isn't great). The highest percentage among the adults is 34%, but many of the peds values are in the 40s and above, with the highest being 65%. Is this correct? 
 
 ```{r results='asis'}
-hist(df$sensor_g250)
-ar1_mod_func(outcome = "scale(sensor_g250)",data = df,diagnostics = T)
+hist(model_df$sensor_g250)
+ar1_mod_func(outcome = "scale(sensor_g250)",data = model_df,diagnostics = T)
 ```
 
+# Discontinuers
+
+Discontinuers were defined as any participants with <= 10% AM use at any time point. Intermittent participants are those who had < 10% at one timepoint and >= 10% AM use at a later timepoint. Those with only baseline data or baseline plus one visit are not included in these numbers because it is unclear whether they continued.
+
+```{r discontinuers}
+discontinuers <- df %>% filter(timepoint != "Baseline") %>% 
+  group_by(record_id) %>% mutate(time_am_0 = ifelse(time_am > 0,1,0)) %>%
+  summarise(
+    discontinued = 
+      ifelse(0 %in% diff(time_am_0) & 
+               1 %in% diff(time_am_0),"Intermittent",
+             ifelse(0 %in% time_am,"Discontinued","Continued"))) %>%
+  ungroup()
+kable(table(discontinuers$discontinued),col.names = c("","n"))
+```
+
+# ROC Analysis
+
+```{r roc}
+
+```
