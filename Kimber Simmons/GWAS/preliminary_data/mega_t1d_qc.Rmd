@@ -2,20 +2,23 @@
 title: "Hispanic T1D MEGA Array QC"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: html_document
+output: word_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 knitr::opts_knit$set(root.dir = "C:/Users/timbv/Desktop/QC")
 library(tidyverse)
+library(qqman)
 ```
 
-# Merge and Quality Control
+# Quality Control
 
 All sample quality control steps were performed using plink version 2.0 (http://www.cog-genomics.org/plink/2.0/) unless otherwise specified, and all merge steps were performed using plink version 1.9 (http://www.cog-genomics.org/plink/1.9/). Duplicate variants and indels were deleted, after which there were 1,943,170 variants remaining in the dataset.
 
-Quality control measures included a call rate (< 0.02), discrepancy between reported and genotype-inferred sex, minor allele frequency (MAF) > 0.95, Hardy-Weinberg equilibrium in controls (P > $10^{-10}$), and sample heterozygosity. Samples were also checked for relatedness using the KING-robust kinship coefficient, although no individuals were excluded due to relatedness. After quality control measures, 135,626 SNPs in 667 cases and 968 controls remained.
+Quality control measures included a call rate (< 0.02), discrepancy between reported and genotype-inferred sex, minor allele frequency (MAF) > 0.95, Hardy-Weinberg equilibrium (P > $10^{-10}$), and sample heterozygosity. Samples were also checked for relatedness using the KING-robust kinship coefficient, although no individuals were excluded due to relatedness. Phase 3 data from the 1000 Genomes project (Auton et al., 2015) were used to examine population stratification and confirm Hispanic heritage.
+
+After quality control measures, 135,626 SNPs in 667 participants remained.
 
 ## Quality Control Steps
 
@@ -47,7 +50,7 @@ plink --bfile Simmons_combined --remove NAs_remove.txt --make-bed --out Simmons_
 plink --bfile Simmons_combined --missing
 ```
 
-```{r r missing plots pre-deletion, echo=FALSE,eval=FALSE}
+```{r r missing plots pre-deletion,echo=FALSE}
 # Read in plink missingness files
 indmiss <-read.table(file="./plink.imiss",
                      header=TRUE)
@@ -72,7 +75,7 @@ plink --bfile Simmons_combined_1 --mind 0.02 --make-bed --out Simmons_combined_1
 plink --bfile Simmons_combined_1 --missing --out miss_post_del
 ```
 
-```{r r missing plots post-deletion, echo=FALSE,eval=FALSE}
+```{r r missing plots post-deletion,echo=FALSE}
 # Post-deletion
 indmiss_check <-
   read.table(file="./miss_post_del.imiss",
@@ -108,7 +111,7 @@ post_repeated_subs_del <- read.table("./Simmons_combined_2.fam")
 plink --bfile Simmons_combined_2 --check-sex
 ```
 
-```{r r sex check pre, echo=FALSE}
+```{r r sex check pre,echo=FALSE}
 # Gender file
 gender <- read.table("./plink.sexcheck",
                      header=T,as.is=T)
@@ -256,18 +259,8 @@ het$HET_RATE = (het$"N.NM." - het$"O.HOM.")/het$"N.NM."
 hist(het$HET_RATE, xlab="Heterozygosity Rate", ylab="Frequency", main= "Heterozygosity Rate")
 ```
 
-### Relatedness
-
 ```{bash plink related check pre,eval=FALSE,results = 'hide'}
-plink --bfile Simmons_passed_qc --genome --min 0.05
-```
-
-```{r r related check pre, echo=FALSE}
-relatedness = read.table("./plink.genome", header=T)
-par(pch=16, cex=1)
-with(relatedness,plot(Z0,Z1, xlim=c(0,1), ylim=c(0,1), type="n"))
-with(subset(relatedness,RT=="UN") , points(Z0,Z1,col=3))
-hist(relatedness[,10],main="Histogram relatedness", xlab= "Pihat") 
+plink2 --bfile Simmons_passed_qc --make-king-table --king-table-filter 0.354 --out Simmons_passed_qc_kin
 ```
 
 # Population Stratification
@@ -311,8 +304,6 @@ plink --bfile 1kG_MDS4 --extract list.snps --make-bed --out 1kG_MDS5
 plink --bfile Simmons_passed_qc --extract list.snps --make-bed --out Simmons_MDS
 ```
 
-### Merge
-
 ```{bash merge prune mds,eval=FALSE}
 # Make a list of multiple-position SNPs
 plink --bfile Simmons_MDS --bmerge 1kG_MDS5.bed 1kG_MDS5.bim 1kG_MDS5.fam --make-bed --out first_merge
@@ -326,8 +317,6 @@ plink --bfile MDS_merge --indep-pairwise 50 5 0.2 --out mergeSNP
 plink --bfile MDS_merge --extract mergeSNP.prune.in --make-bed --out final_merge
 # PCA
 plink --bfile final_merge --cluster --pca --out PCA
-# MDS
-plink --bfile final_merge --cluster --mds-plot 10 --out final_merge_mds
 # Convert MDS and PCA to covariate files
 awk '{print$1, $2, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13}' final_merge_mds.mds > covar_mds.txt
 ```
@@ -345,10 +334,12 @@ fam$race <-
 fam$race <- 
   factor(fam$race,levels = c(0,1),labels = c("Non-Hispanic","Hispanic"))
 fam$race <- as.character(fam$race)
+fam$Gender <- 
+  kimber$Gender[match(fam$studyid,kimber$correct_labID)]
 # Reference races
 race<- read.csv(file="./race_1kG.csv",stringsAsFactors = F)
 colnames(race) <- c("FID","V2","superpop","pop")
-race <- full_join(race,fam[,c("V2","race")],by = "V2")
+race <- full_join(race,fam[,c("V2","race","Gender")],by = "V2")
 race <- race %>% mutate(pop = coalesce(race,pop))
 race$superpop <- 
   ifelse(race$pop == "Hispanic","Hispanic",
@@ -357,14 +348,23 @@ colnames(race)[2] <- "IID"
 
 data<- read.table(file="./PCA.eigenvec",header=FALSE)
 colnames(data) <- c("FID","IID",paste0("C",seq(1,ncol(data)-2)))
-
-datafile<- left_join(data,race[,c("IID","superpop","pop")],by="IID")
+datafile<- left_join(data,race[,c("IID","superpop","pop","Gender")],
+                     by="IID")
+# Add sex
+ref_sex <- read.csv("./G1K_sample_info.csv")
+datafile$Gender[datafile$IID %in% ref_sex$IID] <- 
+  ref_sex$Gender[match(datafile$IID,ref_sex$IID)]
+datafile$Gender <- as.factor(datafile$Gender)
+levels(datafile$Gender) <- c("F","F","M","M")
 # Plot (colorblind friendly)
 cbPalette <- c("#999999","#E69F00","#56B4E9","#009E73","#F0E442",
                "#0072B2","#D55E00","#CC79A7")
 ggplot(datafile,aes(x=C1,y=C2)) + geom_point(aes(color = superpop)) + scale_color_manual(values=cbPalette) + theme_bw()
 ggplot(datafile,aes(x=C2,y=C3)) + geom_point(aes(color = superpop)) + scale_color_manual(values=cbPalette) + theme_bw()
 ggplot(datafile,aes(x=C1,y=C3)) + geom_point(aes(color = superpop)) + scale_color_manual(values=cbPalette) + theme_bw()
+# Make covariate txt files
+write.table(datafile[,c("FID","IID","Gender","C1","C2","C3")],
+            file = "./covar.txt",quote = F,row.names = F)
 ```
 
 ```{r scree,echo=FALSE}
@@ -377,43 +377,28 @@ ggplot(scree,aes(x = factor(pc),y = percent_explained)) + geom_point() +
   xlab("") + ylab("% Variation Explained") + ggtitle("PCA Scree Plot") + theme_bw()
 ```
 
-# Logistic Regression
+<!-- # Analysis -->
 
-```{bash echo=FALSE,eval=FALSE}
-# Directory
-cd /Volumes/peds/RI\ Biostatistics\ Core/Shared/Shared\ Projects/Laura/BDC/Projects/Kimber\ Simmons/GWAS/Data_Cleaned/association
-# Plink logistic regression
-plink --bfile final_merge --covar covar_mds.txt --hide-covar --logistic --out logistic_results
-# Permutation testing
-plink --bfile final_merge --logistic --model mperm=1000000 --out perm_result
-```
+<!-- ```{bash eval=FALSE} -->
+<!-- # Logistic regression -->
+<!-- plink2 --bfile final_merge --covar covar.txt --logistic 'firth-fallback' --out logistic_results -->
+<!-- # Adjusted p values -->
+<!-- plink2 --adjust-file logistic_results.PHENO1.glm.logistic.hybrid 'test=ADD' --out logistic_results -->
+<!-- ``` -->
 
-```{r echo=FALSE,warning=FALSE}
-# Import SNPs of interest
-snps <- read.table("t1d_snps.txt",header = T)
-# Import logistic results
-results_log <- read.table("logistic_results.assoc.logistic",header = T)
-# Remove rows without p values or p = 0
-results_log <- results_log[!is.na(results_log$P) & results_log$P > 0,]
-# Plots
-manhattan(results_log,chr="CHR",bp="BP",p="P",snp="SNP", 
-          main = "Manhattan plot: logistic",highlight = snps$SNP,
-          annotatePval = 1e-20, annotateTop = FALSE)
-qq(results_log$P)
-```
+<!-- # Results -->
 
-# Logistic Regression with Permutation Adjustment
-
-```{r echo=FALSE,warning=FALSE}
-# re-import logistic results
-results_log <- read.table("logistic_results.assoc.logistic",header = T)
-# Import permutation results, add to logistic results
-perm <- read.table("perm_result.model.best.mperm",header = T)
-results_log <- merge(results_log,perm[,c(2,4)],by = "SNP")
-results_log <- results_log[!is.na(results_log$EMP2) & results_log$EMP2 > 0,]
-# Plots
-manhattan(results_log,chr="CHR",bp="BP",p="EMP2",snp="SNP",
-          main = "Manhattan plot: logistic (permutation)",highlight = snps$SNP,
-          annotatePval = 1e-75, annotateTop = FALSE)
-qq(results_log$P)
-```
+<!-- ```{r logistic results,warning=FALSE} -->
+<!-- # Import plink results -->
+<!-- logistic_results <- read.delim("./logistic_results.PHENO1.glm.logistic.hybrid") -->
+<!-- # Format data -->
+<!-- res <- logistic_results[logistic_results$TEST == "ADD",c("ID","X.CHROM","POS","P","Z_STAT")] -->
+<!-- colnames(res) <- c("SNP","CHR","BP","P","Z") -->
+<!-- # Get SNPs of interest from Kimber -->
+<!-- snps_interest <- read.csv("./Variants in any T1D GRS.csv") -->
+<!-- # Plot -->
+<!-- manhattan(res,main = "Manhattan Plot") -->
+<!-- qq(res$P) -->
+<!-- # Write significant SNPs -->
+<!-- write.csv(res[res$P<0.05,],file = "./significant_snps.csv",row.names = F) -->
+<!-- ``` -->
