@@ -377,28 +377,55 @@ ggplot(scree,aes(x = factor(pc),y = percent_explained)) + geom_point() +
   xlab("") + ylab("% Variation Explained") + ggtitle("PCA Scree Plot") + theme_bw()
 ```
 
-<!-- # Analysis -->
+# Analysis
 
-<!-- ```{bash eval=FALSE} -->
-<!-- # Logistic regression -->
-<!-- plink2 --bfile final_merge --covar covar.txt --logistic 'firth-fallback' --out logistic_results -->
-<!-- # Adjusted p values -->
-<!-- plink2 --adjust-file logistic_results.PHENO1.glm.logistic.hybrid 'test=ADD' --out logistic_results -->
-<!-- ``` -->
+```{bash eval=FALSE}
+# Just Kimber's data
+plink2 --bfile simmons_passed_qc --indep-pairwise 50 5 0.2 --out simmons_mergeSNP
+plink2 --bfile simmons_passed_qc --extract simmons_mergeSNP.prune.in --make-bed --out simmons_pruned
+# PCA
+plink2 --bfile simmons_pruned --pca --out PCA
+```
 
-<!-- # Results -->
+```{r}
+# Change race to "phenotype"
+simmons <- read.table("./simmons_pruned.fam")
+clinical <- read.csv("./clinical.csv")
+simmons$V6 <- 
+  clinical$Hispanic..0.N..1.Y.[match(gsub(".*_","",simmons$V2),
+                                     clinical$correct_labID)] + 1
+write.table(simmons, file = "./simmons_pruned.fam",row.names = F,
+            sep = "\t",col.names = F,quote = F)
+# Make covariate text file
+covar <- read.table("./pca.eigenvec")
+covar$id <- gsub(".*_","",covar$V2)
+covar$sex <- clinical$Gender[match(covar$id,clinical$correct_labID)]
+covar <- covar[,c("V1","V2","sex","V3","V4")]
+colnames(covar) <- c("FID","IID","sex","PC1","PC2")
+# Write
+write.table(covar,file = "./covar.txt",quote = F,row.names = F)
+```
 
-<!-- ```{r logistic results,warning=FALSE} -->
-<!-- # Import plink results -->
-<!-- logistic_results <- read.delim("./logistic_results.PHENO1.glm.logistic.hybrid") -->
-<!-- # Format data -->
-<!-- res <- logistic_results[logistic_results$TEST == "ADD",c("ID","X.CHROM","POS","P","Z_STAT")] -->
-<!-- colnames(res) <- c("SNP","CHR","BP","P","Z") -->
-<!-- # Get SNPs of interest from Kimber -->
-<!-- snps_interest <- read.csv("./Variants in any T1D GRS.csv") -->
-<!-- # Plot -->
-<!-- manhattan(res,main = "Manhattan Plot") -->
-<!-- qq(res$P) -->
-<!-- # Write significant SNPs -->
-<!-- write.csv(res[res$P<0.05,],file = "./significant_snps.csv",row.names = F) -->
-<!-- ``` -->
+```{bash eval=FALSE}
+# Logistic regression
+plink2 --bfile simmons_pruned --covar covar.txt --logistic --out logistic_results
+# Adjusted p values
+plink2 --adjust-file logistic_results.PHENO1.glm.logistic.hybrid 'test=ADD' --out logistic_results
+```
+
+# Results
+
+```{r logistic results,warning=FALSE}
+# Import plink results
+logistic_results <- read.delim("./logistic_results.PHENO1.glm.logistic.hybrid")
+# Format data
+res <- logistic_results[logistic_results$TEST == "ADD",c("ID","X.CHROM","POS","P","Z_STAT")]
+colnames(res) <- c("SNP","CHR","BP","P","Z")
+# Get SNPs of interest from Kimber
+snps_interest <- read.csv("./Variants in any T1D GRS.csv")
+# Plot
+manhattan(res,main = "Manhattan Plot")
+qq(res$P)
+# Write significant SNPs
+write.csv(res[res$P<0.05,],file = "./significant_snps.csv",row.names = F)
+```
