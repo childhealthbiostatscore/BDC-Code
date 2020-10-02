@@ -7,7 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
-knitr::opts_knit$set(root.dir = "/Users/timvigers/petter_metabolomics")
+knitr::opts_knit$set(root.dir = "C:/Users/timbv/Dropbox/Documents/Work/petter_metabolomics")
 library(arsenal)
 library(skimr)
 library(knitr)
@@ -57,38 +57,58 @@ pca.res <- pca(X, ncomp = 5, center = TRUE, scale = FALSE)
 # Plot
 plotIndiv(pca.res,group = df$group,legend = TRUE,ind.names = FALSE,
           title = 'PCA by Group (PCs 1 & 2)',ellipse = T)
-plotIndiv(pca.res,comp = c(1,3),group = df$group,legend = TRUE,ind.names = FALSE,
-          title = 'PCA by Group (PCs 1 & 3)',ellipse = T)
-plotIndiv(pca.res,comp = c(2,3),group = df$group,legend = TRUE,ind.names = FALSE,
-          title = 'PCA by Group (PCs 2 & 3)',ellipse = T)
+plotIndiv(pca.res,comp = c(1,3),group = df$group,legend = TRUE,
+          ind.names = FALSE,title = 'PCA by Group (PCs 1 & 3)',
+          ellipse = T)
+plotIndiv(pca.res,comp = c(2,3),group = df$group,legend = TRUE,
+          ind.names = FALSE,title = 'PCA by Group (PCs 2 & 3)',
+          ellipse = T)
 ```
 
 # PLS-DA
+
+## Permutation Testing
 
 ```{r plsda,cache=TRUE}
 # Group as outcome
 Y <- as.factor(df$group)
 # PLS-DA function
-plsda.res <- plsda(X, Y, ncomp = 5)
+plsda_true <- plsda(X,Y)
 # Check error
-perf.plsda <- perf(plsda.res,progressBar=FALSE, auc=TRUE,validation = "loo")
-# Plot performance
-plot(perf.plsda,legend.position = "horizontal")
+perf_plsda_true <- perf(plsda_true,progressBar=FALSE, auc=TRUE,
+                   validation = "loo")
+auc_true <- as.numeric(perf_plsda_true$auc$comp1["AUC.mean"])
+# Permutation testing - takes forever, make sure to cache
+n_perm <- 10000
+aucs <- vector(mode="numeric", length=n_perm)
+for (i in 1:n_perm) {
+  Y <- sample(df$group,replace = F)
+  plsda_res <- plsda(X,Y,ncomp = 1)
+  perf_plsda <- perf(plsda_res,progressBar=FALSE, auc=TRUE,
+                   validation = "loo")
+  aucs[i] <- as.numeric(perf_plsda$auc$comp1["AUC.mean"])
+}
+ggplot(as.data.frame(aucs),aes(x=aucs)) + 
+  geom_histogram(binwidth = 0.01) + 
+  geom_vline(aes(xintercept=auc_true),color="red") + 
+  theme_bw() + xlab("AUC")
 ```
 
-# sPLS-DA
+Group labels were permuted `r n_perm` times. One component PLS-DA was run for each permutation and AUC was calculated using leave one out cross-validation. Red line indicates the AUC calculated for non-permuted data.
 
-```{r splsda,cache=TRUE}
-# Tune
-tune.splsda <- tune.splsda(X, Y, ncomp = 10, progressBar = FALSE,validation = "loo")
-plot(tune.splsda)
-choice.ncomp <- 1
-choice.keepX <- tune.splsda$choice.keepX[1:choice.ncomp]
-# sPLS-DA function
-splsda.res <- splsda(X, Y, ncomp = choice.ncomp, keepX = choice.keepX)
-# Performance
-perf.splsda <- perf(splsda.res,progressBar = FALSE,
-                    auc = TRUE)
-# Select variables
-selectVar(splsda.res, comp = 1)$value
-```
+<!-- # sPLS-DA -->
+
+<!-- ```{r splsda,cache=TRUE} -->
+<!-- # Tune -->
+<!-- tune.splsda <- tune.splsda(X, Y, ncomp = 10, progressBar = FALSE,validation = "loo") -->
+<!-- plot(tune.splsda) -->
+<!-- choice.ncomp <- 1 -->
+<!-- choice.keepX <- tune.splsda$choice.keepX[1:choice.ncomp] -->
+<!-- # sPLS-DA function -->
+<!-- splsda.res <- splsda(X, Y, ncomp = choice.ncomp, keepX = choice.keepX) -->
+<!-- # Performance -->
+<!-- perf.splsda <- perf(splsda.res,progressBar = FALSE, -->
+<!--                     auc = TRUE) -->
+<!-- # Select variables -->
+<!-- selectVar(splsda.res, comp = 1)$value -->
+<!-- ``` -->
