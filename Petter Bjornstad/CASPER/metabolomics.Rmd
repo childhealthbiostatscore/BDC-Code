@@ -1,0 +1,115 @@
+---
+title: "CASPER Metabolomics"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_knit$set(root.dir = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/Peds Endo/Petter Bjornstad/Metabolomics")
+library(arsenal)
+library(skimr)
+library(knitr)
+library(mixOmics)
+library(tidyverse)
+```
+
+```{r data}
+# Import data
+raw_data <- read.csv("./Raw data/2020-03-20 Bjornstad discovery mode results jrh v2.csv", 
+               stringsAsFactors=TRUE,na.strings = "")
+samples <- read.csv("./Clean data/KNN_serum.csv_sampledata.csv")
+samples$X <- NULL
+# Transpose
+compounds <- paste0("W",raw_data$Molecular.Weight,raw_data$RT..min.)
+df <- raw_data %>% dplyr::select(CS.01:RH.47.L) %>% t()
+colnames(df) <- compounds
+df <- as.data.frame(df)
+# Sample data
+df$ID <- sub("\\.","-",sub(".L","",rownames(df)))
+df <- left_join(df,samples,by = "ID")
+# Reorganize
+df <- df %>% dplyr::select(ID:group,everything())
+```
+
+# Preprocessing
+
+```{r preprocessing}
+# Check for samples missing > 80% of compounds, remove them
+missing <- 
+  which(rowSums(is.na(df[,11:ncol(df)])) / length(11:ncol(df)) > 0.8)
+if (length(missing)>0){df <- df[-missing,]}
+# Same for 0 instead of NA - none
+missing0 <- which(rowSums(df[,11:ncol(df)] == 0) / length(11:ncol(df)) > 0.8)
+```
+
+Removed `r length(missing)` samples missing > 80% of compounds and `r length(missing0)` samples with > 80% of compounds equal to 0. 
+
+```{r}
+X <- df[,11:ncol(df)]
+```
+
+# PCA
+
+```{r pca}
+# 4 PCs
+pca.res <- pca(X, ncomp = 5, center = TRUE, scale = FALSE)
+# Plot
+plotIndiv(pca.res,group = df$group,legend = TRUE,ind.names = FALSE,
+          title = 'PCA by Group (PCs 1 & 2)',ellipse = T)
+plotIndiv(pca.res,comp = c(1,3),group = df$group,legend = TRUE,
+          ind.names = FALSE,title = 'PCA by Group (PCs 1 & 3)',
+          ellipse = T)
+plotIndiv(pca.res,comp = c(2,3),group = df$group,legend = TRUE,
+          ind.names = FALSE,title = 'PCA by Group (PCs 2 & 3)',
+          ellipse = T)
+```
+
+# PLS-DA
+
+## Permutation Testing
+
+```{r plsda,cache=TRUE}
+# Group as outcome
+Y <- as.factor(df$group)
+# PLS-DA function
+plsda_true <- plsda(X,Y)
+# Check error
+perf_plsda_true <- perf(plsda_true,progressBar=FALSE, auc=TRUE,
+                   validation = "loo")
+auc_true <- as.numeric(perf_plsda_true$auc$comp1["AUC.mean"])
+# Permutation testing - takes forever, make sure to cache
+n_perm <- 1000
+aucs <- vector(mode="numeric", length=n_perm)
+for (i in 1:n_perm) {
+  Y <- sample(df$group,replace = F)
+  plsda_res <- plsda(X,Y,ncomp = 1)
+  perf_plsda <- perf(plsda_res,progressBar=FALSE, auc=TRUE,
+                   validation = "loo")
+  aucs[i] <- as.numeric(perf_plsda$auc$comp1["AUC.mean"])
+}
+ggplot(as.data.frame(aucs),aes(x=aucs)) + 
+  geom_histogram(binwidth = 0.01) + 
+  geom_vline(aes(xintercept=auc_true),color="red") + 
+  theme_bw() + xlab("AUC")
+```
+
+Group labels were permuted `r n_perm` times. One component PLS-DA was run for each permutation and AUC was calculated using leave one out cross-validation. Red line indicates the AUC calculated for non-permuted data.
+
+# sPLS-DA
+
+```{r splsda,cache=TRUE}
+# Tune
+tune.splsda <- tune.splsda(X, Y, ncomp = 10, progressBar = FALSE,validation = "loo")
+plot(tune.splsda)
+choice.ncomp <- 1
+choice.keepX <- tune.splsda$choice.keepX[1:choice.ncomp]
+# sPLS-DA function
+splsda.res <- splsda(X, Y, ncomp = choice.ncomp, keepX = choice.keepX)
+# Performance
+perf.splsda <- perf(splsda.res,progressBar = FALSE,
+                    auc = TRUE)
+# Select variables
+selectVar(splsda.res, comp = 1)$value
+```
