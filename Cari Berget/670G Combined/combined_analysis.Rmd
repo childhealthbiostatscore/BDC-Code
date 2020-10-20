@@ -15,6 +15,8 @@ library(mice)
 library(nlme)
 library(emmeans)
 library(knitr)
+library(lme4)
+library(pROC)
 library(tidyverse)
 ```
 
@@ -86,6 +88,7 @@ adult <- adult %>%
          cohort = "Adult",hba1c = HbA1C,
          record_id = Patient.ID,race = Ethnicity,
          insurance = Insurance,sex = Gender,
+         sensor_70 = tir_under_70,
          sensor_70_180 = tir_70_180,sensor_g250 = tir_over_250,
          sensor_181_250 = tir_over_180 - tir_over_250)
 # Re-level factors
@@ -102,7 +105,7 @@ adult$insurance <- as.character(adult$insurance)
 vars <- c("record_id","cohort","timepoint","days_from_start","age",
           "sex","race","insurance","hba1c_baseline","hba1c","gmi",
           "bg_checks","time_am","time_mm","sensor_wear","sensor_mean",
-          "sensor_sd","sensor_70_180","sensor_181_250",
+          "sensor_sd","sensor_70","sensor_70_180","sensor_181_250",
           "sensor_g250","amexits","amexit_hyper","amexit_manual",
           "amexits_day","amexits_other")
 adult <- adult %>%
@@ -136,6 +139,7 @@ data <- data %>%
   mutate(race = demographics_race.factor,
          sex = as.character(demographics_sex.factor),
          insurance = demographics_insurance.factor,
+         sensor_70 = sensor_u54 + sensor_54_69,
          amexit_hyper = amexit_hyper / amexits,
          amexit_manual = amexit_manual / amexits,
          amexits_other = amexits_other / amexits,
@@ -161,7 +165,7 @@ df$hba1c_group <- cut(df$hba1c_baseline,breaks = c(0,7,8,Inf))
 levels(df$hba1c_group) <- c("<= 7%","7% - 8.9%",">= 9%")
 ```
 
-Pediatric participants with no automode start date and adult participants with no baseline HbA1c value were excluded from this analysis.
+Pediatric participants with no automode start date and adult participants with no PDF data were excluded from this analysis.
 
 # Table 1: Descriptive Characteristics
 
@@ -186,7 +190,8 @@ summary(t1,pfootnote = T,labelTranslations =
 ggplot(df,aes(x = timepoint,y = hba1c)) +
   geom_line(alpha = 0.2,aes(group = record_id,color = cohort)) +
   geom_smooth(aes(group = cohort,color = cohort),se = F) +
-  theme_bw() + xlab("Timepoint") + ylab("HbA1c (%)")
+  theme_bw() + xlab("Timepoint") + ylab("HbA1c (%)") +
+  scale_color_discrete(name = "Cohort")
 ```
 
 # Figure 2: HbA1c Over Time by Age Group
@@ -195,7 +200,8 @@ ggplot(df,aes(x = timepoint,y = hba1c)) +
 ggplot(df[!is.na(df$age_group),],aes(x = timepoint,y = hba1c)) +
   geom_line(alpha = 0.2,aes(group = record_id,color = age_group)) +
   geom_smooth(aes(group = age_group,color = age_group),se = F) +
-  theme_bw() + xlab("Timepoint") + ylab("HbA1c (%)")
+  theme_bw() + xlab("Timepoint") + ylab("HbA1c (%)") +
+  scale_color_discrete(name = "Age Group")
 ```
 
 # Figure 3: GMI Over Time by Cohort
@@ -204,7 +210,8 @@ ggplot(df[!is.na(df$age_group),],aes(x = timepoint,y = hba1c)) +
 ggplot(df,aes(x = timepoint,y = gmi)) +
   geom_line(alpha = 0.2,aes(group = record_id,color = cohort)) +
   geom_smooth(aes(group = cohort,color = cohort),se = F) +
-  theme_bw() + xlab("Timepoint") + ylab("GMI")
+  theme_bw() + xlab("Timepoint") + ylab("GMI") +
+  scale_color_discrete(name = "Cohort")
 ```
 
 # Figure 4: GMI Over Time by Age Group
@@ -213,7 +220,8 @@ ggplot(df,aes(x = timepoint,y = gmi)) +
 ggplot(df[!is.na(df$age_group),],aes(x = timepoint,y = gmi)) +
   geom_line(alpha = 0.2,aes(group = record_id,color = age_group)) +
   geom_smooth(aes(group = age_group,color = age_group),se = F) +
-  theme_bw() + xlab("Timepoint") + ylab("GMI")
+  theme_bw() + xlab("Timepoint") + ylab("GMI") +
+  scale_color_discrete(name = "Age Group")
 ```
 
 # Model Results
@@ -275,7 +283,7 @@ outnames <- c("LS Mean","SE","p value vs. M1")
 
 ```{r model function}
 # Based on preliminary analyses, an AR1 model with random intercept is best for most variables.
-ar1_mod_func <- function(outcome,data = df,diagnostics=F){
+ar1_mod_func <- function(outcome,data = df,diagnostics=F,p.adj = "fdr"){
   data <- data[data$timepoint != "Baseline",]
   form <- as.formula(paste0(outcome,"~","timepoint*age_group"))
   # Model with interaction
@@ -320,7 +328,7 @@ ar1_mod_func <- function(outcome,data = df,diagnostics=F){
   age_groups <- bind_rows(peds,ya,adult,older)
   colnames(age_groups) <- outnames
   final <- bind_rows(combined_means,age_groups)
-  final[,3] <- p.adjust(final[,3],"fdr")
+  final[,3] <- p.adjust(final[,3],method = p.adj)
   # Print
   print(kable(ano,digits = 3))
   print(kable(final,digits = 3))
@@ -375,6 +383,14 @@ hist(model_df$sensor_mean)
 ar1_mod_func(outcome = "sensor_mean",data = model_df,diagnostics = T)
 ```
 
+## % TIR < 70 mg/dL
+
+```{r results='asis'}
+hist(model_df$sensor_70)
+# Exclude 1408816
+ar1_mod_func(outcome = "sensor_70",diagnostics = T)
+```
+
 ## % TIR 70 - 180 mg/dL
 
 ```{r results='asis'}
@@ -402,22 +418,48 @@ ar1_mod_func(outcome = "scale(sensor_g250)",data = model_df,diagnostics = T)
 
 # Discontinuers
 
-Discontinuers were defined as any participants with <= 10% AM use at any time point. Intermittent participants are those who had < 10% at one timepoint and >= 10% AM use at a later timepoint. Those with only baseline data or baseline plus one visit are not included in these numbers because it is unclear whether they continued.
+Discontinuers were defined as any participants with <= 10% AM use at any time point. Intermittent participants are those who had <= 10% at one timepoint and > 10% AM use at a later timepoint. Those with only baseline data or baseline plus one visit are not included in these numbers because it is unclear whether they continued.
 
 ```{r discontinuers}
 discontinuers <- df %>% filter(timepoint != "Baseline") %>% 
-  group_by(record_id) %>% mutate(time_am_0 = ifelse(time_am > 0,1,0)) %>%
-  summarise(
-    discontinued = 
-      ifelse(0 %in% diff(time_am_0) & 
-               1 %in% diff(time_am_0),"Intermittent",
-             ifelse(0 %in% time_am,"Discontinued","Continued"))) %>%
-  ungroup()
-kable(table(discontinuers$discontinued),col.names = c("","n"))
+  group_by(record_id) %>% 
+  mutate(time_am_0 = ifelse(time_am > 10,1,0)) %>%
+  summarise(discontinued = 
+      ifelse(1 %in% diff(time_am_0),"Intermittent",
+             ifelse(0 %in% time_am,"Discontinued","Continued")),
+      cohort = cohort[1],.groups = "drop")
+kable(table(discontinuers$discontinued,discontinuers$cohort))
 ```
 
 # ROC Analysis
 
-```{r roc}
+Cutoffs were determined by fitting a generalized linear mixed model (GzLMM) with a binary outcome (0 = TIR <70% and 1 = TIR >=70%) and random intercept for subject to account for repeated measures. Then sensitivity and specificity were calculated based on predicted values from the GzLMM, using the pROC package. Optimal cutoffs were determined by maximizing Youden's J statistic.
 
+```{r cutoffs,echo=FALSE,message=FALSE}
+# Outcome
+model_df$tir_outcome <- cut(model_df$sensor_70_180,right = F,
+                            c(-Inf,70,Inf),labels = c("< 70%",">= 70%"))
+# Fit GzLMM
+am_mod <- glmer(tir_outcome ~ time_am + (1|record_id),
+                data = model_df,family = "binomial")
+est <- summary(am_mod)$coefficients[,1]
+# ROC using the predicted values
+gzlmm_pred <- predict(am_mod,type = "response")
+roc <- roc(am_mod@resp$y,gzlmm_pred)
+# Threshold to maximize Youden
+c<-coords(roc,"best",best.method = "youden",transpose = F)
+# Find the participant closest to this threshold and use their TIR
+w <- as.numeric(which.min(abs(gzlmm_pred-c$threshold)))
+am_mod@frame$time_am[w]
+```
+
+```{r}
+t <- df %>% filter(cohort == "Adult") %>% 
+  select(record_id,timepoint,time_am) %>% 
+  pivot_wider(id_cols = record_id,names_from = timepoint,
+              values_from = time_am) %>%
+  select(record_id,Baseline,M1,M3,M6,M9,M12)
+t <- left_join(t,discontinuers[,c("record_id","discontinued")],
+               by = "record_id") %>%
+  filter(!is.na(discontinued))
 ```
