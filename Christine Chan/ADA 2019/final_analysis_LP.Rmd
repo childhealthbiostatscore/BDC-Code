@@ -82,7 +82,7 @@ data$homa_ir <- (data$lab_ogtt_fasting*data$min_0_insulin)/22.5
 # also need the following
 # iAUCg, iAUCins/iAUCg, iAUCcpep/iAUCg, iAUCglucagon
 #glucose
-cols_gluc = c("min_minus_10_glucose","lab_ogtt_fasting",
+cols_gluc = c("lab_ogtt_fasting",
          "min_10_glucose","min_20_glucose","min_30_glucose",
          "lab_ogtt_1_hour_glucose","min_90_glucose",
          "lab_ogtt_2_hour_glucose","min_150_glucose",
@@ -94,7 +94,7 @@ ogttdat <- ogttdat[,c("subject_id","iaucbase_glucose")]
 data <- merge(data,ogttdat,by="subject_id",all.x=TRUE,all.y=TRUE)
 
 #insulin
-cols_ins = c("min_minus_10_insulin","min_0_insulin","min_10_insulin","min_20_insulin","min_30_insulin","min_60_insulin",
+cols_ins = c("min_0_insulin","min_10_insulin","min_20_insulin","min_30_insulin","min_60_insulin",
              "min_90_insulin","min_120_insulin","min_150_insulin","min_180_insulin")
 ogttdat <- data[,c(cols_ins,"subject_id")]
 ogttdat <- ogttdat[which(rowSums(!is.na(ogttdat[,cols_ins]))>=4),]
@@ -103,7 +103,7 @@ ogttdat <- ogttdat[,c("subject_id","iaucbase_insulin")]
 data <- merge(data,ogttdat,by="subject_id",all.x=TRUE,all.y=TRUE)
 
 #C-peptide
-cols_cpep = c("min_minus_10_c_peptide","min_0_c_peptide","min_10_c_peptide","min_20_c_peptide","min_30_c_peptide","min_60_c_peptide",
+cols_cpep = c("min_0_c_peptide","min_10_c_peptide","min_20_c_peptide","min_30_c_peptide","min_60_c_peptide",
              "min_90_c_peptide","min_120_c_peptide","min_150_c_peptide","min_180_c_peptide")
 ogttdat <- data[,c(cols_cpep,"subject_id")]
 ogttdat <- ogttdat[which(rowSums(!is.na(ogttdat[,cols_cpep]))>=4),]
@@ -112,7 +112,7 @@ ogttdat <- ogttdat[,c("subject_id","iaucbase_cpep")]
 data <- merge(data,ogttdat,by="subject_id",all.x=TRUE,all.y=TRUE)
 
 # glucagon
-cols_glucagon = c("min_minus_10_glucagon","min_0_glucagon","min_10_glucagon","min_20_glucagon","min_30_glucagon","min_60_glucagon",
+cols_glucagon = c("min_0_glucagon","min_10_glucagon","min_20_glucagon","min_30_glucagon","min_60_glucagon",
               "min_90_glucagon","min_120_glucagon","min_150_glucagon","min_180_glucagon")
 ogttdat <- data[,c(cols_glucagon,"subject_id")]
 ogttdat <- ogttdat[which(rowSums(!is.na(ogttdat[,cols_glucagon]))>=4),]
@@ -140,15 +140,34 @@ alldata$gender <- as.factor(alldata$gender)
 alldata$g_tube_feeds <- as.factor(alldata$g_tube_feeds)
 alldata$cf_pancreatic <- as.factor(alldata$cf_pancreatic)
 
+# calculate TIR
+alldata$tir_70_140 <- 100 - (alldata$percent_time_under_70 + alldata$percent_time_over_140)
+
+# calculate insulin clearance
+alldata$fasting_ins_clearance <-  alldata$min_0_c_peptide / alldata$min_0_insulin
+alldata$ins_clearance_30 <-  (alldata$min_30_c_peptide-alldata$min_0_c_peptide) / (alldata$min_30_insulin-alldata$min_0_insulin) 
+alldata$ins_clearance_ogtt <- alldata$iaucbase_cpep / alldata$iaucbase_insulin
+
+# read in genotype data
+genotype <- read.csv("S:\\Shared Projects\\Laura\\Laura Tim projects\\Christine Chan\\2019 ADA Abstracts\\Data_Raw\\genotype.csv")
+genotype$genoclass <- NA
+genotype$genoclass <- ifelse(genotype$cf_mutation_1_class %in% c(1,2,3) & genotype$cf_mutation_2_class %in% c(1,2,3),"Class I-III",
+                             ifelse(genotype$cf_mutation_1_class %in% c(4,5) | genotype$cf_mutation_2_class %in% c(4,5),
+                                    "Class IV-V","Unidentified"))
+genotype$genoclass <- ifelse(is.na(genotype$cf_mutation_1_class) | is.na(genotype$cf_mutation_2_class),NA,genotype$genoclass)
+genotype$genoclass <- as.factor(genotype$genoclass)
+genotype <- genotype[,c("subject_id","genoclass")]
+alldata <- merge(alldata,genotype,by="subject_id",all.x=T,all.y=F)
+
 # labels
 label(alldata$age_at_visit_1)="Age"
 label(alldata$race_ethnicity.factor)="Race/ethnicity"
-label(alldata$gender)="Gender"
+label(alldata$gender.factor)="Gender"
 label(alldata$poc_a1c)="HbA1c"
-label(alldata$g_tube_feeds)="G-tube feeds"
+label(alldata$g_tube_feeds.factor)="G-tube feeds"
 label(alldata$fev_perc)="FEV-1 percent"
 label(alldata$fvc_perc)="FVC"
-label(alldata$cf_pancreatic)="Pancreatic insufficiency"
+label(alldata$cf_pancreatic.factor)="Pancreatic insufficiency"
 label(alldata$tanner)="Tanner stage"
 label(alldata$bmi_z_score)="First BMI-Z"
 label(alldata$isi)="ISI"
@@ -183,6 +202,14 @@ label(alldata$iaucbase_glucagon)="iAUC glucagon"
 label(alldata$iAUCins_iAUC_gluc)="iAUC insulin/iAUC glucose"
 label(alldata$iAUCcpep_iAUCgluc)="iAUC C-peptide/iAUC glucose"
 label(alldata$cov) ="CV"
+label(alldata$tir_70_140) ="TIR 70-140"
+label(alldata$lab_ogtt_fasting)="Fasting glucose"
+label(alldata$lab_ogtt_1_hour_glucose)="1 hr glucose"
+label(alldata$lab_ogtt_2_hour_glucose)="2 hr glucose"
+label(alldata$fasting_ins_clearance)="Fasting insulin clearance"
+label(alldata$ins_clearance_30)="Insulin clearance - 30 minute"
+label(alldata$ins_clearance_ogtt)="Insulin clearance - whole OGTT"
+label(alldata$genoclass)="Genotype class"
 
 # create new variable for diabetes vs. no diabetes
 alldata$diabetes <- ifelse(alldata$group_category.factor=="Cystic Fibrosis Related Diabetes",1,0)
@@ -190,7 +217,7 @@ alldata$diabetes <- ifelse(alldata$group_category.factor=="Cystic Fibrosis Relat
 # find people missing 1 hr or 2 hr glucose but not both
 keep <- alldata[(is.na(alldata$lab_ogtt_1_hour_glucose) | is.na(alldata$lab_ogtt_2_hour_glucose)),
                 c("subject_id","lab_ogtt_1_hour_glucose","lab_ogtt_2_hour_glucose")]
-keep <- keep[!(is.na(alldata$lab_ogtt_1_hour_glucose && is.na(alldata$lab_ogtt_2_hour_glucose))),]
+#keep <- keep[!(is.na(alldata$lab_ogtt_1_hour_glucose && is.na(alldata$lab_ogtt_2_hour_glucose))),]
 write.csv(keep,"C:\\temp\\missing 1 hr or 2 hr.csv",na = "")
 
 # create new variable for prediabetes - 1 hr >=200 or 2 hr >= 140
@@ -230,8 +257,8 @@ npar_odi <- nrow(has_odi)
 
 # table 1
 tab1vars <- c("age_at_visit_1", "race_ethnicity.factor","gender.factor","poc_a1c","fev_perc","fvc_perc","g_tube_feeds.factor",
-              "tanner","cf_pancreatic.factor","bmi_z_score")
-#tab1vars <- c("age", "race_ethnicity","gender","poc_a1c","g_tube_feeds","fev1_percent","fvc","cf_pancreatic","tanner","first_bmiz")
+              "tanner","cf_pancreatic.factor","bmi_z_score","lab_ogtt_fasting","lab_ogtt_1_hour_glucose","lab_ogtt_2_hour_glucose",
+              "genoclass")
 tab1_all <- final_table(data=alldata,variables=tab1vars,group=alldata$group_category.factor,margin=2,single=0,ron=2)
 tab1_odi <- final_table(data=has_odi,variables=tab1vars,group=has_odi$group_category.factor,margin=2,single=0,ron=2)
 
@@ -243,18 +270,23 @@ a1t <- a1t[,-1]
 
 # compare groups
 ogttvars <- c("isi","isi_cpep","odi","odi_cpep","matsuda","homa_ir","iaucbase_glucose","iaucbase_insulin","iaucbase_cpep",
-              "iaucbase_glucagon","iAUCins_iAUC_gluc","iAUCcpep_iAUCgluc")
-has_odi[,ogttvars] <- apply(has_odi[,ogttvars],2,as.numeric)
+              "iaucbase_glucagon","iAUCins_iAUC_gluc","iAUCcpep_iAUCgluc","min_0_insulin","fasting_ins_clearance",
+              "ins_clearance_30","ins_clearance_ogtt")
 cgmvars <- c("min_sensor","max_sensor","average_sensor","average_auc_per_day","excursions_over_200","avg_excur_over_140_per_day",
              "avg_excur_over_200_per_day","excursions_over_140","percent_time_under_60","percent_time_under_70",
              "percent_time_over_140","percent_time_over_180","percent_time_over_200",
              "min_spent_under_60","min_spent_under_70","min_spent_over_200","min_spent_over_140",
-             "total_auc","standard_deviation","mean_amp_glycemic_ex","Calprotectin","C.Reactive.Protein","cov")
+             "total_auc","standard_deviation","mean_amp_glycemic_ex","Calprotectin","C.Reactive.Protein","cov","tir_70_140")
+has_odi[,c(cgmvars,ogttvars)] <- apply(has_odi[,c(cgmvars,ogttvars)],2,as.numeric)
 tab2a <- final_table(data=alldata,variables=cgmvars,group=alldata$group_category.factor,margin=2,single=0,ron=2)
 # not sure why this isn't running
 #tab2b <- final_table(data=has_odi,variables=ogttvars,group=has_odi$group_category.factor,margin=2,single=0,ron=2)
 tab2b <- CreateTableOne(data=has_odi,ogttvars,strata="group_category.factor")
 tab2b <- print(tab2b,printToggle = F,varLabels=TRUE,missing=T)
+
+# new table of CGM variables for those who have OGTT
+tab2c <- CreateTableOne(data=has_odi,cgmvars,strata="group_category.factor")
+tab2c <- print(tab2c,printToggle = F,varLabels=TRUE,missing=T)
 
 # pairwise comparisons for table 2 - ISI
 a2 <- aov(has_odi$isi~has_odi$group_category.factor)
@@ -337,21 +369,52 @@ a17 <- aov(alldata$cov ~alldata$group_category.factor)
 a17t <- tidy(TukeyHSD(a17))
 a17t <- a17t[,-1]
 
+# pairwise comparisons for table 2 - TIR
+a18 <- aov(alldata$tir_70_140 ~alldata$group_category.factor)
+a18t <- tidy(TukeyHSD(a18))
+a18t <- a18t[,-1]
+
 # correlations
 corr <- rcorr(as.matrix(alldata[, c(ogttvars,cgmvars)]), type = "pearson")
 corr <- flattenCorrMatrix(corr$r, corr$P)
 corr <- corr[corr$row %in% ogttvars & corr$column %in% cgmvars,]
+
+# reduced set correlations with FDR adjustment
+ogttvars_red <- c("isi_cpep","odi_cpep","matsuda","homa_ir","iaucbase_glucose","iaucbase_cpep")
+cgmvars_red <- c("min_sensor","max_sensor","average_sensor","avg_excur_over_200_per_day","avg_excur_over_140_per_day",
+                 "percent_time_over_140","percent_time_under_60","percent_time_over_180","percent_time_over_200",
+                 "standard_deviation","cov","mean_amp_glycemic_ex","Calprotectin","C.Reactive.Protein")
+corr_red <- rcorr(as.matrix(alldata[, c(ogttvars_red,cgmvars_red)]), type = "pearson")
+corr_red$P <- as.matrix(corr_red$P,nrow=)
+corr_red <- flattenCorrMatrix(corr_red$r, corr_red$P)
+corr_red <- corr_red[corr_red$row %in% ogttvars_red & corr_red$column %in% cgmvars_red,]
+corr_red$p <- p.adjust(corr_red$p)
+
 ```
 
 ```{r echo=FALSE}
 # Pairwise comparisons
-sigvars <- c("poc_a1c","isi","isi_cpep","odi","odi_cpep","iaucbase_glucose","iaucbase_cpep","iAUCcpep_iAUCgluc","iAUCins_iAUC_gluc","average_sensor","standard_deviation","max_sensor","average_auc_per_day","excursions_over_200","avg_excur_over_200_per_day","min_spent_over_200","excursions_over_140","avg_excur_over_140_per_day","percent_time_over_140","min_spent_over_140","mean_amp_glycemic_ex","percent_time_over_180","percent_time_over_200","cov")
+sigvars <- c("poc_a1c","isi","isi_cpep","odi","odi_cpep","iaucbase_glucose","iaucbase_cpep","iAUCcpep_iAUCgluc","iAUCins_iAUC_gluc","average_sensor","standard_deviation","max_sensor","average_auc_per_day","excursions_over_200","avg_excur_over_200_per_day","min_spent_over_200","excursions_over_140","avg_excur_over_140_per_day","percent_time_over_140","min_spent_over_140","mean_amp_glycemic_ex","percent_time_over_180","percent_time_over_200","cov","tir_70_140")
 l <- list()
 for (var in sigvars) {
   table <- TukeyHSD(aov(alldata[,var] ~ alldata$group_category.factor))
   table <- as.data.frame(table$`alldata$group_category.factor`)
   table <- round(table,3)
   l[[var]] <- table
+}
+```
+
+```{r echo=FALSE}
+# Pairwise comparisons
+sigvars_odi <- c("max_sensor","average_sensor","average_auc_per_day","avg_excur_over_140_per_day","avg_excur_over_200_per_day",
+                 "excursions_over_140","percent_time_over_140","percent_time_over_180","min_spent_over_140","standard_deviation",
+                 "mean_amp_glycemic_ex","cov","tir_70_140")
+l_odi <- list()
+for (var in sigvars_odi) {
+  table <- TukeyHSD(aov(has_odi[,var] ~ has_odi$group_category.factor))
+  table <- as.data.frame(table$`has_odi$group_category.factor`)
+  table <- round(table,3)
+  l_odi[[var]] <- table
 }
 ```
 
@@ -565,7 +628,7 @@ kable(tab2b,caption="Table 2b.  Descriptive statistics for beta cell function ou
 
 \newpage
 
-Pairwise Comparisons for Table 2 using Tukey's Honestly Significant Difference
+Pairwise Comparisons for Tables 2a and 2b using Tukey's Honestly Significant Difference
 ```{r echo=FALSE}
 # Kable does not appear to work in a for loop for some reason.
 kable(l[[1]],caption = sigvars[1])
@@ -592,13 +655,51 @@ kable(l[[21]],caption = sigvars[21])
 kable(l[[22]],caption = sigvars[22])
 kable(l[[23]],caption = sigvars[23])
 kable(l[[24]],caption = sigvars[24])
+kable(l[[25]],caption = sigvars[25])
+
 ```
 
 \newpage
 
-Pearson correlation coefficients between beta cell function outcomes and CGM outcomes are shown in Table 3.
 ```{r, results='asis',tidy=TRUE, echo=FALSE}
-kable(corr,caption="Table 3.  Correlation between beta cell function outcomes and CGM outcomes.")
+kable(tab2c,caption="Table 2c.  Descriptive statistics for CGM variables by group, for participants with fsOGTT.  Statistics given are N(%), mean±SD, or median (25th %ile, 75th %ile).  * denotes that the Wilcoxon test was used, and ** denotes that Fisher's exact test was used.")
+```
+<br>
+
+\newpage
+
+Pairwise Comparisons for Table 2c using Tukey's Honestly Significant Difference
+```{r echo=FALSE}
+# Kable does not appear to work in a for loop for some reason.
+kable(l_odi[[1]],caption = sigvars_odi[1])
+kable(l_odi[[2]],caption = sigvars_odi[2])
+kable(l_odi[[3]],caption = sigvars_odi[3])
+kable(l_odi[[4]],caption = sigvars_odi[4])
+kable(l_odi[[5]],caption = sigvars_odi[5])
+kable(l_odi[[6]],caption = sigvars_odi[6])
+kable(l_odi[[7]],caption = sigvars_odi[7])
+kable(l_odi[[8]],caption = sigvars_odi[8])
+kable(l_odi[[9]],caption = sigvars_odi[9])
+kable(l_odi[[10]],caption = sigvars_odi[10])
+kable(l_odi[[11]],caption = sigvars_odi[11])
+kable(l_odi[[12]],caption = sigvars_odi[12])
+kable(l_odi[[13]],caption = sigvars_odi[13])
+
+```
+
+\newpage
+
+Pearson correlation coefficients between beta cell function outcomes and CGM outcomes are shown in Table 3a.
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(corr,caption="Table 3a.  Correlation between beta cell function outcomes and CGM outcomes.")
+```
+<br>
+
+\newpage
+
+A reduced set of Pearson correlation coefficients between beta cell function outcomes and CGM outcomes, with FDR adjusted p-values, are shown in Table 3b.
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(corr_red,caption="Table 3b.  Correlation between beta cell function outcomes and CGM outcomes, with FDR adjusted p-values.")
 ```
 <br>
 
