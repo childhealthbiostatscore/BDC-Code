@@ -19,6 +19,10 @@ library(pROC)
 library(dplyr)
 library(sjlabelled)
 library(tableone)
+library(ISLR)
+library(glmnet)
+library(pROC)
+library(cutpointr)
 #library(officedown)
 ```
 
@@ -227,6 +231,11 @@ alldata$prediabetes <- ifelse(alldata$prediabetes==1 & alldata$diabetes==1,0,
 alldata[alldata$subject_id %in% keep$subject_id,]$prediabetes <- 0
 alldata$prediabetes_or_diabetes <- ifelse(alldata$prediabetes==1 | alldata$diabetes==1,1,0)
 
+# create variable for 2 hour glucose >=140
+alldata$ogtt_2h_140 <- ifelse(alldata$lab_ogtt_2_hour_glucose>=140,1,0)
+alldata$ogtt_2h_140 <- ifelse(is.na(alldata$lab_ogtt_2_hour_glucose),NA,alldata$ogtt_2h_140)
+label(alldata$ogtt_2h_140)="2 hour glucose >=140"
+
 # read in calprotectin and CRP
 crp <- read.csv("S:\\Shared Projects\\Laura\\Laura Tim projects\\Christine Chan\\2019 ADA Abstracts\\Data_Raw\\CGMInHealthyControls-CalprotectinAndCRP_DATA_LABELS_2020-04-30_1855.csv")
 crp$subject_id <- crp$Subject.ID
@@ -427,6 +436,12 @@ pct140_res <- coords(pct140_roc,"best",transpose=F,best.method = "closest.toplef
 pct140_res$auc <- as.numeric(pct140_roc$auc)
 pct140_res <- apply(pct140_res,2,function(x){round(x,2)})
 
+# trying pct140 with cutpointr - max sensitivity given spec 50%
+# here we are saying that the cost of a false negative is 30x that of a false positive
+test <- cutpointr(data=alldata,class=diabetes,x=percent_time_over_140,
+                  method=minimize_metric,metric=misclassification_cost,
+                  cost_fp=1,cost_fn=30,na.rm = T,pos_class = 1,direction=">=")
+
 pct180_roc <- roc(diabetes~percent_time_over_180,data=alldata,quiet=T)
 pct180_res <- coords(pct180_roc,"best",transpose=F,best.method = "closest.topleft")
 pct180_res$auc <- as.numeric(pct180_roc$auc)
@@ -575,6 +590,83 @@ tab_cal_crp_delta <-  CreateTableOne(vars = c("Calprotectin","C.Reactive.Protein
                                data = alldata[alldata$delta_bg_tertile==1 | alldata$delta_bg_tertile==3,])
 tab_cal_crp_delta <- print(tab_cal_crp_delta,printToggle = F)
 
+# LASSO for diabetes, prediabetes by 2 hour OGTT
+# first create separate matrices with the needed variables
+lasso_cgmvars <- c("min_sensor","max_sensor","average_sensor","average_auc_per_day","excursions_over_200","avg_excur_over_140_per_day",
+             "avg_excur_over_200_per_day","excursions_over_140","percent_time_under_60","percent_time_under_70",
+             "percent_time_over_140","percent_time_over_180","percent_time_over_200",
+             "min_spent_under_60","min_spent_under_70","min_spent_over_200","min_spent_over_140",
+             "total_auc","standard_deviation","mean_amp_glycemic_ex","cov","tir_70_140")
+
+# first diabetes - use all observations
+#lasso_diabetes <- alldata[,c("diabetes",lasso_cgmvars)]
+#lasso_diabetes <- na.omit(lasso_diabetes)
+#x = model.matrix(diabetes~., lasso_diabetes)[,-1] # trim off the first column leaving only the predictors
+#y = lasso_diabetes %>% select(diabetes) %>%  unlist() %>% as.numeric()
+#lasso_mod_diabetes <- glmnet(x,y,alpha=1)
+#set.seed(1)
+#cv.out = cv.glmnet(x, y, alpha = 1) # Fit lasso model on training data
+#plot(cv.out) 
+#bestlam = cv.out$lambda.min
+#out = glmnet(x, y, alpha = 1, lambda = bestlam)
+#lasso_coef = predict(out, type = "coefficients", s = bestlam) # Display coefficients using lambda chosen by CV
+
+# diabetes using training and test set
+set.seed(3654)
+lasso_diabetes <- alldata[,c("diabetes",lasso_cgmvars)]
+lasso_diabetes <- na.omit(lasso_diabetes)
+lasso_diabetes_train <- lasso_diabetes %>% sample_frac(0.7)
+lasso_diabetes_test <- lasso_diabetes %>% setdiff(lasso_diabetes_train)
+x_train = model.matrix(diabetes~., lasso_diabetes_train)[,-1]
+x_test = model.matrix(diabetes~., lasso_diabetes_test)[,-1]
+y_train <- ifelse(lasso_diabetes_train$diabetes==1,1,0) 
+y_test <-  ifelse(lasso_diabetes_test$diabetes==1,1,0)
+cv.out = cv.glmnet(x_train, y_train, alpha = 1,family="binomial") # Fit lasso model on training data
+#plot(cv.out) # Draw plot of training MSE as a function of lambda
+bestlam = cv.out$lambda.min 
+lasso_mod_diabetes_train <- glmnet(x_train,y_train,alpha=1,family = "binomial",lambda = bestlam)
+probabilities_diabetes <- lasso_mod_diabetes_train %>% predict(newx=x_test, type="response",s=bestlam)
+predicted_classes <- ifelse(probabilities_diabetes>0.5,1,0)
+observed_classes <- y_test
+diabetes_crosstab <- as.data.frame.matrix(table(observed_classes,predicted_classes))
+# refit the final model 
+final_mod_diabetes <- glm(diabetes ~ max_sensor + mean_amp_glycemic_ex + cov, family = "binomial", data=alldata)
+mod_diabetes_table <- data.frame(summary(final_mod_diabetes)$coef)
+mod_diabetes_table$OR <- exp(mod_diabetes_table$Estimate)
+mod_diabetes_table$LCL <- exp(mod_diabetes_table$Estimate - mod_diabetes_table$Std..Error * 1.96 )
+mod_diabetes_table$UCL <- exp(mod_diabetes_table$Estimate + mod_diabetes_table$Std..Error * 1.96 )
+mod_diabetes_table$`p-value` <- round(mod_diabetes_table$Pr...z..,4)
+mod_diabetes_table <- mod_diabetes_table[c(5,6,7,8)]
+
+# 2 hour glucose using training and test set
+set.seed(3654)
+lasso_2hr <- alldata[,c("ogtt_2h_140",lasso_cgmvars)]
+lasso_2hr <- na.omit(lasso_2hr)
+lasso_2hr_train <- lasso_2hr %>% sample_frac(0.7)
+lasso_2hr_test <- lasso_2hr %>% setdiff(lasso_2hr_train)
+x_train_2hr = model.matrix(ogtt_2h_140~., lasso_2hr_train)[,-1]
+x_test_2hr = model.matrix(ogtt_2h_140~., lasso_2hr_test)[,-1]
+y_train_2hr <-  ifelse(lasso_2hr_train$ogtt_2h_140==1,1,0)  
+y_test_2hr <-  ifelse(lasso_2hr_test$ogtt_2h_140==1,1,0) 
+cv.out.2hr = cv.glmnet(x_train_2hr, y_train_2hr, alpha = 1,family="binomial") # Fit lasso model on training data
+#plot(cv.out.2hr) # Draw plot of training MSE as a function of lambda
+bestlam_2hr = cv.out.2hr$lambda.min 
+lasso_mod_2hr_train <- glmnet(x_train_2hr,y_train_2hr,alpha=1,family = "binomial",lambda=bestlam_2hr)
+probabilities_2hr <- lasso_mod_2hr_train %>% predict(newx=x_test_2hr, type="response",s=bestlam_2hr)
+predicted_classes_2hr <- ifelse(probabilities_2hr>0.5,1,0)
+observed_classes_2hr <- y_test_2hr
+twohr_crosstab <- as.data.frame.matrix(table(observed_classes_2hr,predicted_classes_2hr))
+# refit the final model 
+final_mod_2hr <- glm(ogtt_2h_140 ~ max_sensor + min_spent_under_70 + min_spent_over_140 + total_auc + standard_deviation
+                     + mean_amp_glycemic_ex + tir_70_140, family = "binomial", data=alldata)
+mod_2hr_table <- data.frame(summary(final_mod_2hr)$coef)
+mod_2hr_table$OR <- exp(mod_2hr_table$Estimate)
+mod_2hr_table$LCL <- exp(mod_2hr_table$Estimate - mod_2hr_table$Std..Error * 1.96 )
+mod_2hr_table$UCL <- exp(mod_2hr_table$Estimate + mod_2hr_table$Std..Error * 1.96 )
+mod_2hr_table$`p-value` <- round(mod_2hr_table$Pr...z..,4)
+mod_2hr_table <- mod_2hr_table[c(5,6,7,8)]
+
+
 ```
 
 # Background
@@ -595,6 +687,8 @@ Integrated AUC (iAUC) for glucose, insulin, C-peptide, and glucagon were calcula
 The distributions of all variables were examined prior to analysis.  Groups were compared using ANOVA or the Wilcoxon test for continuous variables, and the chi-square or Fisher's exact test for categorical variables.  Pearson's correlation coefficient was used to test the association between beta cell function outcomes and CGM outcomes.
 
 ROC analysis was used to examine CGM variables associated with diabetes and to determine the cutoff that best discriminates between participants with and without CFRD.  Optimal cutoffs for each CGM metric determined by "closest to top left" algorithm:  $min((1 - sensitivities)^2 + (1 - specificities)^2)$.
+
+LASSO regression was used to determine which CGM variables best predict diabetes or a 2 hour OGTT>=140.  The data were randomly divided 1:1 into training and test sets.  The training set was used to fit the LASSO regression model, with cross-validation used to determine the optimal value of the lambda parameter.  The model was refit to the test set in order to examine model performance.  Finally, because the parameter estimates from LASSO regression are biased, the model was refit to the entire dataset using logistic regression.
 
 # Results
 
@@ -1069,6 +1163,38 @@ kable(tab_cal_crp_mage,caption = "Calprotectin and CRP in the lowest (1) and hig
 
 ```{r, results='asis',tidy=TRUE, echo=FALSE}
 kable(tab_cal_crp_delta,caption = "Calprotectin and CRP in the lowest (1) and highest (3) tertiles of delta BG.")
+```
+<br>
+
+\newpage
+
+LASSO regression was used to determine which CGM variables best predict diabetes.  The final model was refit to the entire dataset using regular logistic regression in order to obtain unbiased parameter estimates.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(mod_diabetes_table)
+```
+<br>
+
+The proportion of participants who were correctly classified in the test set was `r round(mean(predicted_classes==observed_classes),4)`.  The table below provides a cross-tabulation of the true ("observed") diabetes status compared to the predicted diabetes status in the test set.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(diabetes_crosstab, caption = "Cross-tabulation of observed diabetes status (rows) vs. predicted diabetes status (columns).")
+```
+<br>
+
+\newpage
+
+LASSO regression was used to determine which CGM variables best predict a 2 hour glucose >=140.  The final model was refit to the entire dataset using regular logistic regression in order to obtain unbiased parameter estimates.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(mod_2hr_table)
+```
+<br>
+
+The proportion of participants who were correctly classified in the test set was `r round(mean(predicted_classes_2hr==observed_classes_2hr),4)`.  The table below provides a cross-tabulation of the true ("observed") 2 hour glucose status (1 corresponds to glucose >=140) compared to the predicted 2 hour glucose status in the test set.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(twohr_crosstab, caption = "Cross-tabulation of observed 2 hour glucose status (rows) vs. predicted 2 hour glucose status (columns).")
 ```
 <br>
 
