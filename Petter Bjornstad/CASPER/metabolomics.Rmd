@@ -2,18 +2,20 @@
 title: "CASPER Untargeted Metabolomics"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: html_document
+output: word_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE,cache = TRUE,dpi = 600)
-knitr::opts_knit$set(root.dir = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/Peds Endo/Petter Bjornstad/Metabolomics")
+knitr::opts_chunk$set(echo = FALSE,dpi = 600)
+knitr::opts_knit$set(root.dir = "D:/")
 library(arsenal)
 library(skimr)
 library(knitr)
 library(mixOmics)
 library(limma)
 library(tidyverse)
+library(haven)
+library(psych)
 library(pheatmap)
 set.seed(1017)
 ```
@@ -32,10 +34,18 @@ df <- as.data.frame(df)
 # Sample data
 df$ID <- sub("\\.","-",sub(".L","",rownames(df)))
 df <- left_join(df,samples,by = "ID")
-# Reorganize
-df <- df %>% dplyr::select(ID:group,everything())
 # Outcome 
 df$group <- factor(df$group,levels = c(1,4),labels = c("T1D","Control"))
+# SAS data
+sas <- read_sas("./Raw data/casperheir_for_laura.sas7bdat")
+# Add
+df <- 
+  left_join(df,sas[,c("ID","kidney_GFR","medullary_GFR","cortex_GFR")],
+                by = "ID")
+# Reorganize
+df <- df %>% dplyr::select(ID:cortex_GFR,everything())
+# Delete SAS data
+rm(sas)
 ```
 
 # Preprocessing
@@ -55,14 +65,14 @@ missing0 <- which(rowSums(df[,11:ncol(df)] == 0) / length(11:ncol(df)) > 0.8)
 Removed `r length(missing)` samples missing > 80% of compounds and `r length(missing0)` samples with > 80% of compounds equal to 0. 
 
 ```{r}
-X <- df[,11:ncol(df)]
+X <- df[,14:ncol(df)]
 ```
 
 # PCA
 
-```{r pca}
-# 5 PCs
-pca.res <- pca(X, ncomp = 5, center = TRUE, scale = FALSE)
+```{r pca,cache=TRUE}
+# 3 PCs
+pca.res <- pca(X, ncomp = 3, center = TRUE, scale = FALSE)
 # Plot
 plotIndiv(pca.res,group = df$group,legend = TRUE,ind.names = FALSE,
           title = 'PCA by Group (PCs 1 & 2)',ellipse = T)
@@ -78,7 +88,7 @@ plotIndiv(pca.res,comp = c(2,3),group = df$group,legend = TRUE,
 
 ## PLS-DA Performance
 
-```{r plsda loo}
+```{r plsda loo,cache=TRUE}
 # Group as outcome
 Y <- as.factor(df$group)
 # PLS-DA function
@@ -102,9 +112,9 @@ plotIndiv(plsda_true,comp = c(1,2),title = "PLS-DA Components 1 & 2",
 
 ## Permutation Testing
 
-```{r permutation testing}
+```{r permutation testing,cache=TRUE}
 # Permutation testing - takes forever, make sure to cache
-n_perm <- 10
+n_perm <- 1
 aucs1 <- vector(mode="numeric", length=n_perm)
 aucs2 <- vector(mode="numeric", length=n_perm)
 for (i in 1:n_perm) {
@@ -183,7 +193,7 @@ kable(head(results,20),row.names = F)
 
 # Heatmap
 
-```{r cim,include=FALSE}
+```{r cim,include=FALSE,cache=TRUE}
 # Color by T1D status
 colors <- c("steelblue","orange")
 colors <- colors[as.numeric(factor(Y))]
@@ -198,11 +208,12 @@ obj.cim = cim(plsda_true,col.names = F,row.sideColors = colors,
 # Correlations 
 
 ```{r}
-vars = c("GIR","GIR_per_kg","body_fat","screen_bmi_percentile","gfr",	
-         "rpf","acr_mean","kidney_oxygenation")
-varnames = c("GIR","GIR per kg","Body fat","BMI %ile","GFR","RPF",
-             "Mean ACR","Kidney Oxy.")
-add_vars = c("kidney_GFR","medullary_GFR","cortex_GFR")
+vars = c("GIR","GIR_per_kg","body_fat","screen_bmi_percentile",	
+         "rpf","acr_mean","kidney_oxygenation","gfr","kidney_GFR",
+         "medullary_GFR","cortex_GFR")
+varnames = c("GIR","GIR per kg","Body fat","BMI %ile","RPF",
+             "Mean ACR","Kidney Oxy.","GFR","Kidney GFR","Medullary GFR",
+             "Cortex GFR")
 ```
 
 ## For the Top 20 Identified Metabolites by Moderated t test
@@ -227,7 +238,7 @@ kable(c$p,digits = 3)
 ### Heatmap
 
 ```{r}
-pheatmap(c$r)
+heatmap(c$r,margins = c(8,8))
 ```
 
 ## For the Top 20 Identified Metabolites by PLS-DA
@@ -252,5 +263,5 @@ kable(c$p,digits = 3)
 ### Heatmap
 
 ```{r}
-pheatmap(c$r)
+heatmap(c$r,margins = c(8,8))
 ```
