@@ -2,7 +2,7 @@
 title: "NOVO Transition"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: html_document
+output: word_document
 ---
 
 ```{r setup, include=FALSE}
@@ -15,6 +15,7 @@ library(cgmanalysis)
 library(tidyverse)
 library(XML)
 library(Hmisc)
+library(emmeans)
 ```
 
 ```{r import}
@@ -62,9 +63,7 @@ lapply(f, function(file){
 cgmvariables(outdir,"./Data_Cleaned","cgm_randomization",printname = T)
 ```
 
-# Table 1: Descriptive Characteristics
-
-```{r results='asis',warning=FALSE}
+```{r data clean}
 # Subject id from record id (record_id = 1 dropped out)
 data$subject_id = data$record_id + 1
 # Import CGM data
@@ -74,6 +73,29 @@ insulin = read.csv("./Data_Cleaned/insulin.csv",na.strings = "")
 insulin$subject_id = as.numeric(sapply(strsplit(insulin$Id,"-"),"[[",2))
 # Add to REDCap data
 data = full_join(data,insulin,by = "subject_id")
+data = full_join(data,cgm,by = "subject_id")
+# Check if they have CGM data
+data$cgm_randomization = factor(!is.na(data$date_cgm_placement),
+                                labels = c("No","Yes"))
+# Surveys
+# IDSS score: mean of items 1-14 (reverse code items: 1, 3-4, 7-13)
+reverse = c("idss_complicated","idss_embarrassing","idss_hassle_to_use",
+            "idss_expensive","idss_spontaneous","idss_many_pieces",
+            "idss_benefit","idss_inconvinient","idss_time",
+            "idss_hassle_to_carry")
+reverse_v2 = paste0(reverse,"_randomization_v2")
+data[,reverse_v2] = lapply(data[,reverse_v2], function(x){6-x})
+all_idss = c(reverse,"idss_good_control","idss_control",
+             "idss_works_well","idss_future")
+all_idss_v2 = paste0(all_idss,"_randomization_v2")
+data$idss_randomization_v2 = 
+  apply(data,1,function(r){mean(as.numeric(r[all_idss_v2]))})
+# Percent overall work impairment due to problem: Q2/(Q2+Q4)+[(1-(Q2/(Q2+Q4)))x(Q5/10)]
+```
+
+# Table 1: Descriptive Characteristics
+
+```{r results='asis',warning=FALSE}
 # Table 1
 t1_vars = c("age","gender.factor","bmi","gold_score.factor",
             "diabetes_duration","a1c","insulin_pump.factor",
@@ -83,7 +105,7 @@ t1_vars = c("age","gender.factor","bmi","gold_score.factor",
             "insurance_no_answer.factor","household_income.factor",
             "diab_conditions___1.factor","diab_conditions___2.factor",
             "diab_conditions___3.factor","diab_conditions___4.factor",
-            "diab_conditions___5.factor")
+            "diab_conditions___5.factor","cgm_randomization")
 t1_form = as.formula(paste0("randomization_group.factor~",
                             paste0(t1_vars,collapse = "+")))
 table_1 = 
@@ -107,5 +129,48 @@ summary(table_1,labelTranslations =
                diab_conditions___2.factor="Diabetic Neuropathy",
                diab_conditions___3.factor="Diabetic Nephropathy",
                diab_conditions___4.factor="High Cholesterol",
-               diab_conditions___5.factor="High Blood Pressure"))
+               diab_conditions___5.factor="High Blood Pressure",
+               cgm_randomization = "CGM Data at Randomization"))
+```
+
+# Figure 1: Percent time spent > 180 mg/dL
+
+```{r fig 1,warning=FALSE}
+ggplot(data[!is.na(data$randomization_group.factor),],
+       aes(x=randomization_group.factor,y=percent_time_over_180))+
+  geom_boxplot() + 
+  theme_bw() + xlab("") + ylab("% Time Above 180 mg/dL")
+```
+
+# Table 2: Differences between treatment group adjusted for BMI and Medicaid status
+
+Means and standard errors (SE) are averaged over the levels of Medicaid status and reported for the average BMI in each treatment group. All outcomes were compared using linear regression except for the number of correction boluses, which was modeled using Poisson regression.
+
+```{r table 2}
+data$no_of_corrections = 
+  suppressWarnings(
+    as.numeric(
+      data$No.of.correction.boluses.in.first.72.hours.of.randomization))
+vars = list("% TIR"="percent_time_70_180",
+            "% Time < 70 mg/dL"="percent_time_under_70",
+            "% Time < 54 mg/dL"="percent_time_under_54",
+            "Number of correction boluses in first 72 hours"=
+              "no_of_corrections","IDSS"="idss_randomization_v2")
+group = "randomization_group.factor"
+table_2 = lapply(vars,function(var){
+  form = 
+    as.formula(paste0(var,"~",group,"+bmi+insurance_medicaid.factor"))
+  mod = lm(form,data = data)
+  if(grepl("no",var)){
+    mod = glm(form,data = data,family = "poisson")
+  }
+  res = as.data.frame(summary(mod)$coefficients)
+  p = res[2,4]
+  means = as.data.frame(emmeans(mod,as.formula(paste0("~",group))))
+  return(c(means[1,2],means[1,3],means[2,2],means[2,3],p))
+})
+table_2 = as.data.frame(do.call(rbind,table_2))
+rownames(table_2) = names(vars)
+kable(table_2,col.names = c("SOC Mean","SOC SE","OLP Mean","OLP SE","p"),
+      digits = 3)
 ```
