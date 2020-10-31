@@ -2,7 +2,7 @@
 title: "NOVO Transition"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: word_document
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
@@ -24,58 +24,79 @@ source("C:/Users/tim/Documents/GitHub/BDC-Code/Viral Shah/Transition/NOVOTransit
 ```
 
 ```{r cgm,eval=FALSE}
-# List patient folders
-l = list.files("./Data_Raw/Patient data")
-l_full = list.files("./Data_Raw/Patient data",full.names = T)
-l = l_full[!is.na(suppressWarnings(as.numeric(l)))]
-# Find randomization files in patient folders
-f = lapply(l, function(f){
-  files = list.files(f,full.names = T)
-  w = which(grepl("random",tolower(files)))
-  files[w]
-})
-f = unlist(f)
-# Import randomization files and write as csv to clean data folder
-outdir = "./Data_cleaned/Randomization/"
-dir.create(outdir,showWarnings = FALSE)
-lapply(f, function(file){
-  ext = tools::file_ext(file)
-  if(ext == "xml"){
-    doc <- xmlParse(file)
-    l <- xmlToList(doc)
-    id = as.numeric(strsplit(file,"/")[[1]][4])
-    l <- l[["GlucoseReadings"]]
-    times <- lapply(l, function(x) {x[["DisplayTime"]]})
-    times <- do.call(rbind,times)
-    sensor <- lapply(l, function(x) {x[["Value"]]})
-    sensor <- do.call(rbind,sensor)
-    table <- as.data.frame(cbind(times,sensor))
-    colnames(table) <- c("timestamp","sensorglucose")
-    table$subjectid <- NA
-    table$subjectid[1] <- id
-    table <- table[,c("subjectid","timestamp","sensorglucose")]
-    table$timestamp = lubridate::ymd_hms(table$timestamp)
-    write.csv(table,file = paste0(outdir,id,"_randomization.csv"),
-              row.names = F,na="")
-  }
-})
+# Get cgm data function
+cgm_by_timepoint = function(indir,outdir,regex,timepoint){
+  # List patient folders
+  l = list.files(indir)
+  l_full = list.files(indir,full.names = T)
+  l = l_full[!is.na(suppressWarnings(as.numeric(l)))]
+  # Find timepoint files in patient folders
+  f = lapply(l, function(f){
+    files = list.files(f,full.names = T,pattern = ".*.xml")
+    w = which(grepl(regex,tolower(files)))
+    files[w]
+  })
+  f = unlist(f)
+  # Import randomization files and write as csv to clean data folder
+  dir.create(outdir,showWarnings = FALSE)
+  lapply(f, function(file){
+    ext = tools::file_ext(file)
+    if(ext == "xml"){
+      doc <- xmlParse(file)
+      l <- xmlToList(doc)
+      id = as.numeric(strsplit(file,"/")[[1]][4])
+      l <- l[["GlucoseReadings"]]
+      times <- lapply(l, function(x) {x[["DisplayTime"]]})
+      times <- do.call(rbind,times)
+      sensor <- lapply(l, function(x) {x[["Value"]]})
+      sensor <- do.call(rbind,sensor)
+      table <- as.data.frame(cbind(times,sensor))
+      colnames(table) <- c("timestamp","sensorglucose")
+      table$subjectid <- NA
+      table$subjectid[1] <- id
+      table <- table[,c("subjectid","timestamp","sensorglucose")]
+      table$timestamp = lubridate::ymd_hms(table$timestamp)
+      write.csv(table,file = paste0(outdir,id,"_",timepoint,".csv"),
+                row.names = F,na="")
+    }
+  })
+}
+# Randomization
+cgm_by_timepoint(indir="./Data_Raw/Patient data",
+                 outdir = "./Data_Cleaned/Randomization/",
+                 regex = "random",
+                 timepoint = "randomization")
+# Baseline
+cgm_by_timepoint(indir="./Data_Raw/Patient data",
+                 outdir = "./Data_Cleaned/Screening/",
+                 regex = "screen",
+                 timepoint = "screening")
 # CGM variables
-cgmvariables(outdir,"./Data_Cleaned","cgm_randomization",printname = T)
+cgmvariables("./Data_Cleaned/Randomization/",
+             "./Data_Cleaned","cgm_randomization")
+cgmvariables("./Data_Cleaned/Screening/",
+             "./Data_Cleaned","cgm_screening")
 ```
 
 ```{r data clean}
 # Subject id from record id (record_id = 1 dropped out)
 data$subject_id = data$record_id + 1
 # Import CGM data
-cgm = read.csv("./Data_Cleaned/cgm_randomization.csv")
+cgm_randomization = read.csv("./Data_Cleaned/cgm_randomization.csv")
+colnames(cgm_randomization)[2:ncol(cgm_randomization)] = 
+  paste0(colnames(cgm_randomization)[2:ncol(cgm_randomization)],"_r")
+cgm_screening = read.csv("./Data_Cleaned/cgm_screening.csv")
+colnames(cgm_screening)[2:ncol(cgm_screening)] = 
+  paste0(colnames(cgm_screening)[2:ncol(cgm_screening)],"_s")
 # Import insulin data
 insulin = read.csv("./Data_Cleaned/insulin.csv",na.strings = "")
 insulin$subject_id = as.numeric(sapply(strsplit(insulin$Id,"-"),"[[",2))
 # Add to REDCap data
 data = full_join(data,insulin,by = "subject_id")
-data = full_join(data,cgm,by = "subject_id")
+data = full_join(data,cgm_randomization,by = "subject_id")
+data = full_join(data,cgm_screening,by = "subject_id")
 # Check if they have CGM data
-data$cgm_randomization = factor(!is.na(data$date_cgm_placement),
+data$cgm_randomization = factor(!is.na(data$date_cgm_placement_r),
                                 labels = c("No","Yes"))
 # Surveys
 # IDSS score: mean of items 1-14 (reverse code items: 1, 3-4, 7-13)
@@ -90,7 +111,9 @@ all_idss = c(reverse,"idss_good_control","idss_control",
 all_idss_v2 = paste0(all_idss,"_randomization_v2")
 data$idss_randomization_v2 = 
   apply(data,1,function(r){mean(as.numeric(r[all_idss_v2]))})
-# Percent overall work impairment due to problem: Q2/(Q2+Q4)+[(1-(Q2/(Q2+Q4)))x(Q5/10)]
+# Change in % time > 180
+data$change_time_over_180 = 
+  data$percent_time_over_180_r - data$percent_time_over_180_s
 ```
 
 # Table 1: Descriptive Characteristics
@@ -137,7 +160,7 @@ summary(table_1,labelTranslations =
 
 ```{r fig 1,warning=FALSE}
 ggplot(data[!is.na(data$randomization_group.factor),],
-       aes(x=randomization_group.factor,y=percent_time_over_180))+
+       aes(x=randomization_group.factor,y=percent_time_over_180_r))+
   geom_boxplot() + 
   theme_bw() + xlab("") + ylab("% Time Above 180 mg/dL")
 ```
@@ -151,9 +174,10 @@ data$no_of_corrections =
   suppressWarnings(
     as.numeric(
       data$No.of.correction.boluses.in.first.72.hours.of.randomization))
-vars = list("% TIR"="percent_time_70_180",
-            "% Time < 70 mg/dL"="percent_time_under_70",
-            "% Time < 54 mg/dL"="percent_time_under_54",
+vars = list("% TIR"="percent_time_70_180_r",
+            "% > 180 mg/dL"="percent_time_over_180_r",
+            "% Time < 70 mg/dL"="percent_time_under_70_r",
+            "% Time < 54 mg/dL"="percent_time_under_54_r",
             "Number of correction boluses in first 72 hours"=
               "no_of_corrections","IDSS"="idss_randomization_v2")
 group = "randomization_group.factor"
