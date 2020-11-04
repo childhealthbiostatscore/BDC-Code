@@ -56,7 +56,8 @@ missing <-
   which(rowSums(is.na(df[,11:ncol(df)])) / length(11:ncol(df)) > 0.8)
 if (length(missing)>0){df <- df[-missing,]}
 # Same for 0 instead of NA - none
-missing0 <- which(rowSums(df[,11:ncol(df)] == 0) / length(11:ncol(df)) > 0.8)
+missing0 <- 
+  which(rowSums(df[,11:ncol(df)] == 0) / length(11:ncol(df)) > 0.8)
 # Write csv
 # write.csv(df,file = "./Clean data/metabolomics_for_RF.csv",
 #           row.names = F,na = "")
@@ -70,7 +71,7 @@ X <- df[,14:ncol(df)]
 
 # PCA
 
-```{r pca}
+```{r pca,eval=FALSE}
 # 3 PCs
 pca.res <- pca(X, ncomp = 3, center = TRUE, scale = FALSE)
 # Plot
@@ -112,9 +113,9 @@ plotIndiv(plsda_true,comp = c(1,2),title = "PLS-DA Components 1 & 2",
 
 ## Permutation Testing
 
-```{r permutation testing}
+```{r permutation testing,cache=TRUE}
 # Permutation testing - takes forever, make sure to cache
-n_perm <- 100
+n_perm <- 1000
 aucs1 <- vector(mode="numeric", length=n_perm)
 aucs2 <- vector(mode="numeric", length=n_perm)
 for (i in 1:n_perm) {
@@ -166,7 +167,7 @@ kable(head(names[!is.na(names)],20),col.names = "Compound Name")
 
 Top 20 identified metabolites that are significantly different between groups. P values adjusted using the FDR method. The reference group here is group 1, so negative logFC values indicate that the metabolite was lower in group 4 (and positive values indicate it was higher).
 
-```{r echo=FALSE}
+```{r message=FALSE}
 # Design matrix - 0 and 1 for CAC progression
 design <- model.matrix(~factor(group),df)
 # Linear model - X is "expression" matrix (samples in columns)
@@ -205,7 +206,7 @@ obj.cim = cim(plsda_true,col.names = F,row.sideColors = colors,
 
 ![](Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/Peds Endo/Petter Bjornstad/Metabolomics/PLScim.jpeg)
 
-# Correlations 
+# Correlations for the Metabolites by Moderated t test
 
 ```{r}
 vars = c("M_I_kg_GC","M_I_leankg_GC","body_fat",
@@ -214,14 +215,13 @@ vars = c("M_I_kg_GC","M_I_leankg_GC","body_fat",
 varnames = c("M_I_kg_GC","M_I_leankg_GC","Body fat","BMI %ile","RPF",
              "Mean ACR","Kidney Oxy.","GFR","Kidney GFR","Medullary GFR",
              "Cortex GFR")
+intersection = intersect(top20,top20_pls)
 ```
-
-## For the Top 20 Identified Metabolites by Moderated t test
 
 ### Correlations
 
 ```{r}
-c = corr.test(X[,top20],df[,vars],method = "spearman")
+c = corr.test(X[,intersection],df[,vars],method = "spearman")
 rownames(c$r) <- raw_data$Name[match(rownames(c$r),compounds)]
 colnames(c$r) <- varnames
 kable(c$r,digits = 3)
@@ -241,27 +241,11 @@ kable(c$p,digits = 3)
 heatmap(c$r,margins = c(8,8))
 ```
 
-## For the Top 20 Identified Metabolites by PLS-DA
-
-### Correlations
-
 ```{r}
-c = corr.test(X[,top20_pls],df[,vars],method = "spearman")
-rownames(c$r) <- raw_data$Name[match(rownames(c$r),compounds)]
-colnames(c$r) <- varnames
-kable(c$r,digits = 3)
-```
-
-### P Values (FDR-adjusted)
-
-```{r}
-rownames(c$p) <- rownames(c$r)
-colnames(c$p) <- colnames(c$r)
-kable(c$p,digits = 3)
-```
-
-### Heatmap
-
-```{r}
-heatmap(c$r,margins = c(8,8))
+# Find interesting results to report
+report = as.data.frame(which(c$p < 0.05 & abs(c$r) >= 0.5,arr.ind = T))
+for (r in levels(factor(report$row))) {
+  col = report$col[report$row == r]
+  corrs = c$r[r,col]
+}
 ```
