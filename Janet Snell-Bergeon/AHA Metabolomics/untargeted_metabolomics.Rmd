@@ -55,7 +55,7 @@ clinical$GlobalSampleID <-
   as.character(samples$Injection[match(clinical$StudyID,samples$SampleID)])
 # Relevant columns
 clinical <- clinical %>%
-  select(GlobalSampleID,age,sex,race,CACp,GROUP) %>%
+  select(GlobalSampleID,age,sex,race,bmiV1,acV1,CACp,GROUP) %>%
   filter(!is.na(GlobalSampleID))
 # Names
 names <- data$compound
@@ -94,19 +94,19 @@ data[,c("GlobalSampleID","sex","race")] <-
 
 ```{r echo=FALSE}
 # Check for samples missing > 80% of compounds, remove them
-missing <- which(rowSums(is.na(data[,8:ncol(data)])) / length(8:ncol(data)) > 0.8)
+missing <- which(rowSums(is.na(data[,10:ncol(data)])) / length(10:ncol(data)) > 0.8)
 data <- data[-missing,]
 # Same for 0 instead of NA - none
-missing0 <- which(rowSums(data[,8:ncol(data)] == 0) / length(8:ncol(data)) > 0.8)
+missing0 <- which(rowSums(data[,10:ncol(data)] == 0) / length(10:ncol(data)) > 0.8)
 # Check for and remove compounds with > 20% missing in research - none
 research <- which(colSums(is.na(data[!grepl("QC",data$GlobalSampleID),])) / 
                     (nrow(data))-13 > 0.2)
 # or > 80% missing in QC - none
-qc <- names(which(colSums(is.na(data[grepl("QC",data$GlobalSampleID),8:ncol(data)])) / 
+qc <- names(which(colSums(is.na(data[grepl("QC",data$GlobalSampleID),10:ncol(data)])) / 
                     13 > 0.2))
 data <- data[,!(names(data) %in% qc)]
 # Check for compounds with CV > 0.3 in QC samples
-qc_cv <- names(which(lapply(data[grepl("QC",data$GlobalSampleID),8:ncol(data)],function(x){
+qc_cv <- names(which(lapply(data[grepl("QC",data$GlobalSampleID),10:ncol(data)],function(x){
   sd(x,na.rm = T)/mean(x,na.rm = T)
 }) > 0.3))
 data <- data[,!(names(data) %in% qc_cv)]
@@ -121,7 +121,7 @@ Removed `r length(missing)` samples missing > 80% of compounds and `r length(mis
 ```{r echo=FALSE,cache=TRUE}
 # Find the effective number of variables for multiple testing adjustment.
 # Correlation matrix between all metabolites
-mets <- data[,8:ncol(data)]
+mets <- data[,10:ncol(data)]
 cor_mat <- cor(mets,use = "complete.obs")
 # Get eigenvalues for correlation matrix
 values <- eigen(cor_mat)$values
@@ -134,7 +134,7 @@ meff <- 1 + (M - 1)*(1 - (var(values)/M))
 
 ```{r echo=FALSE}
 # Non-missing outcome
-X <- data[,c(5,6,8:ncol(data))]
+X <- data[,c(7,8,10:ncol(data))]
 X <- X[!is.na(X[,1]),]
 X$GROUP <- as.factor(as.character(X$GROUP))
 # Log transform
@@ -188,7 +188,7 @@ design <- as.data.frame(as.numeric(data$CACp)-1)
 colnames(design) <- "CACp"
 design <- model.matrix(~CACp,design)
 # "Expression" matrix (samples in columns) for each
-X <- data[match(rownames(design),rownames(X)),8:ncol(data)]
+X <- data[match(rownames(design),rownames(X)),10:ncol(data)]
 # Linear model
 fit <- lmFit(t(X),design)
 fit <- eBayes(fit)
@@ -214,7 +214,7 @@ colnames(design) <- "GROUP"
 design$GROUP <- as.factor(as.numeric(design$GROUP))
 design <- model.matrix(~GROUP,design)
 # "Expression" matrix (samples in columns) for each
-X <- data[match(rownames(design),rownames(X)),8:ncol(data)]
+X <- data[match(rownames(design),rownames(X)),10:ncol(data)]
 # Linear model
 fit <- lmFit(t(X),design)
 fit <- eBayes(fit)
@@ -267,6 +267,7 @@ On imputed data from Qibin
 # Format data
 pca.mat = read.csv("./Data_Cleaned/metabolomics.csv",
                      stringsAsFactors = F,na.strings = c("","NA"))
+compounds = pca.mat$Compound
 pca.mat = pca.mat[,25:ncol(pca.mat)]
 
 colnames(pca.mat) = gsub("IsoMS_results_","",colnames(pca.mat))
@@ -274,7 +275,7 @@ colnames(pca.mat) = gsub("*_.*","",colnames(pca.mat))
 pca.mat$S171 = NULL
 pca.mat$S050 = NULL
 # Metadata
-cov = data[,1:7]
+cov = data[,1:9]
 rownames(cov) = cov$GlobalSampleID
 cov = cov[,-1]
 cov = cov[colnames(pca.mat),]
@@ -301,6 +302,62 @@ ggplot(pca.frame, aes(x=PC1, y=PC2, color=class)) +
 
 ### Correlation heatmaps
 
-```{r cor_heatmaps,warning=FALSE}
-eigencorplot(pca,metavars = c("age","sex","race","GROUP","batch"))
+```{r cor_heatmaps,warning=FALSE,message=FALSE}
+eigencorplot(pca,metavars = 
+               c("age","sex","race","bmiV1","acV1","GROUP","batch"))
+```
+
+# Association with age, BMI, etc.
+
+## Age
+
+```{r}
+age = data$age[14:nrow(data)]
+ts = lapply(data[14:nrow(data),10:ncol(data)],function(x){
+  d = as.data.frame(cbind(age,x))
+  m = lm(age~x,d)
+  summary(m)$coefficients[2,4]
+})
+ts = do.call(rbind,ts)
+```
+
+Without adjusting for multiple comparisons, there are `r sum(ts<0.05)` metabolites significantly associated with age. After FDR adjustment there are `r sum(p.adjust(ts,"fdr")<0.05)`.
+
+## BMI
+
+```{r}
+bmi = data$bmi[14:nrow(data)]
+ts = lapply(data[14:nrow(data),10:ncol(data)],function(x){
+  d = as.data.frame(cbind(bmi,x))
+  m = lm(bmi~x,d)
+  summary(m)$coefficients[2,4]
+})
+ts = do.call(rbind,ts)
+```
+
+Without adjusting for multiple comparisons, there are `r sum(ts<0.05)` metabolites significantly associated with BMI. After FDR adjustment there are `r sum(p.adjust(ts,"fdr")<0.05)`.
+
+## Albumin to creatinine ratio
+
+```{r}
+ac = data$acV1[14:nrow(data)]
+ts = lapply(data[14:nrow(data),10:ncol(data)],function(x){
+  d = as.data.frame(cbind(ac,x))
+  m = lm(ac~x,d)
+  summary(m)$coefficients[2,4]
+})
+ts = do.call(rbind,ts)
+```
+
+Without adjusting for multiple comparisons, there are `r sum(ts<0.05)` metabolites significantly associated with BMI. After FDR adjustment there are `r sum(p.adjust(ts,"fdr")<0.05)`.
+
+```{r}
+# Get top metabolites for PC loadings
+l = lapply(pca$loadings, function(c){
+  o = order(abs(c),decreasing = T)
+  compounds[o]
+})
+l = do.call(cbind,l)
+write.csv(l,file = "C:/Users/tim/Desktop/pc_loadings.csv",
+          row.names = F,na="Unidentified")
 ```
