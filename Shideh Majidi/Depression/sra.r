@@ -1,6 +1,6 @@
 library(Hmisc) 
 #Read Data
-data=read.csv('Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Shideh Majidi/Depression/Data_Cleaned/sra.csv')
+data=read.csv('/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Shideh Majidi/Depression/Data_Cleaned/sra.csv')
 #Setting Labels
 label(data$record_id)="Record ID"
 label(data$redcap_survey_identifier)="Survey Identifier"

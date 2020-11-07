@@ -2,16 +2,16 @@ import pandas as pd
 import os
 import math
 # Serial numbers from Cari
-sns = pd.read_excel("/Users/timvigers/Documents/OneDrive - The University of Colorado Denver/Control IQ/DCLP pump SN.xlsx")
+sns = pd.read_excel("/Users/timvigers/OneDrive - The University of Colorado Denver/Control IQ/DCLP pump SN.xlsx")
 # SNs only
 sns = sns['pump 1 SN '].tolist() + \
     sns['pump 2 SN '].tolist() + \
     sns['pump 3 SN'].tolist()
 sns = [x for x in sns if str(x) != 'nan']
 # Get list of pump files
-control_dir = "/Users/timvigers/Documents/OneDrive - The University of Colorado Denver/Control IQ/Controls/"
+control_dir = "/Users/timvigers/OneDrive - The University of Colorado Denver/Control IQ/Controls/"
 control_files = os.listdir(control_dir)
-iq_dir = "/Users/timvigers/Documents/OneDrive - The University of Colorado Denver/Control IQ/Control-IQ/"
+iq_dir = "/Users/timvigers/OneDrive - The University of Colorado Denver/Control IQ/Control-IQ/"
 iq_files = os.listdir(iq_dir)
 # Loop through control files - if missing from Cari's file add to list
 # If present in Cari's file, get dates
