@@ -7,7 +7,7 @@ output: word_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE,dpi = 600)
-knitr::opts_knit$set(root.dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/NOVO Transition")
+knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/NOVO Transition")
 library(arsenal)
 library(skimr)
 library(knitr)
@@ -111,6 +111,26 @@ all_idss = c(reverse,"idss_good_control","idss_control",
 all_idss_v2 = paste0(all_idss,"_randomization_v2")
 data$idss_randomization_v2 = 
   apply(data,1,function(r){mean(as.numeric(r[all_idss_v2]))})
+# WPAI score
+wpai = read.csv("./Data_Cleaned/wpai.csv",na.strings = "")
+wpai$subject_id = wpai$record_id + 1
+q2 = wpai$wpai_missed_work_v2
+q4 = wpai$wpai_productivity_v2
+q5 = wpai$wpai_productivity_while_work_v2
+q6 = wpai$wpai_productivity_regular_activity_v2
+# Percent work time missed due to problem: Q2/(Q2+Q4)
+wpai$percent_work = q2/(q2+q4)
+# Percent impairment while working due to problem: Q5/10
+wpai$work_impairment = q5/10
+#Percent overall work impairment due to problem: Q2/(Q2+Q4)+[(1-(Q2/(Q2+Q4)))x(Q5/10)]
+wpai$overall_work_impairment = q2/(q2+q4) + (1-(q2/(q2+q4))*q5/10)
+# Percent activity impairment due to problem: Q6/10 
+wpai$activiy_impairment = q6/10
+# Merge back in
+wpai_vars = c("percent_work","work_impairment","overall_work_impairment",
+              "activiy_impairment")
+data = left_join(data,wpai[,c("subject_id",wpai_vars)],
+                 by = "subject_id")
 # Change in % time > 180
 data$change_time_over_180 = 
   data$percent_time_over_180_r - data$percent_time_over_180_s
@@ -135,10 +155,10 @@ t1_vars = c("age","gender.factor","bmi","gold_score.factor",
 t1_form = as.formula(paste0("randomization_group.factor~",
                             paste0(t1_vars,collapse = "+")))
 table_1 = 
-  tableby(t1_form,data = 
-            droplevels(data[!is.na(data$randomization_group.factor),]))
+  tableby(t1_form,data = droplevels(data[data$cgm_randomization == "Yes",]))
 # Print
-summary(table_1,labelTranslations = 
+summary(table_1,
+        labelTranslations = 
           list(age="Age",gender.factor="Gender",
                gold_score.factor = "Gold Score",
                insulin_pump.factor = "Insulin Pump",
@@ -177,11 +197,9 @@ ggplot(data[!is.na(data$randomization_group.factor),],
   theme_bw() + xlab("") + ylab("Change in % Time Above 180 mg/dL")
 ```
 
-# Table 2: Differences between treatment group adjusted for BMI and Medicaid status
+# Table 2: Differences between treatment group - unadjusted
 
-Means and standard errors (SE) are averaged over the levels of Medicaid status and reported for the average BMI in each treatment group. All outcomes were compared using linear regression except for the number of correction boluses, which was modeled using Poisson regression.
-
-```{r table 2}
+```{r table 2,results="asis"}
 data$no_of_corrections = 
   suppressWarnings(
     as.numeric(
@@ -192,22 +210,20 @@ vars = list("% TIR"="percent_time_70_180_r",
             "% Time < 70 mg/dL"="percent_time_under_70_r",
             "% Time < 54 mg/dL"="percent_time_under_54_r",
             "Number of correction boluses in first 72 hours"=
-              "no_of_corrections","IDSS"="idss_randomization_v2")
+              "no_of_corrections",
+            "IDSS"="idss_randomization_v2",
+            "Percent work time missed due to problem" = "percent_work",
+            "Percent impairment while working"="work_impairment",
+            "Percent overall work impairment"="overall_work_impairment",
+            "Percent activity impairment due to problem" = "activiy_impairment")
+t_vars = as.list(names(vars))
+names(t_vars) = as.character(vars)
+
+
 group = "randomization_group.factor"
-table_2 = lapply(vars,function(var){
-  form = 
-    as.formula(paste0(var,"~",group,"+bmi+insurance_medicaid.factor"))
-  mod = lm(form,data = data)
-  if(grepl("no",var)){
-    mod = glm(form,data = data,family = "poisson")
-  }
-  res = as.data.frame(summary(mod)$coefficients)
-  p = res[2,4]
-  means = as.data.frame(emmeans(mod,as.formula(paste0("~",group))))
-  return(c(means[1,2],means[1,3],means[2,2],means[2,3],p))
-})
-table_2 = as.data.frame(do.call(rbind,table_2))
-rownames(table_2) = names(vars)
-kable(table_2,col.names = c("SOC Mean","SOC SE","OLP Mean","OLP SE","p"),
-      digits = 3)
+
+med_table = tableby(as.formula(paste0(group,"~",paste0(vars,collapse = "+"))),
+                    data=data[data$cgm_randomization=="Yes",],
+                    numeric.test="kwt",numeric.stats=c("Nmiss", "median", "q1q3"))
+summary(med_table,pfootnote=TRUE,labelTranslations = t_vars)
 ```
