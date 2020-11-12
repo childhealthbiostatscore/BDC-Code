@@ -7,7 +7,7 @@ output: word_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE,dpi = 600)
-knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/Peds Endo/Petter Bjornstad/Metabolomics/")
+knitr::opts_knit$set(root.dir = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/Peds Endo/Petter Bjornstad/Metabolomics")
 library(arsenal)
 library(skimr)
 library(knitr)
@@ -16,6 +16,7 @@ library(limma)
 library(tidyverse)
 library(haven)
 library(psych)
+library(WGCNA)
 library(pheatmap)
 library(pander)
 set.seed(1017)
@@ -59,15 +60,13 @@ if (length(missing)>0){df <- df[-missing,]}
 # Same for 0 instead of NA - none
 missing0 <- 
   which(rowSums(df[,11:ncol(df)] == 0) / length(11:ncol(df)) > 0.8)
-# Write csv
-# write.csv(df,file = "./Clean data/metabolomics_for_RF.csv",
-#           row.names = F,na = "")
 ```
 
 Removed `r length(missing)` samples missing > 80% of compounds and `r length(missing0)` samples with > 80% of compounds equal to 0. 
 
 ```{r}
 X <- df[,14:ncol(df)]
+rownames(X) = df$ID
 ```
 
 # PCA
@@ -116,7 +115,7 @@ plotIndiv(plsda_true,comp = c(1,2),title = "PLS-DA Components 1 & 2",
 
 ```{r permutation testing,cache=TRUE}
 # Permutation testing - takes forever, make sure to cache
-n_perm <- 1
+n_perm <- 1000
 aucs1 <- vector(mode="numeric", length=n_perm)
 aucs2 <- vector(mode="numeric", length=n_perm)
 for (i in 1:n_perm) {
@@ -253,3 +252,67 @@ for (r in levels(factor(report$row))) {
 }
 ```
 
+# WGCNA
+
+## Data Check
+
+```{r message=FALSE,warning=FALSE}
+# Test - WGCNA tutorial
+femData = 
+  read.csv("C:/Users/tim/Downloads/FemaleLiver-Data/LiverFemale3600.csv",
+           stringsAsFactors = F)
+datExpr0 = as.data.frame(t(femData[, -c(1:8)]));
+names(datExpr0) = femData$substanceBXH;
+rownames(datExpr0) = names(femData)[-c(1:8)]
+
+gsg = goodSamplesGenes(datExpr0, verbose = 3)
+gsg$allOK
+# Petter's data
+# Check data quality - all good!
+#gs = goodSamplesGenes(X)
+# Sample tree
+sampleT = hclust(dist(X), method = "average")
+plot(sampleT, main = "Sample clustering")
+```
+
+RH-10 appears to be an outlier based on this dendrogram. Should we exclude that sample?
+
+## Creating the Network
+
+```{r cache=TRUE}
+# Call the network topology analysis function
+sft = pickSoftThreshold(X)
+# Scale-free topology fit index as a function of the soft-thresholding power
+plot(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
+     xlab="Soft Threshold (power)",
+     ylab="Scale Free Topology Model Fit,signed R^2",
+     main = "Scale independence")
+plot(sft$fitIndices[,1], sft$fitIndices[,5],
+     xlab="Soft Threshold (power)",ylab="Mean Connectivity",
+     main = paste("Mean connectivity"))
+```
+
+Choose the lowest power for which the scale-free topology fit index curve flattens out upon reaching a high value. 5 seems appropriate here. 
+
+```{r echo=TRUE,cache=TRUE}
+# Make simple network
+net = blockwiseModules(X, power = 5,saveTOMs = TRUE,
+                       saveTOMFileBase = "casperTOM",
+                       maxBlockSize = ncol(X))
+mergedColors = labels2colors(net$colors)
+plotDendroAndColors(net$dendrograms[[1]],
+                    mergedColors[net$blockGenes[[1]]],"Module colors",
+                    dendroLabels = F)
+
+```
+
+There are a lot of options in the function above. Is it okay to use the defaults for this analysis? Do we want to pick a p value ratio threshold for assigning metabolites to specific modules (default is 0.000001)?
+
+## Eigenmetabolites
+
+```{r}
+moduleLabels = net$colors
+moduleColors = labels2colors(net$colors)
+MEs = net$MEs
+geneTree = net$dendrograms[[1]]
+```
