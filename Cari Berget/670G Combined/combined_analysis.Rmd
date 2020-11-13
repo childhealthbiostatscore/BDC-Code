@@ -208,8 +208,6 @@ Pediatric participants with no automode start date and adult participants with n
 
 # Table 1: Descriptive Characteristics
 
-# Add MEDIAN DAYS FROM START
-
 ```{r table 1,results='asis',message=FALSE}
 demographics <- df %>% group_by(record_id) %>% 
   mutate(days_to_m1 = ifelse(length(days_from_start[timepoint=="M1"])>0,
@@ -233,8 +231,7 @@ t1 <- tableby(cohort ~ hba1c_baseline +
                 kwt(days_to_m3,"Nmiss","median","q1q3") + 
                 kwt(days_to_m6,"Nmiss","median","q1q3") + 
                 kwt(days_to_m9,"Nmiss","median","q1q3") + 
-                kwt(days_to_m12,"Nmiss","median","q1q3") + 
-                kwt(days_to_m18,"Nmiss","median","q1q3"),
+                kwt(days_to_m12,"Nmiss","median","q1q3"),
               data = demographics)
 # Print
 summary(t1,pfootnote = T,labelTranslations = 
@@ -248,8 +245,7 @@ summary(t1,pfootnote = T,labelTranslations =
                days_to_m3 = "Days to M3 Visit",
                days_to_m6 = "Days to M6 Visit",
                days_to_m9 = "Days to M9 Visit",
-               days_to_m12 = "Days to M12 Visit",
-               days_to_m18 = "Days to M18 Visit"))
+               days_to_m12 = "Days to M12 Visit"))
 ```
 
 # Figure 1: HbA1c Over Time by Cohort
@@ -437,7 +433,9 @@ ar1_mod_func(outcome = "amexits_day",data = model_df,diagnostics = T)
 
 ## BG Checks per Day
 
-The peds cohort has quite a few people with BG checks in the 10-25 range whereas the maximum in the adult cohort is 6.6. Is this correct?
+The peds cohort has quite a few people with BG checks in the 10-25 range whereas the maximum in the adult cohort is 6.6. Is this correct? 
+
+Also, the model looks better if we log-transform the BG checks variable. However, this makes the interpretation of the group comparisons difficult, because they become a ratio rather than a raw difference ($log(x)-log(y)=log(\frac{x}{y})$).
 
 ```{r results='asis'}
 hist(model_df$bg_checks)
@@ -479,9 +477,40 @@ ar1_mod_func(outcome = "sensor_181_250",data = model_df,diagnostics = T)
 
 This may require some more complicated models if the data are correct, because the distribution is so skewed (the means reported here are LS means from the models, so the negative values are sign that the model isn't great). The highest percentage among the adults is 34%, but many of the peds values are in the 40s and above, with the highest being 65%. Is this correct? 
 
+This model also looks much better when the outcome is log-transformed, but like with BG checks this makes the comparisons more complicated.
+
 ```{r results='asis'}
-hist(model_df$sensor_g250)
-ar1_mod_func(outcome = "scale(sensor_g250)",data = model_df,diagnostics = T)
+hist(log(model_df$sensor_g250))
+ar1_mod_func(outcome = "scale(sensor_g250)",data = model_df,
+             diagnostics = T)
+```
+
+## Total Daily Dose (TDD)
+
+```{r results='asis'}
+hist(model_df$tdd)
+ar1_mod_func(outcome = "tdd",data = model_df,diagnostics = T)
+```
+
+## % TDD Delivered as Bolus
+
+```{r results='asis'}
+hist(model_df$tdd_bolus)
+ar1_mod_func(outcome = "tdd_bolus",data = model_df,diagnostics = T)
+```
+
+## % TDD Delivered as Basal
+
+```{r results='asis'}
+hist(model_df$tdd_basal)
+ar1_mod_func(outcome = "tdd_basal",data = model_df,diagnostics = T)
+```
+
+## Meal Boluses per Day
+
+```{r results='asis'}
+hist(model_df$dailymealbolus)
+ar1_mod_func(outcome = "dailymealbolus",data = model_df,diagnostics = T)
 ```
 
 # Discontinuers
@@ -490,6 +519,7 @@ Discontinuers were defined as any participants with <= 10% AM use at any time po
 
 ```{r discontinuers}
 discontinuers <- df %>% filter(timepoint != "Baseline") %>% 
+  arrange(record_id,timepoint) %>%
   group_by(record_id) %>% 
   mutate(time_am_0 = ifelse(time_am > 10,1,0)) %>%
   summarise(discontinued = 
@@ -501,33 +531,50 @@ kable(table(discontinuers$discontinued,discontinuers$cohort))
 
 # ROC Analysis
 
-Cutoffs were determined by fitting a generalized linear mixed model (GzLMM) with a binary outcome (0 = TIR <70% and 1 = TIR >=70%) and random intercept for subject to account for repeated measures. Then sensitivity and specificity were calculated based on predicted values from the GzLMM, using the pROC package. Optimal cutoffs were determined by maximizing Youden's J statistic.
+Cutoffs were determined by fitting a generalized estimating equation (GEE) with a binary outcome (0 = TIR <70% and 1 = TIR >=70%) and AR1 correlation structure to account for repeated measures. Then, sensitivity and specificity were calculated based on predicted values from the GEE, using the pROC package. Optimal cutoffs were determined by maximizing Youden's J statistic.
 
 ```{r cutoffs,echo=FALSE,message=FALSE}
 # Outcome
 model_df$tir_outcome <- cut(model_df$sensor_70_180,right = F,
                             c(-Inf,70,Inf),labels = c("< 70%",">= 70%"))
 # Fit GzLMM
-am_mod <- glmer(tir_outcome ~ time_am + (1|record_id),
-                data = model_df,family = "binomial")
+am_mod <- geeglm(as.numeric(tir_outcome)-1 ~ time_am,corstr = "ar1",
+                id = record_id,data = model_df,family = "binomial")
 est <- summary(am_mod)$coefficients[,1]
-# ROC using the predicted values
-gzlmm_pred <- predict(am_mod,type = "response")
-roc <- roc(am_mod@resp$y,gzlmm_pred)
+# ROC using the predicted values back transformed to time in AM
+gee_pred <- c(predict(am_mod,type = "response"))
+roc <- roc(am_mod$y,gee_pred)
 # Threshold to maximize Youden
 c<-coords(roc,"best",best.method = "youden",transpose = F)
-# Find the participant closest to this threshold and use their TIR
-w <- as.numeric(which.min(abs(gzlmm_pred-c$threshold)))
-am_mod@frame$time_am[w]
+# Transform back to am time
+thresh = (car::logit(c$threshold) - est[1])/est[2]
+# Plot
+plot(roc,legacy.axes=T,print.auc=T)
 ```
 
+A threshold of `r thresh`% automode use predicted TIR >= 70% at 12 months or later with sensitivity of `r c$sensitivity` and specificity of `r c$specificity`. Area under the ROC curve was `r as.numeric(roc$auc)`.
+
+## Clinical factors associated with meeting the AM use cutoff above
+
+A generalized linear mixed model (GzLMM) with random intercept for subject was used to determine which demographic characteristics were associated with achieving the automode use threshold (at any timepoint).
+
 ```{r}
-t <- df %>% filter(cohort == "Adult") %>% 
-  select(record_id,timepoint,time_am) %>% 
-  pivot_wider(id_cols = record_id,names_from = timepoint,
-              values_from = time_am) %>%
-  select(record_id,Baseline,M1,M3,M6,M9,M12)
-t <- left_join(t,discontinuers[,c("record_id","discontinued")],
-               by = "record_id") %>%
-  filter(!is.na(discontinued))
+# Make a cutoff yes/no variable
+model_df$am_cutoff = cut(model_df$time_am,c(-Inf,thresh,Inf),right = F,
+                         labels = c("Under","Over"))
+# Logistic regression
+thresh_mod = glmer(am_cutoff ~ age + sex + race + hba1c_baseline + 
+                     (1|record_id),
+                   data = model_df,family = "binomial")
+res = broom.mixed::tidy(thresh_mod,conf.int = T,exponentiate=T)
+res = res[-which(res$term == "(Intercept)"),]
+res = res[-which(res$group == "record_id"),]
+res$term = gsub("race","Race: ",res$term)
+res$term = gsub("sex","Sex: ",res$term)
+res$term = gsub("age","Age",res$term)
+res$term = gsub("hba1c_baseline","Baseline HbA1c",res$term)
+res = res %>% select(term,estimate,conf.low,conf.high,p.value)
+kable(res)
 ```
+
+Age at HCL start and baseline A1c were significantly associated with reaching the AM use cutoff. For each 1 year increase in age at HCL start, odds of reaching the AM use threshold changed by `r (res$estimate[res$term == "Age"]-1)*100`%. Each 1 unit increase in baseline HbA1c was associated with a `r (res$estimate[res$term == "Baseline HbA1c"]-1)*100`% change in the odds of achieving the AM use threshold.
