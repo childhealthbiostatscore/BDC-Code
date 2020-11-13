@@ -31,7 +31,7 @@ pdf_cgm_data = function(indir){
     # BG checks per day
     ys = df$y[which(df$text=="Calibration")]
     y = ys[which(ys %in% df$y[which(df$text=="(per")])]
-    bg = df[which(df$y == y & df$x > 640),"text"]
+    bg = df[which(df$y == y & df$x > 600),"text"]
     bg = suppressWarnings(as.numeric(bg))
     bg = bg[which(!is.na(bg))[1]]
     # Get statistics - x column changes depending on length of text
