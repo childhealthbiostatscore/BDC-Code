@@ -30,7 +30,11 @@ label(data$amexit_manual)="# of exits due to patient manually disabling auto mod
 label(data$amexits_day)="Average # of auto mode exits per day "
 label(data$amexits_other)="All auto mode exits other than hyper, hypo and manual"
 label(data$automode_start)="Date of Closed Loop (CL) Start"
-label(data$bg_checks)="Average BG checks per day"
+label(data$bg_checks)="Average # of BG checks per day "
+label(data$tdd)="Total Daily Dose"
+label(data$tdd_basal)="Average % of total daily dose delivered as basal "
+label(data$tdd_bolus)="Average % of total daily dose delivered as bolus "
+label(data$dailymealbolus)="# of MEAL boluses per day"
 #Setting Units
 
 
@@ -46,7 +50,6 @@ data$gyl_timepoint.factor = factor(data$gyl_timepoint,levels=c("0","1","2","3","
 levels(data$redcap_event_name.factor)=c("Baseline (Arm 1: Child)","1 (Arm 1: Child)","2 (Arm 1: Child)","3 (Arm 1: Child)","4 (Arm 1: Child)","5 (Arm 1: Child)","6 (Arm 1: Child)","Baseline (Arm 2: Young Adult )","1 (Arm 2: Young Adult )","2 (Arm 2: Young Adult )","3 (Arm 2: Young Adult )","4 (Arm 2: Young Adult )","5 (Arm 2: Young Adult )","6 (Arm 2: Young Adult )","Baseline (Arm 3: Adult)","1 (Arm 3: Adult)","2 (Arm 3: Adult)","3 (Arm 3: Adult)","4 (Arm 3: Adult)","5 (Arm 3: Adult)")
 levels(data$demographics_hcl.factor)=c("670G","Control IQ")
 levels(data$demographics_sex.factor)=c("Female","Male")
-#levels(data$demographics_race.factor)=c("American Indian/Alaska Native","Asian","Native Hawaiian or Other Pacific Islander","Black or African American","White","More Than One Race","Unknown / Not Reported")
 levels(data$demographics_race.factor)=c("Non-white","Non-white","Non-white","Non-white","White","More Than One Race","Unknown / Not Reported")
 levels(data$demographics_ethnicity.factor)=c("Hispanic or Latino","NOT Hispanic or Latino","Unknown / Not Reported")
 levels(data$demographics_insurance.factor)=c("Public","Private","Other")

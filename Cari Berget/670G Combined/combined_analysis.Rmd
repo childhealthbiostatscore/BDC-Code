@@ -35,6 +35,10 @@ adult_new <- read.csv("./Data_Cleaned/670Excel.new55patients.csv",
                       na.strings = na_strings,stringsAsFactors = F)
 adult_pump <- read.csv("./Data_Cleaned/pdf_summary.csv",
                        na.strings = na_strings,stringsAsFactors = F)
+adult_pump1 <- read.csv("./Data_Cleaned/pdf_summary_additional_1.csv",
+                        na.strings = na_strings,stringsAsFactors = F)
+adult_pump2 <- read.csv("./Data_Cleaned/pdf_summary_additional_2.csv",
+                        na.strings = na_strings,stringsAsFactors = F)
 # Format and combine
 adult <- adult %>% select(Patient.ID,start.date,contains("HbA1C"))
 adult_2 <- adult_2 %>% 
@@ -59,8 +63,37 @@ adult <- adult %>%
   pivot_longer(cols = contains("HbA1C"),
                names_to = c(".value","timepoint"),
                names_sep = "\\.")
+adult = adult %>% 
+  add_row(.,Patient.ID = unique(adult$Patient.ID),timepoint="M18") %>%
+  group_by(Patient.ID) %>% fill(start.date:first_name)
+# Get timepoints
+adult$start.date = lubridate::mdy(adult$start.date)
+b = 30 * c(0,1,3,6,9,12,18)
+t = c("Baseline","M1","M3","M6","M9","M12","M18")
+adult_pump1$timepoint = apply(adult_pump1,1,function(r){
+  c = as.character(r["cgm_start"])
+  m = which(adult$first_name == as.character(r["first_name"]) &
+              adult$last_name == as.character(r["last_name"]))[1]
+  s = adult$start.date[m]
+  d = as.numeric(difftime(c,s,units = "days"))
+  tp = t[which.min(abs(d-b))]
+  ifelse(length(tp)>0,return(tp),return(NA))
+})
+adult_pump2$timepoint = apply(adult_pump2,1,function(r){
+  c = as.character(r["cgm_start"])
+  m = which(adult$first_name == as.character(r["first_name"]) &
+              adult$last_name == as.character(r["last_name"]))[1]
+  s = adult$start.date[m]
+  d = as.numeric(difftime(c,s,units = "days"))
+  tp = t[which.min(abs(d-b))]
+  ifelse(length(tp)>0,return(tp),return(NA))
+})
+adult_pump = rbind(adult_pump,adult_pump1)
+adult_pump = rbind(adult_pump,adult_pump2)
+# Merge 18 month data from Cari
 adult <- left_join(adult,adult_pump,
                    by = c("last_name", "first_name", "timepoint"))
+# Mutate
 adult <- adult %>% group_by(Patient.ID) %>% 
   mutate(hba1c_baseline = HbA1C[timepoint == "Baseline"],
          days_from_start = 
@@ -70,7 +103,7 @@ adult <- adult %>% group_by(Patient.ID) %>%
 # Delete rows without PDF information
 pdf_start <- which(colnames(adult)=="days_worn")
 remove_rows <- 
-  which(rowSums(is.na(adult[,pdf_start:(pdf_start+19)]))==20 &
+  which(rowSums(is.na(adult[,pdf_start:(pdf_start+28)]))==29 &
           adult$timepoint != "Baseline")
 adult <- adult[-c(remove_rows),]
 # Combine am exit columns to match Cari's
@@ -89,7 +122,9 @@ adult <- adult %>%
          insurance = Insurance,sex = Gender,
          sensor_70 = tir_under_70,
          sensor_70_180 = tir_70_180,sensor_g250 = tir_over_250,
-         sensor_181_250 = tir_over_180 - tir_over_250)
+         sensor_181_250 = tir_over_180 - tir_over_250,
+         tdd = daily_dose,tdd_basal = basal_perc,	
+         tdd_bolus = bolus_perc,	dailymealbolus = meals_per_day)
 # Re-level factors
 adult$race <- as.factor(adult$race)
 levels(adult$race) <- 
@@ -105,7 +140,8 @@ vars <- c("record_id","cohort","timepoint","days_from_start","age",
           "sex","race","insurance","hba1c_baseline","hba1c","gmi",
           "bg_checks","time_am","time_mm","sensor_wear","sensor_mean",
           "sensor_sd","sensor_70","sensor_70_180","sensor_181_250",
-          "sensor_g250","amexits","amexit_hyper","amexit_manual",
+          "sensor_g250","tdd","tdd_basal","tdd_bolus","dailymealbolus",
+          "amexits","amexit_hyper","amexit_manual",
           "amexits_day","amexits_other")
 adult <- adult %>%
   select(all_of(vars))
@@ -114,7 +150,8 @@ source("C:/Users/tim/Documents/GitHub/BDC-Code/Cari Berget/670G Combined/data_cl
 # Exclude non-670G and those who never started
 data <- data[as.numeric(as.character(data$record_id)) < 116,]
 never_started <- data %>% group_by(record_id) %>% 
-  filter(gyl_timepoint.factor == "Baseline",is.na(automode_start)) %>% .$record_id
+  filter(gyl_timepoint.factor == "Baseline",is.na(automode_start)) %>% 
+  .$record_id
 data <- data[!(data$record_id %in% never_started),]
 # Format
 data$cohort <- "Peds"
@@ -123,9 +160,10 @@ data$timepoint =
                       labels = c("Baseline","M1","M3","M6","M9","M12")))
 levels(data$demographics_sex.factor) = c("F","M")
 # Age
-data$age <- as.numeric(difftime(as.Date(data$automode_start,"%m/%d/%Y"),
-                                as.Date(data$demographics_dob,"%m/%d/%Y"),
-                                units = "days"))/365.25
+data$age <- 
+  as.numeric(difftime(as.Date(data$automode_start,"%Y-%m-%d"),
+                      as.Date(data$demographics_dob,"%Y-%m-%d"),
+                      units = "days"))/365.25
 # Baseline A1c
 data <- data %>% filter(!is.na(timepoint)) %>% group_by(record_id) %>% 
   mutate(hba1c_baseline = hba1c[timepoint == "Baseline"],
@@ -144,8 +182,8 @@ data <- data %>%
          amexits_other = amexits_other / amexits,
          gmi = 3.31 + (sensor_mean * 0.02392),
          days_from_start = 
-           as.numeric(difftime(as.Date(date_visit,"%m/%d/%Y"),
-                               as.Date(automode_start,"%m/%d/%Y"),
+           as.numeric(difftime(as.Date(date_visit,"%Y-%m-%d"),
+                               as.Date(automode_start,"%Y-%m-%d"),
                                units = "days"))) %>%
   select(all_of(vars))
 # Remove rows with no pump data
@@ -156,10 +194,12 @@ df = rbind(adult,data)
 factor_vars = c("record_id","sex","race","insurance","cohort")
 df[,factor_vars] <- lapply(df[,factor_vars], as.factor)
 # Order timepoints
-df$timepoint <- factor(df$timepoint,levels = c("Baseline","M1","M3","M6","M9","M12"))
+df$timepoint <- factor(df$timepoint,
+                       levels = c("Baseline","M1","M3","M6","M9","M12"))
 # Create age and a1c groups
 df$age_group <- cut(df$age,breaks = c(0,18,26,50,Inf),right = F)
-levels(df$age_group) <- c("Pediatric","Young Adult","Adult","Older Adult")
+levels(df$age_group) <- 
+  c("Pediatric","Young Adult","Adult","Older Adult")
 df$hba1c_group <- cut(df$hba1c_baseline,breaks = c(0,7,8,Inf))
 levels(df$hba1c_group) <- c("<= 7%","7% - 8.9%",">= 9%")
 ```
@@ -171,10 +211,30 @@ Pediatric participants with no automode start date and adult participants with n
 # Add MEDIAN DAYS FROM START
 
 ```{r table 1,results='asis',message=FALSE}
-demographics <- df %>% group_by(record_id) %>% filter(row_number()==1)
+demographics <- df %>% group_by(record_id) %>% 
+  mutate(days_to_m1 = ifelse(length(days_from_start[timepoint=="M1"])>0,
+                             days_from_start[timepoint=="M1"],NA),
+         days_to_m3 = ifelse(length(days_from_start[timepoint=="M3"])>0,
+                             days_from_start[timepoint=="M3"],NA),
+         days_to_m6 = ifelse(length(days_from_start[timepoint=="M6"])>0,
+                             days_from_start[timepoint=="M6"],NA),
+         days_to_m9 = ifelse(length(days_from_start[timepoint=="M9"])>0,
+                             days_from_start[timepoint=="M9"],NA),
+         days_to_m12 = 
+           ifelse(length(days_from_start[timepoint=="M12"])>0,
+                  days_from_start[timepoint=="M12"],NA),
+         days_to_m18 = ifelse(length(days_from_start[timepoint=="M8"])>0,
+                              days_from_start[timepoint=="M18"],NA)) %>%
+  filter(row_number()==1)
 # Table 1
 t1 <- tableby(cohort ~ hba1c_baseline + 
-                hba1c_group + age + age_group + sex + race + insurance,
+                hba1c_group + age + age_group + sex + race + insurance +
+                kwt(days_to_m1,"Nmiss","median","q1q3") + 
+                kwt(days_to_m3,"Nmiss","median","q1q3") + 
+                kwt(days_to_m6,"Nmiss","median","q1q3") + 
+                kwt(days_to_m9,"Nmiss","median","q1q3") + 
+                kwt(days_to_m12,"Nmiss","median","q1q3") + 
+                kwt(days_to_m18,"Nmiss","median","q1q3"),
               data = demographics)
 # Print
 summary(t1,pfootnote = T,labelTranslations = 
@@ -183,7 +243,13 @@ summary(t1,pfootnote = T,labelTranslations =
                sex = "Sex",race = "Race",
                insurance = "Insurance",
                hba1c_baseline = "HbA1c (%) at Baseline",
-               hba1c_group = "HbA1c Group"))
+               hba1c_group = "HbA1c Group",
+               days_to_m1 = "Days to M1 Visit",
+               days_to_m3 = "Days to M3 Visit",
+               days_to_m6 = "Days to M6 Visit",
+               days_to_m9 = "Days to M9 Visit",
+               days_to_m12 = "Days to M12 Visit",
+               days_to_m18 = "Days to M18 Visit"))
 ```
 
 # Figure 1: HbA1c Over Time by Cohort
@@ -427,9 +493,9 @@ discontinuers <- df %>% filter(timepoint != "Baseline") %>%
   group_by(record_id) %>% 
   mutate(time_am_0 = ifelse(time_am > 10,1,0)) %>%
   summarise(discontinued = 
-      ifelse(1 %in% diff(time_am_0),"Intermittent",
-             ifelse(0 %in% time_am,"Discontinued","Continued")),
-      cohort = cohort[1],.groups = "drop")
+              ifelse(1 %in% diff(time_am_0),"Intermittent",
+                     ifelse(0 %in% time_am,"Discontinued","Continued")),
+            cohort = cohort[1],.groups = "drop")
 kable(table(discontinuers$discontinued,discontinuers$cohort))
 ```
 
