@@ -1,0 +1,1555 @@
+---
+title: "6 Month Discontinuer Analysis"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(MASS)
+library(redcapAPI)
+library(reshape2)
+library(tidyverse)
+library(skimr)
+library(knitr)
+library(tableone)
+library(readxl)
+library(nlme)
+library(gridExtra)
+library(psych)
+# Check OS and alter file path accordingly.
+if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.Platform$OS.type == "unix"){pathstart <- "/Volumes/"}
+```
+
+```{r echo=FALSE,include=FALSE,cache=TRUE}
+# REDCap API data import
+tokens <- read.csv("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/api_tokens.csv",
+                   stringsAsFactors = FALSE)
+# YA
+rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
+                         token = tokens$Token[tokens$Study == "YA670g"])
+ya_full <- exportRecords(rcon)
+# Parents
+rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
+                         token = tokens$Token[tokens$Study == "Parent670g"])
+parent_full <- exportRecords(rcon)
+# Read in baseline glycemic data
+baseline_glycemic_csv <- read.csv("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/670GChild_BaselineGlycemicData_14JAN2019.csv")
+# Import VAS data
+rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
+                         token = tokens$Token[tokens$Study == "Discontinuers670G"])
+vas_full <- exportRecords(rcon)
+```
+
+```{r echo=FALSE,include=FALSE}
+child_full <- read.csv("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/670GChild_DATA_2019-05-06.csv")
+# Read in 
+# Format child glycemic
+child_full$record_id <- as.character(child_full$record_id)
+child_full$c_t1_date_m1 <- lubridate::mdy(as.character(child_full$c_t1_date_m1))
+child_full$automode_start <- lubridate::mdy(as.character(child_full$automode_start))
+child_full$c_t1_date <- lubridate::mdy(as.character(child_full$c_t1_date))
+child_full$c_t2_date <- lubridate::mdy(as.character(child_full$c_t2_date))
+# Demographics
+demographics_child <- child_full %>%
+  select(record_id,automode_start,demographics_t1d_duration,
+         demographics_age:demographics_cgmhx)
+demographics_ya <- ya_full %>%
+  select(record_id,ya_automoste_start,demographics_t1d_duration,
+         ya_demographics_age:ya_demographics_cgmhx)
+# Subtract 1 to match child coding
+demographics_ya[,3:ncol(demographics_ya)] <- 
+  lapply(demographics_ya[,3:ncol(demographics_ya)],as.numeric) 
+demographics_ya[,c("ya_demographics_ethnicity","ya_demographics_race","ya_demographics_sex")] <- 
+  lapply(demographics_ya[,c("ya_demographics_ethnicity","ya_demographics_race","ya_demographics_sex")],
+         function(x) x-1)
+colnames(demographics_ya) <- sub("ya_","",colnames(demographics_ya))
+colnames(demographics_ya)[2] <- "automode_start"
+# Filter YA out of child data
+ya <- as.character(demographics_ya$record_id)
+demographics_child <- 
+  demographics_child[-c(which(demographics_child$record_id %in% ya)),]
+child <- as.character(demographics_child$record_id)
+demographics <- rbind(demographics_child,demographics_ya) %>%
+  arrange(as.numeric(record_id))
+# Never trained and withdrawn
+withdrawn <- c("41","50") # Per Cari
+never_trained <- demographics$record_id[which(is.na(demographics$automode_start))]
+never_trained <- never_trained[which(!(never_trained %in% withdrawn))]
+# Age group
+demographics$age_group <- cut(demographics$demographics_age, 
+                              breaks = c(0,14,18,Inf),
+                              labels = c("< 14","14 - 17","18 +"),right = F)
+# Format glycemic data
+glycemic_colnames <- c("record_id","days","hba1c","am_time","mm_time",
+                       "sensor_wear","sensor_u54","sensor_55_69",
+                       "sensor_70_180","sensor_181_250","sensor_g250",
+                       "mean_sg","sd","bg_checks","calibrations",
+                       "tdd","basal","bolus","amexits",
+                       "amexit_day","amexit_hyper","amexit_hypo",
+                       "amexit_manual","amexit_other")
+# Baseline
+baseline_hba1c <- child_full %>%
+  select(record_id,hba1c_baseline)
+baseline_hba1c$record_id <- as.integer(baseline_hba1c$record_id)
+baseline_glycemic <- left_join(baseline_glycemic_csv,baseline_hba1c, by = "record_id")
+colnames(baseline_glycemic) <- sub("_b","",colnames(baseline_glycemic))
+colnames(baseline_glycemic)[ncol(baseline_glycemic)] <- "hba1c"
+baseline_glycemic[,c(glycemic_colnames[which(!(glycemic_colnames %in% colnames(baseline_glycemic)))])] <- NA
+baseline_glycemic <- baseline_glycemic[glycemic_colnames]
+baseline_glycemic <- as.data.frame(lapply(baseline_glycemic, as.numeric))
+baseline_glycemic$Timepoint <- "B"
+# M1
+m1_glycemic_child <- child_full %>%
+  select(record_id,c_t1_date_m1,hba1c_m1,am_time_m1:amexits_other_m1) %>%
+  filter(record_id %in% child)
+m1_glycemic_child <- left_join(m1_glycemic_child,
+                               demographics[,c("record_id","automode_start")],
+                               by = "record_id")
+m1_glycemic_child$days <- as.numeric(difftime(m1_glycemic_child$c_t1_date_m1,m1_glycemic_child$automode_start))
+m1_glycemic_child <- m1_glycemic_child %>% select(record_id,days,hba1c_m1:amexits_other_m1)
+colnames(m1_glycemic_child) <- glycemic_colnames
+m1_glycemic_ya <- ya_full %>% 
+  select(record_id,ya_t1_date_m1,ya_hba1c_t1_m1,ya_t1_am_time_m1:ya_t1_amexit_other_m1) %>%
+  filter(record_id %in% ya)
+m1_glycemic_ya <- left_join(m1_glycemic_ya,
+                               demographics[,c("record_id","automode_start")],
+                               by = "record_id")
+m1_glycemic_ya$days <- as.numeric(difftime(m1_glycemic_ya$ya_t1_date_m1,m1_glycemic_ya$automode_start))
+m1_glycemic_ya <- m1_glycemic_ya %>% select(record_id,days,ya_hba1c_t1_m1:ya_t1_amexit_other_m1)
+colnames(m1_glycemic_ya) <- glycemic_colnames
+m1_glycemic <- rbind(m1_glycemic_child,m1_glycemic_ya)
+m1_glycemic <- as.data.frame(lapply(m1_glycemic, as.numeric))
+m1_glycemic$Timepoint <- "M1"
+# T1
+t1_glycemic_child <- child_full %>%
+  select(record_id,c_t1_date,c_hba1c_baseline_t1,c_t1_am_time:c_t2_amexits_other) %>%
+  filter(record_id %in% child)
+t1_glycemic_child <- left_join(t1_glycemic_child,
+                               demographics[,c("record_id","automode_start")],
+                               by = "record_id")
+t1_glycemic_child$days <- as.numeric(difftime(t1_glycemic_child$c_t1_date,t1_glycemic_child$automode_start))
+t1_glycemic_child <- t1_glycemic_child %>% select(record_id,days,c_hba1c_baseline_t1:c_t2_amexits_other)
+colnames(t1_glycemic_child) <- glycemic_colnames
+t1_glycemic_ya <- ya_full %>% 
+  select(record_id,ya_t1_date,ya_hba1c_t1,ya_t1_am_time:ya_t1_amexit_other) %>%
+  filter(record_id %in% ya)
+t1_glycemic_ya <- left_join(t1_glycemic_ya,
+                               demographics[,c("record_id","automode_start")],
+                               by = "record_id")
+t1_glycemic_ya$days <- as.numeric(difftime(t1_glycemic_ya$ya_t1_date,t1_glycemic_ya$automode_start))
+t1_glycemic_ya <- t1_glycemic_ya %>% select(record_id,days,ya_hba1c_t1:ya_t1_amexit_other)
+colnames(t1_glycemic_ya) <- glycemic_colnames
+t1_glycemic <- rbind(t1_glycemic_child,t1_glycemic_ya) %>%
+  arrange(as.numeric(record_id))
+t1_glycemic <- as.data.frame(lapply(t1_glycemic, as.numeric))
+t1_glycemic$Timepoint <- "T1"
+# T2
+t2_glycemic_child <- child_full %>%
+  select(record_id,c_t2_date,c_hba1c_baseline_t2,c_t2_am_time:c_t2_amexit_other) %>%
+  filter(record_id %in% child)
+t2_glycemic_child <- left_join(t2_glycemic_child,
+                               demographics[,c("record_id","automode_start")],
+                               by = "record_id")
+t2_glycemic_child$days <- as.numeric(difftime(t2_glycemic_child$c_t2_date,t2_glycemic_child$automode_start))
+t2_glycemic_child <- t2_glycemic_child %>% select(record_id,days,c_hba1c_baseline_t2:c_t2_amexit_other)
+colnames(t2_glycemic_child) <- glycemic_colnames
+t2_glycemic_ya <- ya_full %>% 
+  select(record_id,ya_t2_date,ya_hba1c_t2,ya_t2_am_time:ya_t2_amexit_other) %>%
+  filter(record_id %in% ya)
+t2_glycemic_ya <- left_join(t2_glycemic_ya,
+                               demographics[,c("record_id","automode_start")],
+                               by = "record_id")
+t2_glycemic_ya$days <- as.numeric(difftime(t2_glycemic_ya$ya_t2_date,t2_glycemic_ya$automode_start))
+t2_glycemic_ya <- t2_glycemic_ya %>% select(record_id,days,ya_hba1c_t2:ya_t2_amexit_other)
+colnames(t2_glycemic_ya) <- glycemic_colnames
+t2_glycemic <- rbind(t2_glycemic_child,t2_glycemic_ya) %>%
+  arrange(as.numeric(record_id))
+t2_glycemic <- as.data.frame(lapply(t2_glycemic, as.numeric))
+t2_glycemic$Timepoint <- "T2"
+# Bind timepoints, 
+glycemic_data <- bind_rows(baseline_glycemic,m1_glycemic,t1_glycemic,t2_glycemic) 
+# Baseline HbA1c group
+glycemic_data <- glycemic_data %>%
+  group_by(record_id) %>%
+  mutate(hba1c_baseline = hba1c[1]) %>%
+  mutate(hba1c_clinical = cut(hba1c_baseline,breaks = c(0,7.5,9.0,Inf),
+                              labels = c("Low Baseline HbA1c",
+                                         "Medium Baseline HbA1c",
+                                         "High Baseline HbA1c"))) %>%
+  arrange(record_id,Timepoint) %>%
+  select(record_id,Timepoint,days,hba1c:hba1c_clinical) %>%
+  filter(!(record_id %in% never_trained) & !(record_id %in% withdrawn))
+# Discontinuers
+t1_discont <- glycemic_data %>%
+  filter(Timepoint == "T1", am_time < 10) %>%
+  .$record_id
+# Remove participant 10 from discontinuers, because she had AM > 10 at T2.
+t1_discont <- t1_discont[-c(which(t1_discont == "10"))]
+# T2 discontinuers
+t2_discont <- glycemic_data %>%
+  filter(Timepoint == "T2", am_time < 10) %>%
+  .$record_id
+t2_discont <- t2_discont[which(!(t2_discont %in% t1_discont))]
+# Combine TIR columns for <70 and >180
+glycemic_data$sensor_l70 <- glycemic_data$sensor_u54 + glycemic_data$sensor_55_69
+glycemic_data$sensor_g180 <- 
+  glycemic_data$sensor_181_250 + glycemic_data$sensor_g250
+# AM exits as a percentage of total 
+glycemic_data$amexit_hyper_perc <- glycemic_data$amexit_hyper/glycemic_data$amexits
+glycemic_data$amexit_hypo_perc <- glycemic_data$amexit_hypo/glycemic_data$amexits
+glycemic_data$amexit_manual_perc <- 
+  glycemic_data$amexit_manual/glycemic_data$amexits
+glycemic_data$amexit_other_perc <- glycemic_data$amexit_other/glycemic_data$amexits
+```
+
+```{r echo=FALSE,include=FALSE}
+# Format survey data
+# Child
+child_surveys_b <- child_full %>%
+  select(record_id,timepoint_baselinesurvey:c_paid20)
+colnames(child_surveys_b)[2] <- "Timepoint"
+child_surveys_1 <- child_full %>%
+  select(record_id,timepoint_survey1:c_paid20_t1)
+colnames(child_surveys_1) <- sub("_t1","",colnames(child_surveys_1))
+colnames(child_surveys_1)[2] <- "Timepoint"
+child_surveys_2 <- child_full %>%
+  select(record_id,timepoint_survey2:c_paid20_t2)
+colnames(child_surveys_2) <- sub("_t2","",colnames(child_surveys_2))
+colnames(child_surveys_2)[2] <- "Timepoint"
+child_surveys_3 <- child_full %>%
+  select(record_id,timepoint_survey3:c_paid20_t3)
+colnames(child_surveys_3) <- sub("_t3","",colnames(child_surveys_3))
+colnames(child_surveys_3)[2] <- "Timepoint"
+child_surveys_4 <- child_full %>%
+  select(record_id,timepoint_survey4:c_paid20_t4)
+colnames(child_surveys_4) <- sub("_t4","",colnames(child_surveys_4))
+colnames(child_surveys_4)[2] <- "Timepoint"
+child_surveys <- bind_rows(child_surveys_b,child_surveys_1,child_surveys_2,
+                           child_surveys_3,child_surveys_4)
+child_surveys <- child_surveys %>%
+  arrange(as.numeric(record_id),Timepoint)
+colnames(child_surveys) <- sub("c_","",colnames(child_surveys))
+colnames(child_surveys) <- sub("hfs_","",colnames(child_surveys))
+# YA
+ya_surveys_b <- ya_full %>%
+  select(record_id,timepoint_baselinesurvey,ya_hfs_behave1_b:ya_hfs_worry18_b,
+         ya_paid1_base:ya_paid20_base)
+ya_surveys_b[,3:ncol(ya_surveys_b)] <- lapply(ya_surveys_b[,3:ncol(ya_surveys_b)],as.numeric)
+colnames(ya_surveys_b)[2] <- "Timepoint"
+colnames(ya_surveys_b)[3:ncol(ya_surveys_b)] <- 
+  substr(colnames(ya_surveys_b)[3:ncol(ya_surveys_b)],1,
+         nchar(colnames(ya_surveys_b)[3:ncol(ya_surveys_b)])-2)
+colnames(ya_surveys_b) <- sub("_ba","",colnames(ya_surveys_b))
+ya_surveys_1 <- ya_full %>%
+  select(record_id,timepoint_survey1,ya_hfs_behave1_t1:ya_hfs_worry18_t1,
+         ya_paid1_t1:ya_paid20_t1)
+ya_surveys_1[,3:ncol(ya_surveys_1)] <- lapply(ya_surveys_1[,3:ncol(ya_surveys_1)],as.numeric)
+colnames(ya_surveys_1) <- sub("_t1","",colnames(ya_surveys_1))
+colnames(ya_surveys_1)[which(colnames(ya_surveys_1) == "ya_hfs_worry8_b")] <- "ya_hfs_worry8"
+colnames(ya_surveys_1)[2] <- "Timepoint"
+ya_surveys_2 <- ya_full %>%
+  select(record_id,timepoint_survey2,ya_hfs_behave1_t2:ya_hfs_worry18_t2,
+         ya_paid1_t2:ya_paid20_t2)
+ya_surveys_2[,3:ncol(ya_surveys_2)] <- lapply(ya_surveys_2[,3:ncol(ya_surveys_2)],as.numeric)
+colnames(ya_surveys_2) <- sub("_t2","",colnames(ya_surveys_2))
+colnames(ya_surveys_2) <- sub("_b_t1","",colnames(ya_surveys_2))
+colnames(ya_surveys_2)[2] <- "Timepoint"
+ya_surveys_3 <- ya_full %>%
+  select(record_id,timepoint_survey3,ya_hfs_behave1_t3:ya_hfs_worry18_t3,
+         ya_paid1_t3:ya_paid20_t3)
+ya_surveys_3[,3:ncol(ya_surveys_3)] <- lapply(ya_surveys_3[,3:ncol(ya_surveys_3)],as.numeric)
+colnames(ya_surveys_3) <- sub("_t3","",colnames(ya_surveys_3))
+colnames(ya_surveys_3) <- sub("_3","",colnames(ya_surveys_3))
+colnames(ya_surveys_3)[2] <- "Timepoint"
+ya_surveys_4 <- ya_full %>%
+  select(record_id,timepoint_survey4,ya_hfs_behave1_t4:ya_hfs_worry18_t4,
+         ya_paid1_t4:ya_paid20_t4)
+ya_surveys_4[,3:ncol(ya_surveys_4)] <- lapply(ya_surveys_4[,3:ncol(ya_surveys_4)],as.numeric)
+colnames(ya_surveys_4) <- sub("_t4","",colnames(ya_surveys_4))
+colnames(ya_surveys_4)[2] <- "Timepoint"
+ya_surveys <- bind_rows(ya_surveys_b,ya_surveys_1,ya_surveys_2,
+                           ya_surveys_3,ya_surveys_4)
+colnames(ya_surveys) <- sub("ya_","",colnames(ya_surveys))
+colnames(ya_surveys) <- sub("hfs_","",colnames(ya_surveys))
+ya_surveys <- ya_surveys %>%
+  arrange(as.numeric(record_id),Timepoint)
+# Parents
+parent_surveys_b <- parent_full %>%
+  select(record_id,timepoint_baselinesurvey:p_hfs_worry26,p_paid1:p_paid18)
+colnames(parent_surveys_b)[2] <- "Timepoint"
+parent_surveys_1 <- parent_full %>%
+  select(record_id,timepoint_survey1:p_hfs_worry26_t1,p_paid1_t1:p_paid18_t1)
+colnames(parent_surveys_1) <- sub("_t1","",colnames(parent_surveys_1))
+colnames(parent_surveys_1)[2] <- "Timepoint"
+parent_surveys_2 <- parent_full %>%
+  select(record_id,timepoint_survey2:p_hfs_worry26_t2,p_paid1_t2:p_paid18_t2)
+colnames(parent_surveys_2) <- sub("_t2","",colnames(parent_surveys_2))
+colnames(parent_surveys_2)[2] <- "Timepoint"
+parent_surveys_3 <- parent_full %>%
+  select(record_id,timepoint_survey3:p_hfs_worry26_t3,p_paid1_t3:p_paid18_t3)
+colnames(parent_surveys_3) <- sub("_t3","",colnames(parent_surveys_3))
+colnames(parent_surveys_3)[2] <- "Timepoint"
+parent_surveys_4 <- parent_full %>%
+  select(record_id,timepoint_survey4:p_hfs_worry26_t4,p_paid1_t4:p_paid18_t4)
+colnames(parent_surveys_4) <- sub("_t4","",colnames(parent_surveys_4))
+colnames(parent_surveys_4)[2] <- "Timepoint"
+parent_surveys <- bind_rows(parent_surveys_b,parent_surveys_1,parent_surveys_2,
+                           parent_surveys_3,parent_surveys_4)
+colnames(parent_surveys) <- sub("p_","",colnames(parent_surveys))
+colnames(parent_surveys) <- sub("hfs_","",colnames(parent_surveys))
+parent_surveys <- parent_surveys %>%
+  filter(!(record_id %in% c("1a","74a"))) %>% # exclude 1a and 74a per Cari
+  arrange(as.numeric(record_id),Timepoint)
+```
+
+```{r echo=FALSE,include=FALSE}
+# Survey scoring
+# Subtract 1 to code from 0-4
+child_surveys[,3:ncol(child_surveys)] <- lapply(child_surveys[,3:ncol(child_surveys)],function(x){as.numeric(x)-1})
+ya_surveys[,3:ncol(ya_surveys)] <- lapply(ya_surveys[,3:ncol(ya_surveys)],function(x){as.numeric(x)-1})
+parent_surveys[,3:ncol(parent_surveys)] <- lapply(parent_surveys[,3:ncol(parent_surveys)],function(x){as.numeric(x)-1})
+# Split into PAID and HFS subscales
+# Child
+child_surveys_paid <- child_surveys %>%
+  select(record_id,Timepoint,paid1:paid20)
+child_surveys_behave <- child_surveys %>%
+  select(record_id,Timepoint,behave1:behave10)
+child_surveys_worry <- child_surveys %>%
+  select(record_id,Timepoint,worry11:worry25)
+# YA
+ya_surveys_paid <- ya_surveys %>%
+  select(record_id,Timepoint,paid1:paid20)
+ya_surveys_behave <- ya_surveys %>%
+  select(record_id,Timepoint,behave1:behave15)
+ya_surveys_worry <- ya_surveys %>%
+  select(record_id,Timepoint,worry1:worry18)
+# Parent
+parent_surveys_paid <- parent_surveys %>%
+  select(record_id,Timepoint,paid1:paid18)
+parent_surveys_behave <- parent_surveys %>%
+  select(record_id,Timepoint,behave1:behave11)
+parent_surveys_worry <- parent_surveys %>%
+  select(record_id,Timepoint,worry12:worry26)
+# Replace missing data with means if > 75% answered
+# Children
+# PAID
+missing_threshold <- ceiling(length(3:ncol(child_surveys_paid)) * 0.25)
+for (r in 1:nrow(child_surveys_paid)) { # Couldn't get apply to work for some reason
+  x <- child_surveys_paid[r,3:ncol(child_surveys_paid)]
+  replacement <- mean(as.numeric(x),na.rm = T)
+  num_missing <- length(which(is.na(x)))
+  if (num_missing<=missing_threshold && num_missing>0) {
+    x[which(is.na(x))] <- replacement
+    } else if (num_missing > missing_threshold) {
+      x <- rep(NA,length(x))
+    }
+  child_surveys_paid[r,3:ncol(child_surveys_paid)] <- x
+}
+# Behave
+missing_threshold <- ceiling(length(3:ncol(child_surveys_behave)) * 0.25)
+for (r in 1:nrow(child_surveys_behave)) { # Couldn't get apply to work for some reason
+  x <- child_surveys_behave[r,3:ncol(child_surveys_behave)]
+  replacement <- mean(as.numeric(x),na.rm = T)
+  num_missing <- length(which(is.na(x)))
+  if (num_missing<=missing_threshold && num_missing>0) {
+    x[which(is.na(x))] <- replacement
+    } else if (num_missing > missing_threshold) {
+      x <- rep(NA,length(x))
+    }
+  child_surveys_behave[r,3:ncol(child_surveys_behave)] <- x
+}
+# Worry
+missing_threshold <- ceiling(length(3:ncol(child_surveys_worry)) * 0.25)
+for (r in 1:nrow(child_surveys_worry)) { # Couldn't get apply to work for some reason
+  x <- child_surveys_worry[r,3:ncol(child_surveys_worry)]
+  replacement <- mean(as.numeric(x),na.rm = T)
+  num_missing <- length(which(is.na(x)))
+  if (num_missing<=missing_threshold && num_missing>0) {
+    x[which(is.na(x))] <- replacement
+    } else if (num_missing > missing_threshold) {
+      x <- rep(NA,length(x))
+    }
+  child_surveys_worry[r,3:ncol(child_surveys_worry)] <- x
+}
+# YA
+#PAID
+missing_threshold <- ceiling(length(3:ncol(ya_surveys_paid)) * 0.25)
+for (r in 1:nrow(ya_surveys_paid)) { # Couldn't get apply to work for some reason
+  x <- ya_surveys_paid[r,3:ncol(ya_surveys_paid)]
+  replacement <- mean(as.numeric(x),na.rm = T)
+  num_missing <- length(which(is.na(x)))
+  if (num_missing<=missing_threshold && num_missing>0) {
+    x[which(is.na(x))] <- replacement
+    } else if (num_missing > missing_threshold) {
+      x <- rep(NA,length(x))
+    }
+  ya_surveys_paid[r,3:ncol(ya_surveys_paid)] <- x
+}
+# Behave
+missing_threshold <- ceiling(length(3:ncol(ya_surveys_behave)) * 0.25)
+for (r in 1:nrow(ya_surveys_behave)) { # Couldn't get apply to work for some reason
+  x <- ya_surveys_behave[r,3:ncol(ya_surveys_behave)]
+  replacement <- mean(as.numeric(x),na.rm = T)
+  num_missing <- length(which(is.na(x)))
+  if (num_missing<=missing_threshold && num_missing>0) {
+    x[which(is.na(x))] <- replacement
+    } else if (num_missing > missing_threshold) {
+      x <- rep(NA,length(x))
+    }
+  ya_surveys_behave[r,3:ncol(ya_surveys_behave)] <- x
+}
+# Worry
+missing_threshold <- ceiling(length(3:ncol(ya_surveys_worry)) * 0.25)
+for (r in 1:nrow(ya_surveys_worry)) { # Couldn't get apply to work for some reason
+  x <- ya_surveys_worry[r,3:ncol(ya_surveys_worry)]
+  replacement <- mean(as.numeric(x),na.rm = T)
+  num_missing <- length(which(is.na(x)))
+  if (num_missing<=missing_threshold && num_missing>0) {
+    x[which(is.na(x))] <- replacement
+    } else if (num_missing > missing_threshold) {
+      x <- rep(NA,length(x))
+    }
+  ya_surveys_worry[r,3:ncol(ya_surveys_worry)] <- x
+}
+# Parents
+# PAID
+missing_threshold <- ceiling(length(3:ncol(parent_surveys_paid)) * 0.25)
+for (r in 1:nrow(parent_surveys_paid)) { # Couldn't get apply to work for some reason
+  x <- parent_surveys_paid[r,3:ncol(parent_surveys_paid)]
+  replacement <- mean(as.numeric(x),na.rm = T)
+  num_missing <- length(which(is.na(x)))
+  if (num_missing<=missing_threshold && num_missing>0) {
+    x[which(is.na(x))] <- replacement
+    } else if (num_missing > missing_threshold) {
+      x <- rep(NA,length(x))
+    }
+  parent_surveys_paid[r,3:ncol(parent_surveys_paid)] <- x
+}
+# Behave
+missing_threshold <- ceiling(length(3:ncol(parent_surveys_behave)) * 0.25)
+for (r in 1:nrow(parent_surveys_behave)) { # Couldn't get apply to work for some reason
+  x <- parent_surveys_behave[r,3:ncol(parent_surveys_behave)]
+  replacement <- mean(as.numeric(x),na.rm = T)
+  num_missing <- length(which(is.na(x)))
+  if (num_missing<=missing_threshold && num_missing>0) {
+    x[which(is.na(x))] <- replacement
+    } else if (num_missing > missing_threshold) {
+      x <- rep(NA,length(x))
+    }
+  parent_surveys_behave[r,3:ncol(parent_surveys_behave)] <- x
+}
+# Worry
+missing_threshold <- ceiling(length(3:ncol(parent_surveys_worry)) * 0.25)
+for (r in 1:nrow(parent_surveys_worry)) { # Couldn't get apply to work for some reason
+  x <- parent_surveys_worry[r,3:ncol(parent_surveys_worry)]
+  replacement <- mean(as.numeric(x),na.rm = T)
+  num_missing <- length(which(is.na(x)))
+  if (num_missing<=missing_threshold && num_missing>0) {
+    x[which(is.na(x))] <- replacement
+    } else if (num_missing > missing_threshold) {
+      x <- rep(NA,length(x))
+    }
+  parent_surveys_worry[r,3:ncol(parent_surveys_worry)] <- x
+}
+# Score children
+# PAID
+child_surveys_paid$paid_score <- 
+  apply(child_surveys_paid[3:ncol(child_surveys_paid)],1,
+        function(x) (mean(4-x))*25)
+# Behave
+child_surveys_behave$behave_score <- 
+  apply(child_surveys_behave[3:ncol(child_surveys_behave)],1,sum)
+# Worry
+child_surveys_worry$worry_score <- 
+  apply(child_surveys_worry[3:ncol(child_surveys_worry)],1,sum)
+
+# Score YA
+# PAID
+ya_surveys_paid$paid_score <- 
+  apply(ya_surveys_paid[3:ncol(ya_surveys_paid)],1,
+        function(x) (sum(x))*1.25)
+# Behave
+ya_surveys_behave$behave_score <- 
+  apply(ya_surveys_behave[3:ncol(ya_surveys_behave)],1,sum)
+# Worry
+ya_surveys_worry$worry_score <- 
+  apply(ya_surveys_worry[3:ncol(ya_surveys_worry)],1,sum)
+
+# Score parents
+# PAID
+parent_surveys_paid$paid_score <- 
+  apply(parent_surveys_paid[3:ncol(parent_surveys_paid)],1,
+        function(x) (mean(4-x))*25)
+# Behave
+parent_surveys_behave$behave_score <- 
+  apply(parent_surveys_behave[3:ncol(parent_surveys_behave)],1,sum)
+# Worry
+parent_surveys_worry$worry_score <- 
+  apply(parent_surveys_worry[3:ncol(parent_surveys_worry)],1,sum)
+```
+
+<!-- # Methods -->
+
+<!-- Linear mixed effects models were used to examine change in HbA1c over time. Three models were compared using Aikaike’s Information Criterion to select the best model: -->
+
+<!-- 1.	A random intercept model with visit number (baseline, T1, T2) as a categorical time variable.  No adjustment for baseline. -->
+<!-- 2.	A random intercept model with visit number as a continuous time variable, without adjustment for baseline. -->
+<!-- 3.	A random intercept and random slope model, without adjustment for baseline. -->
+
+<!-- The random intercept model with time treated as a categorical variable was the best model. Originally the models were adjusted for baseline value (as we did for the abstract), but it was decided that this adjustment does not make sense given the question this study wants to answer, in addition to making the model results difficult to interpret. -->
+
+<!-- The HbA1c model included an interaction term for baseline HbA1c group with timepoint, but the CGM variable models did not. We examined the interaction effect of age and timepoint on HbA1c, but it was not significant. Differences between timepoints for each baseline HbA1c group were compared using linear contrasts. -->
+
+<!-- Discontinuation was defined as AM time < 10 at either T1 or T2. This analysis excluded those never trained on automode, and all timepoints with < 10 AM time. -->
+
+<!-- # Results -->
+
+```{r echo=FALSE,include=FALSE}
+# Table 1
+dem_vars <- c("hba1c_baseline","demographics_t1d_duration","demographics_age",
+              "age_group","hba1c_clinical","demographics_ethnicity","demographics_race",
+              "demographics_sex","demographics_insurance","demographics_pumphx",
+              "demographics_cgmhx")
+# Get days from AM
+days <- glycemic_data %>%
+  select(record_id,Timepoint,days)
+days <- spread(days,Timepoint,days)
+colnames(days) <- c("record_id","baseline_to_am","am_to_m1","am_to_t1","am_to_t2")
+days$record_id <- as.character(days$record_id)
+# Survey days between timepoints - done manually to save time on this report
+survey_days_c <- read.csv("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/children_survey_dates.csv",na.strings = c("NA","")) %>%
+  filter(!(record_id %in% ya))
+survey_days_c[,c("automode_start","date","date_t1","c_date_t2","c_date_t3","c_date_t4")] <- 
+  lapply(survey_days_c[,c("automode_start","date","date_t1","c_date_t2","c_date_t3","c_date_t4")],
+         lubridate::mdy)
+survey_days_c$baseline_survey_to_am <- abs(as.numeric(difftime(survey_days_c$date,survey_days_c$automode_start,units = "days")))
+survey_days_c$survey_am_to_t1 <- as.numeric(difftime(survey_days_c$date_t1,survey_days_c$automode_start,units = "days"))
+survey_days_c$survey_am_to_t2 <- as.numeric(difftime(survey_days_c$c_date_t2,survey_days_c$automode_start,units = "days"))
+
+survey_days_ya <- read.csv("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Data_Cleaned/ya_survey_dates.csv",na.strings = c("NA",""))
+survey_days_ya[,c("ya_automoste_start","ya_hfs_date_b","ya_hfs_date_t1","ya_hfs_date_t2","ya_hfs_date_t3","ya_hfs_date_t4")] <- 
+  lapply(survey_days_ya[,c("ya_automoste_start","ya_hfs_date_b","ya_hfs_date_t1","ya_hfs_date_t2","ya_hfs_date_t3","ya_hfs_date_t4")],lubridate::mdy)
+survey_days_ya$baseline_survey_to_am <- abs(as.numeric(difftime(survey_days_ya$ya_hfs_date_b,
+                                                            survey_days_ya$ya_automoste_start,units = "days")))
+survey_days_ya$survey_am_to_t1 <- as.numeric(difftime(survey_days_ya$ya_hfs_date_t1,
+                                                      survey_days_ya$ya_automoste_start,units = "days"))
+survey_days_ya$survey_am_to_t2 <- as.numeric(difftime(survey_days_ya$ya_hfs_date_t2,
+                                                      survey_days_ya$ya_automoste_start,units = "days"))
+survey_days <- rbind(survey_days_c[,c("record_id","baseline_survey_to_am","survey_am_to_t1","survey_am_to_t2")],
+                     survey_days_ya[,c("record_id","baseline_survey_to_am","survey_am_to_t1","survey_am_to_t2")])
+survey_days$record_id <- as.character(survey_days$record_id )
+# Add to demographics
+demographics <- left_join(demographics,days,by = "record_id")
+demographics <- left_join(demographics,child_full[,c("record_id","hba1c_date_b","hba1c_baseline")])
+demographics$hba1c_clinical <- cut(demographics$hba1c_baseline,breaks = c(0,7.5,9.0,Inf),
+                              labels = c("Low Baseline HbA1c","Medium Baseline HbA1c","High Baseline HbA1c"))
+demographics$hba1c_date_b <- lubridate::mdy(demographics$hba1c_date_b)
+demographics$baseline_a1c_to_am <- as.numeric(difftime(demographics$automode_start,demographics$hba1c_date_b,units = "days"))
+demographics <- left_join(demographics,survey_days,by="record_id")
+# Table 1
+demographics$continuation <- ifelse(demographics$record_id %in% t1_discont,"Discontinued",
+                               ifelse(demographics$record_id %in% t2_discont,"Discontinued",
+                                      ifelse(demographics$record_id %in% never_trained,"Never Trained",
+                                             ifelse(demographics$record_id %in% withdrawn,"Withdrawn","Continued"))))
+demographics$trained <- ifelse(demographics$continuation %in% c("Never Trained","Withdrawn"),"Never Trained","Trained")
+# Format
+demographics[c("demographics_ethnicity","demographics_race","demographics_sex",
+               "demographics_insurance","demographics_pumphx",
+               "demographics_cgmhx")] <- lapply(demographics[c("demographics_ethnicity","demographics_race","demographics_sex",
+               "demographics_insurance","demographics_pumphx",
+               "demographics_cgmhx")], as.factor)
+# Variables
+dem_vars <- c("baseline_to_am","baseline_a1c_to_am","am_to_m1","am_to_t1","am_to_t2",
+              "baseline_survey_to_am","survey_am_to_t1","survey_am_to_t2",dem_vars)
+# Non-normal variables
+nonnormal<- c("baseline_to_am","baseline_a1c_to_am","am_to_m1","am_to_t2","am_to_t1","baseline_survey_to_am","survey_am_to_t1","survey_am_to_t2")
+# Trained vs. never
+t1a <- CreateTableOne(dem_vars,data = demographics,strata = "trained")
+t1a <- print(t1a,nonnormal = nonnormal,printToggle = F)
+# Continuers
+trained <- demographics[which(demographics$trained=="Trained"),]
+t1b <- CreateTableOne(dem_vars,data = trained,strata = "continuation")
+t1b <- print(t1b,nonnormal = nonnormal,printToggle = F)
+```
+
+<!-- ### Table 1a: Descriptive statistics by AM training status -->
+
+```{r echo=FALSE,include=FALSE}
+kable(t1a)
+```
+
+<!-- ### Table 1b: Descriptive statistics by continuation status -->
+
+```{r echo=FALSE,include=FALSE}
+kable(t1b)
+```
+
+```{r echo=FALSE,include=FALSE}
+# 6 month glycemic analysis
+# If participant discontinued at T1, remove T1 and T2, if dicontinued at T2, remove just T2. Also remove those never trained.
+glycemic_data_6_month <- glycemic_data %>% 
+  filter(!(record_id %in% never_trained)) %>%
+  filter(!(record_id %in% t1_discont & (Timepoint == "T1" | Timepoint == "T2"))) %>%
+  filter(!(record_id %in% t2_discont & Timepoint == "T2"))
+glycemic_data_6_month$record_id <- as.character(glycemic_data_6_month$record_id)
+glycemic_data_6_month <- left_join(glycemic_data_6_month,demographics[,c("record_id","age_group")])
+# Remove M1, group by clinical A1c cutoffs at baseline
+data_no_m1 <- glycemic_data_6_month %>%
+  filter(Timepoint != "M1")
+# Write file for SAS contrasts
+# write.csv(data_no_m1,file = "/Users/timvigers/Desktop/cari.csv",
+#           row.names = F,na="")
+# Remove B (e.g. for % time AM models etc.)
+data_no_b <- glycemic_data_6_month %>%
+  filter(Timepoint != "B")
+```
+
+<!-- ### Number of visits with at least some glycemic data for each timepoint -->
+
+```{r echo=FALSE,include=FALSE}
+ns <- glycemic_data_6_month %>%
+  select(record_id:hba1c_clinical)
+ns$nas <- rowSums(is.na(ns))
+ns <- ns %>%
+  filter(nas < 23) %>%
+  ungroup() %>%
+  count(Timepoint)
+kable(ns)
+```
+
+```{r include=FALSE}
+# A1c mixed models
+a1c_mod <- lme(hba1c ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+a1c_mod_means <- lme(hba1c ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+a1c_glyc_control_mod <- lme(hba1c ~ Timepoint*hba1c_clinical,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+# Means models
+a1c_age_mod_means <- lme(hba1c ~ Timepoint:age_group-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+a1c_glyc_control_mod_means <- lme(hba1c ~ Timepoint:hba1c_clinical-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+# Contrasts
+# cmat.emmc <- rbind(c(0, 0, 1, 0, 0, 0, 0, 0, -1),
+#               c(1, 0, 0, 0, 0, 0, -1, 0, 0),
+#               c(0, 1, 0, 0, 0, 0, 0, -1, 0),
+#               c(0, 0, 0, 0, 0, 1, 0, 0, -1),
+#               c(0, 0, 0, 1, 0, 0, -1, 0, 0),
+#               c(0, 0, 0, 0, 1, 0, 0, -1, 0))
+# a1c_glyc_emm <- emmeans(a1c_glyc_control_mod,~Timepoint:hba1c_clinical)
+# contrast(a1c_glyc_emm,"cmat")
+```
+
+```{r echo=FALSE,include=FALSE}
+# Import results from contrasts in SAS.
+estimates <- read_excel(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Reports/estimates.xlsx"))
+means <- read_excel(paste0(pathstart,"som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/6 Month Manuscript/Reports/means.xlsx"))
+```
+
+<!-- ### Figure 1: Mean HbA1c by Timepoint -->
+
+```{r echo=FALSE,warning=FALSE,dpi=600,fig.width=7,include=FALSE}
+a1c_plot <- ggplot(means,aes(x=Timepoint,y=Estimate,group=hba1c_clinical)) + 
+  geom_line(aes(linetype=hba1c_clinical)) +
+  geom_point() + 
+  geom_label(aes(label = round(Estimate,1)),nudge_x = -0.25,nudge_y = -0.4) +
+  xlab("Timepoint") + 
+  ylab("HbA1c (%)") +
+  theme_bw() + 
+  theme(legend.title=element_blank()) +
+  geom_point(data=data_no_m1,aes(x=Timepoint,y=hba1c),size=0.2) +
+  scale_x_discrete(labels = c("Baseline","Month 3","Month 6")) + 
+  scale_linetype_discrete(breaks = c("High Baseline HbA1c","Medium Baseline HbA1c","Low Baseline HbA1c"),
+                          labels = c("High Baseline HbA1c","Middle Baseline HbA1c","Low Baseline HbA1c"))
+a1c_plot
+```
+
+<!-- ### Table 2: A1c Mixed Models -->
+
+```{r echo=FALSE,include=FALSE}
+kable(summary(a1c_mod)$tTable,caption = "Mixed Model Fixed Effects, Full Cohort")
+kable(summary(a1c_mod_means)$tTable,caption = "Mixed Model Means, Full Cohort")
+kable(means[,c("Timepoint","hba1c_clinical","Estimate","StdErr","Probt")],caption = "Group Means by Time Point")
+kable(anova.lme(a1c_glyc_control_mod),caption = "Type 3 Tests of Fixed Effects")
+kable(estimates[,c("Label","Estimate","StdErr","Probt")],caption = "Timepoint Differences by HbA1c Group")
+```
+
+<!-- ### HbA1c mixed model interpretation -->
+
+<!-- The "Mixed Model Fixed Effects, Full Cohort" table includes the effect of timepoint on the cohort overall without accounting for baseline HbA1c. -->
+
+<!-- The "Group Means by Timepoint" table shows the average HbA1c at each timepoint, for each HbA1c group. The p values in this table ("Probt") refer to whether the mean HbA1c is close to 0, so they can be ignored for now.  -->
+
+<!-- The type 3 tests of fixed effects show that timepoint, HbA1c group, and the interaction between timepoint and HbA1c group were each significant overall. -->
+
+<!-- "Timepoint Differences by HbA1c Group" shows whether time 1 or time 2 were significantly different from baseline, by HbA1c group (Low = (0,7.5], Medium = (7.5,9], High = (9,Inf]). So on average, the low A1c group increased by 0.098 from baseline to visit 1, but it was not statistically significant. On average the high A1c group decreased by 0.994 from baseline to visit 1, which was statistically significant (p < 0.0001). -->
+
+```{r echo=FALSE,include=FALSE}
+# Per Cari Berget 5/1/19:
+# "Subjects 4,8,16,17,21 completed the child survey versions in the baseline survey form and adult surveys for the rest of the time points.  The young adult surveys are the correct ones"
+incorrect_surveys <- c("4","8","16","17","21")
+incorrect_surveys_baseline <- which(child_surveys_paid$record_id %in% incorrect_surveys & !is.na(child_surveys_paid$paid_score))
+incorrect_surveys_baseline <- incorrect_surveys_baseline[-c(2)]
+child_surveys_paid$Timepoint[incorrect_surveys_baseline] <- 0
+child_surveys_paid$Timepoint <- as.integer(child_surveys_paid$Timepoint)
+
+# 6 month survey analysis
+child_surveys_6_month <- child_surveys_paid %>%
+  select(record_id,Timepoint,paid_score) %>%
+  left_join(child_surveys_behave[,c("record_id","Timepoint","behave_score")],
+            by=c("record_id", "Timepoint")) %>%
+  left_join(child_surveys_worry[,c("record_id","Timepoint","worry_score")],
+            by=c("record_id", "Timepoint")) %>%
+  mutate(total_hfs_score = worry_score + behave_score)
+child_surveys_6_month$Timepoint <- as.factor(child_surveys_6_month$Timepoint)
+levels(child_surveys_6_month$Timepoint) <- list("B"=0,"M1"=1,"T1"=2,"T2"=3)
+child_surveys_6_month$Group <- "Child"
+child_surveys_all <- child_surveys_6_month %>% filter(Timepoint %in% c("B","M1","T1","T2"))
+child_surveys_6_month <- child_surveys_6_month %>%
+  filter(Timepoint %in% c("B","T1","T2"))
+# Z scores
+child_surveys_6_month$worry_score_z <- (child_surveys_6_month$worry_score - mean(child_surveys_6_month$worry_score, na.rm = T)) / sd(child_surveys_6_month$worry_score, na.rm = T)
+child_surveys_6_month$behave_score_z <- (child_surveys_6_month$behave_score - mean(child_surveys_6_month$behave_score, na.rm = T)) / sd(child_surveys_6_month$behave_score, na.rm = T)
+
+child_surveys_all$worry_score_z <- (child_surveys_all$worry_score - mean(child_surveys_all$worry_score, na.rm = T)) / sd(child_surveys_all$worry_score, na.rm = T)
+child_surveys_all$behave_score_z <- (child_surveys_all$behave_score - mean(child_surveys_all$behave_score, na.rm = T)) / sd(child_surveys_all$behave_score, na.rm = T)
+
+ya_surveys_6_month <- ya_surveys_paid %>%
+  select(record_id,Timepoint,paid_score) %>%
+  left_join(ya_surveys_behave[,c("record_id","Timepoint","behave_score")],
+            by=c("record_id", "Timepoint")) %>%
+  left_join(ya_surveys_worry[,c("record_id","Timepoint","worry_score")],
+            by=c("record_id", "Timepoint")) %>%
+  mutate(total_hfs_score = worry_score + behave_score) %>%
+  filter(Timepoint %in% c("baseline","Time 1","Time 2"))
+ya_surveys_6_month$Timepoint <- ifelse(ya_surveys_6_month$Timepoint == "baseline",0,
+                                       ifelse(ya_surveys_6_month$Timepoint == "Time 1",2,3))
+ya_surveys_6_month$Timepoint <- as.factor(ya_surveys_6_month$Timepoint)
+levels(ya_surveys_6_month$Timepoint) <- list("B"=0,"M1"=1,"T1"=2,"T2"=3)
+ya_surveys_6_month$Group <- "YA"
+ya_surveys_all <- ya_surveys_6_month %>% filter(Timepoint %in% c("B","M1","T1","T2"))
+# Z scores
+ya_surveys_6_month$worry_score_z <- (ya_surveys_6_month$worry_score - mean(ya_surveys_6_month$worry_score, na.rm = T)) / sd(ya_surveys_6_month$worry_score, na.rm = T)
+ya_surveys_6_month$behave_score_z <- (ya_surveys_6_month$behave_score - mean(ya_surveys_6_month$behave_score, na.rm = T)) / sd(ya_surveys_6_month$behave_score, na.rm = T)
+
+ya_surveys_all$worry_score_z <- (ya_surveys_all$worry_score - mean(ya_surveys_all$worry_score, na.rm = T)) / sd(ya_surveys_all$worry_score, na.rm = T)
+ya_surveys_all$behave_score_z <- (ya_surveys_all$behave_score - mean(ya_surveys_all$behave_score, na.rm = T)) / sd(ya_surveys_all$behave_score, na.rm = T)
+
+parent_surveys_6_month <- parent_surveys_paid %>%
+  select(record_id,Timepoint,paid_score) %>%
+  left_join(parent_surveys_behave[,c("record_id","Timepoint","behave_score")],
+            by=c("record_id", "Timepoint")) %>%
+  left_join(parent_surveys_worry[,c("record_id","Timepoint","worry_score")],
+            by=c("record_id", "Timepoint")) %>%
+  mutate(total_hfs_score = worry_score + behave_score) %>%
+  filter(Timepoint %in% c("baseline","Time 1","Time 2")) %>%
+  filter(!(record_id %in% ya)) # Filter out parents associated with a YA
+parent_surveys_6_month$Timepoint <- as.numeric(parent_surveys_6_month$Timepoint) -1
+parent_surveys_6_month$Group <- "Parents"
+parent_surveys_6_month$Timepoint <- as.factor(parent_surveys_6_month$Timepoint)
+levels(parent_surveys_6_month$Timepoint) <- list("B"=0,"T1"=2,"T2"=3)
+parent_surveys_6_month$record_id <- paste0(parent_surveys_6_month$record_id,"p")
+parent_surveys_6_month <- parent_surveys_6_month %>%
+  filter(!(record_id %in% never_trained)) %>%
+  filter(!(record_id %in% t1_discont & (Timepoint == "T1" | Timepoint == "T2"))) %>%
+  filter(!(record_id %in% t2_discont & Timepoint == "T2"))
+# Z scores
+parent_surveys_6_month$worry_score_z <- (parent_surveys_6_month$worry_score - mean(parent_surveys_6_month$worry_score, na.rm = T)) / sd(parent_surveys_6_month$worry_score, na.rm = T)
+parent_surveys_6_month$behave_score_z <- (parent_surveys_6_month$behave_score - mean(parent_surveys_6_month$behave_score, na.rm = T)) / sd(parent_surveys_6_month$behave_score, na.rm = T)
+# Combine child and YA survey data
+c_ya_surveys_6_month <- rbind(child_surveys_6_month,ya_surveys_6_month)
+c_ya_surveys_all <- c_ya_surveys_6_month
+c_ya_surveys_6_month %>%
+  filter(!(record_id %in% never_trained)) %>%
+  filter(!(record_id %in% t1_discont & (Timepoint == "T1" | Timepoint == "T2"))) %>%
+  filter(!(record_id %in% t2_discont & Timepoint == "T2"))
+c_ya_surveys_all 
+```
+
+<!-- ### Number of visits with at least some survey data for each timepoint, children and YA -->
+
+```{r echo=FALSE,include=FALSE}
+# Numbers
+ns <- c_ya_surveys_6_month
+ns$nas <- rowSums(is.na(ns))
+ns <- ns %>%
+  filter(nas < 6) %>%
+  ungroup() %>%
+  count(Timepoint)
+kable(ns)
+```
+
+<!-- ### Number of visits with at least some survey data for each timepoint, parents -->
+
+```{r echo=FALSE,include=FALSE}
+# Numbers
+ns <- parent_surveys_6_month
+ns$nas <- rowSums(is.na(ns))
+ns <- ns %>%
+  filter(nas < 6) %>%
+  ungroup() %>%
+  count(Timepoint)
+kable(ns)
+```
+
+```{r echo=FALSE,include=FALSE}
+# CGM data models
+# TIR
+tir_u54_mod <- lme(sensor_u54 ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+tir_u54_mod_means <- lme(sensor_u54 ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+
+tir_l70_mod <- lme(sensor_l70 ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+tir_l70_mod_means <- lme(sensor_l70 ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+
+tir_70_180_mod <- lme(sensor_70_180 ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+tir_70_180_mod_means <- lme(sensor_70_180 ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+
+tir_g180_mod <- lme(sensor_g180 ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+tir_g180_mod_means <- lme(sensor_g180 ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+
+tir_g250_mod <- lme(sensor_g250 ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+tir_g250_mod_means <- lme(sensor_g250 ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+# AM time
+am_mod <- lme(am_time ~ Timepoint,random=~1|record_id,data = data_no_b,na.action = na.omit)
+am_mod_means <- lme(am_time ~ Timepoint-1,random=~1|record_id,data = data_no_b,na.action = na.omit)
+# Sensor wear
+sensor_wear_mod <- lme(sensor_wear ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+sensor_wear_mod_means <- lme(sensor_wear ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+# AM exits
+amexit_day_mod <- lme(amexit_day ~ Timepoint,random=~1|record_id,data = data_no_b,na.action = na.omit)
+amexit_day_mod_means <- lme(amexit_day ~ Timepoint-1,random=~1|record_id,data = data_no_b,na.action = na.omit)
+
+amexit_hyper_mod <- lme(amexit_hyper_perc ~ Timepoint,random=~1|record_id,data = data_no_b,na.action = na.omit)
+amexit_hyper_mod_means <- lme(amexit_hyper_perc ~ Timepoint-1,random=~1|record_id,data = data_no_b,na.action = na.omit)
+
+amexit_hypo_mod <- lme(amexit_hypo_perc ~ Timepoint,random=~1|record_id,data = data_no_b,na.action = na.omit)
+amexit_hypo_mod_means <- lme(amexit_hypo_perc ~ Timepoint-1,random=~1|record_id,data = data_no_b,na.action = na.omit)
+
+amexit_manual_mod <- lme(amexit_manual_perc ~ Timepoint,random=~1|record_id,data = data_no_b,na.action = na.omit)
+amexit_manual_mod_means <- lme(amexit_manual_perc ~ Timepoint-1,random=~1|record_id,data = data_no_b,na.action = na.omit)
+
+amexit_other_mod <- lme(amexit_other_perc ~ Timepoint,random=~1|record_id,data = data_no_b,na.action = na.omit)
+amexit_other_mod_means <- lme(amexit_other_perc ~ Timepoint-1,random=~1|record_id,data = data_no_b,na.action = na.omit)
+
+# BG Checks
+bg_checks_mod <- lme(bg_checks ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+bg_checks_mod_means <- lme(bg_checks ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+# Calibrations
+calibrations_mod <- lme(calibrations ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+calibrations_mod_means <- lme(calibrations ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+# TDD
+tdd_mod <- lme(tdd ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+tdd_mod_means <- lme(tdd ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+# Basal
+basal_mod <- lme(basal ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+basal_mod_means <- lme(basal ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+# Bolus
+bolus_mod <- lme(bolus ~ Timepoint,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+bolus_mod_means <- lme(bolus ~ Timepoint-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+# Survey scores child and YA
+paid_mod <- lme(paid_score ~ Timepoint,random=~1|record_id,data = c_ya_surveys_6_month,na.action = na.omit)
+paid_mod_means <- lme(paid_score ~ Timepoint-1,random=~1|record_id,data = c_ya_surveys_6_month,na.action = na.omit)
+behave_mod <- lme(behave_score_z ~ Timepoint,random=~1|record_id,data = c_ya_surveys_6_month,na.action = na.omit)
+behave_mod_means <- lme(behave_score_z ~ Timepoint-1,random=~1|record_id,data = c_ya_surveys_6_month,na.action = na.omit)
+worry_mod <- lme(worry_score_z ~ Timepoint,random=~1|record_id,data = c_ya_surveys_6_month,na.action = na.omit)
+worry_mod_means <- lme(worry_score_z ~ Timepoint-1,random=~1|record_id,data = c_ya_surveys_6_month,na.action = na.omit)
+# Survey scores parents
+paid_mod_p <- lme(paid_score ~ Timepoint,random=~1|record_id,data = parent_surveys_6_month,na.action = na.omit)
+paid_mod_means_p <- lme(paid_score ~ Timepoint-1,random=~1|record_id,data = parent_surveys_6_month,na.action = na.omit)
+behave_mod_p <- lme(behave_score_z ~ Timepoint,random=~1|record_id,data = parent_surveys_6_month,na.action = na.omit)
+behave_mod_means_p <- lme(behave_score_z ~ Timepoint-1,random=~1|record_id,data = parent_surveys_6_month,na.action = na.omit)
+worry_mod_p <- lme(worry_score_z ~ Timepoint,random=~1|record_id,data = parent_surveys_6_month,na.action = na.omit)
+worry_mod_means_p <- lme(worry_score_z ~ Timepoint-1,random=~1|record_id,data = parent_surveys_6_month,na.action = na.omit)
+```
+
+<!-- ## Table 3: Mixed Models Summary -->
+
+```{r echo=FALSE,include=FALSE}
+# Make table
+mod_summary <- as.data.frame(matrix(nrow = 23,ncol = 6))
+colnames(mod_summary) <- c("Baseline","Month 1","Time 1","T1 P value","Time 2","T2 P value")
+rownames(mod_summary) <- c("TIR <54","TIR <70","TIR 70-180",
+                           "TIR >180","TIR >250","AM Time","Sensor Wear",
+                           "AM Exits Per Day","AM Exits Hyperglycemia (%)",
+                           "AM Exits Hypoglycemia (%)","AM Exits Manual (%)",
+                           "AM Exits Other (%)","BG Checks","Calibrations","TDD",
+                           "Basal","Bolus","PAID","HFS Behave Z Score",
+                           "HFS Worry Z Score","PAID-PR",
+                           "HFS Behave Z Score Parents",
+                           "HFS Worry Z Score Parents")
+# TIR
+tir_u54 <- paste0(round(summary(tir_u54_mod_means)$tTable[,1],3)," (",
+              round(summary(tir_u54_mod_means)$tTable[,2],3),")")
+mod_summary["TIR <54","Baseline"] <- tir_u54[1]
+mod_summary["TIR <54","Time 1"] <- tir_u54[2]
+mod_summary["TIR <54","T1 P value"] <- summary(tir_u54_mod)$tTable[2,5]
+mod_summary["TIR <54","Time 2"] <- tir_u54[3]
+mod_summary["TIR <54","T2 P value"] <- summary(tir_u54_mod)$tTable[3,5]
+
+tir_l70 <- paste0(round(summary(tir_l70_mod_means)$tTable[,1],3)," (",
+              round(summary(tir_l70_mod_means)$tTable[,2],3),")")
+mod_summary["TIR <70","Baseline"] <- tir_l70[1]
+mod_summary["TIR <70","Time 1"] <- tir_l70[2]
+mod_summary["TIR <70","T1 P value"] <- summary(tir_l70_mod)$tTable[2,5]
+mod_summary["TIR <70","Time 2"] <- tir_l70[3]
+mod_summary["TIR <70","T2 P value"] <- summary(tir_l70_mod)$tTable[3,5]
+
+tir_70_180 <- paste0(round(summary(tir_70_180_mod_means)$tTable[,1],3)," (",
+              round(summary(tir_70_180_mod_means)$tTable[,2],3),")")
+mod_summary["TIR 70-180","Baseline"] <- tir_70_180[1]
+mod_summary["TIR 70-180","Time 1"] <- tir_70_180[2]
+mod_summary["TIR 70-180","T1 P value"] <- summary(tir_70_180_mod)$tTable[2,5]
+mod_summary["TIR 70-180","Time 2"] <- tir_70_180[3]
+mod_summary["TIR 70-180","T2 P value"] <- summary(tir_70_180_mod)$tTable[3,5]
+
+tir_g180 <- paste0(round(summary(tir_g180_mod_means)$tTable[,1],3)," (",
+              round(summary(tir_g180_mod_means)$tTable[,2],3),")")
+mod_summary["TIR >180","Baseline"] <- tir_g180[1]
+mod_summary["TIR >180","Time 1"] <- tir_g180[2]
+mod_summary["TIR >180","T1 P value"] <- summary(tir_g180_mod)$tTable[2,5]
+mod_summary["TIR >180","Time 2"] <- tir_g180[3]
+mod_summary["TIR >180","T2 P value"] <- summary(tir_g180_mod)$tTable[3,5]
+
+tir_g250 <- paste0(round(summary(tir_g250_mod_means)$tTable[,1],3)," (",
+              round(summary(tir_g250_mod_means)$tTable[,2],3),")")
+mod_summary["TIR >250","Baseline"] <- tir_g250[1]
+mod_summary["TIR >250","Time 1"] <- tir_g250[2]
+mod_summary["TIR >250","T1 P value"] <- summary(tir_g250_mod)$tTable[2,5]
+mod_summary["TIR >250","Time 2"] <- tir_g250[3]
+mod_summary["TIR >250","T2 P value"] <- summary(tir_g250_mod)$tTable[3,5]
+
+# AM time
+am <- paste0(round(summary(am_mod_means)$tTable[,1],3)," (",
+             round(summary(am_mod_means)$tTable[,2],3),")")
+mod_summary["AM Time","Month 1"] <- am[1]
+mod_summary["AM Time","Time 1"] <- am[2]
+mod_summary["AM Time","T1 P value"] <- summary(am_mod)$tTable[2,5]
+mod_summary["AM Time","Time 2"] <- am[3]
+mod_summary["AM Time","T2 P value"] <- summary(am_mod)$tTable[3,5]
+
+# Sensor
+sensor_wear <- paste0(round(summary(sensor_wear_mod_means)$tTable[,1],3)," (",
+                      round(summary(sensor_wear_mod_means)$tTable[,2],3),")")
+mod_summary["Sensor Wear","Baseline"] <- sensor_wear[1]
+mod_summary["Sensor Wear","Time 1"] <- sensor_wear[2]
+mod_summary["Sensor Wear","T1 P value"] <- summary(sensor_wear_mod)$tTable[2,5]
+mod_summary["Sensor Wear","Time 2"] <- sensor_wear[3]
+mod_summary["Sensor Wear","T2 P value"] <- summary(sensor_wear_mod)$tTable[3,5]
+
+# AM Exits
+amexit_day <- paste0(round(summary(amexit_day_mod_means)$tTable[,1],3)," (",
+                     round(summary(amexit_day_mod_means)$tTable[,2],3),")")
+mod_summary["AM Exits Per Day","Month 1"] <- amexit_day[1]
+mod_summary["AM Exits Per Day","Time 1"] <- amexit_day[2]
+mod_summary["AM Exits Per Day","T1 P value"] <- summary(amexit_day_mod)$tTable[2,5]
+mod_summary["AM Exits Per Day","Time 2"] <- amexit_day[3]
+mod_summary["AM Exits Per Day","T2 P value"] <- summary(amexit_day_mod)$tTable[3,5]
+
+amexit_hyper <- paste0(round(summary(amexit_hyper_mod_means)$tTable[,1],3)," (",
+                     round(summary(amexit_hyper_mod_means)$tTable[,2],3),")")
+mod_summary["AM Exits Hyperglycemia (%)","Month 1"] <- amexit_hyper[1]
+mod_summary["AM Exits Hyperglycemia (%)","Time 1"] <- amexit_hyper[2]
+mod_summary["AM Exits Hyperglycemia (%)","T1 P value"] <- summary(amexit_hyper_mod)$tTable[2,5]
+mod_summary["AM Exits Hyperglycemia (%)","Time 2"] <- amexit_hyper[3]
+mod_summary["AM Exits Hyperglycemia (%)","T2 P value"] <- summary(amexit_hyper_mod)$tTable[3,5]
+
+amexit_hypo <- paste0(round(summary(amexit_hypo_mod_means)$tTable[,1],3)," (",
+                     round(summary(amexit_hypo_mod_means)$tTable[,2],3),")")
+mod_summary["AM Exits Hypoglycemia (%)","Month 1"] <- amexit_hypo[1]
+mod_summary["AM Exits Hypoglycemia (%)","Time 1"] <- amexit_hypo[2]
+mod_summary["AM Exits Hypoglycemia (%)","T1 P value"] <- summary(amexit_hypo_mod)$tTable[2,5]
+mod_summary["AM Exits Hypoglycemia (%)","Time 2"] <- amexit_hypo[3]
+mod_summary["AM Exits Hypoglycemia (%)","T2 P value"] <- summary(amexit_hypo_mod)$tTable[3,5]
+
+amexit_manual <- paste0(round(summary(amexit_manual_mod_means)$tTable[,1],3)," (",
+                     round(summary(amexit_manual_mod_means)$tTable[,2],3),")")
+mod_summary["AM Exits Manual (%)","Month 1"] <- amexit_manual[1]
+mod_summary["AM Exits Manual (%)","Time 1"] <- amexit_manual[2]
+mod_summary["AM Exits Manual (%)","T1 P value"] <- summary(amexit_manual_mod)$tTable[2,5]
+mod_summary["AM Exits Manual (%)","Time 2"] <- amexit_manual[3]
+mod_summary["AM Exits Manual (%)","T2 P value"] <- summary(amexit_manual_mod)$tTable[3,5]
+
+amexit_other <- paste0(round(summary(amexit_other_mod_means)$tTable[,1],3)," (",
+                     round(summary(amexit_other_mod_means)$tTable[,2],3),")")
+mod_summary["AM Exits Other (%)","Month 1"] <- amexit_other[1]
+mod_summary["AM Exits Other (%)","Time 1"] <- amexit_other[2]
+mod_summary["AM Exits Other (%)","T1 P value"] <- summary(amexit_other_mod)$tTable[2,5]
+mod_summary["AM Exits Other (%)","Time 2"] <- amexit_other[3]
+mod_summary["AM Exits Other (%)","T2 P value"] <- summary(amexit_other_mod)$tTable[3,5]
+
+# BG Checks
+bg_checks <- paste0(round(summary(bg_checks_mod_means)$tTable[,1],3)," (",
+              round(summary(bg_checks_mod_means)$tTable[,2],3),")")
+mod_summary["BG Checks","Baseline"] <- bg_checks[1]
+mod_summary["BG Checks","Time 1"] <- bg_checks[2]
+mod_summary["BG Checks","T1 P value"] <- summary(bg_checks_mod)$tTable[2,5]
+mod_summary["BG Checks","Time 2"] <- bg_checks[3]
+mod_summary["BG Checks","T2 P value"] <- summary(bg_checks_mod)$tTable[3,5]
+# Calibrations
+calibrations <- paste0(round(summary(calibrations_mod_means)$tTable[,1],3)," (",
+              round(summary(calibrations_mod_means)$tTable[,2],3),")")
+mod_summary["Calibrations","Baseline"] <- calibrations[1]
+mod_summary["Calibrations","Time 1"] <- calibrations[2]
+mod_summary["Calibrations","T1 P value"] <- summary(calibrations_mod)$tTable[2,5]
+mod_summary["Calibrations","Time 2"] <- calibrations[3]
+mod_summary["Calibrations","T2 P value"] <- summary(calibrations_mod)$tTable[3,5]
+# TDD
+tdd <- paste0(round(summary(tdd_mod_means)$tTable[,1],3)," (",
+              round(summary(tdd_mod_means)$tTable[,2],3),")")
+mod_summary["TDD","Baseline"] <- tdd[1]
+mod_summary["TDD","Time 1"] <- tdd[2]
+mod_summary["TDD","T1 P value"] <- summary(tdd_mod)$tTable[2,5]
+mod_summary["TDD","Time 2"] <- tdd[3]
+mod_summary["TDD","T2 P value"] <- summary(tdd_mod)$tTable[3,5]
+# Basal
+basal <- paste0(round(summary(basal_mod_means)$tTable[,1],3)," (",
+              round(summary(basal_mod_means)$tTable[,2],3),")")
+mod_summary["Basal","Baseline"] <- basal[1]
+mod_summary["Basal","Time 1"] <- basal[2]
+mod_summary["Basal","T1 P value"] <- summary(basal_mod)$tTable[2,5]
+mod_summary["Basal","Time 2"] <- basal[3]
+mod_summary["Basal","T2 P value"] <- summary(basal_mod)$tTable[3,5]
+# Bolus
+bolus <- paste0(round(summary(bolus_mod_means)$tTable[,1],3)," (",
+              round(summary(bolus_mod_means)$tTable[,2],3),")")
+mod_summary["Bolus","Baseline"] <- bolus[1]
+mod_summary["Bolus","Time 1"] <- bolus[2]
+mod_summary["Bolus","T1 P value"] <- summary(bolus_mod)$tTable[2,5]
+mod_summary["Bolus","Time 2"] <- bolus[3]
+mod_summary["Bolus","T2 P value"] <- summary(bolus_mod)$tTable[3,5]
+# PAID
+paid <- paste0(round(summary(paid_mod_means)$tTable[,1],3)," (",
+              round(summary(paid_mod_means)$tTable[,2],3),")")
+mod_summary["PAID","Baseline"] <- paid[1]
+mod_summary["PAID","Time 1"] <- paid[2]
+mod_summary["PAID","T1 P value"] <- summary(paid_mod)$tTable[2,5]
+mod_summary["PAID","Time 2"] <- paid[3]
+mod_summary["PAID","T2 P value"] <- summary(paid_mod)$tTable[3,5]
+# HFS Behave
+behave <- paste0(round(summary(behave_mod_means)$tTable[,1],3)," (",
+              round(summary(behave_mod_means)$tTable[,2],3),")")
+mod_summary["HFS Behave Z Score","Baseline"] <- behave[1]
+mod_summary["HFS Behave Z Score","Time 1"] <- behave[2]
+mod_summary["HFS Behave Z Score","T1 P value"] <- summary(behave_mod)$tTable[2,5]
+mod_summary["HFS Behave Z Score","Time 2"] <- behave[3]
+mod_summary["HFS Behave Z Score","T2 P value"] <- summary(behave_mod)$tTable[3,5]
+# HFS Worry
+worry <- paste0(round(summary(worry_mod_means)$tTable[,1],3)," (",
+              round(summary(worry_mod_means)$tTable[,2],3),")")
+mod_summary["HFS Worry Z Score","Baseline"] <- worry[1]
+mod_summary["HFS Worry Z Score","Time 1"] <- worry[2]
+mod_summary["HFS Worry Z Score","T1 P value"] <- summary(worry_mod)$tTable[2,5]
+mod_summary["HFS Worry Z Score","Time 2"] <- worry[3]
+mod_summary["HFS Worry Z Score","T2 P value"] <- summary(worry_mod)$tTable[3,5]
+# Parents
+# PAID
+paid <- paste0(round(summary(paid_mod_means_p)$tTable[,1],3)," (",
+              round(summary(paid_mod_means_p)$tTable[,2],3),")")
+mod_summary["PAID-PR","Baseline"] <- paid[1]
+mod_summary["PAID-PR","Time 1"] <- paid[2]
+mod_summary["PAID-PR","T1 P value"] <- summary(paid_mod_p)$tTable[2,5]
+mod_summary["PAID-PR","Time 2"] <- paid[3]
+mod_summary["PAID-PR","T2 P value"] <- summary(paid_mod_p)$tTable[3,5]
+# HFS Behave
+behave <- paste0(round(summary(behave_mod_means_p)$tTable[,1],3)," (",
+              round(summary(behave_mod_means_p)$tTable[,2],3),")")
+mod_summary["HFS Behave Z Score Parents","Baseline"] <- behave[1]
+mod_summary["HFS Behave Z Score Parents","Time 1"] <- behave[2]
+mod_summary["HFS Behave Z Score Parents","T1 P value"] <- summary(behave_mod_p)$tTable[2,5]
+mod_summary["HFS Behave Z Score Parents","Time 2"] <- behave[3]
+mod_summary["HFS Behave Z Score Parents","T2 P value"] <- summary(behave_mod_p)$tTable[3,5]
+# HFS Worry
+worry <- paste0(round(summary(worry_mod_means_p)$tTable[,1],3)," (",
+              round(summary(worry_mod_means_p)$tTable[,2],3),")")
+mod_summary["HFS Worry Z Score Parents","Baseline"] <- worry[1]
+mod_summary["HFS Worry Z Score Parents","Time 1"] <- worry[2]
+mod_summary["HFS Worry Z Score Parents","T1 P value"] <- summary(worry_mod_p)$tTable[2,5]
+mod_summary["HFS Worry Z Score Parents","Time 2"] <- worry[3]
+mod_summary["HFS Worry Z Score Parents","T2 P value"] <- summary(worry_mod_p)$tTable[3,5]
+# Adjust p values, format
+mod_summary$`T1 P value` <- format.pval(p.adjust(mod_summary$`T1 P value`,"fdr"),
+                                        eps = 0.001,digits = 2)
+mod_summary$`T2 P value` <- format.pval(p.adjust(mod_summary$`T2 P value`,"fdr"),
+                                        eps = 0.001,digits = 2)
+# Print
+options(knitr.kable.NA = '')
+kable(mod_summary)
+```
+
+<!-- Reported as mean (standard error). All continuers, no interaction by HbA1c group included in these models. P values adjusted for multiple comparisons using the false discovery rate (FDR) method, treating baseline to T1 and baseline to T2 as separate questions (i.e. T1 and T2 p-value columns adjusted separately).  -->
+
+<!-- Parent and child responses analyzed seperately due to potential correlation between parent and child responses. -->
+
+<!-- ### Figure 2: Survey Scores by Timepoint -->
+
+```{r echo=FALSE,warning=FALSE,dpi=600,include=FALSE}
+# Plot
+# PAID
+paid_plot_data <- rbind(child_surveys_6_month[,c("record_id","Timepoint","Group","paid_score")],
+                        ya_surveys_6_month[,c("record_id","Timepoint","Group","paid_score")],
+                        parent_surveys_6_month[,c("record_id","Timepoint","Group","paid_score")])
+
+paid_plot <- ggplot(subset(paid_plot_data),aes(x=Timepoint,y=paid_score,group=record_id))+
+  geom_point(size = 0.2) +
+  stat_summary(fun.y=mean, geom="line", aes(group = Group,linetype = Group)) +
+  xlab("Timepoint") + 
+  ylab("PAID Score") +
+  theme(legend.title=element_blank())
+# Behave
+behave_plot_data <- rbind(child_surveys_6_month[,c("record_id","Timepoint","Group","behave_score_z")],
+                        ya_surveys_6_month[,c("record_id","Timepoint","Group","behave_score_z")],
+                        parent_surveys_6_month[,c("record_id","Timepoint","Group","behave_score_z")])
+behave_plot_data$Timepoint <- as.factor(behave_plot_data$Timepoint)
+levels(behave_plot_data$Timepoint) <- list("B"=0,"T1"=2,"T2"=3)
+behave_plot <- ggplot(subset(behave_plot_data),aes(x=Timepoint,y=behave_score_z,group=record_id))+
+  geom_point(size = 0.2) +
+  stat_summary(fun.y=mean, geom="line", aes(group = Group,linetype = Group)) +
+  xlab("Timepoint") + 
+  ylab("Behave Z Score") +
+  theme(legend.title=element_blank())
+# Worry
+worry_plot_data <- rbind(child_surveys_6_month[,c("record_id","Timepoint","Group","worry_score_z")],
+                        ya_surveys_6_month[,c("record_id","Timepoint","Group","worry_score_z")],
+                        parent_surveys_6_month[,c("record_id","Timepoint","Group","worry_score_z")])
+worry_plot_data$Timepoint <- as.factor(worry_plot_data$Timepoint)
+levels(worry_plot_data$Timepoint) <- list("B"=0,"T1"=2,"T2"=3)
+worry_plot <- ggplot(subset(worry_plot_data),aes(x=Timepoint,y=worry_score_z,group=record_id))+
+  geom_point(size = 0.2) +
+  stat_summary(fun.y=mean, geom="line", aes(group = Group,linetype = Group)) +
+  xlab("Timepoint") + 
+  ylab("Worry Z Score") +
+  theme(legend.title=element_blank())
+grid.arrange(paid_plot,behave_plot,worry_plot, ncol=2)
+```
+
+<!-- ### Sensor Wear Among Discontinuers -->
+
+```{r echo=FALSE,include=FALSE}
+sensor_t1 <- glycemic_data %>% 
+  filter(record_id %in% t1_discont) %>%
+  filter(Timepoint == "T1") %>%
+  ungroup() %>%
+  count(sensor_wear < 10)
+colnames(sensor_t1) <- c("Sensor Wear T1","n")
+sensor_t1$`Sensor Wear T1` <- c("> 10%","< 10%","NA")
+
+sensor_t2 <- glycemic_data %>% 
+  filter(record_id %in% t2_discont) %>%
+  filter(Timepoint == "T2") %>%
+  ungroup() %>%
+  count(sensor_wear < 10)
+colnames(sensor_t2) <- c("Sensor Wear T2","n")
+sensor_t2$`Sensor Wear T2` <- c("> 10%","< 10%","NA")
+
+kable(sensor_t1)
+kable(sensor_t2)
+```
+
+<!-- ### Cronbach's alpha -->
+
+```{r echo=FALSE,message=FALSE,warning=FALSE,include=FALSE}
+# Calculate alphas
+# PAID
+alpha_cpb <- psych::alpha(child_surveys_paid[child_surveys_paid$Timepoint==0,3:22],check.keys=TRUE)
+alpha_cpt1 <- psych::alpha(child_surveys_paid[child_surveys_paid$Timepoint==2,3:22],check.keys=TRUE)
+alpha_cpt2 <- psych::alpha(child_surveys_paid[child_surveys_paid$Timepoint==3,3:22],check.keys=TRUE)
+
+alpha_yapb <- psych::alpha(ya_surveys_paid[ya_surveys_paid$Timepoint=="baseline",3:22],check.keys=TRUE)
+alpha_yapt1 <- psych::alpha(ya_surveys_paid[ya_surveys_paid$Timepoint=="Time 1",3:22],check.keys=TRUE)
+alpha_yapt2 <- psych::alpha(ya_surveys_paid[ya_surveys_paid$Timepoint=="Time 2",3:22],check.keys=TRUE)
+
+alpha_parentpb <- psych::alpha(parent_surveys_paid[parent_surveys_paid$Timepoint=="baseline",3:20],check.keys=TRUE)
+alpha_parentpt1 <- psych::alpha(parent_surveys_paid[parent_surveys_paid$Timepoint=="Time 1",3:20],check.keys=TRUE)
+alpha_parentpt2 <- psych::alpha(parent_surveys_paid[parent_surveys_paid$Timepoint=="Time 2",3:20],check.keys=TRUE)
+# Worry
+alpha_cworryb <- psych::alpha(child_surveys_worry[child_surveys_worry$Timepoint==0,3:17],check.keys=TRUE)
+alpha_cworryt1 <- psych::alpha(child_surveys_worry[child_surveys_worry$Timepoint==2,3:17],check.keys=TRUE)
+alpha_cworryt2 <- psych::alpha(child_surveys_worry[child_surveys_worry$Timepoint==3,3:17],check.keys=TRUE)
+
+alpha_yaworryb <- psych::alpha(ya_surveys_worry[ya_surveys_worry$Timepoint=="baseline",3:20],check.keys=TRUE)
+alpha_yaworryt1 <- psych::alpha(ya_surveys_worry[ya_surveys_worry$Timepoint=="Time 1",3:20],check.keys=TRUE)
+alpha_yaworryt2 <- psych::alpha(ya_surveys_worry[ya_surveys_worry$Timepoint=="Time 2",3:20],check.keys=TRUE)
+
+alpha_parentworryb <- psych::alpha(parent_surveys_worry[parent_surveys_worry$Timepoint=="baseline",3:17],check.keys=TRUE)
+alpha_parentworryt1 <- psych::alpha(parent_surveys_worry[parent_surveys_worry$Timepoint=="Time 1",3:17],check.keys=TRUE)
+alpha_parentworryt2 <- psych::alpha(parent_surveys_worry[parent_surveys_worry$Timepoint=="Time 2",3:17],check.keys=TRUE)
+
+# Results table
+alpha_table <- as.data.frame(matrix(nrow = 6,ncol = 3))
+rownames(alpha_table) <- c("PAID-Peds","PAID","PAID-PR","CHFS Worry","HFS-II Worry","PHFS Worry")
+colnames(alpha_table) <- c("Baseline","Month 3","Month 6")
+alpha_table$Baseline <- c(alpha_cpb$total$std.alpha,alpha_yapb$total$std.alpha,
+                          alpha_parentpb$total$std.alpha,
+                          alpha_cworryb$total$std.alpha,
+                          alpha_yaworryb$total$std.alpha,
+                          alpha_parentworryb$total$std.alpha)
+alpha_table$`Month 3` <- c(alpha_cpt1$total$std.alpha,alpha_yapt1$total$std.alpha,
+                          alpha_parentpt1$total$std.alpha,
+                          alpha_cworryt1$total$std.alpha,
+                          alpha_yaworryt1$total$std.alpha,
+                          alpha_parentworryt1$total$std.alpha)
+alpha_table$`Month 6` <- c(alpha_cpt2$total$std.alpha,alpha_yapt2$total$std.alpha,
+                          alpha_parentpt2$total$std.alpha,
+                          alpha_cworryt2$total$std.alpha,
+                          alpha_yaworryt2$total$std.alpha,
+                          alpha_parentworryt2$total$std.alpha)
+alpha_table <- round(alpha_table,3)
+kable(alpha_table)
+```
+
+```{r echo=FALSE}
+# Format data
+baseline_surveys <- c_ya_surveys_all %>%
+  filter(Timepoint=="B") %>%
+  select(record_id,paid_score,behave_score_z,worry_score_z) %>%
+  arrange(record_id)
+trained <- left_join(trained,baseline_surveys,by="record_id")
+
+m1 <- glycemic_data %>%
+  filter(Timepoint == "M1") %>%
+  select(record_id,am_time,sensor_wear,amexit_day,bg_checks)
+colnames(m1) <- c("record_id","m1_am_time","m1_sensor_wear","m1_amexit_day","m1_bg_checks")
+m1$record_id <- as.character(m1$record_id)
+
+trained <- left_join(trained,m1,by="record_id")
+
+trained$race_ethnicity <- ifelse(trained$demographics_race == 4 & trained$demographics_ethnicity == 1,
+                                 "White Non-Hispanic","Other")
+
+trained$cgmhx <- ifelse(trained$demographics_cgmhx %in% 1:3,"<= 1 Year","> 1 Year")
+trained$cgmhx[which(is.na(trained$demographics_cgmhx))] <- NA
+trained$pumphx <- ifelse(trained$demographics_pumphx %in% 1:3,"<= 1 Year","> 1 Year")
+trained$pumphx[which(is.na(trained$demographics_pumphx))] <- NA
+
+m1_discont <- trained$record_id[which(trained$m1_am_time < 10)]
+m1_discont <- t1_discont[which(t1_discont %in% m1_discont)]
+remove <- which(trained$record_id %in% m1_discont)
+
+trained$m1_am_time[remove] <- NA
+trained$m1_amexit_day[remove] <- NA
+trained$m1_bg_checks[remove] <- NA
+trained$m1_sensor_wear[remove] <- NA
+
+dem_vars <- c("hba1c_baseline","demographics_t1d_duration","demographics_age",
+              "paid_score","behave_score_z","worry_score_z",
+              "m1_am_time","m1_sensor_wear","m1_amexit_day","m1_bg_checks",
+              "race_ethnicity","demographics_sex",
+              "demographics_insurance","pumphx",
+              "cgmhx")
+
+t1 <- CreateTableOne(dem_vars,data = trained,strata = "continuation")
+t1 <- print(t1,nonnormal = c("demographics_t1d_duration","m1_am_time","paid_score",
+                             "m1_sensor_wear","m1_bg_checks"),
+            exact = c("hba1c_clinical","demographics_race","demographics_insurance"),
+            printToggle = F)
+t1 <- as.data.frame(t1)
+overall <- CreateTableOne(dem_vars,data = trained)
+overall <- as.data.frame(print(overall,nonnormal = 
+                                 c("demographics_t1d_duration","m1_am_time",
+                                   "paid_score","m1_sensor_wear","m1_bg_checks"),
+                               printToggle = F))
+t1$Overall <- overall$Overall
+t1 <- t1[,c("Overall","Continued","Discontinued","p","test")]
+rownames(t1) <- c("n","Baseline HbA1c (mean (SD))","T1D Duration (median [IQR])",
+                  "Age (mean (SD)","PAID Score ","Behave Z-Score ",
+                  "Worry Z-Score ","Month 1 AM Time ","Month 1 Sensor Wear ",
+                  "Month 1 AM Exits per Day ","Month 1  BG Checks per Day ",
+                  "Race/Ethnicity = White Non-Hispanic (%)","Sex = 1 (%)",
+                  "Insurance (%)","Public","Private","Other",
+                  "Pump History > 1 Year (%)","CGM History > 1 Year (%)")
+```
+
+# Table 1: Clinical Observations
+
+```{r echo=FALSE}
+kable(t1[,1:4])
+```
+
+There were significant differences in baseline HbA1c, month 1 AM time, month 1 sensor wear, and month 1 BG checks between continuers and discontinuers. Race was also significantly different between the two groups. 
+
+Of the 28 discontinuers 2 had discontinued by month 1 (7.1%), 8 more by month 3 (28.6%), and 18 more by month 6 (64.3%).
+
+# Change in diabetes distress and FOH pre and post discontinuation
+
+```{r echo=FALSE,warning=FALSE}
+survey_change <- rbind(child_surveys_all,ya_surveys_all) %>% arrange(as.numeric(record_id))
+all_discont <- c(t1_discont,t2_discont)
+# Convert to wide
+survey_change <- reshape(survey_change[,c("record_id","Timepoint","paid_score","worry_score_z","behave_score_z")],
+                         v.names = c("paid_score","worry_score_z","behave_score_z"),
+                         timevar = "Timepoint",direction = "wide",idvar = "record_id")
+# Calculate change
+survey_change$paid_b_t1 <- 
+  survey_change$paid_score.T1-survey_change$paid_score.B
+survey_change$paid_m1_t1 <- 
+  survey_change$paid_score.T1-survey_change$paid_score.M1
+survey_change$paid_t1_t2 <- 
+  survey_change$paid_score.T2-survey_change$paid_score.T1
+survey_change$paid_b_t2 <- 
+  survey_change$paid_score.T2-survey_change$paid_score.B
+
+survey_change$worry_b_t1 <- 
+  survey_change$worry_score_z.T1 - survey_change$worry_score_z.B
+survey_change$worry_m1_t1 <- 
+  survey_change$worry_score_z.T1 - survey_change$worry_score_z.M1
+survey_change$worry_t1_t2 <- 
+  survey_change$worry_score_z.T2 - survey_change$worry_score_z.T1
+survey_change$worry_b_t2 <- 
+  survey_change$worry_score_z.T2 - survey_change$worry_score_z.B
+
+survey_change$behave_b_t1 <- 
+  survey_change$behave_score_z.T1 - survey_change$behave_score_z.B
+survey_change$behave_m1_t1 <- 
+  survey_change$behave_score_z.T1 - survey_change$behave_score_z.M1
+survey_change$behave_t1_t2 <- 
+  survey_change$behave_score_z.T2 - survey_change$behave_score_z.T1
+survey_change$behave_b_t2 <- 
+  survey_change$behave_score_z.T2 - survey_change$behave_score_z.B
+# Discontinuers only, remove unnecesssary columns
+survey_change <- survey_change %>% filter(as.numeric(record_id) %in% all_discont)
+survey_change <- rbind(c(35,rep(NA,24)),survey_change)
+# By time discontinued
+t1 <- survey_change %>% filter(record_id %in% t1_discont) %>% 
+  select(record_id,paid_m1_t1,worry_m1_t1,behave_m1_t1)
+t2 <- survey_change %>% filter(record_id %in% t2_discont) %>%
+  select(record_id,paid_t1_t2,worry_t1_t2,behave_t1_t2)
+colnames(t1) <- c("record_id","paid","worry","behave")
+colnames(t2) <- c("record_id","paid","worry","behave")
+change_no_baseline <- rbind(t1,t2)
+# Using baseline values
+t1 <- survey_change %>% filter(record_id %in% t1_discont) %>% 
+  select(record_id,paid_b_t1,worry_b_t1,behave_b_t1)
+t2 <- survey_change %>% filter(record_id %in% t2_discont) %>%
+  select(record_id,paid_b_t2,worry_b_t2,behave_b_t2)
+colnames(t1) <- c("record_id","paid","worry","behave")
+colnames(t2) <- c("record_id","paid","worry","behave")
+change_baseline <- rbind(t1,t2)
+# Results 
+vars = c("paid","worry","behave")
+no_baseline <- CreateTableOne(vars = vars,data = change_no_baseline)
+no_baseline <- as.data.frame(print(no_baseline,nonnormal = vars,printToggle = F,
+                                   missing = T))
+ps <- 
+  as.numeric(lapply(change_no_baseline[,vars], function(x) wilcox.test(x)$p.value))
+
+
+baseline <- CreateTableOne(vars = vars,data = change_baseline)
+baseline <- as.data.frame(print(baseline,nonnormal = vars,printToggle = F,
+                                missing = T))
+ps <- c(ps,as.numeric(lapply(change_baseline[,vars], 
+                             function(x) wilcox.test(x)$p.value)))
+ps <- p.adjust(ps,"fdr")
+ps <- format.pval(ps,eps = 0.001,digits = 3)
+
+no_baseline$p.value <- c("",ps[1:3])
+baseline$p.value <- c("",ps[4:6])
+colnames(no_baseline) <- c("Difference","Missing (%)","P Value")
+colnames(baseline) <- c("Difference","Missing (%)","P Value")
+```
+
+## Difference between visit prior to and visit post-discontinuation, FDR-adjusted p values
+
+```{r echo=FALSE}
+kable(no_baseline)
+```
+
+## Difference between baseline and visit post-discontinuation, FDR-adjusted p values
+
+```{r echo=FALSE}
+kable(baseline)
+```
+
+There is not a significant change in survey scores before and after discontinuation.
+
+# Predict dropout from baseline and month 1 variables
+
+```{r echo=FALSE}
+predict <- demographics %>%
+  select(record_id,hba1c_baseline,demographics_t1d_duration,
+         demographics_insurance,demographics_sex,demographics_pumphx,
+         demographics_age,demographics_cgmhx)
+predict <- left_join(predict,trained[,c("record_id","paid_score",
+                                        "behave_score_z","worry_score_z",
+                                        "continuation")],by = "record_id")
+predict <- predict %>%
+  filter(!is.na(continuation))
+
+predict <- left_join(predict,glycemic_data_6_month %>%
+                       filter(Timepoint=="M1") %>%
+                       select(record_id,am_time,sensor_wear,amexit_day,bg_checks,
+                              sensor_70_180),
+                     by= "record_id")
+
+# logistic regression
+form <- as.formula("factor(continuation) ~ hba1c_baseline + demographics_age + demographics_t1d_duration + 
+    demographics_insurance + demographics_sex + demographics_age +
+    paid_score + behave_score_z + worry_score_z + am_time + sensor_wear + 
+    amexit_day + bg_checks")
+mod <- glm(update(form,~ . -demographics_sex),family = "binomial",data = predict)
+results <- as.data.frame(summary(mod)$coefficients)
+results <- cbind(results$Estimate,confint.default(mod),results$`Pr(>|z|)`)
+results[,1:3] <- exp(results[,1:3])
+colnames(results) <- c("Estimate","2.5% CI","97.5% CI","P Value")
+kable(round(results,3))
+# Stepwise backwards selection
+step_select <- stepAIC(glm(update(form,~ . + demographics_pumphx),
+                           family = "binomial",data = predict[complete.cases(predict),]),
+                       direction = "both",trace = 0)
+# hba1c_baseline and sensor_wear kept in model when using backward selection.
+form <- update(form,~ .-hba1c_baseline+sensor_70_180)
+mod <- glm(update(form,~ . -demographics_sex),family = "binomial",data = predict)
+results <- as.data.frame(summary(mod)$coefficients)
+results <- cbind(results$Estimate,confint.default(mod),results$`Pr(>|z|)`)
+results[,1:3] <- exp(results[,1:3])
+colnames(results) <- c("Estimate","2.5% CI","97.5% CI","P Value")
+kable(round(results,3))
+# Stepwise backwards selection
+step_select <- stepAIC(glm(update(form,~ . + demographics_pumphx),
+                           family = "binomial",data = predict[complete.cases(predict),]),
+                       direction = "both",trace = 0)
+```
+
+Baseline HbA1c is the only significant predictor of discontinuation. On average, the odds of discontinuing are 2.656 times higher (95% CI: 1.123, 6.283) for each 1 unit increase in baseline HbA1c.
+
+# VAS Scores
+
+```{r echo=FALSE,warning=FALSE}
+# Rename variables
+vas <- vas_full %>% select(pid,user_or_parent,slider_cost:erroralerts_670g)
+colnames(vas) <- c("pid","user_or_parent","Cost of supplies/device",
+                   "Hassle of wearing","Look on body","Feel on body",
+                   "Nervous may not work","Worried what others will think",
+                   "Interfering with sleep","Not helping glucose levels",
+                   "Too busy to use","Too much time to make work",
+                   "Too many alarms","Can’t control insulin settings",
+                   "Interferes with daily life","Don’t understand how to use",
+                   "Causes stress with family","Not enough support",
+                   "Other devices better","Don’t want excessive data",
+                   "Difficult to calibrate","No remote monitoring",
+                   "Too many fingersticks","Too many error alerts")
+# Split by parents and users
+parents <- vas %>% filter(user_or_parent == "parent/guardian") %>% select(-user_or_parent)
+users <- vas %>% filter(user_or_parent == "670G user") %>% select(-user_or_parent)
+# Melt
+users_long <- melt(users,id.vars = "pid")
+parents_long <- melt(parents,id.vars = "pid")
+# Ranks
+users_long <- users_long %>%
+  group_by(pid) %>%
+  mutate(ranks = rank(value)) %>%
+  arrange(pid,ranks)
+parents_long <- parents_long %>%
+  group_by(pid) %>%
+  mutate(ranks = rank(value)) %>%
+  arrange(pid,ranks)
+```
+
+## Users
+
+```{r echo=FALSE,warning=FALSE,dpi=600}
+# Rank burdens
+users_rank <- users_long %>% group_by(variable) %>% 
+  summarise(n=length(which(!is.na(value))),rankmean=sum(ranks)/n,
+            median_score = median(value,na.rm = T)) %>%
+  arrange(desc(rankmean))
+```
+
+VAS Score, Sorted by Rank
+
+```{r echo=FALSE,warning=FALSE,dpi=600,fig.width=8,fig.height=5}
+# Plot, order x axis by rank
+ggplot(users_long,aes(x=variable,y=value)) + geom_boxplot(fill='#666666',width=0.3) + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 45,hjust = 1)) +
+  stat_summary(fun.y = median,geom = "label",aes(label=round(..y.., digits=2))) +
+  xlab("Variable") + 
+  ylab("VAS Score \n 0 = “Not a problem” and 100 = “Major problem”") + 
+  scale_x_discrete(limits = users_rank$variable)
+```
+
+VAS Score, Sorted by Median Score
+
+```{r echo=FALSE,warning=FALSE,dpi=600,fig.width=8,fig.height=5}
+# Plot, order x axis by median score
+ggplot(users_long,aes(x=variable,y=value)) + geom_boxplot(fill='#666666',width=0.3) + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 45,hjust = 1)) +
+  stat_summary(fun.y = median,geom = "label",aes(label=round(..y.., digits=2))) +
+  xlab("Variable") +
+  ylab("VAS Score \n 0 = “Not a problem” and 100 = “Major problem”") +
+  scale_x_discrete(limits = users_rank$variable[order(users_rank$median_score,decreasing = T)])
+```
+
+### Frequent Barriers by Rank 
+
+Higher mean rank indicates a more common barrier.
+
+```{r echo=FALSE}
+# Sum the ranks for each variable, display from highest ranked to lowest
+kable(users_rank)
+```
+
+## Parents
+
+```{r echo=FALSE,warning=FALSE,dpi=600}
+# Rank burdens
+parents_rank <- parents_long %>% group_by(variable) %>% 
+  summarise(n=length(which(!is.na(value))),rankmean=sum(ranks)/n,
+            median_score = median(value,na.rm = T)) %>%
+  arrange(desc(rankmean))
+```
+
+VAS Score, Sorted by Rank
+
+```{r echo=FALSE,warning=FALSE,dpi=600,fig.width=8,fig.height=5}
+# Plot, order x axis by rank
+ggplot(parents_long,aes(x=variable,y=value)) + geom_boxplot(fill='#666666',width=0.3) + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 45,hjust = 1)) +
+  stat_summary(fun.y = median,geom = "label",aes(label=round(..y.., digits=2))) +
+  xlab("Variable") + 
+  ylab("VAS Score \n 0 = “Not a problem” and 100 = “Major problem”") +
+  scale_x_discrete(limits = parents_rank$variable)
+```
+
+VAS Score, Sorted by Median Score
+
+```{r echo=FALSE,warning=FALSE,dpi=600,fig.width=8,fig.height=5}
+# Plot, order x axis by median score
+ggplot(parents_long,aes(x=variable,y=value)) + geom_boxplot(fill='#666666',width=0.3) + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 45,hjust = 1)) +
+  stat_summary(fun.y = median,geom = "label",aes(label=round(..y.., digits=2))) +
+  xlab("Variable") +
+  ylab("VAS Score \n 0 = “Not a problem” and 100 = “Major problem”") +
+  scale_x_discrete(limits = parents_rank$variable[order(parents_rank$median_score,decreasing = T)])
+```
+
+### Frequent Barriers by Rank 
+
+Higher mean rank indicates a more common barrier.
+
+```{r echo=FALSE}
+# Sum the ranks for each variable, display from highest ranked to lowest
+kable(parents_rank)
+```
+
+For both parents and users, calibration was the biggest barrier to continuation.
+
+# Free Text Box
+
+```{r echo=FALSE,include=FALSE}
+# Count words in text box
+text <- vas_full %>% 
+  select(pid,user_or_parent,describe_stop_hcl) %>% 
+  group_by(pid,user_or_parent) %>% 
+  summarise(word_count = length(unlist(strsplit(describe_stop_hcl," "))))
+t1_overall <- CreateTableOne("word_count",data = text)
+t1_overall <- as.data.frame(print(t1_overall,nonnormal = "word_count",minMax=T))
+t1_parent_child <- CreateTableOne("word_count",strata = "user_or_parent",data = text)
+t1_parent_child <- as.data.frame(print(t1_parent_child,nonnormal = "word_count",minMax=T))
+t1 <- cbind(t1_overall,t1_parent_child)
+```
+
+```{r echo=FALSE}
+kable(t1)
+```
+
