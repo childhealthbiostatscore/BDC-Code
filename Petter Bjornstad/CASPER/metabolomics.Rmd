@@ -19,6 +19,7 @@ library(psych)
 library(WGCNA)
 library(pheatmap)
 library(pander)
+library(parallel)
 set.seed(1017)
 ```
 
@@ -113,33 +114,44 @@ plotIndiv(plsda_true,comp = c(1,2),title = "PLS-DA Components 1 & 2",
 
 ## Permutation Testing
 
-```{r permutation testing,cache=TRUE}
-# Permutation testing - takes forever, make sure to cache
+```{r permutation testing,cache=TRUE,include=FALSE}
+# Permutation testing
 n_perm <- 1000
-aucs1 <- vector(mode="numeric", length=n_perm)
-aucs2 <- vector(mode="numeric", length=n_perm)
-for (i in 1:n_perm) {
+# Parallel
+cl = makeCluster(12)
+clusterEvalQ(cl, library(mixOmics))
+#You need to load your data into the cluster also
+clusterExport(cl, "X")
+clusterExport(cl, "df")
+aucs = clusterApply(cl,c(1:n_perm),function(i){
+  set.seed(1+i)
   Y <- sample(df$group,replace = F)
   plsda_res <- plsda(X,Y,ncomp = 2)
   perf_plsda <- perf(plsda_res,progressBar=FALSE, auc=TRUE,
                      validation = "loo")
-  aucs1[i] <- as.numeric(perf_plsda$auc$comp1["AUC.mean"])
-  aucs2[i] <- as.numeric(perf_plsda$auc$comp2["AUC.mean"])
-}
+  auc1 <- as.numeric(perf_plsda$auc$comp1["AUC.mean"])
+  auc2 <- as.numeric(perf_plsda$auc$comp2["AUC.mean"])
+  return(c(auc1,auc2))
+})
+stopCluster(cl)
+aucs = as.data.frame(do.call(rbind,aucs))
+```
+
+```{r plot perms}
 # Plot for each component
-plot1 <- ggplot(as.data.frame(aucs1),aes(x=aucs1)) + 
+plot1 <- ggplot(aucs,aes(x=V1)) + 
   geom_histogram(binwidth = 0.01) + 
   geom_vline(aes(xintercept=auc_true1),color="red") + 
   theme_bw() + xlab("AUC") + ggtitle("Component 1")
 plot1
-plot2 <- ggplot(as.data.frame(aucs2),aes(x=aucs2)) + 
+plot2 <- ggplot(aucs,aes(x=V2)) + 
   geom_histogram(binwidth = 0.01) + 
   geom_vline(aes(xintercept=auc_true2),color="red") + 
   theme_bw() + xlab("AUC") + ggtitle("Component 2")
 plot2
 # Permutation p values
-p1 <- (sum(aucs1 > auc_true1) + 1) / (length(aucs1) + 1)
-p2 <- (sum(aucs2 > auc_true2) + 1) / (length(aucs2) + 1)
+p1 <- (sum(aucs$V1 > auc_true1) + 1) / (length(aucs$V1) + 1)
+p2 <- (sum(aucs$V2 > auc_true2) + 1) / (length(aucs$V2) + 1)
 ```
 
 Group labels were permuted `r n_perm` times. Two component PLS-DA was run for each permutation and AUC was calculated using LOO CV. Red line indicates the AUC calculated for non-permuted data, and the gray histogram represents the null distribution of AUC. So, the permutation-based p value for AUC of component 1 is `r format.pval(p1,eps = 0.001)` and is `r  format.pval(p2,eps = 0.001)` for component 2. In other words, it's likely that PLS-DA is finding genuine differences between group 1 and group 4 and the AUC is not purely due to overfitting.
@@ -316,7 +328,7 @@ MEs = net$MEs
 geneTree = net$dendrograms[[1]]
 # Recalculate MEs with color labels
 MEs = orderMEs(moduleEigengenes(X[,1:5000],
-                              labels2colors(net$colors))$eigengenes)
+                                labels2colors(net$colors))$eigengenes)
 moduleTraitCor = cor(MEs, traits, use = "pairwise.complete.obs")
 moduleTraitPvalue = corPvalueStudent(moduleTraitCor, nrow(X))
 # Heatmap
