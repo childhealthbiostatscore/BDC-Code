@@ -1,0 +1,64 @@
+---
+title: "Metabolon insulin sensitivity pilot - lipidomics"
+author: "Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+
+knitr::opts_chunk$set(echo = FALSE,cache = FALSE)
+
+library(tableone)
+library(limma)
+
+# read in data
+lipids <- read.csv("T:\\CACTI\\Metabolon insulin resistance pilot\\Lipidomics\\Data_raw\\Lipidomics_Cleaning_Final_combined.csv")
+# fix typo
+lipids[lipids$StudyID==2008,]$StudyID <- 1008
+# convert all values to numeric
+for (i in 3:ncol(lipids)){
+  lipids[,i] <- as.numeric(as.character(lipids[,i]))
+}
+
+# read in clamp data
+# tertiles of GIR are 3.8 and 5.4 for T1D, for control are 10.3 and 13.67
+clamp <- read.csv("S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Lipidomics\\Data_raw\\QClampHormones_All Dataset.csv")
+clamp$diabetes <- ifelse(!is.na(clamp$duration),1,0)
+sampledata <- clamp[,c("StudyID","S3_GIR","diabetes")]
+sampledata$GIR_cat <- ifelse((sampledata$diabetes==1 & sampledata$S3_GIR<3.8) |
+                               (sampledata$diabetes==0 & sampledata$S3_GIR<10.3),1,
+                             ifelse((sampledata$diabetes==1 & sampledata$S3_GIR<5.4) |
+                                      (sampledata$diabetes==0 & sampledata$S3_GIR<13.67),2,3))
+
+# merge lipidomics and clamp data
+alldata <- merge(lipids,sampledata,by="StudyID",all.x = T,all.y = F)
+
+# create correct matrix for limma
+# first the comparison of T1D vs. control
+dia_contrast <- ifelse(alldata$diabetes==1,1,0)
+dia_contrast <- cbind(rep(1,nrow(alldata)),dia_contrast)
+# diabetes specific tertiles of GFR
+GIR_contrast <- ifelse(alldata$GIR_cat==3,1,0)
+GIR_contrast <- cbind(rep(1,nrow(alldata)),GIR_contrast)
+
+# pull out the lipids and transpose for limma
+ymat <- t(alldata[,3:147])
+
+# model for T1D vs. control
+fit_dia <- lmFit(ymat,dia_contrast)
+fit_dia <- eBayes(fit_dia)
+# format results
+results_dia <- topTable(fit_dia,coef = 2,number = nrow(ymat))
+write.csv(results_dia,"T:\\CACTI\\Metabolon insulin resistance pilot\\Reports\\lipidomics_T1D.csv")
+
+# model for GIR
+fit_gir <- lmFit(ymat,GIR_contrast)
+fit_gir <- eBayes(fit_gir)
+# format results
+results_gir <- topTable(fit_gir,coef = 2,number = nrow(ymat))
+write.csv(results_gir,"T:\\CACTI\\Metabolon insulin resistance pilot\\Reports\\lipidomics_gir.csv")
+
+
+```

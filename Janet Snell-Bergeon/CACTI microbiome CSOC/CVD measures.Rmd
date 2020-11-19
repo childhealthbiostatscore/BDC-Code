@@ -1,0 +1,108 @@
+---
+title: "CACTI Study CVD Measures"
+author: "Laura Pyle, PhD"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(readxl)
+library(magrittr)
+library(purrr)
+library(readr)
+library(tableone)
+library(Hmisc)
+library(labelled)
+
+# read in raw data
+cat <- read.csv("S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\CACTI oral microbiome\\Blinded CSOC report\\Data\\Blinded category.csv")
+pwa <- read.csv("S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\CACTI oral microbiome\\Blinded CSOC report\\Data\\PWA.csv")
+pwv <- read.csv("S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\CACTI oral microbiome\\Blinded CSOC report\\Data\\PWV.csv")
+cIMT <- read.csv("S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\CACTI oral microbiome\\Blinded CSOC report\\Data\\cIMT.csv")
+BrachD <- read.csv("S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\CACTI oral microbiome\\Blinded CSOC report\\Data\\BrachD.csv")
+
+# clean up extra rows
+cat <- cat[!is.na(cat$StudyID),] # N=607
+pwa <- pwa[!is.na(pwa$StudyID),]
+pwv <- pwv[!is.na(pwv$StudyID),]
+cIMT <- cIMT[!is.na(cIMT$StudyID),]
+BrachD <- BrachD[!is.na(BrachD$StudyID),]
+
+# for cIMT, take largest of left and right mean, unless only one side
+for (i in 1:nrow(cIMT)) {
+  cIMT$cIMT[i] <- ifelse(is.na(cIMT$CIMT_LeftMean[i]) & is.na(cIMT$CIMT_RightMean[i]),NA,max(cIMT$CIMT_LeftMean[i],cIMT$CIMT_RightMean[i],na.rm = TRUE))
+}
+
+# for PWV, PWA, BD, average per person
+pwv_mean <- aggregate(pwv[,4:5],by=list(pwv$StudyID),mean,na.rm=TRUE)
+colnames(pwv_mean) <- c("StudyID","MeanHeartRate","MeanPulseWaveVelocity")
+pwv_mean <- pwv_mean[!is.na(pwv_mean$MeanHeartRate),]
+
+pwa_mean <- aggregate(pwa[,4:6],by=list(pwa$StudyID),mean,na.rm=TRUE)
+colnames(pwa_mean) <- c("StudyID","C_Ap","C_Ph","C_Agph")
+pwa_mean <- pwa_mean[!is.na(pwa_mean$C_Ph),]
+
+bd_mean <- aggregate(BrachD[,4],by=list(BrachD$StudyID),mean,na.rm=TRUE)
+colnames(bd_mean) <- c("StudyID","BA_Distensibilty")
+bd_mean <- bd_mean[!is.na(bd_mean$BA_Distensibilty),]
+
+# merge data by StudyID
+alldata <- merge(cat,pwa_mean,by="StudyID",all.x=TRUE,all.y=TRUE)
+alldata <- merge(alldata,pwv_mean,by="StudyID",all.x=TRUE,all.y=TRUE)
+alldata <- merge(alldata,bd_mean,by="StudyID",all.x=TRUE,all.y=TRUE)
+alldata <- merge(alldata,cIMT,by="StudyID",all.x=TRUE,all.y=TRUE)
+alldata[alldata$StudyID=="",] <- NA
+alldata <- alldata[!is.na(alldata$StudyID),]
+
+# currently there is one ppt with Group.Status="N" - take them out for now
+alldata <- alldata[alldata$Group.Status=="A" | alldata$Group.Status=="B",]
+alldata$Group.Status <- factor(alldata$Group.Status)
+
+# some people have 0 values for BD, set to missing
+alldata$BA_Distensibilty[alldata$BA_Distensibilty==0] <- NA
+
+# get rid of people missing all data 
+alldata <- alldata[!is.na(alldata$C_Ap) | !is.na(alldata$C_Ph) | !is.na(alldata$C_Agph) | !is.na(alldata$MeanHeartRate) |
+                     !is.na(alldata$MeanPulseWaveVelocity) | !is.na(alldata$BA_Distensibilty) | !is.na(alldata$cIMT),]
+
+# count number of each measure
+n_C_Ap <- nrow(alldata[!is.na(alldata$C_Ap),])
+n_C_Ph <- nrow(alldata[!is.na(alldata$C_Ph),])
+n_C_Agph <- nrow(alldata[!is.na(alldata$C_Agph),])
+n_HR <- nrow(alldata[!is.na(alldata$MeanHeartRate),])
+n_PWV <- nrow(alldata[!is.na(alldata$MeanPulseWaveVelocity),])
+n_BD <- nrow(alldata[!is.na(alldata$BA_Distensibilty),])
+n_cIMT <- nrow(alldata[!is.na(alldata$cIMT),])
+
+# labels
+var_label(alldata$cIMT)="cIMT (mm)"
+var_label(alldata$C_Ap)="Augmented Pressure (mmHg)"
+var_label(alldata$C_Agph)="Augmentation Index (%)"
+var_label(alldata$BA_Distensibilty)="Brachial Distensibility (%/mmHg)"
+var_label(alldata$MeanPulseWaveVelocity)="Pulse Wave Velocity (m/s)"
+
+myvars <- c("C_Ap","C_Agph","MeanPulseWaveVelocity","BA_Distensibilty","cIMT")
+tab <- CreateTableOne(vars=myvars, strata="Group.Status",data=alldata, test=FALSE)
+tab <- print(tab,varLabels=TRUE)
+
+```
+
+# Background
+
+The CACTI Study Clinical Study Oversight Committee (CSOC) is concerned that there may not be enough subclinical cardiovascular disease (CVD) in the non-diabetic group to answer the research question.  The CSOC has requested a closed report with means and standard deviations of all CVD measures, stratified by study group, as part of the interim report.  This table should be developed and provided by a blinded statistician.
+
+# Methods
+
+The CVD outcomes data were provided to the blinded statistician, along with blinded group memberships.  Participants with at least one CVD measure were included in this report.  For cIMT, the maximum of the left and right sides was used in analysis.  For pulse wave velocity, Augmentation Index, augmented pressure, and brachial distensitiblity, the mean of a participant's multiple measures was used in analysis.
+
+Participants were stratified by group and descriptive statistics were calculated.
+
+# Results
+
+Table 1 provides descriptive statistics for the CVD measures, by blinded study group.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kableone(tab,caption="Table 1.  Descriptive statistics for CVD measures, by blinded study group.")
+```

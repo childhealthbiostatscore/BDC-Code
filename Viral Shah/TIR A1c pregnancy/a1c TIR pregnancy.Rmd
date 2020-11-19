@@ -1,0 +1,425 @@
+---
+title: "A1c and TIR in pregnancy"
+author: "Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(plyr)
+library(Hmisc)
+library(tidyverse)
+library(broom)
+library(tableone)
+library(ggplot2)
+library(knitr)
+library(sjlabelled)
+
+# read in data from Sarit's primary analysis
+alldata <- read.csv("S:\\Shared Projects\\Laura\\BDC\\Projects\\Viral Shah\\TIR and A1c in pregnancy\\Data Cleaned\\for_viral.csv")
+alldata <- alldata[!is.na(alldata$trimester),]
+
+# read in SMBG data
+source("S:\\Shared Projects\\Laura\\BDC\\Projects\\Viral Shah\\TIR and A1c in pregnancy\\Data Raw\\PregnancyCGM-SMBG_R_2020-02-28_1912.r")
+data <- data[!is.na(data$day1_date),]
+data <- data[!(data$redcap_event_name %in% c("baseline_informati_arm_1","postpartum_arm_1","preconception_arm_1",
+                                              "retinopathy_arm_1")),]
+data$redcap_event_name <- factor(data$redcap_event_name)
+data$visit <- ifelse(data$redcap_event_name=="visit_10_22_to_24_arm_1",10,
+                     ifelse(data$redcap_event_name=="visit_15_32_to_34_arm_1",15,
+                            ifelse(data$redcap_event_name=="visit_16_34_to_36_arm_1",16,
+                            ifelse(data$redcap_event_name=="visit_3_8_to_10_we_arm_1",3,
+                                   ifelse(data$redcap_event_name=="visit_4_10_to_12_w_arm_1",4,
+                                          ifelse(data$redcap_event_name=="visit_9_20_to_22_w_arm_1",9,NA))))))
+# assign trimester to SMBG data
+data$trimester <- ifelse(data$visit %in% c(1,2,3,4),1,
+                         ifelse(data$visit %in% c(5,6,7,8,9,10,11,12),2,
+                                ifelse(data$visit %in% c(15,16),3,NA)))
+
+# function to calculate % of daily readings between 63-140
+calc_smbg_tir <- function(a,b,c,d,e,f,g,h) {
+  smbg_tir <- NULL
+  for (i in 1:nrow(data)) {
+    temp <- as.data.frame(c(a[i],b[i],c[i],d[i],e[i],f[i],g[i],h[i]))
+    temp <- drop_na(temp)
+    names(temp) <- "smbg"
+    if (nrow(temp)==0) {temp_tir <- NA}
+    else {
+      for (j in 1:nrow(temp)) {
+        temp$inrange[j] <- ifelse(temp$smbg[j]>=63 && temp$smbg[j]<=140,1,0)
+      }
+      temp_tir <- (sum(temp$inrange) / nrow(temp))*100
+    }
+    smbg_tir <- c(smbg_tir,temp_tir)
+  }
+return(smbg_tir)
+}
+data$smbg_tir1 <- calc_smbg_tir(data$day1_brkft_pre,data$day1_brkft_post,data$day1_lunch_pre,data$day1_lunch_post,
+                      data$day1_din_pre,data$day1_din_post,data$day1_bed_pre,data$day1_bed_post)
+data$smbg_tir2 <- calc_smbg_tir(data$day2_brkft_pre,data$day2_brkft_post,data$day2_lunch_pre,data$day2_lunch_post,
+                      data$day2_din_pre,data$day2_din_post,data$day2_bed_pre,data$day2_bed_post)
+data$smbg_tir3 <- calc_smbg_tir(data$day3_brkft_pre,data$day3_brkft_post,data$day3_lunch_pre,data$day3_lunch_post,
+                      data$day3_din_pre,data$day3_din_post,data$day3_bed_pre,data$day3_bed_post)
+data$smbg_tir4 <- calc_smbg_tir(data$day4_brkft_pre,data$day4_brkft_post,data$day4_lunch_pre,data$day4_lunch_post,
+                      data$day4_din_pre,data$day4_din_post,data$day4_bed_pre,data$day4_bed_post)
+data$smbg_tir5 <- calc_smbg_tir(data$day5_brkft_pre,data$day5_brkft_post,data$day5_lunch_pre,data$day5_lunch_post,
+                      data$day5_din_pre,data$day5_din_post,data$day5_bed_pre,data$day5_bed_post)
+data$smbg_tir6 <- calc_smbg_tir(data$day6_brkft_pre,data$day6_brkft_post,data$day6_lunch_pre,data$day6_lunch_post,
+                      data$day6_din_pre,data$day6_din_post,data$day6_bed_pre,data$day6_bed_post)
+data$smbg_tir7 <- calc_smbg_tir(data$day7_brkft_pre,data$day7_brkft_post,data$day7_lunch_pre,data$day7_lunch_post,
+                      data$day7_din_pre,data$day7_din_post,data$day7_bed_pre,data$day7_bed_post)
+data$smbg_tir_mean <- + colMeans(data[,c("smbg_tir1","smbg_tir2","smbg_tir3","smbg_tir4","smbg_tir5","smbg_tir6","smbg_tir7")],na.rm = T)
+
+# function to calculate % of daily readings <63
+calc_smbg_tbr <- function(a,b,c,d,e,f,g,h) {
+  smbg_tbr <- NULL
+  for (i in 1:nrow(data)) {
+    temp <- as.data.frame(c(a[i],b[i],c[i],d[i],e[i],f[i],g[i],h[i]))
+    temp <- drop_na(temp)
+    names(temp) <- "smbg"
+    if (nrow(temp)==0) {temp_tbr <- NA}
+    else {
+      for (j in 1:nrow(temp)) {
+        temp$br[j] <- ifelse(!is.na(temp$smbg[j]) && temp$smbg[j]<63,1,0)
+      }
+      temp_tbr <- (sum(temp$br) / nrow(temp))*100
+    }
+    smbg_tbr <- c(smbg_tbr,temp_tbr)
+  }
+return(smbg_tbr)
+}
+data$smbg_tbr1 <- calc_smbg_tbr(data$day1_brkft_pre,data$day1_brkft_post,data$day1_lunch_pre,data$day1_lunch_post,
+                      data$day1_din_pre,data$day1_din_post,data$day1_bed_pre,data$day1_bed_post)
+data$smbg_tbr2 <- calc_smbg_tbr(data$day2_brkft_pre,data$day2_brkft_post,data$day2_lunch_pre,data$day2_lunch_post,
+                      data$day2_din_pre,data$day2_din_post,data$day2_bed_pre,data$day2_bed_post)
+data$smbg_tbr3 <- calc_smbg_tbr(data$day3_brkft_pre,data$day3_brkft_post,data$day3_lunch_pre,data$day3_lunch_post,
+                      data$day3_din_pre,data$day3_din_post,data$day3_bed_pre,data$day3_bed_post)
+data$smbg_tbr4 <- calc_smbg_tbr(data$day4_brkft_pre,data$day4_brkft_post,data$day4_lunch_pre,data$day4_lunch_post,
+                      data$day4_din_pre,data$day4_din_post,data$day4_bed_pre,data$day4_bed_post)
+data$smbg_tbr5 <- calc_smbg_tbr(data$day5_brkft_pre,data$day5_brkft_post,data$day5_lunch_pre,data$day5_lunch_post,
+                      data$day5_din_pre,data$day5_din_post,data$day5_bed_pre,data$day5_bed_post)
+data$smbg_tbr6 <- calc_smbg_tbr(data$day6_brkft_pre,data$day6_brkft_post,data$day6_lunch_pre,data$day6_lunch_post,
+                      data$day6_din_pre,data$day6_din_post,data$day6_bed_pre,data$day6_bed_post)
+data$smbg_tbr7 <- calc_smbg_tbr(data$day7_brkft_pre,data$day7_brkft_post,data$day7_lunch_pre,data$day7_lunch_post,
+                      data$day7_din_pre,data$day7_din_post,data$day7_bed_pre,data$day7_bed_post)
+data$smbg_tbr_mean <- + colMeans(data[,c("smbg_tbr1","smbg_tbr2","smbg_tbr3","smbg_tbr4","smbg_tbr5","smbg_tbr6","smbg_tbr7")],na.rm = T)
+
+# function to calculate % of daily readings >140
+calc_smbg_tar <- function(a,b,c,d,e,f,g,h) {
+  smbg_tar <- NULL
+  for (i in 1:nrow(data)) {
+    temp <- as.data.frame(c(a[i],b[i],c[i],d[i],e[i],f[i],g[i],h[i]))
+    temp <- drop_na(temp)
+    names(temp) <- "smbg"
+    if (nrow(temp)==0) {temp_tar <- NA}
+    else {
+      for (j in 1:nrow(temp)) {
+        temp$ar[j] <- ifelse(!is.na(temp$smbg[j]) && temp$smbg[j]>140,1,0)
+      }
+      temp_tar <- (sum(temp$ar) / nrow(temp))*100
+    }
+    smbg_tar <- c(smbg_tar,temp_tar)
+  }
+return(smbg_tar)
+}
+data$smbg_tar1 <- calc_smbg_tar(data$day1_brkft_pre,data$day1_brkft_post,data$day1_lunch_pre,data$day1_lunch_post,
+                      data$day1_din_pre,data$day1_din_post,data$day1_bed_pre,data$day1_bed_post)
+data$smbg_tar2 <- calc_smbg_tar(data$day2_brkft_pre,data$day2_brkft_post,data$day2_lunch_pre,data$day2_lunch_post,
+                      data$day2_din_pre,data$day2_din_post,data$day2_bed_pre,data$day2_bed_post)
+data$smbg_tar3 <- calc_smbg_tar(data$day3_brkft_pre,data$day3_brkft_post,data$day3_lunch_pre,data$day3_lunch_post,
+                      data$day3_din_pre,data$day3_din_post,data$day3_bed_pre,data$day3_bed_post)
+data$smbg_tar4 <- calc_smbg_tar(data$day4_brkft_pre,data$day4_brkft_post,data$day4_lunch_pre,data$day4_lunch_post,
+                      data$day4_din_pre,data$day4_din_post,data$day4_bed_pre,data$day4_bed_post)
+data$smbg_tar5 <- calc_smbg_tar(data$day5_brkft_pre,data$day5_brkft_post,data$day5_lunch_pre,data$day5_lunch_post,
+                      data$day5_din_pre,data$day5_din_post,data$day5_bed_pre,data$day5_bed_post)
+data$smbg_tar6 <- calc_smbg_tar(data$day6_brkft_pre,data$day6_brkft_post,data$day6_lunch_pre,data$day6_lunch_post,
+                      data$day6_din_pre,data$day6_din_post,data$day6_bed_pre,data$day6_bed_post)
+data$smbg_tar7 <- calc_smbg_tar(data$day7_brkft_pre,data$day7_brkft_post,data$day7_lunch_pre,data$day7_lunch_post,
+                      data$day7_din_pre,data$day7_din_post,data$day7_bed_pre,data$day7_bed_post)
+data$smbg_tar_mean <- + colMeans(data[,c("smbg_tar1","smbg_tar2","smbg_tar3","smbg_tar4","smbg_tar5","smbg_tar6","smbg_tar7")],na.rm = T)
+
+data_keep <- data[,c("subject_id","trimester","visit","smbg_tir_mean","smbg_tbr_mean","smbg_tar_mean")]
+# no one has more than one SMBG profile per trimester
+
+# merge datasets together
+# we now have one record per participant and visit
+# need to somehow summarize over trimester or account for correlation
+alldata <- merge(alldata,data_keep,by=c("subject_id","trimester","visit"),all.x = T, all.y = F)
+
+# make a demographics dataset 
+demo <- alldata[,c("subject_id","trimester","visit","age_baseline","bmi","ethnicity","bp","tc","cur_cig","past_cig",
+                   "ins_delivery","dm_duration","ins_basal_dose","ins_bolus_dose","a1c_precon")]
+demo <- demo[!duplicated(demo$subject_id), ]
+demo$subject_id <- droplevels(demo$subject_id)
+demo$age_baseline <- set_label(demo$age_baseline,"Age at baseline")
+demo$bmi <- set_label(demo$bmi,"BMI")
+demo$ethnicity <- set_label(demo$ethnicity,"Ethnicity")
+demo$bp <- set_label(demo$bp,"Hypertension")
+demo$tc <- set_label(demo$tc,"Hypercholesterolemia")
+demo$cur_cig <- set_label(demo$cur_cig,"Current smoker")
+demo$past_cig <- set_label(demo$past_cig,"Past smoker")
+demo$ins_delivery <- set_label(demo$ins_delivery,"Insulin delivery method")
+demo$dm_duration <- set_label(demo$dm_duration,"Diabetes duration")
+demo$ins_basal_dose <- set_label(demo$ins_basal_dose,"Insulin basal dose")
+demo$ins_bolus_dose <- set_label(demo$ins_bolus_dose,"Insulin bolus dose")
+demo$a1c_precon <- set_label(demo$a1c_precon,"Preconception A1c")
+ 
+demotab <- CreateTableOne(vars=c("age_baseline","bmi","ethnicity","bp","tc",
+                               "cur_cig","past_cig","ins_delivery","dm_duration","ins_basal_dose",
+                               "ins_bolus_dose","a1c_precon"),data = demo)
+demotab <- print(demotab,printToggle = F,varLabels=TRUE,missing=T)
+
+# keep only the variables we need
+# make a dataset with one record per trimester
+final <- alldata[c("subject_id","trimester","visit","a1c_trimester_mean","per_in_range_63_140","percent_time_over_140",
+                   "percent_time_under_63","gmi","estimated_a1c","smbg_tir_mean","smbg_tbr_mean","smbg_tar_mean")]
+final <- final[with(final, order(subject_id,trimester,-smbg_tir_mean)), ]
+final <- final %>% group_by(subject_id,trimester) %>% filter(row_number()==1)
+
+# labels
+final$a1c_trimester_mean <- set_label(final$a1c_trimester_mean,"HbA1c")
+final$per_in_range_63_140 <- set_label(final$per_in_range_63_140,"TIR 63-140")
+final$gmi <- set_label(final$gmi,"GMI")
+final$estimated_a1c <- set_label(final$estimated_a1c,"ADA eA1c")
+final$smbg_tir_mean <- set_label(final$smbg_tir_mean,"TIR by SMBG")
+final$smbg_tbr_mean <- set_label(final$smbg_tbr_mean,"TBR by SMBG")
+final$smbg_tar_mean <- set_label(final$smbg_tar_mean,"TAR by SMBG")
+
+# number of subjects
+nsubj <- length(unique(final$subject_id))
+
+corfun<-function(x, y) {
+  corr=(cor.test(x, y,
+                 alternative="two.sided", method="pearson",na.action="na.omit"))
+}
+
+cor_tir <- ddply(final, .(trimester), summarise,corr=round(corfun(a1c_trimester_mean,per_in_range_63_140)$estimate,3),
+       pval=round(corfun(a1c_trimester_mean,per_in_range_63_140)$p.value,4))
+
+cor_gmi <- ddply(final, .(trimester), summarise,corr=round(corfun(a1c_trimester_mean,gmi)$estimate,3),
+       pval=round(corfun(a1c_trimester_mean,gmi)$p.value,4))
+
+cor_ea1c <- ddply(final, .(trimester), summarise,corr=round(corfun(a1c_trimester_mean,estimated_a1c)$estimate,3),
+       pval=round(corfun(a1c_trimester_mean,estimated_a1c)$p.value,4))
+
+cor_smbg_tir <- ddply(final, .(trimester), summarise,corr=round(corfun(a1c_trimester_mean,smbg_tir_mean)$estimate,3),
+       pval=round(corfun(a1c_trimester_mean,smbg_tir_mean)$p.value,4))
+
+cor_tir_tir <- ddply(final, .(trimester), summarise,corr=round(corfun(per_in_range_63_140,smbg_tir_mean)$estimate,3),
+       pval=round(corfun(a1c_trimester_mean,smbg_tir_mean)$p.value,4))
+
+cor_tir_gmi <- ddply(final, .(trimester), summarise,corr=round(corfun(per_in_range_63_140,gmi)$estimate,3),
+       pval=round(corfun(a1c_trimester_mean,gmi)$p.value,4))
+
+taboutvars <- c("a1c_trimester_mean","per_in_range_63_140","percent_time_over_140", "percent_time_under_63",
+                "gmi","estimated_a1c","smbg_tir_mean","smbg_tbr_mean","smbg_tar_mean")
+t1 <- CreateTableOne(vars = taboutvars,data = final, strata = "trimester")
+t1 <- print(t1,printToggle = F,varLabels=TRUE,missing=T)
+
+# regress A1c on TIR and get predicted A1c for 10% increases in TIR
+model <- lm(a1c_trimester_mean ~ per_in_range_63_140, data=final)
+newdata <- as.data.frame(c(10,20,30,40,50,60,70,80,90))
+names(newdata) <- "per_in_range_63_140"
+p <- predict.lm(model,newdata,se.fit = T)
+p <- cbind(newdata,p)
+p <- p[,1:3]
+
+# regress A1c on GMI and get predicted A1c for 10% increases in TIR
+model_gmi <- lm(gmi ~ per_in_range_63_140, data=final)
+newdata_gmi <- as.data.frame(c(10,20,30,40,50,60,70,80,90))
+names(newdata_gmi) <- "per_in_range_63_140"
+p_gmi <- predict.lm(model_gmi,newdata_gmi,se.fit = T)
+p_gmi <- cbind(newdata_gmi,p_gmi)
+p_gmi <- p_gmi[,1:3]
+
+# regress A1c on TIR and get predicted A1c for 10% increases in TIR BY TRIMESTER
+model1 <- lm(a1c_trimester_mean ~ per_in_range_63_140, data=final[final$trimester==1,])
+newdata <- as.data.frame(c(10,20,30,40,50,60,70,80,90))
+names(newdata) <- "per_in_range_63_140"
+p1 <- predict.lm(model1,newdata,se.fit = T)
+p1 <- cbind(newdata,p1)
+p1 <- p1[,1:3]
+# T2
+model2 <- lm(a1c_trimester_mean ~ per_in_range_63_140, data=final[final$trimester==2,])
+newdata <- as.data.frame(c(10,20,30,40,50,60,70,80,90))
+names(newdata) <- "per_in_range_63_140"
+p2 <- predict.lm(model2,newdata,se.fit = T)
+p2 <- cbind(newdata,p2)
+p2 <- p2[,1:3]
+# T3
+model3 <- lm(a1c_trimester_mean ~ per_in_range_63_140, data=final[final$trimester==3,])
+newdata <- as.data.frame(c(10,20,30,40,50,60,70,80,90))
+names(newdata) <- "per_in_range_63_140"
+p3 <- predict.lm(model3,newdata,se.fit = T)
+p3 <- cbind(newdata,p3)
+p3 <- p3[,1:3]
+
+# regress A1c on GMI and get predicted A1c for 10% increases in TIR BY TRIMESTER
+model_gmi1 <- lm(gmi ~ per_in_range_63_140, data=final[final$trimester==1,])
+newdata_gmi <- as.data.frame(c(10,20,30,40,50,60,70,80,90))
+names(newdata_gmi) <- "per_in_range_63_140"
+p_gmi1 <- predict.lm(model_gmi1,newdata_gmi,se.fit = T)
+p_gmi1 <- cbind(newdata_gmi,p_gmi1)
+p_gmi1 <- p_gmi1[,1:3]
+# T2
+model_gmi2 <- lm(gmi ~ per_in_range_63_140, data=final[final$trimester==2,])
+newdata_gmi <- as.data.frame(c(10,20,30,40,50,60,70,80,90))
+names(newdata_gmi) <- "per_in_range_63_140"
+p_gmi2 <- predict.lm(model_gmi2,newdata_gmi,se.fit = T)
+p_gmi2 <- cbind(newdata_gmi,p_gmi2)
+p_gmi2 <- p_gmi2[,1:3]
+# T3
+model_gmi3 <- lm(gmi ~ per_in_range_63_140, data=final[final$trimester==3,])
+newdata_gmi <- as.data.frame(c(10,20,30,40,50,60,70,80,90))
+names(newdata_gmi) <- "per_in_range_63_140"
+p_gmi3 <- predict.lm(model_gmi3,newdata_gmi,se.fit = T)
+p_gmi3 <- cbind(newdata_gmi,p_gmi3)
+p_gmi3 <- p_gmi3[,1:3]
+
+```
+
+# Background
+
+The purpose of this analysis is to examine the assocations between point-of-care HbA1c, CGM variables (GMI, ADAG eA1c), and TIR by SMBG.
+
+# Methods
+
+If a participant had multiple HbA1c values during a trimester, the mean of these values was used in analysis.  The TIR by SMBG per day was calculated as the number of SMBG readings between 63-140 mg/dL during the day divided by the number of SMBG readings taken that day, and then the mean TIR was calculated across the 7 day period.  Pearson correlation coefficients were calculated to examine associations between variables of interest.
+
+# Results
+
+A total of `r nsubj` participants were included in this analysis.  Participant characteristics are shown in Table 1.
+
+```{r, echo=FALSE}
+kable(demotab,caption = "Table 1.  Participant characteristics.  Statistics presented are mean (SD), median [25th %ile, 75th %ile], or N(%).")
+```
+<br>
+
+\newpage
+
+Descriptive statistics by trimester are shown in Table 2.
+
+```{r, echo=FALSE}
+kable(t1,caption = "Table 2.  Descriptive statistics by trimester.  Statistics presented are mean (SD), median [25th %ile, 75th %ile], or N(%).")
+```
+<br>
+
+\newpage
+
+```{r, echo=FALSE}
+kable(cor_tir,caption = "Correlation of TIR by CGM with HbA1c by trimester.")
+```
+<br>
+
+```{r, echo=FALSE}
+kable(cor_gmi,caption = "Correlation of GMI by CGM with HbA1c by trimester.")
+```
+<br>
+
+```{r, echo=FALSE}
+kable(cor_ea1c,caption = "Correlation of ADAG eA1c by CGM with HbA1c by trimester.")
+```
+<br>
+
+```{r, echo=FALSE}
+kable(cor_smbg_tir,caption = "Correlation of SMBG TIR with HbA1c by trimester.")
+```
+<br>
+
+```{r, echo=FALSE}
+kable(cor_tir_tir,caption = "Correlation of SMBG TIR with TIR by CGM.")
+```
+<br>
+
+```{r, echo=FALSE}
+kable(cor_tir_gmi,caption = "Correlation of TIR by CGM with GMI.")
+```
+<br>
+
+\newpage
+
+The figure below shows the association of HbA1c and TIR by CGM by trimester.
+
+```{r echo=FALSE,warning=FALSE,dpi=600,fig.width=8,fig.height=5}
+ggplot(final, aes(x=a1c_trimester_mean,y=per_in_range_63_140,color=as.factor(trimester))) + geom_point() + geom_smooth(method=lm) + xlab("HbA1c (%)") + ylab("TIR by CGM") + 
+  scale_color_manual("Trimester",values=c("#898c89","#575957","#191a19")) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"))
+ 
+```
+
+The figure below shows the association of HbA1c and GMI by trimester.
+
+```{r echo=FALSE,warning=FALSE,dpi=600,fig.width=8,fig.height=5}
+ggplot(final, aes(x=a1c_trimester_mean,y=gmi,color=as.factor(trimester))) + geom_point() + geom_smooth(method=lm) + xlab("HbA1c (%)") + ylab("GMI by CGM") + 
+  scale_color_manual("Trimester",values=c("#898c89","#575957","#191a19")) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"))
+ 
+```
+
+The figure below shows the association of TIR and GMI by trimester.
+
+```{r echo=FALSE,warning=FALSE,dpi=600,fig.width=8,fig.height=5}
+ggplot(final, aes(x=per_in_range_63_140,y=gmi,color=as.factor(trimester))) + geom_point() + geom_smooth(method=lm) + xlab("TIR by CGM") + ylab("GMI by CGM") + 
+  scale_color_manual("Trimester",values=c("#898c89","#575957","#191a19")) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black"))
+ 
+```
+
+For a 10% increase in % TIR by CGM, there was a `r round(model$coefficients[2]*10,2)`% change in HbA1c.
+
+```{r, echo=FALSE}
+kable(p,caption = "Predicted values ('fit') and associated standard errors of HbA1c for various levels of % TIR by CGM.")
+```
+<br>
+
+For a 10% increase in % TIR by CGM, there was a `r round(model_gmi$coefficients[2]*10,2)` change in GMI.
+
+
+```{r, echo=FALSE}
+kable(p_gmi,caption = "Predicted values ('fit') and associated standard errors of GMI for various levels of % TIR by CGM.")
+```
+<br>
+
+For a 10% increase in % TIR by CGM, there was a `r round(model1$coefficients[2]*10,2)`% change in HbA1c.
+
+```{r, echo=FALSE}
+kable(p1,caption = "Predicted values ('fit') and associated standard errors of HbA1c for various levels of % TIR by CGM, 1st trimester.")
+```
+<br>
+
+For a 10% increase in % TIR by CGM, there was a `r round(model2$coefficients[2]*10,2)`% change in HbA1c.
+
+```{r, echo=FALSE}
+kable(p2,caption = "Predicted values ('fit') and associated standard errors of HbA1c for various levels of % TIR by CGM, 2nd trimester.")
+```
+<br>
+
+For a 10% increase in % TIR by CGM, there was a `r round(model3$coefficients[2]*10,2)`% change in HbA1c.
+
+```{r, echo=FALSE}
+kable(p3,caption = "Predicted values ('fit') and associated standard errors of HbA1c for various levels of % TIR by CGM, 3rd trimester.")
+```
+<br>
+
+For a 10% increase in % TIR by CGM, there was a `r round(model_gmi1$coefficients[2]*10,2)` change in GMI.
+
+```{r, echo=FALSE}
+kable(p_gmi1,caption = "Predicted values ('fit') and associated standard errors of GMI for various levels of % TIR by CGM, 1st trimester.")
+```
+<br>
+
+For a 10% increase in % TIR by CGM, there was a `r round(model_gmi2$coefficients[2]*10,2)` change in GMI.
+
+```{r, echo=FALSE}
+kable(p_gmi2,caption = "Predicted values ('fit') and associated standard errors of GMI for various levels of % TIR by CGM, 2nd trimester.")
+```
+<br>
+
+For a 10% increase in % TIR by CGM, there was a `r round(model_gmi3$coefficients[2]*10,2)` change in GMI.
+
+```{r, echo=FALSE}
+kable(p_gmi3,caption = "Predicted values ('fit') and associated standard errors of GMI for various levels of % TIR by CGM, 3rd trimester.")
+```
+<br>

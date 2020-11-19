@@ -1,0 +1,343 @@
+---
+title: "Erin Cobry - telemedicine and technology"
+author: "Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(readxl)
+library(dplyr)
+library(ggmap)
+library(tableone)
+library(geosphere)
+library(sjlabelled)
+library(lubridate)
+library(naniar)
+
+knitr::opts_chunk$set(echo = TRUE)
+
+# read in general clinic data
+allclinic <- read.csv("T:\\Erin Cobry\\Telemedicine\\Data raw\\General Clinic Master List_08-26-20 Rural.csv",na.strings = c(" ",""))
+
+# read in clinic data, excluding patients in telemedicine
+#pump <- read_excel("S:\\Shared Projects\\Laura\\BDC\\Projects\\Erin Cobry\\Telemedicine\\Data raw\\PedsT1DPtsSeenInLast12Month_CGM_Pump_ExcludeTelemedPts_12202019.xlsx", sheet="Pts_OnPump")
+#cgm <- read_excel("S:\\Shared Projects\\Laura\\BDC\\Projects\\Erin Cobry\\Telemedicine\\Data raw\\PedsT1DPtsSeenInLast12Month_CGM_Pump_ExcludeTelemedPts_12202019.xlsx", sheet="Pts_OnCGM")
+#pump_cgm <- read_excel("S:\\Shared Projects\\Laura\\BDC\\Projects\\Erin Cobry\\Telemedicine\\Data raw\\PedsT1DPtsSeenInLast12Month_CGM_Pump_ExcludeTelemedPts_12202019.xlsx", sheet="Pts_OnPump_CGM")
+
+allclinic$Gender <- as.factor(allclinic$Gender)
+
+levels(allclinic$Pump.Only) <- c(levels(allclinic$Pump.Only),"N")
+levels(allclinic$CGM.Only) <- c(levels(allclinic$CGM.Only),"N")
+levels(allclinic$Pump.and.CGM) <- c(levels(allclinic$Pump.and.CGM),"N")
+
+allclinic[is.na(allclinic$Pump.Only),]$Pump.Only <- "N"
+allclinic[is.na(allclinic$CGM.Only),]$CGM.Only <- "N"
+allclinic[is.na(allclinic$Pump.and.CGM),]$Pump.and.CGM <- "N"
+
+allclinic$pump <- ifelse(allclinic$Pump.Only %in% c("Y","y"),1,0)
+allclinic$cgm <- ifelse(allclinic$CGM.Only %in% c("Y","y"),1,0)
+allclinic$pump_cgm <- ifelse(allclinic$Pump.and.CGM %in% c("Y","y"),1,0)
+allclinic[allclinic$pump==1 & allclinic$pump_cgm==1,]$pump <- 0 
+allclinic[allclinic$cgm==1 & allclinic$pump_cgm==1,]$cgm <- 0 
+
+# fix insurance var in clinic dataset
+levels(allclinic$InsuranceType) <- c(levels(allclinic$InsuranceType),"Private/Military")
+allclinic[allclinic$InsuranceType=="dddd",]$InsuranceType <- "Unknown"
+allclinic[allclinic$InsuranceType=="Unknown",]$InsuranceType <- "Unknown"
+allclinic[allclinic$InsuranceType=="Unkown",]$InsuranceType <- "Unknown"
+allclinic[allclinic$InsuranceType=="unknown",]$InsuranceType <- "Unknown"
+allclinic[allclinic$InsuranceType=="NULL",]$InsuranceType <- "Unknown"
+allclinic[allclinic$InsuranceType %in% c("Military Plans","Private"),]$InsuranceType <- "Private/Military"
+allclinic$InsuranceType <- droplevels(allclinic$InsuranceType)
+
+# make one variable for tech group
+allclinic$techgroup <- NA
+allclinic[allclinic$pump==1,]$techgroup <- "Pump"
+allclinic[allclinic$cgm==1,]$techgroup <- "CGM"
+allclinic[allclinic$pump_cgm==1,]$techgroup <- "Pump and CGM"
+allclinic[is.na(allclinic$techgroup),]$techgroup <- "None"
+
+# make numeric
+allclinic$DiabetesDuration_12132019 <- as.numeric(allclinic$DiabetesDuration_12132019)
+allclinic$DiabetesDuration <- allclinic$DiabetesDuration_12132019/365.25
+allclinic$LastA1C_OrderValue <- as.numeric(as.character(allclinic$LastA1C_OrderValue))
+allclinic$Age_12132019 <- as.numeric(as.character(allclinic$Age_12132019))
+allclinic$Distance.to.Clinic.Direct..Km. <- as.numeric(as.character(allclinic$Distance.to.Clinic.Direct..Km.))
+allclinic$Distance.to.Clinic.Driving..Km. <- as.numeric(as.character(allclinic$Distance.to.Clinic.Driving..Km.))
+
+# fix rural variable
+allclinic$Rural <- ifelse(is.na(allclinic$Rural),"n","r")
+
+# one row per ppt 
+demo <- unique(allclinic)
+
+# read in telemedicine data
+data <- read.csv("T:\\Erin Cobry\\Telemedicine\\Data raw\\DiabetesTelemedicine-Cobry2020ADAAbstract_DATA_rural_distance_11-5-2020.csv")
+#source("T:\\Erin Cobry\\Telemedicine\\Data raw\\DiabetesTelemedicine-Cobry2020ADAAbstract_R_2020-01-05_1613.r")
+
+# only include patients in the file Erin sent
+keep <- read.csv("T:\\Erin Cobry\\Telemedicine\\Data raw\\Telemedicine Study Patient MRNs.csv")
+data <- merge(data,keep,by="study_id",all.x=F,all.y=T)
+#write.csv(data,"C:\\Temp\\Erin Cobry\\Telemedicine\\export_for_erin_telemed.csv")
+
+# reshape redcap dataset
+enroll <- data[,c("study_id","redcap_event_name", "age","dod","zip_code_of_residence","race_chart___1","race_chart___2","race_chart___3",
+  "race_chart___4","race_chart___5","race_chart___8","race_chart___9","ethnicity_chart","insurance_prior_chart","pump_prior_chart","cgmuse_prior_chart","gender",
+  "Rural.","Distance.to.clinic.direct..KM...as.the.crow.flies.","Distance.to.clinic.driving..km.")]
+enroll <- enroll[enroll$redcap_event_name=="enrollmentpatient_arm_1",]
+first <- data[,c("study_id","redcap_event_name","date_of_first_visit","age_1st_telemed","diabetes_duration","city_of_first_visit","a1c_1st_telemedicine",
+                 "insurance_first_telemed","pumptype_first_telemed","cgmuse_first_telemed","zipcode_first_visit","q149")]
+first <- first[first$redcap_event_name=="first_telemedicine_arm_1",]
+fup <- data[, -which(names(data) %in% c("age","dod","zip_code_of_residence","race_chart___1","race_chart___2","race_chart___3",
+  "race_chart___4","race_chart___5","race_chart___8","race_chart___9","ethnicity_chart","insurance_prior_chart","pump_prior_chart","cgmuse_prior_chart",
+  "date_of_first_visit","age_1st_telemed","diabetes_duration","city_of_first_visit","a1c_1st_telemedicine",
+                 "insurance_first_telemed","pumptype_first_telemed","cgmuse_first_telemed","zipcode_first_visit","q149","gender",
+  "Rural.","Distance.to.clinic.direct..KM...as.the.crow.flies.","Distance.to.clinic.driving..km."))]
+fup$date_of_fup_visit <- dplyr::na_if(fup$date_of_fup_visit,"")
+fup <- fup[!is.na(fup$date_of_fup_visit),]
+#fup$date_of_fup_visit <- as.Date(as.character(fup$date_of_fup_visit), format="%m-%d-%Y")
+fup$date_of_fup_visit <- mdy(as.character(fup$date_of_fup_visit))
+fup <- arrange(fup,study_id,date_of_fup_visit)
+# for now, we just want the most recent fup visit
+fup <- fup %>% 
+  group_by(study_id) %>%
+  slice(which.max(date_of_fup_visit))
+# merge in date of first visit so we can calculate length of tele
+firstvis <- first[,c("study_id","date_of_first_visit")]
+fup <- merge(fup,firstvis,by="study_id")
+fup$date_of_first_visit <- as.Date(as.character(fup$date_of_first_visit),format = "%m/%d/%Y")
+fup$dur_tele <- as.numeric((fup$date_of_fup_visit - fup$date_of_first_visit)/365.25)
+# there are 149 patients with enrollment and 1st visit data, but only 127 with fup data
+# asked Erin if we want to use 1st visit data as last visit, or exclude them
+# for now, I will just merge all together and exclude no one
+tele <- merge(enroll, first, by="study_id",all.x=T, all.y=T)
+tele <- merge(tele, fup, by="study_id",all.x=T, all.y=T)
+
+# create variables for pump, cgm, and pump/cgm at most recent visit
+tele$pump <- ifelse(!is.na(tele$date_of_fup_visit),tele$pumptype_fup_chart,tele$pumptype_first_telemed)
+tele$pump <- ifelse(!is.na(tele$pump),1,0)
+# recode variable for cgm use at first visit...was coded 1=yes, 2=no, 9=don't know
+tele$cgmuse_first_telemed  <- ifelse(tele$cgmuse_first_telemed==1,1,
+                                     ifelse(tele$cgmuse_first_telemed==2,0,NA)) 
+tele$cgm <- ifelse(!is.na(tele$date_of_fup_visit),tele$cgmuse_fup_chart,tele$cgmuse_first_telemed)
+tele$pump_cgm <- ifelse(is.na(tele$pump) | is.na(tele$cgm), NA,
+                        ifelse(tele$pump==1 & tele$cgm==1,1,0))
+tele$pump <- as.factor(tele$pump)
+tele$cgm <- as.factor(tele$cgm)
+tele$pump_cgm <- as.factor(tele$pump_cgm)
+
+# check tech variables
+check <- tele[,c("study_id","date_of_fup_visit","pumptype_fup_chart","pumptype_first_telemed","pump",
+                 "cgmuse_fup_chart","cgmuse_first_telemed","cgm","pump_cgm")]
+write.csv(check,"T:\\Erin Cobry\\Telemedicine\\Data_clean\\checking telemedicine.csv")
+
+# create variable for insurance at most recent visit
+tele$ins <- ifelse(!is.na(tele$insurance_fup_chart),tele$insurance_fup_chart,tele$insurance_first_telemed)
+# now make variable to match insurance coding in clinic dataset
+tele$InsuranceType <- NA
+tele[is.na(tele$ins),]$InsuranceType <- NA
+tele[!is.na(tele$ins) & tele$ins %in% c(1,3),]$InsuranceType <- "Private/Military"
+tele[!is.na(tele$ins) & tele$ins==2,]$InsuranceType <- "Medicaid"
+tele[!is.na(tele$ins) & tele$ins==4,]$InsuranceType <- NA
+tele[!is.na(tele$ins) & tele$ins==9,]$InsuranceType <- NA
+
+
+# find distance to BDC
+tele$zip_code_of_residence<- as.character(tele$zip_code_of_residence)
+allzip <- read.csv("T:\\Erin Cobry\\Telemedicine\\Data raw\\gaz1990zipcodecentroid.csv")
+allzip$fipsst <- NULL
+names(allzip) <- c("zip_code_of_residence","lon_residence","lat_residence")
+tele <- merge(tele,allzip,by="zip_code_of_residence",all.x = T, all.y = F)
+tele$bdc_long <- 104.838
+tele$bdc_lat <- 39.74801
+tele$dist_to_bdc_km <- distHaversine(cbind(tele$lon_residence,tele$lat_residence),cbind(tele$bdc_long,tele$bdc_lat))/1000
+
+# code race/ethnicity
+# ethnicity is 1=Hispanic, 0=NH, 9=unk
+# race is 1=White, 2=Black, 3=AI/AN, 4=Asian, 5=NH/PI, 8=Other, 9=unk
+tele$numrace <- rowSums(tele[,c("race_chart___1","race_chart___2","race_chart___3","race_chart___4","race_chart___5",
+                           "race_chart___8","race_chart___9")],na.rm = T)
+# nobody has more than 1 race
+tele$race <- NA
+tele[!is.na(tele$race_chart___1) & tele$race_chart___1==1,]$race <- "White"
+tele[tele$race_chart___2==1,]$race <- "Black"
+tele[tele$race_chart___3==1,]$race <- "AI/AN"
+tele[tele$race_chart___8==1,]$race <- "Other"
+tele[tele$race_chart___9==1,]$race <- "Unknown"
+tele$race_eth <- NA
+tele$race_eth <- ifelse(tele$ethnicity_chart==1,"Hispanic/Latino",tele$race)
+tele$diabetes_duration <- as.numeric(as.character(tele$diabetes_duration))
+tele$age_1st_telemed <- as.numeric(as.character(tele$age_1st_telemed))
+
+# code new race/eth variable
+tele$race2 <- NA
+tele$race2[tele$race_eth=="White"] <- "NHW"
+tele$race2[tele$race_eth=="Black"] <- "NHB"
+tele$race2[tele$race_eth=="Hispanic/Latino"] <- "Hispanic"
+tele$race2[tele$race_eth=="Unknown"] <- "Unknown"
+tele$race2[tele$race_eth=="AI/AN" | tele$race_eth=="Other"] <- "Other"
+
+# labels
+set_label(tele$race_eth) <- "Race/ethnicity"
+set_label(tele$race2) <- "Race/ethnicity"
+set_label(tele$age_1st_telemed) <- "Age 1st telemedicine visit"
+set_label(tele$cgmuse_prior_chart) <- "CGM use prior to telemedicine"
+set_label(tele$pump_prior_chart) <- "Pump use prior to telemedicine"
+set_label(tele$diabetes_duration) <- "Diabetes duration"
+set_label(tele$pump) <- "Pump use at most recent visit"
+set_label(tele$cgm) <- "CGM use at most recent visit"
+set_label(tele$pump_cgm) <- "Pump/CGM use at most recent visit"
+set_label(tele$dur_tele) <- "Duration of telemedicine (yrs)"
+set_label(tele$Distance.to.clinic.direct..KM...as.the.crow.flies.) <- "Distance to clinic (km) direct"
+set_label(tele$Distance.to.clinic.driving..km.) <- "Driving distance (km)"
+
+# fix A1c
+tele$a1c_1st_telemedicine <- as.numeric(tele$a1c_1st_telemedicine)
+tele$a1c_fup_telemed <- as.numeric(tele$a1c_fup_telemed)
+
+# make one variable for tech group
+tele$techgroup <- NA
+tele[tele$pump==1,]$techgroup <- "Pump"
+tele[!is.na(tele$cgm) & tele$cgm==1,]$techgroup <- "CGM"
+tele[!is.na(tele$pump_cgm) & tele$pump_cgm==1,]$techgroup <- "Pump and CGM"
+tele[is.na(tele$techgroup),]$techgroup <- "None"
+
+# fix factors
+tele$gender <- as.factor(tele$gender)
+tele$cgmuse_first_telemed <- as.factor(tele$cgmuse_first_telemed)
+tele$cgmuse_prior_chart <- ifelse(tele$cgmuse_prior_chart=='9',NA,tele$cgmuse_prior_chart)
+tele$cgmuse_prior_chart <- as.factor(tele$cgmuse_prior_chart)
+tele$pumptype_first_telemed <- as.factor(tele$pumptype_first_telemed)
+tele$pump_prior_chart <- as.factor(tele$pump_prior_chart)
+tele$Rural. <- droplevels(tele$Rural.)
+
+# make combined df with techgroup and A1c
+combclinic <- allclinic[,c("techgroup","LastA1C_OrderValue","Distance.to.Clinic.Driving..Km.","Distance.to.Clinic.Direct..Km.",
+                           "Rural","InsuranceType")]
+combclinic$hba1c <- combclinic$LastA1C_OrderValue
+combclinic$LastA1C_OrderValue <- NULL
+combclinic$Distance.to.clinic.driving..km. <- combclinic$Distance.to.Clinic.Driving..Km.
+combclinic$Distance.to.Clinic.Driving..Km. <- NULL
+combclinic$Distance.to.clinic.direct..KM...as.the.crow.flies. <- combclinic$Distance.to.Clinic.Direct..Km.
+combclinic$Distance.to.Clinic.Direct..Km. <- NULL
+combclinic$Rural. <- combclinic$Rural
+combclinic$Rural <- NULL
+combclinic$group <- "Clinic"
+combtele <- tele[,c("techgroup","a1c_fup_telemed","Distance.to.clinic.direct..KM...as.the.crow.flies.","Distance.to.clinic.driving..km.",
+                    "Rural.","InsuranceType")]
+combtele$hba1c <- combtele$a1c_fup_telemed
+combtele$a1c_fup_telemed <- NULL
+combtele$group <- "Telemedicine"
+comb <- rbind(combclinic,combtele)
+comb$hba1c <- as.numeric(as.character(comb$hba1c))
+comb$anypump <- as.factor(ifelse(comb$techgroup %in% c("Pump","Pump and CGM"),1,0))
+comb$anycgm <- as.factor(ifelse(comb$techgroup %in% c("CGM","Pump and CGM"),1,0))
+comb$pumponly <- as.factor(ifelse(comb$techgroup=="Pump",1,0))
+comb$cgmonly <- as.factor(ifelse(comb$techgroup=="CGM",1,0))
+
+# New variable for pump and CGM yes/no
+comb$pump_cgm <- as.factor(ifelse(comb$techgroup=="Pump and CGM",1,0))
+
+# create df with pump, cgm, pump_cgm in both groups
+a <- allclinic[,c("pump","cgm","pump_cgm","InsuranceType")]
+a$group <- "Clinic"
+b <- tele[,c("pump","cgm","pump_cgm","InsuranceType")]
+b$group <- "Telemedicine"
+twogroup <- rbind(a,b)
+
+# table comparing tech use in the two groups
+techtable <- CreateTableOne(vars=c("techgroup","anypump","anycgm","pumponly","cgmonly","pump_cgm",
+                                   "InsuranceType","Distance.to.clinic.driving..km.",
+                                   "Distance.to.clinic.direct..KM...as.the.crow.flies.","Rural." ), data=comb, strata="group", test=TRUE)
+techtable <- print(techtable,varLabels=TRUE,showAllLevels=TRUE)
+
+# demographics in telemedicine patients
+demovars <- c("age_1st_telemed","race2","gender","cgmuse_prior_chart","pump_prior_chart","diabetes_duration","InsuranceType",
+              "a1c_1st_telemedicine","dur_tele","Distance.to.clinic.driving..km.","Distance.to.clinic.direct..KM...as.the.crow.flies.","Rural.")
+nonnorm <- c("diabetes_duration","dur_tele")
+t1 <- CreateTableOne(vars=demovars, data=tele)
+t1 <- print(t1,varLabels=TRUE,showAllLevels=TRUE,nonnorm=nonnorm)
+
+# demographics in BDC clinic
+clinicdemovars <- c("Age_12132019","Gender","DiabetesDuration","LastA1C_OrderValue","Race_Eithnicity",
+                    "InsuranceType","Distance.to.Clinic.Direct..Km.","Distance.to.Clinic.Driving..Km.","Rural" )
+nonnorm <- c("DiabetesDuration")
+t1a <- CreateTableOne(vars=clinicdemovars,data=allclinic)
+t1a <- print(t1a,varLabels=T,showAllLevels=T,nonnorm=nonnorm)
+
+# compare characteristics in tele pts who use tech vs. not
+tele$tech <- NA
+tele[(!is.na(tele$cgm) & tele$cgm==1) | (!is.na(tele$pump) & tele$pump==1) | (!is.na(tele$pump_cgm) & tele$pump_cgm==1),]$tech <- "Uses tech"
+tele[(!is.na(tele$cgm) & tele$cgm==0) & (!is.na(tele$pump) & tele$pump==0) & (!is.na(tele$pump_cgm) & tele$pump_cgm==0),]$tech <- "Doesn't use tech"
+tele[is.na(tele$cgm) | is.na(tele$pump) | is.na(tele$pump_cgm),] <- NA
+
+compvars <- c("age_1st_telemed","race2","gender","cgmuse_prior_chart","pump_prior_chart","diabetes_duration","InsuranceType",
+              "a1c_1st_telemedicine","a1c_fup_telemed","Distance.to.clinic.direct..KM...as.the.crow.flies.","Distance.to.clinic.driving..km.",
+              "Rural.")
+nonnorm <- "diabetes_duration"
+t3 <- CreateTableOne(vars=compvars, data=tele, strata = "tech", test=TRUE)
+t3 <- print(t3,varLabels=TRUE,showAllLevels=TRUE,nonnorm=nonnorm)
+
+nonnorm <- "a1c_fup_telemed"
+t4 <- CreateTableOne(vars="a1c_fup_telemed", data=tele, strata = "techgroup", test=TRUE)
+t4 <- print(t4,varLabels=TRUE,showAllLevels=TRUE,nonnorm=nonnorm)
+
+allclinic$LastA1C_OrderValue <- as.numeric(as.character(allclinic$LastA1C_OrderValue))
+nonnorm <- "LastA1C_OrderValue"
+t5 <- CreateTableOne(vars="LastA1C_OrderValue", data=allclinic, strata = "techgroup", test=TRUE)
+t5 <- print(t5,varLabels=TRUE,showAllLevels=TRUE,nonnorm=nonnorm)
+
+nonnorm <- "hba1c"
+t6 <- CreateTableOne(vars=c("hba1c"), data=comb, strata = "techgroup", test=TRUE)
+t6 <- print(t6,varLabels=TRUE,showAllLevels=TRUE,nonnorm=nonnorm)
+
+
+```
+
+##  Background
+
+The goal of this analysis is to describe technology uptake in patients who use telemedicine as a routine part of diabetes care.
+
+##  Methods
+
+Only consented patients in the telemedicine REDCap database were included in this analysis.  Pump, CGM, and pump/cgm use were defined as use at the most recent visit (either first telemedicine visit or follow-up visits).  Insurance type and technology use in the telemedicine cohort was compared to the BDC clinic population using chi-square tests.  Insurance types were not significantly different in the clinic and telemedicine cohorts, so all models are unadjusted.
+
+Distance to the BDC was estimated using the great circle distance between zip codes.  Characteristics of telemedicine patients who use technology were compared to those who don't using t-tests or Mann-Whitney tests, and chi-square tests.
+
+##  Results
+
+```{r, echo=FALSE}
+kable(t1,caption = "Table 1.  Demographics in the telemedicine cohort.  Statistics presented are mean (SD), median [25th %ile, 75th %ile], or N(%).")
+```
+\newpage
+
+```{r, echo=FALSE}
+kable(t1a,caption = "Table 1a.  Demographics in the BDC clinic patients.  Statistics presented are mean (SD), median [25th %ile, 75th %ile], or N(%).")
+```
+\newpage
+
+```{r, echo=FALSE}
+kable(techtable,caption = "Table 2.  Comparison of the telemedicine and clinic cohorts.  Statistics presented are mean (SD), median [25th %ile, 75th %ile], or N(%).")
+```
+\newpage
+
+```{r, echo=FALSE}
+kable(t3,caption = "Table 3.  Comparison of telemedicine patients who use technology vs. those who do not use technology. Statistics presented are mean (SD), median [25th %ile, 75th %ile], or N(%).")
+```
+\newpage
+
+```{r, echo=FALSE}
+kable(t4,caption = "Table 4.  Comparison of HbA1c in telemedicine patients by technology group. Statistics presented are mean (SD), median [25th %ile, 75th %ile], or N(%).")
+```
+\newpage
+
+```{r, echo=FALSE}
+kable(t5,caption = "Table 5.  Comparison of HbA1c in clinic patients by technology group. Statistics presented are mean (SD), median [25th %ile, 75th %ile], or N(%).")
+```
+\newpage
+
+```{r, echo=FALSE}
+kable(t6,caption = "Table 6.  Comparison of HbA1c and distance to clinic in all patients by technology group. Statistics presented are mean (SD), median [25th %ile, 75th %ile], or N(%).")
+```

@@ -1,0 +1,862 @@
+---
+title: "DAISY longitudinal T-cell responses to hybrid insulin peptides"
+author: "Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=F}
+# required libraries
+library(purrr)
+library(tableone)
+library(dplyr)
+library(plyr)
+library(zoo)
+library(nlme)
+library(lme4)
+library(emmeans)
+library(knitr)
+library(car)
+```
+
+## Background
+
+The aim of this analysis is to evaluate T-cell responses to hybrid insulin peptides over time in the prediabetic period.  The analysis includes data from 25 Aab+ participants and 38 HLA-DR-DQ matched Aab- participants.
+
+## Methods
+
+Table 1: Aab+ and AAb- participants were compared using t-tests for continuous variables and Fisher's exact test for categorical variables.
+
+Figure 1b:  Linear mixed models with a random intercept to account for correlation of measures within a participant were used to compare responses in Aab+ and Aab- participants.  Response levels were natural log transformed prior to analysis.
+
+Figure 1c, Figure 1d, Supplemental Figure 3: Paired t-tests were used to test whether the specified peptide responses differed.  
+
+Figure 2a-b: Linear mixed models with random intercepts and random slopes were used to test whether Aab+ and Aab- participants have different trajectories in their IFNy/IL10 ratios over time.  Ratios were natural log transformed prior to analysis.
+
+Figure 3 and Supplemental Figure 5:  Linear mixed models with a random intercept to account for correlation of measures within a participant were used to compare responses in Aab+ participants who progressed to T1D and those who did not progress to T1D, and in Aab- participants who seroconverted to those who did not seroconvert.  Response levels were natural log transformed prior to analysis.
+
+Supplemental Figure 6: A t-test was used to compare the duration since seroconversion in Aab+ participants who progressed to T1D and those who did not progress.
+
+Figure 4 and Supplemental Figure 7: Linear mixed models with a random intercept to account for correlation of measures within a participant were used to test the association between peptide responses and clinical variables.  Response levels were natural log transformed prior to analysis.  Similar models with a quadratic relationship between the variables were also tested.
+
+\newpage
+
+## Results
+
+```{r, include=F}
+# read in data
+dat1 <- read.csv("T:\\Aaron Michels\\Longitudinal T-cell responses in DAISY\\Supp. Table 1 ab pos.csv",
+                 na.strings = c("NA"," ","","N/R"))
+dat1$group <- "Aab+"
+dat2 <- read.csv("T:\\Aaron Michels\\Longitudinal T-cell responses in DAISY\\Supp. Table 1 ab neg.csv",
+                 na.strings = c("NA"," ","","N/R"))
+dat2$group <- "Aab-"
+dat2$Age.at.Dx..years. <- NA
+dat2$Duration.from.Sero.Conversion..years. <- NA
+dat2$Gluc.0..mg.dl. <- NA
+dat2$Gluc.30..mg.dl. <- NA
+dat2$Gluc.60..mg.dl. <- NA
+dat2$Gluc.90..mg.dl. <- NA
+dat2$Gluc.120..mg.dl. <- NA
+dat2$Gluc.AUC..mg.dl.min. <- NA
+dat2$Developed.T1D <- NA
+dat1$Converted.to.pos <- NA
+dat <- rbind(dat1,dat2)
+dat$group <- as.factor(dat$group)
+
+`%not_in%` <- purrr::negate(`%in%`)
+missing <- names(dat1)[names(dat1) %not_in% names(dat2)]
+missing2 <- names(dat2)[names(dat2) %not_in% names(dat1)]
+
+dat$Pt..ID <- na.locf(dat$Pt..ID)
+dat$Sex <- na.locf(dat$Sex)
+dat$Race <- na.locf(dat$Race)
+dat$Ethnicity <- na.locf(dat$Ethnicity)
+
+# delete incorrect value
+dat[dat$Pt..ID=="Aab+ P11" & dat$IFN.y.IL.10.Pediarix==165.0,]$IFN.y.IL.10.Pediarix <- NA
+
+# count number of visits
+numvisit <- dat %>% group_by(Pt..ID) %>% tally()
+colnames(numvisit) <- c("Pt..ID","numvisit")
+dat <- merge(dat,numvisit,by="Pt..ID")
+
+# calculate duration of follow up
+ages <- dat[,c("Pt..ID","Age.at.Visit..years.")]
+ages <- ages[order(ages$Pt..ID,ages$Age.at.Visit..years.),]
+first_age <- ages %>% group_by(Pt..ID) %>% filter(row_number()==1)
+colnames(first_age) <- c("Pt..ID","first_age")
+ages <- ages[order(ages$Pt..ID,-ages$Age.at.Visit..years.),]
+last_age <- ages %>% group_by(Pt..ID) %>% filter(row_number()==1)
+colnames(last_age) <- c("Pt..ID","last_age")
+dat <- merge(dat,first_age,by="Pt..ID")
+dat <- merge(dat,last_age,by="Pt..ID")
+dat$fup <- (dat$last_age-dat$first_age)*12
+
+# number of autoantibodies at enrollment
+dat$gadpos <- ifelse(is.na(dat$GAD65..nl...20.DK.Units.),NA,
+                     ifelse(dat$GAD65..nl...20.DK.Units.<20,0,1))
+dat$ia2pos <- ifelse(is.na(dat$IA.2..nl...5.DK.Units.),NA,
+                     ifelse(dat$IA.2..nl...5.DK.Units.<5,0,1))
+dat$iaapos <- ifelse(is.na(dat$IAA..nl...0.011.),NA,
+                     ifelse(dat$IAA..nl...0.011.<0.011,0,1))
+dat$znt8pos <- ifelse(is.na(dat$ZnT8..nl...0.021.),NA,
+                     ifelse(dat$ZnT8..nl...0.021.<0.021,0,1))
+posnames <- c("gadpos","ia2pos","iaapos","znt8pos")
+posnamesnozn <- c("gadpos","ia2pos","iaapos")
+numpos <- NA
+for(i in 1:nrow(dat)) {
+  numpos[i] <- ifelse(is.na(dat[i,]$znt8pos), rowSums(dat[i,posnamesnozn]),rowSums(dat[i,posnames]))
+}
+dat <- cbind(dat,numpos)
+firstpos <- dat[,c("Pt..ID","Age.at.Visit..years.","numpos")]
+firstpos <- firstpos[order(firstpos$Pt..ID,firstpos$Age.at.Visit..years.),]
+firstpos <- firstpos %>% group_by(Pt..ID) %>% filter(row_number()==1)
+firstpos$Age.at.Visit..years. <- NULL
+colnames(firstpos) <- c("Pt..ID","ab_at_enrollment")
+dat <- merge(dat,firstpos)
+dat$ab_at_enrollment <- as.factor(as.character(dat$ab_at_enrollment))
+
+# create new dfs for Figures 4 and S7
+fig4c_a1c <- read.csv("T:\\Aaron Michels\\Longitudinal T-cell responses in DAISY\\Fig. 4C-S7C A1c.csv",
+                      na.strings = c("N/R",""))
+fig4c_a1c$Pt..ID <- na.locf(fig4c_a1c$Pt..ID)
+fig4b_auc <- read.csv("T:\\Aaron Michels\\Longitudinal T-cell responses in DAISY\\Fig. 4B-S7B AUC.csv",
+                      na.strings = c("N/R",""))
+fig4b_auc$Pt..ID <- na.locf(fig4b_auc$Pt..ID)
+fig4a_iaa <- read.csv("T:\\Aaron Michels\\Longitudinal T-cell responses in DAISY\\Fig. 4A-S7A IAA.csv",
+                      na.strings = c("N/R",""))
+fig4a_iaa$Pt..ID <- na.locf(fig4a_iaa$Pt..ID)
+
+
+```
+
+```{r, include=F}
+# Table 1
+# not getting same length of follow up
+tab1dat <- dat %>% group_by(Pt..ID) %>% filter(row_number()==1)
+tab1vars <- c("Age.at.Visit..years.","Sex","Race","Ethnicity","numvisit","fup","ab_at_enrollment")
+tab1 <- CreateTableOne(vars=tab1vars, data=tab1dat, strata = "group")
+tab1 <- print(tab1,varLabels=TRUE,showAllLevels=TRUE,exact=c("Sex","Race","Ethnicity",
+                                                             "ab_at_enrollment"))
+```
+
+```{r, echo=FALSE}
+kable(tab1,caption="Table 1")
+```
+
+\newpage
+
+The Fisher's exact test for HLA genotype is shown below.
+
+```{r, echo=F}
+# calculate p-value for HLA-DQ
+dummy1 <- c(13,4,7,1)
+dummy2 <- c(15,4,14,5)
+HLA <- cbind(dummy1,dummy2)
+fisher.test(HLA)
+```
+
+\newpage
+
+```{r, include=F}
+# figure 1b - compare groups wrt peptides using all visits
+# need to account for correlation within a person
+peptides <- c("IFN.y.No.Antigen","IFN.y.Pediarix","IFN.y.B.9.23..Native.","IFN.y.B.9.23..B22E.", "IFN.y.C.Peptide.Neuropeptide.Y","IFN.y.C.Peptide.IAPP..1","IFN.y.C.Peptide.IAPP.2",
+"IFN.y.C.Peptide.A.chain","IFN.y.C.Peptide.10.24","IL.10.No.Antigen","IL.10.Pediarix",
+"IL.10.B.9.23..Native.","IL.10.B.9.23..B22E.","IL.10.C.Peptide.Neuropeptide.Y","IL.10.C.Peptide.IAPP..1",
+"IL.10.C.Peptide.IAPP.2","IL.10.C.Peptide.A.chain","IL.10.C.Peptide.10.24","IFN.y.IL.10.Pediarix",       
+"IFN.y.IL.10.B.9.23..Native.","IFN.y.IL.10.B.9.23..B22E.","IFN.y.IL.10.C.Peptide.Neuropeptide.Y",
+"IFN.y.IL.10.C.Peptide.IAPP..1","IFN.y.IL.10.C.Peptide.IAPP.2","IFN.y.IL.10.C.Peptide.A.chain",
+"IFN.y.IL.10.C.Peptide.10.24")
+dat[,peptides] <- apply(dat[,peptides],2,as.numeric)
+```
+
+The tables below are the results of the mixed models for Figure 1b.  For each peptide, there are two tables.  The first table contains the least-squares mean (on the log scale) of the peptide in each group.  The second table provides the p-value for the group comparison.
+
+```{r, echo=FALSE}
+# examine convergence
+#lmer_models <- lapply(peptides, function(x) {
+#  lmer(substitute(log(i+0.00001) ~ group + (1| Pt..ID), list(i=as.name(x))),data=dat)
+#})
+# models to be reported
+sum_tab <- NULL
+for (i in 1:length(peptides)) {
+  variable <- dat[,peptides[i]]
+  lme_cur <- lme(log(variable+0.00001) ~ group, random = ~1| Pt..ID, dat,na.action = na.omit)
+  #print(summary(lme_cur))
+  #temp_tab <- c(peptides[i],summary(lme_cur)$tTable[2,5])
+  #sum_tab <- rbind(sum_tab,temp_tab)
+  print(peptides[i])
+  lme_cur.emm <- emmeans(lme_cur,"group")
+  print(lme_cur.emm)
+  lme_cur.pairs <- pairs(lme_cur.emm)
+  print(lme_cur.pairs)
+}
+
+```
+
+\newpage
+
+The tables below are the results of the paired t-tests for Figure 1c, 1d, and Supplemental Figure 3.  The p-values test whether the peptide responses are different, stratified by group.
+
+Figure 1c.  Testing whether there is a difference between IFN.y.B.9.23..Native. and IFN.y.B.9.23..B22E.., among Ab+ patients.  
+```{r, echo=FALSE}
+# figure 1c
+t.test(dat[dat$group=="Aab+",]$IFN.y.B.9.23..Native. - dat[dat$group=="Aab+",]$IFN.y.B.9.23..B22E.,na.action = na.omit)
+```
+
+Figure 1c.  Testing whether there is a difference between IFN.y.C.Peptide.10.24 and IFN.y.C.Peptide.IAPP.2, among Ab+ patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab+",]$IFN.y.C.Peptide.10.24 - dat[dat$group=="Aab+",]$IFN.y.C.Peptide.IAPP.2,na.action = na.omit)
+```
+
+Figure 1c.  Testing whether there is a difference between IFN.y.C.Peptide.10.24 and IFN.y.C.Peptide.Neuropeptide.Y., among Ab+ patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab+",]$IFN.y.C.Peptide.10.24 - dat[dat$group=="Aab+",]$IFN.y.C.Peptide.Neuropeptide.Y,na.action = na.omit)
+```
+
+Figure 1c.  Testing whether there is a difference between IFN.y.C.Peptide.10.24 and IFN.y.C.Peptide.IAPP.1., among Ab+ patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab+",]$IFN.y.C.Peptide.10.24 - dat[dat$group=="Aab+",]$IFN.y.C.Peptide.IAPP..1,na.action = na.omit)
+
+```
+
+Figure 1c.  Testing whether there is a difference between IFN.y.C.Peptide.10.24 and IFN.y.C.Peptide.A.chain., among Ab+ patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab+",]$IFN.y.C.Peptide.10.24 - dat[dat$group=="Aab+",]$IFN.y.C.Peptide.A.chain,na.action = na.omit)
+```
+
+\newpage
+
+Figure 1d. Testing whether there is a difference between IL.10.B.9.23..Native. and IL.10.B.9.23..B22E., among Ab+ patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab+",]$IL.10.B.9.23..Native. - dat[dat$group=="Aab+",]$IL.10.B.9.23..B22E.,na.action = na.omit)
+```
+
+Figure 1d. Testing whether there is a difference between IL.10.C.Peptide.10.24 and IL.10.C.Peptide.IAPP.2, among Ab+ patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab+",]$IL.10.C.Peptide.10.24 - dat[dat$group=="Aab+",]$IL.10.C.Peptide.IAPP.2,na.action = na.omit)
+```
+
+Figure 1d. Testing whether there is a difference between IL.10.C.Peptide.10.24 and IL.10.C.Peptide.Neuropeptide.Y, among Ab+ patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab+",]$IL.10.C.Peptide.10.24 - dat[dat$group=="Aab+",]$IL.10.C.Peptide.Neuropeptide.Y,na.action = na.omit)
+```
+
+Figure 1d. Testing whether there is a difference between IL.10.C.Peptide.10.24 and IL.10.C.Peptide.IAPP.1, among Ab+ patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab+",]$IL.10.C.Peptide.10.24 - dat[dat$group=="Aab+",]$IL.10.C.Peptide.IAPP..1,na.action = na.omit)
+```
+
+Figure 1d. Testing whether there is a difference between IL.10.C.Peptide.10.24 and IL.10.C.Peptide.A.chain, among Ab+ patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab+",]$IL.10.C.Peptide.10.24 - dat[dat$group=="Aab+",]$IL.10.C.Peptide.A.chain,na.action = na.omit)
+```
+
+\newpage
+
+Supp. Figure 3.  Testing whether there is a difference between IFN.y.No.Antigen and IFN.y.Pediarix., among Ab+ patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab+",]$IFN.y.No.Antigen - dat[dat$group=="Aab+",]$IFN.y.Pediarix,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IFN.y.No.Antigen and IFN.y.B.9.23..Native., among Ab+ patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab+",]$IFN.y.No.Antigen - dat[dat$group=="Aab+",]$IFN.y.B.9.23..Native.,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IFN.y.No.Antigen and IFN.y.B.9.23..B22E., among Ab+ patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab+",]$IFN.y.No.Antigen - dat[dat$group=="Aab+",]$IFN.y.B.9.23..B22E.,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IFN.y.No.Antigen and IFN.y.C.Peptide.IAPP.2, among Ab+ patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab+",]$IFN.y.No.Antigen - dat[dat$group=="Aab+",]$IFN.y.C.Peptide.IAPP.2,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IFN.y.No.Antigen and IFN.y.C.Peptide.Neuropeptide.Y, among Ab+ patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab+",]$IFN.y.No.Antigen - dat[dat$group=="Aab+",]$IFN.y.C.Peptide.Neuropeptide.Y,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IFN.y.No.Antigen and IFN.y.C.Peptide.IAPP..1, among Ab+ patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab+",]$IFN.y.No.Antigen - dat[dat$group=="Aab+",]$IFN.y.C.Peptide.IAPP..1,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IFN.y.No.Antigen and IFN.y.C.Peptide.A.chain., among Ab+ patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab+",]$IFN.y.No.Antigen - dat[dat$group=="Aab+",]$IFN.y.C.Peptide.A.chain,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IFN.y.No.Antigen and IFN.y.C.Peptide.10.24, among Ab+ patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab+",]$IFN.y.No.Antigen - dat[dat$group=="Aab+",]$IFN.y.C.Peptide.10.24,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IL.10.No.Antigen and IL.10.Pediarix, among Ab+ patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab+",]$IL.10.No.Antigen - dat[dat$group=="Aab+",]$IL.10.Pediarix,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IL.10.No.Antigen and IL.10.B.9.23..Native., among Ab+ patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab+",]$IL.10.No.Antigen - dat[dat$group=="Aab+",]$IL.10.B.9.23..Native.,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IL.10.No.Antigen and IL.10.B.9.23..B22E., among Ab+ patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab+",]$IL.10.No.Antigen - dat[dat$group=="Aab+",]$IL.10.B.9.23..B22E.,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IL.10.No.Antigen and IL.10.C.Peptide.IAPP.2, among Ab+ patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab+",]$IL.10.No.Antigen - dat[dat$group=="Aab+",]$IL.10.C.Peptide.IAPP.2,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IL.10.No.Antigen and IL.10.C.Peptide.Neuropeptide.Y, among Ab+ patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab+",]$IL.10.No.Antigen - dat[dat$group=="Aab+",]$IL.10.C.Peptide.Neuropeptide.Y,na.action = na.omit)
+
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IL.10.No.Antigen and IL.10.C.Peptide.IAPP..1, among Ab+ patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab+",]$IL.10.No.Antigen - dat[dat$group=="Aab+",]$IL.10.C.Peptide.IAPP..1,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IL.10.No.Antigen and IL.10.C.Peptide.A.chain, among Ab+ patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab+",]$IL.10.No.Antigen - dat[dat$group=="Aab+",]$IL.10.C.Peptide.A.chain,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IL.10.No.Antigen and IL.10.C.Peptide.10.24, among Ab+ patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab+",]$IL.10.No.Antigen - dat[dat$group=="Aab+",]$IL.10.C.Peptide.10.24,na.action = na.omit)
+```
+
+\newpage
+
+Figure 1c.  Testing whether there is a difference between IFN.y.B.9.23..Native. and IFN.y.B.9.23..B22E.., among Ab- patients.  
+```{r, echo=FALSE}
+# figure 1c
+t.test(dat[dat$group=="Aab-",]$IFN.y.B.9.23..Native. - dat[dat$group=="Aab-",]$IFN.y.B.9.23..B22E.,na.action = na.omit)
+```
+
+Figure 1c.  Testing whether there is a difference between IFN.y.C.Peptide.10.24 and IFN.y.C.Peptide.IAPP.2, among Ab- patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab-",]$IFN.y.C.Peptide.10.24 - dat[dat$group=="Aab-",]$IFN.y.C.Peptide.IAPP.2,na.action = na.omit)
+```
+
+Figure 1c.  Testing whether there is a difference between IFN.y.C.Peptide.10.24 and IFN.y.C.Peptide.Neuropeptide.Y., among Ab- patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab-",]$IFN.y.C.Peptide.10.24 - dat[dat$group=="Aab-",]$IFN.y.C.Peptide.Neuropeptide.Y,na.action = na.omit)
+```
+
+Figure 1c.  Testing whether there is a difference between IFN.y.C.Peptide.10.24 and IFN.y.C.Peptide.IAPP.1., among Ab- patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab-",]$IFN.y.C.Peptide.10.24 - dat[dat$group=="Aab-",]$IFN.y.C.Peptide.IAPP..1,na.action = na.omit)
+```
+
+Figure 1c.  Testing whether there is a difference between IFN.y.C.Peptide.10.24 and IFN.y.C.Peptide.A.chain., among Ab- patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab-",]$IFN.y.C.Peptide.10.24 - dat[dat$group=="Aab-",]$IFN.y.C.Peptide.A.chain,na.action = na.omit)
+```
+
+\newpage
+
+Figure 1d. Testing whether there is a difference between IL.10.B.9.23..Native. and IL.10.B.9.23..B22E., among Ab- patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab-",]$IL.10.B.9.23..Native. - dat[dat$group=="Aab-",]$IL.10.B.9.23..B22E.,na.action = na.omit)
+```
+
+Figure 1d. Testing whether there is a difference between IL.10.C.Peptide.10.24 and IL.10.C.Peptide.IAPP.2, among Ab- patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab-",]$IL.10.C.Peptide.10.24 - dat[dat$group=="Aab-",]$IL.10.C.Peptide.IAPP.2,na.action = na.omit)
+```
+
+Figure 1d. Testing whether there is a difference between IL.10.C.Peptide.10.24 and IL.10.C.Peptide.Neuropeptide.Y, among Ab- patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab-",]$IL.10.C.Peptide.10.24 - dat[dat$group=="Aab-",]$IL.10.C.Peptide.Neuropeptide.Y,na.action = na.omit)
+```
+
+Figure 1d. Testing whether there is a difference between IL.10.C.Peptide.10.24 and IL.10.C.Peptide.IAPP.1, among Ab- patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab-",]$IL.10.C.Peptide.10.24 - dat[dat$group=="Aab-",]$IL.10.C.Peptide.IAPP..1,na.action = na.omit)
+```
+
+Figure 1d. Testing whether there is a difference between IL.10.C.Peptide.10.24 and IL.10.C.Peptide.A.chain, among Ab- patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab-",]$IL.10.C.Peptide.10.24 - dat[dat$group=="Aab-",]$IL.10.C.Peptide.A.chain,na.action = na.omit)
+```
+
+\newpage
+
+Supp. Figure 3.  Testing whether there is a difference between IFN.y.No.Antigen and IFN.y.Pediarix., among Ab- patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab-",]$IFN.y.No.Antigen - dat[dat$group=="Aab-",]$IFN.y.Pediarix,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IFN.y.No.Antigen and IFN.y.B.9.23..Native., among Ab- patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab-",]$IFN.y.No.Antigen - dat[dat$group=="Aab-",]$IFN.y.B.9.23..Native.,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IFN.y.No.Antigen and IFN.y.B.9.23..B22E., among Ab- patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab-",]$IFN.y.No.Antigen - dat[dat$group=="Aab-",]$IFN.y.B.9.23..B22E.,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IFN.y.No.Antigen and IFN.y.C.Peptide.IAPP.2, among Ab- patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab-",]$IFN.y.No.Antigen - dat[dat$group=="Aab-",]$IFN.y.C.Peptide.IAPP.2,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IFN.y.No.Antigen and IFN.y.C.Peptide.Neuropeptide.Y, among Ab- patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab-",]$IFN.y.No.Antigen - dat[dat$group=="Aab-",]$IFN.y.C.Peptide.Neuropeptide.Y,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IFN.y.No.Antigen and IFN.y.C.Peptide.IAPP..1, among Ab- patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab-",]$IFN.y.No.Antigen - dat[dat$group=="Aab-",]$IFN.y.C.Peptide.IAPP..1,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IFN.y.No.Antigen and IFN.y.C.Peptide.A.chain., among Ab- patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab-",]$IFN.y.No.Antigen - dat[dat$group=="Aab-",]$IFN.y.C.Peptide.A.chain,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IFN.y.No.Antigen and IFN.y.C.Peptide.10.24, among Ab- patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab-",]$IFN.y.No.Antigen - dat[dat$group=="Aab-",]$IFN.y.C.Peptide.10.24,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IL.10.No.Antigen and IL.10.Pediarix, among Ab- patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab-",]$IL.10.No.Antigen - dat[dat$group=="Aab-",]$IL.10.Pediarix,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IL.10.No.Antigen and IL.10.B.9.23..Native., among Ab- patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab-",]$IL.10.No.Antigen - dat[dat$group=="Aab-",]$IL.10.B.9.23..Native.,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IL.10.No.Antigen and IL.10.B.9.23..B22E., among Ab- patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab-",]$IL.10.No.Antigen - dat[dat$group=="Aab-",]$IL.10.B.9.23..B22E.,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IL.10.No.Antigen and IL.10.C.Peptide.IAPP.2, among Ab- patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab-",]$IL.10.No.Antigen - dat[dat$group=="Aab-",]$IL.10.C.Peptide.IAPP.2,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IL.10.No.Antigen and IL.10.C.Peptide.Neuropeptide.Y, among Ab- patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab-",]$IL.10.No.Antigen - dat[dat$group=="Aab-",]$IL.10.C.Peptide.Neuropeptide.Y,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IL.10.No.Antigen and IL.10.C.Peptide.IAPP..1, among Ab- patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab-",]$IL.10.No.Antigen - dat[dat$group=="Aab-",]$IL.10.C.Peptide.IAPP..1,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IL.10.No.Antigen and IL.10.C.Peptide.A.chain, among Ab- patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab-",]$IL.10.No.Antigen - dat[dat$group=="Aab-",]$IL.10.C.Peptide.A.chain,na.action = na.omit)
+```
+
+Supp. Figure 3.  Testing whether there is a difference between IL.10.No.Antigen and IL.10.C.Peptide.10.24, among Ab- patients.
+```{r, echo=FALSE}
+t.test(dat[dat$group=="Aab-",]$IL.10.No.Antigen - dat[dat$group=="Aab-",]$IL.10.C.Peptide.10.24,na.action = na.omit)
+```
+
+The tables below are the results of the mixed models for Figure 2.  The p-values test whether Aab+ and Aab- participants have different trajectories in their peptide responses over time..
+
+Figure 2.  Testing whether Aab+ and Aab- participants have different trajectories of IFN.y.IL.10.Pediarix over time.
+```{r, echo=FALSE, warning=F}
+# figure 2 - do groups have different trajectories of IFNy/IL10 ratios over time?
+# ratios are highly skewed - not sure if regular mixed model will work
+# actually doesn't look too bad
+kable(Anova(lme(log(IFN.y.IL.10.Pediarix+0.00001) ~ Visit..months.:group, random = ~1 + Visit..months.| Pt..ID, dat,na.action = na.omit)))
+```
+
+Figure 2.  Testing whether Aab+ and Aab- participants have different trajectories of IFN.y.IL.10.B.9.23..Native. over time.
+```{r, echo=FALSE, warning=F, message=F}
+ctrl <- lmeControl(opt='optim',maxIter = 1000, msMaxEval=1000,msVerbose = F,msMaxIter=1000)
+kable(Anova(lme(log(IFN.y.IL.10.B.9.23..Native.+0.00001) ~ Visit..months.:group, random = ~1 + Visit..months.| Pt..ID, dat,na.action = na.omit,control=ctrl)))
+```
+
+Figure 2.  Testing whether Aab+ and Aab- participants have different trajectories of IFN.y.IL.10.B.9.23..B22E. over time.
+```{r, echo=FALSE, warning=F, message=F}
+kable(Anova(lme(log(IFN.y.IL.10.B.9.23..B22E.+0.00001) ~ Visit..months.:group, random = ~1 + Visit..months.| Pt..ID, dat,na.action = na.omit)))
+```
+
+Figure 2.  Testing whether Aab+ and Aab- participants have different trajectories of IFN.y.IL.10.C.Peptide.Neuropeptide.Y over time.
+```{r, echo=FALSE, warning=F, message=F}
+kable(Anova(lme(log(IFN.y.IL.10.C.Peptide.Neuropeptide.Y+0.00001) ~ Visit..months.:group, random = ~1 + Visit..months.| Pt..ID, dat,na.action = na.omit)))
+```
+
+Figure 2.  Testing whether Aab+ and Aab- participants have different trajectories of IFN.y.IL.10.C.Peptide.IAPP..1 over time.
+```{r, echo=FALSE, warning=F, message=F}
+kable(Anova(lme(log(IFN.y.IL.10.C.Peptide.IAPP..1+0.00001) ~ Visit..months.:group, random = ~1 + Visit..months.| Pt..ID, dat,na.action = na.omit)))
+```
+
+Figure 2.  Testing whether Aab+ and Aab- participants have different trajectories of IFN.y.IL.10.C.Peptide.IAPP.2 over time.
+```{r, echo=FALSE, warning=F, message=F}
+kable(Anova(lme(log(IFN.y.IL.10.C.Peptide.IAPP.2+0.00001) ~ Visit..months.:group, random = ~1 + Visit..months.| Pt..ID, dat,na.action = na.omit)))
+```
+
+Figure 2.  Testing whether Aab+ and Aab- participants have different trajectories of IFN.y.IL.10.C.Peptide.A.chain over time.
+```{r, echo=FALSE, warning=F, message=F}
+kable(Anova(lme(log(IFN.y.IL.10.C.Peptide.A.chain+0.00001) ~ Visit..months.:group, random = ~1 + Visit..months.| Pt..ID, dat,na.action = na.omit, control = ctrl)))
+```
+
+Figure 2.  Testing whether Aab+ and Aab- participants have different trajectories of IFN.y.IL.10.C.Peptide.10.24 over time.
+```{r, echo=FALSE, warning=F, message=F}
+kable(Anova(lme(log(IFN.y.IL.10.C.Peptide.10.24+0.00001) ~ Visit..months.:group, random = ~1 + Visit..months.| Pt..ID, dat,na.action = na.omit, control=ctrl)))
+```
+
+\newpage
+
+The tables below are the results of the mixed models for Figure 3 and Supplemental Figure 5, for the comparison of Aab+ who progressed to T1D to Aab+ who did not progress.  For each peptide, there are two tables.  The first table contains the least-squares mean (on the log scale) of the peptide in each group.  The second table provides the p-value for the group comparison.
+
+```{r, echo=FALSE}
+# in figure 3, we are comparing the IFNy/IL10 ratios for various peptides in Ab+ who progressed to T1D vs. 
+# Ab+ who did not progress, and in Ab- who seroconverted to Ab- who did not seroconvert
+# the figures are histograms, but can get p-value from a random intercept model
+aabpos <- dat[dat$group=="Aab+",]
+ratios <- c("IFN.y.IL.10.Pediarix","IFN.y.IL.10.B.9.23..Native.","IFN.y.IL.10.B.9.23..B22E.",
+            "IFN.y.IL.10.C.Peptide.Neuropeptide.Y","IFN.y.IL.10.C.Peptide.IAPP..1","IFN.y.IL.10.C.Peptide.IAPP.2",
+            "IFN.y.IL.10.C.Peptide.A.chain","IFN.y.IL.10.C.Peptide.10.24")
+# models to be reported
+sum_tab <- NULL
+for (i in 1:length(ratios)) {
+  variable <- aabpos[,ratios[i]]
+  lme_cur <- lme(log(variable+0.00001) ~ Developed.T1D, random = ~1| Pt..ID, aabpos,na.action = na.omit)
+  #print(summary(lme_cur))
+  #temp_tab <- c(peptides[i],summary(lme_cur)$tTable[2,5])
+  #sum_tab <- rbind(sum_tab,temp_tab)
+  print(ratios[i])
+  lme_cur.emm <- emmeans(lme_cur,"Developed.T1D")
+  print(lme_cur.emm)
+  lme_cur.pairs <- pairs(lme_cur.emm)
+  print(lme_cur.pairs)
+}
+
+```
+
+\newpage
+
+The tables below are the results of the mixed models for Figure 3 and Supplemental Figure 5, for the comparison of Aab- who seroconverted to Aab- who did not seroconvert.  For each peptide, there are two tables.  The first table contains the least-squares mean (on the log scale) of the peptide in each group.  The second table provides the p-value for the group comparison.
+
+```{r, echo=FALSE}
+# in figure 3, we are comparing the IFNy/IL10 ratios for various peptides in Ab+ who progressed to T1D vs. 
+# Ab+ who did not progress, and in Ab- who seroconverted to Ab- who did not seroconvert
+# the figures are histograms, but can get p-value from a random intercept model
+aabneg <- dat[dat$group=="Aab-",]
+ratios <- c("IFN.y.IL.10.Pediarix","IFN.y.IL.10.B.9.23..Native.","IFN.y.IL.10.B.9.23..B22E.",
+            "IFN.y.IL.10.C.Peptide.Neuropeptide.Y","IFN.y.IL.10.C.Peptide.IAPP..1","IFN.y.IL.10.C.Peptide.IAPP.2",
+            "IFN.y.IL.10.C.Peptide.A.chain","IFN.y.IL.10.C.Peptide.10.24")
+# models to be reported
+sum_tab <- NULL
+for (i in 1:length(ratios)) {
+  variable <- aabneg[,ratios[i]]
+  lme_cur <- lme(log(variable+0.00001) ~ Converted.to.pos, random = ~1| Pt..ID, aabneg,na.action = na.omit)
+  #print(summary(lme_cur))
+  #temp_tab <- c(peptides[i],summary(lme_cur)$tTable[2,5])
+  #sum_tab <- rbind(sum_tab,temp_tab)
+  print(ratios[i])
+  lme_cur.emm <- emmeans(lme_cur,"Converted.to.pos")
+  print(lme_cur.emm)
+  lme_cur.pairs <- pairs(lme_cur.emm)
+  print(lme_cur.pairs)
+}
+
+```
+
+\newpage
+
+```{r, include=FALSE}
+SF6 <- CreateTableOne(vars="Duration.from.Sero.Conversion..years.", 
+                      data=tab1dat[tab1dat$group=="Aab+",], strata = "Developed.T1D")
+SF6 <- print(SF6,varLabels=TRUE,showAllLevels=TRUE)
+t.test(tab1dat[tab1dat$group=="Aab+",]$Duration.from.Sero.Conversion..years.~
+       tab1dat[tab1dat$group=="Aab+",]$Developed.T1D,var.equal = T)
+```
+
+The table below shows the comparison of duration since seroconversion in Aab+ who developed T1D (N=5) and Aab+ who did not develop T1D (N=20).
+
+```{r, echo=FALSE}
+kable(SF6,caption="")
+```
+
+\newpage
+
+The tables below show the results of the mixed models testing the association between the response to peptides and clinical variables.
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.Pediarix and IAA.
+```{r, echo=FALSE}
+# Fig 4 and S7
+kable(summary(lme(log(Pediarix+0.00001) ~ IAA..nl...0.011., random = ~1| Pt..ID, fig4a_iaa,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.B.9.23..Native. and IAA.
+```{r, echo=FALSE}
+kable(summary(lme(log(B.9.23..Native.+0.00001) ~ IAA..nl...0.011., random = ~1| Pt..ID, fig4a_iaa,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.B.9.23..B22E. and IAA.
+```{r, echo=FALSE}
+kable(summary(lme(log(B.9.23..B22E.+0.00001) ~ IAA..nl...0.011., random = ~1| Pt..ID, fig4a_iaa,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.10.24 and IAA.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.10.24+0.00001) ~ IAA..nl...0.011., random = ~1| Pt..ID, fig4a_iaa,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.IAPP.2 and IAA.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.IAPP.2+0.00001) ~ IAA..nl...0.011., random = ~1| Pt..ID, fig4a_iaa,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.Neuropeptide.Y and IAA.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.Neuropeptide.Y+0.00001) ~ IAA..nl...0.011., random = ~1| Pt..ID, fig4a_iaa,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.IAPP..1 and IAA.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.IAPP..1+0.00001) ~ IAA..nl...0.011., random = ~1| Pt..ID, fig4a_iaa,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.A.chain and IAA.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.A.chain+0.00001) ~ IAA..nl...0.011., random = ~1| Pt..ID, fig4a_iaa,na.action = na.omit))$tTable)
+```
+
+\newpage
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.Pediarix and glucose AUC.
+```{r, echo=FALSE}
+# Fig 4 and S7
+kable(summary(lme(log(Pediarix+0.00001) ~ Gluc.AUC..mg.dl.min., random = ~1| Pt..ID, 
+                  fig4b_auc,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.B.9.23..Native. and glucose AUC.
+```{r, echo=FALSE}
+kable(summary(lme(log(B.9.23..Native.+0.00001) ~ Gluc.AUC..mg.dl.min., random = ~1| Pt..ID, fig4b_auc,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.B.9.23..B22E. and glucose AUC.
+```{r, echo=FALSE}
+kable(summary(lme(log(B.9.23..B22E.+0.00001) ~ Gluc.AUC..mg.dl.min., random = ~1| Pt..ID, fig4b_auc,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.10.24 and glucose AUC.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.10.24+0.00001) ~ Gluc.AUC..mg.dl.min., random = ~1| Pt..ID, fig4b_auc,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.IAPP.2 and glucose AUC.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.IAPP.2+0.00001) ~ Gluc.AUC..mg.dl.min., random = ~1| Pt..ID, fig4b_auc,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.Neuropeptide.Y and glucose AUC.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.Neuropeptide.Y+0.00001) ~ Gluc.AUC..mg.dl.min., random = ~1| Pt..ID, fig4b_auc,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.IAPP..1 and glucose AUC.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.IAPP..1+0.00001) ~ Gluc.AUC..mg.dl.min., random = ~1| Pt..ID, fig4b_auc,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.A.chain and IAA.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.A.chain+0.00001) ~ Gluc.AUC..mg.dl.min., random = ~1| Pt..ID, fig4b_auc,na.action = na.omit))$tTable)
+```
+
+\newpage
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.Pediarix and HbA1c.
+```{r, echo=FALSE}
+# Fig 4 and S7
+kable(summary(lme(log(Pediarix+0.00001) ~ A1C...., random = ~1| Pt..ID, fig4c_a1c,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.B.9.23..Native. and HbA1c.
+```{r, echo=FALSE}
+kable(summary(lme(log(B.9.23..Native.+0.00001) ~ A1C...., random = ~1| Pt..ID, fig4c_a1c,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.B.9.23..B22E. and HbA1c.
+```{r, echo=FALSE}
+kable(summary(lme(log(B.9.23..B22E.+0.00001) ~ A1C...., random = ~1| Pt..ID, fig4c_a1c,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.10.24 and HbA1c.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.10.24+0.00001) ~ A1C...., random = ~1| Pt..ID, fig4c_a1c,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.IAPP.2 and HbA1c.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.IAPP.2+0.00001) ~ A1C...., random = ~1| Pt..ID, fig4c_a1c,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.Neuropeptide.Y and HbA1c.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.Neuropeptide.Y+0.00001) ~ A1C...., random = ~1| Pt..ID, fig4c_a1c,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.IAPP..1 and HbA1c.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.IAPP..1+0.00001) ~ A1C...., random = ~1| Pt..ID, fig4c_a1c,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.A.chain and IAA.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.A.chain+0.00001) ~ A1C...., random = ~1| Pt..ID, fig4c_a1c,na.action = na.omit))$tTable)
+```
+
+\newpage
+
+The tables below show the results of the mixed models testing the association between the response to peptides and clinical variables, allowing a quadratic relationship between the two.
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.Pediarix and IAA, allowing for a quadratic relationship.
+```{r, echo=FALSE}
+# Fig 4 and S7
+kable(summary(lme(log(Pediarix+0.00001) ~ IAA..nl...0.011. + I(IAA..nl...0.011.^2), random = ~1| Pt..ID, fig4a_iaa,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.B.9.23..Native. and IAA, allowing for a quadratic relationship.
+```{r, echo=FALSE}
+kable(summary(lme(log(B.9.23..Native.+0.00001) ~ IAA..nl...0.011. + I(IAA..nl...0.011.^2), random = ~1| Pt..ID, fig4a_iaa,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.B.9.23..B22E. and IAA, allowing for a quadratic relationship.
+```{r, echo=FALSE}
+kable(summary(lme(log(B.9.23..B22E.+0.00001) ~ IAA..nl...0.011. + I(IAA..nl...0.011.^2), random = ~1| Pt..ID, fig4a_iaa,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.10.24 and IAA, allowing for a quadratic relationship.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.10.24+0.00001) ~ IAA..nl...0.011. + I(IAA..nl...0.011.^2), random = ~1| Pt..ID, fig4a_iaa,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.IAPP.2 and IAA, allowing for a quadratic relationship.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.IAPP.2+0.00001) ~ IAA..nl...0.011. + I(IAA..nl...0.011.^2), random = ~1| Pt..ID, fig4a_iaa,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.Neuropeptide.Y and IAA, allowing for a quadratic relationship.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.Neuropeptide.Y+0.00001) ~ IAA..nl...0.011. + I(IAA..nl...0.011.^2), random = ~1| Pt..ID, fig4a_iaa,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.IAPP..1 and IAA, allowing for a quadratic relationship.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.IAPP..1+0.00001) ~ IAA..nl...0.011. + I(IAA..nl...0.011.^2), random = ~1| Pt..ID, fig4a_iaa,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.A.chain and IAA, allowing for a quadratic relationship.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.A.chain+0.00001) ~ IAA..nl...0.011. + I(IAA..nl...0.011.^2), random = ~1| Pt..ID, fig4a_iaa,na.action = na.omit))$tTable)
+```
+
+\newpage
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.Pediarix and glucose AUC, allowing for a quadratic relationship.
+```{r, echo=FALSE}
+# Fig 4 and S7
+kable(summary(lme(log(Pediarix+0.00001) ~ Gluc.AUC..mg.dl.min. + I(Gluc.AUC..mg.dl.min.^2), random = ~1| Pt..ID, fig4b_auc,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.B.9.23..Native. and glucose AUC, allowing for a quadratic relationship.
+```{r, echo=FALSE}
+kable(summary(lme(log(B.9.23..Native.+0.00001) ~ Gluc.AUC..mg.dl.min. + I(Gluc.AUC..mg.dl.min.^2), random = ~1| Pt..ID, fig4b_auc,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.B.9.23..B22E. and glucose AUC, allowing for a quadratic relationship.
+```{r, echo=FALSE}
+kable(summary(lme(log(B.9.23..B22E.+0.00001) ~ Gluc.AUC..mg.dl.min. + I(Gluc.AUC..mg.dl.min.^2), random = ~1| Pt..ID, fig4b_auc,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.10.24 and glucose AUC, allowing for a quadratic relationship.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.10.24+0.00001) ~ Gluc.AUC..mg.dl.min. + I(Gluc.AUC..mg.dl.min.^2), random = ~1| Pt..ID, fig4b_auc,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.IAPP.2 and glucose AUC, allowing for a quadratic relationship.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.IAPP.2+0.00001) ~ Gluc.AUC..mg.dl.min. + I(Gluc.AUC..mg.dl.min.^2), random = ~1| Pt..ID, fig4b_auc,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.Neuropeptide.Y and glucose AUC, allowing for a quadratic relationship.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.Neuropeptide.Y+0.00001) ~ Gluc.AUC..mg.dl.min. + I(Gluc.AUC..mg.dl.min.^2), random = ~1| Pt..ID, fig4b_auc,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.IAPP..1 and glucose AUC, allowing for a quadratic relationship.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.IAPP..1+0.00001) ~ Gluc.AUC..mg.dl.min. + I(Gluc.AUC..mg.dl.min.^2), random = ~1| Pt..ID, fig4b_auc,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.A.chain and IAA, allowing for a quadratic relationship.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.A.chain+0.00001) ~ Gluc.AUC..mg.dl.min. + I(Gluc.AUC..mg.dl.min.^2), random = ~1| Pt..ID, fig4b_auc,na.action = na.omit))$tTable)
+```
+
+\newpage
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.Pediarix and HbA1c, allowing for a quadratic relationship.
+```{r, echo=FALSE}
+# Fig 4 and S7
+kable(summary(lme(log(Pediarix+0.00001) ~ A1C.... + I(A1C....^2), random = ~1| Pt..ID, fig4c_a1c,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.B.9.23..Native. and HbA1c, allowing for a quadratic relationship.
+```{r, echo=FALSE}
+kable(summary(lme(log(B.9.23..Native.+0.00001) ~ A1C.... + I(A1C....^2), random = ~1| Pt..ID, fig4c_a1c,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.B.9.23..B22E. and HbA1c, allowing for a quadratic relationship.
+```{r, echo=FALSE}
+kable(summary(lme(log(B.9.23..B22E.+0.00001) ~ A1C.... + I(A1C....^2), random = ~1| Pt..ID, fig4c_a1c,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.10.24 and HbA1c, allowing for a quadratic relationship.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.10.24+0.00001) ~ A1C.... + I(A1C....^2), random = ~1| Pt..ID, fig4c_a1c,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.IAPP.2 and HbA1c, allowing for a quadratic relationship.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.IAPP.2+0.00001) ~ A1C.... + I(A1C....^2), random = ~1| Pt..ID, fig4c_a1c,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.Neuropeptide.Y and HbA1c, allowing for a quadratic relationship.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.Neuropeptide.Y+0.00001) ~ A1C.... + I(A1C....^2), random = ~1| Pt..ID, fig4c_a1c,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.IAPP..1 and HbA1c, allowing for a quadratic relationship.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.IAPP..1+0.00001) ~ A1C.... + I(A1C....^2), random = ~1| Pt..ID, fig4c_a1c,na.action = na.omit))$tTable)
+```
+
+Figure 4 and Supp. Figure 7.  Association between IFN.y.IL.10.C.Peptide.A.chain and IAA, allowing for a quadratic relationship.
+```{r, echo=FALSE}
+kable(summary(lme(log(C.Peptide.A.chain+0.00001) ~ A1C.... + I(A1C....^2), random = ~1| Pt..ID, fig4c_a1c,na.action = na.omit))$tTable)
+```

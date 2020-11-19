@@ -1,0 +1,114 @@
+---
+title: "CACTI Study CVD Measures"
+author: "Laura Pyle, PhD"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(readxl)
+library(magrittr)
+library(purrr)
+library(readr)
+library(tableone)
+library(Hmisc)
+library(labelled)
+
+# read in Janet's combined file
+alldata <- read.csv("S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\CACTI oral microbiome\\Blinded CSOC report #2\\Data\\QOMBE_Blinded32320.csv")
+
+# read in augmentation index file
+ai <- read.csv("S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\CACTI oral microbiome\\Blinded CSOC report #2\\Data\\PWA Query.csv")
+ai <- ai[,c("StudyID","AvgOfC_Al")]
+alldata <- merge(alldata,ai,by="StudyID")
+
+# clean up extra rows
+alldata <- alldata[!is.na(alldata$StudyID),] 
+
+# for cIMT, take largest of left and right mean, unless only one side
+for (i in 1:nrow(alldata)) {
+  alldata$cIMT[i] <- ifelse(is.na(alldata$CIMT_LeftMean[i]) & is.na(alldata$CIMT_RightMean[i]),NA,max(alldata$CIMT_LeftMean[i],alldata$CIMT_RightMean[i],na.rm = TRUE))
+}
+
+# some people have 0 values for BD, set to missing
+alldata$BrachD[alldata$BrachD==0] <- NA
+
+# count number of each measure
+n_Ap <- nrow(alldata[!is.na(alldata$Ap),])
+n_Ph <- nrow(alldata[!is.na(alldata$Ph),])
+n_Agph <- nrow(alldata[!is.na(alldata$Agph),])
+n_HR <- nrow(alldata[!is.na(alldata$HR),])
+n_PWV <- nrow(alldata[!is.na(alldata$PWV),])
+n_BD <- nrow(alldata[!is.na(alldata$BrachD),])
+n_cIMT <- nrow(alldata[!is.na(alldata$cIMT),])
+
+# now classify as normal/abnormal
+alldata$cIMT_abnormal <- ifelse(is.na(alldata$cIMT),NA,ifelse(alldata$cIMT>1,1,0))
+alldata$PWV_abnormal <- ifelse(is.na(alldata$PWV),NA,
+                               ifelse(alldata$AgeV1>=30 & alldata$AgeV1<40 & alldata$PWV>6.47,1,
+                                      ifelse(alldata$AgeV1>=40 & alldata$AgeV1<50 & alldata$PWV>7.03,1,
+                                             ifelse(alldata$AgeV1>=50 & alldata$AgeV1<60 & alldata$PWV>8.33,1,
+                                                    ifelse(alldata$AgeV1>=60 & alldata$AgeV1<70 & alldata$PWV>8.68,1,
+                                                    ifelse(alldata$AgeV1>=70 & alldata$AgeV1<80 & alldata$PWV>9.76,1,0))))))
+alldata$BrachD_abnormal <- ifelse(is.na(alldata$BrachD) | !(alldata$RaceVal %in% c("White","Black or African American")),NA,
+                              ifelse(alldata$RaceVal=="White" & alldata$Gender=="M" & alldata$BrachD <6.38,1,
+                                ifelse(alldata$RaceVal=="White" & alldata$Gender=="F" & alldata$BrachD <6.7,1,
+                                  ifelse(alldata$RaceVal=="Black or African American" & alldata$Gender=="M" & alldata$BrachD <6,1,
+                                         ifelse(alldata$RaceVal=="Black or African American" & alldata$Gender=="F" & alldata$BrachD<6.25,1,0)))))
+alldata$cIMT_abnormal <- as.factor(alldata$cIMT_abnormal)
+alldata$PWV_abnormal <- as.factor(alldata$PWV_abnormal)
+alldata$BrachD_abnormal <- as.factor(alldata$BrachD_abnormal)
+
+# labels
+var_label(alldata$cIMT)="cIMT (mm)"
+var_label(alldata$Ap)="Augmented Pressure (mmHg)"
+var_label(alldata$Agph)="Augmentation Index (%)"
+var_label(alldata$BrachD)="Brachial Distensibility (%/mmHg)"
+var_label(alldata$PWV)="Pulse Wave Velocity (m/s)"
+var_label(alldata$cIMT_abnormal)="cIMT abnormal"
+var_label(alldata$PWV_abnormal)="PWV abnormal"
+var_label(alldata$BrachD_abnormal)="BrachD abnormal"
+
+myvars <- c("Ap","Agph","PWV","BrachD","cIMT","cIMT_abnormal","PWV_abnormal","BrachD_abnormal")
+tab <- CreateTableOne(vars=myvars, strata="AStatus",data=alldata, test=FALSE)
+tab <- print(tab,varLabels=TRUE)
+
+```
+
+# Background
+
+The CACTI Study Clinical Study Oversight Committee (CSOC) is concerned that there may not be enough subclinical cardiovascular disease (CVD) in the non-diabetic group to answer the research question.  The CSOC has requested a closed report with means and standard deviations of all CVD measures, stratified by study group, as part of the interim report.  This table should be developed and provided by a blinded statistician.
+
+In this second version of the report, the prevalence of abnormal values of cIMT, PWV, and brachial distensibility have been added to the report.  The definitions of abnormal values are described in the methods section.  We were unable to identify clear criteria for abnormal augmentation index in the literature.
+
+# Methods
+
+The CVD outcomes data were provided to the blinded statistician, along with blinded group memberships.  Participants with at least one CVD measure were included in this report.  For cIMT, the maximum of the left and right sides was used in analysis.  For pulse wave velocity, Augmentation Index, augmented pressure, and brachial distensitiblity, the mean of a participant's multiple measures was used in analysis.
+
+The criteria for abnormal values of cIMT, PWV, and brachial distensibility were defined as follows:
+
+1) cIMT greater than 1 mm, per Boulous et al.
+
+2) PWV above the upper limit of the 95% confidence interval by age group as reported in Diaz et al.
+
+3) Brachial distensibility below the lower limit of the 95% confidence interval by sex and race as reported in Urbina et al.
+
+Participants were stratified by group and descriptive statistics were calculated.
+
+# Results
+
+Table 1 provides descriptive statistics for the CVD measures, by blinded study group.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kableone(tab,caption="Table 1.  Descriptive statistics for CVD measures, by blinded study group.")
+```
+
+# References
+
+Boulous NM, et al.  Carotid plaque characterization, stenosis, and intima-media thickness according to age and gender in a large registry cohort.  Am J Cardiol 2016, 117(7): 1185-1191. 
+
+Diaz A, et al.  Reference values of pulse wave velocity in healthy people from an urban and rural Argentinean population.  International Journal of Hypertension 2014, doi: 10.1155/2014/653239.
+
+Urbina EM, et al.  Brachial artery distensibility and relation to cardiovascular disease risk factor in healthy young adults (the Bogalusa Heart Study).  Am J Cardiol 2002, 89: 946-951.
