@@ -1,0 +1,260 @@
+---
+title: "CD-8 Elispot analysis - revised figures"
+author: "Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+options(scipen=999)
+
+library(knitr)
+library(tidyr)
+library(tableone)
+library(lme4)
+library(nlme)
+library(emmeans)
+library(dplyr)
+library(easyCODA)
+library(DescTools)
+library(PropCIs)
+library(sjlabelled)
+
+####FIG 3D - WAS FIG 3C #######
+
+fig3c <- read.csv("T:\\Maki Nakayama\\CD-8 Elispot\\Data raw\\From Maki\\new_fig3d.csv")
+#fig3c$HLA.A <- as.numeric(sub("%","",fig3c$HLA.A))
+#fig3c$HLA.B <- as.numeric(sub("%","",fig3c$HLA.B))
+#fig3c$HLA.C <- as.numeric(sub("%","",fig3c$HLA.C))
+# make a long dataset
+fig3c_long <- fig3c %>% gather(HLA,Proportion,HLA.A:HLA.C)
+
+# LMM
+fig3c_lme <- lme(Proportion ~ HLA, random = ~1| X, fig3c_long)
+fig3c.emm <- emmeans(fig3c_lme,"HLA")
+fig3c_pairs <- pairs(fig3c.emm)
+qqnorm(fig3c_lme)
+
+# arcsine sqrt transformation
+#trans.arcsine <- function(x){
+#  asin(sign(x) * sqrt(abs(x)))
+#}
+#fig3c_long$Prop_arcsine <- trans.arcsine(fig3c_long$Proportion/100)
+#fig3c_lme_arcsine <- lme(Prop_arcsine ~ HLA, random = ~1| X, fig3c_long)
+#qqnorm(fig3c_lme_arcsine)
+
+# centered log ratio transformation
+fig3c_new <- fig3c
+fig3c_new$HLA.A <- ifelse(fig3c_new$HLA.A==0,0.001,fig3c_new$HLA.A)
+fig3c_new$HLA.B <- ifelse(fig3c_new$HLA.B==0,0.001,fig3c_new$HLA.B)
+fig3c_new$HLA.C <- ifelse(fig3c_new$HLA.C==0,0.001,fig3c_new$HLA.C)
+temp <- CLR(fig3c_new[,c("HLA.A","HLA.B","HLA.C")])
+fig3c_new$HLA.A_CLR <- temp$LR[,1]
+fig3c_new$HLA.B_CLR <- temp$LR[,2]
+fig3c_new$HLA.C_CLR <- temp$LR[,3]
+# make a long dataset
+fig3c_new_long <- fig3c_new %>% gather(HLA,Prop_CLR,HLA.A_CLR:HLA.C_CLR)
+fig3c_lme_clr <- lme(Prop_CLR ~ HLA, random = ~1| X, fig3c_new_long)
+qqnorm(fig3c_lme_clr)
+fig3c_clr.emm <- emmeans(fig3c_lme_clr,"HLA")
+fig3c_clr_pairs <- pairs(fig3c_clr.emm)
+fig3c_clr_pairs <- summary(fig3c_clr_pairs,adjust="none")
+
+# estimate CI for proportion
+observed <- c(12,6,8)
+fig3c_multci <- MultinomCI(observed,conf.level=0.95)
+colnames(fig3c_multci) <- c("Proportion","Lower CI","Upper CI")
+row.names(fig3c_multci) <- c("HLA-A","HLA-B","HLA-C")
+
+#####FIG 3E - WAS FIG 3D ######
+fig3d_binom <- binom.test(10,21,p=0.167,alternative = "two.sided")
+
+#####FIG 3F - was FIG 3E ######
+fig3e_binom <- binom.test(10,11,p=0.167,alternative = "two.sided")
+
+#####FIG 5D - same analysis as previous fig 3f ######
+fig5d <- read.csv("T:\\Maki Nakayama\\CD-8 Elispot\\Data raw\\From Maki\\new_fig5d.csv")
+fig5d$PPI.DRiP.reactive <- as.numeric(sub("%","",fig5d$PPI.DRiP.reactive))
+
+tab5d <- CreateTableOne(vars="PPI.DRiP.reactive", strata="Group",data=fig5d, test=TRUE)
+tab5d <- print(tab5d,varLabels=TRUE,nonnorm="PPI.DRiP.reactive")
+
+#####FIG 5E - same analysis as previous fig 3f ######
+fig5e <- read.csv("T:\\Maki Nakayama\\CD-8 Elispot\\Data raw\\From Maki\\new_fig5e.csv")
+fig5e$PPI.DRiP.reactive <- as.numeric(sub("%","",fig5e$PPI.DRiP.reactive))
+
+tab5e <- CreateTableOne(vars="PPI.DRiP.reactive", strata="Group",data=fig5e, test=TRUE)
+tab5e <- print(tab5e,varLabels=TRUE,nonnorm="PPI.DRiP.reactive")
+
+######FIG 1A in T1D #####
+fig1a_t1d <- read.csv("T:\\Maki Nakayama\\CD-8 Elispot\\Data raw\\From Maki\\new_fig1a_t1d.csv")
+tab1a_t1d <- CreateTableOne(vars=c("CD4","CD8"), data=fig1a_t1d)
+tab1a_t1d <- print(tab1a_t1d,varLabels=TRUE,nonnorm=c("CD4","CD8"))
+fig1a_t1d_res <- wilcox.test(fig1a_t1d$CD4,fig1a_t1d$CD8,paired = T)
+
+######FIG 1A in controls #####
+fig1a_control <- read.csv("T:\\Maki Nakayama\\CD-8 Elispot\\Data raw\\From Maki\\new_fig1a_control.csv")
+tab1a_control <- CreateTableOne(vars=c("CD4","CD8"), data=fig1a_control)
+tab1a_control <- print(tab1a_control,varLabels=TRUE,nonnorm=c("CD4","CD8"))
+fig1a_control_res <- wilcox.test(fig1a_control$CD4,fig1a_control$CD8,paired = T)
+
+
+######FIG 1B/C in T1D #####
+fig1bc_t1d <- read.csv("T:\\Maki Nakayama\\CD-8 Elispot\\Data raw\\From Maki\\new_fig1bc_t1d.csv")
+tab1bc_t1d <- CreateTableOne(vars=c("CD4","CD8"), data=fig1bc_t1d)
+tab1bc_t1d <- print(tab1bc_t1d,varLabels=TRUE,nonnorm=c("CD4","CD8"))
+fig1bc_t1d_res <- wilcox.test(fig1bc_t1d$CD4,fig1bc_t1d$CD8,paired = T)
+
+######FIG 1B/C in controls #####
+fig1bc_control <- read.csv("T:\\Maki Nakayama\\CD-8 Elispot\\Data raw\\From Maki\\new_fig1bc_control.csv")
+tab1bc_control <- CreateTableOne(vars=c("CD4","CD8"), data=fig1bc_control)
+tab1bc_control <- print(tab1bc_control,varLabels=TRUE,nonnorm=c("CD4","CD8"))
+fig1bc_control_res <- wilcox.test(fig1bc_control$CD4,fig1bc_control$CD8,paired = T)
+
+######FIG 1D CD4 vs. CD8 all donors #####
+fig1d_cd4cd8_alldonors <- read.csv("T:\\Maki Nakayama\\CD-8 Elispot\\Data raw\\From Maki\\new_fig1d_cd4cd8_alldonors.csv")
+tab1d_cd4cd8_alldonors <- CreateTableOne(vars=c("CD4","CD8"), data=fig1d_cd4cd8_alldonors)
+tab1d_cd4cd8_alldonors <- print(tab1d_cd4cd8_alldonors,varLabels=TRUE,nonnorm=c("CD4","CD8"))
+tab1d_cd4cd8_alldonors_res <- wilcox.test(fig1d_cd4cd8_alldonors$CD4,fig1d_cd4cd8_alldonors$CD8,paired = T)
+
+######FIG 1D CD4 vs. CD8 T1D donors #####
+fig1d_cd4cd8_t1ddonors <- read.csv("T:\\Maki Nakayama\\CD-8 Elispot\\Data raw\\From Maki\\new_fig1d_cd4cd8_t1ddonors.csv")
+tab1d_cd4cd8_t1ddonors <- CreateTableOne(vars=c("CD4","CD8"), data=fig1d_cd4cd8_t1ddonors)
+tab1d_cd4cd8_t1ddonors <- print(tab1d_cd4cd8_t1ddonors,varLabels=TRUE,nonnorm=c("CD4","CD8"))
+tab1d_cd4cd8_t1ddonors_res <- wilcox.test(fig1d_cd4cd8_t1ddonors$CD4,fig1d_cd4cd8_t1ddonors$CD8,paired = T)
+
+######FIG 1D CD4 vs. CD8 control donors #####
+fig1d_cd4cd8_controldonors <- read.csv("T:\\Maki Nakayama\\CD-8 Elispot\\Data raw\\From Maki\\new_fig1d_cd4cd8_controldonors.csv")
+tab1d_cd4cd8_controldonors <- CreateTableOne(vars=c("CD4","CD8"), data=fig1d_cd4cd8_controldonors)
+tab1d_cd4cd8_controldonors <- print(tab1d_cd4cd8_controldonors,varLabels=TRUE,nonnorm=c("CD4","CD8"))
+tab1d_cd4cd8_controldonors_res <- wilcox.test(fig1d_cd4cd8_controldonors$CD4,fig1d_cd4cd8_controldonors$CD8,paired = T)
+
+######FIG 1D CD4 T1D vs. control #####
+fig1d_cd4 <- read.csv("T:\\Maki Nakayama\\CD-8 Elispot\\Data raw\\From Maki\\new_fig1d_cd4_t1dvcontrol.csv")
+tab1d_cd4 <- CreateTableOne(vars="CD4", strata="Group",data=fig1d_cd4,test = T)
+tab1d_cd4 <- print(tab1d_cd4,varLabels=TRUE,nonnorm="CD4")
+
+######FIG 1D CD8 T1D vs. control #####
+fig1d_cd8 <- read.csv("T:\\Maki Nakayama\\CD-8 Elispot\\Data raw\\From Maki\\new_fig1d_cd8_t1dvcontrol.csv")
+tab1d_cd8 <- CreateTableOne(vars="CD8", strata="Group",data=fig1d_cd8,test = T)
+tab1d_cd8 <- print(tab1d_cd8,varLabels=TRUE,nonnorm="CD8")
+
+```
+
+
+## New Fig 3d - was Fig 3c
+
+A mixed model was used to compare the clonotypes in each HLA class.  The overall comparison was not significant.
+
+```{r, echo=FALSE}
+kable(anova(fig3c_lme),caption = "Figure 3c.  Mixed model results.")
+```
+<br>
+
+```{r, echo=FALSE}
+kable(fig3c_pairs,caption = "Figure 3c.  Mixed model results, pairwise comparisons between means.")
+```
+<br>
+
+Given the small sample size, a simpler approach was also used to compare the proportions.  Assuming a multinomial distribution, 95% confidence intervals for each proportion were calculated.  There were no significant differences.
+
+```{r, echo=FALSE}
+kable(fig3c_multci,caption = "Figure 3c.  95% confidence intervals for multinomial proportions.")
+```
+<br>
+
+## Fig 3d
+
+An exact binomial test was used to test whether the proportion of A*02:01 alleles was equal to 1/6.  The null hypothesis was rejected with p<0.0001.  The estimated proportion was `r fig3d_binom$estimate`.
+
+```{r, echo=FALSE}
+fig3d_binom
+```
+
+## Fig 3e
+
+An exact binomial test was used to test whether the proportion of A*02:01 alleles was equal to 1/6.  The null hypothesis was rejected with p<0.0001.  The estimated proportion was `r fig3e_binom$estimate`.
+
+```{r, echo=FALSE}
+fig3e_binom
+```
+
+## Fig 5d
+
+The table below compares the percentage of PPI/DRIP reactive clonotypes by levels of C-peptide.  P-values are from the Mann-Whitney test.
+
+```{r, echo=FALSE}
+kable(tab5d,caption = "Figure 5d.  Percentage of PPI/DRIP reactive clonotypes in donors by level of C-peptide.")
+```
+
+
+## Fig 5e
+
+The table below compares the percentage of PPI/DRIP reactive clonotypes by mIAA status.  P-values are from the Mann-Whitney test.
+
+```{r, echo=FALSE}
+kable(tab5e,caption = "Figure 5f.  Percentage of PPI/DRIP reactive clonotypes in donors by mIAA status.")
+```
+
+## Fig 1a
+
+The table below compares number of CD4 and CD8 Tcells per islet in T1D donors.  The p-value from the Wilcoxon rank sum test is `r fig1a_t1d_res$p.value`.
+
+```{r, echo=FALSE}
+kable(tab1a_t1d,caption = "Figure 1a.  Number of CD4 and CD8 Tcells per islet in T1D donors.")
+```
+
+The table below compares number of CD4 and CD8 Tcells per islet in control donors.  The p-value from the Wilcoxon rank sum test is `r fig1a_control_res$p.value`.
+
+```{r, echo=FALSE}
+kable(tab1a_control,caption = "Figure 1a.  Number of CD4 and CD8 Tcells per islet in control donors.")
+```
+
+## Fig 1b/c
+
+The table below compares the percentages of CD4 and CD8 TCRs detected from multiple cells in T1D donors.  The p-value from the Wilcoxon rank sum test is `r fig1bc_t1d_res$p.value`.
+
+```{r, echo=FALSE}
+kable(tab1bc_t1d,caption = "Figure 1b/c.  Percentage of CD4 and CD8 TCRs detected from multiple cells in T1D donors.")
+```
+
+The table below compares the percentages of CD4 and CD8 TCRs detected from multiple cells in control donors.  The p-value from the Wilcoxon rank sum test is `r fig1bc_control_res$p.value`.
+
+```{r, echo=FALSE}
+kable(tab1bc_control,caption = "Figure 1b/c.  Percentage of CD4 and CD8 TCRs detected from multiple cells in control donors.")
+```
+
+## Fig 1d
+
+The table below compares Shannon Diversity Index of CD4 and CD8 in all donors.  The p-value from the Wilcoxon rank sum test is 
+`r tab1d_cd4cd8_alldonors_res$p.value`.
+
+```{r, echo=FALSE}
+kable(tab1d_cd4cd8_alldonors,caption = "Figure 1d.  Shannon Diversity Index of CD4 and CD8 in all donors.")
+```
+
+The table below compares Shannon Diversity Index of CD4 and CD8 in T1D donors.  The p-value from the Wilcoxon rank sum test is 
+`r tab1d_cd4cd8_t1ddonors_res$p.value`.
+
+```{r, echo=FALSE}
+kable(tab1d_cd4cd8_t1ddonors,caption = "Figure 1d.  Shannon Diversity Index of CD4 and CD8 in T1D donors.")
+```
+
+The table below compares Shannon Diversity Index of CD4 and CD8 in control donors.  The p-value from the Wilcoxon rank sum test is 
+`r tab1d_cd4cd8_controldonors_res$p.value`.
+
+```{r, echo=FALSE}
+kable(tab1d_cd4cd8_controldonors,caption = "Figure 1d.  Shannon Diversity Index of CD4 and CD8 in control donors.")
+```
+
+The table below compares Shannon Diversity Index of CD4 in T1D vs. control.  
+
+```{r, echo=FALSE}
+kable(tab1d_cd4,caption = "Figure 1d.  Shannon Diversity Index of CD4 in T1D vs. control.")
+```
+
+The table below compares Shannon Diversity Index of CD8 in T1D vs. control.  
+
+```{r, echo=FALSE}
+kable(tab1d_cd8,caption = "Figure 1d.  Shannon Diversity Index of CD8 in T1D vs. control.")
+```

@@ -1,0 +1,338 @@
+---
+title: "ASKED-IT"
+author: "Laura Pyle and Kristen Campbell"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(knitr)
+###update this working directory to your personal cloned directory:
+#C:\\Users\\pylell\\Documents\\GitHub\\ASKEDIT\\
+setwd("C:\\Users\\campbkri\\Documents\\GitHub\\ASKEDIT")
+
+
+# read in SMOD datasets are long, not wide
+source("ASKEDIT_R_2019-01-16_1449.r")
+smod <- data
+
+# create another dataframe with smod subscales
+smod_sub <- smod[,c("pid","redcap_event_name","collaboration_score","care_subscale","problem_solve_score","communication_score","goal_score")]
+# before reshaping the datasets, need to make new time var
+smod_sub$visit[smod_sub$redcap_event_name %in% c("enrollment_arm_2","enrollment_arm_1")] <- "0"
+smod_sub$visit[smod_sub$redcap_event_name %in% c("3_months_arm_2","3_months_arm_1")] <- "3"
+smod_sub$visit[smod_sub$redcap_event_name %in% c("6_months_arm_1","6_months_arm_2")] <- "6"
+smod_sub <- smod_sub[,-2]
+smod_sub_wide <- reshape(smod_sub,timevar="visit",direction="wide",idvar="pid")
+# calculate deltas
+smod_sub_wide$d.collaboration3 <- smod_sub_wide$collaboration_score.3 - smod_sub_wide$collaboration_score.0
+smod_sub_wide$d.collaboration6 <- smod_sub_wide$collaboration_score.6 - smod_sub_wide$collaboration_score.0
+smod_sub_wide$d.care3 <- smod_sub_wide$care_subscale.3 - smod_sub_wide$care_subscale.0
+smod_sub_wide$d.care6 <- smod_sub_wide$care_subscale.6 - smod_sub_wide$care_subscale.0
+smod_sub_wide$d.solve3 <- smod_sub_wide$problem_solve_score.3 - smod_sub_wide$problem_solve_score.0
+smod_sub_wide$d.solve6 <- smod_sub_wide$problem_solve_score.6 - smod_sub_wide$problem_solve_score.0
+smod_sub_wide$d.comm3 <- smod_sub_wide$communication_score.3 - smod_sub_wide$communication_score.0
+smod_sub_wide$d.comm6 <- smod_sub_wide$communication_score.6 - smod_sub_wide$communication_score.0
+smod_sub_wide$d.goal3 <- smod_sub_wide$goal_score.3 - smod_sub_wide$goal_score.0
+smod_sub_wide$d.goal6 <- smod_sub_wide$goal_score.6 - smod_sub_wide$goal_score.0
+
+# create dataframe with main smod score
+smod <- smod[,c("pid","redcap_event_name","smod_score")]
+# before reshaping the datasets, need to make new time var
+smod$visit[smod$redcap_event_name %in% c("enrollment_arm_2","enrollment_arm_1")] <- "0"
+smod$visit[smod$redcap_event_name %in% c("3_months_arm_2","3_months_arm_1")] <- "3"
+smod$visit[smod$redcap_event_name %in% c("6_months_arm_1","6_months_arm_2")] <- "6"
+smod <- smod[,-2]
+smod_wide <- reshape(smod,timevar="visit",direction="wide",idvar="pid")
+# calculate deltas
+smod_wide$d.smod3 <- smod_wide$smod_score.3 - smod_wide$smod_score.0
+smod_wide$d.smod6 <- smod_wide$smod_score.6 - smod_wide$smod_score.0
+
+
+# read in main dataset
+source("ASKEDIT_R_2018-12-05_1420.r")
+
+#source("C:\\Users\\pylell\\Documents\\GitHub\\General-code\\temp_table1.r")
+#source("C:\\Users\\pylell\\Documents\\GitHub\\General-code\\01_functions.r")
+
+source("S:\\Shared Material\\Shared Code\\R\\temp_table1.r")
+source("C:\\Users\\campbkri\\Documents\\GitHub\\General-code\\01_functions.r")
+
+
+# collapse insurance to private vs. public
+data$insnew[data$insurance==1] <- "Private"
+data$insnew[data$insurance != 1 & data$insurance !=6] <- "Public"
+data$insnew[data$insurance==6] <- "None"
+
+# drop unused levels of group
+data$redcap_event_name.factor <-  droplevels(data$redcap_event_name.factor)
+
+# calculate deltas
+data$d.mwikad3 <- data$mwikad3month - data$mwikadenroll
+data$d.mwikad6 <- data$mwikad6month - data$mwikadenroll
+data$d.a1c3 <- data$a1c3month - data$enrolla1c
+data$d.a1c6 <- data$a1c6month - data$enrolla1c
+data$d.bgtest3 <- data$bgtest3month - data$enrollbgfrequency
+data$d.bgtest6 <- data$testing6month - data$enrollbgfrequency
+data$d.high3 <- data$high3month - data$enrollhigh
+data$d.high6 <- data$high6month - data$enrollhigh
+data$d.low3 <-data$low3month - data$enrolllow
+data$d.low6 <- data$low6month - data$enrolllow
+data$d.inrange3 <- data$inrange3month - data$enrollinrange
+data$d.inrange6 <- data$inrange6month - data$enrollinrange
+
+# merge in smod data
+data <- merge(data,smod_wide,by="pid")
+
+#fix race/ethnicity variable:
+data$race_eth_cat<-"Other"
+data$race_eth_cat[data$nih_race.factor=="White"]<-"Non-Hispanic White"
+data$race_eth_cat[data$ethnicity.factor=="Hispanic or Latino"]<-"Hispanic"
+data$race_eth_cat[data$nih_race.factor=="Black or African-American"]<-"Black"
+data$race_eth_cat<-as.factor(data$race_eth_cat)
+
+# dropout variables:
+data$sixmontha1c<-"No 6 Month A1C"
+data$sixmontha1c[!is.na(data$a1c6month)]<-"6 Month A1C"
+
+data$sixmonthSMOD<-"No 6 Month SMOD"
+data$sixmonthSMOD[!is.na(data$smod_score.6)]<-"6 Month SMOD"
+
+# labels
+label(data$nih_sex.factor)="Sex"
+label(data$nih_race.factor)="Race"
+label(data$ethnicity.factor)="Ethnicity"
+label(data$race_eth_cat)="Race/Ethnicity"
+label(data$insulindelivery.factor)="Insulin delivery"
+label(data$cgm.factor)="CGM"
+label(data$homes.factor)="Do you live in more than one home?"
+label(data$income.factor)="Income"
+label(data$insnew)="Insurance"
+label(data$d.mwikad3)="Change in MWIKAD 3 mo"
+label(data$d.mwikad6)="Change in MWIKAD 6 mo"
+label(data$d.a1c3)="Change in A1c 3 mo"
+label(data$d.a1c6)="Change in A1c 6 mo"
+label(data$d.bgtest3)="Change in BG testing 3 mo"
+label(data$d.bgtest6)="Change in BG testing 6 mo"
+label(data$d.high3)="Change in % high 3 mo"
+label(data$d.high6)="Change in % high 6 mo"
+label(data$d.low3)="Change in % low 3 mo"
+label(data$d.low6)="Change in % low 6 mo"
+label(data$d.inrange3)="Change in % in range 3 mo"
+label(data$d.inrange6)="Change in % in range 6 mo"
+label(data$d.smod3)="Change in total SMOD 3 mo"
+label(data$d.smod6)="Change in total SMOD 6 mo"
+
+# merge in smod subscales
+data <- merge(data,smod_sub_wide,by="pid")
+
+# more labels
+label(data$d.collaboration3)="Change in SMOD collaboration score 3 mo"
+label(data$d.collaboration6)="Change in SMOD collaboration score 6 mo"
+label(data$d.care3)="Change in SMOD care score 3 mo"
+label(data$d.care6)="Change in SMOD care score 6 mo"
+label(data$d.solve3)="Change in SMOD problem solving score 3 mo"
+label(data$d.solve6)="Change in SMOD problem solving score 6 mo"
+label(data$d.comm3)="Change in SMOD communication score 3 mo"
+label(data$d.comm6)="Change in SMOD communication score 6 mo"
+label(data$d.goal3)="Change in SMOD goal score 3 mo"
+label(data$d.goal6)="Change in SMOD goal score 6 mo"
+label(data$mwikadenroll)<-"MWIKAD Baseline"
+label(data$mwikad3month)<-"MWIKAD 3 Months"
+label(data$mwikad6month)<-"MWIKAD 6 Months"
+
+
+#recategorize insulin delivery (sarit did in manuscript):
+data$insulindelivery_2<-data$insulindelivery.factor
+data$insulindelivery_2[data$insulindelivery_2=="Insulin shots with set doses at meals based on blood sugar"]<-"Insulin shots with carbohydrate counting"
+data$insulindelivery_2<-factor(data$insulindelivery_2)
+label(data$insulindelivery_2)<-"Insulin Delivery"
+#recategorize income (sarit did in manuscript):
+data$income_2<-NA
+data$income_2[data$income.factor==1]<-"<$30,000"
+data$income_2[data$income.factor==2]<-"<$30,000"
+data$income_2[data$income.factor==3]<-"<$30,000"
+data$income_2[data$income.factor==4]<-"$30,000-$50,000"
+data$income_2[data$income.factor==5]<-"$30,000-$50,000"
+data$income_2[data$income.factor==6]<-"$50,000-$100,000"
+data$income_2[data$income.factor==7]<-"$50,000-$100,000"
+data$income_2[data$income.factor==8]<-"$100,000+"
+data$income_2[data$income.factor==9]<-"$100,000+"
+data$income_2[data$income.factor==10]<-"Unknown"
+
+data$income_2<-factor(data$income_2,levels=c("<$30,000","$30,000-$50,000","$50,000-$100,000","$100,000+","Unknown"))
+label(data$income_2)<-"Family Income"
+data$cgm_yn<-NA
+data$cgm_yn[data$cgm.factor=="Yes, Dexcom"]<-"Yes"
+data$cgm_yn[data$cgm.factor=="Yes, Medtronic"]<-"Yes"
+data$cgm_yn[data$cgm.factor=="No"]<-"No"
+label(data$cgm_yn)<-"CGM"
+# Table 1
+tab1 <- final_table(data,c("age","nih_sex.factor","diab_durration","race_eth_cat","insulindelivery_2",
+                           "cgm_yn","insnew","homes.factor","income_2"),
+                    group=as.factor(data$redcap_event_name.factor),margin=2,single=0,ron=1)
+
+# Table 2 - table of changes
+tab2 <- final_table(data,c("d.mwikad3","d.mwikad6","d.a1c3","d.a1c6","d.bgtest3","d.bgtest6","d.high3","d.high6",
+                           "d.low3","d.low6","d.inrange3","d.inrange6","d.smod3","d.smod6","d.collaboration3","d.collaboration6",
+                           "d.care3","d.care6","d.solve3","d.solve6","d.comm3","d.comm6","d.goal3","d.goal6")
+                    ,group=as.factor(data$redcap_event_name.factor),margin=2,single=0,ron=1)
+
+# Table 2b - table of raw values, requested by sonalee on 2/26:
+
+tab2b <- final_table(data,c("enrolla1c","enrollhigh", "mwikadenroll","mwikad3month","mwikad6month",
+                            "collaboration_score.0","collaboration_score.3","collaboration_score.6",
+                            "care_subscale.0","care_subscale.3","care_subscale.6",
+                            "problem_solve_score.0","problem_solve_score.3","problem_solve_score.6",
+                            "communication_score.0","communication_score.3","communication_score.6",
+                            "goal_score.0","goal_score.3","goal_score.6",
+                            "smod_score.0","smod_score.3","smod_score.6")
+                    ,group=as.factor(data$redcap_event_name.factor),margin=2,single=0,ron=1,summary.stat ='both')
+
+tab2b
+
+# Loss to follow-up comparison, requested by sonalee on 2/26:
+
+
+tab_ltfu.1 <- final_table(data,c("age","nih_sex.factor","diab_durration","race_eth_cat","insulindelivery.factor",
+                           "cgm.factor","insnew","homes.factor","income.factor","a1c3month",
+                           "mwikadenroll","collaboration_score.0","care_subscale.0","problem_solve_score.0",
+                           "communication_score.0","goal_score.0","smod_score.0")
+                    ,group=as.factor(data$sixmontha1c),margin=2,single=0,ron=1,summary.stat ='both')
+
+tab_ltfu.1
+# split by group:
+data.int<-subset(data,data$redcap_event_name.factor=="Enrollment (Arm 2: Texting)")
+data.con<-subset(data,data$redcap_event_name.factor=="Enrollment (Arm 1: Control)")
+
+tab_ltfu.1_int <- final_table(data.int,c("age","nih_sex.factor","diab_durration","race_eth_cat","insulindelivery.factor",
+                           "cgm.factor","insnew","homes.factor","income.factor","a1c3month",
+                           "mwikadenroll","collaboration_score.0","care_subscale.0","problem_solve_score.0",
+                           "communication_score.0","goal_score.0","smod_score.0")
+                    ,group=as.factor(data.int$sixmontha1c),margin=2,single=0,ron=1,summary.stat ='both')
+
+tab_ltfu.1_int
+tab_ltfu.1_con <- final_table(data.con,c("age","nih_sex.factor","diab_durration","race_eth_cat","insulindelivery.factor",
+                           "cgm.factor","insnew","homes.factor","income.factor","a1c3month",
+                           "mwikadenroll","collaboration_score.0","care_subscale.0","problem_solve_score.0",
+                           "communication_score.0","goal_score.0","smod_score.0")
+                    ,group=as.factor(data.con$sixmontha1c),margin=2,single=0,ron=1,summary.stat ='both')
+
+tab_ltfu.1_con
+
+tab_ltfu.2 <- final_table(data,c("age","nih_sex.factor","diab_durration","race_eth_cat","insulindelivery.factor",
+                           "cgm.factor","insnew","homes.factor","income.factor","a1c3month",
+                           "mwikadenroll","collaboration_score.0","care_subscale.0","problem_solve_score.0",
+                           "communication_score.0","goal_score.0","smod_score.0")
+                    ,group=as.factor(data$sixmonthSMOD),margin=2,single=0,ron=1,summary.stat ='both')
+
+tab_ltfu.2
+
+tab_ltfu.2_int <- final_table(data.int,c("age","nih_sex.factor","diab_durration","race_eth_cat","insulindelivery.factor",
+                           "cgm.factor","insnew","homes.factor","income.factor","a1c3month",
+                           "mwikadenroll","collaboration_score.0","care_subscale.0","problem_solve_score.0",
+                           "communication_score.0","goal_score.0","smod_score.0")
+                    ,group=as.factor(data.int$sixmonthSMOD),margin=2,single=0,ron=1,summary.stat ='both')
+
+tab_ltfu.2_int
+tab_ltfu.2_con <- final_table(data.con,c("age","nih_sex.factor","diab_durration","race_eth_cat","insulindelivery.factor",
+                           "cgm.factor","insnew","homes.factor","income.factor","a1c3month",
+                           "mwikadenroll","collaboration_score.0","care_subscale.0","problem_solve_score.0",
+                           "communication_score.0","goal_score.0","smod_score.0")
+                    ,group=as.factor(data.con$sixmonthSMOD),margin=2,single=0,ron=1,summary.stat ='both')
+
+tab_ltfu.2_con
+
+# ++++++++++++++++++++++++++++
+# flattenCorrMatrix
+# ++++++++++++++++++++++++++++
+# cormat : matrix of the correlation coefficients
+# pmat : matrix of the correlation p-values
+flattenCorrMatrix <- function(cormat, pmat) {
+  ut <- upper.tri(cormat)
+  data.frame(
+    row = rownames(cormat)[row(cormat)[ut]],
+    column = rownames(cormat)[col(cormat)[ut]],
+    cor  =(cormat)[ut],
+    p = pmat[ut]
+    )
+}
+corrout <- rcorr(as.matrix(data[, c("d.mwikad3","d.mwikad6","d.a1c3","d.a1c6","d.bgtest3","d.bgtest6","d.high3","d.high6",
+                           "d.low3","d.low6","d.inrange3","d.inrange6","d.smod3","d.smod6","d.collaboration3","d.collaboration6",
+                           "d.care3","d.care6","d.solve3","d.solve6","d.comm3","d.comm6","d.goal3","d.goal6",
+                           "response_rate","response_rate_6_months")])
+                  ,type = "spearman")
+corrout <- flattenCorrMatrix(corrout$r, corrout$P)
+corrout <- corrout[corrout$column=="response_rate" | corrout$column=="response_rate_6_months",]
+
+##re-run high and inrange with only those who had CGM:
+data.cgm<-subset(data,data$cgm!="No")
+
+corrout_2 <- rcorr(as.matrix(data.cgm[, c("d.high3","d.high6",
+                          "d.inrange3","d.inrange6",
+                           "response_rate","response_rate_6_months")])
+                  ,type = "spearman")
+corrout_2 <- flattenCorrMatrix(corrout_2$r, corrout_2$P)
+corrout_2 <- corrout_2[corrout_2$column=="response_rate" | corrout_2$column=="response_rate_6_months",]
+
+```
+
+# Background
+
+The purpose of the ASKED-IT study is to test whether a texting intervention improves diabetes knowledge, self-care, and adherence.
+
+# Methods
+
+The distributions of all variables were examined prior to analysis.  Groups were compared using t-tests or Mann Whitney U-tests for continuous variables, and chi-square or Fisher's exact tests for categorical variables.  Spearman's correlation coefficient was used to examine the association between response rate and study outcomes in the intervention group.
+
+# Results
+
+Table 1 shows descriptive statistics by group.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(tab1,caption="Table 1.  Descriptive statistics by group.  Statistics given are N(%), mean±SD, or median (25th %ile, 75th %ile).  * denotes that the Mannn-Whitney test was used, and ** denotes that Fisher's exact test was used.")
+```
+\
+
+Table 2 shows a summary of study outcomes by group
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(tab2b,caption="Table 2.  Summary of study outcomes by group.  Statistics given are N(%), mean±SD, or median (25th %ile, 75th %ile).  * denotes that the Mannn-Whitney test was used, and ** denotes that Fisher's exact test was used.")
+```
+
+Comparisons of changes in study outcomes are shown in Table 3.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(tab2,caption="Table 3.  Changes in study outcomes by group.  Statistics given are N(%), mean±SD, or median (25th %ile, 75th %ile).  * denotes that the Mannn-Whitney test was used, and ** denotes that Fisher's exact test was used.")
+```
+\
+
+Correlations between study outcomes and response rates for participants in the intervention group are shown in Table 4.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(corrout,caption="Table 4.  Correlations between study outcomes and response rates.  Changes in study outcomes are denoted with a 'd.' prior to the variable name.  The number at the end of the variable name indicates the time period over which the change was calculated.  For example, 'd.inrange3' is the change in the percent in range from enrollment to 3 months.")
+```
+\
+
+Correlations between study outcomes and response rates for participants who had CGM are shown in Table 4b.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(corrout_2,caption="Table 4b.  Correlations between study outcomes and response rates in patients with CGM.  Changes in study outcomes are denoted with a 'd.' prior to the variable name.  The number at the end of the variable name indicates the time period over which the change was calculated.  For example, 'd.inrange3' is the change in the percent in range from enrollment to 3 months.")
+```
+\
+
+Table 5a: comparison of baseline characteristics for those who completed the study versus those who were loss to follow-up (A1C).
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(tab_ltfu.1,caption="Table 5a.  Comparison of baseline characteristics between those who had a 6 month A1c versus those who did not.  Statistics given are N(%), mean±SD, or median (25th %ile, 75th %ile).  * denotes that the Mannn-Whitney test was used, and ** denotes that Fisher's exact test was used.")
+```
+\
+
+Table 5b: comparison of baseline characteristics for those who completed the study versus those who were loss to follow-up (SMOD).
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(tab_ltfu.2,caption="Table 5a.  Comparison of baseline characteristics between those who had a 6 month SMOD versus those who did not.  Statistics given are N(%), mean±SD, or median (25th %ile, 75th %ile).  * denotes that the Mannn-Whitney test was used, and ** denotes that Fisher's exact test was used.")
+```
+\

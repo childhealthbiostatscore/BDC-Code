@@ -1,0 +1,231 @@
+---
+title: "CD-8 Elispot analysis"
+author: "Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+options(scipen=999)
+
+library(knitr)
+library(tidyr)
+library(tableone)
+library(lme4)
+library(nlme)
+library(emmeans)
+library(dplyr)
+library(easyCODA)
+library(DescTools)
+library(PropCIs)
+library(sjlabelled)
+
+####FIG 3C#######
+
+fig3c <- read.csv("T:\\Maki Nakayama\\CD-8 Elispot\\Data raw\\From Maki\\fig 3c.csv")
+fig3c$HLA.A <- as.numeric(sub("%","",fig3c$HLA.A))
+fig3c$HLA.B <- as.numeric(sub("%","",fig3c$HLA.B))
+fig3c$HLA.C <- as.numeric(sub("%","",fig3c$HLA.C))
+# make a long dataset
+fig3c_long <- fig3c %>% gather(HLA,Proportion,HLA.A:HLA.C)
+
+# LMM
+fig3c_lme <- lme(Proportion ~ HLA, random = ~1| X, fig3c_long)
+fig3c.emm <- emmeans(fig3c_lme,"HLA")
+fig3c_pairs <- pairs(fig3c.emm)
+qqnorm(fig3c_lme)
+
+# arcsine sqrt transformation
+trans.arcsine <- function(x){
+  asin(sign(x) * sqrt(abs(x)))
+}
+fig3c_long$Prop_arcsine <- trans.arcsine(fig3c_long$Proportion/100)
+fig3c_lme_arcsine <- lme(Prop_arcsine ~ HLA, random = ~1| X, fig3c_long)
+qqnorm(fig3c_lme_arcsine)
+
+# centered log ratio transformation
+fig3c_new <- fig3c
+fig3c_new$HLA.A <- ifelse(fig3c_new$HLA.A==0,0.001,fig3c_new$HLA.A)
+fig3c_new$HLA.B <- ifelse(fig3c_new$HLA.B==0,0.001,fig3c_new$HLA.B)
+fig3c_new$HLA.C <- ifelse(fig3c_new$HLA.C==0,0.001,fig3c_new$HLA.C)
+temp <- CLR(fig3c_new[,c("HLA.A","HLA.B","HLA.C")])
+fig3c_new$HLA.A_CLR <- temp$LR[,1]
+fig3c_new$HLA.B_CLR <- temp$LR[,2]
+fig3c_new$HLA.C_CLR <- temp$LR[,3]
+# make a long dataset
+fig3c_new_long <- fig3c_new %>% gather(HLA,Prop_CLR,HLA.A_CLR:HLA.C_CLR)
+fig3c_lme_clr <- lme(Prop_CLR ~ HLA, random = ~1| X, fig3c_new_long)
+qqnorm(fig3c_lme_clr)
+fig3c_clr.emm <- emmeans(fig3c_lme_clr,"HLA")
+fig3c_clr_pairs <- pairs(fig3c_clr.emm)
+fig3c_clr_pairs <- summary(fig3c_clr_pairs,adjust="none")
+
+# estimate CI for proportion
+observed <- c(46,19,22)
+fig3c_multci <- MultinomCI(observed,conf.level=0.95)
+colnames(fig3c_multci) <- c("Proportion","Lower CI","Upper CI")
+row.names(fig3c_multci) <- c("HLA-A","HLA-B","HLA-C")
+
+#####FIG 3D######
+fig3d_binom <- binom.test(40,77,p=0.167,alternative = "two.sided")
+
+#####FIG 3E######
+fig3e <- read.csv("T:\\Maki Nakayama\\CD-8 Elispot\\Data raw\\From Maki\\fig 3e.csv")
+fig3e$PPI.DRiP.reactive <- as.numeric(sub("%","",fig3e$PPI.DRiP.reactive))
+fig3e$PPI.DRiP.reactive_log <- log(fig3e$PPI.DRiP.reactive)
+
+tab3e <- CreateTableOne(vars="PPI.DRiP.reactive", strata="Group",data=fig3e, test=TRUE)
+tab3e <- print(tab3e,varLabels=TRUE,nonnorm="PPI.DRiP.reactive")
+
+#####FIG 3F######
+fig3f <- read.csv("T:\\Maki Nakayama\\CD-8 Elispot\\Data raw\\From Maki\\fig 3f.csv")
+fig3f$PPI.DRiP.reactive <- as.numeric(sub("%","",fig3f$PPI.DRiP.reactive))
+
+tab3f <- CreateTableOne(vars="PPI.DRiP.reactive", strata="Group",data=fig3f, test=TRUE)
+tab3f <- print(tab3f,varLabels=TRUE,nonnorm="PPI.DRiP.reactive")
+
+#####FIG 3G######
+fig3g <- read.csv("T:\\Maki Nakayama\\CD-8 Elispot\\Data raw\\From Maki\\fig 3g.csv")
+fig3g$PPI.DRiP.reactive <- as.numeric(sub("%","",fig3g$PPI.DRiP.reactive))
+
+tab3g <- CreateTableOne(vars="PPI.DRiP.reactive", strata="Group",data=fig3g, test=TRUE)
+tab3g <- print(tab3g,varLabels=TRUE,nonnorm="PPI.DRiP.reactive")
+
+#####FIG 1A######
+fig1a <- read.csv("T:\\Maki Nakayama\\CD-8 Elispot\\Data raw\\From Maki\\fig 1a.csv")
+fig1a$cd8_minus_cd4 <- fig1a$CD8-fig1a$CD4
+
+tab1a <- CreateTableOne(vars=c("CD4","CD8","cd8_minus_cd4"), strata="Group",data=fig1a, test=TRUE)
+tab1a <- print(tab1a,varLabels=TRUE,nonnorm=c("CD4","CD8"))
+
+#####FIG 1B and 1C######
+fig1b_1c <- read.csv("T:\\Maki Nakayama\\CD-8 Elispot\\Data raw\\From Maki\\fig 1b_1c.csv")
+fig1b_1c$cd4_sum <- fig1b_1c$Num.CD4.multiple+fig1b_1c$Num.CD4.single
+fig1b_1c$cd8_sum <- fig1b_1c$Num.CD8.multiple+fig1b_1c$Num.CD8.single
+fig1b_1c$cd8_minus_cd4 <- fig1b_1c$cd8_sum - fig1b_1c$cd4_sum
+vars1b1c <- c("Percentage.CD4.single","Percentage.CD4.multiple","Percentage.CD8.single","Percentage.CD8.multiple",
+              "Num.CD4.single","Num.CD4.multiple","Num.CD8.single","Num.CD8.multiple","cd4_sum",
+              "cd8_sum","cd8_minus_cd4")
+nonnorm <- c("Percentage.CD4.single","Percentage.CD4.multiple","Percentage.CD8.single","Percentage.CD8.multiple",
+              "Num.CD4.single","Num.CD4.multiple","Num.CD8.single","Num.CD8.multiple","cd4_sum",
+              "cd8_sum")
+fig1b_1c$cd4_sum <- set_label(fig1b_1c$cd4_sum,"Total CD4")
+fig1b_1c$cd8_sum <-set_label(fig1b_1c$cd8_sum,"Total CD8")
+
+tab1b_1c <- CreateTableOne(vars=vars1b1c, strata="Group",data=fig1b_1c, test=TRUE)
+tab1b_1c <- print(tab1b_1c,varLabels=TRUE,nonnorm=nonnorm)
+
+#####FIG 4######
+fig4 <- read.csv("T:\\Maki Nakayama\\CD-8 Elispot\\Data raw\\From Maki\\fig 4.csv")
+UL <- mean(fig4$EC50) + 1.96*((sd(fig4$EC50))/sqrt(length(fig4$EC50)))
+LL <- mean(fig4$EC50) - 1.96*((sd(fig4$EC50))/sqrt(length(fig4$EC50)))
+outliers_high <- fig4[fig4$EC50>UL,]
+outliers_low <- fig4[fig4$EC50<LL,]
+
+#####FIG 5######
+fig5 <- read.csv("T:\\Maki Nakayama\\CD-8 Elispot\\Data raw\\From Maki\\fig 5.csv")
+fig5$Percent.PPIDRIP.reactive <- as.numeric(sub("%","",fig5$Percent.PPIDRIP.reactive))
+fig5$Percent.PPI.reactive <- as.numeric(sub("%","",fig5$Percent.PPI.reactive))
+fig5$Percent.GCG.reactive <- as.numeric(sub("%","",fig5$Percent.GCG.reactive))
+fig5$PPIDRIP_minus_GCG <- fig5$Percent.PPI.reactive-fig5$Percent.GCG.reactive
+vars5a <- c("Percent.PPIDRIP.reactive")
+
+tab5a <- CreateTableOne(vars=vars5a, strata="Group",data=fig5, test=TRUE)
+tab5a <- print(tab5a,varLabels=TRUE,nonnorm=vars5a)
+
+fig5t <- t.test(fig5$PPIDRIP_minus_GCG, mu=0)
+
+
+```
+
+
+## Fig 3c
+
+A mixed model was used to compare the proportion in each HLA class after the centered log transformation.  The centered log transformation accounts for the compositional nature of the data (i.e., within a person, the proportion in HLA-A, B, and C sums to 1).  The overall comparison was not signficant.
+
+```{r, echo=FALSE}
+kable(anova(fig3c_lme_clr),caption = "Figure 3c.  Mixed model results.")
+```
+<br>
+
+```{r, echo=FALSE}
+kable(fig3c_clr_pairs,caption = "Figure 3c.  Mixed model results, pairwise comparisons between means.")
+```
+<br>
+
+Given the small sample size, a simpler approach was also used to compare the proportions.  Assuming a multinomial distribution, 95% confidence intervals for each proportion were calculated.  The 95% CI for HLA-A does not overlap those of HLA-B and HLA-C, so we can assume the proportion of HLA-A is significantly different from the other two proportions.
+
+```{r, echo=FALSE}
+kable(fig3c_multci,caption = "Figure 3c.  95% confidence intervals for multinomial proportions.")
+```
+<br>
+
+## Fig 3d
+
+An exact binomial test was used to test whether the proportion of A*02:01 alleles was equal to 1/6.  The null hypothesis was rejected with p<0.0001.  The estimated proportion was `r fig3d_binom$estimate`.
+
+```{r, echo=FALSE}
+fig3d_binom
+```
+
+## Fig 3e
+
+The table below compares the percentage of PPI/DRIP reactive clonotypes in donors with and without A*02:01.  P-values are from the Mann-Whitney test.
+
+```{r, echo=FALSE}
+kable(tab3e,caption = "Figure 3e.  Percentage of PPI/DRIP reactive clonotypes in donors with and without A*02:01.")
+```
+
+## Fig 3f
+
+The table below compares the percentage of PPI/DRIP reactive clonotypes in donors with and without DR4-DQ8.  P-values are from the Mann-Whitney test.
+
+```{r, echo=FALSE}
+kable(tab3f,caption = "Figure 3f.  Percentage of PPI/DRIP reactive clonotypes in donors with and without DR4-DQ8.")
+```
+
+## Fig 3g
+
+The table below compares the percentage of PPI/DRIP reactive clonotypes in donors with and without DR0401-DQ8.  P-values are from the Mann-Whitney test.
+
+```{r, echo=FALSE}
+kable(tab3g,caption = "Figure 3g.  Percentage of PPI/DRIP reactive clonotypes in donors with and without DR0401-DQ8.")
+```
+
+## Fig 1a
+
+The table below compares the number and percentage detected in CD4 and CD8 cells in T1D and control.  It also tests whether the difference between CD8 cells and CD4 cells is equal to zero.
+
+```{r, echo=FALSE}
+kable(tab1a,caption = "Figure 1a.  CD4 and CD8 cells/islet in T1D and control.")
+```
+
+## Fig 1b and 1c
+
+The table below compares the number and percentage of CD4 and CD8 cells per islet in T1D and control.  It also tests whether the difference between CD8 cells and CD4 cells is equal to zero.
+
+```{r, echo=FALSE}
+kable(tab1b_1c,caption = "Figure 1b and 1c.  Number and percentage in CD4 and CD8 cells.")
+```
+
+## Fig 4
+
+The mean EC50 was `r round(mean(fig4$EC50),2)` and the 95% CI was (`r round(LL,2)` - `r round(UL,2)`).  The two observations below were above the 95% CI; there were no observations below the 95% CI.
+
+```{r, echo=FALSE}
+kable(outliers_high,caption = "Figure 4.  EC50 outliers.")
+```
+
+## Fig 5
+
+The table below shows the perentage of PPi/DRiP reactive cells in T1D vs. control.
+
+```{r, echo=FALSE}
+kable(tab5a,caption = "Figure 5.  PPI/DRiP reactive T cells in T1D and control.")
+```
+
+In T1D donors, the percentage of PPI/DRiP reactive cells minus the percentage of GCG reactive cells was calculated.  A t-test was performed to test whether the difference is equal to zero.  Since the null hypothesis is rejected, we can conclude that the % of PPI/DRiP reactive cells is higher than CGC reactive cells.
+
+```{r, echo=FALSE}
+fig5t
+```
