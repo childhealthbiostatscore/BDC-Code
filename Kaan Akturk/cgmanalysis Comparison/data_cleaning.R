@@ -1,8 +1,9 @@
 library(tidyverse)
+library(pdftools)
 ## Dexcom
 # Clean exported data based on dates in patient list
 files <- list.files("/Users/timvigers/Medtronic, Dexcom, Libre/Dexcom",full.names = T)
-# Remove patient sumnary from files list
+# Remove patient summary from files list
 files <- files[-c(which(grepl("Patient List",files)))]
 # Patient summary, format dates and names
 patient_list <- read.csv("/Users/timvigers/Medtronic, Dexcom, Libre/Dexcom/Patient List_Dexcom.csv",stringsAsFactors = F)
@@ -94,3 +95,53 @@ for (f in 1:length(files)) {
     write.csv(dat,file = filename,row.names = F,na = "")
   }
 }
+
+# Get PDF data for dexcom and tandem
+files = list.files("/Users/timvigers/Medtronic, Dexcom, Libre/Tandem and Dexcom Data",
+                   full.names = T,recursive = T)
+# Summary data frame
+pdf_summary = data.frame()
+# Iterate through files
+for (f in 1:length(files)) {
+  # Get ID and CGM Type
+  id = as.numeric(sub("-.*","",basename(files[f])))
+  cgm = sub(".*-","",basename(files[f]))
+  cgm = tolower(sub(".pdf","",cgm))
+  # Read PDF into list
+  pdf = pdf_data(files[f])
+  # Find correct page
+  df = as.data.frame(pdf[[length(pdf)]])
+  df = df %>% arrange(x,y)
+  # Get data
+  if (grepl("dexcom",tolower(basename(files[f])))) {
+    # Percent TIRs - Dexcom
+    y = df$y[which(df$text == "Glucose")[1]]
+    x1 = df$x[which(df$text == "Very")[1]]
+    x2 = df$x[max(which(df$text == "High"))]
+    percs = df[which(abs(df$y - y) < 5 & (df$x > x1 & df$x < x2)),"text"]
+    percs = percs[grep("%",percs)]
+    percs = as.numeric(gsub("%","",percs))
+    # SD
+    x = df$x[which(df$text == "SD")]
+    sd = as.numeric(df[which(abs(df$y - y) < 5 & abs(df$x - x) < 5),"text"])
+  } else {
+    # Percent TIRs - Tandem
+    x = df$x[which(df$text == "High")[1]]
+    y1 = df$y[which(df$text == "(>=250" | df$text == "(>=251")[1]]
+    y2 = df$y[which(df$text == "Average")[1]]
+    percs = df[which((df$y > y1 & df$y < y2) & df$x == x),"text"]
+    percs = percs[grep("%",percs)]
+    percs = as.numeric(gsub("%","",percs))
+    percs[2] = percs[1] + percs[2]
+    percs = rev(percs)
+    # SD
+    w = df$y[which(df$text == "Standard")[1]]
+    sd = as.numeric(df[which(abs(df$y - w) < 5 & (df$x > 175 & df$x < 185)),"text"])
+    }
+  # Store results
+  pdf_summary[f,"id"] = id
+  pdf_summary[f,"cgm"] = cgm
+  pdf_summary[f,c("u54","u70","70_180","a180","a250")] = percs
+  pdf_summary[f,"sd"] = sd
+}
+
