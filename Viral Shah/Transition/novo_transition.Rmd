@@ -7,7 +7,7 @@ output: word_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE,dpi = 600)
-knitr::opts_knit$set(root.dir = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/NOVO Transition")
+knitr::opts_knit$set(root.dir = "/Users/timvigers/NOVO Transition")
 library(arsenal)
 library(skimr)
 library(knitr)
@@ -20,28 +20,31 @@ library(emmeans)
 
 ```{r import}
 # Import
-source("C:/Users/tim/Documents/GitHub/BDC-Code/Viral Shah/Transition/NOVOTransitionStudy_R_2020-10-29_1804.R")
+source("/Users/timvigers/GitHub/BDC-Code/Viral Shah/Transition/data_import.R")
+# Subject id from record id (record_id = 1 dropped out)
+data$subject_id = data$record_id + 1
 ```
 
 ```{r cgm,eval=FALSE}
 # Get cgm data function
-cgm_by_timepoint = function(indir,outdir,regex,timepoint){
-  # List patient folders
-  l = list.files(indir)
-  l_full = list.files(indir,full.names = T)
-  l = l_full[!is.na(suppressWarnings(as.numeric(l)))]
-  # Find timepoint files in patient folders
-  f = lapply(l, function(f){
-    files = list.files(f,full.names = T,pattern = ".*.xml")
-    w = which(grepl(regex,tolower(files)))
-    files[w]
-  })
-  f = unlist(f)
-  # Import randomization files and write as csv to clean data folder
-  dir.create(outdir,showWarnings = FALSE)
-  lapply(f, function(file){
-    ext = tools::file_ext(file)
-    if(ext == "xml"){
+# This function will remove all data after the limit argument (in hours)
+cgm_by_timepoint = 
+  function(indir,outdir,regex,timepoint,limit = NULL,date_df = data,
+           date_col = "date_randomization", id_col = "subject_id"){
+    # List patient folders
+    l = list.files(indir)
+    l_full = list.files(indir,full.names = T)
+    l = l_full[!is.na(suppressWarnings(as.numeric(l)))]
+    # Find timepoint files in patient folders
+    f = lapply(l, function(f){
+      files = list.files(f,full.names = T,pattern = ".*.xml")
+      w = which(grepl(regex,tolower(files)))
+      files[w]
+    })
+    f = unlist(f)
+    # Import randomization files and write as csv to clean data folder
+    dir.create(outdir,showWarnings = FALSE)
+    lapply(f, function(file){
       doc <- xmlParse(file)
       l <- xmlToList(doc)
       id = as.numeric(strsplit(file,"/")[[1]][4])
@@ -52,35 +55,76 @@ cgm_by_timepoint = function(indir,outdir,regex,timepoint){
       sensor <- do.call(rbind,sensor)
       table <- as.data.frame(cbind(times,sensor))
       colnames(table) <- c("timestamp","sensorglucose")
+      table$timestamp = lubridate::ymd_hms(table$timestamp)
+      table = table[order(table$timestamp),]
       table$subjectid <- NA
       table$subjectid[1] <- id
       table <- table[,c("subjectid","timestamp","sensorglucose")]
-      table$timestamp = lubridate::ymd_hms(table$timestamp)
-      write.csv(table,file = paste0(outdir,id,"_",timepoint,".csv"),
-                row.names = F,na="")
-    }
-  })
-}
+      # Trim
+      if (!is.null(limit)) {
+        limit_sec = limit * 60 * 60
+        date_limit = table$timestamp[1]
+        date_limit = date_limit + limit_sec
+        table = table[table$timestamp <= date_limit,]
+        filename = paste0(outdir,"/",id,"_",timepoint,"_",limit,"hours.csv")
+      } else {
+        filename = paste0(outdir,"/",id,"_",timepoint,"_all.csv")
+      }
+      write.csv(table,file = filename,row.names = F,na="")
+    })
+  }
 # Randomization
 cgm_by_timepoint(indir="./Data_Raw/Patient data",
                  outdir = "./Data_Cleaned/Randomization/",
                  regex = "random",
                  timepoint = "randomization")
+# First 72 hours
+cgm_by_timepoint(indir="./Data_Raw/Patient data",
+                 outdir = "./Data_Cleaned/Randomization_72_Hours/",
+                 regex = "random",
+                 timepoint = "randomization",
+                 limit = 72)
+# 7 days
+cgm_by_timepoint(indir="./Data_Raw/Patient data",
+                 outdir = "./Data_Cleaned/Randomization_7_Days/",
+                 regex = "random",
+                 timepoint = "randomization",
+                 limit = 24*7)
 # Baseline
 cgm_by_timepoint(indir="./Data_Raw/Patient data",
                  outdir = "./Data_Cleaned/Screening/",
                  regex = "screen",
                  timepoint = "screening")
+# First 72 hours
+cgm_by_timepoint(indir="./Data_Raw/Patient data",
+                 outdir = "./Data_Cleaned/Screening_72_Hours/",
+                 regex = "screen",
+                 timepoint = "screening",
+                 limit = 72)
+# 7 days
+cgm_by_timepoint(indir="./Data_Raw/Patient data",
+                 outdir = "./Data_Cleaned/Screening_7_Days/",
+                 regex = "screen",
+                 timepoint = "screening",
+                 limit = 24*7)
 # CGM variables
+# Randomization
 cgmvariables("./Data_Cleaned/Randomization/",
              "./Data_Cleaned","cgm_randomization")
+cgmvariables("./Data_Cleaned/Randomization_72_Hours/",
+             "./Data_Cleaned","cgm_randomization_72_hours")
+cgmvariables("./Data_Cleaned/Randomization_7_Days/",
+             "./Data_Cleaned","cgm_randomization_7_days")
+# Screening
 cgmvariables("./Data_Cleaned/Screening/",
              "./Data_Cleaned","cgm_screening")
+cgmvariables("./Data_Cleaned/Screening_72_Hours/",
+             "./Data_Cleaned","cgm_screening_72_hours")
+cgmvariables("./Data_Cleaned/Screening_7_Days/",
+             "./Data_Cleaned","cgm_screening_7_days")
 ```
 
 ```{r data clean}
-# Subject id from record id (record_id = 1 dropped out)
-data$subject_id = data$record_id + 1
 # Import CGM data
 cgm_randomization = read.csv("./Data_Cleaned/cgm_randomization.csv")
 colnames(cgm_randomization)[2:ncol(cgm_randomization)] = 
