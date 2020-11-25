@@ -1,7 +1,6 @@
 #Read Data
 data=read.csv('./Data_Raw/NOVOTransitionStudy_DATA_2020-11-25_0951.csv')
 #Setting Labels
-
 label(data$record_id)="Record ID"
 label(data$subject_id)="Subject ID"
 label(data$date_of_visit_screening)="Date of visit"
