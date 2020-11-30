@@ -1,6 +1,3 @@
-  #Clear existing data and graphics
-rm(list=ls())
-graphics.off()
 #Read Data
 data=read.csv('./Data_Raw/all_data.csv',na.strings = "")
 #Setting Factors(will create new variable for factors)

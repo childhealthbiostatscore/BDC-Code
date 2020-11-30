@@ -7,18 +7,19 @@ output: word_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE,dpi = 600)
-knitr::opts_knit$set(root.dir = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Greg Forlenza/JDRF")
+knitr::opts_knit$set(root.dir = "/Users/timvigers/JDRF")
 library(Hmisc)
 library(arsenal)
 library(skimr)
 library(knitr)
 library(Epi)
 library(glmnet)
+library(emmeans)
 library(tidyverse)
 ```
 
 ```{r import data,echo=FALSE}
-source("C:/Users/tim/Documents/GitHub/BDC-Code/Greg Forlenza/JDRF/data_import.R")
+source("/Users/timvigers/GitHub/BDC-Code/Greg Forlenza/JDRF/data_import.R")
 # Exclude participants after 115 and those who never started AM
 exclude <- data$record_id[which(data$gyl_timepoint==0 & is.na(data$automode_start))]
 data <- data %>% filter(record_id <= 115,!(record_id %in% exclude))
@@ -252,9 +253,9 @@ model_m3 <- glm(model3,family = "binomial",temp)
 # Compare
 kable(AIC(model_m1,model_m3))
 r_sens <- ROC(form = model1,data = df,MX=F,MI=F,PV=F,plot = "ROC",
-              main = "M1 Model")
+              main = "1-Month Model")
 r_am <- ROC(form = model3,data = df,MX=F,MI=F,PV=F,plot = "ROC",
-            main = "M3 Model")
+            main = "3-Month Model")
 ```
 
 Interestingly, the month 1 model is better than the month 3 model. There are 75 observations with month 1 data and 63 with month 3 data, so is it possible that dropout is already having an effect? Also I have been using the 90 participants with data at 9 or 12 months, but that could mean we're excluding people who dropped out entirely. Is that okay?
@@ -306,7 +307,7 @@ stan_df$demographics_insurance.factor <-
          levels = levels(df$demographics_insurance.factor))
 stan_df$demographics_race.factor <- 
   factor(stan_df$demographics_race.factor,
-            levels = levels(df$demographics_race.factor))
+         levels = levels(df$demographics_race.factor))
 stan_df$demographics_ethnicity.factor <- 
   factor(stan_df$demographics_ethnicity.factor)
 levels(stan_df$demographics_ethnicity.factor) <- 
@@ -389,7 +390,7 @@ t$term[2:nrow(t)] = c("Baseline HbA1c","M1 AM %","M1 TIR",
 t[,2:ncol(t)] <- lapply(t[,2:ncol(t)],function(x){round(x,4)})
 
 r = ROC(form = final_model,data = df,MX=F,MI=F,PV=F,plot = "ROC",
-        main = "M1 Model")
+        main = "1-Month Model")
 kable(t)
 ```
 
@@ -405,7 +406,7 @@ t$term[2:nrow(t)] = c("Baseline HbA1c","M1 Sensor Wear %","M1 TIR",
                       "Baseline Age 14 - 18","Baseline Age 18+","Male")
 t[,2:ncol(t)] <- lapply(t[,2:ncol(t)],function(x){round(x,4)})
 
-r = ROC(form = final_model,data = df,MX=F,MI=F,PV=F,plot = "ROC",main = "M1 Model")
+r = ROC(form = final_model,data = df,MX=F,MI=F,PV=F,plot = "ROC",main = "1-Month Model")
 kable(t)
 ```
 
@@ -423,7 +424,7 @@ t$term[2:nrow(t)] = c("Baseline HbA1c","M3 AM %","M3 TIR",
                       "Baseline Age 14 - 18","Baseline Age 18+","Male")
 t[,2:ncol(t)] <- lapply(t[,2:ncol(t)],function(x){round(x,4)})
 
-r = ROC(form = final_model,data = df,MX=F,MI=F,PV=F,plot = "ROC",main = "M3 Model")
+r = ROC(form = final_model,data = df,MX=F,MI=F,PV=F,plot = "ROC",main = "3-Month Model")
 kable(t)
 ```
 
@@ -439,8 +440,6 @@ cmat <- age18-age14_18
 
 exp(cmat %*% co)-1
 
-contrast(emmeans(final_mod), 
-         method = list("Age 14-18 vs. Age 18+" = age18 - age14_18))
 ```
 
 ```{r m3 sensor model,echo=FALSE}
@@ -455,7 +454,7 @@ t$term[2:nrow(t)] = c("Baseline HbA1c","M3 Sensor Wear %","M3 TIR",
                       "Baseline Age 14 - 18","Baseline Age 18+","Male")
 t[,2:ncol(t)] <- lapply(t[,2:ncol(t)],function(x){round(x,4)})
 
-r = ROC(form = final_model,data = df,MX=F,MI=F,PV=F,plot = "ROC",main = "M3 Model")
+r = ROC(form = final_model,data = df,MX=F,MI=F,PV=F,plot = "ROC",main = "3-Month Model")
 kable(t)
 ```
 
@@ -478,7 +477,21 @@ t[,2:ncol(t)] <- lapply(t[,2:ncol(t)],function(x){round(x,4)})
 kable(t)
 # ROC
 r = ROC(form = final_model,data = stan_df,MX=F,MI=F,PV=F,plot = "ROC",
-        main = "Validation Cohort")
+        main = "Validation")
+p = as.data.frame(model_stanford$data)
+pred = predict(model_stanford,type = "response")
+p[names(pred),"pred"] = pred
+g <- roc(success ~ pred, data = p)
+plot(g,print.auc=T)
+
+roc_plot = ggplot(p, aes(d = success, m = pred)) + 
+  geom_roc(n.cuts = 0) + geom_abline(intercept = 0,slope = 1) + 
+  annotate(label = paste("Area under the curve:",round(g$auc,3)),
+            x=0.75, y=0.2,family = "Helvetica",geom = "text") + 
+  ylab("Sensitivity") + xlab("1 - Specificity") + theme_bw() + 
+  ggtitle("Validation") + theme(plot.title = element_text(hjust = 0.5))
+ggsave("validation_plot.eps",roc_plot,dpi = 300,device = "eps",
+       width = 107, height = 107, units = "mm")
 ```
 
 # References
