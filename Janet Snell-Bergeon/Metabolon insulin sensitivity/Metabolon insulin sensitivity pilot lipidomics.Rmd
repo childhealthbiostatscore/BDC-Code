@@ -8,10 +8,11 @@ output: word_document
 ```{r setup, include=FALSE}
 library(knitr)
 
-knitr::opts_chunk$set(echo = FALSE,cache = FALSE)
+knitr::opts_chunk$set(echo = FALSE,cache = FALSE, warning=FALSE)
 
 library(tableone)
 library(limma)
+library(mixOmics)
 
 # read in data
 lipids <- read.csv("T:\\CACTI\\Metabolon insulin resistance pilot\\Lipidomics\\Data_raw\\Lipidomics_Cleaning_Final_combined.csv")
@@ -35,17 +36,19 @@ sampledata$GIR_cat <- ifelse((sampledata$diabetes==1 & sampledata$S3_GIR<3.8) |
 # merge lipidomics and clamp data
 alldata <- merge(lipids,sampledata,by="StudyID",all.x = T,all.y = F)
 
+# create separate dataframes for T1D and GIR comparisons, since we want to get rid of GIRcat=2
+girdata <- alldata[alldata$GIR_cat==1 | alldata$GIR_cat==3,]
+
 # create correct matrix for limma
 # first the comparison of T1D vs. control
 dia_contrast <- ifelse(alldata$diabetes==1,1,0)
 dia_contrast <- cbind(rep(1,nrow(alldata)),dia_contrast)
 # diabetes specific tertiles of GFR
-GIR_contrast <- ifelse(alldata$GIR_cat==3,1,0)
-GIR_contrast <- cbind(rep(1,nrow(alldata)),GIR_contrast)
+GIR_contrast <- ifelse(girdata$GIR_cat==3,1,0)
+GIR_contrast <- cbind(rep(1,nrow(girdata)),GIR_contrast)
 
 # pull out the lipids and transpose for limma
 ymat <- t(alldata[,3:147])
-
 # model for T1D vs. control
 fit_dia <- lmFit(ymat,dia_contrast)
 fit_dia <- eBayes(fit_dia)
@@ -54,11 +57,141 @@ results_dia <- topTable(fit_dia,coef = 2,number = nrow(ymat))
 write.csv(results_dia,"T:\\CACTI\\Metabolon insulin resistance pilot\\Reports\\lipidomics_T1D.csv")
 
 # model for GIR
+ymat <- t(girdata[,3:147])
 fit_gir <- lmFit(ymat,GIR_contrast)
 fit_gir <- eBayes(fit_gir)
 # format results
 results_gir <- topTable(fit_gir,coef = 2,number = nrow(ymat))
 write.csv(results_gir,"T:\\CACTI\\Metabolon insulin resistance pilot\\Reports\\lipidomics_gir.csv")
 
-
+# sPLS-DA analysis for T1D vs. control
+plsda_t1d <- splsda(alldata[,c(3:147)],Y=as.factor(alldata$diabetes))
 ```
+
+# Individual plot from sPLS-DA by diabetes status
+
+```{r, echo=FALSE}
+plotIndiv(plsda_t1d, comp = c(1,2),
+          ind.names = FALSE, 
+          ellipse = TRUE, legend = TRUE, title="")
+```
+
+
+```{r, echo=FALSE}
+t1d_top_1 <- selectVar(plsda_t1d,comp=1)
+t1d_top_2 <- selectVar(plsda_t1d,comp=2)
+```
+
+# Ranking of lipids in terms of discrimination of diabetes status, for component 1
+
+```{r, echo=FALSE}
+t1d_top_1$value
+```
+
+# Ranking of lipids in terms of discrimination of diabetes status, for component 2
+
+```{r, echo=FALSE}
+t1d_top_2$value
+```
+
+
+```{r, echo=FALSE}
+plsda.perf.t1d = perf(plsda_t1d, validation = 'Mfold', folds = 5, 
+                           progressBar = FALSE, nrepeat = 10, dist = 'max.dist',auc=TRUE)
+auc_save <- plsda.perf.t1d$auc$`comp1`[1]    
+auc_true <- as.numeric(plsda.perf.t1d$auc$comp1["AUC.mean"])
+```
+
+# Evaluation of sPLS-DA model by diabetes status
+
+Leave-one-out cross-validation was used to examine the performance of the sPLS-DA model: 
+
+ Overall Error rate : `r plsda.perf.t1d$error.rate$overall[1,1]`
+ AUC: `r auc_save[1]`
+
+
+```{r plsda,cache=TRUE, warning=FALSE}
+# Permutation testing - takes forever, make sure to cache
+n_perm <- 1000
+aucs <- vector(mode="numeric", length=n_perm)
+for (i in 1:n_perm) {
+  Y <- sample(as.factor(alldata$diabetes),replace = F)
+  plsda_res <- plsda(alldata[,c(3:147)],Y,ncomp = 1)
+  perf_plsda <- perf(plsda_res,progressBar=FALSE, auc=TRUE,
+                   validation = "loo")
+  aucs[i] <- as.numeric(perf_plsda$auc$comp1["AUC.mean"])
+}
+ggplot(as.data.frame(aucs),aes(x=aucs)) + 
+  geom_histogram(binwidth = 0.01) + 
+  geom_vline(aes(xintercept=auc_true),color="red") + 
+  theme_bw() + xlab("AUC")
+```
+
+Group labels were permuted `r n_perm` times. One component PLS-DA was run for each permutation and AUC was calculated using leave one out cross-validation. Red line indicates the AUC calculated for non-permuted data.
+
+
+```{r, echo=FALSE}
+# sPLS-DA analysis for GIR tertile
+plsda_gir <- splsda(girdata[,c(3:147)],Y=as.factor(girdata$GIR_cat))
+```
+
+# Individual plot from sPLS-DA by diabetes-specific GIR tertiles
+
+```{r, echo=FALSE}
+plotIndiv(plsda_gir, comp = c(1,2),
+          ind.names = FALSE, 
+          ellipse = TRUE, legend = TRUE, title="")
+```
+
+
+```{r, echo=FALSE}
+gir_top_1 <- selectVar(plsda_gir,comp=1)
+gir_top_2 <- selectVar(plsda_gir,comp=2)
+```
+
+# Ranking of lipids in terms of discrimination of diabetes-specific GIR tertiles, for component 1
+
+```{r, echo=FALSE}
+gir_top_1$value
+```
+
+# Ranking of lipids in terms of discrimination of diabetes-specific GIR tertiles, for component 2
+
+```{r, echo=FALSE}
+gir_top_2$value
+```
+
+```{r, echo=FALSE}
+plsda.perf.gir = perf(plsda_gir, validation = 'Mfold', folds = 5, 
+                           progressBar = FALSE, nrepeat = 10, dist = 'max.dist',auc=TRUE)
+auc_save_gir <- plsda.perf.gir$auc$`comp1`[1]    
+auc_true_gir <- as.numeric(plsda.perf.gir$auc$comp1["AUC.mean"])
+```
+
+# Evaluation of sPLS-DA model by diabetes-specific GIR tertiles
+
+Leave-one-out cross-validation was used to examine the performance of the sPLS-DA model: 
+
+ Overall Error rate : `r plsda.perf.gir$error.rate$overall[1,1]`
+ AUC: `r auc_save_gir[1]`
+
+```{r plsda2,cache=TRUE, warning=FALSE}
+# Permutation testing - takes forever, make sure to cache
+n_perm <- 1000
+aucs <- vector(mode="numeric", length=n_perm)
+for (i in 1:n_perm) {
+  Y <- sample(as.factor(girdata$GIR_cat),replace = F)
+  plsda_res <- plsda(girdata[,c(3:147)],Y,ncomp = 1)
+  perf_plsda <- perf(plsda_res,progressBar=FALSE, auc=TRUE,
+                   validation = "loo")
+  aucs[i] <- as.numeric(perf_plsda$auc$comp1["AUC.mean"])
+}
+ggplot(as.data.frame(aucs),aes(x=aucs)) + 
+  geom_histogram(binwidth = 0.01) + 
+  geom_vline(aes(xintercept=auc_true),color="red") + 
+  theme_bw() + xlab("AUC")
+```
+
+Group labels were permuted `r n_perm` times. One component PLS-DA was run for each permutation and AUC was calculated using leave one out cross-validation. Red line indicates the AUC calculated for non-permuted data.
+
+
