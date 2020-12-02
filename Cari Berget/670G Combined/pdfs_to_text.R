@@ -129,8 +129,8 @@ pdf_cgm_data = function(indir){
   return(pdf_summary)
 }
 # Write summaries
-pdf_summary = pdf_cgm_data("Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/670G Combined/Data_Raw/ClinicVisit_PDFs")
-write.csv(pdf_summary,file = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/670G Combined/Data_Cleaned/pdf_summary.csv",
+pdf_summary = pdf_cgm_data("/Users/timvigers/ClinicVisit_PDFs")
+write.csv(pdf_summary,file = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/670G Combined/Data_Cleaned/pdf_summary.csv",
           row.names = F,na = "")
 
 pdf_summary = pdf_cgm_data("Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/670G Combined/Data_Raw/670G adult files_1")
