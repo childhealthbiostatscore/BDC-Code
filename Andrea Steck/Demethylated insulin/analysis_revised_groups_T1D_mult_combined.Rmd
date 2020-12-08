@@ -23,6 +23,7 @@ library(tidyr)
 #library(sjlabelled)
 library(lme4)
 #library(bootpredictlme4)
+library(childsds)
 
 
 # read in the data
@@ -314,6 +315,14 @@ alldata <- merge(alldata,igttever,by="Random_ID")
 alldata$igttever[is.na(alldata$igttever)] <- 0
 alldata$age <- floor(alldata$DOB %--% alldata$Draw_Date / dyears(1))
 
+# calculate BMI-Z
+alldata$bmiz = sds(alldata$BMI,
+              age = alldata$age,
+              sex = alldata$Gender, male = "Male", female =  "Female",
+              ref = cdc.ref,
+              item = "bmi",
+              type = "SDS")
+
 # calculate follow up time
 firstvisit <- alldata[order(alldata$Random_ID,alldata$Draw_Date),]
 firstvisit <- firstvisit[,c("Random_ID","Draw_Date","Date_of_Diagnosis")]
@@ -341,6 +350,7 @@ label(alldata$DR4)="DR4"
 label(alldata$DR3DR4)="DR3DR4"
 label(alldata$BMI)="BMI"
 label(alldata$followup)="Follow-up time (yrs)"
+label(alldata$bmiz)="BMI-Z"
 
 
 # create dataset with earliest proinsulin ratio
@@ -479,7 +489,7 @@ allpro$l_Pro_pep=log(allpro$Pro_pep)
 # anova(lm.pro)
 # TukeyHSD(lm.pro)
 # log transformed
-lm.pro = with(allpro, lm(Pro_pep ~ as.factor(group2) + age + Gender + BMI)) 
+lm.pro = with(allpro, lm(Pro_pep ~ as.factor(group2) + age + Gender + bmiz)) 
 summary(lm.pro)
 anova(lm.pro)
 lm.pro <- aov(lm.pro)
@@ -497,7 +507,7 @@ corr_pro <- flattenCorrMatrix(corr_pro$r, corr_pro$P)
 corr_pro <- corr_pro[corr_pro$row=="Pro_pep",]
 
 # correlation of BMI and age
-corr_bmi <- rcorr(as.matrix(allpro[, c("BMI","age")]),type = "spearman")
+corr_bmi <- rcorr(as.matrix(allpro[, c("bmiz","age")]),type = "spearman")
 corr_bmi <- flattenCorrMatrix(corr_bmi$r, corr_bmi$P)
 
 # write cross-sectional dataset for Taylor
@@ -522,7 +532,7 @@ tab1data <- subset(tab1data, select = -c(final.group))
 tab1data <- merge(tab1data,correct_group,by="Random_ID",all=TRUE)
 tab1data$group2 <- as.factor(ifelse(tab1data$final.group=="T1D" | tab1data$final.group=="Multiple ab positive","T1D/multiple ab pos",tab1data$final.group))
 
-t1 <- final_table(tab1data,c("age","Gender","race_eth","DPT1Risk","DR3","DR4","DR3DR4","HLA","HbA1c","BMI","followup"),group=as.factor(tab1data$group2),margin=2,single=0,ron=1)
+t1 <- final_table(tab1data,c("age","Gender","race_eth","DPT1Risk","DR3","DR4","DR3DR4","HLA","HbA1c","bmiz","followup"),group=as.factor(tab1data$group2),margin=2,single=0,ron=1)
 
 # does earliest proins value predict T1D or IGTT?
 log1 <- glm(T1D~Pro_pep , earliest_pro, family='binomial')
@@ -532,12 +542,12 @@ log2 <- glm(igttever~Pro_pep , earliest_pro, family='binomial')
 log_igtt <- mod_tablog(log2)
 log_igtt$Predictor<-c("Proinsulin ratio")
 
-log1_adj <- glm(T1D~Pro_pep + age + as.factor(Gender) + BMI , earliest_pro, family='binomial')
+log1_adj <- glm(T1D~Pro_pep + age + as.factor(Gender) + bmiz , earliest_pro, family='binomial')
 log_t1d_adj <- mod_tablog(log1_adj)
-log_t1d_adj$Predictor<-c("Proinsulin ratio","Age","Male sex","BMI")
-log2_adj <- glm(igttever~Pro_pep + age + Gender + BMI, earliest_pro, family='binomial')
+log_t1d_adj$Predictor<-c("Proinsulin ratio","Age","Male sex","BMI-Z")
+log2_adj <- glm(igttever~Pro_pep + age + Gender + bmiz, earliest_pro, family='binomial')
 log_igtt_adj <- mod_tablog(log2_adj)
-log_igtt_adj$Predictor<-c("Proinsulin ratio","Age","Male sex","BMI")
+log_igtt_adj$Predictor<-c("Proinsulin ratio","Age","Male sex","BMI-Z")
 
 # longitudinal analysis - this version is using only visits with PI:C, switch next line back to alldata to change
 #long <- alldata[!is.na(alldata$time),]
@@ -623,18 +633,18 @@ predlong_neg_mult_t1d <- predlong[predlong$group2=="Negative" | predlong$group2=
 # dev.off()
 
 # adjusted longitudinal analysis
-mix_adj <- lme(Pro_pep~ time + as.factor(group2) + time:as.factor(group2) + age + Gender + BMI, 
+mix_adj <- lme(Pro_pep~ time + as.factor(group2) + time:as.factor(group2) + age + Gender + bmiz, 
                random = ~1 | Random_ID, data=long, na.action = na.omit)
 # type III tests
 mixt_adj <- anova.lme(mix_adj,type="marginal")
 
 # generating plot from adjusted model
-# mix_year_adj <- lme(Pro_pep~ year_floor + as.factor(group2) + year_floor:as.factor(group2) + age + Gender + BMI, 
+# mix_year_adj <- lme(Pro_pep~ year_floor + as.factor(group2) + year_floor:as.factor(group2) + age + Gender + bmiz, 
 #                     random = ~1 + year_floor | Random_ID, data=long, na.action = na.omit)
 # predlong_adj <- predlong
 # for(i in 1:nrow(predlong_adj)) {
 #   predlong_adj$age[i] <- mean(long[long$group2==paste0(predlong_adj$group2[i]),]$age)
-#   predlong_adj$BMI[i] <- mean(long[long$group2==paste0(predlong_adj$group2[i]),]$BMI,na.rm=TRUE)
+#   predlong_adj$bmiz[i] <- mean(long[long$group2==paste0(predlong_adj$group2[i]),]$bmiz,na.rm=TRUE)
 #   predlong_adj$Gender[i] <- 0.5
 # }
 # png("S:\\Shared Projects\\Laura\\BDC\\Projects\\Andrea Steck\\Trialnet progressors analysis\\Fourth analysis - demethylated insulin with updated dataset\\Abstract\\predicted_over_time_adjusted_T1D_mult_combined.png")
@@ -659,7 +669,7 @@ mix_year_neg_mult_t1d_noslope <- lme(Pro_pep~ year_floor + as.factor(group2) + y
 mix_year_neg_mult_t1d_noslope_t <- anova.lme(mix_year_neg_mult_t1d_noslope,type="marginal")
 
 # two group model adjusted for covariates
-mix_year_neg_mult_t1d_noslope_adj <- lme(Pro_pep~ year_floor + as.factor(group2) + year_floor:as.factor(group2) + age + Gender + BMI, 
+mix_year_neg_mult_t1d_noslope_adj <- lme(Pro_pep~ year_floor + as.factor(group2) + year_floor:as.factor(group2) + age + Gender + bmiz, 
                random = ~1 | Random_ID, data=neg_mult_t1d, na.action = na.omit)
 # type III tests
 mix_year_neg_mult_t1d_noslope_adj_t <- anova.lme(mix_year_neg_mult_t1d_noslope_adj,type="marginal")
@@ -730,10 +740,10 @@ kable(tab_pro2,caption="Table 2b.  Proinsulin ratios.")
 ```
 <br>
 
-After adjusting for age, sex, and BMI, the groups were not significantly different (p=`r pval_final.group`).  Table 3 shows the differences between all pairwise comparisons of groups, using Tukey's HSD test.
+After adjusting for age, sex, and BMI-Z, the groups were not significantly different (p=`r pval_final.group`).  Table 3 shows the differences between all pairwise comparisons of groups, using Tukey's HSD test.
 
 ```{r, results='asis',tidy=TRUE, echo=FALSE}
-kable(diffs_final.group$`as.factor(group2)`,caption="Table 3.  Pairwise comparisons of least-squares mean proinsulin ratio, adjusted for age, sex, and BMI.")
+kable(diffs_final.group$`as.factor(group2)`,caption="Table 3.  Pairwise comparisons of least-squares mean proinsulin ratio, adjusted for age, sex, and BMI-Z.")
 ```
 <br>
 
@@ -751,10 +761,10 @@ kable(log_t1d,caption="Table 5a.  Logistic regression of the earliest pro-insuli
 ```
 <br>
 
-Table 5b shows the results of the logistic regression testing whether the earliest proinsulin ratio predicts T1D, after adjusting for sex, age, and BMI.
+Table 5b shows the results of the logistic regression testing whether the earliest proinsulin ratio predicts T1D, after adjusting for sex, age, and BMI-Z.
 
 ```{r, results='asis',tidy=TRUE, echo=FALSE}
-kable(log_t1d_adj,caption="Table 5b.  Logistic regression of the earliest pro-insulin ratio vs. T1D, adjusting for sex, age, and BMI.")
+kable(log_t1d_adj,caption="Table 5b.  Logistic regression of the earliest pro-insulin ratio vs. T1D, adjusting for sex, age, and BMI-Z.")
 ```
 <br>
 
@@ -765,10 +775,10 @@ kable(log_igtt,caption="Table 6a.  Logistic regression of the earliest pro-insul
 ```
 <br>
 
-Table 6b shows the results of the logistic regression testing whether the earliest proinsulin ratio predicts IGTT, after adjusting for sex, age, and BMI.
+Table 6b shows the results of the logistic regression testing whether the earliest proinsulin ratio predicts IGTT, after adjusting for sex, age, and BMI-Z.
 
 ```{r, results='asis',tidy=TRUE, echo=FALSE}
-kable(log_igtt_adj,caption="Table 6b.  Logistic regression of the earliest pro-insulin ratio vs. IGTT, adjusting for sex, age, and BMI.")
+kable(log_igtt_adj,caption="Table 6b.  Logistic regression of the earliest pro-insulin ratio vs. IGTT, adjusting for sex, age, and BMI-Z.")
 ```
 <br>
 
@@ -779,10 +789,10 @@ kable(mixt,caption="Table 7.  ANOVA table for mixed effects model.")
 ```
 <br>
 
-Table 8 shows the results of the mixed model testing whether the groups differ in the trajectories of proinsulin ratios over time, after adjusting for sex, age, and BMI.  The trajectories in the three groups were not significantly different (p=`r mixt_adj[7,4]`).
+Table 8 shows the results of the mixed model testing whether the groups differ in the trajectories of proinsulin ratios over time, after adjusting for sex, age, and BMI-Z.  The trajectories in the three groups were not significantly different (p=`r mixt_adj[7,4]`).
 
 ```{r, results='asis',tidy=TRUE, echo=FALSE}
-kable(mixt_adj,caption="Table 8.  ANOVA table for mixed effects model, adjusted for sex, age, and BMI.")
+kable(mixt_adj,caption="Table 8.  ANOVA table for mixed effects model, adjusted for sex, age, and BMI-Z.")
 ```
 <br>
 
@@ -807,10 +817,10 @@ kable(mix_year_neg_mult_t1d_noslope_t,caption="Table 9.  ANOVA table for mixed e
 ```
 <br>
 
-Table 10 shows the results of the mixed model testing whether the groups differ in the trajectories of proinsulin ratios over time, using only the antibody negative and multiple antibody positive/T1D groups, and after adjustment for sex, age, and BMI.  The trajectories in the two groups were significantly different (p=`r mix_year_neg_mult_t1d_noslope_adj_t[7,4]`).
+Table 10 shows the results of the mixed model testing whether the groups differ in the trajectories of proinsulin ratios over time, using only the antibody negative and multiple antibody positive/T1D groups, and after adjustment for sex, age, and BMI-Z.  The trajectories in the two groups were significantly different (p=`r mix_year_neg_mult_t1d_noslope_adj_t[7,4]`).
 
 ```{r, results='asis',tidy=TRUE, echo=FALSE}
-kable(mix_year_neg_mult_t1d_noslope_adj_t,caption="Table 10.  ANOVA table for mixed effects model, using only antibody negative and multiple antibody positive/T1D groups, adjusting for sex, age, and BMI.")
+kable(mix_year_neg_mult_t1d_noslope_adj_t,caption="Table 10.  ANOVA table for mixed effects model, using only antibody negative and multiple antibody positive/T1D groups, adjusting for sex, age, and BMI-Z.")
 ```
 <br>
 
@@ -831,10 +841,10 @@ print(p)
 
 \newpage
 
-Table 11 shows the correlation of BMI and age.
+Table 11 shows the correlation of BMI-Z and age.
 
 ```{r, results='asis',tidy=TRUE, echo=FALSE}
-kable(corr_bmi,caption="Table 11.  Correlation between BMI and age.")
+kable(corr_bmi,caption="Table 11.  Correlation between BMI-Z and age.")
 ```
 
 
