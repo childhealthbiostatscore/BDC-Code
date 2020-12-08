@@ -167,7 +167,54 @@ for(i in 1:nrow(alldata)){
             ifelse(alldata$ZnT8[i] <= 0.02, 0, 1)
   )
   alldata$znt8_cat[i]<- f
+  ## coding for ECL IAA
+  g<-ifelse(is.na(alldata$ECL_IAA[i]), 
+            NA,
+            ifelse(alldata$ECL_IAA[i] <= 0.006, 0, 1)
+  )
+  alldata$ecl_iaa_cat[i]<- g
+  ## coding for ECL GADA
+  h<-ifelse(is.na(alldata$ECL_GADA[i]), 
+            NA,
+            ifelse(alldata$ECL_GADA[i] <= 0.023, 0, 1)
+  )
+  alldata$ecl_gada_cat[i]<- h
+  ## coding for ECL IA2
+  j<-ifelse(is.na(alldata$ECL_IA2A[i]), 
+            NA,
+            ifelse(alldata$ECL_IA2A[i] <= 0.01, 0, 1)
+  )
+  alldata$ecl_ia2_cat[i]<- j
 }
+
+# classify people as ECL positive or not
+# first IAA
+ecl_iaa <- alldata[,c("Random_ID","ECL_IAA","ecl_iaa_cat")]
+ecl_iaa <- ecl_iaa[order(ecl_iaa$Random_ID,desc(alldata$ecl_iaa_cat)),]
+ecl_iaa <- ecl_iaa %>% group_by(Random_ID) %>% filter(row_number() == 1)
+ecl_iaa$ECL_IAA <- NULL
+colnames(ecl_iaa) <- c("Random_ID","ecl_iaa_overall")
+alldata <- merge(alldata,ecl_iaa,by="Random_ID")
+# then GADA
+ecl_gada <- alldata[,c("Random_ID","ECL_GADA","ecl_gada_cat")]
+ecl_gada <- ecl_gada[order(ecl_gada$Random_ID,desc(alldata$ecl_gada_cat)),]
+ecl_gada <- ecl_gada %>% group_by(Random_ID) %>% filter(row_number() == 1)
+ecl_gada$ECL_GADA <- NULL
+colnames(ecl_gada) <- c("Random_ID","ecl_gada_overall")
+alldata <- merge(alldata,ecl_gada,by="Random_ID")
+# then IA2A
+ecl_ia2a <- alldata[,c("Random_ID","ECL_IA2A","ecl_ia2_cat")]
+ecl_ia2a <- ecl_ia2a[order(ecl_ia2a$Random_ID,desc(alldata$ecl_ia2_cat)),]
+ecl_ia2a <- ecl_ia2a %>% group_by(Random_ID) %>% filter(row_number() == 1)
+ecl_ia2a$ECL_IA2A <- NULL
+colnames(ecl_ia2a) <- c("Random_ID","ecl_ia2a_overall")
+alldata <- merge(alldata,ecl_ia2a,by="Random_ID")
+# overall ECL positivity
+alldata$ecl_overall <- NA
+for (i in 1:nrow(alldata)) {
+  alldata[i,]$ecl_overall <- max(alldata[i,]$ecl_gada_overall,alldata[i,]$ecl_ia2a_overall,alldata[i,]$ecl_iaa_overall,na.rm = T)
+}
+alldata$ecl_overall <- ifelse(alldata$ecl_overall==-Inf,NA,alldata$ecl_overall)
 
 #####combining both forms of gad65 tests
 for(i in 1:nrow(alldata)){
@@ -674,7 +721,16 @@ mix_year_neg_mult_t1d_noslope_adj <- lme(Pro_pep~ year_floor + as.factor(group2)
 # type III tests
 mix_year_neg_mult_t1d_noslope_adj_t <- anova.lme(mix_year_neg_mult_t1d_noslope_adj,type="marginal")
 
+# ECL pos vs neg
+mix_year_adj_ecl <- lme(Pro_pep~ year_floor + as.factor(ecl_overall) + year_floor:as.factor(ecl_overall) + age + Gender + bmiz, 
+               random = ~1 | Random_ID, data=long, na.action = na.omit)
+# type III tests
+mix_year_adj_ecl_t <- anova.lme(mix_year_adj_ecl,type="marginal")
 
+
+# of those single ab pos by RBA, how many ECL assay positive
+tab_rba_ecl <- table(allpro$group2,allpro$ecl_overall)
+colnames(tab_rba_ecl) <- c("ECL negative","ECL positive")
 
 ```
 
@@ -817,7 +873,7 @@ kable(mix_year_neg_mult_t1d_noslope_t,caption="Table 9.  ANOVA table for mixed e
 ```
 <br>
 
-Table 10 shows the results of the mixed model testing whether the groups differ in the trajectories of proinsulin ratios over time, using only the antibody negative and multiple antibody positive/T1D groups, and after adjustment for sex, age, and BMI-Z.  The trajectories in the two groups were significantly different (p=`r mix_year_neg_mult_t1d_noslope_adj_t[7,4]`).
+Table 10 shows the results of the mixed model testing whether the groups differ in the trajectories of proinsulin ratios over time, using only the antibody negative and multiple antibody positive/T1D groups, and after adjustment for sex, age, and BMI-Z.  The trajectories in the two groups were not significantly different (p=`r mix_year_neg_mult_t1d_noslope_adj_t[7,4]`).
 
 ```{r, results='asis',tidy=TRUE, echo=FALSE}
 kable(mix_year_neg_mult_t1d_noslope_adj_t,caption="Table 10.  ANOVA table for mixed effects model, using only antibody negative and multiple antibody positive/T1D groups, adjusting for sex, age, and BMI-Z.")
@@ -846,5 +902,20 @@ Table 11 shows the correlation of BMI-Z and age.
 ```{r, results='asis',tidy=TRUE, echo=FALSE}
 kable(corr_bmi,caption="Table 11.  Correlation between BMI-Z and age.")
 ```
+<br>
+
+Table 12 shows the cross-tabulation of RBA classification and ECL classification.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(tab_rba_ecl,caption="Table 12.  Cross-tabulation of RBA and ECL classification.")
+```
+
+Table 13 shows the results of the mixed model testing whether the ECL positive and negative groups differ in the trajectories of proinsulin ratios over time, after adjustment for sex, age, and BMI-Z.  The trajectories in the two groups were not significantly different (p=`r mix_year_adj_ecl_t[7,4]`).
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(mix_year_adj_ecl_t,caption="Table 13.  ANOVA table for mixed effects model comparing ECL positive and negative, adjusting for sex, age, and BMI-Z.")
+```
+<br>
+
 
 
