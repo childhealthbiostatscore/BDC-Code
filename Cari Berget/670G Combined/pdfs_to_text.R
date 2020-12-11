@@ -148,9 +148,9 @@ check_cgm_ranges = function(indir){
   # Summary data frame
   pdf_summary = data.frame()
   # Iterate through files
-  for (f in 1:length(files)) {
+  l = lapply(files, function(f){
     # Read PDF into list
-    pdf = pdf_data(files[f])
+    pdf = pdf_data(f)
     # Find correct page
     page = NULL
     for (p in 1:min(2,length(pdf))) {
@@ -170,13 +170,9 @@ check_cgm_ranges = function(indir){
     ranges = suppressWarnings(as.numeric(ranges))
     ranges = ranges[!is.na(ranges)]
     # Add to summary df
-    pdf_summary[f,"first_name"] = strsplit(name," ")[[1]][1]
-    pdf_summary[f,"last_name"] = strsplit(name," ")[[1]][2]
-    pdf_summary[,3:8] = ranges
-  }
-  # Remove rows with all NAs
-  pdf_summary = pdf_summary[rowSums(is.na(pdf_summary)) != ncol(pdf_summary),]
-  return(pdf_summary)
+    return(c(strsplit(name," ")[[1]][1],strsplit(name," ")[[1]][2],ranges))
+  }) 
+  return(do.call(rbind,l))
 }
 
-check_kaan = check_cgm_ranges("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/670G Combined/Data_Raw/ClinicVisit_PDFs")
+check_kaan = check_cgm_ranges("/Users/timvigers/Desktop/ClinicVisit_PDFs")
