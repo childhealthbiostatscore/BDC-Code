@@ -166,13 +166,13 @@ check_cgm_ranges = function(indir){
     name = tolower(name)
     # Ranges
     y = max(df$y[which(df$text == "mg/dL")])
-    ranges = df[which(df$y == y),"text"]
+    ranges = df[which(df$y %in% ((y-1):(y+1)) & df$x < 200),"text"]
     ranges = suppressWarnings(as.numeric(ranges))
     ranges = ranges[!is.na(ranges)]
     # Add to summary df
     pdf_summary[f,"first_name"] = strsplit(name," ")[[1]][1]
     pdf_summary[f,"last_name"] = strsplit(name," ")[[1]][2]
-    pdf_summary[,3:(2+length(ranges))] = ranges
+    pdf_summary[,3:8] = ranges
   }
   # Remove rows with all NAs
   pdf_summary = pdf_summary[rowSums(is.na(pdf_summary)) != ncol(pdf_summary),]
