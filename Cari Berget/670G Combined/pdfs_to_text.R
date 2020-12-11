@@ -140,3 +140,43 @@ write.csv(pdf_summary,file = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projec
 pdf_summary = pdf_cgm_data("Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/670G Combined/Data_Raw/670G adult files_2")
 write.csv(pdf_summary,file = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/670G Combined/Data_Cleaned/pdf_summary_additional_2.csv",
           row.names = F,na = "")
+
+# Check glycemic ranges
+check_cgm_ranges = function(indir){
+  # List files 
+  files = list.files(indir,pattern = "*pdf",full.names = T)
+  # Summary data frame
+  pdf_summary = data.frame()
+  # Iterate through files
+  for (f in 1:length(files)) {
+    # Read PDF into list
+    pdf = pdf_data(files[f])
+    # Find correct page
+    page = NULL
+    for (p in 1:min(2,length(pdf))) {
+      if (dim(pdf[[p]])[1] %in% 240:365) {page = p}
+    }
+    if (is.null(page)){next}
+    # Page as a dataframe, sort by x and y values
+    df = as.data.frame(pdf[[page]])
+    df = df %>% arrange(x,y)
+    # Get name
+    name = paste(gsub('[[:punct:]]','',df$text[which(df$x > 300 & df$y ==35)]),
+                 gsub('[[:punct:]]','',df$text[which(df$x == 289 & df$y ==35)]))
+    name = tolower(name)
+    # Ranges
+    y = max(df$y[which(df$text == "mg/dL")])
+    ranges = df[which(df$y == y),"text"]
+    ranges = suppressWarnings(as.numeric(ranges))
+    ranges = ranges[!is.na(ranges)]
+    # Add to summary df
+    pdf_summary[f,"first_name"] = strsplit(name," ")[[1]][1]
+    pdf_summary[f,"last_name"] = strsplit(name," ")[[1]][2]
+    pdf_summary[,3:(2+length(ranges))] = ranges
+  }
+  # Remove rows with all NAs
+  pdf_summary = pdf_summary[rowSums(is.na(pdf_summary)) != ncol(pdf_summary),]
+  return(pdf_summary)
+}
+
+check_kaan = check_cgm_ranges("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/670G Combined/Data_Raw/ClinicVisit_PDFs")
