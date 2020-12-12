@@ -24,20 +24,14 @@ if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.P
 ```
 
 ```{r echo=FALSE,include=FALSE,cache=TRUE}
-source("T:\\Cari Berget\\Control IQ 6 Month MS\\Data raw\\ClinicalObservationC_R_2020-11-18_0959.r")
+source("T:\\Cari Berget\\Control IQ 6 Month MS\\Data raw\\ClinicalObservationC_R_2020-12-11_1426.r")
 child_full <- data
 
-source("T:\\Cari Berget\\Control IQ 6 Month MS\\Data raw\\ClinicalObservationP_R_2020-11-18_1005.r")
+source("T:\\Cari Berget\\Control IQ 6 Month MS\\Data raw\\ClinicalObservationP_R_2020-12-11_1425.r")
 parent_full <- data
 
-# filter out control IQ users
+# filter control IQ users
 child_full_iq <- child_full[child_full$record_id>=119,]
-
-# make new visit variable
-child_full_iq$visit <- ifelse(str_detect(child_full_iq$redcap_event_name,"baseline"),"B",
-                              ifelse(str_detect(child_full_iq$redcap_event_name,"1_arm"),"T1",
-                                     ifelse(str_detect(child_full_iq$redcap_event_name,"2_arm"),"T2",
-                                                       ifelse(str_detect(child_full_iq$redcap_event_name,"3_arm"),"T3",NA))))
 
 # convert to numeric 
 child_full_iq$date_visit <- as.Date(as.character(child_full_iq$date_visit),format="%Y-%m-%d")
@@ -45,13 +39,12 @@ child_full_iq$demographics_age <- as.numeric(as.character(child_full_iq$demograp
 child_full_iq$hba1c <- as.numeric(as.character(child_full_iq$hba1c))
 
 # keep 6 months of data
-child_full_iq <- child_full_iq[child_full_iq$visit %in% c("B","T1","T2"),]
+child_full_iq <- child_full_iq[child_full_iq$gyl_timepoint.factor %in% c("Baseline","Month 1/ Training F/U","3 Months",
+                                                                         "6 Months"),]
+child_full_iq$gyl_timepoint.factor <- droplevels(child_full_iq$gyl_timepoint.factor)
 
-# use date of consent for baseline visit date
-child_full_iq[child_full_iq$visit=="B",]$date_visit <- child_full_iq[child_full_iq$visit=="B",]$demographics_consent
-
-# checking visit spacing
-View(child_full_iq[,c("record_id","redcap_event_name","visit","date_visit")])
+# get rid of duplicate visit
+#child_full_iq <- child_full_iq[!(child_full_iq$record_id==143 & child_full_iq$date_visit=="2020-04-25"),]
 
 # read in prior insulin mode
 ins <- read.csv("T:\\Cari Berget\\Control IQ 6 Month MS\\Data raw\\Prior_insulin_mode_11-16-2020.csv")
@@ -63,34 +56,166 @@ child_full_iq$prior.insulin.mode <- as.factor(child_full_iq$prior.insulin.mode)
 alarm <- read.csv("T:\\Cari Berget\\Control IQ 6 Month MS\\Data raw\\6 month_alerts_11-20-2020.csv")
 alarm$Start.date <- NULL
 alarm$end.date <- NULL
-alarm$visit <- "T2"
-child_full_iq <- merge(child_full_iq,alarm,by=c("record_id","visit"),all.x=T,all.y = F)
-
-# make baseline dataset
-baseline <- child_full_iq[child_full_iq$visit=="B",]
+alarm$HIGH.alarm.6mo <- alarm$HIGH
+alarm$LOW.alarm.6mo <- alarm$LOW
+alarm$HIGH <- NULL
+alarm$LOW <- NULL
+alarm <- alarm[!is.na(alarm$record_id),]
+child_full_iq <- merge(child_full_iq,alarm,by=c("record_id"),all.x=T,all.y = F)
 
 # classify age and A1c
-baseline$age_cat <- ifelse(baseline$demographics_age<=13,"<=13  years",ifelse(baseline$demographics_age<=17,
-                                                                              "14-17 years","18+ years"))
-baseline$base_a1c_cat <- ifelse(baseline$hba1c<=7,"<= 7%",ifelse(baseline$hba1c<=9,">7% and <9%",">= 9%"))
+child_full_iq$age_cat <- ifelse(child_full_iq$demographics_age<=13,"<=13  years",
+                                ifelse(child_full_iq$demographics_age<=17,"14-17 years","18+ years"))
+child_full_iq$base_a1c_cat <- ifelse(child_full_iq$hba1c<=7,"<= 7%",ifelse(child_full_iq$hba1c<=9,">7% and <9%",">= 9%"))
+child_full_iq <- child_full_iq[!is.na(child_full_iq$record_id),]
+
+# score INSPIRE
+# Baseline, under 18
+a <- child_full_iq[child_full_iq$demographics_age<18 & child_full_iq$gyl_timepoint.factor=="Baseline",]
+a <- a[,c("record_id","gyl_timepoint.factor","inspire_b1","inspire_b2","inspire_b3","inspire_b4","inspire_b5",
+          "inspire_b6","inspire_b7","inspire_b8","inspire_b9","inspire_b10","inspire_b11","inspire_b12",
+          "inspire_b13","inspire_b14","inspire_b15","inspire_b16","inspire_b17")]
+a$inspire_tot <- NA
+a$inspire_tot <- rowMeans(a[,-c(1:2)],na.rm = T)*25
+a <- a[,c("record_id","gyl_timepoint.factor","inspire_tot")]
+# follow-up, under 18
+b <- child_full_iq[child_full_iq$gyl_timepoint.factor %in% c("Month 1/ Training F/U","3 Months","6 Months"),]
+b <- b[,c("record_id","gyl_timepoint.factor","inspire_f1","inspire_f2","inspire_f3","inspire_f4","inspire_f5",
+          "inspire_f6","inspire_f7","inspire_f8","inspire_f9","inspire_f10","inspire_f11","inspire_f12",
+          "inspire_f13","inspire_f14","inspire_f15","inspire_f16","inspire_f17")]
+b <- b[!is.na(b$"inspire_f1"),]
+b$inspire_tot <- NA
+b$inspire_tot <- rowMeans(b[,-c(1:2)],na.rm = T)*25
+b <- b[,c("record_id","gyl_timepoint.factor","inspire_tot")]
+# Baseline, >=18
+c <- child_full_iq[child_full_iq$gyl_timepoint.factor=="Baseline",]
+c <- c[,c("record_id","gyl_timepoint.factor","inspire_b1_adult","inspire_b2_adult","inspire_b3_adult","inspire_b4_adult",
+       "inspire_b5_adult","inspire_b6_adult","inspire_b7_adult","inspire_b8_adult","inspire_b9_adult","inspire_b10_adult",
+       "inspire_b11_adult","inspire_b12_adult","inspire_b13_adult","inspire_b14_adult","inspire_b15_adult",
+       "inspire_b16_adult","inspire_b17_adult","inspire_b18_adult","inspire_b19_adult","inspire_b20_adult",
+       "inspire_b21_adult","inspire_b22_adult")]
+c <- c[!is.na(c$"inspire_b1_adult"),]
+c$inspire_tot <- NA
+c$inspire_tot <- rowMeans(c[,-c(1:2)],na.rm = T)*25
+c <- c[,c("record_id","gyl_timepoint.factor","inspire_tot")]
+# Follow up, >=18
+#d <- child_full_iq[child_full_iq$gyl_timepoint.factor=="Baseline",]
+#d <- d[,c("record_id","gyl_timepoint.factor","inspire_f1_adult","inspire_f2_adult","inspire_f3_adult","inspire_f4_adult",
+#       "inspire_f5_adult","inspire_f6_adult","inspire_f7_adult","inspire_f8_adult","inspire_f9_adult","inspire_f10_adult",
+#       "inspire_f11_adult","inspire_f12_adult","inspire_f13_adult","inspire_f14_adult","inspire_f15_adult",
+#       "inspire_f16_adult","inspire_f17_adult","inspire_f18_adult","inspire_f19_adult","inspire_f20_adult",
+#       "inspire_f21_adult","inspire_f22_adult")]
+#d <- d[!is.na(d$"inspire_f1_adult"),]
+# no adult entries at follow-up
+#d$inspire_tot <- NA
+#d$inspire_tot <- rowMeans(d[,-c(1:2)],na.rm = T)*25
+# combine scored INSPIRE and merge back
+inspire <- rbind(a,b,c)
+child_full_iq <- merge(child_full_iq,inspire,by=c("record_id","gyl_timepoint.factor"),all.x = T,all.y = T)
+child_full_iq <- child_full_iq[!is.na(child_full_iq$record_id),]
+
+# score technology attitudes
+tech <- child_full_iq[,c("record_id","gyl_timepoint.factor","tech1","tech2","tech3","tech4","tech5")]
+tech <- tech[!is.na(tech$tech1),]
+tech$tech1 <- tech$tech1+1
+tech$tech2 <- tech$tech2+1
+tech$tech3 <- tech$tech3+1
+tech$tech4 <- tech$tech4+1
+tech$tech5 <- tech$tech5+1
+tech$tech_sum <- NA
+tech$tech_sum <- rowSums(tech[,-c(1:2)],na.rm = T)
+tech <- tech[,c("record_id","gyl_timepoint.factor","tech_sum")]
+child_full_iq <- merge(child_full_iq,tech,by=c("record_id","gyl_timepoint.factor"),all.x = T, all.y = F)
+
+####################################
+# Tim's survey code
+
+# Get child survey columns, fill in missing values and score
+surveys <- child_full_iq %>%
+  select(record_id,gyl_timepoint.factor,c_paid1:c_paid20,c_hfs_worry11:c_hfs_worry25)
+surveys[,3:22] <- lapply(surveys[,3:22],function(x) as.numeric(x) - 1)
+# Rows with >= 75% PAID data
+replace_rows <- which(rowSums(is.na(surveys[,3:22])) %in% 1:5)
+for (r in replace_rows) {
+  cols <- which(is.na(surveys[r,1:22]))
+  surveys[r,cols] <- mean(as.numeric(surveys[r,3:22]),na.rm = T)
+}
+# Worry data
+replace_rows <- which(rowSums(is.na(surveys[,23:37])) %in% 1:3)
+for (r in replace_rows) {
+  cols <- which(is.na(surveys[r,23:37]))
+  surveys[r,22+cols] <- mean(as.numeric(surveys[r,23:37]),na.rm = T)
+}
+# Score, remove unnecessary columns and rows
+surveys$PAID_Score <- apply(surveys[3:22],1,function(x) (mean(4-x))*25)
+surveys$Worry_Score <- apply(surveys[23:37],1,sum)
+surveys <- surveys %>% select(record_id,gyl_timepoint.factor,PAID_Score,Worry_Score)
+surveys <- surveys[rowSums(!is.na(surveys))>=3,]
+# YA PAID surveys
+ya_surveys <- child_full_iq %>%
+  select(record_id,gyl_timepoint.factor,ya_paid1:ya_paid20)
+# Baseline worry and follow up worry are different columns for YA. Convert wide to long.
+baseline_surveys <- child_full_iq %>%
+  select(record_id,gyl_timepoint.factor,ya_hfs_b_worry16:ya_hfs_b_worry33) %>%
+  filter(gyl_timepoint.factor == "Baseline")
+colnames(baseline_surveys) <- sub("_b_","_",colnames(baseline_surveys))
+follow_surveys <- child_full_iq %>%
+  select(record_id,gyl_timepoint.factor,ya_hfs_f_worry16:ya_hfs_f_worry33) %>%
+  filter(gyl_timepoint.factor != "Baseline")
+colnames(follow_surveys) <- sub("_f_","_",colnames(follow_surveys))
+ya_hfs_surveys <- rbind(baseline_surveys,follow_surveys)
+ya_surveys <- left_join(ya_surveys,ya_hfs_surveys,by=c("record_id","gyl_timepoint.factor"))
+# Replace missing data PAID
+replace_rows <- which(rowSums(is.na(ya_surveys[,3:22])) %in% 1:5)
+for (r in replace_rows) {
+  cols <- which(is.na(ya_surveys[r,1:22]))
+  ya_surveys[r,cols] <- mean(as.numeric(ya_surveys[r,3:22]),na.rm = T)
+}
+# Worry
+replace_rows <- which(rowSums(is.na(ya_surveys[,23:40])) %in% 1:4)
+for (r in replace_rows) {
+  cols <- which(is.na(ya_surveys[r,23:ncol(ya_surveys)]))
+  ya_surveys[r,22+cols] <- mean(as.numeric(ya_surveys[r,23:40]),na.rm = T)
+}
+# Score, remove unnecessary columns and rows
+ya_surveys$PAID_Score <- apply(ya_surveys[3:22],1,function(x) (sum(x))*1.25)
+ya_surveys$Worry_Score <- apply(ya_surveys[23:40],1,sum)
+ya_surveys <- ya_surveys %>% select(record_id,gyl_timepoint.factor,PAID_Score,Worry_Score)
+ya_surveys <- ya_surveys[rowSums(!is.na(ya_surveys))>=3,]
+# Combine everything into one dataframe, remove unnecesary columns.
+surveys <- rbind(surveys,ya_surveys)
+
+child_full_iq <- merge(child_full_iq,surveys,by=c("record_id","gyl_timepoint.factor"),all.x=T,all.y=F)
+
+####################################
+
+# find people with only baseline visit
+checkvisits <- child_full_iq[,c("record_id","gyl_timepoint.factor")]
+checkvisits$flag <- 1
+checkvisits_wide <- reshape(checkvisits,idvar = "record_id",timevar = "gyl_timepoint.factor",direction = "wide")
+
+never_trained <- checkvisits_wide[is.na(checkvisits_wide$`flag.Month 1/ Training F/U`) & 
+                               is.na(checkvisits_wide$`flag.3 Months`) &
+                               is.na(checkvisits_wide$`flag.6 Months`),]
+trained_and_withdrawn <- checkvisits_wide[!is.na(checkvisits_wide$`flag.Month 1/ Training F/U`) & 
+                               is.na(checkvisits_wide$`flag.3 Months`) &
+                               is.na(checkvisits_wide$`flag.6 Months`),]
+
+# check for discontinuers
+# need to figure out how Tim did that
+
+# ALSO - see his discontinuation code for updated survey scoring!!!!
+
+
+# make baseline dataset
+baseline <- child_full_iq[child_full_iq$gyl_timepoint.factor=="Baseline",]
+
 
 # questions 
-# 1) confirm we are using B, T1, T2 - use variable timepoint instead (B, M1, M6) gyl_timepoint
-# 2) do we need to classify into visit windows?
-# 3) date of consent for baseline visit date (date of HCL loops start)
 # 4) i assume if someone only has a baseline visit, we exclude them (yes - need to summarize how many people never started closed loop but they are not included) - what about "never trained"
 # 5) what to do about missing baseline a1c - just exclude from stratified analysis? yes
 # for those w/ a1c compare gmi and a1c
 # can't look at a1c over time, b/c covid...use gmi
-# 6) race and ethnicity as is?
-# 7) demo table stratified by age or A1c?
-# 8) prior insulin mode - 92% Tandem to control IQ so we can't stratify
-
-# notes from call
-# tech survey not coded correctly
-# also PAID not coded correctly?
-# INSPIRE is correct
-# HFS is also not coded correctly
 
 
 ```
