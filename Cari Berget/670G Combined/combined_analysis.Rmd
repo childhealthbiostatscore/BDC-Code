@@ -9,14 +9,15 @@ output: word_document
 knitr::opts_chunk$set(echo = FALSE,dpi = 600)
 knitr::opts_knit$set(root.dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/670G Combined")
 library(Hmisc)
+library(skimr)
 library(arsenal)
 library(skimr)
 library(nlme)
 library(emmeans)
 library(knitr)
 library(lme4)
-library(pROC)
-library(geepack)
+library(Epi)
+library(car)
 library(broom.mixed)
 library(tidyverse)
 ```
@@ -124,7 +125,7 @@ adult <- adult %>%
          insurance = Insurance,sex = Gender,
          sensor_70 = tir_under_70,
          sensor_70_180 = tir_70_180,sensor_g250 = tir_over_250,
-         sensor_181_250 = tir_over_180 - tir_over_250,
+         sensor_g180 = tir_over_180,
          tdd = daily_dose,tdd_basal = basal_perc,	
          tdd_bolus = bolus_perc,	dailymealbolus = meals_per_day)
 # Re-level factors
@@ -145,7 +146,7 @@ adult = adult[-dups,]
 vars <- c("record_id","cohort","timepoint","days_from_start","age",
           "sex","race","insurance","hba1c_baseline","hba1c","gmi",
           "bg_checks","time_am","time_mm","sensor_wear","sensor_mean",
-          "sensor_sd","sensor_70","sensor_70_180","sensor_181_250",
+          "sensor_sd","sensor_70","sensor_70_180","sensor_g180",
           "sensor_g250","tdd","tdd_basal","tdd_bolus","dailymealbolus",
           "amexits","amexit_hyper","amexit_manual",
           "amexits_day","amexits_other")
@@ -183,6 +184,7 @@ data <- data %>%
          sex = as.character(demographics_sex.factor),
          insurance = demographics_insurance.factor,
          sensor_70 = sensor_u54 + sensor_54_69,
+         sensor_g180 = sensor_181_250 + sensor_g250,
          amexit_hyper = amexit_hyper / amexits,
          amexit_manual = amexit_manual / amexits,
          amexits_other = amexits_other / amexits,
@@ -405,7 +407,7 @@ ar1_mod_func <- function(outcome,data = df,diagnostics=F,p.adj = "fdr"){
   print(kable(ano,digits = 3))
   print(kable(final,digits = 3))
   if(diagnostics==T){
-    invisible(car::qqPlot(resid(mod_int)))
+    invisible(qqPlot(resid(mod_int)))
   }
 }
 model_df <- df %>% filter(time_am > 10)
@@ -415,71 +417,73 @@ model_df <- df %>% filter(time_am > 10)
 
 ```{r results='asis'}
 hist(model_df$hba1c,main = "HbA1c")
-ar1_mod_func(outcome = "hba1c",data = model_df,diagnostics = T)
+ar1_mod_func(outcome = "hba1c",data = model_df)
 ```
 
 ## % Time in AM
 
+It might be worth turning this into a categorical variable, because the distribution is fairly skewed.
+
 ```{r results='asis'}
 hist(model_df$time_am,main = "AM Use")
-ar1_mod_func(outcome = "time_am",data = model_df,diagnostics = T)
+ar1_mod_func(outcome = "time_am",data = model_df)
 ```
 
 ## % CGM Wear
 
+Do we want to dichotomize (or categorize) this variable? The skewed distribution is making the model residuals look pretty bad.
+
 ```{r results='asis'}
 hist(model_df$sensor_wear,main = "Sensor Wear")
-ar1_mod_func(outcome = "sensor_wear",data = model_df,diagnostics = T)
+ar1_mod_func(outcome = "sensor_wear",data = model_df)
 ```
 
 ## AM Exits per Day
 
 ```{r results='asis'}
 hist(model_df$amexits_day,main = "AM Exits per Day")
-ar1_mod_func(outcome = "amexits_day",data = model_df,diagnostics = T)
+ar1_mod_func(outcome = "amexits_day",data = model_df)
 ```
 
 ## BG Checks per Day
 
-The peds cohort has quite a few people with BG checks in the 10-25 range whereas the maximum in the adult cohort is 6.6. Is this correct? 
-
-Also, the model looks better if we log-transform the BG checks variable. However, this makes the interpretation of the group comparisons difficult, because they become a ratio rather than a raw difference ($log(x)-log(y)=log(\frac{x}{y})$).
+After fixing the data this looks much better.
 
 ```{r results='asis'}
 hist(model_df$bg_checks,main = "BG Checks per Day")
-ar1_mod_func(outcome = "bg_checks",data = model_df,diagnostics = T)
+ar1_mod_func(outcome = "bg_checks",data = model_df)
 ```
 
 ## Sensor Mean
 
 ```{r results='asis'}
 hist(model_df$sensor_mean,main = "Mean Sensor")
-ar1_mod_func(outcome = "sensor_mean",data = model_df,diagnostics = T)
+ar1_mod_func(outcome = "sensor_mean",data = model_df)
 ```
 
 ## % TIR < 70 mg/dL
 
+Despite the skewed distribution, this model doesn't look too bad. Peds participant 67 has 45% time < 70 at M1, is that correct?
+
 ```{r results='asis'}
 hist(model_df$sensor_70,main = "% Time < 70")
 # Exclude 1408816
-ar1_mod_func(outcome = "sensor_70",data = model_df,diagnostics = T)
+ar1_mod_func(outcome = "sensor_70",data = model_df)
 ```
 
 ## % TIR 70 - 180 mg/dL
 
 ```{r results='asis'}
 hist(model_df$sensor_70_180,main = "% TIR")
-ar1_mod_func(outcome = "sensor_70_180",data = model_df,diagnostics = T)
+ar1_mod_func(outcome = "sensor_70_180",data = model_df)
 ```
 
-## % TIR 181 - 250 mg/dL
-
-Did the peds cohort really have such high % TIR 180-250? The 15 highest percentages in the data are peds and one had 86%!
+## % TIR 180+ mg/dL
 
 ```{r results='asis'}
-hist(model_df$sensor_181_250[model_df$cohort=="Peds"],
+hist(model_df$sensor_g180[model_df$cohort=="Peds"],
      main = "% Time 180 - 250")
-ar1_mod_func(outcome = "sensor_181_250",data = model_df,diagnostics = T)
+ar1_mod_func(outcome = "sensor_g180",data = model_df)
 ```
 
 ## % TIR 250+ mg/dL
@@ -490,35 +494,35 @@ This model also looks much better when the outcome is log-transformed, but like 
 
 ```{r results='asis'}
 hist(model_df$sensor_g250,main = "% Time > 250")
-ar1_mod_func(outcome = "sensor_g250",data = model_df,diagnostics = T)
+ar1_mod_func(outcome = "sensor_g250",data = model_df)
 ```
 
 ## Total Daily Dose (TDD)
 
 ```{r results='asis'}
 hist(model_df$tdd,main = "TDD")
-ar1_mod_func(outcome = "tdd",data = model_df,diagnostics = T)
+ar1_mod_func(outcome = "tdd",data = model_df)
 ```
 
 ## % TDD Delivered as Bolus
 
 ```{r results='asis'}
 hist(model_df$tdd_bolus,main = "% TDD as Bolus")
-ar1_mod_func(outcome = "tdd_bolus",data = model_df,diagnostics = T)
+ar1_mod_func(outcome = "tdd_bolus",data = model_df)
 ```
 
 ## % TDD Delivered as Basal
 
 ```{r results='asis'}
 hist(model_df$tdd_basal,main = "% TDD as Basal")
-ar1_mod_func(outcome = "tdd_basal",data = model_df,diagnostics = T)
+ar1_mod_func(outcome = "tdd_basal",data = model_df)
 ```
 
 ## Meal Boluses per Day
 
 ```{r results='asis'}
 hist(model_df$dailymealbolus,main = "Meal Boluses")
-ar1_mod_func(outcome = "dailymealbolus",data = model_df,diagnostics = T)
+ar1_mod_func(outcome = "dailymealbolus",data = model_df)
 ```
 
 # Discontinuers
@@ -546,32 +550,18 @@ kable(table(discontinuers$discontinued,discontinuers$cohort))
 
 # ROC Analysis
 
-Cutoffs were determined by fitting a generalized estimating equation (GEE) with a binary outcome (0 = TIR <70% and 1 = TIR >=70%) and AR1 correlation structure to account for repeated measures. Then, sensitivity and specificity were calculated based on predicted values from the GEE, using the pROC package. Optimal cutoffs were determined by maximizing Youden's J statistic.
+The outcome for this ROC analysis was defined as >= 70% TIR at month 12. 
 
 ```{r cutoffs,echo=FALSE,message=FALSE}
-# Outcome
-model_df$tir_outcome <- cut(model_df$sensor_70_180,right = F,
-                            c(-Inf,70,Inf),labels = c("< 70%",">= 70%"))
-# Fit GzLMM
-am_mod <- geeglm(as.numeric(tir_outcome)-1 ~ time_am,corstr = "ar1",
-                id = record_id,data = model_df,family = "binomial")
-est <- summary(am_mod)$coefficients[,1]
-# ROC using the predicted values back transformed to time in AM
-gee_pred <- c(predict(am_mod,type = "response"))
-roc <- roc(am_mod$y,gee_pred)
-# Threshold to maximize Youden
-c<-coords(roc,"best",best.method = "youden",transpose = F)
-# Transform back to am time
-thresh = (car::logit(c$threshold) - est[1])/est[2]
-# Plot
-plot(roc,legacy.axes=T,print.auc=T)
-# Test with average TIR
-s = model_df %>% group_by(record_id) %>% 
-  summarise(tir_outcome = tir_outcome[timepoint == "M12"],
-            am = mean(time_am))
+# ROC data
+roc_df = model_df %>% group_by(record_id) %>%
+  summarise(outcome = ifelse(sensor_70_180[timepoint == "M12"] >= 70,1,0),
+            am = mean(time_am,na.rm = T))
+# ROC 
+roc <- ROC(roc_df$am,roc_df$outcome,plot = "roc",MI = F,MX=F)
 ```
 
-A threshold of `r thresh`% automode use predicted TIR >= 70% at any time point with sensitivity of `r c$sensitivity` and specificity of `r c$specificity`. Area under the ROC curve was `r as.numeric(roc$auc)`.
+A threshold of 71.6% automode use predicted TIR >= 70% at month 12 with sensitivity of 85.1% and specificity of 58.3%. Area under the ROC curve was 0.767.
 
 ## Clinical factors associated with meeting the AM use cutoff above
 
@@ -579,21 +569,31 @@ A generalized linear mixed model (GzLMM) with random intercept for subject was u
 
 ```{r}
 # Make a cutoff yes/no variable
-model_df$am_cutoff = cut(model_df$time_am,c(-Inf,thresh,Inf),right = F,
+model_df$am_cutoff = cut(model_df$time_am,c(-Inf,71.6,Inf),right = F,
                          labels = c("Under","Over"))
+# Also look at >/= 3 boluses/day, 3 BG checks per day and CGM wear 
+model_df$bg_checks_bin = cut(model_df$bg_checks,c(-Inf,4,Inf),right = F,
+                             labels = c("< 4",">= 4"))
+model_df$bolus_bin = cut(model_df$dailymealbolus,c(-Inf,4,Inf),right = F,
+                             labels = c("< 4",">= 4"))
 # Logistic regression
-thresh_mod = glmer(am_cutoff ~ age + sex + race + hba1c_baseline + 
-                     (1|record_id),
+thresh_mod = glmer(am_cutoff ~ age + hba1c_baseline + bg_checks_bin +
+                     bolus_bin + scale(sensor_wear,scale = F) + (1|record_id),
                    data = model_df,family = "binomial")
 res = tidy(thresh_mod,conf.int = T,exponentiate=T)
-res = res[-which(res$term == "(Intercept)"),]
 res = res[-which(res$group == "record_id"),]
-res$term = gsub("race","Race: ",res$term)
-res$term = gsub("sex","Sex: ",res$term)
 res$term = gsub("age","Age",res$term)
 res$term = gsub("hba1c_baseline","Baseline HbA1c",res$term)
+res$term = gsub("bg_checks_bin","BG Checks per Day: ",res$term)
+res$term = gsub("bolus_bin","Meal Boluses per Day: ",res$term)
+res$term[which(res$term == "scale(sensor_wear, scale = F)")] = "Sensor Wear (Above Mean)"
+
 res = res %>% select(term,estimate,conf.low,conf.high,p.value)
 kable(res)
 ```
 
-Age at HCL start and baseline A1c were significantly associated with reaching the AM use cutoff. For each 1-year increase in age at HCL start, odds of reaching the AM use threshold changed by `r (res$estimate[res$term == "Age"]-1)*100`%. Each 1 unit increase in baseline HbA1c was associated with a `r (res$estimate[res$term == "Baseline HbA1c"]-1)*100`% change in the odds of achieving the AM use threshold.
+Age at HCL start, BG checks per day, and sensor wear were significantly associated with reaching the AM use cutoff. For each 1-year increase in age at HCL start, odds of reaching the AM use threshold changed by `r round(res$estimate[res$term == "Age"]-1,3)*100`%. Each 1 unit increase above average sensor wear (`r round(mean(model_df$sensor_wear),3)`%) was associated with a `r round(res$estimate[res$term == "Sensor Wear (Above Mean)"]-1,3)*100`% change in the odds of achieving the AM use threshold. Checking BG at least 4 times per day with a `r round(res$estimate[res$term == "BG Checks per Day: >= 4"]-1,3)*100`% change in the odds of success. Baseline HbA1c is no longer significant after adjusting for sensor wear. 
+
+```{r}
+skim(model_df)
+```
