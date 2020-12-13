@@ -197,12 +197,43 @@ checkvisits_wide <- reshape(checkvisits,idvar = "record_id",timevar = "gyl_timep
 never_trained <- checkvisits_wide[is.na(checkvisits_wide$`flag.Month 1/ Training F/U`) & 
                                is.na(checkvisits_wide$`flag.3 Months`) &
                                is.na(checkvisits_wide$`flag.6 Months`),]
+never_trained$trained <- 0
+never_trained <- never_trained[,c("record_id","trained")]
 trained_and_withdrawn <- checkvisits_wide[!is.na(checkvisits_wide$`flag.Month 1/ Training F/U`) & 
                                is.na(checkvisits_wide$`flag.3 Months`) &
                                is.na(checkvisits_wide$`flag.6 Months`),]
+trained_and_withdrawn$withdrawn <- 1
+trained_and_withdrawn <- trained_and_withdrawn[,c("record_id","withdrawn")]
+child_full_iq <- merge(child_full_iq,never_trained,by="record_id",all.x=T,all.y=T)
+child_full_iq <- merge(child_full_iq,trained_and_withdrawn,by="record_id",all.x=T,all.y=T)
+child_full_iq$trained <- ifelse(is.na(child_full_iq$trained),1,0)
+child_full_iq$withdrawn <- ifelse(is.na(child_full_iq$withdrawn),0,1)
 
 # check for discontinuers
-# need to figure out how Tim did that
+# discontinuation is defined as AM <10% at either time point
+child_full_iq$t1_discont <- ifelse(child_full_iq$trained==1 & child_full_iq$withdrawn==0 & 
+                                     child_full_iq$gyl_timepoint.factor=="3 Months" & 
+                                     (is.na(child_full_iq$time_am) | child_full_iq$time_am<10),1,0)
+child_full_iq$t2_discont <- ifelse(child_full_iq$trained==1 & child_full_iq$withdrawn==0 & 
+                                     child_full_iq$gyl_timepoint.factor=="6 Months" & 
+                                     (is.na(child_full_iq$time_am) | child_full_iq$time_am<10),1,0)
+t1_discont <- child_full_iq[,c("record_id","t1_discont")]
+t1_discont <- t1_discont[order(t1_discont$record_id,desc(t1_discont$t1_discont)),]
+t1_discont <- t1_discont %>% group_by(record_id) %>% filter(row_number() == 1)
+t2_discont <- child_full_iq[,c("record_id","t2_discont")]
+t2_discont <- t2_discont[order(t2_discont$record_id,desc(t2_discont$t2_discont)),]
+t2_discont <- t2_discont %>% group_by(record_id) %>% filter(row_number() == 1)
+child_full_iq$t1_discont <- NULL
+child_full_iq$t2_discont <- NULL
+child_full_iq <- merge(child_full_iq,t1_discont,by="record_id",all.x=T,all.y=T)
+child_full_iq <- merge(child_full_iq,t2_discont,by="record_id",all.x=T,all.y=T)
+
+# remove those never trained, withdrawn, discontinued at T1
+child_full_iq <- child_full_iq[child_full_iq$trained==1 & child_full_iq$withdrawn==0 & child_full_iq$t1_discont==0,]
+# if discontinued at T2, remove T2
+child_full_iq <- child_full_iq[!(child_full_iq$gyl_timepoint.factor=="6 Months" & child_full_iq$t2_discont==1),]
+
+View(child_full_iq[,c("record_id","gyl_timepoint.factor","trained","withdrawn","time_am","t1_discont","t2_discont")])
 
 # ALSO - see his discontinuation code for updated survey scoring!!!!
 
