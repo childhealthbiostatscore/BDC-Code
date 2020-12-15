@@ -23,10 +23,12 @@ library(stringr)
 if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.Platform$OS.type == "unix"){pathstart <- "/Volumes/"}
 ```
 
-```{r echo=FALSE,include=FALSE,cache=TRUE}
+```{r echo=FALSE,include=FALSE}
 
 #### NOTE: WHEN I HEAR BACK RE PPT 143, NEED TO WALK THROUGH ALL THIS CODE AND FIGURE OUT WHY
 #### THEIR VISITS KEEP GETTING DUPLICATED
+
+###  ALSO, NEED TO RE-EXPORT DATA, PROBABLY IDEALLY AFTER CARI UPDATES BASELINE INFO
 
 source("T:\\Cari Berget\\Control IQ 6 Month MS\\Data raw\\ClinicalObservationC_R_2020-12-11_1426.r")
 child_full <- data
@@ -36,6 +38,9 @@ parent_full <- data
 
 # filter control IQ users
 child_full_iq <- child_full[child_full$record_id>=119,]
+
+# there were 4 ppts from adult clinic who should be removed
+child_full_iq <- child_full_iq[!(child_full_iq$record_id %in% c(181,182,183,184)),]
 
 # convert to numeric 
 child_full_iq$date_visit <- as.Date(as.character(child_full_iq$date_visit),format="%Y-%m-%d")
@@ -47,8 +52,10 @@ child_full_iq <- child_full_iq[child_full_iq$gyl_timepoint.factor %in% c("Baseli
                                                                          "6 Months"),]
 child_full_iq$gyl_timepoint.factor <- droplevels(child_full_iq$gyl_timepoint.factor)
 
-# get rid of duplicate visit
-#child_full_iq <- child_full_iq[!(child_full_iq$record_id==143 & child_full_iq$date_visit=="2020-04-25"),]
+# get rid of person with duplicate visit
+dat143 <- child_full_iq[child_full_iq$record_id==143,]
+write.csv(dat143,"T:\\Cari Berget\\Control IQ 6 Month MS\\Data clean\\data_143.csv")
+child_full_iq <- child_full_iq[child_full_iq$record_id!=143,]
 
 # read in prior insulin mode
 ins <- read.csv("T:\\Cari Berget\\Control IQ 6 Month MS\\Data raw\\Prior_insulin_mode_11-16-2020.csv")
@@ -91,30 +98,8 @@ b <- b[!is.na(b$"inspire_f1"),]
 b$inspire_tot <- NA
 b$inspire_tot <- rowMeans(b[,-c(1:2)],na.rm = T)*25
 b <- b[,c("record_id","gyl_timepoint.factor","inspire_tot")]
-# Baseline, >=18
-c <- child_full_iq[child_full_iq$gyl_timepoint.factor=="Baseline",]
-c <- c[,c("record_id","gyl_timepoint.factor","inspire_b1_adult","inspire_b2_adult","inspire_b3_adult","inspire_b4_adult",
-       "inspire_b5_adult","inspire_b6_adult","inspire_b7_adult","inspire_b8_adult","inspire_b9_adult","inspire_b10_adult",
-       "inspire_b11_adult","inspire_b12_adult","inspire_b13_adult","inspire_b14_adult","inspire_b15_adult",
-       "inspire_b16_adult","inspire_b17_adult","inspire_b18_adult","inspire_b19_adult","inspire_b20_adult",
-       "inspire_b21_adult","inspire_b22_adult")]
-c <- c[!is.na(c$"inspire_b1_adult"),]
-c$inspire_tot <- NA
-c$inspire_tot <- rowMeans(c[,-c(1:2)],na.rm = T)*25
-c <- c[,c("record_id","gyl_timepoint.factor","inspire_tot")]
-# Follow up, >=18
-#d <- child_full_iq[child_full_iq$gyl_timepoint.factor=="Baseline",]
-#d <- d[,c("record_id","gyl_timepoint.factor","inspire_f1_adult","inspire_f2_adult","inspire_f3_adult","inspire_f4_adult",
-#       "inspire_f5_adult","inspire_f6_adult","inspire_f7_adult","inspire_f8_adult","inspire_f9_adult","inspire_f10_adult",
-#       "inspire_f11_adult","inspire_f12_adult","inspire_f13_adult","inspire_f14_adult","inspire_f15_adult",
-#       "inspire_f16_adult","inspire_f17_adult","inspire_f18_adult","inspire_f19_adult","inspire_f20_adult",
-#       "inspire_f21_adult","inspire_f22_adult")]
-#d <- d[!is.na(d$"inspire_f1_adult"),]
-# no adult entries at follow-up
-#d$inspire_tot <- NA
-#d$inspire_tot <- rowMeans(d[,-c(1:2)],na.rm = T)*25
 # combine scored INSPIRE and merge back
-inspire <- rbind(a,b,c)
+inspire <- rbind(a,b)
 child_full_iq <- merge(child_full_iq,inspire,by=c("record_id","gyl_timepoint.factor"),all.x = T,all.y = T)
 child_full_iq <- child_full_iq[!is.na(child_full_iq$record_id),]
 
@@ -159,10 +144,7 @@ paidya$paid_score_ya <- apply(paidya[3:ncol(paidya)],1,function(x) (mean(4-x))*2
 paidya <- paidya[,c("record_id","gyl_timepoint.factor","paid_score_ya")]
 child_full_iq <- merge(child_full_iq,paidya,by=c("record_id","gyl_timepoint.factor"), all.x = T, all.y = T)
 child_full_iq$paid_score <- NA
-for (i in 1:nrow(child_full_iq)) {
-  child_full_iq[i,]$paid_score <- ifelse(!is.na(child_full_iq[i,]$paid_score_c) | !is.na(child_full_iq[i,]$paid_score_ya),
-                                   max(child_full_iq[i,]$paid_score_c,child_full_iq[i,]$paid_score_ya,na.rm = T),NA)
-}
+child_full_iq$paid_score <- pmax(child_full_iq$paid_score_c,child_full_iq$paid_score_ya,na.rm = T)
 
 # score HFS child
 hfsc <- child_full_iq %>% select(record_id,gyl_timepoint.factor,c_hfs_behave1:c_hfs_behave10,
@@ -182,15 +164,17 @@ for (r in 1:nrow(hfsc)) { # Couldn't get apply to work for some reason
 hfsc$hfs_total_c <- apply(hfsc[,3:ncol(hfsc)],1,sum)
 hfsc$hfs_worry_c <- apply(hfsc[,3:12],1,sum)
 hfsc$hfs_behave_c <- apply(hfsc[,13:27],1,sum)
+hfsc <- hfsc[!is.na(hfsc$hfs_total_c),]
+hfsc <- hfsc[,c("record_id","gyl_timepoint.factor","hfs_total_c","hfs_behave_c","hfs_worry_c")]
 child_full_iq <- merge(child_full_iq,hfsc,by=c("record_id","gyl_timepoint.factor"),all.x = T,all.y = F)
 
-# score HFS YA - variable names are not matching scoring document
-# CHECK THIS CODE ONCE THEY RESPOND
-hfsya <- child_full_iq %>% select(record_id,gyl_timepoint.factor,ya_hfs_behave1:ya_hfs_behave10,
-                                 ya_hfs_worry11:ya_hfs_worry25)
-missing_threshold <- ceiling(length(3:ncol(hfsya)) * 0.25)
-for (r in 1:nrow(hfsya)) { # Couldn't get apply to work for some reason
-  x <- hfsya[r,3:ncol(hfsya)]
+# score HFS YA - baseline and follow-up are separate
+# baseline
+hfsya_b <- child_full_iq %>% select(record_id,gyl_timepoint.factor,ya_hfs_b_behave1:ya_hfs_b_behave15,
+                                 ya_hfs_b_worry16:ya_hfs_b_worry33)
+missing_threshold <- ceiling(length(3:ncol(hfsya_b)) * 0.25)
+for (r in 1:nrow(hfsya_b)) { # Couldn't get apply to work for some reason
+  x <- hfsya_b[r,3:ncol(hfsya_b)]
   replacement <- mean(as.numeric(x),na.rm = T)
   num_missing <- length(which(is.na(x)))
   if (num_missing<=missing_threshold && num_missing>0) {
@@ -198,13 +182,42 @@ for (r in 1:nrow(hfsya)) { # Couldn't get apply to work for some reason
     } else if (num_missing > missing_threshold) {
       x <- rep(NA,length(x))
     }
-  hfsya[r,3:ncol(hfsya)] <- x
+  hfsya_b[r,3:ncol(hfsya_b)] <- x
 }
-hfsya$hfs_total_ya <- apply(hfsya[,3:ncol(hfsya)],1,sum)
-hfsya$hfs_worry_ya <- apply(hfsya[,3:12],1,sum)
-hfsya$hfs_behave_ya <- apply(hfsya[,13:27],1,sum)
+hfsya_b$hfs_total_ya <- apply(hfsya_b[,3:ncol(hfsya_b)],1,sum)
+hfsya_b$hfs_worry_ya <- apply(hfsya_b[,3:12],1,sum)
+hfsya_b$hfs_behave_ya <- apply(hfsya_b[,13:27],1,sum)
+hfsya_b <- hfsya_b[!is.na(hfsya_b$hfs_total_ya),]
+hfsya_b <- hfsya_b[,c("record_id","gyl_timepoint.factor","hfs_total_ya","hfs_worry_ya","hfs_behave_ya")]
+# follow-up
+hfsya_f <- child_full_iq %>% select(record_id,gyl_timepoint.factor,ya_hfs_f_behave1:ya_hfs_f_behave15,
+                                 ya_hfs_f_worry16:ya_hfs_f_worry33)
+missing_threshold <- ceiling(length(3:ncol(hfsya_f)) * 0.25)
+for (r in 1:nrow(hfsya_f)) { # Couldn't get apply to work for some reason
+  x <- hfsya_f[r,3:ncol(hfsya_f)]
+  replacement <- mean(as.numeric(x),na.rm = T)
+  num_missing <- length(which(is.na(x)))
+  if (num_missing<=missing_threshold && num_missing>0) {
+    x[which(is.na(x))] <- replacement
+    } else if (num_missing > missing_threshold) {
+      x <- rep(NA,length(x))
+    }
+  hfsya_f[r,3:ncol(hfsya_f)] <- x
+}
+hfsya_f$hfs_total_ya <- apply(hfsya_f[,3:ncol(hfsya_f)],1,sum)
+hfsya_f$hfs_worry_ya <- apply(hfsya_f[,3:12],1,sum)
+hfsya_f$hfs_behave_ya <- apply(hfsya_f[,13:27],1,sum)
+hfsya_f <- hfsya_f[!is.na(hfsya_f$hfs_total_ya),]
+hfsya_f <- hfsya_f[,c("record_id","gyl_timepoint.factor","hfs_total_ya","hfs_behave_ya","hfs_worry_ya")]
+hfsya <- rbind(hfsya_b,hfsya_f)
 child_full_iq <- merge(child_full_iq,hfsya,by=c("record_id","gyl_timepoint.factor"),all.x = T,all.y = F)
 # NOW NEED TO CHOOSE BETWEEN CHILD AND YA SCORES FOR EACH OF THE SCALES
+child_full_iq$hfs_total <- NA
+child_full_iq$hfs_behave <- NA
+child_full_iq$hfs_worry <- NA
+child_full_iq$hfs_total <- pmax(child_full_iq$hfs_total_c,child_full_iq$hfs_total_ya,na.rm = T)
+child_full_iq$hfs_worry <- pmax(child_full_iq$hfs_worry_c,child_full_iq$hfs_worry_ya,na.rm = T)
+child_full_iq$hfs_behave <- pmax(child_full_iq$hfs_behave_c,child_full_iq$hfs_behave_ya,na.rm = T)
 
 # score technology attitudes
 tech <- child_full_iq[,c("record_id","gyl_timepoint.factor","tech1","tech2","tech3","tech4","tech5")]
@@ -257,6 +270,16 @@ child_full_iq$t1_discont <- NULL
 child_full_iq$t2_discont <- NULL
 child_full_iq <- merge(child_full_iq,t1_discont,by="record_id",all.x=T,all.y=T)
 child_full_iq <- merge(child_full_iq,t2_discont,by="record_id",all.x=T,all.y=T)
+n_t1_discont <- length(unique(child_full_iq[child_full_iq$t1_discont==1,]$record_id))
+n_t2_discont <- length(unique(child_full_iq[child_full_iq$t2_discont==1,]$record_id))
+a <- child_full_iq[child_full_iq$record_id==245,c("record_id","gyl_timepoint.factor","automode_start")]
+n_only_baseline <- length(unique(a$record_id))
+b <- child_full[child_full$record_id %in% c(276,300,313,318,321),c("record_id","gyl_timepoint.factor",
+                                                                  "date_visit","automode_start")]
+n_only_1mo <- length(unique(b$record_id))
+c <- child_full_iq[child_full_iq$t1_discont==1,c("record_id","gyl_timepoint.factor","time_am")]
+d <- child_full_iq[child_full_iq$t2_discont==1,c("record_id","gyl_timepoint.factor","date_visit","time_am")]
+write.csv(d,"T:\\Cari Berget\\Control IQ 6 Month MS\\Data clean\\T2_discontinuers.csv")
 
 # remove those never trained, withdrawn, discontinued at T1
 child_full_iq <- child_full_iq[child_full_iq$trained==1 & child_full_iq$withdrawn==0 & child_full_iq$t1_discont==0,]
@@ -268,6 +291,19 @@ child_full_iq <- child_full_iq[!(child_full_iq$gyl_timepoint.factor=="6 Months" 
 # make baseline dataset
 baseline <- child_full_iq[child_full_iq$gyl_timepoint.factor=="Baseline",]
 
+# table of demographics
+demovars <- c("demographics_age","age_cat","hba1c","base_a1c_cat","demographics_sex.factor",
+              "demographics_ethnicity.factor","demographics_race.factor","demographics_insurance.factor",
+              "prior.insulin.mode")
+t1 <- CreateTableOne(vars=demovars,data=baseline)
+t1 <- print(t1,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T,nonnorm=c("hba1c","demographics_age"))
+
+# missing demographics data
+miss_demo <- baseline[is.na(baseline$demographics_age) | is.na(baseline$demographics_sex) |
+                                     is.na(baseline$demographics_ethnicity) |
+                                             is.na(baseline$demographics_race) |
+                                                   is.na(baseline$demographics_insurance),c("record_id",demovars)]
+write.csv(miss_demo,"T:\\Cari Berget\\Control IQ 6 Month MS\\Data clean\\missing demographics.csv")
 
 # questions 
 # 5) what to do about missing baseline a1c - just exclude from stratified analysis? yes
@@ -277,12 +313,40 @@ baseline <- child_full_iq[child_full_iq$gyl_timepoint.factor=="Baseline",]
 
 ```
 
-```{r echo=FALSE,include=FALSE,cache=TRUE}
-# table of demographics
-demovars <- c("demographics_age","age_cat","hba1c","base_a1c_cat","demographics_sex.factor",
-              "demographics_ethnicity.factor","demographics_race.factor","demographics_insurance.factor",
-              "prior.insulin.mode")
-t1 <- CreateTableOne(vars=demovars,data=baseline)
-t1 <- print(t1,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T,nonnorm=c("hba1c","demographics_age"))
+# Background
 
+# Methods
+
+# Results
+
+# There were `r n_only_baseline` participants with no 1 mo, 3 mo, or 6 mo visits
+
+```{r echo=FALSE}
+# look at people who never trained to see if they have start dates
+kable(a)
+```
+
+# There were `r n_only_1mo` participants with a 1 mo visit, but no 3 mo 6 mo visits
+
+```{r echo=FALSE}
+# look at duration of CIQ use in those who withdrew
+kable(b)
+```
+
+# There were `r n_t1_discont` discontinuers at T1.
+
+```{r echo=FALSE}
+kable(c)
+```
+
+# There were `r n_t2_discont` discontinuers at T2.
+
+```{r echo=FALSE}
+kable(d)
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(t1,caption="Table 1. Demographics and clinical characteristics.")
 ```
