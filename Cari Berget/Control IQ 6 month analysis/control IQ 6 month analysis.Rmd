@@ -19,6 +19,7 @@ library(nlme)
 library(gridExtra)
 library(psych)
 library(stringr)
+library(dplyr)
 # Check OS and alter file path accordingly.
 if (.Platform$OS.type == "windows") {pathstart <- "//ucdenver.pvt/"} else if (.Platform$OS.type == "unix"){pathstart <- "/Volumes/"}
 ```
@@ -104,7 +105,7 @@ child_full_iq <- child_full_iq[!is.na(child_full_iq$record_id),]
 
 # score PAID - child
 # there are no records with partial missing data, but I will include this code in case we need it in the future
-paid <- child_full_iq %>% select(record_id,gyl_timepoint.factor,c_paid1:c_paid20)
+paid <- child_full_iq %>% dplyr::select(record_id,gyl_timepoint.factor,c_paid1:c_paid20)
 missing_threshold <- ceiling(length(3:ncol(paid)) * 0.25)
 for (r in 1:nrow(paid)) { # Couldn't get apply to work for some reason
   x <- paid[r,3:ncol(paid)]
@@ -125,7 +126,7 @@ paid <- paid[,c("record_id","gyl_timepoint.factor","paid_score_c")]
 child_full_iq <- merge(child_full_iq,paid,by=c("record_id","gyl_timepoint.factor"), all.x = T, all.y = T)
 
 # score PAID YA
-paidya <- child_full_iq %>% select(record_id,gyl_timepoint.factor,ya_paid1:ya_paid20)
+paidya <- child_full_iq %>% dplyr::select(record_id,gyl_timepoint.factor,ya_paid1:ya_paid20)
 missing_threshold <- ceiling(length(3:ncol(paidya)) * 0.25)
 for (r in 1:nrow(paidya)) { # Couldn't get apply to work for some reason
   x <- paidya[r,3:ncol(paidya)]
@@ -146,7 +147,7 @@ child_full_iq$paid_score <- NA
 child_full_iq$paid_score <- pmax(child_full_iq$paid_score_c,child_full_iq$paid_score_ya,na.rm = T)
 
 # score HFS child
-hfsc <- child_full_iq %>% select(record_id,gyl_timepoint.factor,c_hfs_behave1:c_hfs_behave10,
+hfsc <- child_full_iq %>% dplyr::select(record_id,gyl_timepoint.factor,c_hfs_behave1:c_hfs_behave10,
                                  c_hfs_worry11:c_hfs_worry25)
 missing_threshold <- ceiling(length(3:ncol(hfsc)) * 0.25)
 for (r in 1:nrow(hfsc)) { # Couldn't get apply to work for some reason
@@ -169,7 +170,7 @@ child_full_iq <- merge(child_full_iq,hfsc,by=c("record_id","gyl_timepoint.factor
 
 # score HFS YA - baseline and follow-up are separate
 # baseline
-hfsya_b <- child_full_iq %>% select(record_id,gyl_timepoint.factor,ya_hfs_b_behave1:ya_hfs_b_behave15,
+hfsya_b <- child_full_iq %>% dplyr::select(record_id,gyl_timepoint.factor,ya_hfs_b_behave1:ya_hfs_b_behave15,
                                  ya_hfs_b_worry16:ya_hfs_b_worry33)
 missing_threshold <- ceiling(length(3:ncol(hfsya_b)) * 0.25)
 for (r in 1:nrow(hfsya_b)) { # Couldn't get apply to work for some reason
@@ -189,7 +190,7 @@ hfsya_b$hfs_behave_ya <- apply(hfsya_b[,13:27],1,sum)
 hfsya_b <- hfsya_b[!is.na(hfsya_b$hfs_total_ya),]
 hfsya_b <- hfsya_b[,c("record_id","gyl_timepoint.factor","hfs_total_ya","hfs_worry_ya","hfs_behave_ya")]
 # follow-up
-hfsya_f <- child_full_iq %>% select(record_id,gyl_timepoint.factor,ya_hfs_f_behave1:ya_hfs_f_behave15,
+hfsya_f <- child_full_iq %>% dplyr::select(record_id,gyl_timepoint.factor,ya_hfs_f_behave1:ya_hfs_f_behave15,
                                  ya_hfs_f_worry16:ya_hfs_f_worry33)
 missing_threshold <- ceiling(length(3:ncol(hfsya_f)) * 0.25)
 for (r in 1:nrow(hfsya_f)) { # Couldn't get apply to work for some reason
@@ -304,11 +305,17 @@ miss_demo <- baseline[is.na(baseline$demographics_age) | is.na(baseline$demograp
                                                    is.na(baseline$demographics_insurance),c("record_id",demovars)]
 write.csv(miss_demo,"T:\\Cari Berget\\Control IQ 6 Month MS\\Data clean\\missing demographics.csv")
 
-# questions 
-# 5) what to do about missing baseline a1c - just exclude from stratified analysis? yes
-# for those w/ a1c compare gmi and a1c
-# can't look at a1c over time, b/c covid...use gmi
+# dataframe without M1
+data_no_m1 <- child_full_iq[child_full_iq$gyl_timepoint.factor != "Month 1/ Training F/U",]
+data_no_m1$gyl_timepoint.factor <- droplevels(data_no_m1$gyl_timepoint.factor)
 
+# % time CIQ
+amtime_mod <- lme(time_am ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+amtime_mod_means <- lme(time_am ~ gyl_timepoint.factor-1,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+
+# questions for Tim:
+# 1.  when I run the first model, why do I only have a fixed effect of 6 months?
+# 2.  I don't understand the syntax of the second model
 
 ```
 
