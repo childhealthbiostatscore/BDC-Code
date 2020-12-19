@@ -10,6 +10,8 @@ knitr::opts_chunk$set(echo = TRUE)
 library(knitr)
 library(tableone)
 library(dplyr)
+library(stringr)
+library(nlme)
 ```
 
 ```{r echo=FALSE,include=FALSE}
@@ -28,18 +30,104 @@ demo_adult <- merge(demo_adult,consent,by="record_id",all.x=T,all.y = T)
 demo_adult$age <- floor(((demo_adult$consent_date - demo_adult$parent_bday)/365.25))
 demo_adult$age <- ifelse(demo_adult$age==0,NA,demo_adult$age)
 demo_adult$parent_check_night <- as.numeric(demo_adult$parent_check_night)
+# calculate child duration
+demo_child$t1d_diagnosis <- as.Date(as.character(demo_child$t1d_diagnosis))
+demo_child$t1d_duration <- as.numeric(((demo_child$consent_date - demo_child$t1d_diagnosis)/365.25))
+# merge in insulin use, CGM use, HCL use from parent questionnaire
+ins <- demo_adult[c("record_id","insulinmethod.factor","previous_cgm_use.factor","currenthcltech.factor")]
+ins$record_id <- ins$record_id+100
+demo_child$insulinmethod.factor <- NULL
+demo_child$previous_cgm_use.factor <- NULL
+demo_child$currenthcltech.factor <- NULL
+demo_child <- merge(demo_child,ins,by="record_id",all.x=T,all.y=T)
+demo_child$cons_age <- as.numeric(demo_child$cons_age)
 
 source("T:\\Erin Cobry\\Prospective HCL and sleep study\\Data raw\\AdvancedHybridClosed-ATTDAbstracts2021_R_2020-12-17_1331.r")
 data <- data[!(data$record_id %in% c(121,221)),]
+# fix total sleep variable
+data$totalsleep_avg <- as.character(data$totalsleep_avg)
+data$hours <-  as.numeric(word(data$totalsleep_avg,1,sep=":"))
+data$minutes <- as.numeric(word(data$totalsleep_avg,2,sep=":"))
+data$totalsleep_avg_num <- data$hours + (data$minutes/60)
+data$redcap_event_name.factor <- droplevels(data$redcap_event_name.factor)
 child <- data[data$record_id>=200,]
 adult <- data[data$record_id<200,]
+# merge sensor data from child with parent
+tir <- child[,c("record_id","sensor_70_180")]
+tir$record_id <- tir$record_id-100
+adult$sensor_70_180 <- NULL
+adult <- merge(adult,tir,by="record_id",all.x=T,all.y=T)
 
 # adult demo table
+# need to add child BG checks when those data are clean
 adult_demo_vars <- c("age","parent_gender.factor","race.factor","parent_check_night")
 t1_adult <- CreateTableOne(data=demo_adult,vars=adult_demo_vars)
 t1_adult <- print(t1_adult,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T,nonnorm=c("age"),test = F)
 
 # child demo table
+child_demo_vars <- c("cons_age","childgender.factor","t1d_duration","insulinmethod.factor","previous_cgm_use.factor",
+                     "currenthcltech.factor")
+t1_child <- CreateTableOne(data=demo_child,vars=child_demo_vars)
+t1_child <- print(t1_child,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T,nonnorm=c("t1d_duration"),test = F)
+
+# ++++++++++++++++++++++++++++
+# flattenCorrMatrix
+# ++++++++++++++++++++++++++++
+# cormat : matrix of the correlation coefficients
+# pmat : matrix of the correlation p-values
+flattenCorrMatrix <- function(cormat, pmat) {
+  ut <- upper.tri(cormat)
+  data.frame(
+    row = rownames(cormat)[row(cormat)[ut]],
+    column = rownames(cormat)[col(cormat)[ut]],
+    cor  =(cormat)[ut],
+    p = pmat[ut]
+  )
+}
+# first both visits together
+corr1_adult <- rcorr(as.matrix(adult[, c("sensor_70_180","totalsleep_avg_num","awake_avg","sleepefficency_avg","waso_avg")])
+                  ,type = "spearman")
+corr1_adult <- flattenCorrMatrix(corr1_adult$r, corr1_adult$P)
+corr1_adult <- corr1_adult[corr1_adult$row=="sensor_70_180",]
+corr1_child <- rcorr(as.matrix(child[, c("sensor_70_180","totalsleep_avg_num","awake_avg","sleepefficency_avg","waso_avg")])
+                  ,type = "spearman")
+corr1_child <- flattenCorrMatrix(corr1_child$r, corr1_child$P)
+corr1_child <- corr1_child[corr1_child$row=="sensor_70_180",]
+# baseline separately
+corr2_adult <- rcorr(as.matrix(adult[adult$redcap_event_name=="baseline_day_1_arm_1",
+                                     c("sensor_70_180","totalsleep_avg_num","awake_avg","sleepefficency_avg","waso_avg")])
+                  ,type = "spearman")
+corr2_adult <- flattenCorrMatrix(corr2_adult$r, corr2_adult$P)
+corr2_adult <- corr2_adult[corr2_adult$row=="sensor_70_180",]
+corr2_child <- rcorr(as.matrix(child[child$redcap_event_name=="baseline_day_1_arm_2",
+                                     c("sensor_70_180","totalsleep_avg_num","awake_avg","sleepefficency_avg","waso_avg")])
+                  ,type = "spearman")
+corr2_child <- flattenCorrMatrix(corr2_child$r, corr2_child$P)
+corr2_child <- corr2_child[corr2_child$row=="sensor_70_180",]
+# week 1 separately
+corr3_adult <- rcorr(as.matrix(adult[adult$redcap_event_name=="hcl_week_1_day_1_arm_1",
+                                     c("sensor_70_180","totalsleep_avg_num","awake_avg","sleepefficency_avg","waso_avg")])
+                  ,type = "spearman")
+corr3_adult <- flattenCorrMatrix(corr3_adult$r, corr3_adult$P)
+corr3_adult <- corr3_adult[corr3_adult$row=="sensor_70_180",]
+corr3_child <- rcorr(as.matrix(child[child$redcap_event_name=="hcl_week_1_day_1_arm_2",
+                                     c("sensor_70_180","totalsleep_avg_num","awake_avg","sleepefficency_avg","waso_avg")])
+                  ,type = "spearman")
+corr3_child <- flattenCorrMatrix(corr3_child$r, corr3_child$P)
+corr3_child <- corr3_child[corr3_child$row=="sensor_70_180",]
+
+# when using both visits, really should be mixed models to account for correlation
+# first adults
+totsleep_adult_mod <- lme(totalsleep_avg_num ~ sensor_70_180,random=~1|record_id,data = adult,na.action = na.omit)
+awake_adult_mod <- lme(awake_avg ~ sensor_70_180,random=~1|record_id,data = adult,na.action = na.omit)
+eff_adult_mod <- lme(sleepefficency_avg ~ sensor_70_180,random=~1|record_id,data = adult,na.action = na.omit)
+waso_adult_mod <- lme(waso_avg ~ sensor_70_180,random=~1|record_id,data = adult,na.action = na.omit)
+# then kids
+totsleep_child_mod <- lme(totalsleep_avg_num ~ sensor_70_180,random=~1|record_id,data = child,na.action = na.omit)
+awake_child_mod <- lme(awake_avg ~ sensor_70_180,random=~1|record_id,data = child,na.action = na.omit)
+eff_child_mod <- lme(sleepefficency_avg ~ sensor_70_180,random=~1|record_id,data = child,na.action = na.omit)
+waso_child_mod <- lme(waso_avg ~ sensor_70_180,random=~1|record_id,data = child,na.action = na.omit)
+
 
 ```
 
@@ -47,11 +135,42 @@ t1_adult <- print(t1_adult,printToggle = F,varLabels=TRUE,missing=T,showAllLevel
 
 # Methods
 
+used average sleep variables
+
 # Results
 
+```{r, echo=FALSE, message=FALSE}
+kable(t1_adult,caption="Table 1. Demographics and clinical characteristics in parents.")
+```
 
 <br>
 
 ```{r, echo=FALSE, message=FALSE}
-kable(t1,caption="Table 1. Demographics and clinical characteristics.")
+kable(t1_child,caption="Table 1. Demographics and clinical characteristics in children.")
 ```
+
+\newpage
+
+```{r, echo=FALSE, message=FALSE}
+kable(corr2_adult,caption="Table 3. Correlations between TIR and adult sleep, at baseline.")
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(corr2_child,caption="Table 4. Correlations between TIR and child sleep, at baseline.")
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(corr3_adult,caption="Table 5. Correlations between TIR and adult sleep, at week 1.")
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(corr3_child,caption="Table 6. Correlations between TIR and child sleep, at week 1.")
+```
+
+
