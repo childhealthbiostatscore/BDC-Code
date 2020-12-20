@@ -65,8 +65,49 @@ actigraphy_wide_child <- actigraphy_wide[actigraphy_wide$record_id>=200,]
 actigraphy_wide_adult <- actigraphy_wide[actigraphy_wide$record_id<200,]
 
 # read in sleep diary data
-diary <- read.csv("T:\\Erin Cobry\\Prospective HCL and sleep study\\Data raw\\awakening reasons.csv")
+diary <- read.csv("T:\\Erin Cobry\\Prospective HCL and sleep study\\Data raw\\awakening reasons.csv",
+                  na.strings = c(""," ","NA"))
+diary$visit <- NA
+diary$visit <- ifelse(diary$Event.Name %in% c("Baseline Day 1 (Arm 1: Parent)","BL D2 (Arm 1: Parent)",
+                                                   "BL D3 (Arm 1: Parent)","BL D4 (Arm 1: Parent)",
+                                                   "BL D5 (Arm 1: Parent)","BL D6 (Arm 1: Parent)",
+                                                   "BL D7 (Arm 1: Parent)","Baseline Day 1 (Arm 2: Child)",
+                                                   "BL D2 (Arm 2: Child)","BL D3 (Arm 2: Child)",
+                                                   "BL D4 (Arm 2: Child)","BL D5 (Arm 2: Child)",
+                                                   "BL D6 (Arm 2: Child)","BL D7 (Arm 2: Child)"),"B","WK1")
 
+# need to calculate number and duration of awakenings, for all awakenings
+# NOTE: DURATION IS MISSING FOR MANY AWAKENINGS, SO THE DURATION WILL BE AN UNDERESTIMATE - for now, will ignore length
+# then look at % diabetes related
+# then stratify by diabetes related or not and look at change in number and duration
+diary$num_awakenings <- NA
+diary$num_awakenings <- ifelse(diary$have_awakenings=="No",0,
+                               ifelse(is.na(diary$a1_additional) | diary$a1_additional=="No",1,
+                               ifelse(is.na(diary$a2_additional) | diary$a2_additional=="No",2,
+                               ifelse(is.na(diary$a3_additional) | diary$a3_additional=="No",3,4))))
+diary$num_t1d_awakenings <- rowSums(diary[,c("a1_diabetes","a2_diabetes","a3_diabetes","a4_diabetes")],na.rm=T)
+#diary$length_awakenings <- rowSums(diary[,c("a1_length","a2_length","a3_length","a4_length")],na.rm=T)
+#diary$length_t1d_awakenings <- NA
+#diary$length_t1d_awakenings <- ifelse(diary$a1_diabetes==1,diary$a1_length,0)
+#diary$length_t1d_awakenings <- ifelse(diary$a2_diabetes==1,rowSums(diary[,c("length_t1d_awakenings","a2_length")],na.rm=T),
+#                                      diary$length_t1d_awakenings)
+#diary$length_t1d_awakenings <- ifelse(diary$a3_diabetes==1,rowSums(diary[,c("length_t1d_awakenings","a3_length")],na.rm=T),
+#                                      diary$length_t1d_awakenings)
+#diary$length_t1d_awakenings <- ifelse(diary$a4_diabetes==1,rowSums(diary[,c("length_t1d_awakenings","a4_length")],na.rm=T),
+#                                      diary$length_t1d_awakenings)
+diary_sum <- diary %>% group_by(Record.ID,visit) %>% summarise(tot_awakenings = sum(num_awakenings),tot_t1d_awakenings = sum(num_t1d_awakenings))
+diary_sum <- as.data.frame(diary_sum)
+diary_wide <- reshape(diary_sum, idvar = "Record.ID", timevar = "visit", direction = "wide")
+diary_wide$d_tot_awakenings <- as.numeric(diary_wide$tot_awakenings.WK1 - diary_wide$tot_awakenings.B)
+diary_wide$d_t1d_awakenings <- as.numeric(diary_wide$tot_t1d_awakenings.WK1 - diary_wide$tot_t1d_awakenings.B)
+diary_wide_adult <- diary_wide[diary_wide$Record.ID<200,]
+diary_wide_child <- diary_wide[diary_wide$Record.ID>=200,]
+
+# look at % of records with awakening length missing
+permiss_a1 <- round(nrow(diary[diary$have_awakenings=="Yes" & is.na(diary$a1_length),]) / nrow(diary[diary$have_awakenings=="Yes",])*100,2)
+permiss_a2 <- round(nrow(diary[diary$a1_additional =="Yes" & is.na(diary$a2_length),]) / nrow(diary[diary$a1_additional,])*100,2)
+permiss_a3 <- round(nrow(diary[diary$a2_additional =="Yes" & is.na(diary$a3_length),]) / nrow(diary[diary$a2_additional,])*100,2)
+permiss_a4 <- round(nrow(diary[diary$a3_additional =="Yes" & is.na(diary$a4_length),]) / nrow(diary[diary$a3_additional,])*100,2)
 
 # adult demo table
 # need to add child BG checks when those data are clean
@@ -82,27 +123,64 @@ t1_child <- print(t1_child,printToggle = F,varLabels=TRUE,missing=T,showAllLevel
 
 # adult actigraphy table
 actvars <- c("d_tot","d_eff","d_waso")
-t_act_adult <- CreateTableOne(data=actigraphy_wide_adult,vars=actvars)
-# add p-values
-# STOPPED HERE - trying to figure out how to combine the pvals and table
+mean <- apply(actigraphy_wide_adult[,actvars],2,mean,na.rm=T)
+mean <- round(mean,4)
 a <- actigraphy_wide_adult[,c("d_tot","d_eff","d_waso")]
-p <- NULL
+p.value <- NULL
 for (i in 1:length(actvars)) {
-  p[i] <- t.test(a[,i],mu=0)$p.value
+  p.value[i] <- t.test(a[,i],mu=0)$p.value
 }
-p <- c("P-value",round(p,4))
-t_act_adult <- c(t_act_adult,p)
-t_act_adult <- print(t_act_adult,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T,test = T)
+act_table_adult <- cbind(mean,p.value)
+row.names(act_table_adult) <- c("Change in total sleep time (hrs)","Change in sleep efficiency (%)","Change in WASO (min)")
+
+# child actigraphy table
+actvars <- c("d_tot","d_eff","d_waso")
+mean <- apply(actigraphy_wide_child[,actvars],2,mean,na.rm=T)
+mean <- round(mean,4)
+a <- actigraphy_wide_child[,c("d_tot","d_eff","d_waso")]
+p.value <- NULL
+for (i in 1:length(actvars)) {
+  p.value[i] <- t.test(a[,i],mu=0)$p.value
+}
+act_table_child <- cbind(mean,p.value)
+row.names(act_table_child) <- c("Change in total sleep time (hrs)","Change in sleep efficiency (%)","Change in WASO (min)")
+
+# adult diary table
+diaryvars <- c("d_tot_awakenings","d_t1d_awakenings")
+mean <- apply(diary_wide_adult[,diaryvars],2,mean,na.rm=T)
+mean <- round(mean,4)
+a <- diary_wide_adult[,c("d_tot_awakenings","d_t1d_awakenings")]
+p.value <- NULL
+for (i in 1:length(diaryvars)) {
+  p.value[i] <- round(t.test(a[,i],mu=0)$p.value,4)
+}
+diary_table_adult <- cbind(mean,p.value)
+row.names(diary_table_adult) <- c("Change in number of total awakenings","Change in number of diabetes-related awakenings")
+
+# child diary table
+diaryvars <- c("d_tot_awakenings","d_t1d_awakenings")
+mean <- apply(diary_wide_child[,diaryvars],2,mean,na.rm=T)
+mean <- round(mean,4)
+a <- diary_wide_child[,c("d_tot_awakenings","d_t1d_awakenings")]
+p.value <- NULL
+for (i in 1:length(diaryvars)) {
+  p.value[i] <- round(t.test(a[,i],mu=0)$p.value,4)
+}
+diary_table_child <- cbind(mean,p.value)
+row.names(diary_table_child) <- c("Change in number of total awakenings","Change in number of diabetes-related awakenings")
+
 
 ```
 
 # Background
 
-The purpose of this analysis is to test associations between time in range by CGM and sleep varaibles by actigraph watch in both parents and children, at baseline and 1 week after starting Control IQ.
+The purpose of this analysis is to test whether sleep measures, by actigraphy and self-report, change 1 week after starting Control IQ, in both adults and children.
 
 # Methods
 
-The actigraphy sleep variables were all average values (average total sleep time, average awakenings, average sleep efficiency, average WASO).  Spearman's correlation coefficient was used to test the association between TIR and sleep variables after stratifying by visit.  When combining the two visits, linear mixed models were used because the two visits within a participant are correlated.
+The actigraphy sleep variables were all average values (average total sleep time, average sleep efficiency, average WASO).  The total number of awakenings and number of diabetes-related awakenings were calculated during the week of sleep diary data for each visit.  Paired t-tests were used to compare sleep measures at baseline and at 1 week.
+
+Note that the length of awakening variables had a large amount of missing data; therefore, those measures are not included in this analysis.  Of the first awakenings reported, `r permiss_a1`% had the length missing.  Similarly, the percentage of missing length data for the 2nd, 3rd, and 4th awakenings were `r permiss_a2`%,`r permiss_a3`%, and `r permiss_a4`%.
 
 # Results
 
@@ -113,94 +191,29 @@ kable(t1_adult,caption="Table 1. Demographics and clinical characteristics in pa
 <br>
 
 ```{r, echo=FALSE, message=FALSE}
-kable(t1_child,caption="Table 1. Demographics and clinical characteristics in children.")
+kable(t1_child,caption="Table 2. Demographics and clinical characteristics in children.")
 ```
 
 \newpage
 
 ```{r, echo=FALSE, message=FALSE}
-kable(corr2_adult,caption="Table 3. Correlations between TIR and adult sleep, at baseline.")
+kable(act_table_adult,caption="Table 3.  Change in sleep variables at 1 week after starting control IQ, in adults.")
 ```
 
 <br>
 
 ```{r, echo=FALSE, message=FALSE}
-kable(corr2_child,caption="Table 4. Correlations between TIR and child sleep, at baseline.")
+kable(act_table_child,caption="Table 4.  Change in sleep variables at 1 week after starting control IQ, in children.")
 ```
 
 <br>
 
 ```{r, echo=FALSE, message=FALSE}
-kable(corr3_adult,caption="Table 5. Correlations between TIR and adult sleep, at week 1.")
+kable(diary_table_adult,caption="Table 5.  Change in awakenings at 1 week after starting control IQ, in adults.")
 ```
 
 <br>
 
 ```{r, echo=FALSE, message=FALSE}
-kable(corr3_child,caption="Table 6. Correlations between TIR and child sleep, at week 1.")
+kable(diary_table_child,caption="Table 6.  Change in sleep variables at 1 week after starting control IQ, in children.")
 ```
-
-\newpage
-
-Model testing association between adult total sleep and TIR, using both baseline and 1 mo timepoints.  To interpret the table, use the row labeled "sensor_70_180."  The column labeled "value" is the change in the outcome for a 1% change in TIR.  
-
-```{r, echo=FALSE, message=FALSE}
-round(summary(totsleep_adult_mod)$tTable,4)
-```
-
-<br>
-
-Model testing association between adult awakenings and TIR, using both baseline and 1 mo timepoints.  To interpret the table, use the row labeled "sensor_70_180."  The column labeled "value" is the change in the outcome for a 1% change in TIR. 
-
-```{r, echo=FALSE, message=FALSE}
-round(summary(awake_adult_mod)$tTable,4)
-```
-
-<br>
-
-Model testing association between adult sleep efficiency and TIR, using both baseline and 1 mo timepoints.  To interpret the table, use the row labeled "sensor_70_180."  The column labeled "value" is the change in the outcome for a 1% change in TIR. 
-
-```{r, echo=FALSE, message=FALSE}
-round(summary(eff_adult_mod)$tTable,4)
-```
-
-<br>
-
-Model testing association between adult WASO and TIR, using both baseline and 1 mo timepoints.  To interpret the table, use the row labeled "sensor_70_180."  The column labeled "value" is the change in the outcome for a 1% change in TIR. 
-
-```{r, echo=FALSE, message=FALSE}
-round(summary(waso_adult_mod)$tTable,4)
-```
-
-<br>
-
-Model testing association between child total sleep time and TIR, using both baseline and 1 mo timepoints.  To interpret the table, use the row labeled "sensor_70_180."  The column labeled "value" is the change in the outcome for a 1% change in TIR. 
-
-```{r, echo=FALSE, message=FALSE}
-round(summary(totsleep_child_mod)$tTable,4)
-```
-
-<br>
-
-Model testing association between child awakenings and TIR, using both baseline and 1 mo timepoints.  To interpret the table, use the row labeled "sensor_70_180."  The column labeled "value" is the change in the outcome for a 1% change in TIR. 
-
-```{r, echo=FALSE, message=FALSE}
-round(summary(awake_child_mod)$tTable,4)
-```
-
-<br>
-
-Model testing association between child sleep efficiency and TIR, using both baseline and 1 mo timepoints.  To interpret the table, use the row labeled "sensor_70_180."  The column labeled "value" is the change in the outcome for a 1% change in TIR. 
-
-```{r, echo=FALSE, message=FALSE}
-round(summary(eff_child_mod)$tTable,4)
-```
-
-<br>
-
-Model testing association between child WASO and TIR, using both baseline and 1 mo timepoints.  To interpret the table, use the row labeled "sensor_70_180."  The column labeled "value" is the change in the outcome for a 1% change in TIR. 
-
-```{r, echo=FALSE, message=FALSE}
-round(summary(waso_child_mod)$tTable,4)
-```
-
