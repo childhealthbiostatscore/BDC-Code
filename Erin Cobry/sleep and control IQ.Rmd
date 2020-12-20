@@ -50,13 +50,19 @@ data$hours <-  as.numeric(word(data$totalsleep_avg,1,sep=":"))
 data$minutes <- as.numeric(word(data$totalsleep_avg,2,sep=":"))
 data$totalsleep_avg_num <- data$hours + (data$minutes/60)
 data$redcap_event_name.factor <- droplevels(data$redcap_event_name.factor)
-child <- data[data$record_id>=200,]
-adult <- data[data$record_id<200,]
-# merge sensor data from child with parent
-tir <- child[,c("record_id","sensor_70_180")]
-tir$record_id <- tir$record_id-100
-adult$sensor_70_180 <- NULL
-adult <- merge(adult,tir,by="record_id",all.x=T,all.y=T)
+# keep needed actigraphy variables
+actigraphy <- data[,c("record_id","redcap_event_name","totalsleep_avg_num","sleepefficency_avg","waso_avg")]
+# create new actigraphy visit variable
+actigraphy$visit <- ifelse(actigraphy$redcap_event_name %in% c("baseline_day_1_arm_1","baseline_day_1_arm_2"),"B","WK1")
+actigraphy_wide <- reshape(actigraphy, idvar = "record_id", timevar = "visit", direction = "wide")
+actigraphy_wide$d_tot <- as.numeric(actigraphy_wide$totalsleep_avg_num.WK1 - actigraphy_wide$totalsleep_avg_num.B)
+actigraphy_wide$d_eff <- as.numeric(actigraphy_wide$sleepefficency_avg.WK1 - actigraphy_wide$sleepefficency_avg.B)
+actigraphy_wide$d_waso <- as.numeric(actigraphy_wide$waso_avg.WK1 - actigraphy_wide$waso_avg.B)
+#label(actigraphy_wide$d_tot) <- "Change in total sleep time"
+#label(actigraphy_wide$d_eff) <- "Change in sleep efficiency"
+#label(actigraphy_wide$d_waso) <- "Change in WASO"
+actigraphy_wide_child <- actigraphy_wide[actigraphy_wide$record_id>=200,]
+actigraphy_wide_adult <- actigraphy_wide[actigraphy_wide$record_id<200,]
 
 # read in sleep diary data
 diary <- read.csv("T:\\Erin Cobry\\Prospective HCL and sleep study\\Data raw\\awakening reasons.csv")
@@ -74,7 +80,19 @@ child_demo_vars <- c("cons_age","childgender.factor","t1d_duration","insulinmeth
 t1_child <- CreateTableOne(data=demo_child,vars=child_demo_vars)
 t1_child <- print(t1_child,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T,nonnorm=c("t1d_duration"),test = F)
 
-
+# adult actigraphy table
+actvars <- c("d_tot","d_eff","d_waso")
+t_act_adult <- CreateTableOne(data=actigraphy_wide_adult,vars=actvars)
+# add p-values
+# STOPPED HERE - trying to figure out how to combine the pvals and table
+a <- actigraphy_wide_adult[,c("d_tot","d_eff","d_waso")]
+p <- NULL
+for (i in 1:length(actvars)) {
+  p[i] <- t.test(a[,i],mu=0)$p.value
+}
+p <- c("P-value",round(p,4))
+t_act_adult <- c(t_act_adult,p)
+t_act_adult <- print(t_act_adult,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T,test = T)
 
 ```
 
