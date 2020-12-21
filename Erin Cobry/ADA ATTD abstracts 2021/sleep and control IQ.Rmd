@@ -1,0 +1,219 @@
+---
+title: "HCL and sleep: changes in sleep after starting Control IQ"
+author: "Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(tableone)
+library(dplyr)
+library(stringr)
+library(nlme)
+```
+
+```{r echo=FALSE,include=FALSE}
+source("T:\\Erin Cobry\\Prospective HCL and sleep study\\Data raw\\AdvancedHybridClosed-Demographics_R_2020-12-17_1648.r")
+demo <- data
+demo <- demo[!(demo$record_id %in% c(121,221)),]
+demo_child <- subset(demo, record_id>=200)
+demo_child$consent_date <- as.Date(as.character(demo_child$consent_date))
+demo_adult <- subset(demo, record_id<200)
+demo_adult$parent_bday <- as.Date(as.character(demo_adult$parent_bday))
+# to calculate age, need to get consent date from child demo
+consent <- demo_child %>% select(record_id, consent_date)
+consent$record_id <- consent$record_id-100
+demo_adult$consent_date <- NULL
+demo_adult <- merge(demo_adult,consent,by="record_id",all.x=T,all.y = T)
+demo_adult$age <- floor(((demo_adult$consent_date - demo_adult$parent_bday)/365.25))
+demo_adult$age <- ifelse(demo_adult$age==0,NA,demo_adult$age)
+demo_adult$parent_check_night <- as.numeric(demo_adult$parent_check_night)
+# calculate child duration
+demo_child$t1d_diagnosis <- as.Date(as.character(demo_child$t1d_diagnosis))
+demo_child$t1d_duration <- as.numeric(((demo_child$consent_date - demo_child$t1d_diagnosis)/365.25))
+# merge in insulin use, CGM use, HCL use from parent questionnaire
+ins <- demo_adult[c("record_id","insulinmethod.factor","previous_cgm_use.factor","currenthcltech.factor")]
+ins$record_id <- ins$record_id+100
+demo_child$insulinmethod.factor <- NULL
+demo_child$previous_cgm_use.factor <- NULL
+demo_child$currenthcltech.factor <- NULL
+demo_child <- merge(demo_child,ins,by="record_id",all.x=T,all.y=T)
+demo_child$cons_age <- as.numeric(demo_child$cons_age)
+
+source("T:\\Erin Cobry\\Prospective HCL and sleep study\\Data raw\\AdvancedHybridClosed-ATTDAbstracts2021_R_2020-12-17_1331.r")
+data <- data[!(data$record_id %in% c(121,221)),]
+# fix total sleep variable
+data$totalsleep_avg <- as.character(data$totalsleep_avg)
+data$hours <-  as.numeric(word(data$totalsleep_avg,1,sep=":"))
+data$minutes <- as.numeric(word(data$totalsleep_avg,2,sep=":"))
+data$totalsleep_avg_num <- data$hours + (data$minutes/60)
+data$redcap_event_name.factor <- droplevels(data$redcap_event_name.factor)
+# keep needed actigraphy variables
+actigraphy <- data[,c("record_id","redcap_event_name","totalsleep_avg_num","sleepefficency_avg","waso_avg")]
+# create new actigraphy visit variable
+actigraphy$visit <- ifelse(actigraphy$redcap_event_name %in% c("baseline_day_1_arm_1","baseline_day_1_arm_2"),"B","WK1")
+actigraphy_wide <- reshape(actigraphy, idvar = "record_id", timevar = "visit", direction = "wide")
+actigraphy_wide$d_tot <- as.numeric(actigraphy_wide$totalsleep_avg_num.WK1 - actigraphy_wide$totalsleep_avg_num.B)
+actigraphy_wide$d_eff <- as.numeric(actigraphy_wide$sleepefficency_avg.WK1 - actigraphy_wide$sleepefficency_avg.B)
+actigraphy_wide$d_waso <- as.numeric(actigraphy_wide$waso_avg.WK1 - actigraphy_wide$waso_avg.B)
+#label(actigraphy_wide$d_tot) <- "Change in total sleep time"
+#label(actigraphy_wide$d_eff) <- "Change in sleep efficiency"
+#label(actigraphy_wide$d_waso) <- "Change in WASO"
+actigraphy_wide_child <- actigraphy_wide[actigraphy_wide$record_id>=200,]
+actigraphy_wide_adult <- actigraphy_wide[actigraphy_wide$record_id<200,]
+
+# read in sleep diary data
+diary <- read.csv("T:\\Erin Cobry\\Prospective HCL and sleep study\\Data raw\\awakening reasons.csv",
+                  na.strings = c(""," ","NA"))
+diary$visit <- NA
+diary$visit <- ifelse(diary$Event.Name %in% c("Baseline Day 1 (Arm 1: Parent)","BL D2 (Arm 1: Parent)",
+                                                   "BL D3 (Arm 1: Parent)","BL D4 (Arm 1: Parent)",
+                                                   "BL D5 (Arm 1: Parent)","BL D6 (Arm 1: Parent)",
+                                                   "BL D7 (Arm 1: Parent)","Baseline Day 1 (Arm 2: Child)",
+                                                   "BL D2 (Arm 2: Child)","BL D3 (Arm 2: Child)",
+                                                   "BL D4 (Arm 2: Child)","BL D5 (Arm 2: Child)",
+                                                   "BL D6 (Arm 2: Child)","BL D7 (Arm 2: Child)"),"B","WK1")
+
+# need to calculate number and duration of awakenings, for all awakenings
+# NOTE: DURATION IS MISSING FOR MANY AWAKENINGS, SO THE DURATION WILL BE AN UNDERESTIMATE - for now, will ignore length
+# then look at % diabetes related
+# then stratify by diabetes related or not and look at change in number and duration
+diary$num_awakenings <- NA
+diary$num_awakenings <- ifelse(diary$have_awakenings=="No",0,
+                               ifelse(is.na(diary$a1_additional) | diary$a1_additional=="No",1,
+                               ifelse(is.na(diary$a2_additional) | diary$a2_additional=="No",2,
+                               ifelse(is.na(diary$a3_additional) | diary$a3_additional=="No",3,4))))
+diary$num_t1d_awakenings <- rowSums(diary[,c("a1_diabetes","a2_diabetes","a3_diabetes","a4_diabetes")],na.rm=T)
+#diary$length_awakenings <- rowSums(diary[,c("a1_length","a2_length","a3_length","a4_length")],na.rm=T)
+#diary$length_t1d_awakenings <- NA
+#diary$length_t1d_awakenings <- ifelse(diary$a1_diabetes==1,diary$a1_length,0)
+#diary$length_t1d_awakenings <- ifelse(diary$a2_diabetes==1,rowSums(diary[,c("length_t1d_awakenings","a2_length")],na.rm=T),
+#                                      diary$length_t1d_awakenings)
+#diary$length_t1d_awakenings <- ifelse(diary$a3_diabetes==1,rowSums(diary[,c("length_t1d_awakenings","a3_length")],na.rm=T),
+#                                      diary$length_t1d_awakenings)
+#diary$length_t1d_awakenings <- ifelse(diary$a4_diabetes==1,rowSums(diary[,c("length_t1d_awakenings","a4_length")],na.rm=T),
+#                                      diary$length_t1d_awakenings)
+diary_sum <- diary %>% group_by(Record.ID,visit) %>% summarise(tot_awakenings = sum(num_awakenings),tot_t1d_awakenings = sum(num_t1d_awakenings))
+diary_sum <- as.data.frame(diary_sum)
+diary_wide <- reshape(diary_sum, idvar = "Record.ID", timevar = "visit", direction = "wide")
+diary_wide$d_tot_awakenings <- as.numeric(diary_wide$tot_awakenings.WK1 - diary_wide$tot_awakenings.B)
+diary_wide$d_t1d_awakenings <- as.numeric(diary_wide$tot_t1d_awakenings.WK1 - diary_wide$tot_t1d_awakenings.B)
+diary_wide_adult <- diary_wide[diary_wide$Record.ID<200,]
+diary_wide_child <- diary_wide[diary_wide$Record.ID>=200,]
+
+# look at % of records with awakening length missing
+permiss_a1 <- round(nrow(diary[diary$have_awakenings=="Yes" & is.na(diary$a1_length),]) / nrow(diary[diary$have_awakenings=="Yes",])*100,2)
+permiss_a2 <- round(nrow(diary[diary$a1_additional =="Yes" & is.na(diary$a2_length),]) / nrow(diary[diary$a1_additional,])*100,2)
+permiss_a3 <- round(nrow(diary[diary$a2_additional =="Yes" & is.na(diary$a3_length),]) / nrow(diary[diary$a2_additional,])*100,2)
+permiss_a4 <- round(nrow(diary[diary$a3_additional =="Yes" & is.na(diary$a4_length),]) / nrow(diary[diary$a3_additional,])*100,2)
+
+# adult demo table
+# need to add child BG checks when those data are clean
+adult_demo_vars <- c("age","parent_gender.factor","race.factor","parent_check_night")
+t1_adult <- CreateTableOne(data=demo_adult,vars=adult_demo_vars)
+t1_adult <- print(t1_adult,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T,nonnorm=c("age"),test = F)
+
+# child demo table
+child_demo_vars <- c("cons_age","childgender.factor","t1d_duration","insulinmethod.factor","previous_cgm_use.factor",
+                     "currenthcltech.factor")
+t1_child <- CreateTableOne(data=demo_child,vars=child_demo_vars)
+t1_child <- print(t1_child,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T,nonnorm=c("t1d_duration"),test = F)
+
+# adult actigraphy table
+actvars <- c("d_tot","d_eff","d_waso")
+mean <- apply(actigraphy_wide_adult[,actvars],2,mean,na.rm=T)
+mean <- round(mean,4)
+a <- actigraphy_wide_adult[,c("d_tot","d_eff","d_waso")]
+p.value <- NULL
+for (i in 1:length(actvars)) {
+  p.value[i] <- t.test(a[,i],mu=0)$p.value
+}
+act_table_adult <- cbind(mean,p.value)
+row.names(act_table_adult) <- c("Change in total sleep time (hrs)","Change in sleep efficiency (%)","Change in WASO (min)")
+
+# child actigraphy table
+actvars <- c("d_tot","d_eff","d_waso")
+mean <- apply(actigraphy_wide_child[,actvars],2,mean,na.rm=T)
+mean <- round(mean,4)
+a <- actigraphy_wide_child[,c("d_tot","d_eff","d_waso")]
+p.value <- NULL
+for (i in 1:length(actvars)) {
+  p.value[i] <- t.test(a[,i],mu=0)$p.value
+}
+act_table_child <- cbind(mean,p.value)
+row.names(act_table_child) <- c("Change in total sleep time (hrs)","Change in sleep efficiency (%)","Change in WASO (min)")
+
+# adult diary table
+diaryvars <- c("d_tot_awakenings","d_t1d_awakenings")
+mean <- apply(diary_wide_adult[,diaryvars],2,mean,na.rm=T)
+mean <- round(mean,4)
+a <- diary_wide_adult[,c("d_tot_awakenings","d_t1d_awakenings")]
+p.value <- NULL
+for (i in 1:length(diaryvars)) {
+  p.value[i] <- round(t.test(a[,i],mu=0)$p.value,4)
+}
+diary_table_adult <- cbind(mean,p.value)
+row.names(diary_table_adult) <- c("Change in number of total awakenings","Change in number of diabetes-related awakenings")
+
+# child diary table
+diaryvars <- c("d_tot_awakenings","d_t1d_awakenings")
+mean <- apply(diary_wide_child[,diaryvars],2,mean,na.rm=T)
+mean <- round(mean,4)
+a <- diary_wide_child[,c("d_tot_awakenings","d_t1d_awakenings")]
+p.value <- NULL
+for (i in 1:length(diaryvars)) {
+  p.value[i] <- round(t.test(a[,i],mu=0)$p.value,4)
+}
+diary_table_child <- cbind(mean,p.value)
+row.names(diary_table_child) <- c("Change in number of total awakenings","Change in number of diabetes-related awakenings")
+
+
+```
+
+# Background
+
+The purpose of this analysis is to test whether sleep measures, by actigraphy and self-report, change 1 week after starting Control IQ, in both adults and children.
+
+# Methods
+
+The actigraphy sleep variables were all average values (average total sleep time, average sleep efficiency, average WASO).  The total number of awakenings and number of diabetes-related awakenings were calculated during the week of sleep diary data for each visit.  Paired t-tests were used to compare sleep measures at baseline and at 1 week.
+
+Note that the length of awakening variables had a large amount of missing data; therefore, those measures are not included in this analysis.  Of the first awakenings reported, `r permiss_a1`% had the length missing.  Similarly, the percentage of missing length data for the 2nd, 3rd, and 4th awakenings were `r permiss_a2`%,`r permiss_a3`%, and `r permiss_a4`%.
+
+# Results
+
+```{r, echo=FALSE, message=FALSE}
+kable(t1_adult,caption="Table 1. Demographics and clinical characteristics in parents.")
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(t1_child,caption="Table 2. Demographics and clinical characteristics in children.")
+```
+
+\newpage
+
+```{r, echo=FALSE, message=FALSE}
+kable(act_table_adult,caption="Table 3.  Change in sleep variables at 1 week after starting control IQ, in adults.")
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(act_table_child,caption="Table 4.  Change in sleep variables at 1 week after starting control IQ, in children.")
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(diary_table_adult,caption="Table 5.  Change in awakenings at 1 week after starting control IQ, in adults.")
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(diary_table_child,caption="Table 6.  Change in sleep variables at 1 week after starting control IQ, in children.")
+```
