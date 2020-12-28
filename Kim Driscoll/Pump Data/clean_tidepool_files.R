@@ -5,12 +5,15 @@ library(tools)
 indir = "/Users/timvigers/T1 Device Data"
 outdir = "/Users/timvigers/tidepool_test"
 files = list.files(indir,full.names = T)
+# T1 dates
+t1 = read_excel("/Users/timvigers/T1Visit Dates.xlsx")
+t1$V1_Completed = lubridate::ymd(t1$V1_Completed)
 # Iterate through
 for (f in files) {
   id = file_path_sans_ext(basename(f))
   # Check extension
   ext = file_ext(f)
-  if(grepl("dexcom",tolower(f)) | ext == "pdf"){next}
+  if(grepl("dexcom",tolower(f)) | grepl("clarity",tolower(f)) | ext == "pdf"){next}
   if(grepl("tidepool",tolower(f))){
     # Read tab names
     tabs = excel_sheets(f)
@@ -47,8 +50,6 @@ for (f in files) {
     t$Date = lubridate::date(t$datetime)
     t$Time = sub(".* ","",t$datetime)
     t$datetime = NULL
-    # Write
-    write.csv(t,file = paste0(outdir,"/",id,".csv"),row.names = F,na = "")
   } else if (grepl("diasend",tolower(f))){
     # Read tab names
     tabs = excel_sheets(f)
@@ -56,6 +57,11 @@ for (f in files) {
     t = read_excel(f,"Insulin use and carbs")
     t = t %>% rename("BWZ Carb Input (grams)" = `Carbs(g)`, "Bolus Volume Delivered (U)" = `Bolus Volume (U)`)
     t$bg = NA
+    t$Time = lubridate::mdy_hm(t$Time)
+    t$Date = lubridate::date(t$Time)
+    t$Time = sub(".* ","",t$Time)
+    t$datetime = NULL
+    t$`BWZ Estimate (U)` = NA
   } else if (grepl("medtronic",tolower(f)) | grepl("carelink",tolower(f))){
     t <- read.csv(f,stringsAsFactors = F,na="",check.names = F)
     end <- which(t[,3] == "Sensor")
@@ -67,7 +73,11 @@ for (f in files) {
       colnames(t) <- t[start[1],]
       t <- t[-c(1:(start[1]+2)),]
     }
-    # Write
-    write.csv(t,file = paste0(outdir,"/",id,".csv"),row.names = F,na = "")
+    t$Date = lubridate::mdy(t$Date)
   }
+  # Get correct dates
+  date = t1$V1_Completed[match(strsplit(id,"_")[[1]][2],sub(".*_","",t1$record_id))]
+  t = t[t$Date <= date & t$Date >= (date - 90),]
+  # Write
+  write.csv(t,file = paste0(outdir,"/",id,".csv"),row.names = F,na = "")
 }
