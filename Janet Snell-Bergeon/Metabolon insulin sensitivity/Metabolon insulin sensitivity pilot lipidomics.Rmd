@@ -26,10 +26,10 @@ for (i in 3:ncol(lipids)){
 # read in clamp data
 # tertiles of GIR are 3.8 and 5.4 for T1D, for control are 10.3 and 13.67
 # tertile 1 has lowest GIR
-clamp <- read.csv("S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Lipidomics\\Data_raw\\QClampHormones_All Dataset.csv")
+clamp <- read.csv("T:\\CACTI\\Metabolon insulin resistance pilot\\Lipidomics\\Data_raw\\QClampHormones_All Dataset.csv")
 clamp$diabetes <- ifelse(!is.na(clamp$duration),1,0)
 clamp$bmi <- clamp$Wt/((clamp$Ht/100)^2)
-sampledata <- clamp[,c("StudyID","S3_GIR","diabetes")]
+sampledata <- clamp[,c("StudyID","S3_GIR","diabetes","bmi")]
 sampledata$GIR_cat <- ifelse((sampledata$diabetes==1 & sampledata$S3_GIR<3.8) |
                                (sampledata$diabetes==0 & sampledata$S3_GIR<10.3),1,
                              ifelse((sampledata$diabetes==1 & sampledata$S3_GIR<5.4) |
@@ -40,6 +40,8 @@ alldata <- merge(lipids,sampledata,by="StudyID",all.x = T,all.y = F)
 
 # create separate dataframes for T1D and GIR comparisons, since we want to get rid of GIRcat=2
 girdata <- alldata[alldata$GIR_cat==1 | alldata$GIR_cat==3,]
+girdata_t1d <- girdata[girdata$diabetes==1,]
+girdata_control <- girdata[girdata$diabetes==0,]
 
 # create correct matrix for limma
 # first the comparison of T1D vs. control
@@ -49,7 +51,11 @@ dia_contrast <- cbind(rep(1,nrow(alldata)),dia_contrast)
 # this is comparing tertile 3 to tertile 1, so highest vs. lowest tertile
 GIR_contrast <- ifelse(girdata$GIR_cat==3,1,0)
 GIR_contrast <- cbind(rep(1,nrow(girdata)),GIR_contrast)
-
+GIR_contrast_t1d <- ifelse(girdata_t1d$GIR_cat==3,1,0)
+GIR_contrast_t1d <- cbind(rep(1,nrow(girdata_t1d)),GIR_contrast_t1d)
+GIR_contrast_control <- ifelse(girdata_control$GIR_cat==3,1,0)
+GIR_contrast_control <- cbind(rep(1,nrow(girdata_control)),GIR_contrast_control)
+  
 # pull out the lipids and transpose for limma
 ymat <- t(alldata[,3:147])
 # model for T1D vs. control
@@ -66,6 +72,54 @@ fit_gir <- eBayes(fit_gir)
 # format results
 results_gir <- topTable(fit_gir,coef = 2,number = nrow(ymat))
 write.csv(results_gir,"T:\\CACTI\\Metabolon insulin resistance pilot\\Reports\\lipidomics_gir.csv")
+
+# model for GIR adjusted for BMI
+GIR_contrast_adj <- model.matrix(~GIR_cat + bmi, data=girdata)
+fit_gir_adj <- lmFit(ymat,GIR_contrast_adj)
+fit_gir_adj <- eBayes(fit_gir_adj)
+# format results
+results_gir_adj <- topTable(fit_gir_adj,coef = 2,number = nrow(ymat))
+write.csv(results_gir_adj,"T:\\CACTI\\Metabolon insulin resistance pilot\\Reports\\lipidomics_gir_adj.csv")
+
+# merge the sig results from GIR unadjusted and GIR adjusted
+results_gir_sig <- results_gir[results_gir$P.Value<0.05,]
+results_gir_sig <- results_gir_sig[,c("logFC","P.Value")]
+colnames(results_gir_sig) <- c("logFC_unadj","P.Value_unadj")
+results_gir_sig$metabolite <- row.names(results_gir_sig)
+results_gir_adj_sig <- results_gir_adj[results_gir_adj$P.Value<0.05,]
+results_gir_adj_sig <- results_gir_adj_sig[,c("logFC","P.Value")]
+colnames(results_gir_adj_sig) <- c("logFC_adj","P.Value_adj")
+results_gir_adj_sig$metabolite <- row.names(results_gir_adj_sig)
+all_sig <- merge(results_gir_sig,results_gir_adj_sig,by="metabolite",all.x = T,all.y=T)
+write.csv(all_sig,"T:\\CACTI\\Metabolon insulin resistance pilot\\Reports\\lipidomics_gir_unadj_adj_comparison.csv")
+
+# GIR analysis stratified by T1D and control
+# T1D
+ymat_t1d <- t(girdata_t1d[,3:147])
+fit_gir_t1d <- lmFit(ymat_t1d,GIR_contrast_t1d)
+fit_gir_t1d <- eBayes(fit_gir_t1d)
+# format results
+results_gir_t1d <- topTable(fit_gir_t1d,coef = 2,number = nrow(ymat_t1d))
+write.csv(results_gir_t1d,"T:\\CACTI\\Metabolon insulin resistance pilot\\Reports\\lipidomics_gir_t1d.csv")
+# control
+ymat_control <- t(girdata_control[,3:147])
+fit_gir_control <- lmFit(ymat_control,GIR_contrast_control)
+fit_gir_control <- eBayes(fit_gir_control)
+# format results
+results_gir_control <- topTable(fit_gir_control,coef = 2,number = nrow(ymat_control))
+write.csv(results_gir_control,"T:\\CACTI\\Metabolon insulin resistance pilot\\Reports\\lipidomics_gir_control.csv")
+
+# now merge sig results for T1D and control
+results_gir_sig_t1d <- results_gir_t1d[results_gir_t1d$P.Value<0.05,]
+results_gir_sig_t1d <- results_gir_sig_t1d[,c("logFC","P.Value")]
+colnames(results_gir_sig_t1d) <- c("logFC_t1d","P.Value_t1d")
+results_gir_sig_t1d$metabolite <- row.names(results_gir_sig_t1d)
+results_gir_sig_control <- results_gir_control[results_gir_control$P.Value<0.05,]
+results_gir_sig_control <- results_gir_sig_control[,c("logFC","P.Value")]
+colnames(results_gir_sig_control) <- c("logFC_control","P.Value_control")
+results_gir_sig_control$metabolite <- row.names(results_gir_sig_control)
+all_sig_stratified <- merge(results_gir_sig_t1d,results_gir_sig_control,by="metabolite",all.x = T,all.y=T)
+write.csv(all_sig_stratified,"T:\\CACTI\\Metabolon insulin resistance pilot\\Reports\\lipidomics_gir_stratified_comparison.csv")
 
 # sPLS-DA analysis for T1D vs. control
 plsda_t1d <- splsda(alldata[,c(3:147)],Y=as.factor(alldata$diabetes))
