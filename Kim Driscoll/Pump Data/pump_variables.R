@@ -1,7 +1,7 @@
 library(tidyverse)
 # Import data
-indir <- "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Pump Variables/Data_Cleaned/Pump Files Cleaned"
-outdir <- "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Pump Variables/Data_Cleaned"
+indir <- "/Users/timvigers/tidepool_test"
+outdir <- "/Users/timvigers"
 files <- list.files(indir,full.names = T)
 # Make a summary variables table.
 summary <- data.frame(matrix(nrow = length(files),ncol = 0))
@@ -17,6 +17,7 @@ for (f in 1:length(files)) {
   table$datetime <- paste(table$Date,table$Time)
   table$datetime <- lubridate::parse_date_time(table$datetime,
                                                orders = c("mdyHMS","ymdHMS"))
+  table = table[!is.na(table$datetime),]
   # Sort by datetime
   table = table[order(table$datetime),]
   # Get day of the week
@@ -192,7 +193,7 @@ for (f in 1:length(files)) {
       delivered <- c(delivered,table$Bolus.Volume.Delivered..U.[b])
       if (grepl("Normal",table$Bolus.Type[b])) {break()}
     }
-    delivered <- sum(delivered,na.rm = T)
+    delivered <- sum(as.numeric(delivered),na.rm = T)
     # Compare delivery to BWZ
     if (delivered == estimate) {
       bolus_equal_bwz <- bolus_equal_bwz + 1
