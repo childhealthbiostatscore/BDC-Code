@@ -77,7 +77,7 @@ for (f in files) {
   }
   # Get correct dates
   date = t1$V1_Completed[match(strsplit(id,"_")[[1]][2],sub(".*_","",t1$record_id))]
-  t = t[t$Date <= date & t$Date >= (date - 90),]
+  t = t[t$Date <= date & t$Date >= (date - 89),]
   # Write
   write.csv(t,file = paste0(outdir,"/",id,".csv"),row.names = F,na = "")
 }
