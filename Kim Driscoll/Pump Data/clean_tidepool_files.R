@@ -2,11 +2,11 @@ library(tidyverse)
 library(readxl)
 library(tools)
 # Original files
-indir = "/Users/timvigers/T1 Device Data"
-outdir = "/Users/timvigers/tidepool_test"
+indir = "/Users/timvigers/Work/td/T1 Device Data"
+outdir = "/Users/timvigers/Work/td/tidepool_test"
 files = list.files(indir,full.names = T)
 # T1 dates
-t1 = read_excel("/Users/timvigers/T1Visit Dates.xlsx")
+t1 = read_excel("/Users/timvigers/Work/td/T1Visit Dates.xlsx")
 t1$V1_Completed = lubridate::ymd(t1$V1_Completed)
 # Iterate through
 for (f in files) {
@@ -55,13 +55,22 @@ for (f in files) {
     tabs = excel_sheets(f)
     if (all(!grepl("insulin",tolower(tabs)))){next}
     t = read_excel(f,"Insulin use and carbs")
-    t = t %>% rename("BWZ Carb Input (grams)" = `Carbs(g)`, "Bolus Volume Delivered (U)" = `Bolus Volume (U)`)
-    t$bg = NA
     t$Time = lubridate::mdy_hm(t$Time)
     t$Date = lubridate::date(t$Time)
     t$Time = sub(".* ","",t$Time)
-    t$datetime = NULL
     t$`BWZ Estimate (U)` = NA
+    t$datetime = lubridate::ymd_hms(paste(t$Date,t$Time))
+    # Merge
+    smbg = read_excel(f,"Name and glucose")
+    smbg = smbg[-c(1:4),1:2]
+    colnames(smbg) = c("datetime","bg")
+    smbg$datetime = lubridate::mdy_hm(smbg$datetime)
+    t = full_join(t,smbg,by = "datetime")
+    # Rename
+    t = t %>% rename("BWZ Carb Input (grams)" = `Carbs(g)`, "Bolus Volume Delivered (U)" = `Bolus Volume (U)`)
+    t$Date = lubridate::date(t$datetime)
+    t$Time = sub(".* ","",t$datetime)
+    t$datetime = NULL
   } else if (grepl("medtronic",tolower(f)) | grepl("carelink",tolower(f))){
     t <- read.csv(f,stringsAsFactors = F,na="",check.names = F)
     end <- which(t[,3] == "Sensor")
