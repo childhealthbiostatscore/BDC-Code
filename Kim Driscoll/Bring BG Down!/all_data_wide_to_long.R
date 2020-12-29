@@ -30,4 +30,3 @@ parent = read.csv("./BringBGDownParent_HORIZONTAL.csv",na.strings = "")
 # Apply function
 make_long(child,"./long_child_data.csv")
 make_long(parent,"./long_parent_data.csv")
-# Again for parent 
