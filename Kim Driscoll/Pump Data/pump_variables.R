@@ -1,7 +1,7 @@
 library(tidyverse)
 # Import data
-indir <- "/Users/timvigers/tidepool_test/"
-outdir <- "/Users/timvigers/"
+indir <- "/Users/timvigers/Work/td/tidepool_test/"
+outdir <- "/Users/timvigers/Work/td/"
 files <- list.files(indir,full.names = T)
 # Make a summary variables table.
 summary <- data.frame(matrix(nrow = length(files),ncol = 0))
