@@ -88,7 +88,7 @@ for (f in files) {
   t = t %>% arrange(Date,Time)
   date = t1$V1_Completed[match(strsplit(id,"_")[[1]][2],sub(".*_","",t1$record_id))]
   first = t$Date[1]
-  t = t[t$Date <= date & t$Date >= (date - 90) & t$Date > first,]
+  t = t[t$Date <= date & t$Date >= (date - 89) & t$Date > first,]
   # Write
   write.csv(t,file = paste0(outdir,"/",id,".csv"),row.names = F,na = "")
 }
