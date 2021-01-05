@@ -1,11 +1,11 @@
 library(readxl)
 library(lubridate)
-setwd("/Users/timvigers/Work/Sarit/Tim")
+setwd("/Volumes/som/BDC/SHARED/POLSKY/Triple C/Tim")
 dateparseorder <- c("mdy HM","mdy HMS","mdY HM","mdY HMS","dmy HM","dmy HMS",
                     "dmY HM","dmY HMS","Ymd HM","Ymd HMS","ymd HM","ymd HMS",
                     "Ydm HM","Ydm HMS","ydm HM","ydm HMS")
 # Output location
-outdir = "/Users/timvigers/Work/Sarit/Tim/Cleaned/"
+outdir = "/Volumes/som/BDC/SHARED/POLSKY/Triple C/Tim/Cleaned/"
 # Import dates 
 dates = read_excel("./Trimester Dates.xlsx")
 # List all the directories
@@ -84,5 +84,3 @@ for (d in dirs[2:length(dirs)]) {
               row.names = F,na = "")
   }
 }
-
-
