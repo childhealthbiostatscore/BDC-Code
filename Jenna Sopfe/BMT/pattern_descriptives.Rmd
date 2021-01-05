@@ -1,0 +1,81 @@
+---
+title: "BMT and CGM"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/Users/timvigers/Work")
+library(redcapAPI)
+library(tableone)
+library(skimr)
+library(knitr)
+library(AGD)
+library(ega)
+library(blandr)
+library(tidyverse)
+```
+
+```{r include=FALSE,cache=TRUE}
+# REDCap API data import
+api <- read.table("./Jenna Sopfe/api_token.txt",header = T,sep = "\t")
+rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
+                         token = as.character(api[1,1]))
+data_full <- exportRecords(rcon)
+```
+
+```{r echo=FALSE}
+# Remove participant 10
+data_full <- data_full %>% filter(study_id != "10")
+# Get demographic info
+demographics <- data_full %>% group_by(study_id) %>% filter(!is.na(mrn))
+# Combine separate race columns into one
+levels(demographics$race___0) <- c(NA,"AI or AN")
+levels(demographics$race___1) <- c(NA,"Asian")
+levels(demographics$race___2) <- c(NA,"African American")
+levels(demographics$race___3) <- c(NA,"NH or PI")
+levels(demographics$race___4) <- c(NA,"White")
+levels(demographics$race___5) <- c(NA,"Hispanic")
+levels(demographics$race___6) <- c(NA,"Other")
+demographics <- demographics %>% ungroup() %>% unite("Race",race___0,race___1,race___2,race___3,race___4,race___5,race___6)
+demographics$Race <- gsub("NA","",demographics$Race)
+demographics$Race <- gsub("_","",demographics$Race)
+demographics$Race[which(demographics$race_multi == "yes")] <- "Multiple"
+demographics$Race[which(demographics$Race == "")] <- "Unknown"
+# Calculate age at transplant
+demographics$AgeTx <- as.numeric(difftime(demographics$date_of_tx,demographics$date_of_birth,units = "days")) / 365.25
+# Format/calculate variables for BMI calculation
+demographics$sex <- demographics$gender
+levels(demographics$sex) <- c("F","M")
+# Calculate BMI and BMI percentile
+demographics$bmi <- as.numeric(demographics$weight) / ((as.numeric(demographics$height)/100)^2)
+demographics$bmi_z <- y2z(demographics$bmi,x = demographics$AgeTx,sex = demographics$sex,ref = get("cdc.bmi"))
+demographics$bmi_percentile <- round(pnorm(demographics$bmi_z) * 100,3)
+# BMI percentile groups
+demographics$bmi_percentile_group <- cut(demographics$bmi_percentile,
+                                         breaks = c(0,85,95,100),
+                                         labels = c("<85th %ile","85th-95th %ile",
+                                                    ">= 95th %ile"),
+                                         right = F)
+```
+
+## Table 1: Descriptive Characteristics
+
+```{r echo=FALSE}
+dem_vars <- c("AgeTx","gender","Race","tanner_stage","bmi_percentile_group","tx_type","primary_dx_cat","spec_dx_cat")
+t1 <- CreateTableOne(dem_vars,data = demographics)
+t1 <- as.data.frame(print(t1, nonnormal = c("AgeTx"),printToggle = F,showAllLevels = T))
+t1 <- cbind(new = NA,t1)
+colnames(t1) <- c("","Level","Overall")
+t1[,1] <- c("n","Age at HSCT (median [IQR])",
+            "Gender (%)","","Race (%)","","","","","",
+            "Tanner Stage (%)","","","","","",
+            "BMI Percentile","","",
+            "HSCT Type (%)","",
+            "Primary Diagnosis (%)","",
+            "Specific Diagnosis (%)","","","","","","","","")
+kable(t1,row.names = F)
+```
+

@@ -13,7 +13,14 @@ for (f in 1:length(files)) {
     print(paste("Delete",files[f]))
     next
   }
+  # Remove blank rows
   table = table[rowSums(is.na(table))<ncol(table),]
+  # Remove micro boluses
+  micro = which(table$Bolus.Source == "CLOSED_LOOP_MICRO_BOLUS")
+  if (length(micro)>0){
+    table = table[-c(micro),]
+  }
+  # ID
   id <- sub(".csv","",basename(files[f]))
   timepoint <- sub("_.*","",id)
   id <- sub("T._","",id)
