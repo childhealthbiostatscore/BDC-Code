@@ -30,20 +30,26 @@ for (d in dirs[2:length(dirs)]) {
     print(f)
     df = read.csv(f,na.strings = "",header = F)
     # Check file type by number of columns
-    if (ncol(df) < 40) {
+    if (ncol(df) == 14) {
       colnames(df) = df[1,]
       df = df[-1,]
       df = df[,grep("timestamp|glucose value",tolower(colnames(df)))]
       colnames(df) = c("timestamp","sensorglucose")
       df$timestamp = sub("T"," ",df$timestamp)
       df$timestamp = parse_date_time(df$timestamp,dateparseorder,tz = "UTC")
-    } else {
+    } else if (ncol(df) >= 48) {
       sensor = which(df$V3 == "Sensor")
-      colnames(df) = df[sensor+1,]
-      df = df[(sensor+2):nrow(df),]
+      colnames(df) = df[sensor[1]+1,]
+      df = df[(sensor[1]+2):nrow(df),]
       df$timestamp = parse_date_time(paste(df$Date,df$Time),dateparseorder,tz = "UTC")
       df = df[,grep("timestamp|sensor glucose",tolower(colnames(df)))]
       colnames(df)[1] = "sensorglucose"
+    } else if (ncol(df) == 19) {
+      colnames(df) = df[3,]
+      df = df[4:nrow(df),]
+      df = df[,grep("timestamp|historic glucose",tolower(colnames(df)))]
+      colnames(df) = c("timestamp","sensorglucose")
+      df$timestamp = parse_date_time(df$timestamp,dateparseorder,tz = "UTC")
     }
     return(df)
   })
