@@ -17,23 +17,50 @@ library(tidyverse)
 ```{r}
 # Import
 proteins = read.csv("./Data_Cleaned/global_proteome.csv",na.strings = "")
-# Rename columns by sample
 manifest = read.csv("./Data_Cleaned/global_manifest.csv",na.strings = "")
-colnames(proteins) = sub("Abundance..","",colnames(proteins))
-colnames(proteins) = sub("..Sample","",colnames(proteins))
-colnames(proteins) = sub(".Normalized...","normalized_",colnames(proteins))
+qc_samples = manifest$File.ID[grep("QC",manifest$Sample.Type)]
+res_samples = manifest$File.ID[grep("Sample",manifest$Sample.Type)]
+# Split into normalized and raw
+raw_df = proteins %>% select(Protein.FDR.Confidence..Combined:Gene.ID,
+                             Abundance..F1..Sample:Abundance..F287..Sample)
+normalized_df = proteins %>% select(Protein.FDR.Confidence..Combined:Gene.ID,
+                             Abundances..Normalized...F1..Sample:Abundances..Normalized...F287..Sample)
+# Rename columns
+colnames(raw_df) = sub("Abundance..","",colnames(raw_df))
+colnames(raw_df) = sub("..Sample","",colnames(raw_df))
+colnames(normalized_df) = sub("Abundance..","",colnames(normalized_df))
+colnames(normalized_df) = sub("..Sample","",colnames(normalized_df))
 ```
 
 # Preprocessing
 
-```{r preprocessing}
-# Check for samples missing > 80% of compounds, remove them
-missing <- 
-  which(rowSums(is.na(df[,11:ncol(df)])) / length(11:ncol(df)) > 0.8)
-if (length(missing)>0){df <- df[-missing,]}
-# Same for 0 instead of NA - none
-missing0 <- 
-  which(rowSums(df[,11:ncol(df)] == 0) / length(11:ncol(df)) > 0.8)
+## Compound QC
+
+```{r}
+# Check compounds with > 20% missing values in research samples
+res_missing <- which(rowSums(is.na(raw_df[,res_samples]))/length(res_samples) > 0.2)
+# Check compounds with > 80% missing values in QC samples
+qc_missing <- which(rowSums(is.na(raw_df[,qc_samples]))/length(qc_samples) > 0.8)
+comp_missing = unique(c(res_missing,qc_missing))
+if (length(comp_missing)>0){raw_df <- raw_df[-comp_missing,]}
 ```
 
-Removed `r length(missing)` samples missing > 80% of compounds and `r length(missing0)` samples with > 80% of compounds equal to 0. 
+Removed `r length(res_missing)` compounds missing in > 20% of research samples and `r length(qc_samples)` compounds missing in > 80% of QC samples (a total of `r length(comp_missing)` accounting for compounds missing in both).
+
+## Sample QC
+
+```{r}
+# Check for samples with > 80% missing compounds
+sample_missing <- which(colSums(is.na(raw_df[,res_samples]))/nrow(raw_df) > 0.8)
+if (length(sample_missing)>0){raw_df <- raw_df[,-sample_missing]}
+```
+
+Removed `r length(sample_missing)` samples missing > 80% of compounds.
+
+## Data Skim (log Transformed)
+
+```{r}
+df = raw_df
+df[,c(res_samples,qc_samples)] = lapply(df[,c(res_samples,qc_samples)], log)
+skim(df)
+```
