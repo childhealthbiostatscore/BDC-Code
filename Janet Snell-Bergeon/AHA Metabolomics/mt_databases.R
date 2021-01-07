@@ -21,7 +21,7 @@ library(data.table)
 library(tidyverse)
 library(xml2)
 library(stringr)
-hmdb <- read_xml('/Volumes/Vault/Documents/Work/Metabolomics/HMDB/hmdb_metabolites.xml')%>%
+hmdb <- read_xml('C:/Users/johnrand/Desktop/Metabolomics Databases/HMDB_serum_metabolites_20190117.xml') %>%
   as_list()
 
 HMP_ID = unlist(sapply(hmdb$hmdb, "[[", "accession"))
