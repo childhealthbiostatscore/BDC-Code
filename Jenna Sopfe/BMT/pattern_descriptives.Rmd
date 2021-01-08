@@ -5,11 +5,12 @@ date: "`r format(Sys.time(), '%d %B %Y')`"
 output: word_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/Users/timvigers/Work")
+```{r setup,include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_knit$set(root.dir = "/Users/timvigers/Work/Jenna Sopfe")
 library(redcapAPI)
 library(tableone)
+library(arsenal)
 library(skimr)
 library(knitr)
 library(AGD)
@@ -20,15 +21,22 @@ library(tidyverse)
 
 ```{r include=FALSE,cache=TRUE}
 # REDCap API data import
-api <- read.table("./Jenna Sopfe/api_token.txt",header = T,sep = "\t")
+api <- read.table("./api_token.txt",header = T,sep = "\t")
 rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
                          token = as.character(api[1,1]))
 data_full <- exportRecords(rcon)
 ```
 
-```{r echo=FALSE}
+```{r }
+# Import Jenna and Greg's visual analysis
+patterns = read.csv("./Disglycemia in BMT/Data_Cleaned/graph_patterns.csv",
+                    na.strings = c("","NA"))
+keep = patterns$Subject[patterns$Suffucient.Data == "Y"]
+keep = keep[!is.na(keep)]
+patterns$pre.HSCT.low.then.increases.post.day.0 = NULL
+patterns$pre.HSCT.no.change..increase.post.HSCT = NULL
 # Remove participant 10
-data_full <- data_full %>% filter(study_id != "10")
+data_full <- data_full %>% filter(study_id %in% keep)
 # Get demographic info
 demographics <- data_full %>% group_by(study_id) %>% filter(!is.na(mrn))
 # Combine separate race columns into one
@@ -63,7 +71,9 @@ demographics$bmi_percentile_group <- cut(demographics$bmi_percentile,
 
 ## Table 1: Descriptive Characteristics
 
-```{r echo=FALSE}
+Participants without sufficient data excluded from the following analyses. 
+
+```{r }
 dem_vars <- c("AgeTx","gender","Race","tanner_stage","bmi_percentile_group","tx_type","primary_dx_cat","spec_dx_cat")
 t1 <- CreateTableOne(dem_vars,data = demographics)
 t1 <- as.data.frame(print(t1, nonnormal = c("AgeTx"),printToggle = F,showAllLevels = T))
@@ -79,3 +89,136 @@ t1[,1] <- c("n","Age at HSCT (median [IQR])",
 kable(t1,row.names = F)
 ```
 
+# Pattern Analysis
+
+Unfortunately, many of the graph patterns do not have enough information to analyze. For example, both participants with peri-HSCT increases had allogenic HSCTs, so it is not really possible to examine trends by transplant type. Often cases like this will result in a p value of 1.
+
+Because we are only comparing two groups (i.e. "pattern" vs. "no pattern"), a linear model ANOVA is the same as a t test.
+
+```{r}
+patterns = patterns[patterns$Suffucient.Data == "Y",]
+outcome_vars = colnames(patterns)[7:ncol(patterns)]
+# Add variables
+patterns$bmi_percentile = demographics$bmi_percentile[match(patterns$Subject,demographics$study_id)]
+patterns$primary_dx_cat = demographics$primary_dx_cat[match(patterns$Subject,demographics$study_id)]
+# Steroid use within 1 week engraftment
+data_full$steroid_post_engraft = NA
+data_full$steroid_post_engraft[!is.na(data_full$steroid_dates)] = "No"
+data_full$steroid_post_engraft[18] = "Yes"
+data_full$steroid_post_engraft[59] = "Yes"
+yes = as.character(data_full$study_id[which(data_full$steroid_post_engraft == "Yes")])
+no = as.character(data_full$study_id[which(data_full$steroid_post_engraft == "No")])
+patterns$steroid_post_engraft = "No"
+patterns$steroid_post_engraft[patterns$Subject %in% yes] = "Yes"
+
+trend_vars = c(Age = "Age",bmi_percentile = "BMI %ile",HSCT.Type = "HSCT type",
+               Prep.Regimen = "Prep. regimen",primary_dx_cat = "Primary diagnosis")
+
+right_form = paste0(names(trend_vars),collapse = "+")
+```
+
+## Peri-HSCT increase
+
+```{r results='asis'}
+patterns$peri.HSCT.increase = factor(patterns$peri.HSCT.increase,labels = c("No","Yes"))
+form = as.formula(paste0("peri.HSCT.increase~",right_form))
+hsct = tableby(form,data = patterns,cat.test = "fe")
+summary(hsct,labelTranslations = trend_vars,pfootnote = T)
+```
+
+## Pre-HSCT increased until day 0
+
+```{r results='asis'}
+patterns$Pre.HSCT.increased.until.day.0 = factor(patterns$Pre.HSCT.increased.until.day.0,labels = c("No","Yes"))
+form = as.formula(paste0("Pre.HSCT.increased.until.day.0~",right_form))
+hsct = tableby(form,data = patterns,cat.test = "fe")
+summary(hsct,labelTranslations = trend_vars,pfootnote = T)
+```
+
+## Pre-HSCT high/rise with fall pre day-0
+
+```{r results='asis'}
+patterns$pre.HSCT.high.rise.with.fall.pre.day.0 = 
+  factor(patterns$pre.HSCT.high.rise.with.fall.pre.day.0,labels = c("No","Yes"))
+form = as.formula(paste0("pre.HSCT.high.rise.with.fall.pre.day.0~",right_form))
+hsct = tableby(form,data = patterns,cat.test = "fe")
+summary(hsct,labelTranslations = trend_vars,pfootnote = T)
+```
+
+## No identifiable peri-HSCT pattern
+
+```{r results='asis'}
+patterns$no.identifiable.peri.HSCT.pattern = 
+  factor(patterns$no.identifiable.peri.HSCT.pattern,labels = c("No","Yes"))
+form = as.formula(paste0("no.identifiable.peri.HSCT.pattern~",right_form))
+hsct = tableby(form,data = patterns,cat.test = "fe")
+summary(hsct,labelTranslations = trend_vars,pfootnote = T)
+```
+
+## Other
+
+```{r results='asis'}
+patterns$other = 
+  factor(patterns$other,labels = c("No","Yes"))
+form = as.formula(paste0("other~",right_form))
+hsct = tableby(form,data = patterns,cat.test = "fe")
+summary(hsct,labelTranslations = trend_vars,pfootnote = T)
+```
+
+## Pre-engraftment increase then decrease post-eng.
+
+```{r results='asis'}
+patterns$pre.engraftment.increase.then.decrease.post.eng. = 
+  factor(patterns$pre.engraftment.increase.then.decrease.post.eng.,labels = c("No","Yes"))
+form = as.formula(paste0("pre.engraftment.increase.then.decrease.post.eng.~",right_form))
+hsct = tableby(form,data = patterns,cat.test = "fe")
+summary(hsct,labelTranslations = trend_vars,pfootnote = T)
+```
+
+## Peri-engraftment increase
+
+```{r}
+trend_vars = c(Age = "Age",bmi_percentile = "BMI %ile",HSCT.Type = "HSCT type",
+               Prep.Regimen = "Prep. regimen",primary_dx_cat = "Primary diagnosis",
+               steroid_post_engraft = "Post-transplant steroids within 1 week of engraftment")
+
+right_form = paste0(names(trend_vars),collapse = "+")
+```
+
+```{r results='asis'}
+patterns$peri.engraftment.increase = 
+  factor(patterns$peri.engraftment.increase,labels = c("No","Yes"))
+form = as.formula(paste0("peri.engraftment.increase~",right_form))
+hsct = tableby(form,data = patterns,cat.test = "fe")
+summary(hsct,labelTranslations = trend_vars,pfootnote = T)
+```
+
+## Peri-engraftment decrease
+
+```{r results='asis'}
+patterns$peri.engraftment.decrease = 
+  factor(patterns$peri.engraftment.decrease,labels = c("No","Yes"))
+form = as.formula(paste0("peri.engraftment.decrease~",right_form))
+hsct = tableby(form,data = patterns,cat.test = "fe")
+summary(hsct,labelTranslations = trend_vars,pfootnote = T)
+```
+
+## No identifiable peri-engraft pattern
+
+```{r results='asis'}
+patterns$no.identifiable.peri.engraft.pattern = 
+  factor(patterns$no.identifiable.peri.engraft.pattern,labels = c("No","Yes"))
+form = as.formula(paste0("no.identifiable.peri.engraft.pattern~",right_form))
+hsct = tableby(form,data = patterns,cat.test = "fe")
+summary(hsct,labelTranslations = trend_vars,pfootnote = T)
+```
+
+## Peri-engraft other
+
+```{r results='asis'}
+patterns$peri.engraft.other = 
+  factor(patterns$peri.engraft.other,labels = c("No","Yes"))
+form = as.formula(paste0("peri.engraft.other~",right_form))
+hsct = tableby(form,data = patterns,cat.test = "fe")
+summary(hsct,labelTranslations = trend_vars,pfootnote = T)
+```
