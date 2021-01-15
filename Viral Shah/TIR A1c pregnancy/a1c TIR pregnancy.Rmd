@@ -18,11 +18,11 @@ library(knitr)
 library(sjlabelled)
 
 # read in data from Sarit's primary analysis
-alldata <- read.csv("S:\\Shared Projects\\Laura\\BDC\\Projects\\Viral Shah\\TIR and A1c in pregnancy\\Data Cleaned\\for_viral.csv")
+alldata <- read.csv("T:\\Viral Shah\\TIR and A1c in pregnancy\\Data Cleaned\\for_viral.csv")
 alldata <- alldata[!is.na(alldata$trimester),]
 
 # read in SMBG data
-source("S:\\Shared Projects\\Laura\\BDC\\Projects\\Viral Shah\\TIR and A1c in pregnancy\\Data Raw\\PregnancyCGM-SMBG_R_2020-02-28_1912.r")
+source("T:\\Viral Shah\\TIR and A1c in pregnancy\\Data Raw\\PregnancyCGM-SMBG_R_2020-02-28_1912.r")
 data <- data[!is.na(data$day1_date),]
 data <- data[!(data$redcap_event_name %in% c("baseline_informati_arm_1","postpartum_arm_1","preconception_arm_1",
                                               "retinopathy_arm_1")),]
@@ -174,9 +174,13 @@ demotab <- print(demotab,printToggle = F,varLabels=TRUE,missing=T)
 # keep only the variables we need
 # make a dataset with one record per trimester
 final <- alldata[c("subject_id","trimester","visit","a1c_trimester_mean","per_in_range_63_140","percent_time_over_140",
-                   "percent_time_under_63","gmi","estimated_a1c","smbg_tir_mean","smbg_tbr_mean","smbg_tar_mean")]
+                   "percent_time_under_63","gmi","estimated_a1c","smbg_tir_mean","smbg_tbr_mean","smbg_tar_mean",
+                   "num_days_good_data","average_sensor")]
 final <- final[with(final, order(subject_id,trimester,-smbg_tir_mean)), ]
 final <- final %>% group_by(subject_id,trimester) %>% filter(row_number()==1)
+final$tirge70 <- ifelse(is.na(final$per_in_range_63_140),NA,
+                      ifelse(final$per_in_range_63_140>=70,1,0))
+final$tirge70 <- as.factor(final$tirge70)
 
 # labels
 final$a1c_trimester_mean <- set_label(final$a1c_trimester_mean,"HbA1c")
@@ -186,6 +190,8 @@ final$estimated_a1c <- set_label(final$estimated_a1c,"ADA eA1c")
 final$smbg_tir_mean <- set_label(final$smbg_tir_mean,"TIR by SMBG")
 final$smbg_tbr_mean <- set_label(final$smbg_tbr_mean,"TBR by SMBG")
 final$smbg_tar_mean <- set_label(final$smbg_tar_mean,"TAR by SMBG")
+final$num_days_good_data <- set_label(final$num_days_good_data,"Number of days of data")
+final$tirge70 <- set_label(final$tirge70,"TIR >=70%")
 
 # number of subjects
 nsubj <- length(unique(final$subject_id))
@@ -214,7 +220,8 @@ cor_tir_gmi <- ddply(final, .(trimester), summarise,corr=round(corfun(per_in_ran
        pval=round(corfun(a1c_trimester_mean,gmi)$p.value,4))
 
 taboutvars <- c("a1c_trimester_mean","per_in_range_63_140","percent_time_over_140", "percent_time_under_63",
-                "gmi","estimated_a1c","smbg_tir_mean","smbg_tbr_mean","smbg_tar_mean")
+                "gmi","estimated_a1c","smbg_tir_mean","smbg_tbr_mean","smbg_tar_mean","num_days_good_data",
+                "tirge70","average_sensor")
 t1 <- CreateTableOne(vars = taboutvars,data = final, strata = "trimester")
 t1 <- print(t1,printToggle = F,varLabels=TRUE,missing=T)
 
