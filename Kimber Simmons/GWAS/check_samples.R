@@ -1,4 +1,4 @@
-setwd("/Users/timvigers/Work/Kimber Simmons/GWAS/Data_Raw")
+setwd("/home/tim/Work/Kimber Simmons/GWAS/Data_Raw")
 
 biobank1 = read.csv("./Simmons Biobank/Biobank Hispanic Patients - Compass Mapping File.csv")
 biobank2 = read.csv("./V2 - Biobank data on Hispanic Patients - Full Genetic Request/Table 1 Patient.csv")

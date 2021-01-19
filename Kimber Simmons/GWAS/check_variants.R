@@ -1,4 +1,4 @@
-setwd("/Users/timvigers/Work/Kimber Simmons/GWAS/Data_Cleaned/plink")
+setwd("/home/tim/Work/Kimber Simmons/GWAS/Data_Cleaned/plink")
 miss_snp = read.table("merged2-merge.missnp")
 
 redo_flip = read.table("./redo_flip.bim")
