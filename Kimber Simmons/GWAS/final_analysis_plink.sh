@@ -27,4 +27,5 @@ plink --bfile redo_flip_update --bmerge biobank1 --make-bed --out merge1_post_fl
 plink --bfile merge1_post_flip --bmerge biobank2 --make-bed --out merged2
 # Remove duplicates
 plink --bfile merged2 --list-duplicate-vars suppress-first
-plink2 --bfile merged2 --exclude plink.dupvar --remove exclude_samples --make-bed --out merged_final
+plink2 --bfile merged2 --exclude plink.dupvar --remove exclude_samples --make-bed --out merged3
+plink2 --bfile merged3 --exclude exclude_snps --make-bed --out merged_final
