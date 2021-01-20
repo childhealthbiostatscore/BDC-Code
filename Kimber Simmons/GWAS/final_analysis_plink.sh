@@ -41,10 +41,18 @@ plink2 --bfile merged_final --missing --out miss_post_del
 # Remove variants based on MAF.
 plink2 --bfile merged_final --maf 0.05 --make-bed --out merged_final
 # Hardy-Weinberg equilibrium
-plink2 --bfile merged_final  --hwe 1e-10 --make-bed --out merged_final 
+plink2 --bfile merged_final  --hwe 1e-10 --write-snplist --make-bed --out merged_final 
 # Check kinship - duplicate samples have kinship 0.5, not 1. none at 0.354 level
 plink2 --bfile merged_final --make-king-table
 # Remove temporary files
 rm merged_final.bed~ merged_final.bim~ merged_final.fam~
 # Merge with TGP
-plink --bfile merged_final --bmerge /home/tim/Documents/Work/GWAS/all_phase3 --make-bed --out first_merge
+plink --bfile /home/tim/Documents/Work/GWAS/all_phase3 --extract merged_final.snplist --allow-extra-chr --make-bed --out all_phase3
+plink --bfile merged_final --bmerge all_phase3 --allow-extra-chr --make-bed --out first_merge
+plink --bfile merged_final --flip first_merge-merge.missnp --make-bed --out merged_final_flip
+
+# Prune
+plink --bfile tgp_merged --indep-pairwise 50 5 0.2 --out SNPs
+plink --bfile tgp_merged --extract SNPs.prune.in --make-bed --out tgp_final_merge
+# PCA
+plink --bfile tgp_final_merge --cluster --pca --out PCA
