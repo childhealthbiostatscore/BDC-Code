@@ -4,9 +4,9 @@ Rscript /home/tim/Documents/GitHub/BDC-Code/Kimber\ Simmons/GWAS/check_samples.R
 # Working directory
 cd Work/Kimber\ Simmons/GWAS
 # Remove indels, limit to chromosomes 1-22 and pseudoautosomal regions of XY
-plink2 --bfile Data_Raw/Simmons_MEGA1_Deliverable_06142019/cleaned_files/Simmons_Custom_MEGA_Analysi_03012019_snpFailsRemoved_passing_QC --snps-only 'just-acgt' --autosome --make-bed --out Data_Cleaned/plink/redo
-plink2 --bfile Data_Raw/Simmons\ Biobank/Simmons_071520 --snps-only 'just-acgt' --autosome --make-bed --out Data_Cleaned/plink/biobank1
-plink2 --bfile Data_Raw/V2\ -\ Biobank\ data\ on\ Hispanic\ Patients\ -\ Full\ Genetic\ Request/Simmons_120420 --snps-only 'just-acgt' --autosome --make-bed --out Data_Cleaned/plink/biobank2
+plink2 --bfile Data_Raw/Simmons_MEGA1_Deliverable_06142019/cleaned_files/Simmons_Custom_MEGA_Analysi_03012019_snpFailsRemoved_passing_QC --snps-only 'just-acgt' --autosome-xy --make-bed --out Data_Cleaned/plink/redo
+plink2 --bfile Data_Raw/Simmons\ Biobank/Simmons_071520 --snps-only 'just-acgt' --autosome-xy --make-bed --out Data_Cleaned/plink/biobank1
+plink2 --bfile Data_Raw/V2\ -\ Biobank\ data\ on\ Hispanic\ Patients\ -\ Full\ Genetic\ Request/Simmons_120420 --snps-only 'just-acgt' --autosome-xy --make-bed --out Data_Cleaned/plink/biobank2
 # Phenotype
 Rscript /home/tim/Documents/GitHub/BDC-Code/Kimber\ Simmons/GWAS/phenotype.R
 # Move to cleaned Data_Raw
@@ -29,3 +29,22 @@ plink --bfile merge1_post_flip --bmerge biobank2 --make-bed --out merged2
 plink --bfile merged2 --list-duplicate-vars suppress-first
 plink2 --bfile merged2 --exclude plink.dupvar --remove exclude_samples --make-bed --out merged3
 plink2 --bfile merged3 --exclude exclude_snps --make-bed --out merged_final
+# QC
+# Check missingness
+plink2 --bfile merged_final --missing
+# Delete SNPs
+plink2 --bfile merged_final --geno 0.02 --make-bed --out merged_final
+# Delete individuals
+plink2 --bfile merged_final --mind 0.02 --make-bed --out merged_final
+# Check missing post-deletion
+plink2 --bfile merged_final --missing --out miss_post_del
+# Remove variants based on MAF.
+plink2 --bfile merged_final --maf 0.05 --make-bed --out merged_final
+# Hardy-Weinberg equilibrium
+plink2 --bfile merged_final  --hwe 1e-10 --make-bed --out merged_final 
+# Check kinship - duplicate samples have kinship 0.5, not 1. none at 0.354 level
+plink2 --bfile merged_final --make-king-table
+# Remove temporary files
+rm merged_final.bed~ merged_final.bim~ merged_final.fam~
+# Merge with TGP
+plink --bfile merged_final --bmerge /home/tim/Documents/Work/GWAS/all_phase3 --make-bed --out first_merge
