@@ -4,9 +4,14 @@ Rscript /home/tim/Documents/GitHub/BDC-Code/Kimber\ Simmons/GWAS/check_samples.R
 # Working directory
 cd Work/Kimber\ Simmons/GWAS
 # Remove indels, limit to chromosomes 1-22 and pseudoautosomal regions of XY
-plink2 --bfile Data_Raw/Simmons_MEGA1_Deliverable_06142019/cleaned_files/Simmons_Custom_MEGA_Analysi_03012019_snpFailsRemoved_passing_QC --snps-only 'just-acgt' --autosome-xy --make-bed --out Data_Cleaned/plink/redo
-plink2 --bfile Data_Raw/Simmons\ Biobank/Simmons_071520 --snps-only 'just-acgt' --autosome-xy --make-bed --out Data_Cleaned/plink/biobank1
-plink2 --bfile Data_Raw/V2\ -\ Biobank\ data\ on\ Hispanic\ Patients\ -\ Full\ Genetic\ Request/Simmons_120420 --snps-only 'just-acgt' --autosome-xy --make-bed --out Data_Cleaned/plink/biobank2
+plink2 --bfile Data_Raw/Simmons_MEGA1_Deliverable_06142019/cleaned_files/Simmons\
+_Custom_MEGA_Analysi_03012019_snpFailsRemoved_passing_QC --snps-only 'just-acgt'\
+ --autosome-xy --make-bed --out Data_Cleaned/plink/redo
+plink2 --bfile Data_Raw/Simmons\ Biobank/Simmons_071520 --snps-only 'just-acgt'\
+ --autosome-xy --make-bed --out Data_Cleaned/plink/biobank1
+plink2 --bfile Data_Raw/V2\ -\ Biobank\ data\ on\ Hispanic\ Patients\ -\ Full\\
+ Genetic\ Request/Simmons_120420 --snps-only 'just-acgt' --autosome-xy\
+  --make-bed --out Data_Cleaned/plink/biobank2
 # Phenotype
 Rscript /home/tim/Documents/GitHub/BDC-Code/Kimber\ Simmons/GWAS/phenotype.R
 # Move to cleaned Data_Raw
@@ -27,7 +32,8 @@ plink --bfile redo_flip_update --bmerge biobank1 --make-bed --out merge1_post_fl
 plink --bfile merge1_post_flip --bmerge biobank2 --make-bed --out merged2
 # Remove duplicates
 plink --bfile merged2 --list-duplicate-vars suppress-first
-plink2 --bfile merged2 --exclude plink.dupvar --remove exclude_samples --make-bed --out merged3
+plink2 --bfile merged2 --exclude plink.dupvar --remove exclude_samples\
+ --make-bed --out merged3
 plink2 --bfile merged3 --exclude exclude_snps --make-bed --out merged_final
 # QC
 # Check missingness
@@ -47,12 +53,9 @@ plink2 --bfile merged_final --make-king-table
 # Remove temporary files
 rm merged_final.bed~ merged_final.bim~ merged_final.fam~
 # Merge with TGP
-plink --bfile /home/tim/Documents/Work/GWAS/all_phase3 --extract merged_final.snplist --allow-extra-chr --make-bed --out all_phase3
-plink --bfile merged_final --bmerge all_phase3 --allow-extra-chr --make-bed --out first_merge
-plink --bfile merged_final --flip first_merge-merge.missnp --make-bed --out merged_final_flip
-
-# Prune
-plink --bfile tgp_merged --indep-pairwise 50 5 0.2 --out SNPs
-plink --bfile tgp_merged --extract SNPs.prune.in --make-bed --out tgp_final_merge
-# PCA
-plink --bfile tgp_final_merge --cluster --pca --out PCA
+plink --bfile /home/tim/Documents/Work/GWAS/all_phase3 --extract\
+ merged_final.snplist --allow-extra-chr --make-bed --out all_phase3
+plink --bfile merged_final --bmerge all_phase3 --allow-extra-chr --make-bed\
+ --out first_merge
+plink --bfile merged_final --flip first_merge-merge.missnp --make-bed\
+ --out merged_final_flip
