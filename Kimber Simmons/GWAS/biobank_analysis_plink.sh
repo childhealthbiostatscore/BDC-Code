@@ -6,16 +6,16 @@ cd /media/tim/Work/Kimber\ Simmons/GWAS
 # Remove indels, limit to chromosomes 1-22 and pseudoautosomal regions of XY
 plink2 --bfile Data_Raw/Simmons_MEGA1_Deliverable_06142019/cleaned_files/Simmons\
 _Custom_MEGA_Analysi_03012019_snpFailsRemoved_passing_QC --snps-only 'just-acgt'\
- --autosome-xy --make-bed --out Data_Cleaned/plink/redo
+ --autosome-xy --make-bed --out Data_Cleaned/biobank_analysis/redo
 plink2 --bfile Data_Raw/Simmons\ Biobank/Simmons_071520 --snps-only 'just-acgt'\
- --autosome-xy --make-bed --out Data_Cleaned/plink/biobank1
+ --autosome-xy --make-bed --out Data_Cleaned/biobank_analysis/biobank1
 plink2 --bfile Data_Raw/V2\ -\ Biobank\ data\ on\ Hispanic\ Patients\ -\ Full\ Genetic\ Request/Simmons_120420\
  --snps-only 'just-acgt' --autosome-xy\
-  --make-bed --out Data_Cleaned/plink/biobank2
+  --make-bed --out Data_Cleaned/biobank_analysis/biobank2
 # Phenotype
 Rscript /home/tim/GitHub/BDC-Code/Kimber\ Simmons/GWAS/phenotype.R
 # Move to cleaned Data_Raw
-cd Data_Cleaned/plink
+cd Data_Cleaned/biobank_analysis
 # Try to merge - lots of flipped SNPs
 plink --bfile redo --bmerge biobank1 --make-bed --out merged1
 plink --bfile redo --flip merged1-merge.missnp --make-bed --out redo_flip
