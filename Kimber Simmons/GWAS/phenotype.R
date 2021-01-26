@@ -1,9 +1,11 @@
-setwd("/home/tim/Work/Kimber Simmons/GWAS/Data_Cleaned/plink")
+setwd("/media/tim/Work/Kimber Simmons/GWAS")
 # Read in and re-write .fam files
-redo = read.table("./redo.fam")
+redo = read.table("./Data_Cleaned/plink/redo.fam")
 redo$V6 = 2
-write.table(redo,file = "redo.fam",row.names = F,quote = F,col.names = F)
+write.table(redo,file = "./Data_Cleaned/plink/redo.fam",row.names = F,quote = F,col.names = F)
 
-biobank = read.table("./biobank2.fam")
+biobank = read.table("./Data_Cleaned/plink/biobank2.fam")
+diagnoses = read.csv("./Data_Raw/V2 - Biobank data on Hispanic Patients - Full Genetic Request/Table 2 Diagnoses.CSV")
 biobank$V6 = 2
-write.table(biobank,file = "./biobank2.fam",row.names = F,quote = F,col.names = F)
+biobank$V6[which(!(biobank$V1 %in% diagnoses$Arb_Person_ID))] = 1
+write.table(biobank,file = "./Data_Cleaned/plink/biobank2.fam",row.names = F,quote = F,col.names = F)

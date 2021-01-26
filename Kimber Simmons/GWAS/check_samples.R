@@ -1,8 +1,4 @@
-setwd("/home/tim/Work/Kimber Simmons/GWAS")
-
-biobank1 = read.csv("./Data_Raw/Simmons Biobank/Biobank Hispanic Patients - Compass Mapping File.csv")
-biobank2 = read.csv("./Data_Raw/V2 - Biobank data on Hispanic Patients - Full Genetic Request/Table 1 Patient.csv")
-
+setwd("/media/tim/Work/Kimber Simmons/GWAS")
 # Exclude based on diagnoses
 diagnoses = read.csv("./Data_Raw/Table 2 Diagnoses EMY edits.csv")
 exclude_samples = unique(diagnoses$Arb_Person_ID)

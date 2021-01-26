@@ -1,4 +1,4 @@
-setwd("/home/tim/Work/Kimber Simmons/GWAS/Data_Cleaned/plink")
+setwd("/media/tim/Work/Kimber Simmons/GWAS/Data_Cleaned/plink")
 miss_snp = read.table("merged2-merge.missnp")
 # Import
 redo = read.table("./redo.bim")
