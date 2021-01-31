@@ -58,14 +58,20 @@ data$hours <-  as.numeric(word(data$totalsleep_avg,1,sep=":"))
 data$minutes <- as.numeric(word(data$totalsleep_avg,2,sep=":"))
 data$totalsleep_avg_num <- data$hours + (data$minutes/60)
 data$redcap_event_name.factor <- droplevels(data$redcap_event_name.factor)
+
+# calculate time under 70
+data$sensor_u70 <- NA
+data$sensor_u70 <- ifelse(is.na(data$sensor_u54) | is.na(data$sensor_55_69), NA, rowSums(data[,c("sensor_u54","sensor_55_69")]))
+
 child <- data[data$record_id>=200,]
 adult <- data[data$record_id<200,]
 # merge sensor data from child with parent
-tir <- child[,c("record_id","sensor_70_180","sensor_55_69","sensor_u54")]
+tir <- child[,c("record_id","sensor_70_180","sensor_55_69","sensor_u54","sensor_u70")]
 tir$record_id <- tir$record_id-100
 adult$sensor_70_180 <- NULL
 adult$sensor_55_69 <- NULL
 adult$sensor_u54 <- NULL
+adult$sensor_u70 <- NULL
 adult <- merge(adult,tir,by="record_id",all.x=T,all.y=T)
 
 # get child a1c from glycemic data and merge into demo data
@@ -186,6 +192,30 @@ corr9_child <- rcorr(as.matrix(child[child$redcap_event_name=="hcl_week_1_day_1_
 corr9_child <- flattenCorrMatrix(corr9_child$r, corr9_child$P)
 corr9_child <- corr9_child[corr9_child$row=="sensor_u54",]
 
+# under 70
+# baseline separately
+corr10_adult <- rcorr(as.matrix(adult[adult$redcap_event_name=="baseline_day_1_arm_1",
+                                     c("sensor_u70","totalsleep_avg_num","awake_avg","sleepefficency_avg","waso_avg")])
+                  ,type = "spearman")
+corr10_adult <- flattenCorrMatrix(corr10_adult$r, corr10_adult$P)
+corr10_adult <- corr10_adult[corr10_adult$row=="sensor_u70",]
+corr10_child <- rcorr(as.matrix(child[child$redcap_event_name=="baseline_day_1_arm_2",
+                                     c("sensor_u70","totalsleep_avg_num","awake_avg","sleepefficency_avg","waso_avg")])
+                  ,type = "spearman")
+corr10_child <- flattenCorrMatrix(corr10_child$r, corr10_child$P)
+corr10_child <- corr10_child[corr10_child$row=="sensor_u70",]
+# week 1 separately
+corr11_adult <- rcorr(as.matrix(adult[adult$redcap_event_name=="hcl_week_1_day_1_arm_1",
+                                     c("sensor_u70","totalsleep_avg_num","awake_avg","sleepefficency_avg","waso_avg")])
+                  ,type = "spearman")
+corr11_adult <- flattenCorrMatrix(corr11_adult$r, corr11_adult$P)
+corr11_adult <- corr11_adult[corr11_adult$row=="sensor_u70",]
+corr11_child <- rcorr(as.matrix(child[child$redcap_event_name=="hcl_week_1_day_1_arm_2",
+                                     c("sensor_u70","totalsleep_avg_num","awake_avg","sleepefficency_avg","waso_avg")])
+                  ,type = "spearman")
+corr11_child <- flattenCorrMatrix(corr11_child$r, corr11_child$P)
+corr11_child <- corr11_child[corr11_child$row=="sensor_u70",]
+
 # when using both visits, really should be mixed models to account for correlation
 # first adults
 totsleep_adult_mod <- lme(totalsleep_avg_num ~ sensor_70_180,random=~1|record_id,data = adult,na.action = na.omit)
@@ -219,6 +249,18 @@ totsleep_child_mod_u54 <- lme(totalsleep_avg_num ~ sensor_u54,random=~1|record_i
 awake_child_mod_u54 <- lme(awake_avg ~ sensor_u54,random=~1|record_id,data = child,na.action = na.omit)
 eff_child_mod_u54 <- lme(sleepefficency_avg ~ sensor_u54,random=~1|record_id,data = child,na.action = na.omit)
 waso_child_mod_u54 <- lme(waso_avg ~ sensor_u54,random=~1|record_id,data = child,na.action = na.omit)
+
+# sensor <70
+# first adults
+totsleep_adult_mod_u70 <- lme(totalsleep_avg_num ~ sensor_u70,random=~1|record_id,data = adult,na.action = na.omit)
+awake_adult_mod_u70 <- lme(awake_avg ~ sensor_u70,random=~1|record_id,data = adult,na.action = na.omit)
+eff_adult_mod_u70 <- lme(sleepefficency_avg ~ sensor_u70,random=~1|record_id,data = adult,na.action = na.omit)
+waso_adult_mod_u70 <- lme(waso_avg ~ sensor_u70,random=~1|record_id,data = adult,na.action = na.omit)
+# then kids
+totsleep_child_mod_u70 <- lme(totalsleep_avg_num ~ sensor_u70,random=~1|record_id,data = child,na.action = na.omit)
+awake_child_mod_u70 <- lme(awake_avg ~ sensor_u70,random=~1|record_id,data = child,na.action = na.omit)
+eff_child_mod_u70 <- lme(sleepefficency_avg ~ sensor_u70,random=~1|record_id,data = child,na.action = na.omit)
+waso_child_mod_u70 <- lme(waso_avg ~ sensor_u70,random=~1|record_id,data = child,na.action = na.omit)
 
 ```
 
@@ -354,30 +396,6 @@ kable(corr6_adult,caption="Table 9. Correlations between sensor glucose 55-69 an
 kable(corr6_child,caption="Table 10. Correlations between sensor glucose 55-69 and child sleep, at week 1.")
 ```
 
-\newpage 
-
-```{r, echo=FALSE, message=FALSE}
-kable(corr8_adult,caption="Table 11. Correlations between sensor glucose <54 and adult sleep, at baseline.")
-```
-
-<br>
-
-```{r, echo=FALSE, message=FALSE}
-kable(corr8_child,caption="Table 12. Correlations between sensor glucose <54 and child sleep, at baseline.")
-```
-
-<br>
-
-```{r, echo=FALSE, message=FALSE}
-kable(corr9_adult,caption="Table 13. Correlations between sensor glucose <54 and adult sleep, at week 1.")
-```
-
-<br>
-
-```{r, echo=FALSE, message=FALSE}
-kable(corr9_child,caption="Table 14. Correlations between sensor glucose <54 and child sleep, at week 1.")
-```
-
 \newpage
 
 Model testing association between adult total sleep and sensor 55-69, using both baseline and 1 week timepoints.  To interpret the table, use the row labeled "sensor_55_69."  The column labeled "value" is the change in the outcome for a 1% change in sensor 55-69.
@@ -442,6 +460,30 @@ Model testing association between child WASO and sensor 55-69, using both baseli
 round(summary(waso_child_mod_55_69)$tTable,4)
 ```
 
+\newpage 
+
+```{r, echo=FALSE, message=FALSE}
+kable(corr8_adult,caption="Table 11. Correlations between sensor glucose <54 and adult sleep, at baseline.")
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(corr8_child,caption="Table 12. Correlations between sensor glucose <54 and child sleep, at baseline.")
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(corr9_adult,caption="Table 13. Correlations between sensor glucose <54 and adult sleep, at week 1.")
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(corr9_child,caption="Table 14. Correlations between sensor glucose <54 and child sleep, at week 1.")
+```
+
 \newpage
 
 Model testing association between adult total sleep and sensor <54, using both baseline and 1 week timepoints.  To interpret the table, use the row labeled "sensor_u54."  The column labeled "value" is the change in the outcome for a 1% change in sensor <54.
@@ -504,4 +546,93 @@ Model testing association between child WASO and sensor <54, using both baseline
 
 ```{r, echo=FALSE, message=FALSE}
 round(summary(waso_child_mod_u54)$tTable,4)
+```
+
+\newpage 
+
+```{r, echo=FALSE, message=FALSE}
+kable(corr10_adult,caption="Table 15. Correlations between sensor glucose <70 and adult sleep, at baseline.")
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(corr10_child,caption="Table 16. Correlations between sensor glucose <70 and child sleep, at baseline.")
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(corr11_adult,caption="Table 17. Correlations between sensor glucose <70 and adult sleep, at week 1.")
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(corr11_child,caption="Table 18. Correlations between sensor glucose <70 and child sleep, at week 1.")
+```
+
+
+\newpage
+
+Model testing association between adult total sleep and sensor <70, using both baseline and 1 week timepoints.  To interpret the table, use the row labeled "sensor_u70."  The column labeled "value" is the change in the outcome for a 1% change in sensor <70.
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(totsleep_adult_mod_u70)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult awakenings and sensor <70, using both baseline and 1 week timepoints.  To interpret the table, use the row labeled "sensor_u70."  The column labeled "value" is the change in the outcome for a 1% change in sensor <70. 
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(awake_adult_mod_u70)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult sleep efficiency and sensor <70, using both baseline and 1 week timepoints.  To interpret the table, use the row labeled "sensor_u70."  The column labeled "value" is the change in the outcome for a 1% change in sensor <70. 
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(eff_adult_mod_u70)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult WASO and sensor <70, using both baseline and 1 week timepoints.  To interpret the table, use the row labeled "sensor_u70."  The column labeled "value" is the change in the outcome for a 1% change in sensor <70. 
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(waso_adult_mod_u70)$tTable,4)
+```
+
+<br>
+
+Model testing association between child total sleep time and sensor <70, using both baseline and 1 week timepoints.  To interpret the table, use the row labeled "sensor_u70."  The column labeled "value" is the change in the outcome for a 1% change in sensor <70. 
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(totsleep_child_mod_u70)$tTable,4)
+```
+
+<br>
+
+Model testing association between child awakenings and sensor <70, using both baseline and 1 week timepoints.  To interpret the table, use the row labeled "sensor_u70."  The column labeled "value" is the change in the outcome for a 1% change in sensor <70. 
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(awake_child_mod_u70)$tTable,4)
+```
+
+<br>
+
+Model testing association between child sleep efficiency and sensor <70, using both baseline and 1 week timepoints.  To interpret the table, use the row labeled "sensor_u70."  The column labeled "value" is the change in the outcome for a 1% change in sensor <70. 
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(eff_child_mod_u70)$tTable,4)
+```
+
+<br>
+
+Model testing association between child WASO and sensor <70, using both baseline and 1 week timepoints.  To interpret the table, use the row labeled "sensor_u70."  The column labeled "value" is the change in the outcome for a 1% change in sensor <70. 
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(waso_child_mod_u70)$tTable,4)
 ```
