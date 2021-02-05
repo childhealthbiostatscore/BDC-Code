@@ -2,11 +2,18 @@
 # Working directory
 cd /mnt/c/Users/Tim\ Vigers/Dropbox/Work/Kimber\ Simmons/GWAS
 # Remove indels, limit to chromosomes 1-22 and pseudoautosomal regions of XY
-plink2 --bfile Data_Raw/Simmons_MEGA1_Deliverable_06142019/cleaned_files/Simmons_Custom_MEGA_Analysi_03012019_snpFailsRemoved_passing_QC --make-bed --out Data_Cleaned/simplified_analysis/redo
+plink --bfile Data_Raw/Simmons_MEGA1_Deliverable_06142019/cleaned_files/Simmons_Custom_MEGA_Analysi_03012019_snpFailsRemoved_passing_QC --make-bed --out Data_Cleaned/simplified_analysis/redo
+# Same for Biobank files
+plink --bfile Data_Raw/Simmons\ Biobank/Simmons_071520 --snps-only 'just-acgt' --autosome-xy --make-bed --out Data_Cleaned/simplified_analysis/biobank1
+plink --bfile Data_Raw/V2\ -\ Biobank\ data\ on\ Hispanic\ Patients\ -\ Full\ Genetic\ Request/Simmons_120420 --snps-only 'just-acgt' --autosome-xy --make-bed --out Data_Cleaned/simplified_analysis/biobank2
 # Phenotype - Hispanic vs. Non-Hispanic
 Rscript /mnt/c/Users/Tim\ Vigers/Documents/GitHub/BDC-Code/Kimber\ Simmons/GWAS/phenotype_simplified_analysis.R
-# QC 
+# Merge biobank files
 cd Data_Cleaned/simplified_analysis/
+plink --bfile biobank1 --bmerge biobank2 --make-bed --out biobank_merged
+# Remove duplicates
+plink --bfile biobank_merged --list-duplicate-vars suppress-first
+# QC 
 # Check sex
 plink --bfile redo --check-sex
 # Check missing
