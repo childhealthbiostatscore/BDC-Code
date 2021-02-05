@@ -1,4 +1,4 @@
-setwd("/media/tim/Work/Kimber Simmons/GWAS")
+setwd("/mnt/c/Users/Tim\ Vigers/Dropbox/Work/Kimber\ Simmons/GWAS/")
 # Read in and re-write .fam files
 redo = read.table("./Data_Cleaned/analysis_no_biobank/redo.fam")
 clinical = read.csv("./Data_Cleaned/clinical.csv")
