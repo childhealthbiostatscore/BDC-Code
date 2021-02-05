@@ -2,11 +2,11 @@
 # Working directory
 cd /mnt/c/Users/Tim\ Vigers/Dropbox/Work/Kimber\ Simmons/GWAS
 # Remove indels, limit to chromosomes 1-22 and pseudoautosomal regions of XY
-plink2 --bfile Data_Raw/Simmons_MEGA1_Deliverable_06142019/cleaned_files/Simmons_Custom_MEGA_Analysi_03012019_snpFailsRemoved_passing_QC --make-bed --out Data_Cleaned/analysis_no_biobank/redo
+plink2 --bfile Data_Raw/Simmons_MEGA1_Deliverable_06142019/cleaned_files/Simmons_Custom_MEGA_Analysi_03012019_snpFailsRemoved_passing_QC --make-bed --out Data_Cleaned/simplified_analysis/redo
 # Phenotype - Hispanic vs. Non-Hispanic
-Rscript /mnt/c/Users/Tim\ Vigers/Documents/GitHub/BDC-Code/Kimber\ Simmons/GWAS/phenotype_no_biobank.R
+Rscript /mnt/c/Users/Tim\ Vigers/Documents/GitHub/BDC-Code/Kimber\ Simmons/GWAS/phenotype_simplified_analysis.R
 # QC 
-cd Data_Cleaned/analysis_no_biobank/
+cd Data_Cleaned/simplified_analysis/
 # Check sex
 plink --bfile redo --check-sex
 # Check missing
