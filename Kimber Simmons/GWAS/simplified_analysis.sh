@@ -13,9 +13,11 @@ cd Data_Cleaned/simplified_analysis/
 plink --bfile biobank1 --bmerge biobank2 --make-bed --out biobank_merged
 # Remove duplicates
 plink --bfile biobank_merged --list-duplicate-vars suppress-first
-# QC 
+plink2 --bfile biobank_merged --exclude plink.dupvar --make-bed --out biobank_merged
+# QC - keeping the datasets separate for this analysis
 # Check sex
 plink --bfile redo --check-sex
+plink --bfile biobank_merged --check-sex
 # Check missing
 plink2 --bfile redo --missing
 # Delete SNPs and individuals with high levels of missingness
