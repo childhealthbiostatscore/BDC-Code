@@ -299,6 +299,12 @@ demovars <- c("demographics_age","age_cat","hba1c","base_a1c_cat","demographics_
               "demographics_ethnicity.factor","demographics_race.factor","demographics_insurance.factor",
               "prior.insulin.mode","HIGH.alarm.6mo","LOW.alarm.6mo" )
 
+# merge baseline A1c and age categories back to main dataset
+keepbase <- baseline[,c("record_id","base_a1c_cat","age_cat")]
+child_full_iq$base_a1c_cat <- NULL
+child_full_iq$age_cat <- NULL
+child_full_iq <- merge(child_full_iq,keepbase,by="record_id",all.x = T, all.y = T)
+
 # missing demographics data
 miss_demo <- baseline[is.na(baseline$demographics_age) | is.na(baseline$demographics_sex) |
                                      is.na(baseline$demographics_ethnicity) |
@@ -466,6 +472,74 @@ tech_mod_anova <- anova.lme(tech_mod, type="marginal")
 tech_mod_means <- emmeans(tech_mod,"gyl_timepoint.factor")
 tech_mod_pairs <-  pairs(tech_mod_means,adjust="tukey")
 
+# model for meal boluses and TIR
+meal_mod_tir <- lme(dailymealbolus ~ sensor_70_180,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+meal_mod_tir_anova <- anova.lme(meal_mod_tir, type="marginal")
+meal_mod_ttable <- summary(meal_mod_tir)$tTable
+ 
+# are alerts at 6 months associated with TIR or time<70
+
+# ++++++++++++++++++++++++++++
+# flattenCorrMatrix
+# ++++++++++++++++++++++++++++
+# cormat : matrix of the correlation coefficients
+# pmat : matrix of the correlation p-values
+flattenCorrMatrix <- function(cormat, pmat) {
+  ut <- upper.tri(cormat)
+  data.frame(
+    row = rownames(cormat)[row(cormat)[ut]],
+    column = rownames(cormat)[col(cormat)[ut]],
+    cor  =(cormat)[ut],
+    p = pmat[ut]
+    )
+}
+
+corr_alert <- rcorr(as.matrix(child_full_iq[child_full_iq$gyl_timepoint.factor=="6 Months", c('HIGH.alarm.6mo','LOW.alarm.6mo','sensor_70_180','sensor_u70')])
+                    ,type = "spearman")
+corr_alert <- flattenCorrMatrix(corr_alert$r, corr_alert$P)
+corr_alert <- corr_alert[corr_alert$row %in% c("HIGH.alarm.6mo","LOW.alarm.6mo"),]
+
+# meeting GMI and TIR goals over time
+child_full_iq$gmi_goal <- ifelse(is.na(child_full_iq$gmi),NA,
+                                 ifelse(child_full_iq$gmi<=7,1,0))
+child_full_iq$tir_goal <- ifelse(is.na(child_full_iq$sensor_70_180),NA,
+                                 ifelse(child_full_iq$sensor_70_180>=70,1,0))
+child_full_iq$gmi_goal <- as.factor(child_full_iq$gmi_goal)
+child_full_iq$tir_goal <- as.factor(child_full_iq$tir_goal)
+
+goal_table <- CreateTableOne(vars=c("tir_goal","gmi_goal"),data=child_full_iq,strata = "gyl_timepoint.factor")
+goal_table <- print(goal_table,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T)
+goal_table <- goal_table[,1:6]
+
+# TIR, GMI, and time<70 stratified by baseline A1c and age
+# TIR stratified by A1c
+tir_mod_strat_a1c <- lme(sensor_70_180 ~ gyl_timepoint.factor*base_a1c_cat,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+tir_mod_strat_a1c_anova <- anova.lme(tir_mod_strat_a1c, type="marginal")
+# use emmeans 
+tir_mod_strat_a1c_means <- emmeans(tir_mod_strat_a1c,c("gyl_timepoint.factor","base_a1c_cat"))
+tir_mod_strat_a1c_pairs <-  pairs(tir_mod_strat_a1c_means,adjust="tukey",simple="each")
+
+# GMI stratified by A1c
+gmi_mod_strat_a1c <- lme(gmi ~ gyl_timepoint.factor*base_a1c_cat,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+gmi_mod_strat_a1c_anova <- anova.lme(gmi_mod_strat_a1c, type="marginal")
+# use emmeans 
+gmi_mod_strat_a1c_means <- emmeans(gmi_mod_strat_a1c,c("gyl_timepoint.factor","base_a1c_cat"))
+gmi_mod_strat_a1c_pairs <-  pairs(gmi_mod_strat_a1c_means,adjust="tukey",simple="each")
+
+# U70 stratified by A1c
+u70_mod_strat_a1c <- lme(sensor_u70 ~ gyl_timepoint.factor*base_a1c_cat,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+u70_mod_strat_a1c_anova <- anova.lme(u70_mod_strat_a1c, type="marginal")
+# use emmeans 
+u70_mod_strat_a1c_means <- emmeans(u70_mod_strat_a1c,c("gyl_timepoint.factor","base_a1c_cat"))
+u70_mod_strat_a1c_pairs <-  pairs(u70_mod_strat_a1c_means,adjust="tukey",simple="each")
+
+# TIR stratified by age
+
+# GMI stratified by age
+
+# U70 stratified by age
+
+# plots of stratified models
 
 ```
 
@@ -801,3 +875,98 @@ kable(sd_mod_means,caption="Time point means.",format.args = list(scientific = F
 kable(sd_mod_pairs,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
 ```
 
+\newpage
+
+### Correlations between alarms and glycemic variables at 6 months
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(corr_alert,format.args = list(scientific = FALSE))
+```
+
+<br>
+
+### Model for meal boluses and TIR
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(meal_mod_ttable,format.args = list(scientific = FALSE))
+```
+
+<br>
+
+### TIR and GMI goals
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(goal_table,format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for TIR (variable = sensor_70_180) stratified by baseline A1c
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(tir_mod_strat_a1c_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(tir_mod_strat_a1c_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(tir_mod_strat_a1c_pairs$`simple contrasts for base_a1c_cat`,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for GMI stratified by baseline A1c
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(gmi_mod_strat_a1c_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(gmi_mod_strat_a1c_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(gmi_mod_strat_a1c_pairs$`simple contrasts for base_a1c_cat`,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for time <70 (variable sensor_u70) stratified by baseline A1c
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(u70_mod_strat_a1c_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(u70_mod_strat_a1c_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(u70_mod_strat_a1c_pairs$`simple contrasts for base_a1c_cat`,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
