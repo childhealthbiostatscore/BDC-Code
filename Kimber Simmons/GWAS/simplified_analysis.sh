@@ -35,9 +35,9 @@ plink --bfile biobank_merged --maf 0.05 --make-bed --out biobank_merged
 # Hardy-Weinberg equilibrium
 plink --bfile redo --hwe 1e-10 --make-bed --out redo
 plink --bfile biobank_merged --hwe 1e-10 --make-bed --out biobank_merged
-# Check kinship - duplicate samples have kinship 0.5, not 1. none at 0.354 level
-plink2 --bfile redo --king-cutoff 0.354 --out redo
-plink2 --bfile biobank_merged --king-cutoff 0.354 --out biobank_merged
+# Check kinship - duplicate samples have kinship 0.5, not 1. none at 0.177 level
+plink2 --bfile redo --king-cutoff 0.177 --out redo
+plink2 --bfile biobank_merged --king-cutoff 0.177 --out biobank_merged
 # Remove temporary files
 find . -type f -name "*~" -delete
 # Impute alleles
