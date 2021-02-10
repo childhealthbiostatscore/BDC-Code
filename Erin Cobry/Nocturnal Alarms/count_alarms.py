@@ -2,7 +2,7 @@ import os
 import math
 from itertools import combinations
 import pandas as pd
-wd = "C:/Users/Tim Vigers/Dropbox/Work/Erin Cobry/Nocturnal Alarms/"
+wd = "/Users/timvigers/Documents/Work/Erin Cobry/Nocturnal Alarms/"
 # Dictionary for results
 dict={'File': [], 'Total Alarms': [], 'Threshold Alarms': [], 'Maintenance Alarms': [], \
     'HCL Alarms': [], 'Pump Alarms': [], 'Other Alarms': []}
@@ -27,6 +27,7 @@ for file in os.listdir(wd+"Data_Raw/CSVs/"):
     # Maintenance
     matches = ["sensor","cal","signal","transmtr"]
     maintenance = [alarm for alarm in all_alarms if any(x in alarm for x in matches)]
+    maintenance = [alarm for alarm in maintenance if 'auto mode' not in alarm]
     # HCL specific
     hcl = [alarm for alarm in all_alarms if 'auto' in alarm]
     # Pump maintenance
