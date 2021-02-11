@@ -6,7 +6,7 @@
 Biostatisticians are available to consult with junior investigators, fellows, and students at the BDC who do not have grant funding and/or access to a statistician.
 
 ### How to Register a New Project
-Contact: Laura.pyle@ucdenver.edu or submit an request: https://redcap.ucdenver.edu/surveys/?s=MP9WKRLK74
+Email [Laura Pyle](laura.pyle@ucdenver.edu) or [submit a request](https://redcap.ucdenver.edu/surveys/?s=MP9WKRLK74)
 
 ### Services Provided
 - Study design, sample size estimation/power calculations
