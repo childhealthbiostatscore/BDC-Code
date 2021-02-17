@@ -13,6 +13,7 @@ library(skimr)
 library(knitr)
 library(tidyverse)
 library(caret)
+library(limma)
 ```
 
 ```{r}
@@ -21,7 +22,7 @@ df = read.delim("T:/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Raw data/QEDIC
 # Convert to categorical
 
 # Proteins
-prot = read.delim("./Raw data/EDIC_WP_DDA_60SPD_Proteins.txt")
+prot = read.delim("T:/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Raw data/EDIC_WP_DDA_60SPD_Proteins.txt")
 rownames(prot) = prot$Accession
 X = prot[,grep("Normalized",colnames(prot))]
 colnames(X) = sub("Abundances..Normalized...","",colnames(X))
@@ -38,5 +39,36 @@ rm(X)
 ```
 
 ```{r}
-skim(df)
+# create contrast for CVD events
+cvd_contrast <- ifelse(df$CARV==1,1,0)
+cvd_contrast <- cbind(rep(1,nrow(df)),cvd_contrast)
+
+# pull out the proteins and transpose for limma
+protnames <- row.names(prot)
+ymat <- t(df[,names(df) %in% protnames])
+# model for T1D vs. control
+fit_cvd <- lmFit(ymat,cvd_contrast)
+fit_cvd <- eBayes(fit_cvd)
+# format results
+results_cvd <- topTable(fit_cvd,coef = 2,number = nrow(ymat))
+desc <- as.data.frame(prot[,"Description"])
+desc$protid <- row.names(prot)
+colnames(desc) <- c("Description","protid")
+results_cvd$protid <- row.names(results_cvd)
+results_cvd <- merge(results_cvd,desc,by="protid",all.x=T,all.y = T)
+results_cvd <- results_cvd[order(results_cvd$adj.P.Val),] 
+write.csv(results_cvd,"B:\\Projects\\Janet Snell-Bergeon\\CACTI DCCT EDIC omics R01\\Reports\\DCCT EDIC CARV.csv")
+
+# need to adjust for tx
+cvd_contrast_adj <- model.matrix(~CARV + GROUP , data=df)
+fit_cvd_adj <- lmFit(ymat,cvd_contrast_adj)
+fit_cvd_adj <- eBayes(fit_cvd_adj)
+# format results
+results_cvd_adj <- topTable(fit_cvd_adj,coef = 2,number = nrow(ymat))
+results_cvd_adj$protid <- row.names(results_cvd_adj)
+results_cvd_adj <- merge(results_cvd_adj,desc,by="protid",all.x=T,all.y = T)
+results_cvd_adj <- results_cvd_adj[order(results_cvd_adj$adj.P.Val),] 
+write.csv(results_cvd_adj,"B:\\Projects\\Janet Snell-Bergeon\\CACTI DCCT EDIC omics R01\\Reports\\DCCT EDIC CARV adjusted GROUP.csv")
+
+
 ```
