@@ -641,7 +641,6 @@ levels(data$after_dur_6.factor)=c("Never","< 1 month","1 to < 3 months","3 to < 
 levels(data$resource_use_survey_complete.factor)=c("Incomplete","Unverified","Complete")
 levels(data$followupsi)=c("No","Yes")
 # Drop levels
-data$race.factor <- droplevels(data$race.factor)
 data$sex.factor <- droplevels(data$sex.factor)
 data$insurace.factor <- droplevels(data$insurance.factor)
 data$pump_use.factor <- droplevels(data$pump_use.factor)
