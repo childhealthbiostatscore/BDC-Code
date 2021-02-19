@@ -1,13 +1,12 @@
-library(readxl)
 library(lubridate)
-setwd("/Volumes/som/BDC/SHARED/POLSKY/Triple C/Tim")
-dateparseorder <- c("mdy HM","mdy HMS","mdY HM","mdY HMS","dmy HM","dmy HMS",
+setwd("/Users/timvigers/Documents/Work/Sarit Polsky/Tim")
+dateparseorder <- c("mdy","mdy HM","mdy HMS","mdY HM","mdY HMS","dmy HM","dmy HMS",
                     "dmY HM","dmY HMS","Ymd HM","Ymd HMS","ymd HM","ymd HMS",
                     "Ydm HM","Ydm HMS","ydm HM","ydm HMS")
 # Output location
-outdir = "/Volumes/som/BDC/SHARED/POLSKY/Triple C/Tim/Cleaned/"
+outdir = "/Users/timvigers/Documents/Work/Sarit Polsky/Tim/Cleaned/"
 # Import dates 
-dates = read_excel("./Trimester Dates.xlsx")
+dates = read.csv("./Trimester Dates -Janet.csv",na.strings = "")
 # List all the directories
 dirs = list.dirs("RAW DATA- CGM downloads")
 # Loop through directories
@@ -18,11 +17,11 @@ for (d in dirs[2:length(dirs)]) {
   last_name = strsplit(name,",")[[1]][1]
   first_name = strsplit(name,",")[[1]][2]
   # Get dates
-  r = which(tolower(dates$`Last name`) == last_name & tolower(dates$`First name`) ==  first_name)
-  t0 = dates$`t=0`[r]
-  wk14 = dates$`14 wks`[r]
-  wk28 = dates$`28 wks`[r]
-  edd = dates$EDD[r]
+  r = which(tolower(dates$Last.name) == last_name & tolower(dates$First.name) ==  first_name)
+  t0 = parse_date_time(dates$t.0[r],dateparseorder,tz = "UTC")
+  wk14 = parse_date_time(dates$X14.wks[r],dateparseorder,tz = "UTC")
+  wk28 = parse_date_time(dates$X28.wks[r],dateparseorder,tz = "UTC")
+  dd = parse_date_time(dates$Delivery.Date[r],dateparseorder,tz = "UTC")
   # List files
   files = list.files(d,full.names = T)
   # Loop through files, combine into 1
@@ -62,6 +61,8 @@ for (d in dirs[2:length(dirs)]) {
   df$subjectid = NA
   id = paste0(last_name,", ",first_name)
   df = df[,c("subjectid","timestamp","sensorglucose")]
+  # Sort by date
+  df = df[order(df$timestamp),]
   # Split and write CSVs
   t0_wk14 = df[df$timestamp >= t0 & df$timestamp < wk14,]
   if (nrow(t0_wk14)>0){
@@ -77,10 +78,10 @@ for (d in dirs[2:length(dirs)]) {
               row.names = F,na = "")
   }
   
-  wk28_edd = df[df$timestamp >= wk28 & df$timestamp < edd,]
-  if(nrow(wk28_edd) > 0) {
-    wk28_edd$subjectid[1] = id
-    write.csv(wk28_edd,file = paste0(outdir,last_name,"_",first_name,"_wk28_edd.csv"),
+  wk28_dd = df[df$timestamp >= wk28 & df$timestamp < dd,]
+  if(nrow(wk28_dd) > 0) {
+    wk28_dd$subjectid[1] = id
+    write.csv(wk28_dd,file = paste0(outdir,last_name,"_",first_name,"_wk28_dd.csv"),
               row.names = F,na = "")
   }
 }
