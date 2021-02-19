@@ -1,10 +1,10 @@
 library(lubridate)
-setwd("/Users/timvigers/Documents/Work/Sarit Polsky/Tim")
+setwd("/Volumes/som/BDC/SHARED/POLSKY/Triple C/Tim/")
 dateparseorder <- c("mdy","mdy HM","mdy HMS","mdY HM","mdY HMS","dmy HM","dmy HMS",
                     "dmY HM","dmY HMS","Ymd HM","Ymd HMS","ymd HM","ymd HMS",
                     "Ydm HM","Ydm HMS","ydm HM","ydm HMS")
 # Output location
-outdir = "/Users/timvigers/Documents/Work/Sarit Polsky/Tim/Cleaned/"
+outdir = "/Volumes/som/BDC/SHARED/POLSKY/Triple C/Tim/"
 # Import dates 
 dates = read.csv("./Trimester Dates -Janet.csv",na.strings = "")
 # List all the directories
