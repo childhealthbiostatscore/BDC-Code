@@ -7,7 +7,7 @@ output: word_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/Users/timvigers/Depression")
+knitr::opts_knit$set(root.dir = "/Users/timvigers/Documents/Work/Shideh Majidi/Depression")
 library(arsenal)
 library(VGAM)
 library(nlme)
@@ -21,8 +21,8 @@ library(tidyverse)
 
 ```{r a1c data import,include=FALSE}
 # Import data
-source("/Users/timvigers/GitHub/BDC-Code/Shideh Majidi/Depression/sra.r")
-source("/Users/timvigers/GitHub/Tim-and-Laura/tim_r_functions.R")
+source("/Users/timvigers/GitHub/BDC-Code/Shideh Majidi/Depression/sra.R")
+source("/Users/timvigers/GitHub/General/Work/r_functions.R")
 a1cs <- read.csv("./Data_Cleaned/a1cs.csv")
 # Clean
 a1cs$A1cResultDate <- lubridate::mdy(a1cs$A1cResultDate)
@@ -40,9 +40,32 @@ a1cs$days_from_screen <-
 a1cs <- a1cs[abs(a1cs$days_from_screen) < 365.25,]
 # Clean up
 rm(temp)
+# Insurance - private vs. other
+levels(data$insurance.factor) <- c("Other","Private","Other","Other","Other","Other","Other")
+# Determine SI - 1 for column "phq9_pos" AND/OR "si_pos" versus 0 for both
+data$si_combined = ifelse(data$phq9_pos.factor == "No" & data$si_pos.factor == "No","No","Yes")
 ```
 
-# Table 1: Descriptive Characteristics
+# Table 1a: Descriptive Characteristics by Follow-Up Status
+
+```{r table 1,echo=FALSE,results='asis'}
+t1 <- tableby(charttreatafter.factor ~ age + diabetes_duration + a1c + 
+                total_score_epic + followupscore + sex.factor + 
+                race.factor + ethnicity.factor + insurance.factor + 
+                pump_use.factor + cgm.factor + si_pos.factor + 
+                followupphq9.factor + followupsi,data)
+newlabels <- list(sex.factor = "Sex",race.factor = "Race",
+                  ethnicity.factor = "Ethnicity",
+                  insurance.factor = "Insurance",
+                  insulin_type.factor = "Insulin Type",
+                  pump_use.factor = "Pump Use", 
+                  cgm.factor = "CGM Use",
+                  followupphq9.factor = "Follow-Up PHQ 9?",
+                  followupsi = "Follow-Up SI?")
+summary(t1,pfootnote = T,labelTranslations = newlabels)
+```
+
+# Table 1b: Descriptive Characteristics by SI Status
 
 ```{r table 1,echo=FALSE,results='asis'}
 t1 <- tableby(charttreatafter.factor ~ age + diabetes_duration + a1c + 
@@ -82,17 +105,6 @@ ggplot(a1cs[a1cs$days_from_screen>=0,],
 ```
 
 About `r round(length(which(a1cs$A1cValue == 15))/length(a1cs$A1cValue),3)*100`% of the values are at 15% and another `r round(length(which(a1cs$A1cValue == 14.1))/length(a1cs$A1cValue),3)*100`% of the values are at 14.1%.
-
-<!-- ## First, Screening, and Last A1cs -->
-
-<!-- ```{r echo=FALSE,warning=FALSE,message=FALSE,include=FALSE} -->
-<!-- random <- a1cs %>% group_by(record_id) %>%  -->
-<!--   slice(which.min(days_from_screen),which(days_from_screen == 0),  -->
-<!--         which.max(days_from_screen)) -->
-<!-- ggplot(random,aes(x = days_from_screen,y = A1cValue)) +  -->
-<!--   theme_bw() + -->
-<!--   geom_line(aes(group = record_id,color = factor(charttreatafter))) -->
-<!-- ``` -->
 
 ## Piecewise Regression
 
@@ -175,19 +187,24 @@ ggplot(a1cs[a1cs$days_from_screen>=0,],
 
 ```{r logistic model,echo=FALSE}
 data$charttreatafter.factor <- relevel(data$charttreatafter.factor,ref = "No")
+# Collapse race and ethnicity
+data$race_eth = ifelse(data$race.factor=="White" & data$ethnicity.factor=="Non-Hispanic","Non-Hispanic White","Other")
+data$race_eth = ifelse(data$race.factor=="Unknown/Not Reported" | data$ethnicity.factor=="Unknown/Not Reported",
+                       "Unknown/Not Reported",data$race_eth)
+data$race_eth = as.factor(data$race_eth)
 # Check models
-mod <- glm(charttreatafter.factor ~ sex.factor + race.factor + ethnicity.factor
-           + insurance.factor + a1c + total_score_epic + pump_use.factor + cgm.factor +
+mod <- glm(charttreatafter.factor ~ sex.factor + race_eth + insurance.factor + 
+             a1c + total_score_epic + pump_use.factor + cgm.factor +
              charttreatbefore.factor,
            data = data,family = binomial(link='logit'))
 # Nice formatting
 results <- format_logistic_out(mod,kable = F)
-format_logistic_out(mod,varnames = c("Male","Non-white","Hispanic or Latino",
+format_logistic_out(mod,varnames = c("Male","Other","Unknown/Not Reported",
                                      "Private insurance","HbA1c at Screening",
                                      "PHQ9 score","No pump","No CGM",
                                      "No previous treat."))
 ```
 
-In order to get this model to work, I had to combine levels of race (white vs. non-white), ethnicity (Hispanic vs. non-Hispanic or unknown), and insurance (private vs. other). 
+In order to get this model to work, I had to combine race and ethnicity (non-Hispanic white vs. other or unknown), and insurance (private vs. other). 
 
 Males were `r abs(results["sex.factorMale","Percent Change"])`% less likely to use psych resources after screening (p = `r results["sex.factorMale","p-value"]`). Hispanics were `r abs(results["ethnicity.factorHispanic or Latino","Percent Change"])`% less likely (p = `r results["ethnicity.factorHispanic or Latino","p-value"]`) and those with no previous treatment were `r abs(results["charttreatbefore.factorNo","Percent Change"])`% less likely (p = `r results["charttreatbefore.factorNo","p-value"]`) to get treatment after screening. For each one unit increase in PHQ9 score, participants were on average `r abs(results["total_score_epic","Percent Change"])`% more likely to get treatment (p = `r results["total_score_epic","p-value"]`).
