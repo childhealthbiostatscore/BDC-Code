@@ -1,5 +1,5 @@
 ---
-title: "Suicide Risk Assessment"
+title: "Mental Health Follow-Up"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
 output: word_document
@@ -7,7 +7,7 @@ output: word_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/Users/timvigers/Documents/Work/Shideh Majidi/Depression")
+knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Shideh Majidi/Depression")
 library(arsenal)
 library(VGAM)
 library(nlme)
@@ -17,6 +17,7 @@ library(skimr)
 library(knitr)
 library(reshape2)
 library(tidyverse)
+library(broom)
 ```
 
 ```{r a1c data import,include=FALSE}
@@ -42,47 +43,64 @@ a1cs <- a1cs[abs(a1cs$days_from_screen) < 365.25,]
 rm(temp)
 # Insurance - private vs. other
 levels(data$insurance.factor) <- c("Other","Private","Other","Other","Other","Other","Other")
-# Determine SI - 1 for column "phq9_pos" AND/OR "si_pos" versus 0 for both
-data$si_combined = ifelse(data$phq9_pos.factor == "No" & data$si_pos.factor == "No","No","Yes")
+# Combined race
+data$race.factor_comb = data$race.factor
+levels(data$race.factor_comb) = c("White","Non-white","Non-white","Non-white","Non-white","Unknown/Not Reported")
 ```
 
 # Table 1a: Descriptive Characteristics by Follow-Up Status
 
-```{r table 1,echo=FALSE,results='asis'}
-t1 <- tableby(charttreatafter.factor ~ age + diabetes_duration + a1c + 
+```{r table 1a,echo=FALSE,results='asis'}
+t1_form = as.formula("charttreatafter.factor ~ age + diabetes_duration + a1c + 
                 total_score_epic + followupscore + sex.factor + 
-                race.factor + ethnicity.factor + insurance.factor + 
+                fe(race.factor) + race.factor_comb + ethnicity.factor + insurance.factor + 
                 pump_use.factor + cgm.factor + si_pos.factor + 
-                followupphq9.factor + followupsi,data)
+                followupphq9.factor + followupsi")
 newlabels <- list(sex.factor = "Sex",race.factor = "Race",
+                  race.factor_comb = "Race (Combined)",
                   ethnicity.factor = "Ethnicity",
                   insurance.factor = "Insurance",
                   insulin_type.factor = "Insulin Type",
                   pump_use.factor = "Pump Use", 
                   cgm.factor = "CGM Use",
                   followupphq9.factor = "Follow-Up PHQ 9?",
+                  si_pos.factor = "Positive SI Score?",
                   followupsi = "Follow-Up SI?")
+t1 <- tableby(t1_form,data)
 summary(t1,pfootnote = T,labelTranslations = newlabels)
 ```
 
-# Table 1b: Descriptive Characteristics by SI Status
+\pagebreak
 
-```{r table 1,echo=FALSE,results='asis'}
-t1 <- tableby(charttreatafter.factor ~ age + diabetes_duration + a1c + 
-                total_score_epic + followupscore + sex.factor + 
-                race.factor + ethnicity.factor + insurance.factor + 
-                pump_use.factor + cgm.factor + si_pos.factor + 
-                followupphq9.factor + followupsi,data)
-newlabels <- list(sex.factor = "Sex",race.factor = "Race",
-                  ethnicity.factor = "Ethnicity",
-                  insurance.factor = "Insurance",
-                  insulin_type.factor = "Insulin Type",
-                  pump_use.factor = "Pump Use", 
-                  cgm.factor = "CGM Use",
-                  followupphq9.factor = "Follow-Up PHQ 9?",
-                  followupsi = "Follow-Up SI?")
+# Table 1b: Descriptive Characteristics by SI Status ("si_pos")
+
+```{r table 1b,echo=FALSE,results='asis'}
+t1 <- tableby(update(t1_form,si_pos.factor~.-si_pos.factor),data)
 summary(t1,pfootnote = T,labelTranslations = newlabels)
 ```
+
+\pagebreak
+
+# Table 1c: Descriptive Characteristics by Depressive Symptoms ("phq9_pos")
+
+```{r table 1c,echo=FALSE,results='asis'}
+t1 <- tableby(update(t1_form,phq9_pos.factor~.-total_score_epic),data)
+summary(t1,pfootnote = T,labelTranslations = newlabels)
+```
+
+\pagebreak
+
+# Table 1d: Descriptive Characteristics by Age Group at Screening
+
+```{r table 1d,echo=FALSE,results='asis'}
+# Age group
+data$age_group = cut(data$age,c(-Inf,18,Inf),labels = c("< 18 Yrs.",">= 18 Yrs."),right = F)
+# Table 1
+t1 <- tableby(update(t1_form,age_group~.-age),data)
+summary(t1,pfootnote = T,labelTranslations = newlabels)
+```
+
+\pagebreak
 
 # HbA1c
 
@@ -106,43 +124,45 @@ ggplot(a1cs[a1cs$days_from_screen>=0,],
 
 About `r round(length(which(a1cs$A1cValue == 15))/length(a1cs$A1cValue),3)*100`% of the values are at 15% and another `r round(length(which(a1cs$A1cValue == 14.1))/length(a1cs$A1cValue),3)*100`% of the values are at 14.1%.
 
+\pagebreak
+
 ## Piecewise Regression
 
 ```{r echo=FALSE,include=FALSE}
 # AR(1) is much better, so refit with REML and check polynomials. 
 a1c_mod_poly <- lme(A1cValue ~ poly(days_from_screen,4),random = ~1|record_id,
-               data = a1cs,correlation = corAR1())
+                    data = a1cs,correlation = corAR1())
 # Can use linear time. Use splines for knot at 0. Random intercept and slope for subject.
 a1cs$days_star <- ifelse(a1cs$days_from_screen < 0,0,a1cs$days_from_screen)
 a1c_mod_ri <- lme(A1cValue ~ days_from_screen*charttreatafter.factor + 
                     days_star*charttreatafter.factor,
-               random = ~1|record_id,data = a1cs,correlation = corAR1(),method = "ML")
+                  random = ~1|record_id,data = a1cs,correlation = corAR1(),method = "ML")
 a1c_mod_ris <- lme(A1cValue ~ days_from_screen*charttreatafter.factor + 
                      days_star*charttreatafter.factor,
-               random = ~days_from_screen|record_id,data = a1cs,correlation = corAR1())
+                   random = ~days_from_screen|record_id,data = a1cs,correlation = corAR1())
 AIC(a1c_mod_ri,a1c_mod_ris) # RI only better by AIC
 # Correlation structure
 mod <- lme(A1cValue ~ days_from_screen*charttreatafter.factor + 
-                    days_star*charttreatafter.factor,
+             days_star*charttreatafter.factor,
            random = ~1|record_id,data = a1cs,method = "ML")
 mod_ar1 <- lme(A1cValue ~ days_from_screen*charttreatafter.factor + 
-                    days_star*charttreatafter.factor,random = ~1|record_id,data = a1cs,
+                 days_star*charttreatafter.factor,random = ~1|record_id,data = a1cs,
                correlation = corAR1(),method = "ML")
 AIC(mod,mod_ar1)
 # Censored
 a1cs$A1cCensored <- a1cs$A1cValue
 a1cs$A1cCensored[a1cs$A1cCensored > 14.1] <- 14.1
 cens <- vglm(A1cValue ~ days_from_screen*charttreatafter.factor + 
-                     days_star*charttreatafter.factor, tobit(Upper = 14.1), 
+               days_star*charttreatafter.factor, tobit(Upper = 14.1), 
              data = a1cs)
 uncens <- glm(A1cValue ~ days_from_screen*charttreatafter.factor + 
-                     days_star*charttreatafter.factor,data = a1cs)
+                days_star*charttreatafter.factor,data = a1cs)
 ```
 
 ```{r plot model,echo=FALSE,include=FALSE}
 # Plot splines
 ggplot(data = a1cs,aes_string(x = "days_from_screen",y = "A1cValue",
-                                           group = "record_id")) + 
+                              group = "record_id")) + 
   geom_line(aes_string(x = "days_from_screen",y = fitted(a1c_mod_ri)),
             alpha = 0.05) +
   theme_bw() +
@@ -153,8 +173,8 @@ ggplot(data = a1cs,aes_string(x = "days_from_screen",y = "A1cValue",
 # Adjust for previous treatment 
 a1c_mod_ri <- lme(A1cValue ~ days_from_screen*charttreatafter.factor + 
                     days_star*charttreatafter.factor + charttreatbefore.factor,
-               random = ~1|record_id,data = a1cs,correlation = corAR1(),
-               method = "ML")
+                  random = ~1|record_id,data = a1cs,correlation = corAR1(),
+                  method = "ML")
 # Spline results
 results <- format_nlme_out(a1c_mod_ri,kable = F)
 vars <- c("Days","No Evidence of Psych. Treat.","Change in Slope",
@@ -187,24 +207,23 @@ ggplot(a1cs[a1cs$days_from_screen>=0,],
 
 ```{r logistic model,echo=FALSE}
 data$charttreatafter.factor <- relevel(data$charttreatafter.factor,ref = "No")
-# Collapse race and ethnicity
-data$race_eth = ifelse(data$race.factor=="White" & data$ethnicity.factor=="Non-Hispanic","Non-Hispanic White","Other")
-data$race_eth = ifelse(data$race.factor=="Unknown/Not Reported" | data$ethnicity.factor=="Unknown/Not Reported",
-                       "Unknown/Not Reported",data$race_eth)
-data$race_eth = as.factor(data$race_eth)
 # Check models
-mod <- glm(charttreatafter.factor ~ sex.factor + race_eth + insurance.factor + 
+mod <- glm(charttreatafter.factor ~ sex.factor + race.factor_comb + ethnicity.factor + insurance.factor + 
              a1c + total_score_epic + pump_use.factor + cgm.factor +
-             charttreatbefore.factor,
-           data = data,family = binomial(link='logit'))
+             charttreatbefore.factor,family = binomial(link='logit'),
+           data = data[data$race.factor_comb!="Unknown/Not Reported" & 
+                         data$ethnicity.factor!="Unknown/Not Reported",])
 # Nice formatting
-results <- format_logistic_out(mod,kable = F)
-format_logistic_out(mod,varnames = c("Male","Other","Unknown/Not Reported",
-                                     "Private insurance","HbA1c at Screening",
-                                     "PHQ9 score","No pump","No CGM",
-                                     "No previous treat."))
+results <- tidy(mod,exponentiate = T) %>%
+  mutate_at(vars(-term),round,3)
+results$term = c("(Intercept)","Male","Non-white",
+                 "Hispanic or Latino",
+                 "Private insurance","HbA1c at Screening",
+                 "PHQ9 score (EPIC)","No pump","No CGM",
+                 "No previous treat.")
+kable(results,row.names = F)
 ```
 
-In order to get this model to work, I had to combine race and ethnicity (non-Hispanic white vs. other or unknown), and insurance (private vs. other). 
+In order to get this model to work, I had to combine levels of race (white vs. non-white) and insurance (private vs. other). Also, because there were not enough "events" among those with unknown race and/or ethnicity (when keeping race and ethnicity separate), those with unknown were excluded (final n = 182). 
 
-Males were `r abs(results["sex.factorMale","Percent Change"])`% less likely to use psych resources after screening (p = `r results["sex.factorMale","p-value"]`). Hispanics were `r abs(results["ethnicity.factorHispanic or Latino","Percent Change"])`% less likely (p = `r results["ethnicity.factorHispanic or Latino","p-value"]`) and those with no previous treatment were `r abs(results["charttreatbefore.factorNo","Percent Change"])`% less likely (p = `r results["charttreatbefore.factorNo","p-value"]`) to get treatment after screening. For each one unit increase in PHQ9 score, participants were on average `r abs(results["total_score_epic","Percent Change"])`% more likely to get treatment (p = `r results["total_score_epic","p-value"]`).
+Males were `r (1 - results[results$term == "Male","estimate"])*100`% less likely to use psych resources after screening (p = `r results[results$term == "Male","p.value"]`). Hispanics were `r (1 - results[results$term == "Hispanic or Latino","estimate"])*100`% less likely (p = `r results[results$term == "Hispanic or Latino","p.value"]`) and those with no previous treatment were `r (1 - results[results$term == "No previous treat.","estimate"])*100`% less likely (p = `r results[results$term == "No previous treat.","p.value"]`) to get treatment after screening. For each one unit increase in PHQ9 score, participants were on average `r (results[results$term == "PHQ9 score (EPIC)","estimate"] - 1)*100`% more likely to get treatment (p = `r results[results$term == "PHQ9 score (EPIC)","p.value"]`).
