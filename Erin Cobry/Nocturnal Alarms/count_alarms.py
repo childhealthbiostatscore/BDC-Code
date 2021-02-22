@@ -4,7 +4,7 @@ from itertools import combinations
 import pandas as pd
 wd = "/Users/timvigers/Documents/Work/Erin Cobry/Nocturnal Alarms/"
 # Dictionary for results
-dict={'File': [], 'Total Alarms': [], 'Threshold Alarms': [], 'Maintenance Alarms': [], \
+dict={'File': [], 'Nights': [], 'Total Alarms': [], 'Threshold Alarms': [], 'Maintenance Alarms': [], \
     'HCL Alarms': [], 'Pump Alarms': [], 'Other Alarms': []}
 # Columns to read in
 fields = ['Patient ID','Unnamed: 16']
@@ -14,9 +14,12 @@ for file in os.listdir(wd+"Data_Raw/CSVs/"):
     df.columns = df.loc[5,]
     df = df.drop(list(range(0,6)),axis = 0)
     # Pull all alarms between 10p-6a 
+    df['Datetime'] = pd.to_datetime(df['Date'] + ' ' + df['Time'],format="%m/%d/%y %H:%M:%S",errors="coerce")
     df['Time'] = pd.to_datetime(df['Time'],format="%H:%M:%S",errors="coerce")
+    # Index by time
     df = df.set_index('Time')
     all_alarms = df['Alarm'].between_time("22:00:00","6:00:00",include_end=False).dropna().str.lower()
+    dates = df.loc[all_alarms.index,'Datetime']
     # Don't count the alarm if it includes the words:  QUIET, BOLUS, ENTER BG, 
     matches = ["quiet","bolus","enter bg"]
     all_alarms = [alarm for alarm in all_alarms if all(x not in alarm for x in matches)]
