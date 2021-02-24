@@ -22,6 +22,11 @@ library(dplyr)
 alldata <- read.csv("T:\\Viral Shah\\TIR and A1c in pregnancy\\Data Cleaned\\for_viral.csv")
 alldata <- alldata[!is.na(alldata$trimester),]
 
+# read in corrected gestational ages
+gest <- read.csv("T:\\Viral Shah\\TIR and A1c in pregnancy\\Data Raw\\corrected gestational ages.csv")
+colnames(gest) <- c("subject_id","base_gest_week","base_gest_day")
+alldata <- merge(alldata, gest,by="subject_id",all.x = T,all.y = T)
+
 # read in SMBG data
 source("T:\\Viral Shah\\TIR and A1c in pregnancy\\Data Raw\\PregnancyCGM-SMBG_R_2020-02-28_1912.r")
 data <- data[!is.na(data$day1_date),]
@@ -151,7 +156,7 @@ alldata <- merge(alldata,data_keep,by=c("subject_id","trimester","visit"),all.x 
 
 # make a demographics dataset 
 demo <- alldata[,c("subject_id","trimester","visit","age_baseline","bmi","ethnicity","bp","tc","cur_cig","past_cig",
-                   "ins_delivery","dm_duration","ins_basal_dose","ins_bolus_dose","a1c_precon")]
+                   "ins_delivery","dm_duration","ins_basal_dose","ins_bolus_dose","a1c_precon","base_gest_week","base_gest_day")]
 demo <- demo[!duplicated(demo$subject_id), ]
 demo$subject_id <- as.factor(demo$subject_id)
 demo$subject_id <- droplevels(demo$subject_id)
@@ -167,12 +172,8 @@ demo$dm_duration <- set_label(demo$dm_duration,"Diabetes duration")
 demo$ins_basal_dose <- set_label(demo$ins_basal_dose,"Insulin basal dose")
 demo$ins_bolus_dose <- set_label(demo$ins_bolus_dose,"Insulin bolus dose")
 demo$a1c_precon <- set_label(demo$a1c_precon,"Preconception A1c")
-
-# get gestational age at 1st pregnancy visit
-preg1 <- alldata[alldata$visit==1,c("subject_id","gest_wk","gest_d")]
-preg1$d7 <- preg1$gest_d/7
-preg1$gest1 <- rowSums(preg1[,c("gest_wk","d7")])
-demo <- merge(demo,preg1,by="subject_id",all.x=T,all.y=F)
+demo$d7 <- demo$base_gest_day/7
+demo$gest1 <- rowSums(demo[,c("base_gest_week","d7")])
 demo$gest1 <- set_label(demo$gest1,"Gestational age at 1st preg visit")
  
 demotab <- CreateTableOne(vars=c("age_baseline","bmi","ethnicity","bp","tc",
@@ -234,7 +235,7 @@ cor_tir_gmi <- ddply(final, .(trimester), summarise,corr=round(corfun(per_in_ran
 
 taboutvars <- c("a1c_trimester_mean","per_in_range_63_140","percent_time_over_140", "percent_time_under_63",
                 "gmi","estimated_a1c","smbg_tir_mean","smbg_tbr_mean","smbg_tar_mean","num_days_good_data",
-                "tirge70","average_sensor","gest1")
+                "tirge70","average_sensor")
 t1 <- CreateTableOne(vars = taboutvars,data = final, strata = "trimester")
 t1 <- print(t1,printToggle = F,varLabels=TRUE,missing=T)
 
@@ -363,27 +364,28 @@ kable(cor_tir_gmi,caption = "Correlation of TIR by CGM with GMI.")
 The figure below shows the association of HbA1c and TIR by CGM by trimester.
 
 ```{r echo=FALSE,warning=FALSE,dpi=600,fig.width=8,fig.height=5}
-ggplot(final, aes(x=a1c_trimester_mean,y=per_in_range_63_140,color=as.factor(trimester))) + geom_point() + geom_smooth(method=lm) + xlab("HbA1c (%)") + ylab("TIR by CGM") + 
+ggplot(final, aes(x=a1c_trimester_mean,y=per_in_range_63_140,color=as.factor(trimester))) + geom_point(aes(shape=as.factor(trimester))) + geom_smooth(method=lm) + xlab("HbA1c (%)") + ylab("TIR by CGM") + 
   scale_color_manual("Trimester",values=c("#898c89","#575957","#191a19")) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-panel.background = element_blank(), axis.line = element_line(colour = "black"))
+panel.background = element_blank(), axis.line = element_line(colour = "black")) + theme(legend.position = "none")
  
 ```
+
 
 The figure below shows the association of HbA1c and GMI by trimester.
 
 ```{r echo=FALSE,warning=FALSE,dpi=600,fig.width=8,fig.height=5}
-ggplot(final, aes(x=a1c_trimester_mean,y=gmi,color=as.factor(trimester))) + geom_point() + geom_smooth(method=lm) + xlab("HbA1c (%)") + ylab("GMI by CGM") + 
+ggplot(final, aes(x=a1c_trimester_mean,y=gmi,color=as.factor(trimester))) + geom_point(aes(shape=as.factor(trimester))) + geom_smooth(method=lm) + xlab("HbA1c (%)") + ylab("GMI by CGM") + 
   scale_color_manual("Trimester",values=c("#898c89","#575957","#191a19")) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-panel.background = element_blank(), axis.line = element_line(colour = "black"))
+panel.background = element_blank(), axis.line = element_line(colour = "black")) + theme(legend.position = "none")
  
 ```
 
 The figure below shows the association of TIR and GMI by trimester.
 
 ```{r echo=FALSE,warning=FALSE,dpi=600,fig.width=8,fig.height=5}
-ggplot(final, aes(x=per_in_range_63_140,y=gmi,color=as.factor(trimester))) + geom_point() + geom_smooth(method=lm) + xlab("TIR by CGM") + ylab("GMI by CGM") + 
+ggplot(final, aes(x=per_in_range_63_140,y=gmi,color=as.factor(trimester))) + geom_point(aes(shape=as.factor(trimester))) + geom_smooth(method=lm) + xlab("TIR by CGM") + ylab("GMI by CGM") + 
   scale_color_manual("Trimester",values=c("#898c89","#575957","#191a19")) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-panel.background = element_blank(), axis.line = element_line(colour = "black"))
+panel.background = element_blank(), axis.line = element_line(colour = "black")) + theme(legend.position = "none")
  
 ```
 
