@@ -7,7 +7,7 @@ output: word_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE,dpi = 600)
-knitr::opts_knit$set(root.dir = "/Users/timvigers/Medtronic, Dexcom, Libre")
+knitr::opts_knit$set(root.dir = "/Users/timvigers/Documents/Work/Kaan Akturk/cgmanalysis Comparisons/Medtronic, Dexcom, Libre")
 library(arsenal)
 library(skimr)
 library(knitr)
@@ -15,6 +15,7 @@ library(cgmanalysis)
 library(tidyverse)
 library(blandr)
 library(patchwork)
+library(TOSTER)
 ```
 
 ```{r cgmanalysis,echo=FALSE,eval=FALSE,warning=FALSE}
@@ -85,59 +86,77 @@ sd <- ggplot(dexcom_package,aes(x = standard_deviation,y = SD)) +
 (under_54 | under_70 | tir_70_180) / (over_180 | over_250 | sd)
 ```
 
-### Bland-Altman
-
-```{r dexcom b-a plot,echo=FALSE,warning=F,fig.width=8,fig.height=6}
-# Make plots
-under_54 <- blandr.draw(dexcom_package$percent_time_under_54,dexcom_package$X.54,
-                        ciDisplay = F) + 
-  theme_bw() + ggtitle("% Time Under 54 mg/dL")
-under_70 <- blandr.draw(dexcom_package$percent_time_under_70,dexcom_package$X.70,
-                        ciDisplay = F) + 
-  theme_bw() + ggtitle("% Time Under 70 mg/dL")
-tir_70_180 <- blandr.draw(dexcom_package$percent_time_70_180,dexcom_package$X70.180,
-                          ciDisplay = F) + 
-  theme_bw() + ggtitle("% Time 70 - 180 mg/dL")
-over_180 <- blandr.draw(dexcom_package$percent_time_over_180,dexcom_package$X.180,
-                        ciDisplay = F) + 
-  theme_bw() + ggtitle("% Time Over 180 mg/dL")
-over_250 <- blandr.draw(dexcom_package$percent_time_over_250,dexcom_package$X.250,
-                        ciDisplay = F) + 
-  theme_bw() + ggtitle("% Time Over 250 mg/dL")
-sd <- blandr.draw(dexcom_package$standard_deviation,dexcom_package$SD,
-                  ciDisplay = F) + 
-  theme_bw() + ggtitle("Standard Deviation")
-# Layout
-(under_54 | under_70 | tir_70_180) / (over_180 | over_250 | sd)
-```
-
 ## Differences
 
-```{r present dexcom,echo=FALSE,results='asis'}
-# Calculate differences
-dexcom_package <- dexcom_package %>%
-  mutate(`Diff. in % Time Under 54` = X.54 - percent_time_under_54,
-         `Diff. in % Time Under 70` = X.70 - percent_time_under_70,
-         `Diff. in % Time 70 - 180` = X70.180 - percent_time_70_180,
-         `Diff. in % Time Over 180` = X.180 - percent_time_over_180,
-         `Diff. in % Time Over 250` = X.250 - percent_time_over_250,
-         `Diff. in CV` = CV - cv,`Diff. in SD` = standard_deviation - SD)
-# Results table and p values
-dex_table <- tableby(~ `Diff. in % Time Under 54` + `Diff. in % Time Under 70` + 
-                       `Diff. in % Time 70 - 180` + `Diff. in % Time Over 180` + 
-                       `Diff. in % Time Over 250` + `Diff. in CV` + `Diff. in SD`,
-                     data = dexcom_package)
-ps <- 
-  sapply(c("Diff. in % Time Under 54","Diff. in % Time Under 70",
-           "Diff. in % Time 70 - 180","Diff. in % Time Over 180",
-           "Diff. in % Time Over 250","Diff. in CV","Diff. in SD"), 
-         function(x){
-           t = t.test(dexcom_package[,x])
-           t$p.value
-         })
-summary(dex_table)
-kable(as.data.frame(ps))
+```{r echo=FALSE}
+# TOST function - takes two columns and a difference cutoff on the raw scale
+tost = function(vec1,vec2,max_diff,plot = T,verbose = F){
+  d = vec2 - vec1
+  m = mean(d,na.rm = T)
+  sd = sd(d,na.rm = T)
+  n = sum(!is.na(d))
+  TOSTone.raw(m,0,sd,n,-max_diff,max_diff,
+              alpha = 0.05,plot = plot,verbose = verbose)
+}
 ```
+
+For each CGM metric, we tested equivalence using the two one-sided test approach (TOST). This approach does not simply test whether the difference between the two metrics is statistically different from 0, but whether the difference is functionally equivalent to 0 based on the provided bounds. For example, it is possible that the the difference between the two measures is statistically not 0 due to low standard deviation, but that the measures are still practically equivalent in the sense that the average difference is small.
+
+### Percent Time < 54 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(dexcom_package$percent_time_under_54,dexcom_package$X.54,1)
+```
+
+The R package and Dexcom software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Percent Time < 70 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(dexcom_package$percent_time_under_70,dexcom_package$X.70,1)
+```
+
+The R package and Dexcom software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Percent Time 70-180 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(dexcom_package$percent_time_70_180,dexcom_package$X70.180,2)
+```
+
+The R package and Dexcom software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Percent Time > 180 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(dexcom_package$percent_time_over_180,dexcom_package$X.180,2)
+```
+
+The R package and Dexcom software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Percent Time > 250 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(dexcom_package$percent_time_over_250,dexcom_package$X.250,2)
+```
+
+The R package and Dexcom software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Standard Deviation
+
+```{r echo=FALSE,results='asis'}
+r = tost(dexcom_package$standard_deviation,dexcom_package$SD,2)
+```
+
+The R package and Dexcom software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### CV
+
+```{r echo=FALSE,results='asis'}
+#r = tost(dexcom_package$cv,dexcom_package$CV,2)
+```
+
+The R package and Dexcom software are exactly the same.
 
 # Dexcom vs. Tandem vs. cgmanalysis
 
@@ -148,14 +167,14 @@ dexcom_tandem = round(dexcom_tandem)
 
 ```{r dex tandem package data,echo=FALSE}
 dexcom_tandem_package = read.csv("./tandem_dex_package.csv",stringsAsFactors = F)
-dexcom_tandem_package = dexcom_tandem_package %>% 
+dexcom_tandem_package = dexcom_tandem_package %>%
   select(id,percent_time_under_54,percent_time_under_70,
          percent_time_70_180,percent_time_over_180,percent_time_over_250,
          standard_deviation)
 # Get device and separate out id
-dexcom_tandem_package$device = 
+dexcom_tandem_package$device =
   ifelse(grepl("Dexcom",dexcom_tandem_package$id),"dex","tandem")
-dexcom_tandem_package$id = 
+dexcom_tandem_package$id =
   as.numeric(sapply(strsplit(dexcom_tandem_package$id,"-"),"[[",1))
 # To wider
 dexcom_tandem_package = dexcom_tandem_package %>%
@@ -163,7 +182,7 @@ dexcom_tandem_package = dexcom_tandem_package %>%
               values_from = c("percent_time_under_54","percent_time_under_70",
                               "percent_time_70_180","percent_time_over_180",
                               "percent_time_over_250","standard_deviation"))
-colnames(dexcom_tandem_package) = 
+colnames(dexcom_tandem_package) =
   gsub("standard_deviation","sd",colnames(dexcom_tandem_package))
 # Round
 dexcom_tandem_package = round(dexcom_tandem_package)
@@ -179,198 +198,262 @@ dexcom_tandem_package = inner_join(dexcom_tandem,dexcom_tandem_package,by = "id"
 # Make plots
 # Under 54
 under_54_t_d <- ggplot(dexcom_tandem_package,aes(x = tandem_u54,y = dex_u54)) +
-  geom_point() + theme_bw() + geom_abline() + 
+  geom_point() + theme_bw() + geom_abline() +
   xlab("Tandem Software") + ylab("Dexcom Software")
 
 under_54_t_p <- ggplot(dexcom_tandem_package,aes(x = tandem_u54,
                                                  y = percent_time_under_54_tandem)) +
-  geom_point() + theme_bw() + geom_abline() + 
+  geom_point() + theme_bw() + geom_abline() +
   xlab("Tandem Software") + ylab("cgmanalysis Package")
 
 under_54_d_p <- ggplot(dexcom_tandem_package,aes(x = dex_u54,
                                                  y = percent_time_under_54_dex)) +
-  geom_point() + theme_bw() + geom_abline() + 
+  geom_point() + theme_bw() + geom_abline() +
   xlab("Dexcom Software") + ylab("cgmanalysis Package")
 
-(under_54_t_d + plot_spacer()) / (under_54_t_p + under_54_d_p) + 
+(under_54_t_d + plot_spacer()) / (under_54_t_p + under_54_d_p) +
   plot_annotation(title = "% Time Under 54 mg/dL",
                   theme = theme(plot.title = element_text(hjust = 0.5)))
 
 # Under 70
 under_70_t_d <- ggplot(dexcom_tandem_package,aes(x = tandem_u70,y = dex_u70)) +
-  geom_point() + theme_bw() + geom_abline() + 
+  geom_point() + theme_bw() + geom_abline() +
   xlab("Tandem Software") + ylab("Dexcom Software")
 
 under_70_t_p <- ggplot(dexcom_tandem_package,aes(x = tandem_u70,
                                                  y = percent_time_under_70_tandem)) +
-  geom_point() + theme_bw() + geom_abline() + 
+  geom_point() + theme_bw() + geom_abline() +
   xlab("Tandem Software") + ylab("cgmanalysis Package")
 
 under_70_d_p <- ggplot(dexcom_tandem_package,aes(x = dex_u70,
                                                  y = percent_time_under_70_dex)) +
-  geom_point() + theme_bw() + geom_abline() + 
+  geom_point() + theme_bw() + geom_abline() +
   xlab("Dexcom Software") + ylab("cgmanalysis Package")
 
-(under_70_t_d + plot_spacer())/ (under_70_t_p + under_70_d_p) + 
+(under_70_t_d + plot_spacer())/ (under_70_t_p + under_70_d_p) +
   plot_annotation(title = "% Time Under 70 mg/dL",
                   theme = theme(plot.title = element_text(hjust = 0.5)))
 # 70 - 180
 tir_70_180_t_d <- ggplot(dexcom_tandem_package,aes(x = tandem_70_180,y = dex_70_180)) +
-  geom_point() + theme_bw() + geom_abline() + 
+  geom_point() + theme_bw() + geom_abline() +
   xlab("Tandem Software") + ylab("Dexcom Software")
 
 tir_70_180_t_p <- ggplot(dexcom_tandem_package,aes(x = tandem_70_180,
                                                    y = percent_time_70_180_tandem)) +
-  geom_point() + theme_bw() + geom_abline() + 
+  geom_point() + theme_bw() + geom_abline() +
   xlab("Tandem Software") + ylab("cgmanalysis Package")
 
 tir_70_180_d_p <- ggplot(dexcom_tandem_package,aes(x = dex_70_180,
                                                    y = percent_time_70_180_dex)) +
-  geom_point() + theme_bw() + geom_abline() + 
+  geom_point() + theme_bw() + geom_abline() +
   xlab("Dexcom Software") + ylab("cgmanalysis Package")
 
-(tir_70_180_t_d + plot_spacer()) / (tir_70_180_t_p + tir_70_180_d_p) + 
+(tir_70_180_t_d + plot_spacer()) / (tir_70_180_t_p + tir_70_180_d_p) +
   plot_annotation(title = "% Time 70 - 180 mg/dL",
                   theme = theme(plot.title = element_text(hjust = 0.5)))
 # Over 180
 over_180_t_d <- ggplot(dexcom_tandem_package,aes(x = tandem_a180,y = dex_a180)) +
-  geom_point() + theme_bw() + geom_abline() + 
+  geom_point() + theme_bw() + geom_abline() +
   xlab("Tandem Software") + ylab("Dexcom Software")
 
 over_180_t_p <- ggplot(dexcom_tandem_package,aes(x = tandem_a180,
                                                  y = percent_time_over_180_tandem)) +
-  geom_point() + theme_bw() + geom_abline() + 
+  geom_point() + theme_bw() + geom_abline() +
   xlab("Tandem Software") + ylab("cgmanalysis Package")
 
 over_180_d_p <- ggplot(dexcom_tandem_package,aes(x = dex_a180,
                                                  y = percent_time_over_180_dex)) +
-  geom_point() + theme_bw() + geom_abline() + 
+  geom_point() + theme_bw() + geom_abline() +
   xlab("Dexcom Software") + ylab("cgmanalysis Package")
 
-(over_180_t_d + plot_spacer()) / (over_180_t_p + over_180_d_p) + 
+(over_180_t_d + plot_spacer()) / (over_180_t_p + over_180_d_p) +
   plot_annotation(title = "% Time Over 180 mg/dL",
                   theme = theme(plot.title = element_text(hjust = 0.5)))
 # Over 250
 over_250_t_d <- ggplot(dexcom_tandem_package,aes(x = tandem_a250,y = dex_a250)) +
-  geom_point() + theme_bw() + geom_abline() + 
+  geom_point() + theme_bw() + geom_abline() +
   xlab("Tandem Software") + ylab("Dexcom Software")
 
 over_250_t_p <- ggplot(dexcom_tandem_package,aes(x = tandem_a250,
                                                  y = percent_time_over_250_tandem)) +
-  geom_point() + theme_bw() + geom_abline() + 
+  geom_point() + theme_bw() + geom_abline() +
   xlab("Tandem Software") + ylab("cgmanalysis Package")
 
 over_250_d_p <- ggplot(dexcom_tandem_package,aes(x = dex_a250,
                                                  y = percent_time_over_250_dex)) +
-  geom_point() + theme_bw() + geom_abline() + 
+  geom_point() + theme_bw() + geom_abline() +
   xlab("Dexcom Software") + ylab("cgmanalysis Package")
 
-(over_250_t_d + plot_spacer()) / (over_250_t_p + over_250_d_p) + 
+(over_250_t_d + plot_spacer()) / (over_250_t_p + over_250_d_p) +
   plot_annotation(title = "% Time Over 250 mg/dL",
                   theme = theme(plot.title = element_text(hjust = 0.5)))
 # SD
 sd_t_d <- ggplot(dexcom_tandem_package,aes(x = tandem_sd,y = dex_sd)) +
-  geom_point() + theme_bw() + geom_abline() + 
+  geom_point() + theme_bw() + geom_abline() +
   xlab("Tandem Software") + ylab("Dexcom Software")
 
 sd_t_p <- ggplot(dexcom_tandem_package,aes(x = tandem_sd,y = sd_tandem)) +
-  geom_point() + theme_bw() + geom_abline() + 
+  geom_point() + theme_bw() + geom_abline() +
   xlab("Tandem Software") + ylab("cgmanalysis Package")
 
 sd_d_p <- ggplot(dexcom_tandem_package,aes(x = dex_sd,y = sd_dex)) +
-  geom_point() + theme_bw() + geom_abline() + 
+  geom_point() + theme_bw() + geom_abline() +
   xlab("Dexcom Software") + ylab("cgmanalysis Package")
 
-(sd_t_d + plot_spacer()) / (sd_t_p + sd_d_p) + 
+(sd_t_d + plot_spacer()) / (sd_t_p + sd_d_p) +
   plot_annotation(title = "Standard Deviation",
                   theme = theme(plot.title = element_text(hjust = 0.5)))
 ```
 
-### Dexcom vs. Tandem
+## Dexcom vs. Tandem
 
-```{r present dex vs. tandem,echo=FALSE,results='asis'}
-# Calculate differences
-dexcom_tandem_package <- dexcom_tandem_package %>%
-  mutate(`Diff. in % Time Under 54` = dex_u54 - tandem_u54,
-         `Diff. in % Time Under 70` = dex_u70 - tandem_u70,
-         `Diff. in % Time 70 - 180` = dex_70_180 - tandem_70_180,
-         `Diff. in % Time Over 180` = dex_a180 - tandem_a180,
-         `Diff. in % Time Over 250` = dex_a250 - tandem_a250,
-         `Diff. in SD` = dex_sd - tandem_sd)
-# Results table
-dex_tan_table <- tableby(~ `Diff. in % Time Under 54` + `Diff. in % Time Under 70` + 
-                           `Diff. in % Time 70 - 180` + `Diff. in % Time Over 180` + 
-                           `Diff. in % Time Over 250` + `Diff. in SD`,
-                         data = dexcom_tandem_package)
-ps <- 
-  sapply(c("Diff. in % Time Under 54","Diff. in % Time Under 70",
-           "Diff. in % Time 70 - 180","Diff. in % Time Over 180",
-           "Diff. in % Time Over 250","Diff. in SD"), 
-         function(x){
-           t = t.test(dexcom_tandem_package[,x])
-           t$p.value
-         })
-summary(dex_tan_table)
-kable(as.data.frame(ps))
+### Percent Time < 54 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(dexcom_tandem_package$dex_u54,dexcom_tandem_package$tandem_u54,1)
 ```
+
+The Tandem and Dexcom software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Percent Time < 70 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(dexcom_tandem_package$dex_u70,dexcom_tandem_package$tandem_u70,1)
+```
+
+The Tandem and Dexcom software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Percent Time 70-180 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(dexcom_tandem_package$dex_70_180,dexcom_tandem_package$tandem_70_180,2)
+```
+
+The Tandem and Dexcom software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Percent Time > 180 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(dexcom_tandem_package$dex_a180,dexcom_tandem_package$tandem_a180,2)
+```
+
+The Tandem and Dexcom software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Percent Time > 250 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(dexcom_tandem_package$dex_a250,dexcom_tandem_package$tandem_a250,2)
+```
+
+The Tandem and Dexcom software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Standard Deviation
+
+```{r echo=FALSE,results='asis'}
+r = tost(dexcom_tandem_package$dex_sd,dexcom_tandem_package$tandem_sd,2)
+```
+
+The Tandem and Dexcom software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
 
 ### Tandem vs. cgmanalysis
 
-```{r present tandem vs. package,echo=FALSE,results='asis'}
-# Calculate differences
-dexcom_tandem_package <- dexcom_tandem_package %>%
-  mutate(`Diff. in % Time Under 54` = tandem_u54 - percent_time_under_54_tandem,
-         `Diff. in % Time Under 70` = tandem_u70 - percent_time_under_70_tandem,
-         `Diff. in % Time 70 - 180` = tandem_70_180 - percent_time_70_180_tandem,
-         `Diff. in % Time Over 180` = tandem_a180 - percent_time_over_180_tandem,
-         `Diff. in % Time Over 250` = tandem_a250 - percent_time_over_250_tandem,
-         `Diff. in SD` = tandem_sd - sd_tandem)
-# Results table
-tan_pack_table <- 
-  tableby(~ `Diff. in % Time Under 54` + `Diff. in % Time Under 70` + 
-            `Diff. in % Time 70 - 180` + `Diff. in % Time Over 180` + 
-            `Diff. in % Time Over 250` + `Diff. in SD`,
-          data = dexcom_tandem_package)
-ps <- 
-  sapply(c("Diff. in % Time Under 54","Diff. in % Time Under 70",
-           "Diff. in % Time 70 - 180","Diff. in % Time Over 180",
-           "Diff. in % Time Over 250","Diff. in SD"), 
-         function(x){
-           t = t.test(dexcom_tandem_package[,x])
-           t$p.value
-         })
-summary(tan_pack_table)
-kable(as.data.frame(ps))
+### Percent Time < 54 mg/dL
+
+```{r echo=FALSE,results='asis'}
+# r = tost(dexcom_tandem_package$percent_time_under_54_tandem,dexcom_tandem_package$tandem_u54,1)
 ```
+
+The R package and Tandem software are exactly the same.
+
+### Percent Time < 70 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(dexcom_tandem_package$percent_time_under_70_tandem,dexcom_tandem_package$tandem_u70,1)
+```
+
+The R package and Tandem software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Percent Time 70-180 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(dexcom_tandem_package$percent_time_70_180_tandem,dexcom_tandem_package$tandem_70_180,2)
+```
+
+The R package and Tandem software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Percent Time > 180 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(dexcom_tandem_package$percent_time_over_180_tandem,dexcom_tandem_package$tandem_a180,2)
+```
+
+The R package and Tandem software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Percent Time > 250 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(dexcom_tandem_package$percent_time_over_250_tandem,dexcom_tandem_package$tandem_a250,2)
+```
+
+The R package and Tandem software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Standard Deviation
+
+```{r echo=FALSE,results='asis'}
+r = tost(dexcom_tandem_package$sd_tandem,dexcom_tandem_package$tandem_sd,2)
+```
+
+The R package and Tandem software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
 
 ### Dexcom vs. cgmanalysis
 
-```{r present dex vs. package,echo=FALSE,results='asis'}
-# Calculate differences
-dexcom_tandem_package <- dexcom_tandem_package %>%
-  mutate(`Diff. in % Time Under 54` = dex_u54 - percent_time_under_54_dex,
-         `Diff. in % Time Under 70` = dex_u70 - percent_time_under_70_dex,
-         `Diff. in % Time 70 - 180` = dex_70_180 - percent_time_70_180_dex,
-         `Diff. in % Time Over 180` = dex_a180 - percent_time_over_180_dex,
-         `Diff. in % Time Over 250` = dex_a250 - percent_time_over_250_dex,
-         `Diff. in SD` = dex_sd - sd_dex)
-# Results table
-dex_pack_table <- 
-  tableby(~ `Diff. in % Time Under 54` + `Diff. in % Time Under 70` + 
-            `Diff. in % Time 70 - 180` + `Diff. in % Time Over 180` + 
-            `Diff. in % Time Over 250` + `Diff. in SD`,
-          data = dexcom_tandem_package)
-ps <- 
-  sapply(c("Diff. in % Time Under 54","Diff. in % Time Under 70",
-           "Diff. in % Time 70 - 180","Diff. in % Time Over 180",
-           "Diff. in % Time Over 250","Diff. in SD"), 
-         function(x){
-           t = t.test(dexcom_tandem_package[,x])
-           t$p.value
-         })
-summary(dex_pack_table)
-kable(as.data.frame(ps))
+### Percent Time < 54 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(dexcom_tandem_package$percent_time_under_54_tandem,dexcom_tandem_package$dex_u54,1)
 ```
+
+The R package and Dexcom software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Percent Time < 70 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(dexcom_tandem_package$percent_time_under_70_tandem,dexcom_tandem_package$dex_u70,1)
+```
+
+The R package and Dexcom software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Percent Time 70-180 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(dexcom_tandem_package$percent_time_70_180_tandem,dexcom_tandem_package$tandem_70_180,2)
+```
+
+The R package and Dexcom software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Percent Time > 180 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(dexcom_tandem_package$percent_time_over_180_tandem,dexcom_tandem_package$dex_a180,2)
+```
+
+The R package and Dexcom software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Percent Time > 250 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(dexcom_tandem_package$percent_time_over_250_tandem,dexcom_tandem_package$tandem_a250,2)
+```
+
+The R package and Tandem software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Standard Deviation
+
+```{r echo=FALSE,results='asis'}
+r = tost(dexcom_tandem_package$sd_tandem,dexcom_tandem_package$tandem_sd,2)
+```
+
+The R package and Tandem software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
 
 # Libre vs. cgmanalysis
 
@@ -394,7 +477,7 @@ libre_package <- libre_package %>% select(subject_id,
                                           standard_deviation,SD)
 # Divide software CV by 100, round all columns
 libre_package$CV <- libre_package$CV / 100
-libre_package[,2:ncol(libre_package)] <- 
+libre_package[,2:ncol(libre_package)] <-
   lapply(libre_package[,2:ncol(libre_package)],round)
 ```
 
@@ -405,86 +488,90 @@ libre_package[,2:ncol(libre_package)] <-
 ```{r libre lm plots,echo=FALSE,fig.width=8,fig.height=6}
 # Make plots
 under_54 <- ggplot(libre_package,aes(x = percent_time_under_54,y = X.54)) +
-  geom_point() + theme_bw() + geom_abline() + 
-  xlab("cgmanalysis Package") + ylab("Libre Software") + 
+  geom_point() + theme_bw() + geom_abline() +
+  xlab("cgmanalysis Package") + ylab("Libre Software") +
   ggtitle("% Time Under 54 mg/dL")
 under_70 <- ggplot(libre_package,aes(x = percent_time_under_70,y = X.70)) +
-  geom_point() + theme_bw() + geom_abline() + 
-  xlab("cgmanalysis Package") + ylab("Libre Software") + 
+  geom_point() + theme_bw() + geom_abline() +
+  xlab("cgmanalysis Package") + ylab("Libre Software") +
   ggtitle("% Time Under 70 mg/dL")
 tir_70_180 <- ggplot(libre_package,aes(x = percent_time_70_180,y = X70.180)) +
-  geom_point() + theme_bw() + geom_abline() + 
-  xlab("cgmanalysis Package") + ylab("Libre Software") + 
+  geom_point() + theme_bw() + geom_abline() +
+  xlab("cgmanalysis Package") + ylab("Libre Software") +
   ggtitle("% Time 70 - 180 mg/dL")
 over_180 <- ggplot(libre_package,aes(x = percent_time_over_180,y = X.180)) +
-  geom_point() + theme_bw() + geom_abline() + 
-  xlab("cgmanalysis Package") + ylab("Libre Software") + 
+  geom_point() + theme_bw() + geom_abline() +
+  xlab("cgmanalysis Package") + ylab("Libre Software") +
   ggtitle("% Time Over 180 mg/dL")
 over_250 <- ggplot(libre_package,aes(x = percent_time_over_250,y = X.250)) +
-  geom_point() + theme_bw() + geom_abline() + 
-  xlab("cgmanalysis Package") + ylab("Libre Software") + 
+  geom_point() + theme_bw() + geom_abline() +
+  xlab("cgmanalysis Package") + ylab("Libre Software") +
   ggtitle("% Time Over 250 mg/dL")
 sd <- ggplot(libre_package,aes(x = standard_deviation,y = SD)) +
-  geom_point() + theme_bw() + geom_abline() + 
-  xlab("cgmanalysis Package") + ylab("Libre Software") + 
+  geom_point() + theme_bw() + geom_abline() +
+  xlab("cgmanalysis Package") + ylab("Libre Software") +
   ggtitle("Standard Deviation")
 
 (under_54 | under_70 | tir_70_180) / (over_180 | over_250 | sd)
 ```
 
-### Bland-Altman
-
-```{r libre b-a plot,echo=FALSE,warning=F,fig.width=8,fig.height=6}
-# Make plots
-under_54 <- blandr.draw(libre_package$percent_time_under_54,libre_package$X.54,
-                        ciDisplay = F) + 
-  theme_bw() + ggtitle("% Time Under 54 mg/dL")
-under_70 <- blandr.draw(libre_package$percent_time_under_70,libre_package$X.70,
-                        ciDisplay = F) + 
-  theme_bw() + ggtitle("% Time Under 70 mg/dL")
-tir_70_180 <- blandr.draw(libre_package$percent_time_70_180,libre_package$X70.180,
-                          ciDisplay = F) + 
-  theme_bw() + ggtitle("% Time 70 - 180 mg/dL")
-over_180 <- blandr.draw(libre_package$percent_time_over_180,libre_package$X.180,
-                        ciDisplay = F) + 
-  theme_bw() + ggtitle("% Time Over 180 mg/dL")
-over_250 <- blandr.draw(libre_package$percent_time_over_250,libre_package$X.250,
-                        ciDisplay = F) + 
-  theme_bw() + ggtitle("% Time Over 250 mg/dL")
-sd <- blandr.draw(libre_package$standard_deviation,libre_package$SD,
-                  ciDisplay = F) + 
-  theme_bw() + ggtitle("Standard Deviation")
-# Layout
-(under_54 | under_70 | tir_70_180) / (over_180 | over_250 | sd)
-```
-
 ## Differences
 
-```{r present libre,echo=FALSE,results='asis'}
-# Calculate differences
-libre_package <- libre_package %>%
-  mutate(`Diff. in % Time Under 54` = X.54 - percent_time_under_54,
-         `Diff. in % Time Under 70` = X.70 - percent_time_under_70,
-         `Diff. in % Time 70 - 180` = X70.180 - percent_time_70_180,
-         `Diff. in % Time Over 180` = X.180 - percent_time_over_180,
-         `Diff. in % Time Over 250` = X.250 - percent_time_over_250,
-         `Diff. in CV` = CV - cv,`Diff. in SD` = standard_deviation - SD)
-# Results table
-libre_table <- tableby(~ `Diff. in % Time Under 54` + `Diff. in % Time Under 70` + 
-                         `Diff. in % Time 70 - 180` + `Diff. in % Time Over 180` + 
-                         `Diff. in % Time Over 250` + `Diff. in CV` + `Diff. in SD`,
-                       data = libre_package)
-ps <- 
-  sapply(c("Diff. in % Time Under 54","Diff. in % Time Under 70",
-           "Diff. in % Time 70 - 180","Diff. in % Time Over 180",
-           "Diff. in % Time Over 250","Diff. in CV","Diff. in SD"), 
-         function(x){
-           t = t.test(libre_package[,x])
-           t$p.value
-         })
-summary(libre_table)
-kable(as.data.frame(ps))
+### Percent Time < 54 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(libre_package$percent_time_under_54,libre_package$X.54,1)
 ```
+
+The R package and Libre software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Percent Time < 70 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(libre_package$percent_time_under_70,libre_package$X.70,1)
+```
+
+The R package and Libre software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Percent Time 70-180 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(libre_package$percent_time_70_180,libre_package$X70.180,2)
+```
+
+The R package and Libre software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Percent Time > 180 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(libre_package$percent_time_over_180,libre_package$X.180,2)
+```
+
+The R package and Libre software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Percent Time > 250 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(libre_package$percent_time_over_250,libre_package$X.250,2)
+```
+
+The R package and Libre software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Standard Deviation
+
+```{r echo=FALSE,results='asis'}
+r = tost(libre_package$standard_deviation,libre_package$SD,2)
+```
+
+The R package and Libre software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### CV
+
+```{r echo=FALSE,results='asis'}
+#r = tost(libre_package$cv,libre_package$CV,2)
+```
+
+The R package and Libre software are exactly the same.
 
 # Medtronic vs. cgmanalysis
 
@@ -507,7 +594,7 @@ medtronic_package <- medtronic_package %>% select(subject_id,
                                                   percent_time_180_250,X.180.250.,
                                                   percent_time_250_400,X.250.400.)
 # Divide software CV by 100, round all columns
-medtronic_package[,2:ncol(medtronic_package)] <- 
+medtronic_package[,2:ncol(medtronic_package)] <-
   lapply(medtronic_package[,2:ncol(medtronic_package)],round)
 ```
 
@@ -518,80 +605,67 @@ medtronic_package[,2:ncol(medtronic_package)] <-
 ```{r medtronic lm plots,echo=FALSE,fig.width=8,fig.height=6}
 # Make plots
 tir_40_50 <- ggplot(medtronic_package,aes(x = percent_time_40_50,y = X.40.50.)) +
-  geom_point() + theme_bw() + geom_abline() + 
-  xlab("cgmanalysis Package") + ylab("Medtronic Software") + 
+  geom_point() + theme_bw() + geom_abline() +
+  xlab("cgmanalysis Package") + ylab("Medtronic Software") +
   ggtitle("% Time 40 - 50 mg/dL")
 tir_50_70 <- ggplot(medtronic_package,aes(x = percent_time_50_70,y = X.50.70.)) +
-  geom_point() + theme_bw() + geom_abline() + 
-  xlab("cgmanalysis Package") + ylab("Medtronic Software") + 
+  geom_point() + theme_bw() + geom_abline() +
+  xlab("cgmanalysis Package") + ylab("Medtronic Software") +
   ggtitle("% Time 50 - 70 mg/dL")
 tir_70_180 <- ggplot(medtronic_package,aes(x = percent_time_70_180,y = X.70.180.TIR)) +
-  geom_point() + theme_bw() + geom_abline() + 
-  xlab("cgmanalysis Package") + ylab("Medtronic Software") + 
+  geom_point() + theme_bw() + geom_abline() +
+  xlab("cgmanalysis Package") + ylab("Medtronic Software") +
   ggtitle("% Time 70 - 180 mg/dL")
 tir_180_250 <- ggplot(medtronic_package,aes(x = percent_time_180_250,y = X.180.250.)) +
-  geom_point() + theme_bw() + geom_abline() + 
-  xlab("cgmanalysis Package") + ylab("Medtronic Software") + 
+  geom_point() + theme_bw() + geom_abline() +
+  xlab("cgmanalysis Package") + ylab("Medtronic Software") +
   ggtitle("% Time 180 - 250 mg/dL")
 tir_250_400 <- ggplot(medtronic_package,aes(x = percent_time_250_400,y = X.250.400.)) +
-  geom_point() + theme_bw() + geom_abline() + 
-  xlab("cgmanalysis Package") + ylab("Medtronic Software") + 
+  geom_point() + theme_bw() + geom_abline() +
+  xlab("cgmanalysis Package") + ylab("Medtronic Software") +
   ggtitle("% Time 250 - 400 mg/dL")
 
 (tir_40_50 | tir_50_70 | tir_70_180) / (tir_180_250 | tir_250_400)
 ```
 
-### Bland-Altman
-
-```{r medtronic b-a plot,echo=FALSE,warning=F,fig.width=8,fig.height=6}
-# Make plots
-tir_40_50 <- blandr.draw(medtronic_package$percent_time_40_50,
-                         medtronic_package$X.40.50.,
-                         ciDisplay = F) + 
-  theme_bw() + ggtitle("% Time 40 - 50 mg/dL")
-tir_50_70 <- blandr.draw(medtronic_package$percent_time_50_70,
-                         medtronic_package$X.50.70.,
-                         ciDisplay = F) + 
-  theme_bw() + ggtitle("% Time 50 - 70 mg/dL")
-tir_70_180 <- blandr.draw(medtronic_package$percent_time_70_180,
-                          medtronic_package$X.70.180.TIR,
-                          ciDisplay = F) + 
-  theme_bw() + ggtitle("% Time 70 - 180 mg/dL")
-tir_180_250 <- blandr.draw(medtronic_package$percent_time_180_250,
-                           medtronic_package$X.180.250.,
-                           ciDisplay = F) + 
-  theme_bw() + ggtitle("% Time 180 - 250 mg/dL")
-tir_250_400 <- blandr.draw(medtronic_package$percent_time_250_400,
-                           medtronic_package$X.250.400.,
-                           ciDisplay = F) + 
-  theme_bw() + ggtitle("% Time 250 - 400 mg/dL")
-# Layout
-(tir_40_50 | tir_50_70 | tir_70_180) / (tir_180_250 | tir_250_400)
-```
-
 ## Differences
 
-```{r present medtronic,echo=FALSE,results='asis'}
-# Calculate differences
-medtronic_package <- medtronic_package %>%
-  mutate(`Diff. in % Time 40 - 50` = X.40.50. - percent_time_40_50,
-         `Diff. in % Time 50 - 70` = X.50.70. - percent_time_50_70,
-         `Diff. in % Time 70 - 180` = X.70.180.TIR - percent_time_70_180,
-         `Diff. in % Time 180 - 250` = X.180.250. - percent_time_180_250,
-         `Diff. in % Time 250 - 400` = X.250.400. - percent_time_250_400)
-# Results table
-medtronic_table <- 
-  tableby(~ `Diff. in % Time 40 - 50` + `Diff. in % Time 50 - 70` + 
-            `Diff. in % Time 70 - 180` + `Diff. in % Time 180 - 250` + 
-            `Diff. in % Time 250 - 400`,data = medtronic_package)
-ps <- 
-  sapply(c("Diff. in % Time 40 - 50","Diff. in % Time 50 - 70",
-            "Diff. in % Time 70 - 180","Diff. in % Time 180 - 250",
-            "Diff. in % Time 250 - 400"), 
-         function(x){
-           t = t.test(medtronic_package[,x])
-           t$p.value
-         })
-summary(medtronic_table)
-kable(as.data.frame(ps))
+### Percent Time 40-50 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(medtronic_package$percent_time_40_50,medtronic_package$X.40.50.,1)
 ```
+
+The R package and Medtronic software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Percent Time < 70 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(medtronic_package$percent_time_50_70,medtronic_package$X.50.70.,1)
+```
+
+The R package and Medtronic software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Percent Time 70-180 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(medtronic_package$percent_time_70_180,medtronic_package$X.70.180.TIR,2)
+```
+
+The R package and Medtronic software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Percent Time 180 - 250 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(medtronic_package$percent_time_180_250,medtronic_package$X.180.250.,2)
+```
+
+The R package and Medtronic software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
+
+### Percent Time > 250 mg/dL
+
+```{r echo=FALSE,results='asis'}
+r = tost(medtronic_package$percent_time_250_400,medtronic_package$X.250.400.,2)
+```
+
+The R package and Medtronic software are statistically equivalent (p `r format.pval(max(r$TOST_p1,r$TOST_p2),digits = 3,eps = 0.001)`).
