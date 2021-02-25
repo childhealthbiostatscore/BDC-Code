@@ -72,10 +72,10 @@ Analysis datasets must be cleaned and in a format ready for analysis.  All datas
 |2|2|2346|0.|5|
 |2|3|4256|0.3|
 
-##### If Sending Multiple Files or Using Multiple REDCap Databases
+#### If Sending Multiple Files or Using Multiple REDCap Databases
 - If sending multiple files, please include **all files in a single folder** unless a different organization system is absolutely necessary.
 - Make sure variable names are exactly the same across all files (e.g., do not use “sensor glucose” in one file and “SG” in another).
 - Use consistent subject and (if relevant) timepoint identifiers across all files
-- **Use consistent, informative file names including participant ID and timepoint, preferably without spaces (e.g., “1_baseline_cgm_data.csv”, “1_6week_cgm_data.csv”, etc.)**
+- **Use consistent, informative file names including participant ID and timepoint, preferably without spaces** (e.g., “1_baseline_cgm_data.csv”, “1_6week_cgm_data.csv”, “2_baseline_cgm_data.csv”, “2_6week_cgm_data.csv”, etc.)
 
 Many of these guidelines come from Karl Broman and Kara Woo’s [excellent paper on data organization](https://doi.org/10.1080/00031305.2017.1375989). We encourage investigators to read this paper thoroughly before sending data or planning a REDCap database.
