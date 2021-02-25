@@ -6,19 +6,23 @@ dateparseorder <- c("mdy","mdy HM","mdy HMS","mdY HM","mdY HMS","dmy HM","dmy HM
                     "Ydm HM","Ydm HMS","ydm HM","ydm HMS")
 # Output location
 outdir = paste0(getwd(),"/","Cleaned/")
-# Import dates 
+# Import dates - remove spaces and characters from names
 dates = read.csv("./Trimester Dates -Janet.csv",na.strings = "")
+dates$Last.name = tolower(gsub(" ","",dates$Last.name))
+dates$Last.name = tolower(gsub("[[:punct:]]","",dates$Last.name))
+dates$First.name = tolower(gsub(" ","",dates$First.name))
+dates$First.name = tolower(gsub("[[:punct:]]","",dates$First.name))
 # List all the directories
 dirs = list.dirs("RAW DATA- CGM downloads")
 # Loop through directories
 for (d in dirs[2:length(dirs)]) {
-  # Get name
+  # Get name - lowercase and remove special characters
   name = tolower(sub("_.*","",basename(d)))
   name = gsub(" ","",name)
-  last_name = strsplit(name,",")[[1]][1]
-  first_name = strsplit(name,",")[[1]][2]
+  last_name = gsub("[[:punct:]]","",strsplit(name,",")[[1]][1])
+  first_name = gsub("[[:punct:]]","",strsplit(name,",")[[1]][2])
   # Get dates
-  r = which(tolower(gsub(" ","",dates$Last.name)) == last_name & tolower(dates$First.name) ==  first_name)
+  r = which(dates$Last.name == last_name & dates$First.name ==  first_name)
   t0 = parse_date_time(dates$t.0[r],dateparseorder,tz = "UTC")
   wk14 = parse_date_time(dates$X14.wks[r],dateparseorder,tz = "UTC")
   wk28 = parse_date_time(dates$X28.wks[r],dateparseorder,tz = "UTC")
