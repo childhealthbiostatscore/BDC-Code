@@ -8,23 +8,30 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 #knitr::opts_knit$set(root.dir = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/COVID Quality of Life")
-knitr::opts_knit$set(root.dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/COVID Quality of Life")
-library(arsenal)
+knitr::opts_knit$set(root.dir = "/Users/timvigers/Dropbox/Work/Erin Cobry/COVID Quality of Life")
 library(skimr)
 library(knitr)
 library(tidyverse)
 library(Hmisc)
+library(arsenal)
 ```
 
 ```{r}
+# Import
 source("/Users/timvigers/GitHub/BDC-Code/Erin Cobry/COVID Quality of Life/data_import.r")
+# Exclude participants per Erin (missing consent)
+exclude = c("1012","2012","1018","2018","1028","2028","1037","2037",
+            "1045","2045","1060","2060","1064","2064","1079","2079",
+            "1088","2088","1103","2103","1108","2108","1115","2115")
+exclude = c(sapply(exclude, grep,data$record_id))
+data = data[-exclude,]
 ```
 
 ```{r}
 # Score surveys
 # Exposure
 exposure = data %>% select(record_id,redcap_event_name,stay_at_home.factor:died.factor)
-exposure$exposure_sum = apply(exposure[,3:ncol(exposure)],1,function(r){
+data$exposure_sum = apply(exposure[,3:ncol(exposure)],1,function(r){
   length(which(r == "Yes"))
 })
 # Impact
@@ -35,17 +42,37 @@ impact[,3:ncol(impact)] = lapply(impact[,3:ncol(impact)],function(c){
   c
   })
 # Mean of all items - NA if more than 3 are missing
-impact$impact_mean = apply(impact[,3:ncol(impact)],1,function(r){
+data$impact_mean = apply(impact[,3:ncol(impact)],1,function(r){
   if(sum(is.na(r))>3){NA}else{
     mean(as.numeric(r),na.rm = T)
   }
 })
 # Distress
 distress = data %>% select(record_id,redcap_event_name,distress:child_distress)
-distress$family_distress = apply(distress[,3:ncol(distress)],1,mean,na.rm = T)
-distress$family_distress[is.nan(distress$family_distress)] = NA
-# Write to csv for Laura
-write.csv(exposure,"./Data_Cleaned/exposure.csv",row.names = F,na = "")
-write.csv(impact,"./Data_Cleaned/impact.csv",row.names = F,na = "")
-write.csv(distress,"./Data_Cleaned/distress.csv",row.names = F,na = "")
+data$family_distress = apply(distress[,3:ncol(distress)],1,mean,na.rm = T)
+data$family_distress[is.nan(data$family_distress)] = NA
+
+# Clean up
+rm(distress,exposure,impact,exclude)
 ```
+
+# Table 1
+
+```{r results='asis'}
+# Get demographic information - per Erin "The child demographic information is under the child IDs (so all of the 2000 IDs, since the 1000 IDs are all of the parents)"
+# Convert age to years
+demographics = data %>% 
+  filter(grepl("baseline",redcap_event_name),as.numeric(substr(record_id,1,4))>=2000) %>%
+  mutate(age = as.numeric(child_age) / 365.25,
+         t1d_duration = as.numeric(t1d_duration) / 365.25)
+missing_consent = which(is.na(demographics$consent_date))
+demographics = demographics[-missing_consent,]
+# Table 1 
+t1_form = as.formula(" ~ age + t1d_duration + gender.factor + child_insurance.factor + race")
+newlabels = list(age = "Age (Years)",t1d_duration = "T1D Duration",race = "Race",
+                 gender.factor = "Gender", child_insurance.factor = "Insurance")
+t1 = tableby(t1_form,demographics)
+summary(t1,labelTranslations = newlabels)
+```
+
+Participants `r paste(demographics$record_id[missing_consent],collapse = ", ")` were excluded due to missing consent dates.
