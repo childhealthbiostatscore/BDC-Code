@@ -48,18 +48,18 @@ plink --bfile merged_final  --hwe 1e-10 --write-snplist --make-bed --out merged_
 plink2 --bfile merged_final --make-king-table
 # Remove temporary files
 find . -name "*~" -delete
-# Merge with TGP
-plink --bfile /media/tim/Work/TGP/all_phase3 --extract merged_final.snplist --allow-extra-chr --make-bed --out all_phase3
-# Variant rs17882081 is inconsistent, so exclude it (not in the list of important SNPs)
-plink --bfile merged_final --bmerge all_phase3 --make-bed --out first_merge
-plink --bfile merged_final --exclude first_merge-merge.missnp --make-bed --out simmons_temp
-plink --bfile all_phase3 --exclude first_merge-merge.missnp --make-bed --out tgp_temp
-plink --bfile simmons_temp --bmerge tgp_temp --make-bed --out tgp_merged
-# Population stratification
-# Remove founders
-plink --bfile tgp_merged --keep-founders --make-bed --out tgp_merged
-# Prune
-plink --bfile tgp_merged --indep-pairwise 50 5 0.2 --out mergeSNP
-plink --bfile tgp_merged --extract mergeSNP.prune.in --make-bed --out tgp_merged
-# PCA
-plink --bfile tgp_merged --cluster --pca --out PCA
+# SNP Imputation
+# Recode merged data to VCF
+plink --bfile merged_final --recode vcf --out merged_final
+# Compress
+bgzip -c merged_final.vcf > merged_final.vcf.gz
+# Loop tabix over all chromosomes to split into individual files
+tabix -p vcf merged_final.vcf.gz
+tabix -h merged_final.vcf.gz chr1 > chr/chr1.vcf
+# Split into individual chromosomes
+bcftools view -r 1 merged_final.vcf
+# Minimac imputation
+minimac4 --refHaps /Users/timvigers/Dropbox/Work/GWAS/Minimac/G1K_P3_M3VCF_FILES_WITH_ESTIMATES/1.1000g.Phase3.v5.With.Parameter.Estimates.m3vcf.gz \
+         --haps chr/chr1.vcf \
+         --prefix testRun \
+         --cpus 4
