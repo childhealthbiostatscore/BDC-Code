@@ -27,29 +27,35 @@ final <- final[final$CACprogV3 != "Unknown",]
 
 final$CACprogV3_num <- ifelse(final$CACprogV3=="Progression",1,0)
 final$CACprogV3 <- NULL
-final$alb_num <- as.factor(ifelse(final$albuminuria %in% c("mac","mic"),1,
-                        ifelse(final$albuminuria=="non",0,NA)))
+#final$alb_num <- as.factor(ifelse(final$albuminuria %in% c("mac","mic"),1,
+#                        ifelse(final$albuminuria=="non",0,NA)))
+final$alb_num <- ifelse(final$albuminuria %in% c("mac","mic"),1,
+                                  ifelse(final$albuminuria=="non",0,NA))
 final$albuminuria <- NULL
-final$smknum <- as.factor(ifelse(final$smkstatus=="Current",1,
-                       ifelse(final$smkstatus %in% c("Former","Never"),0,NA)))
+#final$smknum <- as.factor(ifelse(final$smkstatus=="Current",1,
+#                       ifelse(final$smkstatus %in% c("Former","Never"),0,NA)))
+final$smknum <- ifelse(final$smkstatus=="Current",1,
+                                 ifelse(final$smkstatus %in% c("Former","Never"),0,NA))
+
 final$smkstatus <- NULL
-final$onhypermeds <- as.factor(final$onhypermeds)
-final$onlipidmeds <- as.factor(final$onlipidmeds)
-final$onstatinmeds <- as.factor(final$onstatinmeds)
+#final$onhypermeds <- as.factor(final$onhypermeds)
+#final$onlipidmeds <- as.factor(final$onlipidmeds)
+#final$onstatinmeds <- as.factor(final$onstatinmeds)
 
 write.csv(final,"B:\\Projects\\Janet Snell-Bergeon\\AHA collaborative grant\\Combined predictive model\\clinical data for lasso.csv",row.names = F)
 
 # only complete cases
 complete <- drop_na(final)
 
-# LASSO works but CV doesn't
-# it used to work until I made some of the variables factors
+# LASSO
 x <- as.matrix(subset(complete,select=-CACprogV3_num))
 glmmod1 <- glmnet(x, y=as.factor(complete$CACprogV3_num), alpha=1, family="binomial")
 
+# find best value of lambda
 cv.glmmod <- cv.glmnet(x, y=complete$CACprogV3_num, alpha=1)
 best.lambda <- cv.glmmod$lambda.min
-glmmod1$lambda==best.lambda
-test <- glmmod1$lambda-best.lambda
 
-round(coef(glmmod1,s=best.lambda),4)
+# coefficients at best lambda
+round(coef(glmmod1,s=cv.glmmod$lambda.min),4)
+
+
