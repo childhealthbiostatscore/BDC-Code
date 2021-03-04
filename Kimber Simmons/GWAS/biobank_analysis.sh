@@ -4,9 +4,18 @@ Rscript /Users/timvigers/GitHub/BDC-Code/Kimber\ Simmons/GWAS/check_samples.R
 # Working directory
 cd /Users/timvigers/Dropbox/Work/Kimber\ Simmons/GWAS
 # Remove indels, limit to chromosomes 1-22 and pseudoautosomal regions of XY
-plink --bfile Data_Raw/Simmons_MEGA1_Deliverable_06142019/cleaned_files/Simmons_Custom_MEGA_Analysi_03012019_snpFailsRemoved_passing_QC --snps-only 'just-acgt' --autosome-xy --make-bed --out Data_Cleaned/biobank_analysis/redo
-plink --bfile Data_Raw/Simmons\ Biobank/Simmons_071520 --snps-only 'just-acgt' --autosome-xy --make-bed --out Data_Cleaned/biobank_analysis/biobank1
-plink --bfile Data_Raw/V2\ -\ Biobank\ data\ on\ Hispanic\ Patients\ -\ Full\ Genetic\ Request/Simmons_120420 --snps-only 'just-acgt' --autosome-xy --make-bed --out Data_Cleaned/biobank_analysis/biobank2
+plink --bfile Data_Raw/Simmons_MEGA1_Deliverable_06142019/cleaned_files/Simmons_Custom_MEGA_Analysi_03012019_snpFailsRemoved_passing_QC \
+  --snps-only 'just-acgt' \
+  --autosome-xy \
+  --make-bed --out Data_Cleaned/biobank_analysis/redo
+plink --bfile Data_Raw/Simmons\ Biobank/Simmons_071520\
+  --snps-only 'just-acgt'/
+  --autosome-xy\
+  --make-bed --out Data_Cleaned/biobank_analysis/biobank1
+plink --bfile Data_Raw/V2\ -\ Biobank\ data\ on\ Hispanic\ Patients\ -\ Full\ Genetic\ Request/Simmons_120420\
+  --snps-only 'just-acgt'\
+  --autosome-xy\
+  --make-bed --out Data_Cleaned/biobank_analysis/biobank2
 # Phenotype
 Rscript /Users/timvigers/GitHub/BDC-Code/Kimber\ Simmons/GWAS/biobank_phenotype.R
 # Move to cleaned Data_Raw
@@ -67,7 +76,12 @@ do
    bcftools filter merged_final.vcf.gz -r $i > chr/chr$i.vcf
 done
 # Minimac imputation for autosomes
-minimac4 --refHaps /Users/timvigers/Dropbox/Work/GWAS/Minimac/G1K_P3_M3VCF_FILES_WITH_ESTIMATES/X.Non.Pseudo.Auto.1000g.Phase3.v5.With.Parameter.Estimates.m3vcf.gz \
-         --haps chr/chr23.vcf \
-         --prefix testRun \
-         --cpus 4
+for i in {1..22}
+do
+  minimac4\
+    --refHaps /Users/timvigers/Dropbox/Work/GWAS/Minimac/G1K_P3_M3VCF_FILES_WITH_ESTIMATES/$i.1000g.Phase3.v5.With.Parameter.Estimates.m3vcf.gz \
+    --haps chr/chr$i.vcf \
+    --prefix testRun/\
+    --cpus 4
+done
+# Imputation for XY chromosomes
