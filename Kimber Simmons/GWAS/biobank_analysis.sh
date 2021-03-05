@@ -79,9 +79,9 @@ done
 for i in {1..22}
 do
   minimac4\
-    --refHaps /Users/timvigers/Dropbox/Work/GWAS/Minimac/G1K_P3_M3VCF_FILES_WITH_ESTIMATES/$i.1000g.Phase3.v5.With.Parameter.Estimates.m3vcf.gz \
+    --refHaps ~/Dropbox/Work/GWAS/Minimac/G1K_P3_M3VCF_FILES_WITH_ESTIMATES/$i.1000g.Phase3.v5.With.Parameter.Estimates.m3vcf.gz \
     --haps chr/chr$i.vcf \
     --prefix imputed/\
-    --cpus 8
+    --cpus 6
 done
 # Imputation for XY chromosomes
