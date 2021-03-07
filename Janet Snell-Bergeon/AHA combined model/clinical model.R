@@ -3,8 +3,7 @@ library(glmnet)
 library(tidyr)
 
 home_dir = ifelse(.Platform$OS.type == "unix",
-                  "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant",
-                  "B:/Projects/Janet Snell-Bergeon/AHA collaborative grant")
+                  "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant")
 setwd(home_dir)
 
 allvisits_long <- read.sas7bdat("./allvisits_long.sas7bdat")
@@ -63,4 +62,6 @@ best.lambda <- cv.glmmod$lambda.min
 # coefficients at best lambda
 round(coef(glmmod1,s=cv.glmmod$lambda.min),4)
 
-
+# Check coefficients
+refit_mod = glm(CACprogV3_num ~ age+duration+onhypermeds+onstatinmeds+avesystbp+
+                  hdlc+ac+egdr+homo+eis+UA+smknum,complete,family = binomial("logit"))
