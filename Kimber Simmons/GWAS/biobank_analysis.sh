@@ -81,7 +81,7 @@ do
   minimac4\
     --refHaps ~/Dropbox/Work/GWAS/Minimac/G1K_P3_M3VCF_FILES_WITH_ESTIMATES/$i.1000g.Phase3.v5.With.Parameter.Estimates.m3vcf.gz \
     --haps chr/chr$i.vcf \
-    --prefix imputed/test\
+    --prefix imputed/$i\
     --cpus 4
 done
 # Imputation for XY chromosomes
