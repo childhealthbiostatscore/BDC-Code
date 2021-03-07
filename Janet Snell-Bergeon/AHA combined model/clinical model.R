@@ -42,6 +42,9 @@ final$smkstatus <- NULL
 #final$onlipidmeds <- as.factor(final$onlipidmeds)
 #final$onstatinmeds <- as.factor(final$onstatinmeds)
 
+# drop albuminuria status - we don't want it and AC together
+final$alb_num <- NULL
+
 write.csv(final,"B:\\Projects\\Janet Snell-Bergeon\\AHA collaborative grant\\Combined predictive model\\clinical data for lasso.csv",row.names = F)
 
 # only complete cases
