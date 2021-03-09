@@ -15,11 +15,18 @@ library(geosphere)
 library(sjlabelled)
 library(lubridate)
 library(naniar)
+library(lessR)
+library(tidyverse)
+
+code_dir = ifelse(.Platform$OS.type == "unix",
+                  "",
+                  "T:\\Erin Cobry\\Telemedicine\\Data raw\\")
+setwd(code_dir)
 
 knitr::opts_chunk$set(echo = TRUE)
 
 # read in general clinic data
-allclinic <- read.csv("T:\\Erin Cobry\\Telemedicine\\Data raw\\General Clinic Master List_08-26-20 Rural.csv",na.strings = c(" ",""))
+allclinic <- read.csv("General Clinic Master List_08-26-20 Rural.csv",na.strings = c(" ",""))
 allclinic$DiabetesDuration_12132019<- as.numeric(as.character(allclinic$DiabetesDuration_12132019))
 allclinic <- allclinic[allclinic$DiabetesDuration_12132019>0.5,]
 
@@ -77,13 +84,17 @@ allclinic$Rural <- ifelse(is.na(allclinic$Rural),"n","r")
 demo <- unique(allclinic)
 
 # read in telemedicine data
-data <- read.csv("T:\\Erin Cobry\\Telemedicine\\Data raw\\DiabetesTelemedicine-Cobry2020ADAAbstract_DATA_rural_distance_11-5-2020.csv")
+data <- read.csv("DiabetesTelemedicine-Cobry2020ADAAbstract_DATA_rural_distance_11-5-2020.csv")
 #source("T:\\Erin Cobry\\Telemedicine\\Data raw\\DiabetesTelemedicine-Cobry2020ADAAbstract_R_2020-01-05_1613.r")
 
+# unique IDs before removing unconsented pts
+n_tele_all <- length(unique(data$study_id))
+
 # only include patients in the file Erin sent
-keep <- read.csv("T:\\Erin Cobry\\Telemedicine\\Data raw\\Telemedicine Study Patient MRNs.csv")
+keep <- read.csv("Telemedicine Study Patient MRNs.csv")
 data <- merge(data,keep,by="study_id",all.x=F,all.y=T)
 #write.csv(data,"C:\\Temp\\Erin Cobry\\Telemedicine\\export_for_erin_telemed.csv")
+n_tele_consent <- length(unique(data$study_id))
 
 # reshape redcap dataset
 enroll <- data[,c("study_id","redcap_event_name", "age","dod","zip_code_of_residence","race_chart___1","race_chart___2","race_chart___3",
@@ -219,6 +230,7 @@ tele$Rural. <- droplevels(tele$Rural.)
 
 # exclude those w/ duration <= 6 mo
 tele <- tele[tele$diabetes_duration>0.5,]
+n_tele_consent_6mo <- length(unique(tele$study_id))
 
 # make combined df with techgroup and A1c
 combclinic <- allclinic[,c("techgroup","LastA1C_OrderValue","Distance.to.Clinic.Driving..Km.","Distance.to.Clinic.Direct..Km.",
@@ -243,6 +255,9 @@ comb$anypump <- as.factor(ifelse(comb$techgroup %in% c("Pump","Pump and CGM"),1,
 comb$anycgm <- as.factor(ifelse(comb$techgroup %in% c("CGM","Pump and CGM"),1,0))
 comb$pumponly <- as.factor(ifelse(comb$techgroup=="Pump",1,0))
 comb$cgmonly <- as.factor(ifelse(comb$techgroup=="CGM",1,0))
+# new variable for tech or no tech
+comb$tech <- NA
+comb$tech <- ifelse(comb$anypump==1 | comb$anycgm==1,"Uses tech","Doesn't use tech")
 
 # New variable for pump and CGM yes/no
 comb$pump_cgm <- as.factor(ifelse(comb$techgroup=="Pump and CGM",1,0))
@@ -255,7 +270,7 @@ b$group <- "Telemedicine"
 twogroup <- rbind(a,b)
 
 # table comparing tech use in the two groups
-techtable <- CreateTableOne(vars=c("techgroup","anypump","anycgm","pumponly","cgmonly","pump_cgm",
+techtable <- CreateTableOne(vars=c("techgroup","anypump","anycgm","pumponly","cgmonly","pump_cgm","tech",
                                    "InsuranceType","Distance.to.clinic.driving..km.",
                                    "Distance.to.clinic.direct..KM...as.the.crow.flies.","Rural." ), data=comb, strata="group", test=TRUE)
 techtable <- print(techtable,varLabels=TRUE,showAllLevels=TRUE)
@@ -276,9 +291,8 @@ t1a <- print(t1a,varLabels=T,showAllLevels=T,nonnorm=nonnorm)
 
 # compare characteristics in tele pts who use tech vs. not
 tele$tech <- NA
-tele[(!is.na(tele$cgm) & tele$cgm==1) | (!is.na(tele$pump) & tele$pump==1) | (!is.na(tele$pump_cgm) & tele$pump_cgm==1),]$tech <- "Uses tech"
-tele[(!is.na(tele$cgm) & tele$cgm==0) & (!is.na(tele$pump) & tele$pump==0) & (!is.na(tele$pump_cgm) & tele$pump_cgm==0),]$tech <- "Doesn't use tech"
-tele[is.na(tele$cgm) | is.na(tele$pump) | is.na(tele$pump_cgm),] <- NA
+tele$tech <- ifelse(tele$cgm==1 | tele$pump==1,"Uses tech","Doesn't use tech")
+tele[is.na(tele$tech),]$tech <- "Doesn't use tech"
 
 compvars <- c("age_1st_telemed","race2","gender","cgmuse_prior_chart","pump_prior_chart","diabetes_duration","InsuranceType",
               "a1c_1st_telemedicine","a1c_fup_telemed","Distance.to.clinic.direct..KM...as.the.crow.flies.","Distance.to.clinic.driving..km.",
@@ -300,6 +314,9 @@ nonnorm <- "hba1c"
 t6 <- CreateTableOne(vars=c("hba1c"), data=comb, strata = "techgroup", test=TRUE)
 t6 <- print(t6,varLabels=TRUE,showAllLevels=TRUE,nonnorm=nonnorm)
 
+plotN <- comb %>% group_by(techgroup,group) %>% summarize(N=n())
+  
+p <- ggplot(comb, aes(x=techgroup, y=hba1c, fill=group)) + geom_boxplot() + xlab("") + ylab("HbA1c (%)") + scale_fill_grey() + theme_classic() + guides(fill=guide_legend(title=""))
 
 ```
 
@@ -309,9 +326,9 @@ The goal of this analysis is to describe technology uptake in patients who use t
 
 ##  Methods
 
-In this version of the report, patients with <=6 months diabetes duration were excluded.
+Only consented patients in the telemedicine REDCap database were included in this analysis.  There were a total of `r n_tele_all` patients in the REDCap database, of whom `r n_tele_consent` consented.  In this version of the report, patients with <=6 months diabetes duration were excluded, leaving a total of `r n_tele_consent_6mo` patients in the analysis.
 
-Only consented patients in the telemedicine REDCap database were included in this analysis.  Pump, CGM, and pump/cgm use were defined as use at the most recent visit (either first telemedicine visit or follow-up visits).  Insurance type and technology use in the telemedicine cohort was compared to the BDC clinic population using chi-square tests.  Insurance types were not significantly different in the clinic and telemedicine cohorts, so all models are unadjusted.
+Pump, CGM, and pump/cgm use were defined as use at the most recent visit (either first telemedicine visit or follow-up visits).  Insurance type and technology use in the telemedicine cohort was compared to the BDC clinic population using chi-square tests.  Insurance types were not significantly different in the clinic and telemedicine cohorts, so all models are unadjusted.
 
 Distance to the BDC was estimated using the great circle distance between zip codes.  Characteristics of telemedicine patients who use technology were compared to those who don't using t-tests or Mann-Whitney tests, and chi-square tests.
 
@@ -360,4 +377,10 @@ kable(t5,caption = "Table 5.  Comparison of HbA1c in clinic patients by technolo
 
 ```{r, echo=FALSE}
 kable(t6,caption = "Table 6.  Comparison of HbA1c and distance to clinic in all patients by technology group. Statistics presented are mean (SD), median [25th %ile, 75th %ile], or N(%).")
+```
+
+\newpage
+
+```{r, echo=FALSE}
+p
 ```
