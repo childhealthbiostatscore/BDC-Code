@@ -13,16 +13,23 @@ dict={'File': [], 'Nights': [], 'Total Alarms': [], 'Threshold Alarms': [], 'Mai
     'HCL Alarms': [], 'Pump Alarms': [], 'Other Alarms': []}
 # Iterate through files in wd
 for file in os.listdir(wd+"Data_Cleaned/CSVs/"):
+	if file == ".DS_Store":
+		continue
 	print(file)
 	# Get subject name and dates
-	df = pd.read_csv(wd+"Data_Raw/CSVs/"+file)
+	df = pd.read_csv(wd+"Data_Raw/CSVs/"+file,low_memory=False)
 	t = file.split(" ")[1]
 	t_cols = [col for col in subject_dates.columns if t.lower() in col]
+	if len(t_cols) < 1:
+		t_cols = ['week2_start','week2_end']
 	last = df[["Last Name"]].iloc[0]
 	first = df[["First Name"]].iloc[0]
 	ind = np.where(names == first[0].lower()+" "+last[0].lower())[0]
 	start = subject_dates.loc[ind,t_cols[0]].item()
 	end = subject_dates.loc[ind,t_cols[1]].item()
+	# Check dates
+	if type(start)!=str and type(end)!=str:
+		continue
 	# Remove unnecessary top rows
 	df.columns = df.loc[5,]
 	df = df.drop(list(range(0,6)),axis = 0)
@@ -30,6 +37,7 @@ for file in os.listdir(wd+"Data_Cleaned/CSVs/"):
 	df['Datetime'] = pd.to_datetime(df['Date'] + ' ' + df['Time'],format="%m/%d/%y %H:%M:%S",errors="coerce")
 	df = df.set_index('Datetime')
 	df = df.loc[start:end]
+	nights = df['Date'].nunique() - 1
 	# Pull all alarms between 10p-6a 
 	df['Time'] = pd.to_datetime(df['Time'],format="%H:%M:%S",errors="coerce")
 	df = df.set_index('Time')
@@ -55,7 +63,8 @@ for file in os.listdir(wd+"Data_Cleaned/CSVs/"):
 	# Other
 	other = [alarm for alarm in all_alarms if 'other' in alarm]
 	# Return
-	dict['File'].append(file.replace(".csv","")) 
+	dict['File'].append(file.replace(".csv",""))
+	dict['Nights'].append(nights) 
 	dict['Total Alarms'].append(len(all_alarms)) 
 	dict['Threshold Alarms'].append(len(threshold)) 
 	dict['Maintenance Alarms'].append(len(maintenance)) 
@@ -64,4 +73,4 @@ for file in os.listdir(wd+"Data_Cleaned/CSVs/"):
 	dict['Other Alarms'].append(len(other))
 # Results as a dataframe
 df=pd.DataFrame(data=dict)
-df.to_csv(wd+"Data_Clean/nocturnal_alarms.csv",index=False)
+df.to_csv(wd+"Data_Cleaned/nocturnal_alarms.csv",index=False)
