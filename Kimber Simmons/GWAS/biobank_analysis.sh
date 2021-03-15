@@ -76,12 +76,20 @@ do
    bcftools filter merged_final.vcf.gz -r $i > chr/chr$i.vcf
 done
 # Minimac imputation for autosomes
+cps=4
 for i in {1..22}
 do
   minimac4\
     --refHaps ~/Dropbox/Work/GWAS/Minimac/G1K_P3_M3VCF_FILES_WITH_ESTIMATES/$i.1000g.Phase3.v5.With.Parameter.Estimates.m3vcf.gz \
     --haps chr/chr$i.vcf \
     --prefix imputed/$i\
-    --cpus 4
+    --cpus cps
 done
 # Imputation for XY chromosomes
+minimac4\
+    --refHaps ~/Dropbox/Work/GWAS/Minimac/G1K_P3_M3VCF_FILES_WITH_ESTIMATES/X.Non.Pseudo.Auto.1000g.Phase3.v5.With.Parameter.Estimates.m3vcf.gz \
+    --haps chr/chr23.vcf \
+    --prefix imputed/X\
+    --cpus cps
+
+
