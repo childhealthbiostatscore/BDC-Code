@@ -85,11 +85,9 @@ do
     --prefix imputed/$i\
     --cpus cps
 done
-# Imputation for XY chromosomes
-minimac4\
-    --refHaps ~/Dropbox/Work/GWAS/Minimac/G1K_P3_M3VCF_FILES_WITH_ESTIMATES/X.Non.Pseudo.Auto.1000g.Phase3.v5.With.Parameter.Estimates.m3vcf.gz \
-    --haps chr/chr23.vcf \
-    --prefix imputed/X\
-    --cpus cps
-
-
+# Merge the imputed files back into a single VCF - need to be indexed first
+for i in {1..22}
+do
+  bcftools index imputed/$i.dose.vcf.gz
+done
+bcftools merge imputed/*vcf.gz -Oz -o Merged.vcf.gz
