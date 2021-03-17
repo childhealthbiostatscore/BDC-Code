@@ -1,0 +1,84 @@
+---
+title: "EDIC Lipidomics"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+#knitr::opts_knit$set(root.dir = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
+knitr::opts_knit$set(root.dir = "~/Dropbox/Work/Janet Snell-Bergeon/EDIC/Lipidomics")
+library(readxl)
+library(caret)
+```
+
+```{r include=FALSE}
+# Import
+intensities = read.csv("./Data_Raw/EDIC lipidomics data matrix_Skyline_2021.02.25.csv")
+# Transpose and format
+intensities = t(intensities)
+colnames(intensities) = intensities[1,]
+intensities = intensities[-1,]
+sample.ids = rownames(intensities)
+intensities = suppressWarnings(apply(intensities,2,as.numeric))
+rownames(intensities) = sample.ids
+
+# Import sample injection order
+injection_order = read_excel("./Data_Raw/EDIC lipidomics run order.xlsx")
+colnames(injection_order) = "id"
+injection_order$id[is.na(injection_order$id)] = "QC" # For now assume that the missing are QCs
+injection_order$sample_id = suppressWarnings(as.numeric(sub(".*-","",injection_order$id)))
+injection_order$sample_id[is.na(injection_order$sample_id)] = paste0("QC",1:14)
+# Batch information
+batches = diff(c(0,grep("QC",injection_order$sample_id),nrow(injection_order)))
+injection_order$batch = rep(1:length(batches),times = batches)
+injection_order = injection_order[!duplicated(injection_order$sample_id),]
+# Get sample info
+sample.info = read.csv("./Data_Raw/QEDIC_WP_DDA_60SPD_StudyInformat.csv")
+sample.info$sample_id = sample.info$ProteomicsSampleID
+sample.info = merge(injection_order,sample.info,all = T,by = "sample_id")
+rownames(sample.info) = sample.info$sample_id
+sample.info = sample.info[injection_order$sample_id,]
+sample.info$id = gsub("-",".",sample.info$id)
+sample.info$id = sub("QC.EDIC","EDIC.QC",sample.info$id)
+sample.info = sample.info[-c(grep("QC",sample.info$sample_id)),]
+rownames(sample.info) = sample.info$id
+```
+
+### Sample QC
+
+#### PCA Scree plot
+
+```{r scree}
+# Sort by injection order, remove columns with missing data
+ordered.intensities = intensities[sample.info$id,]
+ordered.intensities = ordered.intensities[,-c(which(colSums(is.na(ordered.intensities))>0))]
+# PCA
+pca = pca(ordered.intensities,metadata = sample.info, 
+          center=TRUE, scale=TRUE,transposed = T)
+screeplot(pca, components=getComponents(pca, 1:10), hline = 50)
+```
+
+#### PCA scatterplots
+
+The dashed horizontal and vertical lines denote 2 SD away from the mean, to be used for identifying outliers
+
+```{r pca}
+nr.sd <- 2
+pca.frame <- pca$rotated
+pca.frame$batch <- sample.info$batch
+pca.frame$class <- factor(sample.info$HARD)
+#PC1 and PC2
+x.min <- mean(pca.frame$PC1) - nr.sd*sd(pca.frame$PC1)
+x.max <- mean(pca.frame$PC1) + nr.sd*sd(pca.frame$PC1)
+y.min <- mean(pca.frame$PC2) - nr.sd*sd(pca.frame$PC2)
+y.max <- mean(pca.frame$PC2) + nr.sd*sd(pca.frame$PC2)
+ggplot(pca.frame, aes(x=PC1, y=PC2, shape=batch, color=class)) +
+  geom_point() +
+  scale_shape_manual(values=1:8) + theme_bw() +
+  geom_hline(yintercept=y.min, linetype="dashed") +
+  geom_hline(yintercept=y.max, linetype="dashed") +
+  geom_vline(xintercept=x.min, linetype="dashed") +
+  geom_vline(xintercept=x.max, linetype="dashed") 
+```
