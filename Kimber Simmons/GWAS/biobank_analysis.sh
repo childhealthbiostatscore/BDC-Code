@@ -2,7 +2,7 @@
 # Find individuals to exclude
 Rscript /Users/timvigers/GitHub/BDC-Code/Kimber\ Simmons/GWAS/check_samples.R
 # Working directory
-cd /Users/timvigers/Dropbox/Work/Kimber\ Simmons/GWAS
+cd /Users/timvigers/Documents/Work/Kimber\ Simmons/GWAS
 # Remove indels, limit to chromosomes 1-22 and pseudoautosomal regions of XY
 plink --bfile Data_Raw/Simmons_MEGA1_Deliverable_06142019/cleaned_files/Simmons_Custom_MEGA_Analysi_03012019_snpFailsRemoved_passing_QC \
   --snps-only 'just-acgt' \
@@ -75,7 +75,7 @@ for i in {1..26}
 do
    bcftools filter merged_final.vcf.gz -r $i > chr/chr$i.vcf
 done
-# Minimac imputation for autosomes
+# Minimac imputation for autosomes - sex chromosomes not working yet
 cps=4
 for i in {1..22}
 do
@@ -90,4 +90,4 @@ for i in {1..22}
 do
   bcftools index imputed/$i.dose.vcf.gz
 done
-bcftools merge imputed/*vcf.gz -Oz -o Merged.vcf.gz
+bcftools concat imputed/*vcf.gz -Oz -o Merged.vcf.gz
