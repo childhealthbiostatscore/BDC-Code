@@ -9,41 +9,43 @@ output: html_document
 knitr::opts_chunk$set(echo = FALSE)
 #knitr::opts_knit$set(root.dir = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
 knitr::opts_knit$set(root.dir = "~/Dropbox/Work/Janet Snell-Bergeon/EDIC/Lipidomics")
-library(readxl)
 library(PCAtools)
+library(readxl)
+library(tidyverse)
 ```
 
 ```{r include=FALSE}
 # Import
-intensities = read.csv("./Data_Raw/EDIC lipidomics data matrix_Skyline_2021.02.25.csv")
+intensities = read.csv("./Data_Raw/EDIC lipidomics data matrix_Skyline_2021.02.25.csv",stringsAsFactors = F)
+# Get compound info in separate frame
+compound_info = intensities[,"LipidSpecies"]
+intensities$LipidSpecies = NULL
 # Transpose and format
-intensities = t(intensities)
-colnames(intensities) = intensities[1,]
-intensities = intensities[-1,]
-sample.ids = rownames(intensities)
-intensities = suppressWarnings(apply(intensities,2,as.numeric))
-rownames(intensities) = sample.ids
-
+intensities = as.data.frame(t(intensities))
+names(compound_info) = colnames(intensities)
+intensities$sample_id = gsub("\\.","-",rownames(intensities))
+intensities = intensities %>% select(sample_id,everything())
+intensities[,2:ncol(intensities)] = lapply(intensities[,2:ncol(intensities)],as.numeric)
 # Import sample injection order
 injection_order = read_excel("./Data_Raw/EDIC lipidomics run order.xlsx")
-colnames(injection_order) = "id"
-injection_order$id[is.na(injection_order$id)] = "QC" # For now assume that the missing are QCs
-injection_order$sample_id = suppressWarnings(as.numeric(sub(".*-","",injection_order$id)))
-injection_order$sample_id[is.na(injection_order$sample_id)] = paste0("QC",1:14)
+colnames(injection_order) = "sample_id"
+injection_order$sample_id = sub("QC-EDIC","EDIC-QC",injection_order$sample_id)
+injection_order$sample_id[is.na(injection_order$sample_id)] = paste0("Failed-QC-",1:sum(is.na(injection_order$sample_id))) # For now assume that the missing are QCs
+injection_order$injection_order = 1:nrow(injection_order)
 # Batch information
 batches = diff(c(0,grep("QC",injection_order$sample_id),nrow(injection_order)))
 injection_order$batch = rep(1:length(batches),times = batches)
-injection_order = injection_order[!duplicated(injection_order$sample_id),]
+# Remove duplicates and QC for now
+injection_order = injection_order[-c(which(duplicated(injection_order$sample_id)),grep("Failed-QC",injection_order$sample_id)),]
 # Get sample info
 sample.info = read.csv("./Data_Raw/QEDIC_WP_DDA_60SPD_StudyInformat.csv")
+# Get sample IDs, add leading zeroes and "EDIC" to number
 sample.info$sample_id = sample.info$ProteomicsSampleID
+sample.info$sample_id = paste0("EDIC-",str_pad(sample.info$sample_id,3,"left",0))
+sample.info = sample.info %>% select(sample_id,everything())
+# Combine
 sample.info = merge(injection_order,sample.info,all = T,by = "sample_id")
-rownames(sample.info) = sample.info$sample_id
-sample.info = sample.info[injection_order$sample_id,]
-sample.info$id = gsub("-",".",sample.info$id)
-sample.info$id = sub("QC.EDIC","EDIC.QC",sample.info$id)
-sample.info = sample.info[-c(grep("QC",sample.info$sample_id)),]
-rownames(sample.info) = sample.info$id
+sample.info = sample.info[order(sample.info$injection_order),]
 # Try two batches
 sample.info$batch2 = ifelse(sample.info$batch < 6,1,2)
 ```
@@ -53,12 +55,23 @@ sample.info$batch2 = ifelse(sample.info$batch < 6,1,2)
 #### PCA Scree plot
 
 ```{r scree}
-# Sort by injection order, remove columns with missing data
-ordered.intensities = intensities[sample.info$id,]
-ordered.intensities = ordered.intensities[,-c(which(colSums(is.na(ordered.intensities))>0))]
-# PCA
-pca = pca(ordered.intensities,metadata = sample.info, 
-          center=TRUE, scale=TRUE,transposed = T)
+ordered.intensities <- merge(sample.info[,c("sample_id", "injection_order")], intensities)
+#Order by injection order - then the order of the samples will be the same as in sample.info
+ordered.intensities <- ordered.intensities[order(ordered.intensities$injection_order),]
+sample.ids <- ordered.intensities$sample_id
+pca.mat <- as.matrix(t(ordered.intensities[,-c(1,2)]))
+#Remove compounds with no variability so PCA does not fall over
+no.var.compounds <- which(apply(pca.mat, 1, var) == 0)
+if (length(no.var.compounds) > 0) {
+  pca.mat <- pca.mat[-no.var.compounds,]  
+}
+# Complete cases
+pca.mat = pca.mat[complete.cases(pca.mat),]
+#The colnames of the PCA input matrix and the rownames of the PCA metadata must be set 
+#and must contain the same IDs and in the same order
+colnames(pca.mat) <- sample.ids
+rownames(sample.info) <- sample.info$sample_id
+pca = pca(pca.mat, metadata = sample.info, center=TRUE, scale=TRUE)
 screeplot(pca, components=getComponents(pca, 1:10), hline = 50)
 ```
 
@@ -139,4 +152,54 @@ ggplot(pca.frame, aes(x=PC1, y=PC2, color=batch2)) +
   geom_hline(yintercept=y.max, linetype="dashed") +
   geom_vline(xintercept=x.min, linetype="dashed") +
   geom_vline(xintercept=x.max, linetype="dashed") 
+```
+
+#### Remove PCA outliers
+
+Remove samples that are PCA outliers.
+
+```{r pca_outliers,echo=TRUE}
+#PC1 
+PC1.min <- mean(pca.frame$PC1) - nr.sd*sd(pca.frame$PC1)
+PC1.max <- mean(pca.frame$PC1) + nr.sd*sd(pca.frame$PC1)
+PC1.outliers <- sample.info$sample_id[(pca.frame$PC1 < PC1.min) | (pca.frame$PC1 > PC1.max)]
+
+#PC2
+PC2.min <- mean(pca.frame$PC2) - nr.sd*sd(pca.frame$PC2)
+PC2.max <- mean(pca.frame$PC2) + nr.sd*sd(pca.frame$PC2)
+PC2.outliers <- sample.info$sample_id[(pca.frame$PC2 < PC2.min) | (pca.frame$PC2 > PC2.max)]
+
+#Create output data frame with outliers
+outlier.frame <- data.frame(
+  sample_id=c(PC1.outliers, PC2.outliers),
+  reason=c(rep("PC1 outlier", length(PC1.outliers)), rep("PC2 outlier", length(PC2.outliers)))
+)
+dim(outlier.frame)
+outlier.ids <- unique(outlier.frame$sample_id)
+length(outlier.ids)
+
+#Remove the outliers from the intensities data frame, so they are no longer present for the 
+#subsequent QC of the comounds
+dim(intensities)
+intensities <- intensities[!(intensities$sample_id %in% outlier.ids),]
+dim(intensities)
+dim(sample.info)
+sample.info <- sample.info[!(sample.info$sample_id %in% outlier.ids),]
+dim(sample.info)
+```
+
+
+#### Number of peaks per sample ordered by injection order
+
+```{r nr_peaks,eval=FALSE}
+nrPeaks <- function(i) {
+  return (sum(i != 1))
+}
+#Order by injection order - then the order of the samples will be the same as in sample.info
+nr.peaks <- apply(ordered.intensities, 1, nrPeaks)
+nr.peaks.frame <- sample.info[order(sample.info$id),]
+nr.peaks.frame$nr_peaks <- nr.peaks
+ggplot(nr.peaks.frame, aes(x=injection_order, y=nr_peaks, shape=batch, color=class)) +
+  geom_point() +
+  scale_shape_manual(values=1:8) 
 ```
