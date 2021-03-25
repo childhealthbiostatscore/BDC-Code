@@ -2,7 +2,7 @@
 title: "HCL Overnight Analysis"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: word_document
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
@@ -28,45 +28,34 @@ source("/Users/timvigers/GitHub/BDC-Code/Erin Cobry/Nocturnal Alarms/AdvancedClo
 demographics <- data %>% 
   filter(redcap_event_name %in% c("baseline_arm_1","baseline_arm_2"),
          !is.na(child_ya))
-# ID to match Erin's - clean Erin's then demographics
-demographics$id <- paste0(demographics$record_id,demographics$demographics_initals)
 # remove missing
-no_data <- c("27","30LR","38SR","41SW")
-demographics <- demographics %>% filter(!(id %in% no_data))
+no_data <- c("27","30","38","41")
+demographics <- demographics[-c(which(demographics$record_id %in% no_data)),]
 # Manually corrected a few dates in CSV file.
 # Read in (manually converted to long format from Erin's Excel spreadsheet)
-overnight_alarms <- read.csv("./Data_Cleaned/subject_info.csv",
+overnight_alarms <- read.csv("./Data_Cleaned/nocturnal_alarms.csv",
                              na.strings = c("","No Data"))
-# Column names
-colnames(overnight_alarms) <- c("id","timepoint","start_date","end_date","num_nights",
-                                "num_alarms","num_alarms_in_AM","time_in_AM_during_cgm",
-                                "actual_time_am","cgm_use","perc_cgm_per_week")
+# Match IDs and filter
+dates = read.csv("./Data_Cleaned/subject_dates.csv")
+overnight_alarms$id = dates$id[match(gsub(" ","",overnight_alarms$id),tolower(gsub(" ","",dates$name)))]
 overnight_alarms <- overnight_alarms %>% filter(!(id %in% no_data))
 # Format date columns
 overnight_alarms[,c("start_date","end_date")] <- 
   lapply(overnight_alarms[,c("start_date","end_date")], 
          function(x) {lubridate::mdy(as.character(x))})
-# Calculate number of nights and actual AM time
-overnight_alarms$num_nights <- as.numeric(difftime(overnight_alarms$end_date,
-                                                   overnight_alarms$start_date,
-                                                   units = "days"))
-overnight_alarms$actual_time_am <- overnight_alarms$time_in_AM_during_cgm * 
-  overnight_alarms$perc_cgm_per_week
 # Numeric timepoints in months
 overnight_alarms$numeric_time <- 
   car::recode(overnight_alarms$timepoint,
-              "'Baseline' = 0;'week 2' = 0.5;'T1' = 3;'T2' = 6;'T3' = 9;'T4' = 12")
+              "'Baseline' = 0;'Post' = 0.5;'T1' = 3;'T2' = 6;'T3' = 9;'T4' = 12")
 overnight_alarms$numeric_time <- 
   as.numeric(as.character(overnight_alarms$numeric_time))
-# Percent AM time
-overnight_alarms$actual_time_am <- overnight_alarms$actual_time_am * 100
 # Alarms per day
-overnight_alarms$alarms_per_day <- 
-  overnight_alarms$num_alarms / overnight_alarms$num_nights
-overnight_alarms$alarms_AM_per_day <- 
-  overnight_alarms$num_alarms_in_AM / overnight_alarms$num_nights
-# Get Erin's participants 
-demographics <- demographics[which(demographics$id %in% overnight_alarms$id),]
+alarm_vars = c("num_alarms","threshold_alarms","maintenance_alarms","hcl_alarms",
+               "pump_alarms","other_alarms")
+overnight_alarms = overnight_alarms %>%
+  mutate(across(alarm_vars,.fns = ~./num_nights,.names = "{col}_per_night"))
+ # Get Erin's participants 
+demographics <- demographics[which(demographics$record_id %in% overnight_alarms$id),]
 # Combine CGM and pump hx levels
 levels(demographics$demographics_cgmhx.factor) <-
   c("< 1 month","> 1 month","> 1 month","> 1 month","> 1 month","> 1 month")

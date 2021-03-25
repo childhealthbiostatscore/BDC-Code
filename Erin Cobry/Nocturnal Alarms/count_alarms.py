@@ -9,8 +9,9 @@ subject_dates = pd.read_csv(wd+"Data_Cleaned/subject_dates.csv")
 names = [name.lower() for name in subject_dates['name']]
 names = np.array(names)
 # Dictionary for results
-dict={'Name': [],'Timepoint': [], 'Nights': [], 'Total Alarms': [], 'Threshold Alarms': [],\
-'Maintenance Alarms': [], 'HCL Alarms': [], 'Pump Alarms': [], 'Other Alarms': []}
+dict={'id': [], 'timepoint': [], 'start_date': [], 'end_date': [], 'num_nights': [],\
+'num_alarms': [], 'threshold_alarms': [], 'maintenance_alarms': [], 'hcl_alarms': [],\
+'pump_alarms': [], 'other_alarms': []}
 # Iterate through files in wd
 for file in os.listdir(wd+"Data_Cleaned/CSVs/"):
     if file == ".DS_Store":
@@ -62,15 +63,17 @@ for file in os.listdir(wd+"Data_Cleaned/CSVs/"):
     # Other
     other = len(all_alarms)-sum([len(threshold),len(maintenance),len(hcl),len(pump)])
     # Return
-    dict['Name'].append(first[0].lower().strip()+last[0].lower().strip())
-    dict['Timepoint'].append(t)
-    dict['Nights'].append(nights)
-    dict['Total Alarms'].append(len(all_alarms))
-    dict['Threshold Alarms'].append(len(threshold))
-    dict['Maintenance Alarms'].append(len(maintenance))
-    dict['HCL Alarms'].append(len(hcl))
-    dict['Pump Alarms'].append(len(pump))
-    dict['Other Alarms'].append(other)
+    dict['id'].append(first[0].lower()+last[0].lower())
+    dict['timepoint'].append(t)
+    dict['start_date'].append(start)
+    dict['end_date'].append(end)
+    dict['num_nights'].append(nights)
+    dict['num_alarms'].append(len(all_alarms))
+    dict['threshold_alarms'].append(len(threshold))
+    dict['maintenance_alarms'].append(len(maintenance))
+    dict['hcl_alarms'].append(len(hcl))
+    dict['pump_alarms'].append(len(pump))
+    dict['other_alarms'].append(other)
 # Results as a dataframe
 df=pd.DataFrame(data=dict)
 df.to_csv(wd+"Data_Cleaned/nocturnal_alarms.csv",index=False)
