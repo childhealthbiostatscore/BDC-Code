@@ -7,7 +7,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/Users/timvigers/Dropbox/Work/Erin Cobry/Nocturnal Alarms")
+knitr::opts_knit$set(root.dir = "~/Documents/Work/Erin Cobry/Nocturnal Alarms")
 library(arsenal)
 library(cgmanalysis)
 library(car)
@@ -84,86 +84,12 @@ t1 <- tableby(~ hba1c + kwt(demographics_age,"median","q1q3") +
 summary(t1,labelTranslations = labels)
 ```
 
-```{r clean CGM files,echo=FALSE,include=FALSE,eval=FALSE}
-# Merge files and write CSVs with correct dates
-# Files
-cgm_files <- list.files("./Data_Raw/Project 2 - HCL Overnight Data Project_Zip/Project 2 - HCL Overnight Data Project",recursive = T,full.names = T)
-all_cgm <- data.frame()
-# Clean all CGM files - this is extremely slow but only needs to be run once
-for (file in cgm_files) {
-  # Get ID
-  id <- strsplit(file,"/")[[1]][5]
-  if (id %in% no_data){
-    next()
-  }
-  # Clean data
-  table <- read.csv(file,stringsAsFactors = F,na.strings = "")
-  sensor <- which(table$Patient.ID == "Sensor")[1]
-  if (is.na(sensor)) {
-    next()
-  }
-  table <- table[sensor:nrow(table),]
-  colnames(table) <- as.character(table[2,])
-  table <- table[which(!is.na(table$`Sensor Glucose (mg/dL)`) & 
-                         table$Index != "Index"),]
-  if (nrow(table) == 0) {
-    next()
-  }
-  # Format columns
-  table$timestamp <- lubridate::mdy_hms(paste(table$Date,table$Time))
-  table$sensorglucose <- as.numeric(as.character(table$`Sensor Glucose (mg/dL)`))
-  table$subjectid <- id
-  table <- table[,c("subjectid","timestamp","sensorglucose")]
-  table$timepoint <- NA
-  # Get timepoints
-  dates <- overnight_alarms[which(overnight_alarms$id == id),]
-  # Baseline 
-  start <- dates$start_date[dates$timepoint == "Baseline"]
-  end <- dates$end_date[dates$timepoint == "Baseline"]
-  table$timepoint[which(table$timestamp > start & table$timestamp <= end)] <- "Baseline"
-  # Week 2 
-  start <- dates$start_date[dates$timepoint == "week 2"]
-  end <- dates$end_date[dates$timepoint == "week 2"]
-  table$timepoint[which(table$timestamp > start & table$timestamp <= end)] <- "week 2"
-  # T1 
-  start <- dates$start_date[dates$timepoint == "T1"]
-  end <- dates$end_date[dates$timepoint == "T1"]
-  table$timepoint[which(table$timestamp > start & table$timestamp <= end)] <- "T1"
-  # T2 
-  start <- dates$start_date[dates$timepoint == "T2"]
-  end <- dates$end_date[dates$timepoint == "T2"]
-  table$timepoint[which(table$timestamp > start & table$timestamp <= end)] <- "T2"
-  # T3 
-  start <- dates$start_date[dates$timepoint == "T3"]
-  end <- dates$end_date[dates$timepoint == "T3"]
-  table$timepoint[which(table$timestamp > start & table$timestamp <= end)] <- "T3"
-  # T4 
-  start <- dates$start_date[dates$timepoint == "T4"]
-  end <- dates$end_date[dates$timepoint == "T4"]
-  table$timepoint[which(table$timestamp > start & table$timestamp <= end)] <- "T4"
-  # Remove readings with no time period
-  table <- table[!is.na(table$timepoint),]
-  # Add to big dataframe
-  all_cgm <- rbind(all_cgm,table)
-}
-# Remove duplicates
-all_cgm <- unique(all_cgm)
-# Split and write CSVs
-all_cgm <- split(all_cgm,list(all_cgm$subjectid,all_cgm$timepoint))
-lapply(all_cgm,function(x){
-  x <- as.data.frame(x)
-  filename <- paste0("./Data_Cleaned/Cleaned CGM/",x$subjectid[1],"_",x$timepoint[1],".csv")
-  write.csv(x,file = filename,row.names = F,na = "")
-})
-# CGM variables
-cgmvariables("./Data_Cleaned/Cleaned CGM/","./Data_Cleaned",id_filename = T,outputname = "cgm_variables")
-```
-
 ```{r cgm data,echo=FALSE,include=FALSE}
 # Read in CGM data
-cgm <- read.csv("./Data_Cleaned/cgm_variables.csv",stringsAsFactors = F)
+cgm <- read.csv("./Data_Cleaned/cgm_variables.csv",
+                stringsAsFactors = F)
 # ID and timepoint
-cgm$id <- sapply(strsplit(cgm$subject_id,"_"),`[[`,1)
+cgm$id <- as.numeric(gsub("[[:alpha:]]","",sapply(strsplit(cgm$subject_id,"_"),`[[`,1)))
 cgm$timepoint <- sapply(strsplit(cgm$subject_id,"_"),`[[`,2)
 cgm$timepoint <- factor(cgm$timepoint,levels = c("Baseline","week 2","T1","T2","T3","T4"))
 # Select columns
@@ -173,18 +99,14 @@ cgm <- cgm %>% select(id,timepoint,nighttime_avg_sens_glucose,
 overnight_alarms <- left_join(overnight_alarms,cgm,by = c("id","timepoint"))
 # Read in corrected AM data
 am_correct <- read.csv("./Data_Cleaned/REDCap AM Data.csv")
-am_correct$id <- as.character(am_correct$id)
 # Add to overnight alarms
-overnight_alarms$id <- gsub("[^0-9.-]", "", overnight_alarms$id)
-overnight_alarms <- left_join(overnight_alarms,am_correct)
+overnight_alarms <- left_join(overnight_alarms,am_correct,by = c("id", "timepoint"))
 # Order timepoints
 overnight_alarms$timepoint <- factor(overnight_alarms$timepoint,
                                      levels = c("Baseline","week 2",
                                                 "T1","T2","T3","T4" ))
 levels(overnight_alarms$timepoint) <- c("Baseline","Week 2",
                                         "T1","T2","T3","T4" )
-# Remove those not using CGM
-overnight_alarms_cgm <- overnight_alarms %>% filter(cgm_use == "Y")
 ```
 
 # Table 2: Alarm Frequency
