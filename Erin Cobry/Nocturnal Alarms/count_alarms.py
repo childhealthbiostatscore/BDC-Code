@@ -3,7 +3,7 @@ import math
 from itertools import combinations
 import pandas as pd
 import numpy as np
-wd = "/Users/timvigers/Dropbox/Work/Erin Cobry/Nocturnal Alarms/"
+wd = "/Users/timvigers/Documents/Work/Erin Cobry/Nocturnal Alarms/"
 # Subject information and dates
 subject_dates = pd.read_csv(wd+"Data_Cleaned/subject_dates.csv")
 names = [name.lower() for name in subject_dates['name']]
@@ -57,6 +57,7 @@ for file in os.listdir(wd+"Data_Cleaned/CSVs/"):
     maintenance = [alarm for alarm in maintenance if 'auto mode' not in alarm]
     # HCL specific
     hcl = [alarm for alarm in all_alarms if 'auto' in alarm]
+    hcl = [alarm for alarm in hcl if 'pump' not in alarm]
     # Pump maintenance
     matches = ["pump","battery","reservoir"]
     pump = [alarm for alarm in all_alarms if any(x in alarm for x in matches)]
