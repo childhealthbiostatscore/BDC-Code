@@ -1,4 +1,7 @@
 #!/bin/bash
+
+
+
 # SNP Imputation
 # Recode merged data to VCF
 plink --bfile merged_final --recode vcf --out merged_final
