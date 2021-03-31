@@ -2,7 +2,7 @@
 # Module 1: Within-array processing
 # Cohort QC prior to merge
 # Find individuals to exclude
-Rscript /Users/timvigers/GitHub/BDC-Code/Kimber\ Simmons/GWAS/check_samples.R
+Rscript ~/GitHub/BDC-Code/Kimber\ Simmons/GWAS/check_samples.R
 # Working directory
 cd ~/Dropbox/Work/Kimber\ Simmons/GWAS
 # Remove indels limit to chromosomes 1-22 and pseudoautosomal regions of XY
@@ -21,6 +21,8 @@ plink --bfile Data_Raw/V2\ -\ Biobank\ data\ on\ Hispanic\ Patients\ -\ Full\ Ge
   --autosome-xy\
   --list-duplicate-vars suppress-first \
   --make-bed --out Data_Cleaned/harmonized_analysis/biobank2
+# Phenotypes
+Rscript ~/GitHub/BDC-Code/Kimber\ Simmons/GWAS/biobank_phenotype.R
 # QC from list
 cd Data_Cleaned/harmonized_analysis
 for value in redo biobank1 biobank2
@@ -50,3 +52,6 @@ done
 # Remove temporary files
 find . -name "*~" -delete 
 # Ancestry inference
+
+
+python3 ~/GitHub/BDC-Code/Kimber\ Simmons/GWAS/ancestry_rf.py
