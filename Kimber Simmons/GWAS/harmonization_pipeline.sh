@@ -1,45 +1,52 @@
 #!/bin/bash
-
-
-
-# SNP Imputation
-# Recode merged data to VCF
-plink --bfile merged_final --recode vcf --out merged_final
-# Compress
-bgzip -c merged_final.vcf > merged_final.vcf.gz
-# Loop tabix and bcftools over all chromosomes to split into individual files
-# Code from https://www.biostars.org/p/173073/ and
-# https://bioinformatics.stackexchange.com/questions/3401/how-to-subset-a-vcf-by-chromosome-and-keep-the-header
-# Autosomes are coded 1 - 22 and the others are:
-# X chromosome                    = 23
-# Y chromosome                    = 24
-# Pseudo-autosomal region of X    = 25
-# Mitochondrial                   = 26
-tabix -p vcf merged_final.vcf.gz
-for i in {1..26}
+# Module 1: Within-array processing
+# Cohort QC prior to merge
+# Find individuals to exclude
+Rscript /Users/timvigers/GitHub/BDC-Code/Kimber\ Simmons/GWAS/check_samples.R
+# Working directory
+cd ~/Dropbox/Work/Kimber\ Simmons/GWAS
+# Remove indels limit to chromosomes 1-22 and pseudoautosomal regions of XY
+plink --bfile Data_Raw/Simmons_MEGA1_Deliverable_06142019/cleaned_files/Simmons_Custom_MEGA_Analysi_03012019_snpFailsRemoved_passing_QC \
+  --snps-only 'just-acgt' \
+  --autosome-xy \
+  --list-duplicate-vars suppress-first \
+  --make-bed --out Data_Cleaned/harmonized_analysis/redo
+plink --bfile Data_Raw/Simmons\ Biobank/Simmons_071520 \
+  --snps-only 'just-acgt' \
+  --autosome-xy \
+  --list-duplicate-vars suppress-first \
+  --make-bed --out Data_Cleaned/harmonized_analysis/biobank1
+plink --bfile Data_Raw/V2\ -\ Biobank\ data\ on\ Hispanic\ Patients\ -\ Full\ Genetic\ Request/Simmons_120420\
+  --snps-only 'just-acgt'\
+  --autosome-xy\
+  --list-duplicate-vars suppress-first \
+  --make-bed --out Data_Cleaned/harmonized_analysis/biobank2
+# QC from list
+cd Data_Cleaned/harmonized_analysis
+for value in redo biobank1 biobank2
 do
-   bcftools filter merged_final.vcf.gz -r $i > chr/chr$i.vcf
+  # Remove duplicates
+  plink --bfile $value \
+    --exclude $value.dupvar \
+    --make-bed --out $value
+  # Remove samples with missing rate greater than 2%
+  plink --bfile $value --mind 0.02 --make-bed --out $value
+  # Check sex
+  plink --bfile $value --check-sex
+  grep "PROBLEM" plink.sexcheck| awk '{print$1,$2}'> sex_discrepancy.txt
+  plink --bfile $value --remove sex_discrepancy.txt --make-bed --out $value
+  # Check for relationships between individuals with a pihat > 0.2.
+  plink --bfile $value --genome --min 0.625 --out pihat
+  awk '{print$1,$2}' pihat.genome > pihat_high.txt
+  plink --bfile $value --remove pihat_high.txt --make-bed --out $value
+  # Check inbreeding
+  plink --bfile $value --het --out R_check
+  Rscript --no-save /Users/timvigers/GitHub/BDC-Code/Kimber\ Simmons/GWAS/heterozygosity.R
+  sed 's/"// g' fail-het-qc.txt | awk '{print$1, $2}'> het_fail_ind.txt
+  plink --bfile $value --remove het_fail_ind.txt --make-bed --out $value
+  # Remove variants with missing rate greater than 1%
+  plink --bfile $value --geno 0.01 --make-bed --out $value
 done
-# Minimac imputation for autosomes - sex chromosomes not working yet
-cps=4
-for i in {1..22}
-do
-  minimac4\
-    --refHaps ~/Dropbox/Work/GWAS/Minimac/G1K_P3_M3VCF_FILES_WITH_ESTIMATES/$i.1000g.Phase3.v5.With.Parameter.Estimates.m3vcf.gz \
-    --haps chr/chr$i.vcf \
-    --prefix imputed/$i\
-    --cpus cps
-done
-# Convert each chromosome dose file to plink format
-for i in {1..22}
-do
-  bcftools index imputed/$i.dose.vcf.gz
-  plink --vcf imputed/$i.dose.vcf.gz --recode --double-id --make-bed --out imputed/$i.plink
-done
-# Remove .map, .ped, etc. files
-cd imputed
-find . -type f -name "*.ped" -delete
-find . -type f -name "*.map" -delete
-find . -type f -name "*.nosex" -delete
-find . -type f -name "*.log" -delete
-cd ..
+# Remove temporary files
+find . -name "*~" -delete 
+# Ancestry inference
