@@ -2,15 +2,15 @@
 # Find individuals to exclude
 Rscript /Users/timvigers/GitHub/BDC-Code/Kimber\ Simmons/GWAS/check_samples.R
 # Working directory
-cd /Users/timvigers/Documents/Work/Kimber\ Simmons/GWAS
+cd ~/Dropbox/Work/Kimber\ Simmons/GWAS
 # Remove indels, limit to chromosomes 1-22 and pseudoautosomal regions of XY
 plink --bfile Data_Raw/Simmons_MEGA1_Deliverable_06142019/cleaned_files/Simmons_Custom_MEGA_Analysi_03012019_snpFailsRemoved_passing_QC \
   --snps-only 'just-acgt' \
   --autosome-xy \
   --make-bed --out Data_Cleaned/biobank_analysis/redo
-plink --bfile Data_Raw/Simmons\ Biobank/Simmons_071520\
-  --snps-only 'just-acgt'/
-  --autosome-xy\
+plink --bfile Data_Raw/Simmons\ Biobank/Simmons_071520 \
+  --snps-only 'just-acgt' \
+  --autosome-xy \
   --make-bed --out Data_Cleaned/biobank_analysis/biobank1
 plink --bfile Data_Raw/V2\ -\ Biobank\ data\ on\ Hispanic\ Patients\ -\ Full\ Genetic\ Request/Simmons_120420\
   --snps-only 'just-acgt'\
@@ -56,7 +56,7 @@ plink --bfile merged_final  --hwe 1e-10 --write-snplist --make-bed --out merged_
 # Check kinship - duplicate samples have kinship 0.5, not 1. none at 0.354 level
 plink2 --bfile merged_final --make-king-table
 # Remove temporary files
-find . -name "*~" -delete
+find . -name "*~" -delete 
 # SNP Imputation
 # Recode merged data to VCF
 plink --bfile merged_final --recode vcf --out merged_final
