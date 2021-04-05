@@ -27,25 +27,17 @@ print("Accuracy of RF model based on a 75/25 training/test split of 1k Genomes d
 # Apply to Kimber's data
 wd = "~/Dropbox/Work/Kimber Simmons/GWAS/Data_Cleaned/harmonized_analysis/"
 # Import PCA from Kimber
-redo_PCA = pd.read_csv(wd+"redo.eigenvec", sep=' ').set_index('IID')
-redo_PCA = redo_PCA[pcs]
-biobank1_PCA = pd.read_csv(wd+"biobank1.eigenvec", sep=' ').set_index('IID')
-biobank1_PCA = biobank1_PCA[pcs]
-biobank2_PCA = pd.read_csv(wd+"biobank2.eigenvec", sep=' ').set_index('IID')
-biobank2_PCA = biobank2_PCA[pcs]
+redo_PCA = pd.read_csv(wd+"redo.eigenvec", sep=' ')
+biobank1_PCA = pd.read_csv(wd+"biobank1.eigenvec", sep=' ')
+biobank2_PCA = pd.read_csv(wd+"biobank2.eigenvec", sep=' ')
 # Predict ancestry group
-redo_pop = pd.DataFrame(clf.predict(redo_PCA))
-redo_pop.index = redo_PCA.index
-redo_pop.index.name = "IID"
-
-biobank1_pop = pd.DataFrame(clf.predict(biobank1_PCA))
-biobank1_pop.index = biobank1_PCA.index
-biobank1_pop.index.name = "IID"
-
-biobank2_pop = pd.DataFrame(clf.predict(biobank2_PCA))
-biobank2_pop.index = biobank2_PCA.index
-biobank2_pop.index.name = "IID"
+redo_pop = pd.DataFrame(clf.predict(redo_PCA[pcs]))
+redo_pop = pd.concat([redo_PCA[["FID","IID"]],redo_pop],axis=1)
+biobank1_pop = pd.DataFrame(clf.predict(biobank1_PCA[pcs]))
+biobank1_pop = pd.concat([biobank1_PCA[["FID","IID"]],biobank1_pop],axis=1)
+biobank2_pop = pd.DataFrame(clf.predict(biobank2_PCA[pcs]))
+biobank2_pop = pd.concat([biobank2_PCA[["FID","IID"]],biobank2_pop],axis=1)
 # Write 
-redo_pop.to_csv(wd+'redo_pop.csv',index=True,header=['SuperPop'])
-biobank1_pop.to_csv(wd+'biobank1_pop.csv',index=True,header=['SuperPop'])
-biobank2_pop.to_csv(wd+'biobank2_pop.csv',index=True,header=['SuperPop'])
+redo_pop.to_csv(wd+'redo_pop.csv',index=False,header=["FID","IID","SuperPop"])
+biobank1_pop.to_csv(wd+'biobank1_pop.csv',index=False,header=["FID","IID","SuperPop"])
+biobank2_pop.to_csv(wd+'biobank2_pop.csv',index=False,header=["FID","IID","SuperPop"])
