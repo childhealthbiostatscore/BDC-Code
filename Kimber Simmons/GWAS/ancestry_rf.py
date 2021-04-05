@@ -29,15 +29,23 @@ wd = "~/Dropbox/Work/Kimber Simmons/GWAS/Data_Cleaned/harmonized_analysis/"
 # Import PCA from Kimber
 redo_PCA = pd.read_csv(wd+"redo.eigenvec", sep=' ').set_index('IID')
 redo_PCA = redo_PCA[pcs]
-biobank1_PCA = pd.read_csv(wd+"biobank1.eigenvec", sep=' ')
+biobank1_PCA = pd.read_csv(wd+"biobank1.eigenvec", sep=' ').set_index('IID')
 biobank1_PCA = biobank1_PCA[pcs]
-biobank2_PCA = pd.read_csv(wd+"biobank2.eigenvec", sep=' ')
+biobank2_PCA = pd.read_csv(wd+"biobank2.eigenvec", sep=' ').set_index('IID')
 biobank2_PCA = biobank2_PCA[pcs]
 # Predict ancestry group
-redo_pop = clf.predict(redo_PCA)
-biobank1_pop = clf.predict(biobank1_PCA)
-biobank2_pop = clf.predict(biobank2_PCA)
+redo_pop = pd.DataFrame(clf.predict(redo_PCA))
+redo_pop.index = redo_PCA.index
+redo_pop.index.name = "IID"
+
+biobank1_pop = pd.DataFrame(clf.predict(biobank1_PCA))
+biobank1_pop.index = biobank1_PCA.index
+biobank1_pop.index.name = "IID"
+
+biobank2_pop = pd.DataFrame(clf.predict(biobank2_PCA))
+biobank2_pop.index = biobank2_PCA.index
+biobank2_pop.index.name = "IID"
 # Write 
-pd.DataFrame(redo_pop).to_csv(wd+'redo_pop.csv',index=False,header=['SuperPop'])
-pd.DataFrame(biobank1_pop).to_csv(wd+'biobank1_pop.csv',index=False,header=['SuperPop'])
-pd.DataFrame(biobank2_pop).to_csv(wd+'biobank2_pop.csv',index=False,header=['SuperPop'])
+redo_pop.to_csv(wd+'redo_pop.csv',index=True,header=['SuperPop'])
+biobank1_pop.to_csv(wd+'biobank1_pop.csv',index=True,header=['SuperPop'])
+biobank2_pop.to_csv(wd+'biobank2_pop.csv',index=True,header=['SuperPop'])
