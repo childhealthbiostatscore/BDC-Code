@@ -52,6 +52,10 @@ done
 # Remove temporary files
 find . -name "*~" -delete 
 # Ancestry inference
-
-
+for value in redo biobank1 biobank2
+do
+  # PCA to plug into RF
+  plink --bfile $value --pca 'header' --out $value
+done
+# RF code
 python3 ~/GitHub/BDC-Code/Kimber\ Simmons/GWAS/ancestry_rf.py
