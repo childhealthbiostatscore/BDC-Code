@@ -1,4 +1,6 @@
 #!/bin/bash
+# From Chen et al. “A Data Harmonization Pipeline to Leverage External Controls and Boost Power in GWAS.” 
+# BioRxiv, December 2, 2020, 2020.11.30.405415. https://doi.org/10.1101/2020.11.30.405415.
 # Module 1: Within-array processing
 # Cohort QC prior to merge
 # Find individuals to exclude
@@ -57,18 +59,38 @@ do
     --score-col-nums 6-15 \
     --out ${value}
 done
-
-# # RF code
-# python3 ~/GitHub/BDC-Code/Kimber\ Simmons/GWAS/ancestry_rf.py
-# # Merge by ancestry type and array (in this set all are on the same array, so use cohort)
-# Rscript ~/GitHub/BDC-Code/Kimber\ Simmons/GWAS/split_by_ancestry.R
-# # Iterate through population types
-# for value in redo biobank1 biobank2
-# do
-#   while read line
-#   do
-#   f="${line}_${value}"
-#   echo $f
-#   plink --bfile $value --keep $f --make-bed --out $f
-#   done < "${value}_pops"
-# done
+# RF code
+python3 ~/GitHub/BDC-Code/Kimber\ Simmons/GWAS/ancestry_rf.py
+# Array-level pre-imputation QC
+# Merge by ancestry type and array (in this set all are on the same array, so use cohort)
+Rscript ~/GitHub/BDC-Code/Kimber\ Simmons/GWAS/split_by_ancestry.R
+# Iterate through population types
+while read line
+do
+  echo $line
+  plink2 --bfile $(echo $line | cut -f2 -d_) --keep $line --make-bed --out $line
+  # Variant QC
+  plink2 --bfile $line --maf 0.01 --mind 0.02 --make-bed --out $line
+  plink --bfile $line --genome --min 0.625 --out "${line}_pihat"
+  awk '{print$1,$2}' ${line}_pihat.genome > pihat_high.txt
+  plink2 --bfile $line --remove pihat_high.txt --make-bed --out $line
+  plink2 --bfile $line --hwe 1e-4 --make-bed --out $line
+  # Pseudo GWAS
+  awk '$6=2' $line.fam > temp.fam
+  mv temp.fam $line.fam
+  ## Merge
+  plink --bfile $line --bmerge /Users/timvigers/Dropbox/Work/GWAS/TGP/QC/phase3_qc \
+    --allow-extra-chr \
+    --make-bed --out "${line}_merged"
+  ## PCA
+  plink2 --bfile "${line}_merged" \
+    --read-freq ~/Dropbox/Work/GWAS/TGP/QC/ref_pcs.acount \
+    --score ~/Dropbox/Work/GWAS/TGP/QC/ref_pcs.eigenvec.allele 2 5 header-read variance-standardize no-mean-imputation \
+    --score-col-nums 6-15 \
+    --out "${line}_merged"
+  ## First 3 PCs only - this is different from the paper. Many of these fail due to perfect separation
+  ## so those should be deleted
+  awk '{$4=$5=""; print $0}' "${line}_merged.sscore" > covar.txt
+  plink2 --bfile "${line}_merged" --glm hide-covar --covar covar.txt \
+    --covar-variance-standardize --out "${line}_merged"
+done < "ancestry_split_files"
