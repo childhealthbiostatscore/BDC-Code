@@ -3,9 +3,9 @@ import sklearn
 import pandas as pd
 import numpy as np
 # Import data
-wd = "~/Dropbox/Work/GWAS/TGP/QC/"
-sample_info = pd.read_csv(wd+"super_pop.csv")
-pca = pd.read_csv(wd+"plink.eigenvec", sep=' ')
+wd = "~/Dropbox/Work/GWAS/TGP/"
+sample_info = pd.read_csv(wd+"all_phase3.csv")
+pca = pd.read_csv(wd+"QC/ref_pcs.eigenvec", sep='\t')
 # Join
 data = pca.set_index('IID').join(sample_info.set_index('IID'))
 # Get outcome (Y) and data (X) - first 6 PCs
@@ -26,17 +26,18 @@ print("Accuracy of RF model based on a 75/25 training/test split of 1k Genomes d
     sklearn.metrics.accuracy_score(y_test, y_pred).round(3))
 # Apply to Kimber's data
 wd = "~/Dropbox/Work/Kimber Simmons/GWAS/Data_Cleaned/harmonized_analysis/"
+pcs = [n + "_AVG" for n in pcs]
 # Import PCA from Kimber
-redo_PCA = pd.read_csv(wd+"redo.eigenvec", sep=' ')
-biobank1_PCA = pd.read_csv(wd+"biobank1.eigenvec", sep=' ')
-biobank2_PCA = pd.read_csv(wd+"biobank2.eigenvec", sep=' ')
+redo_PCA = pd.read_csv(wd+"redo.sscore", sep='\t')
+biobank1_PCA = pd.read_csv(wd+"biobank1.sscore", sep='\t')
+biobank2_PCA = pd.read_csv(wd+"biobank2.sscore", sep='\t')
 # Predict ancestry group
 redo_pop = pd.DataFrame(clf.predict(redo_PCA[pcs]))
-redo_pop = pd.concat([redo_PCA[["FID","IID"]],redo_pop],axis=1)
+redo_pop = pd.concat([redo_PCA[["#FID","IID"]],redo_pop],axis=1)
 biobank1_pop = pd.DataFrame(clf.predict(biobank1_PCA[pcs]))
-biobank1_pop = pd.concat([biobank1_PCA[["FID","IID"]],biobank1_pop],axis=1)
+biobank1_pop = pd.concat([biobank1_PCA[["#FID","IID"]],biobank1_pop],axis=1)
 biobank2_pop = pd.DataFrame(clf.predict(biobank2_PCA[pcs]))
-biobank2_pop = pd.concat([biobank2_PCA[["FID","IID"]],biobank2_pop],axis=1)
+biobank2_pop = pd.concat([biobank2_PCA[["#FID","IID"]],biobank2_pop],axis=1)
 # Write 
 redo_pop.to_csv(wd+'redo_pop.csv',index=False,header=["FID","IID","SuperPop"])
 biobank1_pop.to_csv(wd+'biobank1_pop.csv',index=False,header=["FID","IID","SuperPop"])

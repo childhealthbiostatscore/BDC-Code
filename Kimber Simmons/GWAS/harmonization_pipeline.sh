@@ -48,15 +48,15 @@ done
 # Remove temporary files
 find . -name "*~" -delete 
 # # Ancestry inference
-# # Project onto PC space from 1kG data
-# for value in redo biobank1 biobank2
-# do
-#   plink2 --bfile $value \
-#     --read-freq ~/Dropbox/Work/GWAS/TGP/QC/ref_pcs.acount \
-#     --score ~/Dropbox/Work/GWAS/TGP/QC/ref_pcs.eigenvec.allele 2 5 header-read variance-standardize no-mean-imputation ignore-dup-ids \
-#     --score-col-nums 6-15 \
-#     --out "${value}_projected"
-# done
+# Project onto PC space from 1kG data
+for value in redo biobank1 biobank2
+do
+  plink2 --bfile $value \
+    --read-freq ~/Dropbox/Work/GWAS/TGP/QC/ref_pcs.acount \
+    --score ~/Dropbox/Work/GWAS/TGP/QC/ref_pcs.eigenvec.allele 2 5 header-read variance-standardize no-mean-imputation \
+    --score-col-nums 6-15 \
+    --out ${value}
+done
 
 # # RF code
 # python3 ~/GitHub/BDC-Code/Kimber\ Simmons/GWAS/ancestry_rf.py
