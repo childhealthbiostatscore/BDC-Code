@@ -64,6 +64,7 @@ python3 ~/GitHub/BDC-Code/Kimber\ Simmons/GWAS/ancestry_rf.py
 # Array-level pre-imputation QC
 # Merge by ancestry type and array (in this set all are on the same array, so use cohort)
 Rscript ~/GitHub/BDC-Code/Kimber\ Simmons/GWAS/split_by_ancestry.R
+Rscript ~/GitHub/BDC-Code/Kimber\ Simmons/GWAS/all_pcs.R
 # Iterate through population types
 while read line
 do
@@ -82,15 +83,8 @@ do
   plink --bfile $line --bmerge /Users/timvigers/Dropbox/Work/GWAS/TGP/QC/phase3_qc \
     --allow-extra-chr \
     --make-bed --out "${line}_merged"
-  ## PCA
-  plink2 --bfile "${line}_merged" \
-    --read-freq ~/Dropbox/Work/GWAS/TGP/QC/ref_pcs.acount \
-    --score ~/Dropbox/Work/GWAS/TGP/QC/ref_pcs.eigenvec.allele 2 5 header-read variance-standardize no-mean-imputation \
-    --score-col-nums 6-15 \
-    --out "${line}_merged"
   ## First 3 PCs only - this is different from the paper. Many of these fail due to perfect separation
   ## so those should be deleted
-  awk '{$4=$5=""; print $0}' "${line}_merged.sscore" > covar.txt
-  plink2 --bfile "${line}_merged" --glm hide-covar --covar covar.txt \
-    --covar-variance-standardize --out "${line}_merged"
+  plink2 --bfile "${line}_merged" --glm hide-covar --covar all_pcs \
+    --covar-variance-standardize --out $line
 done < "ancestry_split_files"
