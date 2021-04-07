@@ -11,14 +11,17 @@ cd ~/Documents/Work/Kimber\ Simmons/GWAS
 plink2 --bfile Data_Raw/Simmons_MEGA1_Deliverable_06142019/cleaned_files/Simmons_Custom_MEGA_Analysi_03012019_snpFailsRemoved_passing_QC \
   --snps-only 'just-acgt' \
   --autosome-xy \
+  --set-all-var-ids '@:#[b37]\$r,\$a' \
   --make-bed --out Data_Cleaned/harmonized_analysis/redo
 plink2 --bfile Data_Raw/Simmons\ Biobank/Simmons_071520 \
   --snps-only 'just-acgt' \
   --autosome-xy \
+  --set-all-var-ids '@:#[b37]\$r,\$a' \
   --make-bed --out Data_Cleaned/harmonized_analysis/biobank1
 plink2 --bfile Data_Raw/V2\ -\ Biobank\ data\ on\ Hispanic\ Patients\ -\ Full\ Genetic\ Request/Simmons_120420\
   --snps-only 'just-acgt'\
   --autosome-xy\
+  --set-all-var-ids '@:#[b37]\$r,\$a' \
   --make-bed --out Data_Cleaned/harmonized_analysis/biobank2
 # Phenotypes
 Rscript ~/GitHub/BDC-Code/Kimber\ Simmons/GWAS/biobank_phenotype.R
