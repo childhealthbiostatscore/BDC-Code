@@ -1,4 +1,4 @@
-setwd("~/Dropbox/Work/Kimber Simmons/GWAS")
+setwd("~/Documents/Work/Kimber Simmons/GWAS")
 # Read in and re-write .fam files
 redo = read.table("./Data_Cleaned/harmonized_analysis/redo.fam")
 redo$V6 = 2

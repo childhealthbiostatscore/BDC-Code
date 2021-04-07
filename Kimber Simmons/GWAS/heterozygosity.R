@@ -1,4 +1,4 @@
-setwd("/Users/timvigers/Dropbox/Work/Kimber Simmons/GWAS/Data_Cleaned/harmonized_analysis")
+setwd("~/Documents/Work/Kimber Simmons/GWAS/Data_Cleaned/harmonized_analysis")
 het <- read.table("R_check.het", head=TRUE)
 het$HET_RATE = (het$"N.NM." - het$"O.HOM.")/het$"N.NM."
 het_fail = subset(het, (het$HET_RATE < mean(het$HET_RATE)-3*sd(het$HET_RATE)) | (het$HET_RATE > mean(het$HET_RATE)+3*sd(het$HET_RATE)));

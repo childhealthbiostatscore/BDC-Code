@@ -1,5 +1,5 @@
 library(data.table)
-setwd("~/Dropbox/Work/")
+setwd("~/Documents/Work/")
 delete_cols = c("PHENO1","ALLELE_CT","NAMED_ALLELE_DOSAGE_SUM")
 # Import
 redo = read.table("Kimber Simmons/GWAS/Data_Cleaned/harmonized_analysis/redo.sscore",
