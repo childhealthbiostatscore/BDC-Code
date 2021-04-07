@@ -6,7 +6,7 @@
 # Find individuals to exclude
 Rscript ~/GitHub/BDC-Code/Kimber\ Simmons/GWAS/check_samples.R
 # Working directory
-cd ~/Dropbox/Work/Kimber\ Simmons/GWAS
+cd ~/Documents/Work/Kimber\ Simmons/GWAS
 # Remove indels limit to chromosomes 1-22 and pseudoautosomal regions of XY
 plink2 --bfile Data_Raw/Simmons_MEGA1_Deliverable_06142019/cleaned_files/Simmons_Custom_MEGA_Analysi_03012019_snpFailsRemoved_passing_QC \
   --snps-only 'just-acgt' \
@@ -46,16 +46,14 @@ do
   plink2 --bfile $value --remove het_fail_ind.txt --make-bed --out $value
   # Remove variants with missing rate greater than 1%
   plink2 --bfile $value --geno 0.01 --make-bed --out $value
-done
-# Remove temporary files
-find . -name "*~" -delete 
+done 
 # # Ancestry inference
 # Project onto PC space from 1kG data
 for value in redo biobank1 biobank2
 do
   plink2 --bfile $value \
-    --read-freq ~/Dropbox/Work/GWAS/TGP/QC/ref_pcs.acount \
-    --score ~/Dropbox/Work/GWAS/TGP/QC/ref_pcs.eigenvec.allele 2 5 header-read variance-standardize no-mean-imputation \
+    --read-freq ~/Documents/Work/GWAS/TGP/QC/ref_pcs.acount \
+    --score ~/Documents/Work/GWAS/TGP/QC/ref_pcs.eigenvec.allele 2 5 header-read variance-standardize no-mean-imputation \
     --score-col-nums 6-15 \
     --out ${value}
 done
@@ -80,7 +78,7 @@ do
   awk '$6=2' $line.fam > temp.fam
   mv temp.fam $line.fam
   ## Merge
-  plink --bfile $line --bmerge /Users/timvigers/Dropbox/Work/GWAS/TGP/QC/phase3_qc \
+  plink --bfile $line --bmerge /Users/timvigers/Documents/Work/GWAS/TGP/QC/phase3_qc \
     --allow-extra-chr \
     --make-bed --out "${line}_merged"
   ## First 3 PCs only - this is different from the paper. Many of these fail due to perfect separation
@@ -88,3 +86,5 @@ do
   plink2 --bfile "${line}_merged" --glm hide-covar --covar all_pcs \
     --covar-variance-standardize --out $line
 done < "ancestry_split_files"
+# Remove temporary files
+find . -name "*~" -delete

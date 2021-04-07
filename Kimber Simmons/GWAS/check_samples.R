@@ -1,4 +1,4 @@
-setwd("~/Dropbox/Work/Kimber Simmons/GWAS")
+setwd("~/Documents/Work/Kimber Simmons/GWAS")
 # Exclude based on diagnoses
 diagnoses = read.csv("./Data_Raw/Table 2 Diagnoses EMY edits.csv")
 exclude_samples = unique(diagnoses$Arb_Person_ID)

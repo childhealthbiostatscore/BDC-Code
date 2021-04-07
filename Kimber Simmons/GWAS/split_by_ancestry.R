@@ -1,4 +1,4 @@
-setwd("~/Dropbox/Work/Kimber Simmons/GWAS/Data_Cleaned/harmonized_analysis/")
+setwd("~/Documents/Work/Kimber Simmons/GWAS/Data_Cleaned/harmonized_analysis/")
 # Import inferred ancestry from RF
 redo = read.csv("redo_pop.csv")
 biobank1 = read.csv("biobank1_pop.csv")
