@@ -3,7 +3,7 @@ import sklearn
 import pandas as pd
 import numpy as np
 # Import data
-wd = "~/Dropbox/Work/GWAS/TGP/"
+wd = "~/Documents/Work/GWAS/TGP/"
 sample_info = pd.read_csv(wd+"all_phase3.csv")
 pca = pd.read_csv(wd+"QC/ref_pcs.eigenvec", sep='\t')
 # Join
@@ -25,7 +25,7 @@ y_pred=clf.predict(X_test)
 print("Accuracy of RF model based on a 75/25 training/test split of 1k Genomes data:",\
     sklearn.metrics.accuracy_score(y_test, y_pred).round(3))
 # Apply to Kimber's data
-wd = "~/Dropbox/Work/Kimber Simmons/GWAS/Data_Cleaned/harmonized_analysis/"
+wd = "~/Documents/Work/Kimber Simmons/GWAS/Data_Cleaned/harmonized_analysis/"
 pcs = [n + "_AVG" for n in pcs]
 # Import PCA from Kimber
 redo_PCA = pd.read_csv(wd+"redo.sscore", sep='\t')
