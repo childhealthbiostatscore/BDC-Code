@@ -1,0 +1,76 @@
+---
+title: "EDIC Lipidomics"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+#knitr::opts_knit$set(root.dir = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
+knitr::opts_knit$set(root.dir = "~/Documents/Work/Janet Snell-Bergeon/EDIC/Lipidomics")
+library(PCAtools)
+library(readxl)
+library(tidyverse)
+```
+
+```{r include=FALSE}
+# Import
+intensities = read.csv("./Data_Raw/EDIC lipidomics data matrix_Skyline_2021.02.25.csv",stringsAsFactors = F)
+# Get compound info in separate frame
+compound_info = intensities[,"LipidSpecies"]
+intensities$LipidSpecies = NULL
+# Transpose and format
+intensities = as.data.frame(t(intensities))
+names(compound_info) = colnames(intensities)
+intensities$sample_id = gsub("\\.","-",rownames(intensities))
+intensities = intensities %>% select(sample_id,everything())
+intensities[,2:ncol(intensities)] = lapply(intensities[,2:ncol(intensities)],as.numeric)
+# Import sample injection order
+injection_order = read_excel("./Data_Raw/EDIC lipidomics run order.xlsx")
+colnames(injection_order) = "sample_id"
+injection_order$sample_id = sub("QC-EDIC","EDIC-QC",injection_order$sample_id)
+injection_order$sample_id[is.na(injection_order$sample_id)] = paste0("Failed-QC-",1:sum(is.na(injection_order$sample_id))) # For now assume that the missing are QCs
+injection_order$injection_order = 1:nrow(injection_order)
+# Batch information
+batches = diff(c(0,grep("QC",injection_order$sample_id),nrow(injection_order)))
+injection_order$batch = rep(1:length(batches),times = batches)
+# Remove duplicates and QC for now
+injection_order = injection_order[-c(which(duplicated(injection_order$sample_id)),grep("Failed-QC",injection_order$sample_id)),]
+# Get sample info
+sample.info = read.csv("./Data_Raw/QEDIC_WP_DDA_60SPD_StudyInformat.csv")
+# Get sample IDs, add leading zeroes and "EDIC" to number
+sample.info$sample_id = sample.info$ProteomicsSampleID
+sample.info$sample_id = paste0("EDIC-",str_pad(sample.info$sample_id,3,"left",0))
+sample.info = sample.info %>% select(sample_id,everything())
+# Combine
+sample.info = merge(injection_order,sample.info,all = T,by = "sample_id")
+sample.info = sample.info[order(sample.info$injection_order),]
+# Try two batches
+sample.info$batch2 = ifelse(sample.info$batch < 6,1,2)
+# Plot by HARD status
+sample.info$class = sample.info$HARD
+sample.info$class[which(is.na(sample.info$class))] = "QC"
+sample.info$class = factor(sample.info$class)
+```
+
+# Moderated T Tests
+
+```{r}
+# limma stratified by sex
+# create contrast for CVD events
+males <- df[df$sexnum==1,]
+females <- df[df$sexnum==0,]
+cvd_contrast_males <- ifelse(males$CARV==1,1,0)
+cvd_contrast_males <- cbind(rep(1,nrow(males)),cvd_contrast_males)
+cvd_contrast_females <- ifelse(females$CARV==1,1,0)
+cvd_contrast_females <- cbind(rep(1,nrow(females)),cvd_contrast_females)
+# UNADJUSTED
+ymat_males <- t(df[df$sexnum==1,names(df) %in% protnames])
+ymat_females <- t(df[df$sexnum==0,names(df) %in% protnames])
+# model for T1D vs. control
+fit_cvd_males <- lmFit(ymat_males,cvd_contrast_males)
+fit_cvd_males <- eBayes(fit_cvd_males)
+fit_cvd_females <- lmFit(ymat_females,cvd_contrast_females)
+fit_cvd_females <- eBayes(fit_cvd_females)
+```
