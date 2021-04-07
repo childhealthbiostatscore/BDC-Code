@@ -12,6 +12,8 @@ knitr::opts_knit$set(root.dir = "~/Documents/Work/Janet Snell-Bergeon/EDIC/Lipid
 library(PCAtools)
 library(readxl)
 library(tidyverse)
+library(limma)
+library(knitr)
 ```
 
 ```{r include=FALSE}
@@ -52,25 +54,79 @@ sample.info$batch2 = ifelse(sample.info$batch < 6,1,2)
 sample.info$class = sample.info$HARD
 sample.info$class[which(is.na(sample.info$class))] = "QC"
 sample.info$class = factor(sample.info$class)
+# Column names
+colnames(intensities)[2:ncol(intensities)] = compound_info
 ```
 
 # Moderated T Tests
 
-```{r}
-# limma stratified by sex
-# create contrast for CVD events
-males <- df[df$sexnum==1,]
-females <- df[df$sexnum==0,]
-cvd_contrast_males <- ifelse(males$CARV==1,1,0)
-cvd_contrast_males <- cbind(rep(1,nrow(males)),cvd_contrast_males)
-cvd_contrast_females <- ifelse(females$CARV==1,1,0)
-cvd_contrast_females <- cbind(rep(1,nrow(females)),cvd_contrast_females)
-# UNADJUSTED
-ymat_males <- t(df[df$sexnum==1,names(df) %in% protnames])
-ymat_females <- t(df[df$sexnum==0,names(df) %in% protnames])
-# model for T1D vs. control
-fit_cvd_males <- lmFit(ymat_males,cvd_contrast_males)
-fit_cvd_males <- eBayes(fit_cvd_males)
-fit_cvd_females <- lmFit(ymat_females,cvd_contrast_females)
-fit_cvd_females <- eBayes(fit_cvd_females)
+## CARV
+
+### All
+
+```{r results='asis'}
+# limma stratified by storage time
+sample.info$storage_time = sample.info$VisitAge - sample.info$AGE00
+sample.info$storage_time = cut(sample.info$storage_time,2,labels = c("< 14",">= 14"))
+low = sample.info[sample.info$storage_time=="< 14",]
+high = sample.info[sample.info$storage_time==">= 14",]
+# Make design matrix
+carv <- model.matrix(~CARV,sample.info[!is.na(sample.info$storage_time),])
+# Unadjusted models
+y <- t(intensities[intensities$sample_id %in% sample.info[!is.na(sample.info$storage_time),"sample_id"],2:ncol(intensities)])
+fit <- lmFit(y,carv)
+fit <- eBayes(fit)
+# Results
+kable(topTable(fit,coef = 2))
+```
+
+### Stratified by Above or Below Median Storage Time
+
+```{r results='asis'}
+# Make design matrices
+carv_low <- model.matrix(~CARV,low)
+carv_high <- model.matrix(~CARV,high)
+# Unadjusted models
+y_low <- t(intensities[intensities$sample_id %in% low$sample_id,2:ncol(intensities)])
+y_high <- t(intensities[intensities$sample_id %in% high$sample_id,2:ncol(intensities)])
+fit_low <- lmFit(y_low,carv_low)
+fit_low <- eBayes(fit_low)
+fit_high <- lmFit(y_high,carv_high)
+fit_high <- eBayes(fit_high)
+# Results
+kable(topTable(fit_low,coef = 2),caption = "Low Storage Time")
+kable(topTable(fit_high,coef = 2),caption = "High Storage Time")
+```
+
+## HARD
+
+### All
+
+```{r results='asis'}
+# Make design matrix
+hard <- model.matrix(~HARD,sample.info[!is.na(sample.info$storage_time),])
+# Unadjusted models
+y <- t(intensities[intensities$sample_id %in% sample.info[!is.na(sample.info$storage_time),"sample_id"],2:ncol(intensities)])
+fit <- lmFit(y,hard)
+fit <- eBayes(fit)
+# Results
+kable(topTable(fit_low,coef = 2))
+```
+
+### Stratified by Above or Below Median Storage Time
+
+```{r results='asis'}
+# Make design matrices
+hard_low <- model.matrix(~HARD,low)
+hard_high <- model.matrix(~HARD,high)
+# Unadjusted models
+y_low <- t(intensities[intensities$sample_id %in% low$sample_id,2:ncol(intensities)])
+y_high <- t(intensities[intensities$sample_id %in% high$sample_id,2:ncol(intensities)])
+fit_low <- lmFit(y_low,hard_low)
+fit_low <- eBayes(fit_low)
+fit_high <- lmFit(y_high,hard_high)
+fit_high <- eBayes(fit_high)
+# Results
+kable(topTable(fit_low,coef = 2),caption = "Low Storage Time")
+kable(topTable(fit_high,coef = 2),caption = "High Storage Time")
 ```
