@@ -93,6 +93,17 @@ nsnum <- ns %>% group_by(EPICMRN) %>% count()
 colnames(nsnum) <- c("EPICMRN","nsnum")
 ns <- merge(ns,nsnum,by="EPICMRN",all.x = T,all.y = T)
 ns <- ns[,c("EPICMRN","nsnum","group")]
+# now add by clinic and telemed to ns dataframe
+ns_clinic <- noshow[noshow$ApptStatus=="No Show" & !(noshow$ApptType %in% c("DURANGO CO-FU TELEMED","RIFLE FU TELEMED","SS HOME TELEMED LATINO GROUP",
+                                                                            "TELEMEDICINE FOLLOW UP")),]
+nsnum_clinic <- ns_clinic %>% group_by(EPICMRN) %>% count()
+colnames(nsnum_clinic) <- c("EPICMRN","nsnum_clinic")
+ns <- merge(ns,nsnum_clinic,by="EPICMRN",all.x = T,all.y = T)
+ns_tele <- noshow[noshow$ApptStatus=="No Show" & (noshow$ApptType %in% c("DURANGO CO-FU TELEMED","RIFLE FU TELEMED","SS HOME TELEMED LATINO GROUP",
+                                                                            "TELEMEDICINE FOLLOW UP")),]
+nsnum_tele <- ns_tele %>% group_by(EPICMRN) %>% count()
+colnames(nsnum_tele) <- c("EPICMRN","nsnum_tele")
+ns <- merge(ns,nsnum_tele,by="EPICMRN",all.x = T,all.y = T)
 # WHEN I MERGE IN NS, THE FREQ OF GROUP.X CHANGES
 clinical <- merge(clinical,ns,by="EPICMRN",all.x = T,all.y = T)
 clinical$group <- ifelse(!is.na(clinical$group.x),clinical$group.x,clinical$group.y)
@@ -104,6 +115,17 @@ cancnum <- canc %>% group_by(EPICMRN) %>% count()
 colnames(cancnum) <- c("EPICMRN","cancnum")
 canc <- merge(canc,cancnum,by="EPICMRN",all.x = T,all.y = T)
 canc <- canc[,c("EPICMRN","cancnum","group")]
+# add in variables by clinic and tele
+canc_clinic <- noshow[noshow$ApptStatus=="Canceled" & !(noshow$ApptType %in% c("DURANGO CO-FU TELEMED","RIFLE FU TELEMED","SS HOME TELEMED LATINO GROUP",
+                                                                            "TELEMEDICINE FOLLOW UP")),]
+cancnum_clinic <- canc_clinic %>% group_by(EPICMRN) %>% count()
+colnames(cancnum_clinic) <- c("EPICMRN","cancnum_clinic")
+canc <- merge(canc,cancnum_clinic,by="EPICMRN",all.x = T,all.y = T)
+canc_tele <- noshow[noshow$ApptStatus=="Canceled" & (noshow$ApptType %in% c("DURANGO CO-FU TELEMED","RIFLE FU TELEMED","SS HOME TELEMED LATINO GROUP",
+                                                                            "TELEMEDICINE FOLLOW UP")),]
+cancnum_tele <- canc_tele %>% group_by(EPICMRN) %>% count()
+colnames(cancnum_tele) <- c("EPICMRN","cancnum_tele")
+canc <- merge(canc,cancnum_tele,by="EPICMRN",all.x = T,all.y = T)
 clinical <- merge(clinical,canc,by="EPICMRN",all.x = T,all.y = T)
 clinical$group <- ifelse(!is.na(clinical$group.x),clinical$group.x,clinical$group.y)
 clinical$group.x <- NULL
@@ -113,12 +135,20 @@ clinical$visitnum <- ifelse(is.na(clinical$visitnum),0,clinical$visitnum)
 clinical[is.na(clinical$telenum),]$telenum <- 0
 clinical[is.na(clinical$nsnum),]$nsnum <- 0
 clinical[is.na(clinical$cancnum),]$cancnum <- 0
+clinical[is.na(clinical$nsnum_clinic),]$nsnum_clinic <- 0
+clinical[is.na(clinical$nsnum_tele),]$nsnum_tele <- 0
+clinical[is.na(clinical$cancnum_clinic),]$cancnum_clinic <- 0
+clinical[is.na(clinical$cancnum_tele),]$cancnum_tele <- 0
 clinical$per_tele <- clinical$telenum/clinical$visitnum*100
 clinical[is.na(clinical$per_tele),]$per_tele <- 0
 # new variable that is total of in clinic visits, telehealth visits, cancellations and noshows
 clinical$contacts <- rowSums(clinical[,c("visitnum","telenum","nsnum","cancnum")],na.rm = T)
 clinical$per_ns <- clinical$nsnum/clinical$contacts*100
+clinical$per_ns_clinic <- clinical$nsnum_clinic/clinical$contacts*100
+clinical$per_ns_tele <- clinical$nsnum_tele/clinical$contacts*100
 clinical$per_canc <- clinical$cancnum/clinical$contacts*100
+clinical$per_canc_clinic <- clinical$cancnum_clinic/clinical$contacts*100
+clinical$per_canc_tele <- clinical$cancnum_tele/clinical$contacts*100
 
 # how to summarize A1c, CGM % time - just take the average?  most recent?
 med_a1c <- clinical %>% group_by(EPICMRN) %>% summarise(med_a1c=median(A1cValue,na.rm=T))
@@ -142,6 +172,10 @@ label(clinical$per_ns)="No-shows as % of visits+no-shows+cancellations"
 label(clinical$cancnum)="Number of cancellations"
 label(clinical$per_canc)="Cancellations as % of visits+no-shows+cancellations"
 label(clinical$med_a1c)="Median A1c"
+label(clinical$per_canc_clinic)="In-clinic cancellations as % of visits+no-shows+cancellations"
+label(clinical$per_canc_tele)="Telemedicine cancellations as % of visits+no-shows+cancellations"
+label(clinical$per_ns_clinic)="In-clinic no-shows as % of visits+no-shows+cancellations"
+label(clinical$per_ns_tele)="Telemedicine no-shows as % of visits+no-shows+cancellations"
 
 # need to have just 1 obs per person in clinical dataset
 clinsum <- clinical %>% group_by(EPICMRN) %>% slice_head(n=1)
@@ -149,6 +183,18 @@ clinsum <- clinical %>% group_by(EPICMRN) %>% slice_head(n=1)
 # make baseline dataframe using first visit 
 clinical <- arrange(clinical,EPICMRN,VisitDate)
 baseline <- clinical %>% group_by(EPICMRN) %>% slice_head(n=1)
+
+# read in survey data
+survey <- read.csv("B:\\Projects\\Andrea Gerard Gonzalez\\Transition to telehealth\\Data_raw\\BDCStaffTelemedicine_DATA_LABELS_2021-04-05_0956.csv",
+                   na.strings = c(NA,""))
+#write.table(colnames(survey),"C:\\Temp\\colnames.txt")
+survey_names <- colnames(survey)
+
+# survey tables
+surv_res <- vector(mode = "list", length = 61-8)
+for (i in 8:61) {
+  surv_res[[i]] <- table(survey[,i])
+}
 
 # Baseline table
 t1 <- CreateTableOne(vars=c("Age_VisitDate","Race","Ethnicity","Gender","Language","DiabetesDuration_LastVisitDate"), 
@@ -161,16 +207,16 @@ t1a <- CreateTableOne(vars=c("Age_VisitDate","Race","Ethnicity","Gender","Langua
 t1a <- print(t1a,varLabels=TRUE,showAllLevels=TRUE,nonnorm="DiabetesDuration_LastVisitDate")
 
 # Clinical and visit table
-clintab <- CreateTableOne(vars=c("most_recent_ins","most_recent_CGM","visitnum","telenum","per_tele","nsnum","per_ns","cancnum","per_canc",
-                                 "med_a1c","med_cgmuse"), data=clinsum, strata="group", test=TRUE)
-clintab <- print(clintab,varLabels=TRUE,showAllLevels=TRUE,nonnorm=c("med_a1c","visitnum","telenum","per_tele","nsnum","per_ns","cancnum","per_canc","med_cgmuse"),
-                 minMax=T)
+clintab <- CreateTableOne(vars=c("most_recent_ins","most_recent_CGM","visitnum","telenum","per_tele","nsnum","per_ns","per_ns_clinic","per_ns_tele",
+                                 "cancnum","per_canc","per_canc_clinic","per_canc_tele","med_a1c","med_cgmuse"), data=clinsum, strata="group", test=TRUE)
+clintab <- print(clintab,varLabels=TRUE,showAllLevels=TRUE,nonnorm=c("med_a1c","visitnum","telenum","per_tele","nsnum","per_ns","per_ns_clinic","per_ns_tele",
+                                                                     "cancnum","per_canc","per_canc_clinic","per_canc_tele","med_cgmuse"),minMax=T)
 
 # Clinical and visit table by high/low telemedicine use
-clintaba <- CreateTableOne(vars=c("most_recent_ins","most_recent_CGM","visitnum","telenum","per_tele","nsnum","per_ns","cancnum","per_canc",
-                                 "med_a1c","med_cgmuse"), data=clinsum, strata="telegroup", test=TRUE)
-clintaba <- print(clintaba,varLabels=TRUE,showAllLevels=TRUE,nonnorm=c("med_a1c","visitnum","telenum","per_tele","nsnum","per_ns","cancnum","per_canc","med_cgmuse"),
-                  minMax=T)
+clintaba <- CreateTableOne(vars=c("most_recent_ins","most_recent_CGM","visitnum","telenum","per_tele","nsnum","per_ns","per_ns_clinic","per_ns_tele",
+                                 "cancnum","per_canc","per_canc_clinic","per_canc_tele","med_a1c","med_cgmuse"), data=clinsum, strata="telegroup", test=TRUE)
+clintaba <- print(clintaba,varLabels=TRUE,showAllLevels=TRUE,nonnorm=c("med_a1c","visitnum","telenum","per_tele","nsnum","per_ns","per_ns_clinic","per_ns_tele",
+                                                                     "cancnum","per_canc","per_canc_clinic","per_canc_tele","med_cgmuse"),minMax=T)
 
 # now need to model interaction of telehealth and group
 mod_pump <- glm(pump~telegroup*group,data=clinsum,family = "binomial")
@@ -311,4 +357,14 @@ kable(mod_medcgm.anova,caption="Table 10.  Median % CGM use - test of interactio
 
 ```{r, echo=FALSE, message=FALSE}
 kable(mod_meda1c.anova,caption="Table 11.  Median A1c - test of interaction between high/low telemedicine use and group.  The right-most column contains the p-value; the telegroup:group term is the interaction effect.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+```{r, echo=FALSE, message=FALSE}
+
+for (i in 8:61) {
+  print(survey_names[i])
+  print(surv_res[[i]])
+}
 ```
