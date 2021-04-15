@@ -7,7 +7,7 @@ output: word_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE,dpi = 600)
-knitr::opts_knit$set(root.dir = "/Users/timvigers/Dropbox/Work/Greg Forlenza/JDRF")
+knitr::opts_knit$set(root.dir = "~/Dropbox/Work/Greg Forlenza/JDRF")
 library(Hmisc)
 library(arsenal)
 library(skimr)
@@ -19,7 +19,7 @@ library(tidyverse)
 ```
 
 ```{r import data,echo=FALSE}
-source("/Users/timvigers/GitHub/BDC-Code/Greg Forlenza/JDRF/data_import.R")
+source("~/GitHub/BDC-Code/Greg Forlenza/JDRF/data_import.R")
 # Exclude participants after 115 and those who never started AM
 exclude <- data$record_id[which(data$gyl_timepoint==0 & is.na(data$automode_start))]
 data <- data %>% filter(record_id <= 115,!(record_id %in% exclude))
@@ -72,13 +72,14 @@ df <- left_join(df,data %>%
                   filter(gyl_timepoint.factor == "Month 1/ Training F/U") %>%
                   mutate(m1_sensor_wear = sensor_wear,
                          m1_time_am = time_am,
-                         m1_tir = sensor_70_180) %>%
-                  select(record_id,m1_sensor_wear,m1_time_am,m1_tir),
+                         m1_tir = sensor_70_180,
+                         m1_boluses = dailybolus) %>%
+                  select(record_id,m1_sensor_wear,m1_time_am,m1_tir,m1_boluses),
                 by = "record_id") %>%
   select(record_id,am_final,hba1c,c_paid_total,ya_paid_total,
          c_hfs_behave_total,ya_hfs_behave_total,
          c_hfs_worry_total,ya_hfs_worry_total,
-         m1_sensor_wear,m1_time_am,m1_tir,
+         m1_sensor_wear,m1_time_am,m1_tir,m1_boluses,
          demographics_t1d_duration,demographics_age,
          demographics_sex.factor,demographics_insurance.factor,
          demographics_race.factor,demographics_ethnicity.factor,
@@ -98,110 +99,35 @@ levels(df$demographics_cgmhx.factor) =
 levels(df$demographics_pumphx.factor) = 
   c("<= 6 months","<= 6 months","6+ months","6+ months","6+ months","6+ months",
     "<= 6 months")
-```
-
-# Model selection
-
-## Lasso
-
-The lasso [1] is a shrinkage method of variable selection, similar to ridge regression. Shrinkage methods impose a penalty on regression coefficients, causing unimportant variables go to 0. The advantage of this approach is that "shrinkage methods are more continuous, and don’t suffer as much from high variability" [2] compared to discrete processes like backwards selection. 
-
-The lasso solves this equation:
-
-![](/Users/timvigers/GitHub/BDC-Code/Greg Forlenza/JDRF/lasso.png)
-
-but basically the only thing you need to understand is that the parameter $\lambda$ controls the amount of shrinkage applied. The higher $\lambda$ is, the more aggressively the coefficients are shrunk. So, it's important to find the optimal $\lambda$ value that results in an interpretable model without too many variables, but with good prediction error compared to the full model. 
-
-Luckily, the glmnet package [3] does pretty much all the work for us! It partitions the data set into 10 equal sub-samples, reserves one for validation and uses the remaining 9 to build the model. This is repeated 10 times so that each subset is used to validate the model once. Within each "fold," multiple values of $\lambda$ are tested. Then, the average error and standard deviation of the error are computed over the folds. Finally, it picks the largest value of $\lambda$ (i.e. the smallest model) such that the error is within one SE of the minimum error. 
-
-### Lasso issues
-
-Using the lasso for model selection requires complete data, and the survey variables have a lot of missing data. The sample size of YA participants is too small to use the lasso, but none of the surveys are associated with the outcome based on simple logistic models of the form:
-
-$$
-logit(success) = \beta_0+\beta_1*paid+\beta_2*worry+\beta_3*behave + \epsilon
-$$
-
-Because of all this, surveys were excluded from the lasso model selection, in order to keep the data in one cohort and to avoid missing data problems.
-
-### Without interaction terms
-
-```{r without interact,echo=FALSE,warning=FALSE}
-# Remove surveys
+# Make df for lasso
 lasso <- df %>% select(-ya_paid_total,-ya_hfs_behave_total,-ya_hfs_worry_total,
                        -c_paid_total,-c_hfs_behave_total,-c_hfs_worry_total)
-# Lasso
+```
+
+# Lasso model selection
+
+## M1 data
+
+For model selection, I examined baseline HbA1c, sensor wear,AM use, TIR, daily boluses, T1D duration, age, sex, insurance status, race, ethnicity, CGM history, and pump history. Because some reviewers were concerned about using age as a categorical variable given the different cohorts in the model development and validation datasets, age was kept as a continuous variable in all models. 
+
+### No constraints
+
+```{r without interact,echo=FALSE,warning=FALSE}
 # Make model matrix and outcome vector
-form <- as.formula("success ~ hba1c + m1_sensor_wear + m1_time_am + m1_tir + 
-demographics_t1d_duration + demographics_age + demographics_sex.factor + 
+form <- as.formula("success ~ hba1c + m1_sensor_wear + m1_time_am + m1_tir + m1_boluses +
+demographics_t1d_duration + Age + demographics_sex.factor + 
 demographics_insurance.factor + demographics_race.factor + 
 demographics_ethnicity.factor + demographics_cgmhx.factor + 
 demographics_pumphx.factor")
 cc <- lasso[complete.cases(lasso),]
 x <- model.matrix(form,cc)[,-1]
 y <- cc$success
-# Fit
-fit <- glmnet(x,y,family = "binomial")
-plot(fit,xvar = "lambda")
-# Cross validation for lambda
-cv.fit <- cv.glmnet(x, y, alpha=1, family = "binomial")
-coef(cv.fit)
-```
-As lambda increases, the coefficients are all shrunk to 0. In the table above, the numbers themselves are not important. What matters is whether or not a coefficient was shrunk to 0 or not. The same applies to the lasso with interaction terms included.
-
-### With interaction terms
-
-Because sensor wear and time in automode at month 1 are correlated, only sensor wear was included in further model selection.
-
-```{r with interact,echo=FALSE,warning=FALSE}
-# Lasso
-# Make model matrix and outcome vector
-form <- as.formula("success ~ demographics_age*hba1c + 
-demographics_age*m1_sensor_wear + demographics_age*m1_tir + 
-demographics_age*demographics_sex.factor + 
-demographics_age*demographics_ethnicity.factor + 
-demographics_age*demographics_pumphx.factor")
-cc <- lasso[complete.cases(lasso),]
-x <- model.matrix(form,cc)[,-1]
-y <- cc$success
-# Fit
-fit <- glmnet(x,y,family = "binomial")
-plot(fit,xvar = "lambda")
 # Cross validation for lambda
 cv.fit <- cv.glmnet(x, y, alpha=1, family = "binomial")
 coef(cv.fit)
 ```
 
-## Re-fitting the model
-
-After applying the lasso to determine which variables are kept in the model, we re-fit a standard logistic regression (because the lasso estimates are biased by the shrinkage parameter).
-
-### Issues
-
-Unfortunately, several categorical variables selected by the lasso caused fitted probabilities numerically 0 or 1. In other words, there are levels of the interaction terms where there are either no successes or no failures. I assumed that the lasso would somehow pick up on this and would shrink all the categorical variables coefficients to 0, but this was clearly not the case (and in retrospect a silly assumption).
-
-Also, there is unfortunately not enough variability in pump history or ethnicity to get accurate estimates, since 73/90 (~ 80%) participants are not Hispanic with 6+ months of pump history. See the large coefficients and standard errors in the model summary below.
-
-```{r log model,echo=FALSE,results='asis'}
-full_model = as.formula("success ~ demographics_ethnicity.factor + 
-interaction(demographics_age,demographics_sex.factor) + 
-interaction(demographics_age,demographics_pumphx.factor)")
-full_mod = glm(full_model,family = "binomial",df)
-
-t = tableby(full_model,df)
-kable(summary(t),caption = "Group Ns")
-```
-
-```{r echo=FALSE}
-no_int_model = as.formula("success ~ hba1c + m1_sensor_wear + m1_tir + 
-demographics_ethnicity.factor + demographics_age + demographics_sex.factor + 
-demographics_pumphx.factor")
-
-no_int_mod = glm(no_int_model,family = "binomial",df)
-kable(summary(no_int_mod)$coefficients,caption = "Bad model summary")
-```
-
-The tables above are simply to demonstrate how these issues look in the variable counts and model results.
+With no constraints on the lasso, baseline HbA1c, sensor wear, TIR, daily boluses, sex, ethnicity, and pump history were all selected. 
 
 ## Comparing AM Use to Sensor Wear
 
@@ -209,10 +135,12 @@ The tables above are simply to demonstrate how these issues look in the variable
 # Model formulas
 model_sens_form <- 
   as.formula("success ~ scale(hba1c,scale=F) + scale(m1_sensor_wear,scale=F) +
-             scale(m1_tir,scale=F) + demographics_age + demographics_sex.factor")
+             scale(m1_tir,scale=F) + scale(m1_boluses,scale=F) + demographics_sex.factor + 
+             demographics_ethnicity.factor + demographics_pumphx.factor")
 model_am_form <- 
   as.formula("success ~ scale(hba1c,scale=F) + scale(m1_time_am,scale=F) +
-             scale(m1_tir,scale=F) + demographics_age + demographics_sex.factor")
+             scale(m1_tir,scale=F) + scale(m1_boluses,scale=F) + demographics_sex.factor + 
+             demographics_ethnicity.factor + demographics_pumphx.factor")
 # Fit
 model_sens <- glm(model_sens_form,family = "binomial",df)
 model_am <- glm(model_am_form,family = "binomial",df)
@@ -224,7 +152,7 @@ r_am <- ROC(form = model_am_form,data = df,MX=F,MI=F,PV=F,plot = "ROC",
             main = "AM Use Model")
 ```
 
-Technically the sensor wear model is better by both AIC and ROC AUC, but both appear to be good models. For now I'll continue using AM time since that is what Stanford collected.
+Models using AM use at month 1 were compared to models using sensor wear at month 1. Technically, sensor wear was slightly better in terms of AIC and AUC, but the predictive abilities of the models were comparable and both excellent (AUC = 0.928 for sensor wear and AUC = 0.909 for AM use). So, the following models used time in AM instead of sensor wear, given that the validation cohort only has data for AM time.
 
 ## Comparing 1 month variables to 3 month variables
 
@@ -234,31 +162,31 @@ three_month <- data %>%
   filter(gyl_timepoint.factor == "3 Months") %>%
   mutate(m3_sensor_wear = sensor_wear,
          m3_time_am = time_am,
-         m3_tir = sensor_70_180) %>%
-  select(record_id,m3_sensor_wear,m3_time_am,m3_tir)
+         m3_tir = sensor_70_180,
+         m3_boluses = dailybolus) %>%
+  select(record_id,m3_sensor_wear,m3_time_am,m3_tir,m3_boluses)
 # Add to df
 df <- left_join(df,three_month,by = "record_id")
 # Compare 1 month to 3 month
 model1 <- 
   as.formula("success ~ scale(hba1c,scale=F) + scale(m1_time_am,scale=F) +
-  scale(m1_tir,scale=F) + demographics_age + demographics_sex.factor")
+             scale(m1_tir,scale=F) + scale(m1_boluses,scale=F) + demographics_sex.factor + 
+             demographics_ethnicity.factor + demographics_pumphx.factor")
 model3 <- 
-  as.formula("success ~ scale(hba1c,scale=F) + scale(m3_time_am,scale=F) + 
-  scale(m3_tir,scale=F) + demographics_age + demographics_sex.factor")
+  as.formula("success ~ scale(hba1c,scale=F) + scale(m3_time_am,scale=F) +
+             scale(m3_tir,scale=F) + scale(m3_boluses,scale=F) + demographics_sex.factor + 
+             demographics_ethnicity.factor + demographics_pumphx.factor")
 # Fit
-# Same observations
-temp <- df %>% filter(!is.na(m1_tir) & !is.na(m3_tir))
-model_m1 <- glm(model1,family = "binomial",temp)
-model_m3 <- glm(model3,family = "binomial",temp)
+model_m1 <- glm(model1,family = "binomial",df)
+model_m3 <- glm(model3,family = "binomial",df)
 # Compare
-kable(AIC(model_m1,model_m3))
 r_sens <- ROC(form = model1,data = df,MX=F,MI=F,PV=F,plot = "ROC",
               main = "1-Month Model")
 r_am <- ROC(form = model3,data = df,MX=F,MI=F,PV=F,plot = "ROC",
             main = "3-Month Model")
 ```
 
-Interestingly, the month 1 model is better than the month 3 model. There are 75 observations with month 1 data and 63 with month 3 data, so is it possible that dropout is already having an effect? Also I have been using the 90 participants with data at 9 or 12 months, but that could mean we're excluding people who dropped out entirely. Is that okay?
+Interestingly, the month 3 model is now better than the month 1 model. There are 75 observations with month 1 data and 62 with month 3 data, so is it possible that dropout is already having an effect. 
 
 ## Results
 
@@ -266,13 +194,10 @@ Interestingly, the month 1 model is better than the month 3 model. There are 75 
 # Read in
 stanford <- read.csv("./Data_Cleaned/stanford.csv",
                      na.strings = c("","NA","na","N/A"),stringsAsFactors = F)
+stanford = stanford[-c(which(stanford$Participant.ID %in% c("24","56")))]
 # Format variables to match BDC data
-num_vars <- c("Baseline.A1c","Auto.Mode...1","Time.in.range.....1")
+num_vars <- c("Baseline.A1c","Auto.Mode...1","Time.in.range.....1","Age")
 stanford[,num_vars] <- lapply(stanford[,num_vars], as.numeric)
-# Age groups
-stanford$demographics_age <- 
-  cut(stanford$Age,c(5,13,18,Inf),right = T,
-      labels = c("6 - 13","14 - 18","18+"))
 # Insurance - combine checkboxes
 stanford$insurance <- 
   ifelse(stanford$Insurance.Type..choice.Private.HMO. == "Checked" | 
@@ -286,12 +211,19 @@ stanford$insurance <-
 # Race
 stanford$race <- 
   ifelse(stanford$Race..choice.White. == "Checked","White","Non-white")
+# Age
+stanford <- stanford %>% group_by(Participant.ID) %>%
+  mutate(date_diff = lubridate::mdy(Visit.Date) - lubridate::mdy(Auto.Mode.Start[Event.Name == "Automode Start"]) ,
+         age_HCL_start = Age[Event.Name == "Baseline"] + 
+           (T1D.Duration[Event.Name == "670G Start"] - T1D.Duration[Event.Name == "Baseline"]),
+         t = Age[Event.Name == "Baseline"] )
 # Get variables from appropriate time points
 stan_df <- stanford %>% group_by(Participant.ID) %>%
   summarise(hba1c = Baseline.A1c[Event.Name=="670G Start"],
             m3_time_am = Auto.Mode...1[Event.Name=="3 month visit"],
             m3_tir = Time.in.range.....1[Event.Name=="3 month visit"],
-            demographics_age = demographics_age[Event.Name=="Baseline"],
+            m3_boluses = X..Boluses.day...Visit[Event.Name=="3 month visit"],
+            Age = Age[Event.Name=="Baseline"],
             demographics_sex.factor = Gender[Event.Name=="Baseline"],
             demographics_t1d_duration = 
               as.numeric(T1D.Duration[Event.Name=="Baseline"]),
@@ -487,7 +419,7 @@ plot(g,print.auc=T)
 roc_plot = ggplot(p, aes(d = success, m = pred)) + 
   geom_roc(n.cuts = 0) + geom_abline(intercept = 0,slope = 1) + 
   annotate(label = paste("Area under the curve:",round(g$auc,3)),
-            x=0.75, y=0.2,family = "Helvetica",geom = "text") + 
+           x=0.75, y=0.2,family = "Helvetica",geom = "text") + 
   ylab("Sensitivity") + xlab("1 - Specificity") + theme_bw() + 
   ggtitle("Validation") + theme(plot.title = element_text(hjust = 0.5))
 ggsave("validation_plot.eps",roc_plot,dpi = 300,device = "eps",
