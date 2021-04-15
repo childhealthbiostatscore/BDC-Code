@@ -6,13 +6,14 @@ output: word_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE,dpi = 600)
+knitr::opts_chunk$set(echo = FALSE,dpi = 600)
 knitr::opts_knit$set(root.dir = "~/Dropbox/Work/Greg Forlenza/JDRF")
 library(Hmisc)
 library(arsenal)
 library(skimr)
 library(knitr)
 library(Epi)
+library(plotROC)
 library(glmnet)
 library(emmeans)
 library(tidyverse)
@@ -108,11 +109,10 @@ lasso <- df %>% select(-ya_paid_total,-ya_hfs_behave_total,-ya_hfs_worry_total,
 
 ## M1 data
 
-For model selection, I examined baseline HbA1c, sensor wear,AM use, TIR, daily boluses, T1D duration, age, sex, insurance status, race, ethnicity, CGM history, and pump history. Because some reviewers were concerned about using age as a categorical variable given the different cohorts in the model development and validation datasets, age was kept as a continuous variable in all models. 
-
-### No constraints
+For model selection, I examined baseline HbA1c, sensor wear,AM use, TIR, daily boluses, T1D duration, age, sex, insurance status, race, ethnicity, CGM history, and pump history. Because some reviewers were concerned about using baseline age as a categorical variable given the different cohorts in the model development and validation datasets, age was kept as a continuous variable in all models. 
 
 ```{r without interact,echo=FALSE,warning=FALSE}
+set.seed(1000)
 # Make model matrix and outcome vector
 form <- as.formula("success ~ hba1c + m1_sensor_wear + m1_time_am + m1_tir + m1_boluses +
 demographics_t1d_duration + Age + demographics_sex.factor + 
@@ -128,6 +128,8 @@ coef(cv.fit)
 ```
 
 With no constraints on the lasso, baseline HbA1c, sensor wear, TIR, daily boluses, sex, ethnicity, and pump history were all selected. 
+
+\newpage
 
 ## Comparing AM Use to Sensor Wear
 
@@ -145,7 +147,6 @@ model_am_form <-
 model_sens <- glm(model_sens_form,family = "binomial",df)
 model_am <- glm(model_am_form,family = "binomial",df)
 # Compare
-kable(AIC(model_am,model_sens))
 r_sens <- ROC(form = model_sens_form,data = df,MX=F,MI=F,PV=F,plot = "ROC",
               main = "Sensor Wear Model")
 r_am <- ROC(form = model_am_form,data = df,MX=F,MI=F,PV=F,plot = "ROC",
@@ -153,6 +154,8 @@ r_am <- ROC(form = model_am_form,data = df,MX=F,MI=F,PV=F,plot = "ROC",
 ```
 
 Models using AM use at month 1 were compared to models using sensor wear at month 1. Technically, sensor wear was slightly better in terms of AIC and AUC, but the predictive abilities of the models were comparable and both excellent (AUC = 0.928 for sensor wear and AUC = 0.909 for AM use). So, the following models used time in AM instead of sensor wear, given that the validation cohort only has data for AM time.
+
+Some of the models would not converge when both ethnicity and pump history were included, so only ethnicity was retained in the following models and participants of unknown ethnicity were excluded.
 
 ## Comparing 1 month variables to 3 month variables
 
@@ -167,15 +170,16 @@ three_month <- data %>%
   select(record_id,m3_sensor_wear,m3_time_am,m3_tir,m3_boluses)
 # Add to df
 df <- left_join(df,three_month,by = "record_id")
+df = df %>% filter(demographics_ethnicity.factor != "Unknown / Not Reported")
 # Compare 1 month to 3 month
 model1 <- 
   as.formula("success ~ scale(hba1c,scale=F) + scale(m1_time_am,scale=F) +
-             scale(m1_tir,scale=F) + scale(m1_boluses,scale=F) + demographics_sex.factor + 
-             demographics_ethnicity.factor + demographics_pumphx.factor")
+             scale(m1_tir,scale=F) + scale(m1_boluses,scale=F) + demographics_sex.factor +
+             demographics_ethnicity.factor")
 model3 <- 
   as.formula("success ~ scale(hba1c,scale=F) + scale(m3_time_am,scale=F) +
-             scale(m3_tir,scale=F) + scale(m3_boluses,scale=F) + demographics_sex.factor + 
-             demographics_ethnicity.factor + demographics_pumphx.factor")
+             scale(m3_tir,scale=F) + scale(m3_boluses,scale=F) + demographics_sex.factor +
+             demographics_ethnicity.factor")
 # Fit
 model_m1 <- glm(model1,family = "binomial",df)
 model_m3 <- glm(model3,family = "binomial",df)
@@ -186,7 +190,9 @@ r_am <- ROC(form = model3,data = df,MX=F,MI=F,PV=F,plot = "ROC",
             main = "3-Month Model")
 ```
 
-Interestingly, the month 3 model is now better than the month 1 model. There are 75 observations with month 1 data and 62 with month 3 data, so is it possible that dropout is already having an effect. 
+The month 3 and month 1 models have essentially the same predictive ability (AUC 0.894 vs. 0.900).
+
+\newpage
 
 ## Results
 
@@ -194,9 +200,8 @@ Interestingly, the month 3 model is now better than the month 1 model. There are
 # Read in
 stanford <- read.csv("./Data_Cleaned/stanford.csv",
                      na.strings = c("","NA","na","N/A"),stringsAsFactors = F)
-stanford = stanford[-c(which(stanford$Participant.ID %in% c("24","56")))]
 # Format variables to match BDC data
-num_vars <- c("Baseline.A1c","Auto.Mode...1","Time.in.range.....1","Age")
+num_vars <- c("Baseline.A1c","Auto.Mode...1","Time.in.range.....1","Age","X..Boluses.day...Visit")
 stanford[,num_vars] <- lapply(stanford[,num_vars], as.numeric)
 # Insurance - combine checkboxes
 stanford$insurance <- 
@@ -211,12 +216,6 @@ stanford$insurance <-
 # Race
 stanford$race <- 
   ifelse(stanford$Race..choice.White. == "Checked","White","Non-white")
-# Age
-stanford <- stanford %>% group_by(Participant.ID) %>%
-  mutate(date_diff = lubridate::mdy(Visit.Date) - lubridate::mdy(Auto.Mode.Start[Event.Name == "Automode Start"]) ,
-         age_HCL_start = Age[Event.Name == "Baseline"] + 
-           (T1D.Duration[Event.Name == "670G Start"] - T1D.Duration[Event.Name == "Baseline"]),
-         t = Age[Event.Name == "Baseline"] )
 # Get variables from appropriate time points
 stan_df <- stanford %>% group_by(Participant.ID) %>%
   summarise(hba1c = Baseline.A1c[Event.Name=="670G Start"],
@@ -253,10 +252,12 @@ success <- stanford %>% group_by(Participant.ID) %>%
 # Combine covariates and success dfs
 stan_df <- left_join(stan_df,success,by = "Participant.ID")
 stan_df$success <- as.factor(ifelse(stan_df$am_final >= 60,"Success","Failure"))
+stan_df = stan_df %>% filter(demographics_ethnicity.factor != "Unknown / Not Reported")
 # Cohort
-stan_df$cohort <- "Stanford"
+stan_df$Cohort <- "Stanford"
 colnames(stan_df)[1] <- "record_id"
-df$cohort <- "BDC"
+df$Cohort <- "BDC"
+df$record_id = as.character(df$record_id)
 t1_df <- full_join(df,stan_df)
 ```
 
@@ -265,7 +266,7 @@ t1_df <- full_join(df,stan_df)
 ```{r table 1,echo=FALSE,results='asis'}
 # Table 1 design formula. Visually non-normal variables tested with K-W, categorical
 # variables with < 5 in any cell tested with Fisher's exact
-t1_form <- "cohort~Age+kwt(am_final)+hba1c+kwt(m1_sensor_wear)+kwt(m3_sensor_wear)+kwt(m1_time_am)+kwt(m3_time_am)+m1_tir+m3_tir+kwt(demographics_t1d_duration)+success+demographics_age+demographics_sex.factor+fe(demographics_insurance.factor)+demographics_race.factor+fe(demographics_ethnicity.factor)"
+t1_form <- "Cohort~Age+kwt(am_final)+hba1c+kwt(m1_sensor_wear)+kwt(m3_sensor_wear)+kwt(m1_time_am)+kwt(m3_time_am)+m1_tir+m3_tir+kwt(demographics_t1d_duration)+success+Age+demographics_sex.factor+fe(demographics_insurance.factor)+demographics_race.factor+fe(demographics_ethnicity.factor)"
 
 t1 <- tableby(as.formula(t1_form),data = t1_df[!is.na(t1_df$success),])
 summary(t1,labelTranslations = 
@@ -275,7 +276,7 @@ summary(t1,labelTranslations =
                m1_tir = "M1 TIR",m3_tir = "M3 TIR",
                success = "Success",
                demographics_t1d_duration = "T1D Duration",
-               demographics_age = "Age Group",demographics_sex.factor = "Sex",
+               demographics_sex.factor = "Sex",
                demographics_insurance.factor = "Insurance",
                demographics_race.factor = "Race",
                demographics_ethnicity.factor = "Ethnicity",
@@ -289,7 +290,7 @@ summary(t1,labelTranslations =
 ```{r table 1b,echo=FALSE,results='asis'}
 # Table 1 design formula. Visually non-normal variables tested with K-W, categorical
 # variables with < 5 in any cell tested with Fisher's exact
-t1_form <- "interaction(cohort,success)~Age+kwt(am_final)+hba1c+kwt(m1_sensor_wear)+kwt(m3_sensor_wear)+kwt(m1_time_am)+kwt(m3_time_am)+m1_tir+m3_tir+kwt(demographics_t1d_duration)+demographics_age+demographics_sex.factor+fe(demographics_insurance.factor)+demographics_race.factor+fe(demographics_ethnicity.factor)"
+t1_form <- "interaction(Cohort,success)~Age+kwt(am_final)+hba1c+kwt(m1_sensor_wear)+kwt(m3_sensor_wear)+kwt(m1_time_am)+kwt(m3_time_am)+m1_tir+m3_tir+kwt(demographics_t1d_duration)+Age+demographics_sex.factor+fe(demographics_insurance.factor)+demographics_race.factor+fe(demographics_ethnicity.factor)"
 
 t1 <- tableby(as.formula(t1_form),data = t1_df[!is.na(t1_df$success),])
 summary(t1,labelTranslations = 
@@ -299,7 +300,7 @@ summary(t1,labelTranslations =
                m1_tir = "M1 TIR",m3_tir = "M3 TIR",
                success = "Success",
                demographics_t1d_duration = "T1D Duration",
-               demographics_age = "Age Group",demographics_sex.factor = "Sex",
+               demographics_sex.factor = "Sex",
                demographics_insurance.factor = "Insurance",
                demographics_race.factor = "Race",
                demographics_ethnicity.factor = "Ethnicity",
@@ -311,14 +312,12 @@ summary(t1,labelTranslations =
 ### Final model (1 month variables)
 
 ```{r m1 time_am,echo=FALSE}
-final_model <- 
-  as.formula("success ~ scale(hba1c,scale=F) + 
-  scale(m1_time_am,scale=F) + scale(m1_tir,scale=F) + 
-  demographics_age + demographics_sex.factor")
+final_model <- as.formula("success ~ scale(hba1c,scale=F) + scale(m1_time_am,scale=F) +
+             scale(m1_tir,scale=F) + scale(m1_boluses,scale=F) + demographics_sex.factor +
+             demographics_ethnicity.factor")
 final_mod = glm(final_model,family = "binomial",df)
 t = broom::tidy(final_mod,conf.int = T,exponentiate=T)
-t$term[2:nrow(t)] = c("Baseline HbA1c","M1 AM %","M1 TIR",
-                      "Baseline Age 14 - 18","Baseline Age 18+","Male")
+t$term[2:nrow(t)] = c("Baseline HbA1c","M1 AM %","M1 TIR","M1 Boluses per Day","Male","NOT Hispanic or Latino")
 t[,2:ncol(t)] <- lapply(t[,2:ncol(t)],function(x){round(x,4)})
 
 r = ROC(form = final_model,data = df,MX=F,MI=F,PV=F,plot = "ROC",
@@ -326,104 +325,51 @@ r = ROC(form = final_model,data = df,MX=F,MI=F,PV=F,plot = "ROC",
 kable(t)
 ```
 
-```{r m1 sensor,echo=FALSE}
-final_model <- 
-  as.formula("success ~ scale(hba1c,scale=F) + 
-  scale(m1_sensor_wear,scale=F) + scale(m1_tir,scale=F) + 
-  demographics_age + demographics_sex.factor")
-
-final_mod = glm(final_model,family = "binomial",df)
-t = broom::tidy(final_mod,conf.int = T,exponentiate=T)
-t$term[2:nrow(t)] = c("Baseline HbA1c","M1 Sensor Wear %","M1 TIR",
-                      "Baseline Age 14 - 18","Baseline Age 18+","Male")
-t[,2:ncol(t)] <- lapply(t[,2:ncol(t)],function(x){round(x,4)})
-
-r = ROC(form = final_model,data = df,MX=F,MI=F,PV=F,plot = "ROC",main = "1-Month Model")
-kable(t)
-```
-
 ### Final model (3 month variables)
 
 ```{r m3 time am model,echo=FALSE}
-final_model <- 
-  as.formula("success ~ scale(hba1c,scale=F) + 
-  scale(m3_time_am,scale=F) + scale(m3_tir,scale=F) + 
-  demographics_age + demographics_sex.factor")
-
+final_model <- as.formula("success ~ scale(hba1c,scale=F) + scale(m3_time_am,scale=F) +
+             scale(m3_tir,scale=F) + scale(m3_boluses,scale=F) + demographics_sex.factor +
+             demographics_ethnicity.factor")
 final_mod = glm(final_model,family = "binomial",df)
 t = broom::tidy(final_mod,conf.int = T)
-t$term[2:nrow(t)] = c("Baseline HbA1c","M3 AM %","M3 TIR",
-                      "Baseline Age 14 - 18","Baseline Age 18+","Male")
+t$term[2:nrow(t)] = c("Baseline HbA1c","M3 AM %","M3 TIR","M3 Boluses per Day","Male","NOT Hispanic or Latino")
 t[,2:ncol(t)] <- lapply(t[,2:ncol(t)],function(x){round(x,4)})
 
 r = ROC(form = final_model,data = df,MX=F,MI=F,PV=F,plot = "ROC",main = "3-Month Model")
 kable(t)
 ```
-
-#### Comparisons between age groups
-
-```{r}
-co  <-  coef(final_mod)
-
-age14_18 = c(0,0,0,0,1,0,0)
-age18 = c(0,0,0,0,0,1,0)
-
-cmat <- age18-age14_18
-
-exp(cmat %*% co)-1
-
-```
-
-```{r m3 sensor model,echo=FALSE}
-final_model <- 
-  as.formula("success ~ scale(hba1c,scale=F) + 
-  scale(m3_sensor_wear,scale=F) + scale(m3_tir,scale=F) + 
-  demographics_age + demographics_sex.factor")
-
-final_mod = glm(final_model,family = "binomial",df)
-t = broom::tidy(final_mod,conf.int = T,exponentiate=T)
-t$term[2:nrow(t)] = c("Baseline HbA1c","M3 Sensor Wear %","M3 TIR",
-                      "Baseline Age 14 - 18","Baseline Age 18+","Male")
-t[,2:ncol(t)] <- lapply(t[,2:ncol(t)],function(x){round(x,4)})
-
-r = ROC(form = final_model,data = df,MX=F,MI=F,PV=F,plot = "ROC",main = "3-Month Model")
-kable(t)
-```
-
-The coefficients above must be exponentiated in order to interpret them. So, the interpretation is that for each 1-unit increase in sensor wear at month 1, the odds of success increase $e^\beta$ = `r exp(t$estimate[t$term == "M3 Sensor Wear"])` times. Continuous variables have been mean-centered, so the intercept is interpreted as the average odds of success for a participant with average values of continuous variables and 0 (reference group) for all categorical.
 
 ### Validation
 
+The 3-month model above was applied to the Stanford data, and resulted in fair prediction compared to the excellent prediction in the BDC dataset.
+
 ```{r test model,echo=FALSE}
 # Model formula
-final_model <- 
-  as.formula("success ~ scale(hba1c,scale=F) + scale(m3_time_am,scale=F) + 
-  scale(m3_tir,scale=F) + demographics_age + demographics_sex.factor")
-# Fit
-model_stanford <- glm(final_model,family = "binomial",stan_df)
-# Results
-t = broom::tidy(model_stanford,conf.int = T,exponentiate=T)
-t$term[2:nrow(t)] = c("Baseline HbA1c","M3 AM %","M3 TIR",
-                      "Baseline Age 14 - 18","Baseline Age 18+","Male")
-t[,2:ncol(t)] <- lapply(t[,2:ncol(t)],function(x){round(x,4)})
-kable(t)
+final_model <- as.formula("success ~ scale(hba1c,scale=F) + scale(m3_time_am,scale=F) +
+             scale(m3_tir,scale=F) + scale(m3_boluses,scale=F) + demographics_sex.factor +
+             demographics_ethnicity.factor")
+final_mod = glm(final_model,family = "binomial",df)
+# Test on Stanford's data
+pred = predict(final_mod,stan_df)
 # ROC
-r = ROC(form = final_model,data = stan_df,MX=F,MI=F,PV=F,plot = "ROC",
+r = ROC(test = pred,stat = stan_df$success,MX=F,MI=F,PV=F,plot = "ROC",
         main = "Validation")
-p = as.data.frame(model_stanford$data)
-pred = predict(model_stanford,type = "response")
-p[names(pred),"pred"] = pred
-g <- roc(success ~ pred, data = p)
-plot(g,print.auc=T)
+```
 
-roc_plot = ggplot(p, aes(d = success, m = pred)) + 
-  geom_roc(n.cuts = 0) + geom_abline(intercept = 0,slope = 1) + 
-  annotate(label = paste("Area under the curve:",round(g$auc,3)),
-           x=0.75, y=0.2,family = "Helvetica",geom = "text") + 
-  ylab("Sensitivity") + xlab("1 - Specificity") + theme_bw() + 
-  ggtitle("Validation") + theme(plot.title = element_text(hjust = 0.5))
-ggsave("validation_plot.eps",roc_plot,dpi = 300,device = "eps",
-       width = 107, height = 107, units = "mm")
+#### AUC comparison
+
+```{r warning=FALSE}
+# Get data and combine into one df
+df$train_prob = predict(final_mod,df,type = "response")
+stan_df$train_prob = predict(final_mod,stan_df,type = "response")
+plot_df = rbind(df[,c("record_id","train_prob","success","Cohort")],
+                stan_df[,c("record_id","train_prob","success","Cohort")])
+# Plot
+p = ggplot(plot_df, aes(d = success, m = train_prob, linetype = Cohort)) + 
+  geom_roc(n.cuts = 0) + theme_bw() +
+  xlab("1 - Specificity") + ylab("Sensitivity")
+p
 ```
 
 # References
