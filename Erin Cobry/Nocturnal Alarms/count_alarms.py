@@ -1,13 +1,25 @@
 import os
 import math
 from itertools import combinations
+from datetime import datetime
+from dateutil.parser import parse
+import xlrd
 import pandas as pd
 import numpy as np
-wd = "/Users/timvigers/Documents/Work/Erin Cobry/Nocturnal Alarms/"
+wd = "/Volumes/Documents/Work/Erin Cobry/Nocturnal Alarms/"
 # Subject information and dates
 subject_dates = pd.read_csv(wd+"Data_Cleaned/subject_dates.csv")
 names = [name.lower() for name in subject_dates['name']]
 names = np.array(names)
+# Function for converting Excel dates
+def floatHourToTime(fh):
+    h, r = divmod(fh, 1)
+    m, r = divmod(r*60, 1)
+    return (
+        int(h),
+        int(m),
+        int(r*60),
+    )
 # Dictionary for results
 dict={'id': [], 'timepoint': [], 'start_date': [], 'end_date': [], 'num_nights': [],\
 'num_alarms': [], 'threshold_alarms': [], 'maintenance_alarms': [], 'hcl_alarms': [],\
@@ -16,8 +28,9 @@ dict={'id': [], 'timepoint': [], 'start_date': [], 'end_date': [], 'num_nights':
 for file in os.listdir(wd+"Data_Cleaned/CSVs/"):
     if file == ".DS_Store":
         continue
+    print(file)
     # Get subject name and dates
-    df = pd.read_csv(wd+"Data_Raw/CSVs/"+file,low_memory=False)
+    df = pd.read_csv(wd+"Data_Cleaned/CSVs/"+file,low_memory=False)
     t = file.split(" ")[1]
     t_cols = [col for col in subject_dates.columns if t.lower() in col]
     if len(t_cols) < 1:
@@ -34,7 +47,14 @@ for file in os.listdir(wd+"Data_Cleaned/CSVs/"):
     df.columns = df.loc[5,]
     df = df.drop(list(range(0,6)),axis = 0)
     # Get correct dates
-    df['Datetime'] = pd.to_datetime(df['Date'] + ' ' + df['Time'],format="%m/%d/%y %H:%M:%S",errors="coerce")
+    if "/" in df['Date'].iloc[0]:
+        df['Datetime'] = df['Date'] + ' ' + df['Time']
+        df['Datetime'] = [parse(d) if isinstance(d, str) and '/' in d else '' for d in df['Datetime']]
+    else:
+        df["Date"] = pd.to_numeric(df["Date"], errors='coerce')
+        df["Time"] = pd.to_numeric(df["Time"], errors='coerce')
+        df['Datetime'] = df["Date"]+df["Time"]
+        df['Datetime'] = [datetime(*xlrd.xldate_as_tuple(d, 0)) if not math.isnan(d) else '' for d in df['Datetime']]
     df = df.set_index('Datetime')
     df = df.loc[start:end]
     nights = df['Date'].nunique() - 1
