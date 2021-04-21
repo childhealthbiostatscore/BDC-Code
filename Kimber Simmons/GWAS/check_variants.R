@@ -1,4 +1,4 @@
-setwd("/Users/timvigers/Dropbox/Work/Kimber Simmons/GWAS/Data_Cleaned/biobank_analysis")
+setwd("~/Dropbox/Work/Kimber Simmons/GWAS/Data_Cleaned/biobank_analysis")
 miss_snp = read.table("merged2-merge.missnp")
 # Import
 redo = read.table("./redo.bim")
@@ -16,4 +16,3 @@ redo[,c(1,3,4)] = NULL
 redo = cbind(redo,biobank[match(redo$V2,biobank$V2),c(5,6)])
 
 write.table(redo,file = "redo_update",row.names = F,quote = F,col.names = F)
-

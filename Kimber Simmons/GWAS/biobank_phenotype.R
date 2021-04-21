@@ -1,11 +1,11 @@
-setwd("~/Documents/Work/Kimber Simmons/GWAS")
+setwd("~/Dropbox/Work/Kimber Simmons/GWAS")
 # Read in and re-write .fam files
-redo = read.table("./Data_Cleaned/harmonized_analysis/redo.fam")
+redo = read.table("./Data_Cleaned/biobank_analysis/redo.fam")
 redo$V6 = 2
-write.table(redo,file = "./Data_Cleaned/harmonized_analysis/redo.fam",row.names = F,quote = F,col.names = F)
+write.table(redo,file = "./Data_Cleaned/biobank_analysis/redo.fam",row.names = F,quote = F,col.names = F)
 
-biobank = read.table("./Data_Cleaned/harmonized_analysis/biobank2.fam")
+biobank = read.table("./Data_Cleaned/biobank_analysis/biobank2.fam")
 diagnoses = read.csv("./Data_Raw/V2 - Biobank data on Hispanic Patients - Full Genetic Request/Table 2 Diagnoses.CSV")
 biobank$V6 = 2
 biobank$V6[which(!(biobank$V1 %in% diagnoses$Arb_Person_ID))] = 1
-write.table(biobank,file = "./Data_Cleaned/harmonized_analysis/biobank2.fam",row.names = F,quote = F,col.names = F)
+write.table(biobank,file = "./Data_Cleaned/biobank_analysis/biobank2.fam",row.names = F,quote = F,col.names = F)
