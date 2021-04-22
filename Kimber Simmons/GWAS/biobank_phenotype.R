@@ -6,6 +6,6 @@ write.table(redo,file = "./Data_Cleaned/biobank_analysis/redo.fam",row.names = F
 
 biobank = read.table("./Data_Cleaned/biobank_analysis/biobank2.fam")
 diagnoses = read.csv("./Data_Raw/V2 - Biobank data on Hispanic Patients - Full Genetic Request/Table 2 Diagnoses.CSV")
-biobank$V6 = 2
-biobank$V6[which(!(biobank$V1 %in% diagnoses$Arb_Person_ID))] = 1
+biobank$V6 = 1
+biobank$V6[which(!(biobank$V1 %in% diagnoses$Arb_Person_ID))] = 2
 write.table(biobank,file = "./Data_Cleaned/biobank_analysis/biobank2.fam",row.names = F,quote = F,col.names = F)

@@ -7,119 +7,22 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
-knitr::opts_knit$set(root.dir = "/media/tim/Work/Kimber Simmons/GWAS")
-library(RColorBrewer)
-library(qqman)
-library(tidyverse)
+knitr::opts_knit$set(root.dir = "/Users/timvigers/Dropbox/Work/Kimber Simmons/GWAS")
+library(snpStats)
 ```
 
-# PCA
+# Quality Control
 
-# By Superpopulation
-
-```{r warning=FALSE}
-# Read in race info for study participants
-kimber = read.csv("./Data_Cleaned/clinical.csv")
-kimber$race = kimber$Hispanic..0.N..1.Y.
-race = kimber[,c(1,16)]
-colnames(race) = c("studyid","race")
-race$studyid = as.character(race$studyid)
-race$race = as.character(factor(race$race,labels = c("Non-Hispanic","Hispanic")))
-biobank1 = read.csv("./Data_Raw/V2 - Biobank data on Hispanic Patients - Full Genetic Request/Table 1 Patient.csv")
-biobank1 = biobank1[,c("Arb_Person_ID","Ethnicity")]
-colnames(biobank1) = c("studyid","race")
-biobank1$studyid = as.character(biobank1$studyid)
-biobank2 = read.csv("./Data_Raw/Simmons Biobank/Biobank Hispanic Patients - Compass Mapping File.csv")
-biobank2$race = "Hispanic"
-biobank2 = biobank2[,c(1,3)]
-colnames(biobank2) = c("studyid","race")
-biobank2$studyid = as.character(biobank2$studyid)
-tgp_race = read.table(file="/media/tim/Work/TGP/phase3_corrected.psam",
-                stringsAsFactors = F)
-tgp_race = tgp_race[,c(1,5)]
-colnames(tgp_race) = c("studyid","race")
-race = bind_rows(race,biobank1,biobank2,tgp_race)
-# Import PCA
-data = read.table(file="./Data_Cleaned/plink/PCA.eigenvec",header=FALSE)
-colnames(data) = c("V1","V2",paste0("C",seq(1,ncol(data)-2)))
-data$race = race$race[match(gsub(".*_","",data$V2),race$studyid)]
-datafile = data[!is.na(data$race),]
-# Plot (colorblind friendly)
-cbPalette = brewer.pal(9,"YlGnBu")
-ggplot(datafile,aes(x=C1,y=C2)) + geom_point(aes(color = race)) + scale_color_manual(values=cbPalette) + theme_bw()
-ggplot(datafile,aes(x=C2,y=C3)) + geom_point(aes(color = race)) + scale_color_manual(values=cbPalette) + theme_bw()
-ggplot(datafile,aes(x=C1,y=C3)) + geom_point(aes(color = race)) + scale_color_manual(values=cbPalette) + theme_bw()
-```
-
-# By Batch
-
-```{bash eval=FALSE}
-plink2 --bfile merged_final --pca --out PCA_cohort
-```
-
-```{r warning=FALSE}
-# Import PCA
-data = read.table(file="./Data_Cleaned/plink/PCA_cohort.eigenvec",header=FALSE)
-colnames(data) = c("V1","V2",paste0("C",seq(1,ncol(data)-2)))
-data$race = race$race[match(gsub(".*_","",data$V2),race$studyid)]
-data$cohort = NA
-data$cohort = ifelse(gsub(".*_","",data$V2) %in% 
-                       kimber$correct_labID,"Kimber","Biobank")
-datafile = data[!(data$V2 %in% tgp_race$studyid),]
-cbPalette = brewer.pal(3,"Dark2")
-ggplot(datafile,aes(x=C1,y=C2)) + geom_point(aes(color = cohort)) + scale_color_manual(values=cbPalette) + theme_bw()
-ggplot(datafile,aes(x=C2,y=C3)) + geom_point(aes(color = cohort)) + scale_color_manual(values=cbPalette) + theme_bw()
-ggplot(datafile,aes(x=C1,y=C3)) + geom_point(aes(color = cohort)) + scale_color_manual(values=cbPalette) + theme_bw()
-```
-
-# Analysis
-
-```{r}
-# Make covariate txt files
-datafile$cohort = as.numeric(factor(datafile$cohort))
-datafile$race[datafile$race == "AFR"] = NA
-datafile$race[datafile$race == "Patient Refused"] = NA
-datafile$race = as.numeric(factor(datafile$race))
-write.table(datafile[,c("V1","V2","C1","C2","race")],
-            file = "./Data_Cleaned/plink/covar.txt",quote = F,row.names = F)
-write.table(datafile[,c("V1","V2","C1","C2","race","cohort")],
-            file = "./Data_Cleaned/plink/covar_cohort.txt",quote = F,row.names = F)
-```
-
-```{bash eval=FALSE}
-# Logistic regression
-plink --bfile merged_final --covar covar.txt --logistic sex --out logistic_results
-plink --bfile merged_final --covar covar_cohort.txt --logistic sex --out logistic_results_cohort
-```
-
-## Results
-
-### Unadjusted
-
-```{r warning=FALSE}
-# Import plink results
-logistic_results =
-  read.table("./Data_Cleaned/plink/logistic_results.assoc.logistic",header = T)
-# Format data
-res = logistic_results[logistic_results$TEST == "ADD",]
-# Get SNPs of interest from Kimber
-#snps_interest <- read.csv("./Data_Cleaned/Variants in any T1D GRS.csv")
-# Plot
-# manhattan(res,main = "Manhattan Plot",highlight = snps_interest$SNP)
-qq(res$P)
-```
-
-### Adjusted for cohort (batch)
-
-```{r warning=FALSE}
-# Import plink results
-logistic_results = 
-  read.table("./Data_Cleaned/plink/logistic_results_cohort.assoc.logistic",header = T)
-# Format data
-res = logistic_results[logistic_results$TEST == "ADD",]
-# Get SNPs of interest from Kimber
-#snps_interest <- read.csv("./Data_Cleaned/Variants in any T1D GRS.csv")
-# Plot
-# manhattan(res,main = "Manhattan Plot",highlight = snps_interest$SNP)
-qq(res$P)
+```{r import and merge,cache=TRUE}
+# Kimber
+path <- paste("/Users/timvigers/Dropbox/Work/Kimber Simmons/GWAS/Data_Raw/Simmons_MEGA1_Deliverable_06142019/cleaned_files/Simmons_Custom_MEGA_Analysi_03012019_snpFailsRemoved_passing_QC", c(".bed", ".bim", ".fam"), sep = "")
+redo <- read.plink(path[1], path[2], path[3])
+# First biobank
+path <- paste("/Users/timvigers/Dropbox/Work/Kimber Simmons/GWAS/Data_Raw/Simmons Biobank/Simmons_071520", c(".bed", ".bim", ".fam"), sep = "")
+biobank1 <- read.plink(path[1], path[2], path[3])
+# Second biobank
+path <- paste("/Users/timvigers/Dropbox/Work/Kimber Simmons/GWAS/Data_Raw/V2 - Biobank data on Hispanic Patients - Full Genetic Request/Simmons_120420", c(".bed", ".bim", ".fam"), sep = "")
+biobank2 <- read.plink(path[1], path[2], path[3])
+# Merge
+SNP <- rbind(redo$genotypes, biobank1$genotypes, biobank2$genotypes)
 ```
