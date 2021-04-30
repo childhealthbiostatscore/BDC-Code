@@ -77,16 +77,6 @@ do
     --prefix imputed/$i\
     --cpus cps
 done
-# Convert each chromosome dose file to plink format
-for i in {1..22}
-do
-  bcftools index imputed/$i.dose.vcf.gz
-  plink2 --vcf imputed/$i.dose.vcf.gz --recode --double-id --make-bed --out imputed/$i.plink
-done
-# Remove .map, .ped, etc. files
+# Merge the imputed chromosome files back into one
 cd imputed
-find . -type f -name "*.ped" -delete
-find . -type f -name "*.map" -delete
-find . -type f -name "*.nosex" -delete
-find . -type f -name "*.log" -delete
-cd ..
+bcftools concat *vcf.gz -Oz -o merged_imputed.vcf.gz
