@@ -51,7 +51,14 @@ find . -name "*~" -delete
 # Recode merged data to VCF
 plink2 --bfile merged_final --recode vcf --out merged_final
 # Compress
-# bgzip -c merged_final.vcf > merged_final.vcf.gz
+bgzip -c merged_final.vcf > merged_final.vcf.gz
+tabix -p vcf merged_final.vcf.gz
+mkdir chr
+for i in {1..22}
+do
+   bcftools filter merged_final.vcf.gz -r $i > chr/chr$i.vcf
+   bgzip -c chr/chr$i.vcf > chr/chr$i.vcf.gz
+done
 # Use https://imputation.biodatacatalyst.nhlbi.nih.gov for imputation instead of local
 # GRCh37, r squared filter 0.3, QC frequency check vs. TOPMed
 # Convert original files to vcf
@@ -70,3 +77,16 @@ plink2 --bfile Data_Raw/V2\ -\ Biobank\ data\ on\ Hispanic\ Patients\ -\ Full\ G
   --recode vcf \
   --snps-only 'just-acgt' \
   --out Data_Cleaned/biobank_analysis/biobank2
+# Compress, split by chromosome
+for i in redo biobank1 biobank2
+do
+  bgzip -c $i.vcf > $i.vcf.gz
+  tabix -p vcf $i.vcf.gz
+  mkdir ${i}_chr
+  for j in {1..22}
+  do
+    bcftools view $i.vcf.gz --regions chr${j} > ${i}_chr/chr$j.vcf
+    bgzip -c ${i}_chr/chr$j.vcf > ${i}_chr/chr$j.vcf.gz
+    tabix -p vcf ${i}_chr/chr$j.vcf.gz
+  done
+done
