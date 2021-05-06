@@ -58,35 +58,7 @@ for i in {1..22}
 do
    bcftools filter merged_final.vcf.gz -r $i > chr/chr$i.vcf
    bgzip -c chr/chr$i.vcf > chr/chr$i.vcf.gz
+   rm chr/chr$i.vcf
 done
 # Use https://imputation.biodatacatalyst.nhlbi.nih.gov for imputation instead of local
 # GRCh37, r squared filter 0.3, QC frequency check vs. TOPMed
-# Convert original files to vcf
-cd ~/Dropbox/Work/Kimber\ Simmons/GWAS
-plink2 --bfile Data_Raw/Simmons_MEGA1_Deliverable_06142019/cleaned_files/Simmons_Custom_MEGA_Analysi_03012019_snpFailsRemoved_passing_QC \
-  --recode vcf \
-  --snps-only 'just-acgt' \
-  --out Data_Cleaned/biobank_analysis/redo
-
-plink2 --bfile Data_Raw/Simmons\ Biobank/Simmons_071520 \
-  --recode vcf \
-  --snps-only 'just-acgt' \
-  --out Data_Cleaned/biobank_analysis/biobank1
-
-plink2 --bfile Data_Raw/V2\ -\ Biobank\ data\ on\ Hispanic\ Patients\ -\ Full\ Genetic\ Request/Simmons_120420\
-  --recode vcf \
-  --snps-only 'just-acgt' \
-  --out Data_Cleaned/biobank_analysis/biobank2
-# Compress, split by chromosome
-for i in redo biobank1 biobank2
-do
-  bgzip -c $i.vcf > $i.vcf.gz
-  tabix -p vcf $i.vcf.gz
-  mkdir ${i}_chr
-  for j in {1..22}
-  do
-    bcftools view $i.vcf.gz --regions chr${j} > ${i}_chr/chr$j.vcf
-    bgzip -c ${i}_chr/chr$j.vcf > ${i}_chr/chr$j.vcf.gz
-    tabix -p vcf ${i}_chr/chr$j.vcf.gz
-  done
-done
