@@ -1,6 +1,6 @@
 #!/bin/bash
 # Find individuals to exclude
-Rscript /Users/timvigers/GitHub/BDC-Code/Kimber\ Simmons/GWAS/check_samples.R
+Rscript ~/GitHub/BDC-Code/Kimber\ Simmons/GWAS/check_samples.R
 # Working directory
 cd ~/Dropbox/Work/Kimber\ Simmons/GWAS
 # Remove indels, limit to chromosomes 1-22 and pseudoautosomal regions of XY
@@ -17,7 +17,7 @@ plink2 --bfile Data_Raw/V2\ -\ Biobank\ data\ on\ Hispanic\ Patients\ -\ Full\ G
   --autosome-xy\
   --make-bed --out Data_Cleaned/biobank_analysis/biobank2
 # Phenotype
-Rscript /Users/timvigers/GitHub/BDC-Code/Kimber\ Simmons/GWAS/biobank_phenotype.R
+Rscript ~/GitHub/BDC-Code/Kimber\ Simmons/GWAS/biobank_phenotype.R
 # Move to cleaned Data_Raw
 cd Data_Cleaned/biobank_analysis
 # Merge
@@ -26,7 +26,7 @@ plink --bfile redo --bmerge biobank1 --make-bed --out merged
 plink --bfile redo --flip merged-merge.missnp --make-bed --out redo_flipped
 plink --bfile redo_flipped --bmerge biobank1 --make-bed --out merged
 # Check for variants that are genuine mismatches
-Rscript /Users/timvigers/GitHub/BDC-Code/Kimber\ Simmons/GWAS/check_variants.R
+Rscript ~/GitHub/BDC-Code/Kimber\ Simmons/GWAS/check_variants.R
 # Exclude real mismatches
 plink --bfile redo_flipped --exclude exclude_snps --make-bed --out redo_flipped
 plink --bfile redo_flipped --bmerge biobank1 --make-bed --out merged
@@ -51,32 +51,22 @@ find . -name "*~" -delete
 # Recode merged data to VCF
 plink2 --bfile merged_final --recode vcf --out merged_final
 # Compress
-bgzip -c merged_final.vcf > merged_final.vcf.gz
-# Loop tabix and bcftools over all chromosomes to split into individual files
-# Code from https://www.biostars.org/p/173073/ and
-# https://bioinformatics.stackexchange.com/questions/3401/how-to-subset-a-vcf-by-chromosome-and-keep-the-header
-# Autosomes are coded 1 - 22 and the others are:
-# X chromosome                    = 23
-# Y chromosome                    = 24
-# Pseudo-autosomal region of X    = 25
-# Mitochondrial                   = 26
-tabix -p vcf merged_final.vcf.gz
-mkdir chr
-for i in {1..26}
-do
-   bcftools filter merged_final.vcf.gz -r $i > chr/chr$i.vcf
-done
-# Minimac imputation for autosomes - sex chromosomes not working yet
-mkdir imputed
-cps=4
-for i in {1..22}
-do
-  minimac4\
-    --refHaps ~/Dropbox/Work/GWAS/Minimac/G1K_P3_M3VCF_FILES_WITH_ESTIMATES/$i.1000g.Phase3.v5.With.Parameter.Estimates.m3vcf.gz \
-    --haps chr/chr$i.vcf \
-    --prefix imputed/$i\
-    --cpus cps
-done
-# Merge the imputed chromosome files back into one
-cd imputed
-bcftools concat *vcf.gz -Oz -o merged_imputed.vcf.gz
+# bgzip -c merged_final.vcf > merged_final.vcf.gz
+# Use https://imputation.biodatacatalyst.nhlbi.nih.gov for imputation instead of local
+# GRCh37, r squared filter 0.3, QC frequency check vs. TOPMed
+# Convert original files to vcf
+cd ~/Dropbox/Work/Kimber\ Simmons/GWAS
+plink2 --bfile Data_Raw/Simmons_MEGA1_Deliverable_06142019/cleaned_files/Simmons_Custom_MEGA_Analysi_03012019_snpFailsRemoved_passing_QC \
+  --recode vcf \
+  --snps-only 'just-acgt' \
+  --out Data_Cleaned/biobank_analysis/redo
+
+plink2 --bfile Data_Raw/Simmons\ Biobank/Simmons_071520 \
+  --recode vcf \
+  --snps-only 'just-acgt' \
+  --out Data_Cleaned/biobank_analysis/biobank1
+
+plink2 --bfile Data_Raw/V2\ -\ Biobank\ data\ on\ Hispanic\ Patients\ -\ Full\ Genetic\ Request/Simmons_120420\
+  --recode vcf \
+  --snps-only 'just-acgt' \
+  --out Data_Cleaned/biobank_analysis/biobank2
