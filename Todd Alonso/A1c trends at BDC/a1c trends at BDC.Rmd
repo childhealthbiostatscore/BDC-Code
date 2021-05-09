@@ -1,0 +1,105 @@
+---
+title: "A1c trends at BDC"
+author: "Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    theme: readable
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
+
+library(knitr)
+library(readxl)
+library(tableone)
+library(dplyr)
+
+patientdata <- read_excel("T:\\Todd Alonso\\A1c trends at BDC\\A1cTrendsAtBDC_PatientLevel_03162021.xlsx",na=c("","NA","NULL"))
+patientdata <- unique(patientdata)
+# no dups
+
+visitdata <- read_excel("T:\\Todd Alonso\\A1c trends at BDC\\A1cTrendsAtBDC_VisitLevel_03162021.xlsx",na=c("","NA","NULL"))
+visitdata <- unique(visitdata)
+visitdata$FirstName <- NULL
+visitdata$LastName <- NULL
+visitdata$DOB <- NULL
+visitdata$OnsetDate <- NULL
+# no dups
+
+# create one dataset using only those in both dataframes
+alldata <- merge(visitdata,patientdata,by="EPICMRN",all.x = FALSE,all=FALSE)
+
+# create variable for visit year
+alldata$visityear <- format(alldata$VisitDate,format = "%Y")
+
+# exclude visityear 2011 and 2012
+alldata <- alldata[!alldata$visityear %in% c(2011,2012),]
+
+# create simpler race/ethnicity variable
+alldata$Race_Ethnicity_combined <- ifelse(alldata$Race_Ethnicity=="Hispanic","Hispanic",
+                                          ifelse(alldata$Race_Ethnicity=="Non-Hispanic White","Non-Hispanic White","Other"))
+
+# fix language
+alldata$Language <- ifelse(alldata$Language=="ENGLISH","English",alldata$Language)
+alldata$Language <- ifelse(alldata$Language=="SPANISH","Spanish",alldata$Language)
+alldata$Language <- ifelse(alldata$Language=="Other - please contact MI Department at x79800","Other",alldata$Language)
+alldata$Language_combined <- ifelse(alldata$Language=="English","English",
+                                    ifelse(alldata$Language=="Spanish","Spanish","Other"))
+
+# create variable with mean A1c per year for each patient
+a1c <- alldata[,c("EPICMRN","visityear","A1c_Value")]
+a1c_year <- a1c %>% group_by(EPICMRN,visityear) %>% mutate(A1c_Mean = mean(A1c_Value))  %>% filter(row_number()==1)
+a1c_year <- a1c_year[,c("EPICMRN","visityear","A1c_Mean")]
+alldata <- merge(alldata,a1c_year,by=c("EPICMRN","visityear"),all.x = T,all.y=T)
+
+# categorize the mean A1c value for the year as <6%, 6-12%, or 12%
+alldata$A1c_Mean_cat <- ifelse(alldata$A1c_Mean<6,"<6%",
+                               ifelse(alldata$A1c_Mean>12,">12%","6-12%"))
+
+# count number of visits per year
+visittemp <- alldata[,c("EPICMRN","visityear")]
+visitcount <- visittemp %>% group_by(EPICMRN,visityear) %>% mutate(visitcount = count(visityear)) 
+
+# collapse insurance
+alldata$InsuranceCategory_combined <- ifelse(alldata$InsuranceCategory=="Medicaid","Public",
+                                             ifelse(alldata$InsuranceCategory %in% c("Private","Military Plans"),"Private","Unknown"))
+
+# sort by EPICMRN and visit data
+alldata <- alldata[with(alldata,order(EPICMRN,VisitDate)),]
+
+# create dataset for each year with patients who had visits in that year
+#dat2011 <- alldata[alldata$visityear==2011,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
+#dat2012 <- alldata[alldata$visityear==2012,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
+dat2013 <- alldata[alldata$visityear==2013,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
+dat2014 <- alldata[alldata$visityear==2014,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
+dat2015 <- alldata[alldata$visityear==2015,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
+dat2016 <- alldata[alldata$visityear==2016,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
+dat2017 <- alldata[alldata$visityear==2017,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
+dat2018 <- alldata[alldata$visityear==2018,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
+dat2019 <- alldata[alldata$visityear==2019,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
+dat2020 <- alldata[alldata$visityear==2020,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
+demo_by_year <- rbind(dat2013,dat2014,dat2015,dat2016,dat2017,dat2018,dat2019,dat2020)
+
+# create table of demographics and clinical characteristics by visit year
+demovars <- c("Gender","Race_Ethnicity_combined","Language_combined","InsuranceCategory_combined",
+              "DiabetesDuration_A1cResultDate","Age_A1cResultDate","CGM","InsulinRegimen","A1c_Value","A1c_Mean","A1c_Mean_cat")
+t1 <- CreateTableOne(data=demo_by_year,vars=demovars,strata="visityear")
+t1 <- print(t1)
+
+```
+
+# Background
+
+# Methods
+
+# Results
+
+```{r echo=FALSE}
+kable(t1,caption = "Table 1.  Demographic and clinical characteristics of patients having a visit in each year.  The first visit in each year was included, except for the variable A1c_Mean, which represents the mean A1c value for all visits during that year.")
+```
+<br>
