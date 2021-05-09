@@ -18,6 +18,8 @@ library(knitr)
 library(readxl)
 library(tableone)
 library(dplyr)
+library(tidyr)
+library(nlme)
 
 patientdata <- read_excel("T:\\Todd Alonso\\A1c trends at BDC\\A1cTrendsAtBDC_PatientLevel_03162021.xlsx",na=c("","NA","NULL"))
 patientdata <- unique(patientdata)
@@ -43,6 +45,8 @@ alldata <- alldata[!alldata$visityear %in% c(2011,2012),]
 # create simpler race/ethnicity variable
 alldata$Race_Ethnicity_combined <- ifelse(alldata$Race_Ethnicity=="Hispanic","Hispanic",
                                           ifelse(alldata$Race_Ethnicity=="Non-Hispanic White","Non-Hispanic White","Other"))
+alldata$Race_Ethnicity_combined <- as.factor(alldata$Race_Ethnicity_combined)
+alldata$Race_Ethnicity_combined <- relevel(alldata$Race_Ethnicity_combined,ref="Non-Hispanic White")
 
 # fix language
 alldata$Language <- ifelse(alldata$Language=="ENGLISH","English",alldata$Language)
@@ -63,7 +67,15 @@ alldata$A1c_Mean_cat <- ifelse(alldata$A1c_Mean<6,"<6%",
 
 # count number of visits per year
 visittemp <- alldata[,c("EPICMRN","visityear")]
-visitcount <- visittemp %>% group_by(EPICMRN,visityear) %>% mutate(visitcount = count(visityear)) 
+visitcount <- visittemp %>% group_by(EPICMRN,visityear) %>% summarise(n = n()) 
+colnames(visitcount) <- c("EPICMRN","visityear","visitcount")
+alldata <- merge(alldata,visitcount,by=c("EPICMRN","visityear"),all.x=T,all.y=T)
+
+# find first visit year
+firstvisit <- alldata[,c("EPICMRN","visityear")]
+firstvisit <- firstvisit %>% group_by(EPICMRN) %>% filter(row_number()==1)
+colnames(firstvisit) <- c("EPICMRN","firstvisit")
+#alldata <- merge(alldata,firstvisit,by="EPICMRN",all.x = T,all.y = T)
 
 # collapse insurance
 alldata$InsuranceCategory_combined <- ifelse(alldata$InsuranceCategory=="Medicaid","Public",
@@ -85,21 +97,143 @@ dat2019 <- alldata[alldata$visityear==2019,] %>% group_by(EPICMRN) %>% filter(ro
 dat2020 <- alldata[alldata$visityear==2020,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
 demo_by_year <- rbind(dat2013,dat2014,dat2015,dat2016,dat2017,dat2018,dat2019,dat2020)
 
+# make a new df that will have every year for every patient
+# create variable for whether the patient was seen at least once in the last year, starting at their first visit
+# prior to first visit, will be NA
+alldata_expand <- alldata %>% ungroup() %>% complete(EPICMRN, visityear)
+alldata_expand <- merge(alldata_expand,firstvisit,by="EPICMRN",all.x=T,all.y=T)
+alldata_expand$visit_in_year <- NA
+alldata_expand$visit_in_year <- ifelse(alldata_expand$visityear<alldata_expand$firstvisit,NA,
+                         ifelse(alldata_expand$visitcount %in% c(0,NA),0,1))
+alldata_expand$visit_in_year <- as.factor(alldata_expand$visit_in_year)
+
+# create variable for having a visit in the past year
+x <- alldata_expand[,c("EPICMRN","visityear","visit_in_year")]
+x <- x %>% group_by(EPICMRN,visityear) %>% filter(row_number()==1)
+x$visit_in_year <- as.numeric(as.character(x$visit_in_year))
+x$visityear <- as.numeric(x$visityear)
+x <- x %>% ungroup() %>% group_by(EPICMRN) %>% mutate(visit_last_year=lag(visit_in_year, order_by = visityear))
+x$visit_last_year <- as.factor(x$visit_last_year)
+x$visit_in_year <- NULL
+alldata_expand <- merge(alldata_expand,x,by=c("EPICMRN","visityear"),all.x = T,all.y = T)
+
+# create table of patients having at least one visit in each year
+dat2013_expand <- alldata_expand[alldata_expand$visityear==2013,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
+dat2014_expand <- alldata_expand[alldata_expand$visityear==2014,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
+dat2015_expand <- alldata_expand[alldata_expand$visityear==2015,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
+dat2016_expand <- alldata_expand[alldata_expand$visityear==2016,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
+dat2017_expand <- alldata_expand[alldata_expand$visityear==2017,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
+dat2018_expand <- alldata_expand[alldata_expand$visityear==2018,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
+dat2019_expand <- alldata_expand[alldata_expand$visityear==2019,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
+dat2020_expand <- alldata_expand[alldata_expand$visityear==2020,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
+demo_by_year_expand <- rbind(dat2013_expand,dat2014_expand,dat2015_expand,dat2016_expand,dat2017_expand,dat2018_expand,
+                             dat2019_expand,dat2020_expand)
+demo_by_year_expand <- demo_by_year_expand %>% arrange(EPICMRN,visityear)
+
 # create table of demographics and clinical characteristics by visit year
 demovars <- c("Gender","Race_Ethnicity_combined","Language_combined","InsuranceCategory_combined",
-              "DiabetesDuration_A1cResultDate","Age_A1cResultDate","CGM","InsulinRegimen","A1c_Value","A1c_Mean","A1c_Mean_cat")
+              "DiabetesDuration_A1cResultDate","Age_A1cResultDate","DKAAtOnset","CGM","InsulinRegimen","A1c_Value","A1c_Mean","A1c_Mean_cat",
+              "visitcount")
 t1 <- CreateTableOne(data=demo_by_year,vars=demovars,strata="visityear")
 t1 <- print(t1)
+
+# table of whether patients had a visit in each year, following their first visit
+t2 <- CreateTableOne(data=demo_by_year_expand[demo_by_year_expand$visityear!=2013 & 
+                                                demo_by_year_expand$visityear != 2020,],vars="visit_in_year",strata="visityear")
+t2 <- print(t2)
+
+# table of patients with mean A1c <6% in a given year, and whether they had a visit the prior year
+t3 <- CreateTableOne(data=demo_by_year_expand[demo_by_year_expand$A1c_Mean_cat=="<6%" 
+                                              & demo_by_year_expand$visityear!=2013,],vars="visit_last_year",strata="visityear")
+t3 <- print(t3)
+
+# table of patients with mean A1c 6-12% in a given year, and whether they had a visit the prior year
+t4 <- CreateTableOne(data=demo_by_year_expand[demo_by_year_expand$A1c_Mean_cat=="6-12%"
+                                              & demo_by_year_expand$visityear!=2013,],vars="visit_last_year",strata="visityear")
+t4 <- print(t4)
+
+# table of patients with mean A1c >12% in a given year, and whether they had a visit the prior year
+t5 <- CreateTableOne(data=demo_by_year_expand[demo_by_year_expand$A1c_Mean_cat==">12%"
+                                              & demo_by_year_expand$visityear!=2013,],vars="visit_last_year",strata="visityear")
+t5 <- print(t5)
+
+# mixed model of mean A1c by year
+mod <- lme(A1c_Mean ~ visityear + Race_Ethnicity_combined + Language_combined + InsuranceCategory_combined + DiabetesDuration_A1cResultDate +
+             Age_A1cResultDate + DKAAtOnset + CGM + InsulinRegimen + visitcount,
+           random=~1|EPICMRN,data = demo_by_year_expand[demo_by_year_expand$visityear!=2013 & 
+                                                demo_by_year_expand$visityear != 2020,],na.action = na.omit)
+mod_anova <- anova.lme(mod, type="marginal")
+
+# use emmeans 
+#amtime_mod_means <- emmeans::emmeans(amtime_mod,"gyl_timepoint.factor")
+#amtime_mod_pairs <-  pairs(amtime_mod_means,adjust="tukey")
 
 ```
 
 # Background
 
+The purpose of this analysis is to examine factors that may be related to changes in clinic HbA1c values between 2013-2020 at the BDC.
+
 # Methods
+
+The following data manipulation steps were performed:
+
+- Visit years 2011 and 2012 were excluded.  Should 2020 be excluded since it's a partial year?
+
+- Language was categorized as English, Spanish, and other.
+
+- Race/ethnicity was categorized as Hispanic, Non-Hispanic White, and other.
+
+- Insurance was categorized as private (private insurance + military), public, or unknown.
+
+- The mean A1c per year was calculated for each patient, and was categorized as <6%, 6-12%, and >12%.
+
+- A variable was created to indicate whether each patient had a visit during the calendar year, beginning with the year of their first visit.
+
+Descriptive statistics reported are mean/SD and frequency/percentage.  Years and patient groups were compared using linear models for continuous variables and chi-square tests for categorical variables.  A mixed-effects model was used to model factors associated with HbA1c over time.
 
 # Results
 
+## Demographic and clinical characteristics of patients having a visit in each year.  The first visit in each year was included, except for the variable A1c_Mean, which represents the mean A1c value for all visits during that year, and the variable visitcount, which represents the number of visits per  year.
+
 ```{r echo=FALSE}
-kable(t1,caption = "Table 1.  Demographic and clinical characteristics of patients having a visit in each year.  The first visit in each year was included, except for the variable A1c_Mean, which represents the mean A1c value for all visits during that year.")
+kable(t1)
+```
+<br>
+
+## Percentage of patients with at least one visit in each year, starting with the year of their first visit.
+
+```{r echo=FALSE}
+kable(t2)
+```
+<br>
+
+## Percentage of patients with mean A1c <6% in a given year who had a visit in the prior year.
+
+```{r echo=FALSE}
+kable(t3)
+```
+<br>
+
+## Percentage of patients with mean A1c 6-12% in a given year who had a visit in the prior year.
+
+```{r echo=FALSE}
+kable(t4)
+```
+<br>
+
+## Percentage of patients with mean A1c >12% in a given year who had a visit in the prior year.
+
+```{r echo=FALSE}
+kable(t5)
+```
+<br>
+
+## Mixed-effects model for mean A1c by year.
+
+```{r echo=FALSE,comment=''}
+kable(mod_anova)
+
+summary(mod)
 ```
 <br>
