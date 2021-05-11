@@ -62,3 +62,11 @@ do
 done
 # Use https://imputation.biodatacatalyst.nhlbi.nih.gov for imputation instead of local
 # GRCh37, r squared filter 0.3, QC frequency check vs. TOPMed
+# Post-imputation QC
+cd TOPMed
+7z x "*.zip" -p$(cat password.txt)
+# Merge together
+cd ..
+cd biobank_analysis/imputed
+bcftools concat -O z -o merged_imputed.vcf.gz *.vcf.gz
+# Do we really need more QC - maybe ask Audrey about this
