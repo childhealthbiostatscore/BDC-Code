@@ -354,6 +354,18 @@ data_no_m1$gyl_timepoint.factor <- droplevels(data_no_m1$gyl_timepoint.factor)
 data_no_baseline <- child_full_iq[child_full_iq$gyl_timepoint.factor != "Baseline",]
 data_no_baseline$gyl_timepoint.factor <- droplevels(data_no_baseline$gyl_timepoint.factor)
 
+# reorder baseline a1c factor so it shows up on figure correcctly
+data_no_m1$base_a1c_cat <- factor(data_no_m1$base_a1c_cat, levels=c(">= 9%",">7% and <9%","<= 7%"))
+
+# data frame with M3 and M6 only
+data_m3_m6 <- data_no_m1[data_no_m1$gyl_timepoint.factor != "Baseline",]
+
+# what % of participants have sleep mode set to >15 hours per day?
+data_no_baseline$sleep_gt15 <- as.factor(ifelse(is.na(data_no_baseline$sleep),NA,
+                                    ifelse(data_no_baseline$sleep>15,1,0)))
+sleeptab <- CreateTableOne(vars="sleep_gt15",data=data_no_baseline,strata="gyl_timepoint.factor",test = F)
+sleeptab <- print(sleeptab)
+
 # % time CIQ
 # AM time compare to 1 mo - dataset with no baseline
 amtime_mod <- lme(time_am ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_baseline,na.action = na.omit)
@@ -589,14 +601,28 @@ p1 <- ggplot(data_no_m1[!is.na(data_no_m1$base_a1c_cat),],aes(x = gyl_timepoint.
   geom_smooth(aes(group = base_a1c_cat, linetype=base_a1c_cat), se = T, color="black") + 
   theme_bw() + xlab("Timepoint") + ylab("TIR (%)") + theme(legend.position="none") 
 
-p2 <- ggplot(data_no_m1[!is.na(data_no_m1$base_a1c_cat),],aes(x = gyl_timepoint.factor,y = gmi)) +
+p2 <- ggplot(data_no_m1[!is.na(data_no_m1$base_a1c_cat),],aes(x = gyl_timepoint.factor,y = sensor_u70)) +
+  geom_smooth(aes(group = base_a1c_cat, linetype=base_a1c_cat), se = T, color="black") + 
+  theme_bw() + xlab("Timepoint") + ylab("TBR (%)") + theme(legend.position="none") 
+
+p3 <- ggplot(data_no_m1[!is.na(data_no_m1$base_a1c_cat),],aes(x = gyl_timepoint.factor,y = gmi)) +
   geom_smooth(aes(group = base_a1c_cat, linetype=base_a1c_cat),se = T, color="black") +
   theme_bw() + xlab("Timepoint") + ylab("GMI") + theme(legend.key.size = grid::unit(3, "lines"))
-p2$labels$linetype <- "Baseline HbA1c category"
+p3$labels$linetype <- "Baseline HbA1c category"
 
 png("B:\\Projects\\Cari Berget\\Control IQ 6 Month MS\\Dissemination\\Manuscript\\tir_gmi_figure.png", width = 800)
-p1 + p2
+p1 + p2 + p3
 dev.off()
+
+# relationship between automode and TIR for control IQ and 670q
+lm_auto_tir_ciq <- lme(sensor_70_180 ~ gyl_timepoint.factor + time_am ,random=~1|record_id,data = data_m3_m6,na.action = na.omit)
+lm_auto_tir_ciq_anova <- anova.lme(lm_auto_tir_ciq, type="marginal")
+
+# read in 670g data and run the same model
+data670g <- read.csv("B:\\Projects\\Cari Berget\\Control IQ 6 Month MS\\Data raw\\670g_am_tir_data.csv")
+data670g <- data670g[data670g$tpoint %in% c("T1","T2"),]
+lm_auto_tir_670g <- lme(sensor_70_180 ~ tpoint + am_time ,random=~1|record_id,data = data670g,na.action = na.omit)
+
 ```
 
 # Background
@@ -617,6 +643,11 @@ There were `r n_t1_discont` discontinuers at T1 (3 months).  All of these partic
 ```{r, echo=FALSE, message=FALSE}
 kable(t1,caption="Table 1. Demographics and clinical characteristics.")
 ```
+
+```{r, echo=FALSE, message=FALSE}
+kable(sleeptab,caption="Table 2. Percentage of participants with sleep activity >15 hours/day.")
+```
+
 
 \newpage
 
@@ -1092,6 +1123,26 @@ kable(u70_mod_strat_age_means,caption="Time point means.",format.args = list(sci
 
 ```{r, echo=FALSE, message=FALSE}
 kable(u70_mod_strat_age_pairs$`simple contrasts for age_cat`,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Model for the relationship between time in AM and TIR, for Control IQ (Month 3 and Month 6 only)
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+summary(lm_auto_tir_ciq)
+
+hist(data_m3_m6$time_am)
+```
+
+\newpage
+
+### Model for the relationship between time in AM and TIR, for 670g (Month 3 and Month 6 only)
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+summary(lm_auto_tir_670g)
+
+hist(data670g$am_time)
 ```
 
 \newpage
