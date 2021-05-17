@@ -21,6 +21,7 @@ library(stringr)
 library(dplyr)
 library(emmeans)
 library(patchwork)
+library(scales)
 knitr::opts_chunk$set(echo = FALSE)
 home_dir = ifelse(.Platform$OS.type != "unix","T:/",
                   "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/")
@@ -30,6 +31,24 @@ knitr::opts_knit$set(root.dir = home_dir)
 ```{r echo=FALSE,include=FALSE}
 source("./Cari Berget/Control IQ 6 Month MS/Data raw/ClinicalObservationC_R_2021-01-16_1439.r")
 child_full <- data
+# Calculate COGI:
+# TIR: Linear scoring between 0% and 100% TIR, ie, 67% TIR is assigned 66.7 points
+# TBR (< 70): 0% TBR is assigned 100 points 35%, TBR 15% and above is assigned 0 points, Linear scoring between 0% and 15% TBR, ie, 5% TBR is assigned 66.7 points
+# SD: SD 1 mmol/L (18 mg/dl) and below is assigned 100 points, SD 6 mmol/L (108 mg/dl) and above is assigned 0 points, Linear scoring between 1 and 6 mmol/L (18 and 108 mg/dl), ie, 2.7 mmol/L (48 mg/dl) is assigned 67 points
+# Weighting: 50% TIR, 35% TBR, and 15% SD
+
+# Threshold values
+child_full$cogi_tbr = child_full$sensor_u54 + child_full$sensor_54_69
+child_full$cogi_tbr[child_full$cogi_tbr > 15] = 15
+
+child_full$cogi_sd = child_full$sensor_sd
+child_full$cogi_sd[child_full$cogi_sd > 108] = 108
+child_full$cogi_sd[child_full$cogi_sd < 18] = 18
+
+child_full$cogi = 
+  round(child_full$sensor_70_180) * 0.5 + 
+  round(rescale(child_full$cogi_tbr,c(100,0),c(0,15))) * 0.35 +
+  round(rescale(child_full$sensor_sd,c(100,0),c(18,108))) * 0.15
 
 source("./Cari Berget/Control IQ 6 Month MS/Data raw/ClinicalObservationP_R_2021-01-16_1438.r")
 parent_full <- data
@@ -430,6 +449,13 @@ gmi_mod_anova <- anova.lme(gmi_mod, type="marginal")
 gmi_mod_means <- emmeans(gmi_mod,"gyl_timepoint.factor")
 gmi_mod_pairs <-  pairs(gmi_mod_means,adjust="tukey")
 
+# COGI
+cogi_mod <- lme(cogi ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+cogi_mod_anova <- anova.lme(cogi_mod, type="marginal")
+# use emmeans 
+cogi_mod_means <- emmeans(cogi_mod,"gyl_timepoint.factor")
+cogi_mod_pairs <-  pairs(cogi_mod_means,adjust="tukey")
+
 # mean glucose
 mean_mod <- lme(sensor_mean ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_m1,na.action = na.omit)
 mean_mod_anova <- anova.lme(mean_mod, type="marginal")
@@ -568,6 +594,13 @@ gmi_mod_strat_a1c_anova <- anova.lme(gmi_mod_strat_a1c, type="marginal")
 gmi_mod_strat_a1c_means <- emmeans(gmi_mod_strat_a1c,c("gyl_timepoint.factor","base_a1c_cat"))
 gmi_mod_strat_a1c_pairs <-  pairs(gmi_mod_strat_a1c_means,adjust="tukey",simple="each")
 
+# COGI stratified by A1c
+cogi_mod_strat_a1c <- lme(cogi ~ gyl_timepoint.factor*base_a1c_cat,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+cogi_mod_strat_a1c_anova <- anova.lme(cogi_mod_strat_a1c, type="marginal")
+# use emmeans 
+cogi_mod_strat_a1c_means <- emmeans(cogi_mod_strat_a1c,c("gyl_timepoint.factor","base_a1c_cat"))
+cogi_mod_strat_a1c_pairs <-  pairs(cogi_mod_strat_a1c_means,adjust="tukey",simple="each")
+
 # U70 stratified by A1c
 u70_mod_strat_a1c <- lme(sensor_u70 ~ gyl_timepoint.factor*base_a1c_cat,random=~1|record_id,data = data_no_m1,na.action = na.omit)
 u70_mod_strat_a1c_anova <- anova.lme(u70_mod_strat_a1c, type="marginal")
@@ -588,6 +621,13 @@ gmi_mod_strat_age_anova <- anova.lme(gmi_mod_strat_age, type="marginal")
 # use emmeans 
 gmi_mod_strat_age_means <- emmeans(gmi_mod_strat_age,c("gyl_timepoint.factor","age_cat"))
 gmi_mod_strat_age_pairs <-  pairs(gmi_mod_strat_age_means,adjust="tukey",simple="each")
+
+# COGI stratified by age
+cogi_mod_strat_age <- lme(cogi ~ gyl_timepoint.factor*age_cat,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+cogi_mod_strat_age_anova <- anova.lme(cogi_mod_strat_age, type="marginal")
+# use emmeans 
+cogi_mod_strat_age_means <- emmeans(cogi_mod_strat_age,c("gyl_timepoint.factor","age_cat"))
+cogi_mod_strat_age_pairs <-  pairs(cogi_mod_strat_age_means,adjust="tukey",simple="each")
 
 # U70 stratified by age
 u70_mod_strat_age <- lme(sensor_u70 ~ gyl_timepoint.factor*age_cat,random=~1|record_id,data = data_no_m1,na.action = na.omit)
@@ -833,6 +873,28 @@ kable(gmi_mod_pairs,caption="Pair-wise comparisons.",format.args = list(scientif
 
 \newpage
 
+### Models for COGI
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(cogi_mod_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(cogi_mod_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(cogi_mod_pairs,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
 ### Models for average glucose (variable = sensor_mean)
 
 <br>
@@ -1039,6 +1101,28 @@ kable(gmi_mod_strat_a1c_pairs$`simple contrasts for base_a1c_cat`,caption="Pair-
 
 \newpage
 
+### Models for COGI stratified by baseline A1c
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(cogi_mod_strat_a1c_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(cogi_mod_strat_a1c_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(cogi_mod_strat_a1c_pairs$`simple contrasts for base_a1c_cat`,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
 ### Models for time <70 (variable sensor_u70) stratified by baseline A1c
 
 <br>
@@ -1101,6 +1185,28 @@ kable(gmi_mod_strat_age_means,caption="Time point means.",format.args = list(sci
 
 ```{r, echo=FALSE, message=FALSE}
 kable(gmi_mod_strat_age_pairs$`simple contrasts for age_cat`,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for COGI stratified by age
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(cogi_mod_strat_age_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(cogi_mod_strat_age_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(cogi_mod_strat_age_pairs$`simple contrasts for age_cat`,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
 ```
 
 \newpage
