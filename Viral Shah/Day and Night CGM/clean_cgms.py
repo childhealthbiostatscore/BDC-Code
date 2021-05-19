@@ -12,8 +12,10 @@ a1cs = pd.read_csv(wd+'Data_Clean/a1cs.csv',parse_dates=['MostRecentVisitDate'])
 # Iterate through CGM files, match with row in a1cs df, calculate metrics
 # Dictionary for storing results
 df = {'id':[],'gender':[],'age': [],'insulin':[],'hba1c':[],
-     'day_auc':[],'day_tir':[],'night_auc':[],'night_tir':[]}
+     'day_mean':[],'day_tir':[],'night_mean':[],'night_tir':[]}
 # Iterate through files in wd
+#os.listdir(wd+'Data_Clean/cgms/')
+# ['Nessinger.12.9.2019_90days.xlsx']
 for file in os.listdir(wd+'Data_Clean/cgms/'):
     print(file)
     # File extensioncontinueading in
@@ -36,24 +38,28 @@ for file in os.listdir(wd+'Data_Clean/cgms/'):
         cgm.columns = ['time','glucose']
     else:
         print("Wrong columns")
+        print(file)
         break
     # Get CGM data two weeks from HbA1c
     end = r['MostRecentVisitDate'].iloc[0]
     start = end - datetime.timedelta(days = 14)
     cgm = cgm[(cgm['time'] >= start) & (cgm['time'] < end)]
-    cgm = cgm[(cgm['glucose'] != 'Low') & (cgm['glucose'] != 'High')]
-    cgm['glucose'] = pd.to_numeric(cgm['glucose'])
+    cgm.dropna(axis=0,subset=['glucose'],inplace=True)
+    cgm['tir_glucose'] = pd.to_numeric(cgm['glucose'].replace("Low",40).replace("High",400))
     cgm.set_index('time',inplace=True,drop=False)
     # Calculate CGM metrics
     day = cgm.between_time("6:00","23:00",include_start=False,include_end=False)
     night = cgm.between_time("23:00","6:00")
+    # TIR
+    df['day_tir'].append(len([g for g in day['tir_glucose'] if g >=70 and g < 180])/day.shape[0]*100)
+    df['night_tir'].append(len([g for g in night['tir_glucose'] if g >=70 and g < 180])/night.shape[0]*100)
     # Add dempgraphic information
     df['id'].append(n)
     df['gender'].append(r['Gender'].iloc[0])
     df['age'].append(r['Age'].iloc[0])
     df['insulin'].append(r['InsulinRegimen'].iloc[0])
     df['hba1c'].append(r['MostRecentA1C'].iloc[0])
-    df['day_auc'].append(np.trapz(day['glucose'],pd.to_numeric(day['time'])))
-    df['day_tir'].append(len([g for g in day['glucose'] if g >=70 and g < 180])/day.shape[0]*100)
-    df['night_auc'].append(np.trapz(night['glucose'],pd.to_numeric(night['time'])))
-    df['night_tir'].append(len([g for g in night['glucose'] if g >=70 and g < 180])/night.shape[0]*100)
+    day = day[(day['glucose'] != 'Low') & (day['glucose'] != 'High')]
+    night = night[(night['glucose'] != 'Low') & (night['glucose'] != 'High')]
+    df['day_mean'].append(np.mean(day['glucose'].astype('int')))
+    df['night_mean'].append(np.mean(night['glucose'].astype('int')))
