@@ -63,3 +63,6 @@ for file in os.listdir(wd+'Data_Clean/cgms/'):
     night = night[(night['glucose'] != 'Low') & (night['glucose'] != 'High')]
     df['day_mean'].append(np.mean(day['glucose'].astype('int')))
     df['night_mean'].append(np.mean(night['glucose'].astype('int')))
+# Results as a dataframe
+df=pd.DataFrame(data=df)
+df.to_csv(wd+"Data_Cleaned/analysis_dataset.csv",index=False)
