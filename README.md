@@ -89,8 +89,8 @@ Analysis datasets must be cleaned and in a format ready for analysis.  All datas
 |1|1|2542|0.1|
 |1|2|1345|0.3|
 |1|3|1000|NA|
-|2|1|3256|0.|2|
-|2|2|2346|0.|5|
+|2|1|3256|0.2|
+|2|2|2346|0.5|
 |2|3|4256|0.3|
 
 #### If Sending Multiple Files or Using Multiple REDCap Databases
