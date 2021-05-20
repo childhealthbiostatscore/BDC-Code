@@ -4,15 +4,17 @@ import pandas as pd
 import numpy as np
 import datetime
 from dateutil.parser import parse
-from sklearn import metrics
 # Import data
 wd = '/Users/timvigers/Dropbox/Work/Viral Shah/Day and Night CGM/'
 # Most recent HbA1c information
 a1cs = pd.read_csv(wd+'Data_Clean/a1cs.csv',parse_dates=['MostRecentVisitDate'])
 # Iterate through CGM files, match with row in a1cs df, calculate metrics
 # Dictionary for storing results
-df = {'id':[],'gender':[],'age': [],'insulin':[],'hba1c':[],
-     'day_mean':[],'day_tir':[],'night_mean':[],'night_tir':[]}
+df = {'ID':[],'Gender':[],'Age': [],'Insulin':[],'HbA1c':[],
+     '14 Day Mean':[],'14 Day TIR':[],'14 Night Mean':[],'14 Night TIR':[],
+     '30 Day Mean':[],'30 Day TIR':[],'30 Night Mean':[],'30 Night TIR':[],
+     '60 Day Mean':[],'60 Day TIR':[],'60 Night Mean':[],'60 Night TIR':[],
+     '90 Day Mean':[],'90 Day TIR':[],'90 Night Mean':[],'90 Night TIR':[]}
 # Iterate through files in wd
 #os.listdir(wd+'Data_Clean/cgms/')
 # ['Nessinger.12.9.2019_90days.xlsx']
@@ -40,29 +42,33 @@ for file in os.listdir(wd+'Data_Clean/cgms/'):
         print("Wrong columns")
         print(file)
         break
-    # Get CGM data two weeks from HbA1c
+    # A1c date
     end = r['MostRecentVisitDate'].iloc[0]
-    start = end - datetime.timedelta(days = 14)
-    cgm = cgm[(cgm['time'] >= start) & (cgm['time'] < end)]
+    # Format data
     cgm.dropna(axis=0,subset=['glucose'],inplace=True)
     cgm['tir_glucose'] = pd.to_numeric(cgm['glucose'].replace("Low",40).replace("High",400))
     cgm.set_index('time',inplace=True,drop=False)
-    # Calculate CGM metrics
-    day = cgm.between_time("6:00","23:00",include_start=False,include_end=False)
-    night = cgm.between_time("23:00","6:00")
-    # TIR
-    df['day_tir'].append(len([g for g in day['tir_glucose'] if g >=70 and g < 180])/day.shape[0]*100)
-    df['night_tir'].append(len([g for g in night['tir_glucose'] if g >=70 and g < 180])/night.shape[0]*100)
+    for delta in [14,30,60,90]:
+        # Get CGM data within time delta from HbA1c
+        start = end - datetime.timedelta(days = delta)
+        c = cgm[(cgm['time'] >= start) & (cgm['time'] < end)]
+        # Calculate CGM metrics
+        day = c.between_time("6:00","23:00",include_start=False,include_end=False)
+        night = c.between_time("23:00","6:00")
+        # TIR
+        df[str(delta)+' Day TIR'].append(len([g for g in day['tir_glucose'] if g >=70 and g < 180])/day.shape[0]*100)
+        df[str(delta)+' Night TIR'].append(len([g for g in night['tir_glucose'] if g >=70 and g < 180])/night.shape[0]*100)
+        # Mean
+        day = day[(day['glucose'] != 'Low') & (day['glucose'] != 'High')]
+        night = night[(night['glucose'] != 'Low') & (night['glucose'] != 'High')]
+        df[str(delta)+' Day Mean'].append(np.mean(day['glucose'].astype('int')))
+        df[str(delta)+' Night Mean'].append(np.mean(night['glucose'].astype('int')))
     # Add dempgraphic information
-    df['id'].append(n)
-    df['gender'].append(r['Gender'].iloc[0])
-    df['age'].append(r['Age'].iloc[0])
-    df['insulin'].append(r['InsulinRegimen'].iloc[0])
-    df['hba1c'].append(r['MostRecentA1C'].iloc[0])
-    day = day[(day['glucose'] != 'Low') & (day['glucose'] != 'High')]
-    night = night[(night['glucose'] != 'Low') & (night['glucose'] != 'High')]
-    df['day_mean'].append(np.mean(day['glucose'].astype('int')))
-    df['night_mean'].append(np.mean(night['glucose'].astype('int')))
+    df['ID'].append(n)
+    df['Gender'].append(r['Gender'].iloc[0])
+    df['Age'].append(r['Age'].iloc[0])
+    df['Insulin'].append(r['InsulinRegimen'].iloc[0])
+    df['HbA1c'].append(r['MostRecentA1C'].iloc[0])
 # Results as a dataframe
 df=pd.DataFrame(data=df)
-df.to_csv(wd+"Data_Cleaned/analysis_dataset.csv",index=False)
+df.to_csv(wd+'Data_Clean/analysis_dataset.csv',index=False)
