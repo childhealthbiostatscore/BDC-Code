@@ -16,8 +16,6 @@ plink2 --bfile Data_Raw/V2\ -\ Biobank\ data\ on\ Hispanic\ Patients\ -\ Full\ G
   --snps-only 'just-acgt'\
   --autosome-xy\
   --make-bed --out Data_Cleaned/biobank_analysis/biobank2
-# Phenotype
-Rscript ~/GitHub/BDC-Code/Kimber\ Simmons/GWAS/biobank_phenotype.R
 # Move to cleaned Data_Raw
 cd Data_Cleaned/biobank_analysis
 # Merge
@@ -69,4 +67,36 @@ cd TOPMed
 cd ..
 cd biobank_analysis/imputed
 bcftools concat -O z -o merged_imputed.vcf.gz *.vcf.gz
+# Convert to plink format and exclude samples
+Rscript ~/GitHub/BDC-Code/Kimber\ Simmons/GWAS/check_samples.R
+plink2 --vcf merged_imputed.vcf.gz --remove exclude_samples --make-bed --out merged_imputed
+# Phenotype
+Rscript ~/GitHub/BDC-Code/Kimber\ Simmons/GWAS/phenotype_and_sex.R
 # Do we really need more QC - maybe ask Audrey about this
+# Delete SNPs
+plink2 --bfile merged_imputed --geno 0.02 --make-bed --out merged_imputed_qc
+# Delete individuals
+plink2 --bfile merged_imputed_qc --mind 0.02 --make-bed --out merged_imputed_qc
+# Hardy-Weinberg equilibrium
+plink2 --bfile merged_imputed_qc  --hwe 1e-10 --make-bed --out merged_imputed_qc
+# Check kinship - duplicate samples have kinship 0.5, not 1. none at 0.354 level
+plink2 --bfile merged_imputed_qc --king-cutoff 0.25 --make-bed --out merged_imputed_qc
+# Remove temporary files
+find . -name "*~" -delete
+# PC on 1000 genomes reference files
+
+# Generate genetic relationship matrix for QCed data
+gcta64 --bfile merged_imputed_qc --autosome --maf 0.05 --make-grm --out merged --thread-num 8
+# Make phenotype files
+cut -f1,2,6 merged_imputed_qc.fam > p.phen
+awk '{$3 = $3 - 1; print}' p.phen > merged.phen
+rm p.phen
+# PCA
+gcta64 --grm merged --pca 20 --out pca --thread-num 8
+cut -f1,2,3,4,5,6 pca.eigenvec > 4PCs.txt
+# Obtain cvBLUP solutions for the genetic values of individuals
+gcta64 --reml --grm merged --pheno merged.phen --cvblup --qcovar 4PCs.txt --out results --thread-num 8
+# Obtain cvBLUP solutions for the SNP effects
+gcta64 --bfile merged_imputed_qc --blup-snp results.indi.cvblp --out score
+# compute the polygenic risk score (PRS)
+plink2 --bfile merged_imputed_qc --score score.snp.blp 1 2 3
