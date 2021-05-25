@@ -83,8 +83,6 @@ plink2 --bfile merged_imputed_qc  --hwe 1e-10 --make-bed --out merged_imputed_qc
 plink2 --bfile merged_imputed_qc --king-cutoff 0.25 --make-bed --out merged_imputed_qc
 # Remove temporary files
 find . -name "*~" -delete
-# PC on 1000 genomes reference files
-
 # Generate genetic relationship matrix for QCed data
 gcta64 --bfile merged_imputed_qc --autosome --maf 0.05 --make-grm --out merged --thread-num 8
 # Make phenotype files
@@ -93,9 +91,9 @@ awk '{$3 = $3 - 1; print}' p.phen > merged.phen
 rm p.phen
 # PCA
 gcta64 --grm merged --pca 20 --out pca --thread-num 8
-cut -f1,2,3,4,5,6 pca.eigenvec > 4PCs.txt
+cut -f1,2,3,4 pca.eigenvec > 2PCs.txt
 # Obtain cvBLUP solutions for the genetic values of individuals
-gcta64 --reml --grm merged --pheno merged.phen --cvblup --qcovar 4PCs.txt --out results --thread-num 8
+gcta64 --reml --grm merged --pheno merged.phen --cvblup --qcovar 2PCs.txt --out results --thread-num 8
 # Obtain cvBLUP solutions for the SNP effects
 gcta64 --bfile merged_imputed_qc --blup-snp results.indi.cvblp --out score
 # compute the polygenic risk score (PRS)
