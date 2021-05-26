@@ -63,38 +63,26 @@ done
 # Post-imputation QC
 cd TOPMed
 7z x "*.zip" -p$(cat password.txt)
-# Merge together
+# Merge together the results of imputation
 cd ..
 cd biobank_analysis/imputed
-bcftools concat -O z -o merged_imputed.vcf.gz *.vcf.gz
+bcftools concat --threads 8 -O z -o merged_imputed.vcf.gz *.vcf.gz 
 # Convert to plink format and exclude samples
-Rscript ~/GitHub/BDC-Code/Kimber\ Simmons/GWAS/check_samples.R
-plink2 --vcf merged_imputed.vcf.gz --remove exclude_samples --make-bed --out merged_imputed
+plink2 --vcf merged_imputed.vcf.gz --remove exclude_samples --make-bed --out merged_imputed --threads 8
 # Phenotype
 Rscript ~/GitHub/BDC-Code/Kimber\ Simmons/GWAS/phenotype_and_sex.R
-# Do we really need more QC - maybe ask Audrey about this
 # Delete SNPs
 plink2 --bfile merged_imputed --geno 0.02 --make-bed --out merged_imputed_qc
 # Delete individuals
 plink2 --bfile merged_imputed_qc --mind 0.02 --make-bed --out merged_imputed_qc
 # Hardy-Weinberg equilibrium
 plink2 --bfile merged_imputed_qc  --hwe 1e-10 --make-bed --out merged_imputed_qc
-# Check kinship - duplicate samples have kinship 0.5, not 1. none at 0.354 level
+# Check kinship - duplicate samples have kinship 0.5, not 1.
 plink2 --bfile merged_imputed_qc --king-cutoff 0.25 --make-bed --out merged_imputed_qc
+# Remove variants based on MAF.
+plink2 --bfile merged_imputed_qc --maf 0.05 --make-bed --out merged_imputed_qc
+# Prune
+plink2 --bfile merged_imputed_qc --indep-pairwise 50 5 0.2 --out merged_imputed_qc
 # Remove temporary files
 find . -name "*~" -delete
-# Generate genetic relationship matrix for QCed data
-gcta64 --bfile merged_imputed_qc --autosome --maf 0.05 --make-grm --out merged --thread-num 8
-# Make phenotype files
-cut -f1,2,6 merged_imputed_qc.fam > p.phen
-awk '{$3 = $3 - 1; print}' p.phen > merged.phen
-rm p.phen
-# PCA
-gcta64 --grm merged --pca 20 --out pca --thread-num 8
-cut -f1,2,3,4 pca.eigenvec > 2PCs.txt
-# Obtain cvBLUP solutions for the genetic values of individuals
-gcta64 --reml --grm merged --pheno merged.phen --cvblup --qcovar 2PCs.txt --out results --thread-num 8
-# Obtain cvBLUP solutions for the SNP effects
-gcta64 --bfile merged_imputed_qc --blup-snp results.indi.cvblp --out score
-# compute the polygenic risk score (PRS)
-plink2 --bfile merged_imputed_qc --score score.snp.blp 1 2 3
+# From here, the R package lassosum can be used to generate a PRS
