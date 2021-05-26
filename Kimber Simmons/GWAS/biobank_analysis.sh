@@ -85,10 +85,16 @@ plink2 --bfile merged_imputed_qc --maf 0.05 --make-bed --out merged_imputed_qc
 plink2 --bfile merged_imputed_qc --indep-pairwise 50 5 0.2 --out merged_imputed_qc
 # Remove temporary files
 find . -name "*~" -delete
-# PCA
-plink2 --bfile merged_imputed_qc --extract merged_imputed_qc.prune.in --pca 3 --out merged_imputed_qc
+
+plink2 --bfile merged_imputed_qc --extract merged_imputed_qc.prune.in --pca 10 --out merged_imputed_qc --threads 8
+cut -f1,2,3,4 merged_imputed_qc.eigenvec > 2pcs
+cut -f1,2,3,4,5 merged_imputed_qc.eigenvec > 3pcs
+cut -f1,2,3,4,5,6 merged_imputed_qc.eigenvec > 4pcs
 # Get sex and phenotype
 cut -f1,2,5,6 merged_imputed_qc.fam > p.phen
 # Logistic regression
 plink2 --bfile merged_imputed_qc --extract merged_imputed_qc.prune.in --glm 'allow-no-covars' # will adjust for PCs later during the lasso
+plink2 --bfile merged_imputed_qc --extract merged_imputed_qc.prune.in --glm --covar 2pcs --out logistic_2pcs
+plink2 --bfile merged_imputed_qc --extract merged_imputed_qc.prune.in --glm --covar 3pcs --out logistic_3pcs
+plink2 --bfile merged_imputed_qc --extract merged_imputed_qc.prune.in --glm --covar 4pcs --out logistic_4pcs
 # From here, the R package lassosum can be used to generate a PRS
