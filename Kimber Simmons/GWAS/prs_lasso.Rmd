@@ -12,17 +12,61 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-library(arsenal)
-library(skimr)
-library(knitr)
-library(tidyverse)
 library(lassosum)
+library(data.table)
+library(methods)
+library(magrittr)
+library(parallel)
+library(ggplot2)
 knitr::opts_chunk$set(echo = FALSE)
 home_dir = ifelse(.Platform$OS.type != "unix","T:/",
                   "~/Dropbox/Work/Kimber Simmons/GWAS/Data_Cleaned/biobank_analysis/imputed/")
 knitr::opts_knit$set(root.dir = home_dir)
 ```
 
-```{r}
-
+```{r cache=TRUE,include=FALSE}
+# Read in and process the covariates
+covariate <- read.delim("p.phen",header = F)
+colnames(covariate) = c("FID","IID","Sex","Pheno")
+pcs <- fread("merged_imputed_qc.eigenvec") %>%
+    setnames(., colnames(.), c("FID","IID", paste0("PC",1:3)))
+covariate = merge(covariate,pcs)
+covariate$Pheno = NULL
+# Read in phenotype
+pheno <- read.delim("p.phen",header = F)
+colnames(pheno) = c("FID","IID","Sex","Pheno")
+pheno$Sex = NULL
+# Summary statistics from plink logistic regression
+ss <- read.delim("plink2.PHENO1.glm.logistic.hybrid")
+# Remove P-value = 0, which causes problem in the transformation
+ss <- ss[ss$P != 0,]
+# Transform the P-values into correlation
+cor <- p2cor(p = ss$P,
+        n = nrow(pheno),
+        sign = log(ss$OR)
+        )
+# Run the lassosum pipeline
+# The cluster parameter is used for multi-threading
+cl <- makeCluster(4)
+out <- lassosum.pipeline(
+    cor = cor,
+    chr = ss$X.CHROM,
+    pos = ss$POS,
+    A1 = ss$A1,
+    test.bfile = "merged_imputed_qc",
+    LDblocks = "AFR.hg38", 
+    cluster=cl
+)
+stopCluster(cl)
 ```
+
+```{r}
+cl <- makeCluster(4)
+v <- validate(out, pheno = pheno, covar=covariate,cluster=cl)
+# Split-validation
+sv <- splitvalidate(out,cluster=cl)
+# Pseudo-validation
+pv <- pseudovalidate(out,cluster=cl)
+stopCluster(cl)
+```
+
