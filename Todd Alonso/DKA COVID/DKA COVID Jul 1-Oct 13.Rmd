@@ -1,0 +1,353 @@
+---
+title: "DKA during COVID-19"
+author: "Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tableone)
+library(lubridate)
+library(stringr)
+library(knitr)
+library(questionr)
+
+# read in data from Sarit's primary analysis
+alldata <- read.csv("T:\\Todd Alonso\\DKA during COVID\\Raw data\\Copy of Laura_Version4.csv")
+#alldata <- read.csv("T:\\Todd Alonso\\DKA during COVID\\Raw data\\Copy of Laura_AllPatients_COonly_Version3.csv")
+# convert onset date to date
+alldata$OnsetDate <- as.Date(as.character(alldata$OnsetDate),format="%m/%d/%Y")
+alldata[alldata$MRN=="1270971",]$OnsetDate <- dmy("15-Aug-2018")
+
+# create cutoff based on dates
+# Marian's version of pre/post
+#alldata$pre_post <- ifelse(alldata$OnsetDate < dmy("16-Mar-2020"),"Pre","Post")
+
+# new version of pre-post
+alldata$temp <- NA
+alldata[alldata$OnsetDate >= dmy("01-Jul-2017") & alldata$OnsetDate <= dmy("13-Oct-2017"),]$temp <- "Pre1"
+alldata[alldata$OnsetDate >= dmy("01-Jul-2018") & alldata$OnsetDate <= dmy("13-Oct-2018"),]$temp <- "Pre2"
+alldata[alldata$OnsetDate >= dmy("01-Jul-2019") & alldata$OnsetDate <= dmy("13-Oct-2019"),]$temp <- "Pre3"
+alldata[alldata$OnsetDate >= dmy("01-Jul-2020") & alldata$OnsetDate <= dmy("13-Oct-2020"),]$temp <- "Post"
+alldata$pre_post <- alldata$temp
+alldata[alldata$temp %in% c("Pre1","Pre2","Pre3"),]$pre_post <- "Pre"
+
+# for now, delete DKA=unknown
+alldata <- alldata[!alldata$DKAAtDx == "UNKN",]
+alldata$DKAAtDx <- droplevels(alldata$DKAAtDx)
+#alldata$DKAAtDx <- ifelse(alldata$DKAAtDx=="3","Unknown",alldata$DKAAtDx)
+
+# recode "No" DKA at dx
+alldata$DKAAtDx <- ifelse(!alldata$DKAAtDx %in% c("Yes","UNKN"),"No",alldata$DKAAtDx)
+alldata$DKAAtDx <- ifelse(alldata$DKAAtDx=="3","Yes",alldata$DKAAtDx)
+alldata$DKAAtDx <- as.factor(alldata$DKAAtDx)
+# create numeric version of DKA variable
+alldata$DKAAtDx_num <- NA
+alldata[alldata$DKAAtDx=="Yes",]$DKAAtDx_num <-1
+alldata[alldata$DKAAtDx=="No",]$DKAAtDx_num <-0
+
+# convert age at diagnosis
+#alldata$age_units <- NA
+#alldata$AgeAtOnset <- as.character(alldata$AgeAtOnset)
+#alldata[str_detect(alldata$AgeAtOnset,"year")==TRUE,]$age_units <- "year"
+#alldata[str_detect(alldata$AgeAtOnset,"month")==TRUE,]$age_units <- "month"
+#alldata[is.na(alldata$age_units),]$age_units <- "year"
+#alldata[str_detect(alldata$AgeAtOnset,"year")==TRUE,]$AgeAtOnset <- 
+#  str_remove(alldata[str_detect(alldata$AgeAtOnset,"year")==TRUE,]$AgeAtOnset," year old")
+#alldata[str_detect(alldata$AgeAtOnset,"month")==TRUE,]$AgeAtOnset <-  
+#  str_remove(alldata[str_detect(alldata$AgeAtOnset,"month")==TRUE,]$AgeAtOnset," month old")
+#alldata$AgeAtOnset <- as.numeric(alldata$AgeAtOnset)
+#alldata[alldata$age_units=="month",]$AgeAtOnset <- alldata[alldata$age_units=="month",]$AgeAtOnset/12
+
+# convert typo in gender
+alldata$Gender <- as.character(alldata$Gender)
+alldata[alldata$Gender=="Nale",]$Gender <- "M"
+alldata$Gender <- as.factor(alldata$Gender)
+
+# fix race/ethnicity
+alldata[alldata$RaceEthnicity %in% c("Non-Hispanic Black","Non-HispanicBlack"),]$RaceEthnicity <- "Non-Hispanic Black"
+alldata[alldata$RaceEthnicity %in% c("Non-Hispanic White","Non-HispanicWhite"),]$RaceEthnicity <- "Non-Hispanic White"
+alldata[alldata$RaceEthnicity %in% c("American Indian/Alaska Native","Asian","More than one Race",
+                                     "MorethanoneRace","Native Hawaiian/Other Pacific Islander",
+                                     "Other","Unknown"),]$RaceEthnicity <- "Other"
+alldata$RaceEthnicity <- droplevels(alldata$RaceEthnicity)
+
+# fix insurance
+alldata[alldata$InsuranceType=="Medicaid",]$InsuranceType <- "Public"
+alldata[alldata$InsuranceType=="Military Plans",]$InsuranceType <- "Private"
+alldata[alldata$InsuranceType=="Unisured",]$InsuranceType <- "Uninsured"
+alldata[alldata$InsuranceType %in% c("NULL","TBD"),]$InsuranceType <- NA
+alldata$InsuranceType <- droplevels(alldata$InsuranceType)
+
+# fix language
+levels(alldata$PrimarySpokenLanguage) <- c(levels(alldata$PrimarySpokenLanguage),"Non-English")
+alldata[alldata$PrimarySpokenLanguage %in% c("English","ENGLISH"),]$PrimarySpokenLanguage <- "English"
+alldata[!alldata$PrimarySpokenLanguage %in% c("English","ENGLISH"),]$PrimarySpokenLanguage <- "Non-English"
+alldata$PrimarySpokenLanguage <- droplevels(alldata$PrimarySpokenLanguage)
+
+# fix rural
+#alldata[alldata$Rural.Non.Rural=="NULL" & alldata$ZipCode==80207,]$Rural.Non.Rural <- "nonrural"
+#alldata[alldata$Rural.Non.Rural=="NULL" & alldata$ZipCode==80104,]$Rural.Non.Rural <- "nonrural"
+#alldata$Rural.Non.Rural <- droplevels(alldata$Rural.Non.Rural)
+
+alldata$DKAAtDx <- relevel(alldata$DKAAtDx, ref = "Yes")
+alldata$pre_post <- as.factor(alldata$pre_post)
+alldata$pre_post <- relevel(alldata$pre_post, ref = "Pre")
+alldata$Rural.Non.Rural <- relevel(alldata$Rural.Non.Rural,ref="rural")
+
+# export for model checking in SAS
+write.csv(alldata,"T:\\Todd Alonso\\DKA during COVID\\Raw data\\exportR.csv")
+
+nsubj <-nrow(alldata[alldata$pre_post %in% c("Pre","Post"),])  
+
+# first look at rate of DKA pre vs. post
+tab1 <- CreateTableOne(vars="DKAAtDx",strata="pre_post",data=alldata)
+tab1 <- print(tab1,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T)
+
+# we want to know if the factors that predict DKA differ pre vs. post, so test interaction of each var and pre/post
+agemod <- glm(DKAAtDx_num  ~ AgeAtOnset*pre_post, data=alldata, family="binomial")
+gendermod <- glm(DKAAtDx_num  ~ Gender*pre_post, data=alldata, family="binomial")
+racemod <- glm(DKAAtDx_num  ~ RaceEthnicity*pre_post, data=alldata, family="binomial")
+insmod <- glm(DKAAtDx_num  ~ InsuranceType*pre_post, data=alldata, family="binomial")
+langmod <- glm(DKAAtDx_num  ~ PrimarySpokenLanguage*pre_post, data=alldata, family="binomial")
+ruralmod <- glm(DKAAtDx_num  ~ Rural.Non.Rural*pre_post, data=alldata, family="binomial")
+
+# models without interactino
+agemod_noint <- glm(DKAAtDx_num  ~ AgeAtOnset , data=alldata, family="binomial")
+gendermod_noint <- glm(DKAAtDx_num  ~ Gender , data=alldata, family="binomial")
+racemod_noint <- glm(DKAAtDx_num  ~ RaceEthnicity , data=alldata, family="binomial")
+insmod_noint <- glm(DKAAtDx_num  ~ InsuranceType , data=alldata, family="binomial")
+langmod_noint <- glm(DKAAtDx_num  ~ PrimarySpokenLanguage, data=alldata, family="binomial")
+ruralmod_noint <- glm(DKAAtDx_num  ~ Rural.Non.Rural , data=alldata, family="binomial")
+
+# are any of these factors predictive in the post data?
+agemod_post <- glm(DKAAtDx_num  ~ AgeAtOnset, data=alldata[alldata$pre_post=="Post",], family="binomial")
+summary(agemod_post)
+
+gendermod_post <- glm(DKAAtDx_num  ~ Gender, data=alldata[alldata$pre_post=="Post",], family="binomial")
+summary(gendermod_post)
+
+racemod_post <- glm(DKAAtDx_num  ~ RaceEthnicity, data=alldata[alldata$pre_post=="Post",], family="binomial")
+summary(racemod_post)
+
+insmod_post <- glm(DKAAtDx_num  ~ InsuranceType, data=alldata[alldata$pre_post=="Post",], family="binomial")
+summary(insmod_post)
+
+langmod_post <- glm(DKAAtDx_num  ~ PrimarySpokenLanguage, data=alldata[alldata$pre_post=="Post",], family="binomial")
+summary(langmod_post)
+
+ruralmod_post <- glm(DKAAtDx_num  ~ Rural.Non.Rural, data=alldata[alldata$pre_post=="Post",], family="binomial")
+summary(ruralmod_post)
+
+# are any of these factors predictive in the pre data?
+agemod_pre <- glm(DKAAtDx_num  ~ AgeAtOnset, data=alldata[alldata$pre_post=="Pre",], family="binomial")
+summary(agemod_pre)
+
+gendermod_pre <- glm(DKAAtDx_num  ~ Gender, data=alldata[alldata$pre_post=="Pre",], family="binomial")
+summary(gendermod_pre)
+
+racemod_pre <- glm(DKAAtDx_num  ~ RaceEthnicity, data=alldata[alldata$pre_post=="Pre",], family="binomial")
+summary(racemod_pre)
+
+insmod_pre <- glm(DKAAtDx_num  ~ InsuranceType, data=alldata[alldata$pre_post=="Pre",], family="binomial")
+summary(insmod_pre)
+
+langmod_pre <- glm(DKAAtDx_num  ~ PrimarySpokenLanguage, data=alldata[alldata$pre_post=="Pre",], family="binomial")
+summary(langmod_pre)
+
+ruralmod_pre <- glm(DKAAtDx_num  ~ Rural.Non.Rural, data=alldata[alldata$pre_post=="Pre",], family="binomial")
+summary(ruralmod_pre)
+
+```
+
+# Background
+
+The purpose of this analysis is to compare the rate of DKA at diagnosis of type 1 diabetes before and after the beginning of the COVID-19 pandemic, and to examine whether predictors of DKA differed pre- and post-pandemic.
+
+# Methods
+
+July 1-Oct 13 (2017-2019) was used as the pre-pandemic period.  7/1/20-10/13/20 was used as the post-pandemic period.
+
+The chi-square test was used to test whether the rate of DKA at diagnosis differed pre- and post-pandemic.  Logistic regression was used to examine predictors of DKA at diagnosis.
+
+# Results
+
+A total of `r nsubj` participants were included in this analysis.  Table 1 compares the rate of DKA at diagnosis pre- and post-pandemic.
+
+```{r, echo=FALSE}
+kable(tab1,caption = "Table 1.  Rates of DKA at diagnosis")
+```
+<br>
+
+To test whether the effect of each variable on DKA diagnosis differed in the two periods, a logistic regression model with an interaction betweent the variable and time period was used.  This is the best test of a difference in effect, but it requires a relatively large sample size. None of the interactions were significant (see Tables 2-7).  The interaction terms in these tables are labeled as "predictor:pre_postPost".
+
+\newpage
+
+Table 2.  Interaction between age at onset and time period.
+```{r, echo=FALSE}
+round(summary(agemod)$coef,4)
+```
+<br>
+
+Table 3.  Interaction between gender and time period.
+```{r, echo=FALSE}
+round(summary(gendermod)$coef,4)
+```
+<br>
+
+Table 4.  Interaction between race/ethnicity and time period.
+```{r, echo=FALSE}
+round(summary(racemod)$coef,4)
+```
+<br>
+
+Table 5.  Interaction between insurance and time period.
+```{r, echo=FALSE}
+round(summary(insmod)$coef,4)
+```
+<br>
+
+Table 6.  Interaction between primary language and time period.
+```{r, echo=FALSE}
+round(summary(langmod)$coef,4)
+```
+<br>
+
+Table 7.  Interaction between rural/non-rural status and time period.
+```{r, echo=FALSE}
+round(summary(ruralmod)$coef,4)
+```
+<br>
+
+Because a relatively large sample size is needed to detect a signficant interaction, and the number of participants in the post time period is small, a stratified analysis was also performed.  The data were stratified by time period, and logistic regression models were used to test whether each variable was associated with DKA at diagnosis.  None of the variables were significantly associated with DKA.
+
+
+Table 8.  Effect of age at onset during the pre-pandemic time period.
+```{r, echo=FALSE}
+round(summary(agemod_pre)$coef,4)
+```
+<br>
+
+Table 9. Effect of gender during the pre-pandemic time period.
+```{r, echo=FALSE}
+round(summary(gendermod_pre)$coef,4)
+```
+<br>
+
+\newpage
+
+Table 10.  Effect of race/ethnicity during the pre-pandemic time period.
+```{r, echo=FALSE}
+round(summary(racemod_pre)$coef,4)
+```
+<br>
+
+Table 11.  Effect of insurance during the pre-pandemic time period.
+```{r, echo=FALSE}
+round(summary(insmod_pre)$coef,4)
+```
+<br>
+
+Table 12.  Effect of primary language during the pre-pandemic time period.
+```{r, echo=FALSE}
+round(summary(langmod_pre)$coef,4)
+```
+<br>
+
+Table 13.  Effect of rural/non-rural status during the pre-pandemic time period.
+```{r, echo=FALSE}
+round(summary(ruralmod_pre)$coef,4)
+```
+<br>
+
+Table 14.  Odds ratio for non-rural status compared to rural status during the pre-pandemic time period.
+```{r, echo=FALSE, warning=FALSE}
+odds.ratio(ruralmod_pre)
+```
+
+\newpage
+
+None of the variables were significantly associated with DKA at diagnosis during the post-pandemic time period, possibly due to small sample size.
+
+Table 15.  Effect of age at onset during the post-pandemic time period.
+```{r, echo=FALSE}
+round(summary(agemod_post)$coef,4)
+```
+<br>
+
+Table 16. Effect of gender during the post-pandemic time period.
+```{r, echo=FALSE}
+round(summary(gendermod_post)$coef,4)
+```
+<br>
+
+Table 17.  Effect of race/ethnicity during the post-pandemic time period.
+```{r, echo=FALSE}
+round(summary(racemod_post)$coef,4)
+```
+<br>
+
+Table 18.  Effect of insurance and during the post-pandemic time period.
+```{r, echo=FALSE}
+round(summary(insmod_post)$coef,4)
+```
+<br>
+
+Table 19.  Effect of primary language during the post-pandemic time period.
+```{r, echo=FALSE}
+round(summary(langmod_post)$coef,4)
+```
+<br>
+
+Table 20.  Effect of rural/non-rural status during the post-pandemic time period.
+```{r, echo=FALSE}
+round(summary(ruralmod_post)$coef,4)
+```
+<br>
+
+\newpage
+
+Models without interaction and without stratification are shown below.  Only rural status was significantly associated with DKA at diagnosis.
+
+Table 21.  Association between age at onset and DKA.
+```{r, echo=FALSE}
+round(summary(agemod_noint)$coef,4)
+```
+<br>
+
+Table 22.  Association between gender and DKA.
+```{r, echo=FALSE}
+round(summary(gendermod_noint)$coef,4)
+```
+<br>
+
+Table 23.  Association between race/ethnicity and DKA.
+```{r, echo=FALSE}
+round(summary(racemod_noint)$coef,4)
+```
+<br>
+
+Table 24.  Association between insurance and DKA.
+```{r, echo=FALSE}
+round(summary(insmod_noint)$coef,4)
+```
+<br>
+
+Table 25.  Association between primary language and DKA.
+```{r, echo=FALSE}
+round(summary(langmod_noint)$coef,4)
+```
+<br>
+
+Table 26.  Association between rural/non-rural status and DKA.
+```{r, echo=FALSE}
+round(summary(ruralmod_noint)$coef,4)
+```
+<br>
+
+Table 27.  Odds ratio for non-rural status compared to rural status.
+```{r, echo=FALSE, warning=FALSE}
+odds.ratio(ruralmod_noint)
+```

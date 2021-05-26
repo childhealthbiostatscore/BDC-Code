@@ -1,0 +1,481 @@
+---
+title: "DCCT/EDIC"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_knit$set(root.dir = "T:/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/")
+#knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01")
+library(arsenal)
+library(skimr)
+library(knitr)
+library(tidyverse)
+library(caret)
+library(limma)
+library(tableone)
+library(mixOmics)
+```
+
+```{r, echo=FALSE, warning=FALSE}
+
+# Study information
+#df = read.delim("T:/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics/Raw data/QEDIC_WP_DDA_60SPD_StudyInformat.txt")
+# Convert to categorical
+
+# Janet merged in correct age and diabetes duration at the metabolomics visit
+df <- read.csv("T:/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics/Raw data/QEDIC_WP_DDA_60SPD_StudyInformat.csv")
+#df <- read.csv("./Raw data/QEDIC_WP_DDA_60SPD_StudyInformat.csv")
+# Proteins
+prot = read.delim("T:/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics/Raw data/EDIC_WP_DDA_60SPD_Proteins.txt")
+#prot = read.delim("./Raw data/EDIC_WP_DDA_60SPD_Proteins.txt")
+rownames(prot) = prot$Accession
+X = prot[,grep("Normalized",colnames(prot))]
+colnames(X) = sub("Abundances..Normalized...","",colnames(X))
+colnames(X) = sub("..Sample","",colnames(X))
+# Transpose proteins and remove low variance items
+X = as.data.frame(t(X))
+no_var = caret::nearZeroVar(X)
+X = X[,-c(no_var)]
+# Remove proteins missing in >= 80% of samples
+X = X[,-c(which(colMeans(is.na(X))>=0.8))]
+# Log transform and merge
+X = log(X)
+X$File.ID = rownames(X)
+df = left_join(df,X,by = "File.ID")
+# Clean up workspace
+rm(X)
+
+# looking at number of missing values
+testprot <- prot
+testprot$nmiss <- NA
+testprot$nmiss <- apply(testprot, 1, function(x) sum(is.na(x)))
+
+protnames <- row.names(prot)
+nmiss_row <- apply(df[,names(df) %in% protnames],1,function(x) sum(is.na(x)))
+
+# descriptive statistics
+# VisitAge VisitDuration SEX BMI00	DBP00	SBP00	AER00	CHL00	TRG00	HDL00	LDL00 SMOKE00
+# not sure which variable corresponds to baseline HbA1c
+df$SMOKE00 <- as.factor(df$SMOKE00)
+t1_vars <- c("VisitAge","VisitDuration","SEX","BMI00","DBP00","SBP00","AER00","CHL00","TRG00","HDL00","LDL00","SMOKE00")
+t1 <- CreateTableOne(data=df,vars=t1_vars,strata = "CARV")
+t1 <- print(t1,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T,test = T)
+
+# create contrast for CVD events
+cvd_contrast <- ifelse(df$CARV==1,1,0)
+cvd_contrast <- cbind(rep(1,nrow(df)),cvd_contrast)
+
+# create numeric variable for group and sex
+df$groupnum <- ifelse(df$GROUP=="EXPERIMENTAL",1,0)
+df$sexnum <- ifelse(df$SEX=="M",1,0)
+
+# pull out the proteins and transpose for limma
+ymat <- t(df[,names(df) %in% protnames])
+# model for T1D vs. control
+fit_cvd <- lmFit(ymat,cvd_contrast)
+fit_cvd <- eBayes(fit_cvd)
+# format results
+results_cvd <- topTable(fit_cvd,coef = 2,number = nrow(ymat))
+desc <- as.data.frame(prot[,"Description"])
+desc$protid <- row.names(prot)
+colnames(desc) <- c("Description","protid")
+results_cvd$protid <- row.names(results_cvd)
+results_cvd <- merge(results_cvd,desc,by="protid",all.x=T,all.y = T)
+results_cvd <- results_cvd[order(results_cvd$adj.P.Val),] 
+write.csv(results_cvd,"B:\\Projects\\Janet Snell-Bergeon\\CACTI DCCT EDIC omics R01\\Proteomics\\Reports\\DCCT EDIC CARV.csv")
+#write.csv(results_cvd,"./Reports/DCCT EDIC CARV.csv")
+# need to adjust for tx
+cvd_contrast_adj <- model.matrix(~CARV + GROUP , data=df)
+fit_cvd_adj <- lmFit(ymat,cvd_contrast_adj)
+fit_cvd_adj <- eBayes(fit_cvd_adj)
+# format results
+results_cvd_adj <- topTable(fit_cvd_adj,coef = 2,number = nrow(ymat))
+results_cvd_adj$protid <- row.names(results_cvd_adj)
+results_cvd_adj <- merge(results_cvd_adj,desc,by="protid",all.x=T,all.y = T)
+results_cvd_adj <- results_cvd_adj[order(results_cvd_adj$adj.P.Val),] 
+write.csv(results_cvd_adj,"B:\\Projects\\Janet Snell-Bergeon\\CACTI DCCT EDIC omics R01\\Proteomics\\Reports\\DCCT EDIC CARV adjusted GROUP.csv")
+#write.csv(results_cvd_adj,"./Reports/DCCT EDIC CARV adjusted GROUP.csv")
+
+# adjust for sex, age, and duration
+cvd_contrast_adj2 <- model.matrix(~CARV + GROUP + VisitAge + SEX + VisitDuration , data=df)
+fit_cvd_adj2 <- lmFit(ymat,cvd_contrast_adj2)
+fit_cvd_adj2 <- eBayes(fit_cvd_adj2)
+# format results
+results_cvd_adj2 <- topTable(fit_cvd_adj2,coef = 2,number = nrow(ymat))
+results_cvd_adj2$protid <- row.names(results_cvd_adj2)
+results_cvd_adj2 <- merge(results_cvd_adj2,desc,by="protid",all.x=T,all.y = T)
+results_cvd_adj2 <- results_cvd_adj2[order(results_cvd_adj2$adj.P.Val),] 
+write.csv(results_cvd_adj2,"B:\\Projects\\Janet Snell-Bergeon\\CACTI DCCT EDIC omics R01\\Proteomics\\Reports\\DCCT EDIC CARV adjusted GROUP VisitAge SEX Visit Duration.csv")
+#write.csv(results_cvd_adj2,"./Reports/DCCT EDIC CARV adjusted GROUP VisitAge SEX Visit Duration.csv")
+
+# limma stratified by sex
+# create contrast for CVD events
+males <- df[df$sexnum==1,]
+females <- df[df$sexnum==0,]
+cvd_contrast_males <- ifelse(males$CARV==1,1,0)
+cvd_contrast_males <- cbind(rep(1,nrow(males)),cvd_contrast_males)
+cvd_contrast_females <- ifelse(females$CARV==1,1,0)
+cvd_contrast_females <- cbind(rep(1,nrow(females)),cvd_contrast_females)
+# UNADJUSTED
+ymat_males <- t(df[df$sexnum==1,names(df) %in% protnames])
+ymat_females <- t(df[df$sexnum==0,names(df) %in% protnames])
+# model for T1D vs. control
+fit_cvd_males <- lmFit(ymat_males,cvd_contrast_males)
+fit_cvd_males <- eBayes(fit_cvd_males)
+fit_cvd_females <- lmFit(ymat_females,cvd_contrast_females)
+fit_cvd_females <- eBayes(fit_cvd_females)
+# format results
+results_cvd_males <- topTable(fit_cvd_males,coef = 2,number = nrow(ymat))
+desc <- as.data.frame(prot[,"Description"])
+desc$protid <- row.names(prot)
+colnames(desc) <- c("Description","protid")
+results_cvd_males$protid <- row.names(results_cvd_males)
+results_cvd_males <- merge(results_cvd_males,desc,by="protid",all.x=T,all.y = T)
+results_cvd_males <- results_cvd_males[order(results_cvd_males$adj.P.Val),] 
+write.csv(results_cvd_males,"B:\\Projects\\Janet Snell-Bergeon\\CACTI DCCT EDIC omics R01\\Proteomics\\Reports\\DCCT EDIC CARV males.csv")
+results_cvd_females <- topTable(fit_cvd_females,coef = 2,number = nrow(ymat))
+desc <- as.data.frame(prot[,"Description"])
+desc$protid <- row.names(prot)
+colnames(desc) <- c("Description","protid")
+results_cvd_females$protid <- row.names(results_cvd_females)
+results_cvd_females <- merge(results_cvd_females,desc,by="protid",all.x=T,all.y = T)
+results_cvd_females <- results_cvd_females[order(results_cvd_females$adj.P.Val),] 
+write.csv(results_cvd_females,"B:\\Projects\\Janet Snell-Bergeon\\CACTI DCCT EDIC omics R01\\Proteomics\\Reports\\DCCT EDIC CARV females.csv")
+# ADJUSTED FOR TX
+cvd_contrast_adj_males <- model.matrix(~CARV + GROUP , data=males)
+fit_cvd_adj_males <- lmFit(ymat_males,cvd_contrast_adj_males)
+fit_cvd_adj_males <- eBayes(fit_cvd_adj_males)
+cvd_contrast_adj_females <- model.matrix(~CARV + GROUP , data=females)
+fit_cvd_adj_females <- lmFit(ymat_females,cvd_contrast_adj_females)
+fit_cvd_adj_females <- eBayes(fit_cvd_adj_females)
+# format results
+results_cvd_adj_males <- topTable(fit_cvd_adj_males,coef = 2,number = nrow(ymat))
+results_cvd_adj_males$protid <- row.names(results_cvd_adj_males)
+results_cvd_adj_males <- merge(results_cvd_adj_males,desc,by="protid",all.x=T,all.y = T)
+results_cvd_adj_males <- results_cvd_adj_males[order(results_cvd_adj_males$adj.P.Val),] 
+write.csv(results_cvd_adj_males,"B:\\Projects\\Janet Snell-Bergeon\\CACTI DCCT EDIC omics R01\\Proteomics\\Reports\\DCCT EDIC CARV adjusted GROUP males.csv")
+results_cvd_adj_females <- topTable(fit_cvd_adj_females,coef = 2,number = nrow(ymat))
+results_cvd_adj_females$protid <- row.names(results_cvd_adj_females)
+results_cvd_adj_females <- merge(results_cvd_adj_females,desc,by="protid",all.x=T,all.y = T)
+results_cvd_adj_females <- results_cvd_adj_females[order(results_cvd_adj_females$adj.P.Val),] 
+write.csv(results_cvd_adj_females,"B:\\Projects\\Janet Snell-Bergeon\\CACTI DCCT EDIC omics R01\\Proteomics\\Reports\\DCCT EDIC CARV adjusted GROUP females.csv")
+# ADJUSTED FOR TX, AGE, duration
+cvd_contrast_adj2_males <- model.matrix(~CARV + GROUP + VisitAge + VisitDuration , data=males)
+fit_cvd_adj2_males <- lmFit(ymat_males,cvd_contrast_adj2_males)
+fit_cvd_adj2_males <- eBayes(fit_cvd_adj2_males)
+cvd_contrast_adj2_females <- model.matrix(~CARV + GROUP + VisitAge + VisitDuration , data=females)
+fit_cvd_adj2_females <- lmFit(ymat_females,cvd_contrast_adj2_females)
+fit_cvd_adj2_females <- eBayes(fit_cvd_adj2_females)
+# format results
+results_cvd_adj2_males <- topTable(fit_cvd_adj2_males,coef = 2,number = nrow(ymat))
+results_cvd_adj2_males$protid <- row.names(results_cvd_adj2_males)
+results_cvd_adj2_males <- merge(results_cvd_adj2_males,desc,by="protid",all.x=T,all.y = T)
+results_cvd_adj2_males <- results_cvd_adj2_males[order(results_cvd_adj2_males$adj.P.Val),] 
+write.csv(results_cvd_adj2_males,"B:\\Projects\\Janet Snell-Bergeon\\CACTI DCCT EDIC omics R01\\Proteomics\\Reports\\DCCT EDIC CARV adjusted GROUP VisitAge Visit Duration males.csv")
+results_cvd_adj2_females <- topTable(fit_cvd_adj2_females,coef = 2,number = nrow(ymat))
+results_cvd_adj2_females$protid <- row.names(results_cvd_adj2_females)
+results_cvd_adj2_females <- merge(results_cvd_adj2_females,desc,by="protid",all.x=T,all.y = T)
+results_cvd_adj2_females <- results_cvd_adj2_females[order(results_cvd_adj2_females$adj.P.Val),] 
+write.csv(results_cvd_adj2_females,"B:\\Projects\\Janet Snell-Bergeon\\CACTI DCCT EDIC omics R01\\Proteomics\\Reports\\DCCT EDIC CARV adjusted GROUP VisitAge Visit Duration females.csv")
+
+# sensitivity analysis excluding the outliers on PCA
+outliers <- c("F205","F233","F26","F169","F36","F171")
+sens <- df[!df$File.ID %in% outliers,]
+cvd_contrast_adj_sens <- model.matrix(~CARV + GROUP + VisitAge + SEX + VisitDuration , data=sens)
+ymat_sens <- t(sens[,names(sens) %in% protnames])
+fit_cvd_adj_sens <- lmFit(ymat_sens,cvd_contrast_adj_sens)
+fit_cvd_adj_sens <- eBayes(fit_cvd_adj_sens)
+# format results
+results_cvd_adj_sens <- topTable(fit_cvd_adj_sens,coef = 2,number = nrow(ymat))
+results_cvd_adj_sens$protid <- row.names(results_cvd_adj_sens)
+results_cvd_adj_sens <- merge(results_cvd_adj_sens,desc,by="protid",all.x=T,all.y = T)
+results_cvd_adj_sens <- results_cvd_adj_sens[order(results_cvd_adj_sens$adj.P.Val),] 
+write.csv(results_cvd_adj_sens,"B:\\Projects\\Janet Snell-Bergeon\\CACTI DCCT EDIC omics R01\\Proteomics\\Reports\\DCCT EDIC CARV adjusted GROUP VisitAge SEX Visit Duration sensitivity analysis excluding outliers.csv")
+#write.csv(results_cvd_adj_sens,"./Reports/DCCT EDIC CARV adjusted GROUP VisitAge SEX Visit Duration sensitivity analysis excluding outliers.csv")
+# write file for LASSO regression
+lasso <- df[,names(df) %in% c(protnames,"CARV","groupnum","VisitAge","sexnum","VisitDuration")]
+write.csv(lasso,"B:\\Projects\\Janet Snell-Bergeon\\CACTI DCCT EDIC omics R01\\Proteomics\\Clean data\\lasso.csv",row.names = F)
+#write.csv(lasso,"./Clean data/lasso.csv",row.names = F)
+
+# sPLS-DA
+# trying to tune parameters
+set.seed(3654)
+tune <- tune.splsda(df[,names(df) %in% protnames], Y=as.factor(df$CARV),ncomp = 4,validation = 'Mfold',
+                                 folds = 3, dist = 'max.dist', progressBar = FALSE,
+                                 measure = "BER", nrepeat = 10)
+# optimal is 2 components, top 15 proteins
+plsda_carv <- splsda(df[,names(df) %in% protnames], Y=as.factor(df$CARV),ncomp = 2,keepX = c(15,15))
+
+# stratify sPLS-DA by sex
+tune_males <- tune.splsda(males[,names(males) %in% protnames], Y=as.factor(males$CARV),ncomp = 4,validation = 'Mfold',
+                                 folds = 3, dist = 'max.dist', progressBar = FALSE,
+                                 measure = "BER", nrepeat = 10)
+# optimal is 1 components, top 15 proteins
+# but Janet wants to see 2 components
+plsda_carv_males <- splsda(males[,names(males) %in% protnames], Y=as.factor(males$CARV),ncomp = 2,keepX = c(15,15))
+
+tune_females <- tune.splsda(females[,names(females) %in% protnames], Y=as.factor(females$CARV),ncomp = 4,validation = 'Mfold',
+                                 folds = 3, dist = 'max.dist', progressBar = FALSE,
+                                 measure = "BER", nrepeat = 10)
+
+# optimal is 1 components, but Janet wants to see 2
+plsda_carv_females <- splsda(females[,names(females) %in% protnames], Y=as.factor(females$CARV),ncomp = 2,keepX = c(15,5))
+
+# sensitivity analysis without outliers
+plsda_sens <- splsda(sens[,names(sens) %in% protnames], Y=as.factor(sens$CARV),ncomp = 2,keepX = c(10,10))
+tune_sens <- tune.splsda(sens[,names(sens) %in% protnames], Y=as.factor(sens$CARV),ncomp = 4,validation = 'Mfold',
+                                 folds = 3, dist = 'max.dist', progressBar = FALSE,
+                                 measure = "BER", nrepeat = 10)
+# optimal is 2 components, top 10 proteins
+
+# can we do a pls-da with group age sex and duration added?
+tune_adj <- tune.splsda(df[,names(df) %in% c(protnames,"groupnum","VisitAge","SEXNUM","VisitDuration")], Y=as.factor(df$CARV),ncomp = 4,validation = 'Mfold',
+                                 folds = 3, dist = 'max.dist', progressBar = FALSE,
+                                 measure = "BER", nrepeat = 10)
+# optimal is 2 components, top 15 proteins
+plsda_adj <- splsda(df[,names(df) %in% c(protnames,"groupnum","VisitAge","SEXNUM","VisitDuration")], Y=as.factor(df$CARV),ncomp = 2,keepX = c(15,15))
+
+# calculate storage time using visit date and processing date - not sure of exact processing date but will use 2/1/21
+df$Visit_Date <- as.Date(df$Visit_Date,format = "%m/%d/%Y")
+df$storage_time <- as.Date("2021-02-01",format="%Y-%m-%d") - df$Visit_Date
+df$storage_time <- as.numeric(df$storage_time)
+
+# examine characteristics of outliers
+df$outlier <- ifelse(df$File.ID %in% outliers,1,0)
+outlier_desc <- CreateTableOne(data=df,vars=c("storage_time",t1_vars),strata = "outlier")
+outlier_desc <- print(outlier_desc,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T,test = T)
+
+```
+
+# Background
+
+The purpose of this analysis is to examine differences in proteins in DCCT/EDIC participants with and without cardiovascular disease.
+
+# Methods
+
+Protein data were log transformed prior to analysis.  Proteins missing in >80% of samples were excluded from analysis, as were proteins with near-zero variance.
+
+Moderated t-tests were used to compare CVD groups with and without adjustment for treatment group, sex, age, and duration of diabetes.  Moderated t-tests were also performed after stratifying by sex.
+
+Sparse PLS-DA was used to identify proteins that best discriminated between the groups.  sPLS-DA was repeated with treatment group, sex, age and duration of diabetes included in the model.  Each sPLS-DA model was tuned to identify the number of components and the number of proteins that resulted in the lowest error rate.  For the initial sPLS-DA, the best model retained 2 components and 15 proteins.  For the "adjusted" sPLS-DA, the best model retained 2 components and 15 proteins.
+
+Analyses were repeated after excluding 6 samples that were outliers on the initial PCA plot.  For the sPLS-DA after excluding outliers, the best model retained 2 components and 10 proteins.
+
+sPLS-DA analysis was also performed after stratifying by sex.  For males, the best model retained 1 component and 15 proteins.  For females, the best model retained 1 component and 5 protein.s
+
+\newpage
+
+# Results
+
+<br>
+
+```{r, echo=FALSE}
+kable(t1,caption="Descriptive statistics by CARV")
+```
+
+\newpage
+
+# Descriptive statistics for outlier samples
+
+```{r, echo=FALSE,eval=TRUE}
+kable(outlier_desc)
+```
+
+\newpage
+
+# Individual plot from sPLS-DA by CARV, males and females combined
+
+```{r, echo=FALSE}
+plotIndiv(plsda_carv, comp = c(1,2),
+          ind.names = FALSE, 
+          ellipse = TRUE, legend = TRUE, title="")
+```
+
+```{r, echo=FALSE,eval=TRUE}
+top_1 <- selectVar(plsda_carv,comp=1)
+top_2 <- selectVar(plsda_carv,comp=2)
+top_1d <- top_1$value
+top_2d <- top_2$value
+top_1d$protid <- row.names(top_1d)
+top_2d$protid <- row.names(top_2d)
+top_1d <- merge(top_1d,desc,by="protid",all.x = T,all.y = F)
+top_2d <- merge(top_2d,desc,by="protid",all.x = T,all.y = F)
+
+```
+
+# Loadings of top 15 proteins in terms of discrimination of CARV, for component 1, males and females combined
+
+```{r, echo=FALSE,eval=TRUE}
+kable(top_1d)
+```
+
+# Loadings of top 15 proteins in terms of discrimination of CARV, for component 2, males and females combined
+
+```{r, echo=FALSE,eval=TRUE}
+kable(top_2d)
+```
+
+```{r, echo=FALSE,eval=TRUE}
+set.seed(3654)
+plsda.perf = perf(plsda_carv, validation = 'Mfold', folds = 3, 
+                             progressBar = FALSE, nrepeat = 10, dist = 'max.dist',auc=TRUE)
+
+auc_save <- plsda.perf$auc$`comp1`[1]    
+auc_true <- as.numeric(plsda.perf$auc$comp1["AUC.mean"])
+```
+
+```{r plsda,cache=TRUE, warning=FALSE,eval=TRUE}
+# Permutation testing - takes forever, make sure to cache
+n_perm <- 1000
+aucs <- vector(mode="numeric", length=n_perm)
+for (i in 1:n_perm) {
+ Y <- sample(as.factor(df$CARV),replace = F)
+ plsda_res <- plsda(df[,names(df) %in% protnames],Y,ncomp = 1)
+ perf_plsda <- perf(plsda_res,progressBar=FALSE, auc=TRUE,
+                  validation = "loo")
+ aucs[i] <- as.numeric(perf_plsda$auc$comp1["AUC.mean"])
+}
+ggplot(as.data.frame(aucs),aes(x=aucs)) + 
+geom_histogram(binwidth = 0.01) + 
+geom_vline(aes(xintercept=auc_true),color="red") + 
+theme_bw() + xlab("AUC")
+```
+
+\newpage
+
+# Individual plot from sPLS-DA by CARV including group, age, sex, and diabetes duration, males and females combined
+
+```{r, echo=FALSE}
+plotIndiv(plsda_adj, comp = c(1,2),
+          ind.names = FALSE, 
+          ellipse = TRUE, legend = TRUE, title="")
+```
+
+```{r, echo=FALSE,eval=TRUE}
+top_1_adj <- selectVar(plsda_adj,comp=1)
+top_2_adj <- selectVar(plsda_adj,comp=2)
+top_1d_adj <- top_1_adj$value
+top_2d_adj <- top_2_adj$value
+top_1d_adj$protid <- row.names(top_1d_adj)
+top_2d_adj$protid <- row.names(top_2d_adj)
+top_1d_adj <- merge(top_1d_adj,desc,by="protid",all.x = T,all.y = F)
+top_2d_adj <- merge(top_2d_adj,desc,by="protid",all.x = T,all.y = F)
+
+```
+
+# Loadings of top 15 variables in terms of discrimination of CARV, for component 1, including group, age, sex, and diabetes duration, males and females combined
+
+```{r, echo=FALSE,eval=TRUE}
+kable(top_1d_adj)
+```
+
+# Loadings of top 15 variables in terms of discrimination of CARV, for component 2, including group, age, sex, and diabetes duration, males and females combined
+
+```{r, echo=FALSE,eval=TRUE}
+kable(top_2d_adj)
+```
+
+\newpage
+
+# Individual plot from sPLS-DA by CARV after excluding outliers, males and females combined
+
+```{r, echo=FALSE}
+plotIndiv(plsda_sens, comp = c(1,2),
+          ind.names = FALSE, 
+          ellipse = TRUE, legend = TRUE, title="")
+```
+
+```{r, echo=FALSE,eval=TRUE}
+top_1_sens <- selectVar(plsda_sens,comp=1)
+top_2_sens <- selectVar(plsda_sens,comp=2)
+top_1d_sens <- top_1_sens$value
+top_2d_sens <- top_2_sens$value
+top_1d_sens$protid <- row.names(top_1d_sens)
+top_2d_sens$protid <- row.names(top_2d_sens)
+top_1d_sens <- merge(top_1d_sens,desc,by="protid",all.x = T,all.y = F)
+top_2d_sens <- merge(top_2d_sens,desc,by="protid",all.x = T,all.y = F)
+
+```
+
+# Loadings of top 10 proteins in terms of discrimination of CARV, for component 1, after excluding outliers, males and females combined
+
+```{r, echo=FALSE,eval=TRUE}
+kable(top_1d_sens)
+```
+
+# Loadings of top 10 proteins in terms of discrimination of CARV, for component 2, after excluding outliers, males and females combined
+
+```{r, echo=FALSE,eval=TRUE}
+kable(top_2d_sens)
+```
+
+\newpage
+
+# Individual plot from sPLS-DA by CARV, males only
+
+```{r, echo=FALSE}
+plotIndiv(plsda_carv_males, comp = c(1,2),
+          ind.names = FALSE, 
+          ellipse = TRUE, legend = TRUE, title="")
+```
+
+```{r, echo=FALSE,eval=TRUE}
+top_1_males <- selectVar(plsda_carv_males,comp=1)
+top_2_males <- selectVar(plsda_carv_males,comp=2)
+top_1d_males <- top_1_males$value
+top_2d_males <- top_2_males$value
+top_1d_males$protid <- row.names(top_1d_males)
+top_2d_males$protid <- row.names(top_2d_males)
+top_1d_males <- merge(top_1d_males,desc,by="protid",all.x = T,all.y = F)
+top_2d_males <- merge(top_2d_males,desc,by="protid",all.x = T,all.y = F)
+
+```
+
+# Loadings of top 15 proteins in terms of discrimination of CARV, for component 1, males only
+
+```{r, echo=FALSE,eval=TRUE}
+kable(top_1d_males)
+```
+
+# Loadings of top 15 proteins in terms of discrimination of CARV, for component 2, males only
+
+```{r, echo=FALSE,eval=TRUE}
+kable(top_2d_males)
+```
+
+\newpage
+
+# Individual plot from sPLS-DA by CARV, females only
+
+```{r, echo=FALSE}
+plotIndiv(plsda_carv_males, comp = c(1,2),
+          ind.names = FALSE, 
+          ellipse = TRUE, legend = TRUE, title="")
+```
+
+```{r, echo=FALSE,eval=TRUE}
+top_1_females <- selectVar(plsda_carv_females,comp=1)
+top_2_females <- selectVar(plsda_carv_females,comp=2)
+top_1d_females <- top_1_females$value
+top_2d_females <- top_2_females$value
+top_1d_females$protid <- row.names(top_1d_females)
+top_2d_females$protid <- row.names(top_2d_females)
+top_1d_females <- merge(top_1d_females,desc,by="protid",all.x = T,all.y = F)
+top_2d_females <- merge(top_2d_females,desc,by="protid",all.x = T,all.y = F)
+
+```
+
+# Loadings of top 15 proteins in terms of discrimination of CARV, for component 1, females only
+
+```{r, echo=FALSE,eval=TRUE}
+kable(top_1d_females)
+```
+
+# Loadings of top 5 proteins in terms of discrimination of CARV, for component 2, females only
+
+```{r, echo=FALSE,eval=TRUE}
+kable(top_2d_females)
+```

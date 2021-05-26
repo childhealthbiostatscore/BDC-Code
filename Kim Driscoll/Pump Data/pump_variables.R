@@ -1,23 +1,36 @@
 library(tidyverse)
 # Import data
-indir <- "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Pump Variables/Data_Cleaned/Pump Files Cleaned"
-outdir <- "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Pump Variables/Data_Cleaned"
+indir <- "/Users/timvigers/Work/td/tidepool_test/"
+outdir <- "/Users/timvigers/Work/td/"
 files <- list.files(indir,full.names = T)
 # Make a summary variables table.
 summary <- data.frame(matrix(nrow = length(files),ncol = 0))
 # Iterate through each file
 for (f in 1:length(files)) {
-  print(paste0(round(f / length(files) * 100,3),"% complete"))
   # Read in
   table = read.csv(files[f],header = T,stringsAsFactors = FALSE,na.strings = "")
-  # ID and visit
-  id <- sub("_cleaned.csv","",basename(files[f]))
+  if (nrow(table) == 0){
+    print(paste("Delete",files[f]))
+    next
+  }
+  # Remove blank rows
+  table = table[rowSums(is.na(table))<ncol(table),]
+  # Remove micro boluses
+  micro = which(table$Bolus.Source == "CLOSED_LOOP_MICRO_BOLUS")
+  if (length(micro)>0){
+    table = table[-c(micro),]
+  }
+  # ID
+  id <- sub(".csv","",basename(files[f]))
   timepoint <- sub("_.*","",id)
-  id <- sub(".*_","",id)
+  id <- sub("T._","",id)
   # Date time column
   table$datetime <- paste(table$Date,table$Time)
   table$datetime <- lubridate::parse_date_time(table$datetime,
                                                orders = c("mdyHMS","ymdHMS"))
+  table = table[!is.na(table$datetime),]
+  # Sort by datetime
+  table = table[order(table$datetime),]
   # Get day of the week
   table$weekday <- lubridate::wday(table$datetime)
   # Count days and days of week
@@ -27,8 +40,10 @@ for (f in 1:length(files)) {
   weekdays <- length(which(day_table$day %in% c(2:6)))
   weekends <- length(which(day_table$day %in% c(1,7)))
   # Combine BG columns
-  table$bg <- pmax(table$BG.Reading..mg.dL.,table$BWZ.BG.Input..mg.dL.,na.rm = T)
-  table$bg <- pmax(table$bg,table$Sensor.Calibration.BG..mg.dL.,na.rm = T)
+  if (!("bg" %in% colnames(table))){
+    table$bg <- pmax(table$BG.Reading..mg.dL.,table$BWZ.BG.Input..mg.dL.,na.rm = T)
+    table$bg <- pmax(table$bg,table$Sensor.Calibration.BG..mg.dL.,na.rm = T)
+  }
   table$bg[table$bg == 0] <- NA
   # Get rewind times
   rewind_datetimes = table$datetime[!is.na(table$Rewind)]
@@ -189,7 +204,7 @@ for (f in 1:length(files)) {
       delivered <- c(delivered,table$Bolus.Volume.Delivered..U.[b])
       if (grepl("Normal",table$Bolus.Type[b])) {break()}
     }
-    delivered <- sum(delivered,na.rm = T)
+    delivered <- sum(as.numeric(delivered),na.rm = T)
     # Compare delivery to BWZ
     if (delivered == estimate) {
       bolus_equal_bwz <- bolus_equal_bwz + 1
@@ -315,6 +330,8 @@ for (f in 1:length(files)) {
   summary[f,"bg_above_250_with_bolus_carb"] <- bg_with_carb_bolus_above_250
   
   summary[f,"avg_mins_btw_rewinds"] <- round(mean_rewind,3)
+  # Print progress
+  print(paste0(round(f / length(files) * 100,1),"% complete"))
 }
 # Write summary variables
 filename <- paste0(outdir,"summary.csv")

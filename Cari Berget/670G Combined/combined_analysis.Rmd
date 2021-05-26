@@ -7,16 +7,18 @@ output: word_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE,dpi = 600)
-knitr::opts_knit$set(root.dir = "/home/tim/Documents/Work/670G Combined")
+knitr::opts_knit$set(root.dir = "~/Dropbox/Work/Cari Berget/670G Combined")
 library(Hmisc)
+library(skimr)
 library(arsenal)
 library(skimr)
-library(mice)
 library(nlme)
 library(emmeans)
 library(knitr)
 library(lme4)
-library(pROC)
+library(Epi)
+library(car)
+library(broom.mixed)
 library(tidyverse)
 ```
 
@@ -36,6 +38,10 @@ adult_new <- read.csv("./Data_Cleaned/670Excel.new55patients.csv",
                       na.strings = na_strings,stringsAsFactors = F)
 adult_pump <- read.csv("./Data_Cleaned/pdf_summary.csv",
                        na.strings = na_strings,stringsAsFactors = F)
+adult_pump1 <- read.csv("./Data_Cleaned/pdf_summary_additional_1.csv",
+                        na.strings = na_strings,stringsAsFactors = F)
+adult_pump2 <- read.csv("./Data_Cleaned/pdf_summary_additional_2.csv",
+                        na.strings = na_strings,stringsAsFactors = F)
 # Format and combine
 adult <- adult %>% select(Patient.ID,start.date,contains("HbA1C"))
 adult_2 <- adult_2 %>% 
@@ -60,8 +66,37 @@ adult <- adult %>%
   pivot_longer(cols = contains("HbA1C"),
                names_to = c(".value","timepoint"),
                names_sep = "\\.")
+adult = adult %>% 
+  add_row(.,Patient.ID = unique(adult$Patient.ID),timepoint="M18") %>%
+  group_by(Patient.ID) %>% fill(start.date:first_name)
+# Get timepoints
+adult$start.date = lubridate::mdy(adult$start.date)
+b = 30 * c(0,1,3,6,9,12,18)
+t = c("Baseline","M1","M3","M6","M9","M12","M18")
+adult_pump1$timepoint = apply(adult_pump1,1,function(r){
+  c = as.character(r["cgm_start"])
+  m = which(adult$first_name == as.character(r["first_name"]) &
+              adult$last_name == as.character(r["last_name"]))[1]
+  s = adult$start.date[m]
+  d = as.numeric(difftime(c,s,units = "days"))
+  tp = t[which.min(abs(d-b))]
+  ifelse(length(tp)>0,return(tp),return(NA))
+})
+adult_pump2$timepoint = apply(adult_pump2,1,function(r){
+  c = as.character(r["cgm_start"])
+  m = which(adult$first_name == as.character(r["first_name"]) &
+              adult$last_name == as.character(r["last_name"]))[1]
+  s = adult$start.date[m]
+  d = as.numeric(difftime(c,s,units = "days"))
+  tp = t[which.min(abs(d-b))]
+  ifelse(length(tp)>0,return(tp),return(NA))
+})
+adult_pump = rbind(adult_pump,adult_pump1)
+adult_pump = rbind(adult_pump,adult_pump2)
+# Merge 18 month data from Cari
 adult <- left_join(adult,adult_pump,
                    by = c("last_name", "first_name", "timepoint"))
+# Mutate
 adult <- adult %>% group_by(Patient.ID) %>% 
   mutate(hba1c_baseline = HbA1C[timepoint == "Baseline"],
          days_from_start = 
@@ -71,7 +106,7 @@ adult <- adult %>% group_by(Patient.ID) %>%
 # Delete rows without PDF information
 pdf_start <- which(colnames(adult)=="days_worn")
 remove_rows <- 
-  which(rowSums(is.na(adult[,pdf_start:(pdf_start+19)]))==20 &
+  which(rowSums(is.na(adult[,pdf_start:(pdf_start+28)]))==29 &
           adult$timepoint != "Baseline")
 adult <- adult[-c(remove_rows),]
 # Combine am exit columns to match Cari's
@@ -90,7 +125,9 @@ adult <- adult %>%
          insurance = Insurance,sex = Gender,
          sensor_70 = tir_under_70,
          sensor_70_180 = tir_70_180,sensor_g250 = tir_over_250,
-         sensor_181_250 = tir_over_180 - tir_over_250)
+         sensor_g180 = tir_over_180,
+         tdd = daily_dose,tdd_basal = basal_perc,	
+         tdd_bolus = bolus_perc,	dailymealbolus = meals_per_day)
 # Re-level factors
 adult$race <- as.factor(adult$race)
 levels(adult$race) <- 
@@ -101,21 +138,27 @@ adult$race <- as.character(adult$race)
 adult$insurance <- as.factor(adult$insurance)
 levels(adult$insurance) <- c("Public","Private")
 adult$insurance <- as.character(adult$insurance)
+# Remove duplicate rows
+adult <- adult %>% arrange(first_name,last_name,timepoint)
+dups = which(duplicated(adult[,c("record_id","timepoint")]))
+adult = adult[-dups,]
 # Select columns
 vars <- c("record_id","cohort","timepoint","days_from_start","age",
           "sex","race","insurance","hba1c_baseline","hba1c","gmi",
           "bg_checks","time_am","time_mm","sensor_wear","sensor_mean",
-          "sensor_sd","sensor_70","sensor_70_180","sensor_181_250",
-          "sensor_g250","amexits","amexit_hyper","amexit_manual",
+          "sensor_sd","sensor_70","sensor_70_180","sensor_g180",
+          "sensor_g250","tdd","tdd_basal","tdd_bolus","dailymealbolus",
+          "amexits","amexit_hyper","amexit_manual",
           "amexits_day","amexits_other")
 adult <- adult %>%
   select(all_of(vars))
 # Cari's data
-source("/home/tim/Documents/GitHub/BDC-Code/Cari Berget/670G Combined/data_clean.r")
+source("/Users/timvigers/GitHub/BDC-Code/Cari Berget/670G Combined/data_clean.r")
 # Exclude non-670G and those who never started
 data <- data[as.numeric(as.character(data$record_id)) < 116,]
 never_started <- data %>% group_by(record_id) %>% 
-  filter(gyl_timepoint.factor == "Baseline",is.na(automode_start)) %>% .$record_id
+  filter(gyl_timepoint.factor == "Baseline",is.na(automode_start)) %>% 
+  .$record_id
 data <- data[!(data$record_id %in% never_started),]
 # Format
 data$cohort <- "Peds"
@@ -124,9 +167,10 @@ data$timepoint =
                       labels = c("Baseline","M1","M3","M6","M9","M12")))
 levels(data$demographics_sex.factor) = c("F","M")
 # Age
-data$age <- as.numeric(difftime(as.Date(data$automode_start,"%m/%d/%Y"),
-                                as.Date(data$demographics_dob,"%m/%d/%Y"),
-                                units = "days"))/365.25
+data$age <- 
+  as.numeric(difftime(as.Date(data$automode_start,"%Y-%m-%d"),
+                      as.Date(data$demographics_dob,"%Y-%m-%d"),
+                      units = "days"))/365.25
 # Baseline A1c
 data <- data %>% filter(!is.na(timepoint)) %>% group_by(record_id) %>% 
   mutate(hba1c_baseline = hba1c[timepoint == "Baseline"],
@@ -140,13 +184,14 @@ data <- data %>%
          sex = as.character(demographics_sex.factor),
          insurance = demographics_insurance.factor,
          sensor_70 = sensor_u54 + sensor_54_69,
+         sensor_g180 = sensor_181_250 + sensor_g250,
          amexit_hyper = amexit_hyper / amexits,
          amexit_manual = amexit_manual / amexits,
          amexits_other = amexits_other / amexits,
          gmi = 3.31 + (sensor_mean * 0.02392),
          days_from_start = 
-           as.numeric(difftime(as.Date(date_visit,"%m/%d/%Y"),
-                               as.Date(automode_start,"%m/%d/%Y"),
+           as.numeric(difftime(as.Date(date_visit,"%Y-%m-%d"),
+                               as.Date(automode_start,"%Y-%m-%d"),
                                units = "days"))) %>%
   select(all_of(vars))
 # Remove rows with no pump data
@@ -157,25 +202,41 @@ df = rbind(adult,data)
 factor_vars = c("record_id","sex","race","insurance","cohort")
 df[,factor_vars] <- lapply(df[,factor_vars], as.factor)
 # Order timepoints
-df$timepoint <- factor(df$timepoint,levels = c("Baseline","M1","M3","M6","M9","M12"))
+df$timepoint <- factor(df$timepoint,
+                       levels = c("Baseline","M1","M3","M6","M9","M12"))
 # Create age and a1c groups
 df$age_group <- cut(df$age,breaks = c(0,18,26,50,Inf),right = F)
-levels(df$age_group) <- c("Pediatric","Young Adult","Adult","Older Adult")
+levels(df$age_group) <- 
+  c("Pediatric","Young Adult","Adult","Older Adult")
 df$hba1c_group <- cut(df$hba1c_baseline,breaks = c(0,7,8,Inf))
 levels(df$hba1c_group) <- c("<= 7%","7% - 8.9%",">= 9%")
+# Remove unidentified timepoints
+df = df[!is.na(df$timepoint),]
 ```
 
 Pediatric participants with no automode start date and adult participants with no PDF data were excluded from this analysis.
 
 # Table 1: Descriptive Characteristics
 
-# Add MEDIAN DAYS FROM START
-
 ```{r table 1,results='asis',message=FALSE}
-demographics <- df %>% group_by(record_id) %>% filter(row_number()==1)
+demographics <- df %>% group_by(record_id) %>% 
+  mutate(days_to_m1 = ifelse(length(days_from_start[timepoint=="M1"])>0,
+                             days_from_start[timepoint=="M1"],NA),
+         days_to_m3 = ifelse(length(days_from_start[timepoint=="M3"])>0,
+                             days_from_start[timepoint=="M3"],NA),
+         days_to_m6 = ifelse(length(days_from_start[timepoint=="M6"])>0,
+                             days_from_start[timepoint=="M6"],NA),
+         days_to_m9 = ifelse(length(days_from_start[timepoint=="M9"])>0,
+                             days_from_start[timepoint=="M9"],NA),
+         days_to_m12 = 
+           ifelse(length(days_from_start[timepoint=="M12"])>0,
+                  days_from_start[timepoint=="M12"],NA),
+         days_to_m18 = ifelse(length(days_from_start[timepoint=="M8"])>0,
+                              days_from_start[timepoint=="M18"],NA)) %>%
+  filter(row_number()==1)
 # Table 1
 t1 <- tableby(cohort ~ hba1c_baseline + 
-                hba1c_group + age + age_group + sex + race + insurance,
+                age + fe(age_group) + sex + fe(race) + fe(insurance),
               data = demographics)
 # Print
 summary(t1,pfootnote = T,labelTranslations = 
@@ -184,7 +245,12 @@ summary(t1,pfootnote = T,labelTranslations =
                sex = "Sex",race = "Race",
                insurance = "Insurance",
                hba1c_baseline = "HbA1c (%) at Baseline",
-               hba1c_group = "HbA1c Group"))
+               hba1c_group = "HbA1c Group",
+               days_to_m1 = "Days to M1 Visit",
+               days_to_m3 = "Days to M3 Visit",
+               days_to_m6 = "Days to M6 Visit",
+               days_to_m9 = "Days to M9 Visit",
+               days_to_m12 = "Days to M12 Visit"))
 ```
 
 # Figure 1: HbA1c Over Time by Cohort
@@ -225,6 +291,20 @@ ggplot(df[!is.na(df$age_group),],aes(x = timepoint,y = gmi)) +
   geom_smooth(aes(group = age_group,color = age_group),se = F) +
   theme_bw() + xlab("Timepoint") + ylab("GMI") +
   scale_color_discrete(name = "Age Group")
+```
+
+# Figure 5: Violin Plot of HCL and CGM Use by Age Group (All Timepoints)
+
+```{r warning=FALSE,message=FALSE,}
+violin_df = df %>% filter(!is.na(age_group)) %>% 
+  select(record_id,age_group,time_am,sensor_wear) %>%
+  reshape2::melt(.,id.vars = c("record_id","age_group"))
+
+ggplot(violin_df,aes(x = age_group,y = value,fill = variable)) +
+  geom_violin() + 
+  xlab("Age Group") + ylab("% Use") +
+  scale_fill_discrete(name = "",labels = c("HCL","CGM")) +
+  theme_bw()
 ```
 
 # Model Results
@@ -336,7 +416,7 @@ ar1_mod_func <- function(outcome,data = df,diagnostics=F,p.adj = "fdr"){
   print(kable(ano,digits = 3))
   print(kable(final,digits = 3))
   if(diagnostics==T){
-    invisible(car::qqPlot(resid(mod_int)))
+    invisible(qqPlot(resid(mod_int)))
   }
 }
 model_df <- df %>% filter(time_am > 10)
@@ -345,78 +425,145 @@ model_df <- df %>% filter(time_am > 10)
 ## HbA1c
 
 ```{r results='asis'}
-hist(model_df$hba1c)
-ar1_mod_func(outcome = "hba1c",data = model_df,diagnostics = T)
+hist(model_df$hba1c,main = "HbA1c")
+ar1_mod_func(outcome = "hba1c",data = model_df)
 ```
 
 ## % Time in AM
 
+It might be worth turning this into a categorical variable, because the distribution is fairly skewed.
+
 ```{r results='asis'}
-hist(model_df$time_am)
-ar1_mod_func(outcome = "time_am",data = model_df,diagnostics = T)
+hist(model_df$time_am,main = "AM Use")
+ar1_mod_func(outcome = "time_am",data = model_df)
 ```
 
 ## % CGM Wear
 
+Do we want to dichotomize (or categorize) this variable? The skewed distribution is making the model residuals look pretty bad.
+
 ```{r results='asis'}
-hist(model_df$sensor_wear)
-ar1_mod_func(outcome = "sensor_wear",data = model_df,diagnostics = T)
+hist(model_df$sensor_wear,main = "Sensor Wear")
+ar1_mod_func(outcome = "sensor_wear",data = model_df)
+```
+
+## Figure 6: HCL and CGM Use by Age Group Over Time
+
+```{r}
+# Import means and SE (manually created this table)
+fig_6_df = read.csv("./Data_Cleaned/device_use_for_plot.csv",na.strings = "")
+fig_6_df = fig_6_df %>% pivot_longer(M1_MEAN:M12_SE,
+                                     names_to = c("Time",".value"),
+                                     names_pattern = "(.*)_(.*)")
+fig_6_df$Time = factor(fig_6_df$Time,levels = c("M1","M3","M6","M9","M12"))
+# Plot
+ggplot(fig_6_df[fig_6_df$var != "TIR",],aes(x = Time,y = MEAN, group = group)) + 
+  geom_point(aes(shape = group)) + geom_line(aes(linetype = group)) + 
+  geom_errorbar(aes(ymin=MEAN-SE, ymax=MEAN+SE),width = 0.1) +
+  theme_bw() + ylab("%") + xlab("Time") + 
+  facet_wrap("var") +
+  scale_linetype_discrete(name = "") + 
+  scale_shape_discrete(name = "")
+```
+
+## Figure 7: TIR by Age Group Over Time
+
+```{r}
+ggplot(fig_6_df[fig_6_df$var == "TIR",],aes(x = Time,y = MEAN, group = group)) + 
+  geom_point(aes(shape = group)) + geom_line(aes(linetype = group)) + 
+  geom_errorbar(aes(ymin=MEAN-SE, ymax=MEAN+SE),width = 0.1) +
+  theme_bw() + ylab("%") + xlab("Time") + 
+  facet_wrap("var") +
+  scale_linetype_discrete(name = "") + 
+  scale_shape_discrete(name = "") +
+  scale_y_continuous(breaks = seq(50,75,by = 5))
 ```
 
 ## AM Exits per Day
 
 ```{r results='asis'}
-hist(model_df$amexits_day)
-ar1_mod_func(outcome = "amexits_day",data = model_df,diagnostics = T)
+hist(model_df$amexits_day,main = "AM Exits per Day")
+ar1_mod_func(outcome = "amexits_day",data = model_df)
 ```
 
 ## BG Checks per Day
 
-The peds cohort has quite a few people with BG checks in the 10-25 range whereas the maximum in the adult cohort is 6.6. Is this correct?
+After fixing the data this looks much better.
 
 ```{r results='asis'}
-hist(model_df$bg_checks)
-ar1_mod_func(outcome = "bg_checks",data = model_df,diagnostics = T)
+hist(model_df$bg_checks,main = "BG Checks per Day")
+ar1_mod_func(outcome = "bg_checks",data = model_df)
 ```
 
 ## Sensor Mean
 
 ```{r results='asis'}
-hist(model_df$sensor_mean)
-ar1_mod_func(outcome = "sensor_mean",data = model_df,diagnostics = T)
+hist(model_df$sensor_mean,main = "Mean Sensor")
+ar1_mod_func(outcome = "sensor_mean",data = model_df)
 ```
 
 ## % TIR < 70 mg/dL
 
+Despite the skewed distribution, this model doesn't look too bad. Peds participant 67 has 45% time < 70 at M1, is that correct?
+
 ```{r results='asis'}
-hist(model_df$sensor_70)
+hist(model_df$sensor_70,main = "% Time < 70")
 # Exclude 1408816
-ar1_mod_func(outcome = "sensor_70",diagnostics = T)
+ar1_mod_func(outcome = "sensor_70",data = model_df)
 ```
 
 ## % TIR 70 - 180 mg/dL
 
 ```{r results='asis'}
-hist(model_df$sensor_70_180)
-ar1_mod_func(outcome = "sensor_70_180",data = model_df,diagnostics = T)
+hist(model_df$sensor_70_180,main = "% TIR")
+ar1_mod_func(outcome = "sensor_70_180",data = model_df)
 ```
 
-## % TIR 181 - 250 mg/dL
-
-Did the peds cohort really have such high % TIR 180-250? The 15 highest percentages in the data are peds and one had 86%!
+## % TIR 180+ mg/dL
 
 ```{r results='asis'}
-hist(model_df$sensor_181_250[model_df$cohort=="Peds"])
-ar1_mod_func(outcome = "sensor_181_250",data = model_df,diagnostics = T)
+hist(model_df$sensor_g180[model_df$cohort=="Peds"],
+     main = "% Time 180 - 250")
+ar1_mod_func(outcome = "sensor_g180",data = model_df)
 ```
 
 ## % TIR 250+ mg/dL
 
 This may require some more complicated models if the data are correct, because the distribution is so skewed (the means reported here are LS means from the models, so the negative values are sign that the model isn't great). The highest percentage among the adults is 34%, but many of the peds values are in the 40s and above, with the highest being 65%. Is this correct? 
 
+This model also looks much better when the outcome is log-transformed, but like with BG checks this makes the comparisons more complicated.
+
 ```{r results='asis'}
-hist(model_df$sensor_g250)
-ar1_mod_func(outcome = "scale(sensor_g250)",data = model_df,diagnostics = T)
+hist(model_df$sensor_g250,main = "% Time > 250")
+ar1_mod_func(outcome = "sensor_g250",data = model_df)
+```
+
+## Total Daily Dose (TDD)
+
+```{r results='asis'}
+hist(model_df$tdd,main = "TDD")
+ar1_mod_func(outcome = "tdd",data = model_df)
+```
+
+## % TDD Delivered as Bolus
+
+```{r results='asis'}
+hist(model_df$tdd_bolus,main = "% TDD as Bolus")
+ar1_mod_func(outcome = "tdd_bolus",data = model_df)
+```
+
+## % TDD Delivered as Basal
+
+```{r results='asis'}
+hist(model_df$tdd_basal,main = "% TDD as Basal")
+ar1_mod_func(outcome = "tdd_basal",data = model_df)
+```
+
+## Meal Boluses per Day
+
+```{r results='asis'}
+hist(model_df$dailymealbolus,main = "Meal Boluses")
+ar1_mod_func(outcome = "dailymealbolus",data = model_df)
 ```
 
 # Discontinuers
@@ -425,44 +572,96 @@ Discontinuers were defined as any participants with <= 10% AM use at any time po
 
 ```{r discontinuers}
 discontinuers <- df %>% filter(timepoint != "Baseline") %>% 
+  arrange(record_id,timepoint) %>%
   group_by(record_id) %>% 
   mutate(time_am_0 = ifelse(time_am > 10,1,0)) %>%
   summarise(discontinued = 
-      ifelse(1 %in% diff(time_am_0),"Intermittent",
-             ifelse(0 %in% time_am,"Discontinued","Continued")),
-      cohort = cohort[1],.groups = "drop")
+              ifelse(1 %in% diff(time_am_0),"Intermittent",
+                     ifelse(0 %in% time_am,"Discontinued","Continued")),
+            cohort = cohort[1],.groups = "drop")
+# Update statuses based on Cari's manual check
+cari_discont_check = read.csv("./Data_Cleaned/adult_am_time_review.csv",
+                              na.strings = na_strings)
+discontinuers$discontinued[match(cari_discont_check$record_id,discontinuers$record_id)] = 
+  cari_discont_check$Discontinued
+discontinuers$discontinued = factor(tolower(discontinuers$discontinued),
+                                    levels = c("continued", "discontinued","intermittent"))
 kable(table(discontinuers$discontinued,discontinuers$cohort))
 ```
 
 # ROC Analysis
 
-Cutoffs were determined by fitting a generalized linear mixed model (GzLMM) with a binary outcome (0 = TIR <70% and 1 = TIR >=70%) and random intercept for subject to account for repeated measures. Then sensitivity and specificity were calculated based on predicted values from the GzLMM, using the pROC package. Optimal cutoffs were determined by maximizing Youden's J statistic.
+## >= 70% TIR at month 12. 
 
 ```{r cutoffs,echo=FALSE,message=FALSE}
-# Outcome
-model_df$tir_outcome <- cut(model_df$sensor_70_180,right = F,
-                            c(-Inf,70,Inf),labels = c("< 70%",">= 70%"))
-# Fit GzLMM
-am_mod <- glmer(tir_outcome ~ time_am + (1|record_id),
-                data = model_df,family = "binomial")
-est <- summary(am_mod)$coefficients[,1]
-# ROC using the predicted values
-gzlmm_pred <- predict(am_mod,type = "response")
-roc <- roc(am_mod@resp$y,gzlmm_pred)
-# Threshold to maximize Youden
-c<-coords(roc,"best",best.method = "youden",transpose = F)
-# Find the participant closest to this threshold and use their TIR
-w <- as.numeric(which.min(abs(gzlmm_pred-c$threshold)))
-am_mod@frame$time_am[w]
+# ROC data
+roc_df = model_df %>% group_by(record_id) %>%
+  filter(!is.na(sensor_70_180)) %>%
+  summarise(outcome = ifelse(sensor_70_180[timepoint == "M12"] >= 70,1,0),
+            am = mean(time_am,na.rm = T))
+# ROC 
+roc <- ROC(roc_df$am,roc_df$outcome,plot = "roc",MI = F,MX=F)
 ```
 
-```{r}
-t <- df %>% filter(cohort == "Adult") %>% 
-  select(record_id,timepoint,time_am) %>% 
-  pivot_wider(id_cols = record_id,names_from = timepoint,
-              values_from = time_am) %>%
-  select(record_id,Baseline,M1,M3,M6,M9,M12)
-t <- left_join(t,discontinuers[,c("record_id","discontinued")],
-               by = "record_id") %>%
-  filter(!is.na(discontinued))
+A threshold of 71.6% automode use predicted TIR >= 70% at month 12 with sensitivity of 85.1% and specificity of 58.3%. Area under the ROC curve was 0.767.
+
+## Both >= 70% TIR and < 4% TBR at month 12. 
+
+```{r tbr,echo=FALSE,message=FALSE}
+# ROC data
+roc_df = model_df %>% group_by(record_id) %>%
+  filter(!is.na(sensor_70) & !is.na(sensor_70_180)) %>%
+  summarise(outcome = ifelse(sensor_70[timepoint == "M12"] < 4 & 
+                               sensor_70_180[timepoint == "M12"] >= 70,1,0),
+            am = mean(time_am,na.rm = T))
+# ROC 
+roc <- ROC(roc_df$am,roc_df$outcome,plot = "roc",MI = F,MX=T)
 ```
+
+A threshold of 80.6% automode use predicted TBR < 4% and TIR >= 70% at month 12 with sensitivity of 70.5% and specificity of 78.6%. Area under the ROC curve was 0.76.
+
+## Clinical factors associated with meeting the AM use cutoff above
+
+A generalized linear mixed model (GzLMM) with random intercept for subject was used to determine which demographic characteristics were associated with achieving the automode use threshold (at any timepoint).
+
+```{r}
+# Make a cutoff yes/no variable
+model_df$am_cutoff = cut(model_df$time_am,c(-Inf,71.6,Inf),right = F,
+                         labels = c("Under","Over"))
+# Also look at >/= 3 boluses/day, 3 BG checks per day and CGM wear 
+model_df$bg_checks_bin = cut(model_df$bg_checks,c(-Inf,4,Inf),right = F,
+                             labels = c("< 4",">= 4"))
+model_df$bolus_bin = cut(model_df$dailymealbolus,c(-Inf,4,Inf),right = F,
+                             labels = c("< 4",">= 4"))
+# Logistic regression
+thresh_mod = glmer(am_cutoff ~ age + hba1c_baseline + bg_checks_bin +
+                     bolus_bin + scale(sensor_wear,scale = F) + (1|record_id),
+                   data = model_df,family = "binomial")
+res = tidy(thresh_mod,conf.int = T,exponentiate=T)
+res = res[-which(res$group == "record_id"),]
+res$term = gsub("age","Age",res$term)
+res$term = gsub("hba1c_baseline","Baseline HbA1c",res$term)
+res$term = gsub("bg_checks_bin","BG Checks per Day: ",res$term)
+res$term = gsub("bolus_bin","Meal Boluses per Day: ",res$term)
+res$term[which(res$term == "scale(sensor_wear, scale = F)")] = "Sensor Wear (Above Mean)"
+
+res = res %>% select(term,estimate,conf.low,conf.high,p.value)
+kable(res)
+```
+
+Age at HCL start, BG checks per day, and sensor wear were significantly associated with reaching the AM use cutoff. For each 1-year increase in age at HCL start, odds of reaching the AM use threshold changed by `r round(res$estimate[res$term == "Age"]-1,3)*100`%. Each 1 unit increase above average sensor wear (`r round(mean(model_df$sensor_wear),3)`%) was associated with a `r round(res$estimate[res$term == "Sensor Wear (Above Mean)"]-1,3)*100`% change in the odds of achieving the AM use threshold. Checking BG at least 4 times per day with a `r round(res$estimate[res$term == "BG Checks per Day: >= 4"]-1,3)*100`% change in the odds of success. Baseline HbA1c is no longer significant after adjusting for sensor wear. 
+
+# Data Overview
+
+```{r}
+skim(model_df)
+```
+
+# Numbers at each timepoint
+
+```{r}
+ns = df %>% group_by(record_id) %>% filter(timepoint != "M1") %>%
+  summarise(n=length(!is.na(sensor_wear))) %>% ungroup()
+table(ns$n)
+```
+

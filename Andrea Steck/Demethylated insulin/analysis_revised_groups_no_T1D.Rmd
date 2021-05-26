@@ -1,0 +1,728 @@
+---
+title: "TrialNet proinsulin ratio analyses"
+author: "Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+
+library(dplyr)
+library(lubridate)
+library(graphics)
+library(ggplot2)
+library(Hmisc)
+#library(Table1)
+library(knitr)
+library(nlme)
+library(ggplot2)
+library(tidyr)
+#library(ppcor)
+#library(sjlabelled)
+library(lme4)
+library(bootpredictlme4)
+
+# read in the data
+longitudinal_visit_info <- read.csv("S:/Shared Projects/Laura/BDC/Projects/Andrea Steck/Trialnet progressors analysis/Fourth analysis - demethylated insulin with updated dataset/Data/longitudinal 051019.csv")
+ParticipantInfo_risk <- read.csv("S:/Shared Projects/Laura/BDC/Projects/Andrea Steck/Trialnet progressors analysis/Fourth analysis - demethylated insulin with updated dataset/Data/Participant Info risk 051019.csv",na.strings = c("NA"," ","","      "))
+
+source("C:\\Users\\pylell\\Documents\\GitHub\\General-code\\temp_table1.r")
+source("C:\\Users\\pylell\\Documents\\GitHub\\General-code\\01_functions.r")
+
+
+# get rid of duplicates
+ParticipantInfo_risk <- unique(ParticipantInfo_risk)
+# no duplicates
+
+obslong <- nrow(longitudinal_visit_info)
+nppt <- nrow(ParticipantInfo_risk)
+
+# merge participant info and longitudinal data
+keep_ppt <- data.frame(ParticipantInfo_risk$TrialNet,
+                       ParticipantInfo_risk$T1D,
+                       ParticipantInfo_risk$Date.of.Diagnosis,
+                       ParticipantInfo_risk$DOB, ParticipantInfo_risk$Gender, ParticipantInfo_risk$Race, ParticipantInfo_risk$Ethnicity,
+                       ParticipantInfo_risk$DPT1.Risk.Score,ParticipantInfo_risk$HLA, ParticipantInfo_risk$DR3,ParticipantInfo_risk$DR4) 
+colnames(keep_ppt) <- c("Random_ID","T1D","Date_of_Diagnosis","DOB","Gender",
+                        "Race","Ethnicity","DPT1Risk","HLA","DR3","DR4")
+keep_long <- data.frame(longitudinal_visit_info$PID,
+                        longitudinal_visit_info$Draw.Date,
+                        longitudinal_visit_info$GAD65,
+                        longitudinal_visit_info$GAD65H,
+                        longitudinal_visit_info$ICA512,
+                        longitudinal_visit_info$IA2H,
+                        longitudinal_visit_info$mIAA,
+                        longitudinal_visit_info$ZnT8,
+                        longitudinal_visit_info$ICA,
+                        longitudinal_visit_info$ECL_GADA,
+                        longitudinal_visit_info$ECL_IA.2A,
+                        longitudinal_visit_info$ECL_IAA,
+                        longitudinal_visit_info$Proinsulin_pM.L,
+                        longitudinal_visit_info$PEP0,
+                        longitudinal_visit_info$HbA1c,
+                        longitudinal_visit_info$GLU0,
+                        longitudinal_visit_info$GLU30,
+                        longitudinal_visit_info$GLU60,
+                        longitudinal_visit_info$GLU90,
+                        longitudinal_visit_info$GLU120,
+                        longitudinal_visit_info$Height.cm,
+                        longitudinal_visit_info$Weight.kg)
+colnames(keep_long) <- c("Random_ID","Draw_Date","GAD65","GAD65H","ICA512","IA_2H","mIAA","ZnT8","ICA","ECL_GADA","ECL_IA2A","ECL_IAA","Proinsulin_pM_L","PEP0","HbA1c","GLU0","GLU30","GLU60","GLU90","GLU120","Height.cm","Weight.kg")
+
+# convert draw date to date
+#keep_long$Draw_Date <- mdy_hms(as.character(keep_long$Draw_Date))
+#keep_long$Draw_Date <- as.POSIXlt(as.character(keep_long$Draw_Date),format="%m%d%Y %H%M")
+keep_long$Draw_Date <- mdy_hm(as.character(keep_long$Draw_Date))
+keep_ppt$DOB <- mdy(as.character(keep_ppt$DOB))
+
+# calculate fasting Cpeptide in pM/L
+keep_long$PEP0_pM_L <- keep_long$PEP0*331.09
+
+# calculate proinsulin/Cpep ratio
+keep_long$Pro_pep <- keep_long$Proinsulin_pM_L/keep_long$PEP0_pM_L*100
+
+# merge  datasets
+alldata <- merge(keep_ppt,keep_long,by="Random_ID",all.x=F,all.y=F)
+N <- length(unique(alldata$Random_ID))
+
+# fix gender coding female Female   male   Male 
+alldata$Gender[alldata$Gender=='female'] <- "Female"
+alldata$Gender[alldata$Gender=='male'] <- "Male"
+alldata$Gender <- droplevels(alldata$Gender)
+
+# new variable for DR3/DR4
+alldata$DR3DR4[alldata$DR3=="PRESENT" & alldata$DR4=="PRESENT"] <- "PRESENT"
+alldata$DR3DR4[!(alldata$DR3=="PRESENT" & alldata$DR4=="PRESENT")] <- "ABSENT"
+alldata$DR3DR4[is.na(alldata$DR3) & is.na(alldata$DR4)] <- NA
+
+# correct some values per Andrea
+alldata$Height.cm[alldata$Draw_Date==as.Date("2008-12-30") & alldata$Random_ID=="146273"] <- 172.5
+alldata$Weight.kg[alldata$Draw_Date==as.Date("2008-12-30") & alldata$Random_ID=="146273"] <- 57
+alldata$Height.cm[alldata$Draw_Date==as.Date("2008-11-26") & alldata$Random_ID=="146513"] <- 164.6
+alldata$Weight.kg[alldata$Draw_Date==as.Date("2008-11-26") & alldata$Random_ID=="146513"] <- 52.9
+alldata$Height.cm[alldata$Draw_Date==as.Date("2013-10-14") & alldata$Random_ID=="148088"] <- 161.3
+alldata$Weight.kg[alldata$Draw_Date==as.Date("2013-10-14") & alldata$Random_ID=="148088"] <- 67
+alldata$Height.cm[alldata$Draw_Date==as.Date("2010-08-07") & alldata$Random_ID=="149118"] <- 156.9
+alldata$Weight.kg[alldata$Draw_Date==as.Date("2010-08-07") & alldata$Random_ID=="149118"] <- 61.8
+alldata$Height.cm[alldata$Draw_Date==as.Date("2009-04-20") & alldata$Random_ID=="150283"] <- 184.6
+alldata$Weight.kg[alldata$Draw_Date==as.Date("2009-04-20") & alldata$Random_ID=="150283"] <- 125.4
+alldata$Height.cm[alldata$Draw_Date==as.Date("2015-04-06") & alldata$Random_ID=="237376"] <- 174.9
+alldata$Weight.kg[alldata$Draw_Date==as.Date("2015-04-06") & alldata$Random_ID=="237376"] <- 75.39
+  
+# calculate BMI
+alldata$BMI <- alldata$Weight.kg / ((alldata$Height.cm/100)^2)
+#bad <- alldata[alldata$BMI>50,]
+#bad <- bad[!is.na(bad$Random_ID),]
+#bad <- subset(bad,select=c("Random_ID","Draw_Date","Height.cm","Weight.kg","BMI"))
+
+# combine race/ethnicity
+alldata$race_eth <- NA
+alldata$race_eth[(alldata$Race=="White" & alldata$Ethnicity=="Non-Hispanic origin")]  <- "NHW"
+alldata$race_eth[(alldata$Race=="White" & alldata$Ethnicity=="Non-Hispanic White")] <- "NHW"
+alldata$race_eth[(alldata$Race=="White" & alldata$Ethnicity == "Not Hispanic or Latino")] <- "NHW"
+alldata$race_eth[alldata$Ethnicity=="Hispanic" | alldata$Ethnicity=="Hispanic or Latino" | alldata$Ethnicity=="Hispanic/Latino/Spanish origin"] <- "Hispanic"
+alldata$race_eth[is.na(alldata$race_eth)] <- "Other"
+alldata$race_eth <- as.factor(alldata$race_eth)
+
+# first code each antibody as positive negative
+for(i in 1:nrow(alldata)){
+  ###coding for miaa
+  a <-ifelse(is.na(alldata$mIAA[i]), 
+             NA,
+             ifelse(alldata$mIAA[i] <= 0.01, 0, 1)
+  )
+  alldata$miaa_cat[i]<- a
+  ###coding for first form of gad65
+  b <-ifelse(is.na(alldata$GAD65[i]), 
+             NA,
+             ifelse(alldata$GAD65[i] <= 0.032, 0, 1)
+  )
+  alldata$gad65_cat[i]<- b
+  ###coding for second form of gad65
+  c<-ifelse(is.na(alldata$GAD65H[i]), 
+            NA,
+            ifelse(alldata$GAD65H[i] <= 20, 0, 1)
+  )
+  alldata$gad65h_cat[i]<- c
+  
+  ###coding for first form of ica512/ia2
+  d<-ifelse(is.na(alldata$ICA512[i]), 
+            NA,
+            ifelse(alldata$ICA512[i] <= 0.049, 0, 1)
+  )
+  alldata$ica512_cat[i]<- d
+  ###coding for second form of ica512/ia2
+  e<-ifelse(is.na(alldata$IA_2H[i]), 
+            NA,
+            ifelse(alldata$IA_2H[i] <= 5, 0, 1)
+  )
+  alldata$ia2h_cat[i]<- e
+  ###coding for znt8
+  f<-ifelse(is.na(alldata$ZnT8[i]), 
+            NA,
+            ifelse(alldata$ZnT8[i] <= 0.02, 0, 1)
+  )
+  alldata$znt8_cat[i]<- f
+}
+
+#####combining both forms of gad65 tests
+for(i in 1:nrow(alldata)){
+  test <- sum(alldata$ica512_cat[i],alldata$ia2h_cat[i],na.rm=TRUE)
+  de <- ifelse(is.na(alldata$ica512_cat[i]) & is.na(alldata$ia2h_cat[i]),
+               NA,
+               ifelse(test>=1,1,0))
+  alldata$ica512_ia2_cat[i]<- de    
+  test2 <- sum(alldata$gad65_cat[i],alldata$gad65h_cat[i],na.rm=TRUE)
+  bc <- ifelse(is.na(alldata$gad65_cat[i]) & is.na(alldata$gad65h_cat[i]),
+               1,
+               ifelse(test2>=1,1,0))
+  alldata$GAD65_combo_cat[i]<- bc   
+}  
+
+# if all ab results missing, delete the record
+misstwo <- alldata[is.na(alldata$mIAA) & is.na(alldata$ica512_ia2_cat),]
+alldata <- alldata[!is.na(alldata$mIAA) | !is.na(alldata$miaa_cat) | !is.na(alldata$ica512_ia2_cat),]
+# 36 records deleted
+
+# check if anyone is missing GAD, ICA/IA2, or mIAA
+missing <- alldata[is.na(alldata$GAD65_combo_cat) | is.na(alldata$miaa_cat) | is.na(alldata$ica512_ia2_cat),]
+#write.csv(missing,file="missing.csv") 
+
+# get rid of visits with missing mIAA data
+missmiaa <- alldata[is.na(alldata$GAD65_combo_cat) | is.na(alldata$miaa_cat) | is.na(alldata$ica512_ia2_cat),]
+alldata <- alldata[!is.na(alldata$GAD65_combo_cat) & !is.na(alldata$miaa_cat) & !is.na(alldata$ica512_ia2_cat),]
+# 40 records deleted
+
+# calculate number of positive ab at each visit
+for(i in 1:nrow(alldata)){
+  alldata$numpos[i] <- sum(alldata$ica512_ia2_cat[i],alldata$GAD65_combo_cat[i],alldata$miaa_cat[i],alldata$znt8_cat[i],na.rm=T)
+}
+
+# calculate z-scores for GAD and IA2
+alldata$gad65z <- (alldata$GAD65 - mean(alldata$GAD65,na.rm = TRUE))/sd(alldata$GAD65,na.rm = TRUE)
+alldata$gad65hz <- (alldata$GAD65H - mean(alldata$GAD65H,na.rm = TRUE))/sd(alldata$GAD65H,na.rm = TRUE)
+alldata$gadz <- ifelse(!is.na(alldata$GAD65),alldata$gad65z,alldata$gad65hz)
+alldata$ica512z <- (alldata$ICA512 - mean(alldata$ICA512,na.rm = TRUE))/sd(alldata$ICA512,na.rm = TRUE)
+alldata$ia2hz <- (alldata$IA_2H - mean(alldata$IA_2H,na.rm = TRUE))/sd(alldata$IA_2H,na.rm = TRUE)
+alldata$ia2z <- ifelse(!is.na(alldata$ICA512),alldata$ica512z,alldata$ia2hz)
+
+# exclude people who do not have a proinsulin ratio 
+sortds <- alldata[order(alldata$Random_ID,desc(alldata$Pro_pep)),]
+hasproins <- sortds %>% group_by(Random_ID) %>% filter(row_number(Random_ID) == 1)
+a <- hasproins[is.na(hasproins$Pro_pep),]
+a <- a[,1]
+a$flaga <- rep(1,nrow(a))
+# a contains a list of IDs of people missing proins
+# people with flaga are missing proins and need to be excluded
+
+exclu <- a[a$flaga==1,] 
+misspro <- length(unique(exclu$Random_ID))
+alldata <- merge(alldata,a,by="Random_ID",all.x=TRUE,all.y=TRUE)
+alldata$flaga[is.na(alldata$flaga)] <- 0
+alldata <- alldata[alldata$flaga==0,]
+
+# who is missing T1D data?
+missingt1d <- alldata[is.na(alldata$T1D),]
+# no one is missing t1d status
+
+# group status at each visit - but people can change groups
+for(i in 1:nrow(alldata)) {
+  alldata$group[i] <- ifelse(alldata$T1D[i]=="Yes","T1D",
+                             ifelse(alldata$numpos[i]==0,"Negative",
+                                    ifelse(alldata$numpos[i]==1,"Single ab positive","Multiple ab positive")))
+}
+
+#-------------------------------------------------------------------------------
+# Tim's group status code.
+# Separate table for diagnosis.
+diagnosis.table <- alldata[,c("Random_ID","Draw_Date","group")]
+# save a copy of this data to merge back with the final dx
+allresults <- diagnosis.table
+# Count diagnoses per subject
+counts <- plyr::count(diagnosis.table,c("Random_ID","group"))
+# Find participants with only one single ab+
+single <- counts[counts$group == "Single ab positive",]
+single <- single[single$freq < 2,"Random_ID"]
+# Convert group to numeric
+diagnosis.table$group <- 
+  plyr::revalue(diagnosis.table$group,c("Negative" = 0,"Single ab positive" = 1,
+                                        "Multiple ab positive" = 2,"T1D" = 3))
+diagnosis.table$group <- as.numeric(diagnosis.table$group)
+# Aggregate diagnosis table taking the maximum value.
+diagnosis.table <- aggregate(group ~ Random_ID, data = diagnosis.table, max)
+# Find the single ab+ who were incorrectly categorized, set back to 0.
+recat <- single[
+  which(single %in% diagnosis.table[diagnosis.table$group == 1,"Random_ID"])]
+diagnosis.table[diagnosis.table$Random_ID %in% recat,"group"] <- 0
+colnames(diagnosis.table) <- c("Random_ID","final.group")
+
+# make categorical variable for final group
+diagnosis.table$final.group[diagnosis.table$final.group==0] <- "Negative"
+diagnosis.table$final.group[diagnosis.table$final.group==1] <- "Single ab positive"
+diagnosis.table$final.group[diagnosis.table$final.group==2] <- "Multiple ab positive"
+diagnosis.table$final.group[diagnosis.table$final.group==3] <- "T1D"
+# merge final group category with all results
+allresults <- merge(allresults,diagnosis.table,by="Random_ID")
+alldata <- merge(alldata,diagnosis.table,by = "Random_ID")
+# create new variable for group with T1D and multiple ab combined
+alldata$group2 <- ifelse(alldata$final.group=="T1D" | alldata$final.group=="Multiple ab positive","T1D/multiple ab pos",alldata$final.group)
+
+# Merge the diagnosis back into the full table.
+
+#-------------------------------------------------------------------------------
+check <- alldata %>% distinct(Random_ID, .keep_all=TRUE)
+
+# counting number of INS ratios and proinsulin ratios per person
+#a <- nont1d %>% group_by(Random_ID) %>% filter(!is.na(Proinsulin_pM_L)) %>% summarize(count=n())
+# range from 1 proinsulin ratio to 9
+#b <- nont1d %>% group_by(Random_ID) %>% filter(!is.na(U_MplusU_Ratio_Zen)) %>% summarize(count=n())
+# range from 1 INS ratio to 3
+
+# find the first draw date
+alldata <- alldata[order(alldata$Random_ID,alldata$Draw_Date),]
+temp <- aggregate(alldata$Draw_Date,by=list(alldata$Random_ID),min)
+names(temp) <- c("Random_ID","first_date")
+temp$first_date <- as.Date(temp$first_date)
+alldata <- merge(alldata,temp,by = "Random_ID")
+alldata$Draw_Date <- as.Date(alldata$Draw_Date)
+alldata$time <- alldata$Draw_Date - alldata$first_date
+alldata$years <- alldata$time/365.25
+
+# check range of years for non-missing pro-pep
+a <- alldata[!is.na(alldata$Pro_pep),]
+hist(as.numeric(a$years))
+
+
+# spaghetti plots of outcomes
+#qplot(years,Pro_pep,data=alldata,group=Random_ID,color=group,geom="line")
+#qplot(years,U_MplusU_Ratio_Zen,data=alldata,group=Random_ID,color=group,geom="line")
+
+# now need to determine which INS ratio/proinsulin ratio to use for cross-sectional analyses
+# T1D: results closest to T1D onset 
+alldata$Date_of_Diagnosis <- as.Date(mdy(alldata$Date_of_Diagnosis))
+alldata$timec[alldata$final.group=="T1D"] <- abs(alldata$Draw_Date[alldata$final.group=="T1D"] - alldata$Date_of_Diagnosis[alldata$final.group=="T1D"])
+
+# create new variable for IGTT
+alldata$igtt1[alldata$GLU0>100 & alldata$GLU0<126] <- 1
+alldata$igtt2[alldata$GLU120>= 140 & alldata$GLU120<200] <- 1
+alldata$igtt3[alldata$GLU30>200 | alldata$GLU60>200 | alldata$GLU90>200] <- 1
+alldata$igtt[alldata$igtt1==1 | alldata$igtt2==1 | alldata$igtt3==1] <- 1
+# now need to take maximum of IGTT to see if they ever had IGTT
+igttcheck <- alldata[c("Random_ID","igtt")]
+igttcheck$igtt[is.na(igttcheck$igtt)] <- 0
+igttever <- aggregate(igttcheck$igtt,by=list(igttcheck$Random_ID),max)
+names(igttever) <- c("Random_ID","igttever")
+alldata <- merge(alldata,igttever,by="Random_ID")
+alldata$igttever[is.na(alldata$igttever)] <- 0
+alldata$age <- floor(alldata$DOB %--% alldata$Draw_Date / dyears(1))
+
+# calculate follow up time
+firstvisit <- alldata[order(alldata$Random_ID,alldata$Draw_Date),]
+firstvisit <- firstvisit[,c("Random_ID","Draw_Date","Date_of_Diagnosis")]
+firstvisit <- firstvisit %>% group_by(Random_ID) %>% filter(row_number(Random_ID) == 1)
+names(firstvisit) <- c("Random_ID","firstdate","Date_of_Diagnosis")
+lastvisit <- alldata[order(alldata$Random_ID,desc(alldata$Draw_Date)),]
+lastvisit <- lastvisit[,c("Random_ID","Draw_Date")]
+names(lastvisit) <- c("Random_ID","lastdate")
+lastvisit <- lastvisit %>% group_by(Random_ID) %>% filter(row_number(Random_ID) == 1)
+firstlast <- merge(firstvisit,lastvisit,by="Random_ID",all=TRUE)
+firstlast$lastdate <- ifelse(!is.na(firstlast$Date_of_Diagnosis) & firstlast$Date_of_Diagnosis>firstlast$lastdate,
+                             firstlast$Date_of_Diagnosis,firstlast$lastdate)
+firstlast$lastdate <- as.Date(firstlast$lastdate,origin = "1970-01-01")
+firstlast$followup <-  as.numeric(firstlast$lastdate - firstlast$firstdate) / 365.25
+alldata <- merge(alldata,firstlast,by="Random_ID",all=TRUE)
+
+futab <- tapply(alldata$followup,alldata$final.group,summary)
+
+# labels
+label(alldata$Pro_pep)='Proinsulin ratio'
+label(alldata$Gender)='Gender'
+label(alldata$DPT1Risk)="DPT1 Risk Score"
+label(alldata$DR3)="DR3"
+label(alldata$DR4)="DR4"
+label(alldata$DR3DR4)="DR3DR4"
+label(alldata$BMI)="BMI"
+label(alldata$followup)="Follow-up time (yrs)"
+
+
+# create dataset with earliest proinsulin ratio
+earliest_pro <- alldata[!is.na(alldata$Pro_pep),]
+earliest_pro <- earliest_pro[order(earliest_pro$Random_ID,earliest_pro$Draw_Date),]
+earliest_pro <- earliest_pro %>% group_by(Random_ID) %>% filter(row_number() == 1)
+earliest_pro$age <- floor(earliest_pro$DOB %--% earliest_pro$Draw_Date / dyears(1))
+
+# create labeled factor for final.group
+#check <- alldata %>% distinct(Random_ID, .keep_all=TRUE)
+#table(check$final.group)
+#alldata$final.group <- as.factor(alldata$final.group)
+#check <- alldata %>% distinct(Random_ID, .keep_all=TRUE)
+#table(check$final.group)
+#levels(alldata$final.group) = c("Negative","Single ab positive","Multiple ab positive","T1D")
+#check <- alldata %>% distinct(Random_ID, .keep_all=TRUE)
+#table(check$final.group)
+
+# pull out T1D - if they have T1D at any time point, they are in the T1D group
+t1d <- alldata[alldata$T1D == "Yes",]
+t1d <- t1d[order(t1d$Random_ID, t1d$Draw_Date),]
+# pull out nonT1D
+nont1d <- alldata[alldata$T1D != "Yes",]
+nont1d <- nont1d[order(nont1d$Random_ID, nont1d$Draw_Date),]
+
+# total of 132 subjects, 15 in T1D and 117 nonT1D
+# pull out records with non-missing Pro_pep
+t1d_select_pro <- t1d[!is.na(t1d$Pro_pep),]
+temp <-  aggregate(t1d_select_pro$timec,by=list(t1d_select_pro$Random_ID),min)
+names(temp) <- c("Random_ID","time_from_diagnosis")
+t1d_select_pro <- merge(t1d_select_pro,temp,by = "Random_ID")
+t1d_select_pro <- t1d_select_pro[t1d_select_pro$time_from_diagnosis==t1d_select_pro$timec,]
+
+# now if the proinsulin value closest to dx is not within 3 months, need to use group at the time of proinsulin
+for(i in 1:nrow(t1d_select_pro)) {
+  t1d_select_pro$final.group[i] <- ifelse(t1d_select_pro$time_from_diagnosis[i]<=90, "T1D",    
+                                   ifelse(t1d_select_pro$numpos[i]==0,"Negative",
+                                    ifelse(t1d_select_pro$numpos[i]==1,"Single ab positive","Multiple ab positive")))
+}
+
+# for non-T1D group, use the most recent proinsulin value that corresponds to the final ab group
+# if there isn't a proinsulin value that corresponds to final ab group, use the most recent proinsulin value
+# available and reclassify the person into the ab group corresponding to that visit
+nont1d_select_pro <- nont1d[!is.na(nont1d$Pro_pep),]
+check <- nont1d_select_pro %>% distinct(Random_ID, .keep_all=TRUE)
+nont1d_select_pro$flag[nont1d_select_pro$final.group == nont1d_select_pro$group] <- 1
+# create another df for people who are flagged who have a propep that matches their final group
+nont1D_match <- nont1d_select_pro[nont1d_select_pro$flag==1,]
+# keep the most recent proinsulin for those people
+nont1D_match <- nont1D_match[order(nont1D_match$Random_ID,desc(nont1D_match$Draw_Date)),]
+nont1D_match <- nont1D_match %>% group_by(Random_ID) %>% filter(row_number(Random_ID) == 1)
+# go back to original dataset and take out people who had a match
+# this leaves only people who do not have a proinsulin value drawn while they were in their final.group category
+x <- as.data.frame(nont1D_match$Random_ID)
+x$flagx <- rep(1,length(x))
+names(x) <- c("Random_ID","flagx")
+nont1d_select_pro <- merge(nont1d_select_pro,x,by="Random_ID",all.x = TRUE,all.y=TRUE)
+nont1d_nomatch <- nont1d_select_pro[is.na(nont1d_select_pro$flagx),]
+# keep the most recent proinsulin value
+nont1d_nomatch <- nont1d_nomatch[order(nont1d_nomatch$Random_ID,desc(nont1d_nomatch$Draw_Date)),]
+nont1d_nomatch <- nont1d_nomatch %>% group_by(Random_ID) %>% filter(row_number(Random_ID) == 1)
+# now reclassify final.group to be equal to current group
+nont1d_nomatch$final.group <- nont1d_nomatch$group
+# combine those with match and those without
+nont1d_select_pro <- bind_rows(nont1D_match,nont1d_nomatch)
+# people in match group: 68
+# people in no match group: 17
+# people in final dataset: 85
+
+# combine the results for the pro-pep analysis
+t1d_select_pro$most_recent_draw <- NA
+nont1d_select_pro$time_from_diagnosis <- NA
+allpro <- bind_rows(nont1d_select_pro,t1d_select_pro)
+allpro$age <- floor(allpro$DOB %--% allpro$Draw_Date / dyears(1))
+label(allpro$Pro_pep)="Proinsulin ratio"
+
+# correct group2 variable in allpro
+allpro$group2 <- ifelse(allpro$final.group=="T1D" | allpro$final.group=="Multiple ab positive","T1D/multiple ab pos",allpro$final.group)
+nneg <- length(unique(allpro[allpro$final.group=="Negative",]$Random_ID))
+nsing <- length(unique(allpro[allpro$final.group=="Single ab positive",]$Random_ID))
+nmult <- length(unique(allpro[allpro$final.group=="Multiple ab positive",]$Random_ID))
+
+
+# for table 1, need the draw date corresponding to the proins used in cross sectional analyses
+datepro <- allpro[c("Random_ID","Draw_Date")]
+names(datepro) <- c("Random_ID","Date_proins")
+getdates <- datepro
+# keep the latest date to find A1c and age
+getdates$tab1_date <- pmax(getdates$Date_proins,na.rm=TRUE)
+getdates$tab1flag <- rep(1,nrow(getdates))
+getdates$Draw_Date <- getdates$tab1_date
+tab1data <- merge(alldata,getdates,by=c("Random_ID","Draw_Date"))
+tab1data$age <- floor(tab1data$DOB %--% tab1data$Draw_Date / dyears(1))
+label(tab1data$Pro_pep)="Proinsulin ratio"
+
+
+# need to update final.group variable using what is in allpro
+correct_group <- subset(allpro, select =c(Random_ID,final.group))
+tab1data <- subset(tab1data, select = -c(final.group))
+tab1data <- merge(tab1data,correct_group,by="Random_ID",all=TRUE)
+
+# for this version of the report, remove T1D group
+alldata <- alldata[alldata$final.group != "T1D",]
+tab1data <- tab1data[tab1data$final.group != "T1D",]
+allpro <- allpro[allpro$final.group != "T1D",]
+
+
+# ++++++++++++++++++++++++++++
+# flattenCorrMatrix
+# ++++++++++++++++++++++++++++
+# cormat : matrix of the correlation coefficients
+# pmat : matrix of the correlation p-values
+flattenCorrMatrix <- function(cormat, pmat) {
+  ut <- upper.tri(cormat)
+  data.frame(
+    row = rownames(cormat)[row(cormat)[ut]],
+    column = rownames(cormat)[col(cormat)[ut]],
+    cor  =(cormat)[ut],
+    p = pmat[ut]
+    )
+}
+
+
+
+# compare proinsulin ratios between T1D, Ab-, single Ab+, multiple Ab+
+
+# unadjusted comparisons
+tab_pro <- final_table(allpro,'Pro_pep',group=as.factor(allpro$final.group),margin=2,single=0,ron=2)
+tab_pro2 <- final_table(allpro,'Pro_pep',group=as.factor(allpro$group2),margin=2,single=0,ron=2)
+tab_pro3 <- final_table(allpro[allpro$final.group != "T1D",],'Pro_pep',
+                        group=as.factor(allpro[allpro$final.group != "T1D",]$final.group),margin=2,single=0,ron=2)
+
+# adjust for age, sex, and BMI
+allpro$l_Pro_pep=log(allpro$Pro_pep)
+# lm.pro = with(allpro, lm(Pro_pep ~ as.factor(final.group))) 
+# summary(lm.pro)
+# anova(lm.pro)
+# plot(lm.pro)
+# lm.pro <- aov(lm.pro)
+# summary(lm.pro)
+# anova(lm.pro)
+# TukeyHSD(lm.pro)
+# log transformed
+lm.pro = with(allpro, lm(Pro_pep ~ as.factor(final.group) + age + Gender + BMI)) 
+summary(lm.pro)
+anova(lm.pro)
+lm.pro <- aov(lm.pro)
+summary(lm.pro)
+anova(lm.pro)
+pval_final.group <- anova(lm.pro)[1,5]
+diffs_final.group <- TukeyHSD(lm.pro, which = "as.factor(final.group)")
+
+
+# do proinsulin ratios correlate with biochemical and ECL antibody levels
+corr_pro <- rcorr(as.matrix(allpro[, c( "Pro_pep","gadz","ia2z","mIAA","ZnT8","ICA",
+                                        "ECL_GADA","ECL_IA2A","ECL_IAA")])
+                  ,type = "spearman")
+corr_pro <- flattenCorrMatrix(corr_pro$r, corr_pro$P)
+corr_pro <- corr_pro[corr_pro$row=="Pro_pep",]
+
+# write cross-sectional dataset for Taylor
+#write.csv(allpro,file="S:\\Shared Projects\\Laura\\BDC\\Projects\\Andrea Steck\\Trialnet progressors analysis\\Fourth analysis - demethylated insulin with updated dataset\\Data\\allpro.csv")
+
+# partial correlations adjusted for age, sex, gender
+#blah <- na.omit(remove_all_labels(allpro))
+#corr_pro_part <- pcor.test(x=blah$Pro_pep,y=blah[,c("gadz","ia2z","mIAA","ZnT8","ICA","ECL_GADA","ECL_IA2A","ECL_IAA")],
+#                           z=blah[,c("age","BMI")])
+
+# table 1 - include age at last visit, gender, race/eth, DPT1 score, HLA, A1c
+label(tab1data$age)="Age (yrs)"
+label(tab1data$HLA)="HLA"
+label(tab1data$HbA1c)="HbA1c (%)"
+label(tab1data$race_eth)="Race/ethnicity"
+tab1data$DR3DR4 <- as.factor(tab1data$DR3DR4)
+label(tab1data$DR3DR4)="DR3 DR4"
+
+t1 <- final_table(tab1data,c("age","Gender","race_eth","DPT1Risk","DR3","DR4","DR3DR4","HLA","HbA1c","BMI","followup"),group=as.factor(tab1data$final.group),margin=2,single=0,ron=1)
+
+# does earliest proins value predict T1D or IGTT?
+log1 <- glm(T1D~Pro_pep , earliest_pro, family='binomial')
+log_t1d <- mod_tablog(log1)
+log_t1d$Predictor<-c("Proinsulin ratio")
+log2 <- glm(igttever~Pro_pep , earliest_pro, family='binomial')
+log_igtt <- mod_tablog(log2)
+log_igtt$Predictor<-c("Proinsulin ratio")
+
+log1_adj <- glm(T1D~Pro_pep + age + as.factor(Gender) + BMI , earliest_pro, family='binomial')
+log_t1d_adj <- mod_tablog(log1_adj)
+log_t1d_adj$Predictor<-c("Proinsulin ratio","Age","Male sex","BMI")
+log2_adj <- glm(igttever~Pro_pep + age + Gender + BMI, earliest_pro, family='binomial')
+log_igtt_adj <- mod_tablog(log2_adj)
+log_igtt_adj$Predictor<-c("Proinsulin ratio","Age","Male sex","BMI")
+
+# longitudinal analysis
+long <- alldata[!is.na(alldata$time),]
+# create variable with floor of year
+long$year_floor=as.numeric(floor(long$years))
+
+# write long dataset to file for Taylor
+#write.csv(long,file="S:\\Shared Projects\\Laura\\BDC\\Projects\\Andrea Steck\\Trialnet progressors analysis\\Fourth analysis - demethylated insulin with updated dataset\\Data\\longitudinal data.csv")
+
+
+mix <- lme(Pro_pep~ time + as.factor(final.group) + time:as.factor(final.group), random = ~1 + time | Random_ID, data=long, na.action = na.omit)
+# type III tests
+mixt <- anova.lme(mix,type="marginal")
+# plots of predicted values by year
+mix_year_test <- lme(Pro_pep~ year_floor + as.factor(final.group) + year_floor:as.factor(final.group), random = ~1 + year_floor | Random_ID, data=long, na.action = na.omit)
+# use lmer if going to generate bootstrap CI's, otherwise lme
+#mix_year <- lmer(Pro_pep~ year_floor + as.factor(final.group) + year_floor:as.factor(final.group) 
+#                 + (year_floor| Random_ID), data=long, na.action = na.omit)
+mix_year <- lme(Pro_pep~ year_floor + as.factor(final.group) + year_floor:as.factor(final.group), random = ~1 + year_floor | Random_ID, data=long, na.action = na.omit)
+
+preddata <- expand.grid(final.group=unique(long$final.group))
+for(i in 1:nrow(preddata)) {
+    temp <- subset(long,final.group==paste0(preddata$final.group[i]))
+    preddata$min[i] <- min(temp$year_floor)
+    preddata$max[i] <- max(temp$year_floor)
+}
+predlong <- reshape(preddata,idvar="final.group",direction = "long",varying = c("min","max"),v.names="year_floor")
+predlong <- predlong[with(predlong, order(final.group,time)),]
+predlong <- predlong[,-2]
+
+# this is the original code for the plot
+test <- predict(mix_year, level=0, newdata=predlong,se.fit=TRUE,nsim=100,re.form=NA)
+png("S:\\Shared Projects\\Laura\\BDC\\Projects\\Andrea Steck\\Trialnet progressors analysis\\Fourth analysis - demethylated insulin with updated dataset\\Abstract\\predicted_over_time.png")
+p <- ggplot(long, aes(x=year_floor, y=Pro_pep, colour=final.group)) +
+  xlab("Years") + ylab ("PI:C ratio") +
+  coord_cartesian(xlim=c(0,15)) +
+  geom_line(data=predlong, aes(y=predict(mix_year, level=0, newdata=predlong)),size=2) +
+  labs(colour="Group") +
+  theme_bw(base_size=22) 
+print(p)
+dev.off()
+# trying to modify code to add bootstrapped confidence intervals, but ggplot doesn't like the structure of the predictions
+# png("S:\\Shared Projects\\Laura\\BDC\\Projects\\Andrea Steck\\Trialnet progressors analysis\\Fourth analysis - demethylated insulin with updated dataset\\Abstract\\predicted_over_time.png")
+# p <- ggplot(long, aes(x=year_floor, y=Pro_pep, colour=final.group)) +
+#   xlab("Years") + ylab ("PI:C ratio") +
+#   coord_cartesian(xlim=c(0,15)) +
+#   geom_line(data=predlong, aes(y=predict(mix_year, level=0, newdata=predlong,se.fit=TRUE,nsim=100,re.form=NA)),size=2) +
+#   labs(colour="Group") +
+#   theme_bw(base_size=22) 
+# print(p)
+# dev.off()
+
+# adjusted longitudinal analysis
+mix_adj <- lme(Pro_pep~ time + as.factor(final.group) + time:as.factor(final.group) + age + Gender + BMI, 
+               random = ~1 + time | Random_ID, data=long, na.action = na.omit)
+# type III tests
+mixt_adj <- anova.lme(mix_adj,type="marginal")
+
+# generating plot from adjusted model
+mix_year_adj <- lme(Pro_pep~ year_floor + as.factor(final.group) + year_floor:as.factor(final.group) + age + Gender + BMI, 
+                    random = ~1 + year_floor | Random_ID, data=long, na.action = na.omit)
+predlong_adj <- predlong
+for(i in 1:nrow(predlong_adj)) {
+  predlong_adj$age[i] <- mean(long[long$final.group==paste0(predlong_adj$final.group[i]),]$age)
+  predlong_adj$BMI[i] <- mean(long[long$final.group==paste0(predlong_adj$final.group[i]),]$BMI,na.rm=TRUE)
+  predlong_adj$Gender[i] <- 0.5
+}
+png("S:\\Shared Projects\\Laura\\BDC\\Projects\\Andrea Steck\\Trialnet progressors analysis\\Fourth analysis - demethylated insulin with updated dataset\\Abstract\\predicted_over_time_adjusted.png")
+p <- ggplot(long, aes(x=year_floor, y=Pro_pep, colour=final.group)) +
+  xlab("Years") + ylab ("PI:C ratio") +
+  coord_cartesian(xlim=c(0,15)) +
+  geom_line(data=predlong_adj, aes(y=predict(mix_year_adj, level=0, newdata=predlong_adj)),size=2) +
+  labs(colour="Group") +
+  theme_bw(base_size=22) 
+print(p)
+dev.off()
+```
+
+## Background
+
+The purpose of this analysis is to test whether proinsulin ratios differ between 4 groups of TrialNet subjects: T1D, multiple antibody positive, single antibody positive, and negative.  The correlation of proinsulin ratios with biochemical and ECL antibody levels was also examined.
+
+## Methods
+
+There were `r obslong` records in the initial longitudinal dataset, and `r nppt` participants in the participant database.
+
+The following data manipulation and cleaning steps were performed:
+
+1) Fasting C-peptide in pM/L was calculated as fasting C-peptide*331.09.
+2) Proinsulin ratios were calculated as proinsulin (pM/L) / C-peptide (pM/L) *100
+3) There were `r nrow(misstwo)` records deleted that were missing both mIAA and ICA512/IA2H results.
+4) There were an additional `r nrow(missmiaa)` records deleted that were missing just mIAA.
+5) Antibody results were classifed as positive/negative using the following cutoff values:
++ mIAA, 0.01
++ GAD65, 0.032
++ GAD65H, 20
++ ICA512, 0.049
++ IA_2H, 5
++ ZnT8, 0.02
+6) The categorical variables (positive/negative) for GAD65 and GAD65H were combined into one variable, as were the categorical variables for ICA512 and IA_2H.
+7) The number of positive antibodies at each visit was calculated as the sum of ICA512/IA2H, GAD65/GAD65H, mIAA, and ZnT8.
+8) For analyses using the continuous value of the antibodies, GAD65 and GAD65H were combined by calculating the Z-score of each variable and then combining the Z-scores into one variable.  The same procedure was followed for ICA512/IA2H.
+9) There were `r misspro` subjects who did not have any proinsulin ratio results who were excluded from analysis.   
+10) Participants were classified in the T1D group if they ever had a diagnosis of T1D.  
+11) If a participant was not in the T1D group, they were classfied by antibody status as below.  This resulted in `r length(unique(t1d$Random_ID))` participants in the T1D group, `r nmult` participants in the multiple antibody positive group, `r nsing` participants in the single antibody positive group, and `r nneg` participants in the negative group.
++ If they were multiple antibody positive at any visit, they were classified as multiple antibody positive.
++ If they were never multiple antibody positive, but were single antibody positive at 2 or more visits, they were classified as single antibody positive.
++ Otherwise, they were classified as antibody negative.
+12) For cross-sectional analyses, proinsulin ratios were selected as follows:
++ For the T1D group, if there was a proinsulin ratio within 3 months of diagnosis, that value was used.  If there was not a proinsulin ratio within 3 months of diagnosis, then the most recent proinsulin ratio was used, and the subject was recategorized as having the antibody status that was current at the most recent proinsulin ratio.
++ For all other groups, the analysis used the most recent proinsulin ratio from visits where the participant's antibody status matched the status they belonged to using all their data.  If there were no proinsulin ratios available from such visits, the most recent proinsulin ratio was used, and the participant was reclassifed as having the antibody status that was current at that time.
+13) IGTT was defined as having any visit where:
++ Fasting BG>100 and <126 OR
++ 2 hour BG>=140 and <200 OR
++ Any of 30, 60, 90 minute BG >200
+14) Follow-up time was calculated as the years elapsed between the first draw date and the last draw date or the date of diagnosis, whichever was later.
+
+The distribution of all variables was asssessed prior to analysis.  Group comparisons were done using ANOVA or the Kruskal-Wallis test for continuous variables and the chi-square or Fisher's exact test for categorical variables.  Logistic regresion was used to test whether the earliest pro-insulin ratio predicted development of T1D or IGTT.  A random coefficients mixed model was used to test whether the groups had different trajectories of proinsulin over time.
+
+## Results
+
+Table 1a presents descriptive statistics for demographic and clinical variables by group.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(t1,caption="Table 1a.  Descriptive statistics.  Asterisks indicate that Fisher's exact test was used instead of the chi-square test due to small expected cell value.")
+```
+\
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(futab,caption="Table 1b.  Descriptive statistics for follow up time by group.")
+```
+\
+
+Table 2a shows the results of the group comparisons for proinsulin ratios.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(tab_pro,caption="Table 2a.  Proinsulin ratios.")
+```
+\
+
+
+
+After adjusting for age, sex, and BMI, the groups were not significantly different (p=`r pval_final.group`).  Table 3 shows the differences between all pairwise comparisons of groups, using Tukey's HSD test.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(diffs_final.group$`as.factor(final.group)`,caption="Table 3.  Pairwise comparisons of least-squares mean proinsulin ratio, adjusted for age, sex, and BMI.")
+```
+\
+
+Table 4 shows the correlations of proinsulin ratios with continuous antibody levels at the timepoint selected for cross-sectional analysis.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(corr_pro,caption="Table 4.  Correlation of proinsulin ratios with antibody levels.")
+```
+\
+
+
+Table 6a shows the results of the logistic regression testing whether the earliest proinsulin ratio predicts IGTT.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(log_igtt,caption="Table 6a.  Logistic regression of the earliest pro-insulin ratio vs. IGTT.")
+```
+\
+
+Table 6b shows the results of the logistic regression testing whether the earliest proinsulin ratio predicts IGTT, after adjusting for sex, age, and BMI.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(log_igtt_adj,caption="Table 6b.  Logistic regression of the earliest pro-insulin ratio vs. IGTT, adjusting for sex, age, and BMI.")
+```
+\
+
+Table 7 shows the results of the mixed model testing whether the groups differ in the trajectories of proinsulin ratios over time.  The trajectories in the four groups were not significantly different (p=`r mixt[4,4]`).
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(mixt,caption="Table 7.  ANOVA table for mixed effects model.")
+```
+\
+
+Table 8 shows the results of the mixed model testing whether the groups differ in the trajectories of proinsulin ratios over time, after adjusting for sex, age, and BMI.  The trajectories in the four groups were not significantly different (p=`r mixt_adj[3,4]`).
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(mixt_adj,caption="Table 8.  ANOVA table for mixed effects model, adjusted for sex, age, and BMI.")
+```
+\
+
+Figure 1 shows box plots of the PI:C ratio by year.
+```{r plotnumeric, echo=FALSE}
+boxplot(long$Pro_pep~long$year_floor)
+```

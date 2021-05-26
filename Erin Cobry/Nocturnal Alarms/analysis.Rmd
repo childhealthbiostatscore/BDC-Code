@@ -1,0 +1,480 @@
+---
+title: "HCL Overnight Analysis"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "~/Dropbox/Work/Erin Cobry/Nocturnal Alarms")
+library(tools)
+library(arsenal)
+library(cgmanalysis)
+library(car)
+library(skimr)
+library(Hmisc)
+library(knitr)
+library(lme4)
+library(nlme)
+library(MASS)
+library(tidyverse)
+library(broom)
+library(broom.mixed)
+```
+
+```{r echo=FALSE,include=FALSE}
+# Import Cari's data
+source("~/GitHub/BDC-Code/Erin Cobry/Nocturnal Alarms/AdvancedClosedLoopCl_R_2020-01-05_1101.r")
+# Demographics
+demographics <- data %>% 
+  filter(redcap_event_name %in% c("baseline_arm_1","baseline_arm_2"),
+         !is.na(child_ya))
+# remove missing
+no_data <- c("27","30","38","41")
+demographics <- demographics[-c(which(demographics$record_id %in% no_data)),]
+# Manually corrected a few dates in CSV file.
+# Read in (manually converted to long format from Erin's Excel spreadsheet)
+overnight_alarms <- read.csv("./Data_Cleaned/nocturnal_alarms.csv",
+                             na.strings = c("","No Data"))
+overnight_alarms = overnight_alarms[overnight_alarms$num_nights > 0,]
+# Match IDs and filter
+dates = read.csv("./Data_Cleaned/subject_dates.csv")
+overnight_alarms$id = dates$id[match(gsub(" ","",overnight_alarms$id),tolower(gsub(" ","",dates$name)))]
+overnight_alarms <- overnight_alarms %>% filter(!(id %in% no_data))
+# Format date columns
+overnight_alarms[,c("start_date","end_date")] <- 
+  lapply(overnight_alarms[,c("start_date","end_date")], 
+         function(x) {lubridate::mdy(as.character(x))})
+# Numeric timepoints in months
+overnight_alarms$numeric_time <- 
+  car::recode(overnight_alarms$timepoint,
+              "'Baseline' = 0;'Post' = 0.5;'T1' = 3;'T2' = 6;'T3' = 9;'T4' = 12")
+overnight_alarms$numeric_time <- 
+  as.numeric(as.character(overnight_alarms$numeric_time))
+# Alarms per day
+alarm_vars = c("num_alarms","threshold_alarms","maintenance_alarms","hcl_alarms",
+               "pump_alarms","other_alarms")
+overnight_alarms = overnight_alarms %>%
+  mutate(across(all_of(alarm_vars),.fns = ~./num_nights,.names = "{col}_per_night"))
+ # Get Erin's participants 
+demographics <- demographics[which(demographics$record_id %in% overnight_alarms$id),]
+# Combine CGM and pump hx levels
+levels(demographics$demographics_cgmhx.factor) <-
+  c("< 1 month","> 1 month","> 1 month","> 1 month","> 1 month","> 1 month")
+levels(demographics$demographics_pumphx.factor) <-
+  c("< 1 month","> 1 month","> 1 month","> 1 month","> 1 month","> 1 month")
+```
+
+# Table 1: Descriptive Characteristics
+
+```{r echo=FALSE,results='asis'}
+# Labels
+labels <- list(demographics_t1d_duration = "Diabetes Dur. (years)", 
+               demographics_ethnicity.factor = "Ethnicity",
+               demographics_sex.factor = "Sex",
+               demographics_cgmhx.factor = "CGM History", 
+               demographics_pumphx.factor = "Pump History")
+# Table 1
+t1 <- tableby(~ hba1c + kwt(demographics_age,"median","q1q3") + 
+                kwt(demographics_t1d_duration,"median","q1q3") + 
+                demographics_sex.factor + demographics_ethnicity.factor +
+                demographics_cgmhx.factor + demographics_pumphx.factor,
+              data = demographics)
+# Print
+summary(t1,labelTranslations = labels)
+```
+
+```{r echo=FALSE,include=FALSE}
+# Read in CGM data
+cgm <- read.csv("./Data_Cleaned/cgm_variables.csv",stringsAsFactors = F)
+# ID and timepoint
+cgm$id <- as.numeric(gsub("[[:alpha:]]","",sapply(strsplit(cgm$subject_id,"_"),`[[`,1)))
+cgm$timepoint <- sapply(strsplit(cgm$subject_id,"_"),`[[`,2)
+cgm$timepoint[cgm$timepoint == "week 2"] = "Post"
+# Select columns
+cgm <- cgm %>% select(id,timepoint,nighttime_avg_sens_glucose,
+                      percent_time_70_180_night,percent_time_under_70_night)
+# Merge
+overnight_alarms <- left_join(overnight_alarms,cgm,by = c("id","timepoint"))
+# Read in corrected AM data
+am_correct <- read.csv("./Data_Cleaned/REDCap AM Data.csv")
+am_correct$timepoint[am_correct$timepoint == "week 2"] = "Post"
+# Add to overnight alarms
+overnight_alarms <- left_join(overnight_alarms,am_correct,by = c("id", "timepoint"))
+# Order timepoints
+overnight_alarms$timepoint <- factor(overnight_alarms$timepoint,
+                                     levels = c("Baseline","Post","T1","T2","T3","T4" ))
+levels(overnight_alarms$timepoint) <- c("Baseline","Week 2",
+                                        "T1","T2","T3","T4" )
+```
+
+# Table 2: Alarm Frequency
+
+```{r echo=FALSE}
+alarm_vars_per_night = paste0(alarm_vars,"_per_night")
+alarm_table <- overnight_alarms %>% group_by(timepoint) %>%
+  summarise(across(all_of(c(alarm_vars_per_night,"sensor_wear","time_am")),
+                   .fns = ~round(median(.,na.rm = T),3)))
+colnames(alarm_table)[2:ncol(alarm_table)] = 
+  paste0("Median ",toTitleCase(gsub("_"," ",colnames(alarm_table)[2:ncol(alarm_table)])))
+kable(alarm_table)
+```
+
+# Longitudinal Analysis
+
+Total alarms per night were analyzed using a linear mixed model with random intercept for participant and continuous AR1 correlation structure. All other outcomes were analyzed using a generalized Poisson mixed model with random intercept for subject and continuous AR1 correlation structure.
+
+## Alarms per Night By Timepoint
+
+### Plot
+
+```{r echo=FALSE,warning=FALSE,dpi=600}
+alarms_over_time <- 
+  ggplot(overnight_alarms,aes(x = timepoint, y = num_alarms_per_night,group = id)) + 
+  geom_line(aes(color=factor(id))) + theme_bw() + 
+  xlab("Timepoint") + ylab("Alarms per Night") + 
+  theme(legend.position = "none")
+alarms_over_time
+```
+
+### Model Results - Unadjusted
+
+```{r echo=FALSE,message=FALSE}
+# Random intercept (not enough data for a random slope)
+mod_ri_car1 <- lme(num_alarms_per_night ~ timepoint,random = ~1|id,
+                   data = overnight_alarms,correlation = corCAR1(form = ~numeric_time))
+results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
+results$term <- sub("timepoint","",results$term)
+results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 3)
+# Anova
+an_res <- as.data.frame(Anova(mod_ri_car1))
+# Print
+kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 3)
+```
+
+There was a statistically significant effect of timepoint on the rate of alarms per night (overall p = `r round(an_res["timepoint",3],3)`).
+
+### Model Results - Adjusted for Time in AM
+
+```{r echo=FALSE,message=FALSE}
+# Random intercept (not enough data for a random slope)
+mod_ri_car1 = lme(num_alarms_per_night ~ timepoint + time_am,random = ~1|id,na.action = na.omit,
+                   data = overnight_alarms,correlation = corCAR1(form = ~numeric_time))
+results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
+results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" )
+results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 3)
+# Anova
+an_res <- as.data.frame(Anova(mod_ri_car1))
+# Print
+kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 3)
+```
+
+There was no effect of timepoint on the rate of alarms per night after adjusting for time in AM (overall p = `r round(an_res["timepoint",3],3)`). There was a statistically significant effect of time in AM on the rate of alarms per night (overall p = `r round(an_res["time_am",3],3)`).
+
+### Number of Observations at Each Timepoint
+
+```{r echo=FALSE,message=FALSE}
+alarm_obs <- overnight_alarms %>% group_by(timepoint) %>% count(!is.na(num_alarms_per_night))
+kable(alarm_obs[,c("timepoint","n")])
+```
+
+## Threshold Alarms per Night By Timepoint
+
+### Plot
+
+```{r echo=FALSE,warning=FALSE,dpi=600}
+alarms_over_time <- 
+  ggplot(overnight_alarms,aes(x = timepoint, y = threshold_alarms_per_night,group = id)) + 
+  geom_line(aes(color=factor(id))) + theme_bw() + 
+  xlab("Timepoint") + ylab("Threshold Alarms per Night") + 
+  theme(legend.position = "none")
+alarms_over_time
+```
+
+### Model Results - Unadjusted
+
+```{r echo=FALSE,message=FALSE}
+# Random intercept (not enough data for a random slope)
+mod_ri_car1 <- glmmPQL(threshold_alarms ~ timepoint + offset(log(num_nights)),
+                     random = ~1|id,family = "poisson",
+                     data = overnight_alarms,
+                     correlation = corCAR1(form = ~numeric_time))
+results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
+results$term <- sub("timepoint","",results$term)
+results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 3)
+results[,c("estimate","conf.low","conf.high")] = lapply(results[,c("estimate","conf.low","conf.high")],exp)
+# Anova
+an_res <- as.data.frame(Anova(mod_ri_car1))
+# Print
+kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 3)
+```
+
+There was a statistically significant effect of timepoint on the rate of threshold alarms per night (overall p = `r round(an_res["timepoint",3],3)`). The estimates presented above are interpreted as incidence rate ratios.
+
+### Model Results - Adjusted for Time in AM
+
+```{r echo=FALSE,message=FALSE}
+# Random intercept (not enough data for a random slope)
+mod_ri_car1 <- glmmPQL(threshold_alarms ~ timepoint + time_am + offset(log(num_nights)),
+                     random = ~1|id,family = "poisson",
+                     data = overnight_alarms,
+                     correlation = corCAR1(form = ~numeric_time))
+results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
+results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" )
+results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 3)
+results[,c("estimate","conf.low","conf.high")] = lapply(results[,c("estimate","conf.low","conf.high")],exp)
+# Anova
+an_res <- as.data.frame(Anova(mod_ri_car1))
+# Print
+kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 3)
+```
+
+There was a significant effect of timepoint on the rate of threshold alarms per night after adjusting for time in AM (overall p = `r round(an_res["timepoint",3],3)`). There was also a statistically significant effect of time in AM on the rate of alarms per night (overall p = `r round(an_res["time_am",3],3)`). The estimates presented above are interpreted as incidence rate ratios.
+
+### Number of Observations at Each Timepoint
+
+```{r echo=FALSE,message=FALSE}
+alarm_obs <- overnight_alarms %>% group_by(timepoint) %>% count(!is.na(threshold_alarms))
+kable(alarm_obs[,c("timepoint","n")])
+```
+
+## Maintenance Alarms per Night By Timepoint
+
+### Plot
+
+```{r echo=FALSE,warning=FALSE,dpi=600}
+alarms_over_time <- 
+  ggplot(overnight_alarms,aes(x = timepoint, y = maintenance_alarms_per_night,group = id)) + 
+  geom_line(aes(color=factor(id))) + theme_bw() + 
+  xlab("Timepoint") + ylab("Maintenance Alarms per Night") + 
+  theme(legend.position = "none")
+alarms_over_time
+```
+
+### Model Results - Unadjusted
+
+```{r echo=FALSE,message=FALSE}
+# Random intercept (not enough data for a random slope)
+mod_ri_car1 <- glmmPQL(maintenance_alarms ~ timepoint + offset(log(num_nights)),
+                     random = ~1|id,family = "poisson",
+                     data = overnight_alarms,
+                     correlation = corCAR1(form = ~numeric_time))
+results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
+results$term <- sub("timepoint","",results$term)
+results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 3)
+results[,c("estimate","conf.low","conf.high")] = lapply(results[,c("estimate","conf.low","conf.high")],exp)
+# Anova
+an_res <- as.data.frame(Anova(mod_ri_car1))
+# Print
+kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 3)
+```
+
+There was no effect of timepoint on the rate of maintenance alarms per night (overall p = `r round(an_res["timepoint",3],3)`). The estimates presented above are interpreted as incidence rate ratios.
+
+### Model Results - Adjusted for Time in AM
+
+```{r echo=FALSE,message=FALSE}
+# Random intercept (not enough data for a random slope)
+mod_ri_car1 <- glmmPQL(maintenance_alarms ~ timepoint + time_am + offset(log(num_nights)),
+                     random = ~1|id,family = "poisson",
+                     data = overnight_alarms,
+                     correlation = corCAR1(form = ~numeric_time))
+results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
+results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" )
+results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 3)
+results[,c("estimate","conf.low","conf.high")] = lapply(results[,c("estimate","conf.low","conf.high")],exp)
+# Anova
+an_res <- as.data.frame(Anova(mod_ri_car1))
+# Print
+kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 3)
+```
+
+There was no effect of timepoint on the rate of maintenance alarms per night after adjusting for time in AM (overall p = `r round(an_res["timepoint",3],3)`). There was also no effect of time in AM on the rate of alarms per night (overall p = `r round(an_res["time_am",3],3)`). The estimates presented above are interpreted as incidence rate ratios.
+
+### Number of Observations at Each Timepoint
+
+```{r echo=FALSE,message=FALSE}
+alarm_obs <- overnight_alarms %>% group_by(timepoint) %>% count(!is.na(maintenance_alarms))
+kable(alarm_obs[,c("timepoint","n")])
+```
+
+## HCL Alarms per Night By Timepoint
+
+### Plot
+
+```{r echo=FALSE,warning=FALSE,dpi=600}
+alarms_over_time <- 
+  ggplot(overnight_alarms,aes(x = timepoint, y = hcl_alarms_per_night,group = id)) + 
+  geom_line(aes(color=factor(id))) + theme_bw() + 
+  xlab("Timepoint") + ylab("HCL Alarms per Night") + 
+  theme(legend.position = "none")
+alarms_over_time
+```
+
+### Model Results - Unadjusted
+
+```{r echo=FALSE,message=FALSE}
+# Random intercept (not enough data for a random slope)
+mod_ri_car1 <- glmmPQL(hcl_alarms ~ timepoint + offset(log(num_nights)),
+                     random = ~1|id,family = "poisson",
+                     data = overnight_alarms,
+                     correlation = corCAR1(form = ~numeric_time))
+results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
+results$term <- sub("timepoint","",results$term)
+results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 3)
+results[,c("estimate","conf.low","conf.high")] = lapply(results[,c("estimate","conf.low","conf.high")],exp)
+# Anova
+an_res <- as.data.frame(Anova(mod_ri_car1))
+# Print
+kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 3)
+```
+
+There was a significant effect of timepoint on the rate of HCL alarms per night (overall p < 0.001). The estimates presented above are interpreted as incidence rate ratios.
+
+### Model Results - Adjusted for Time in AM
+
+```{r echo=FALSE,message=FALSE}
+# Random intercept (not enough data for a random slope)
+mod_ri_car1 <- glmmPQL(hcl_alarms ~ timepoint + time_am + offset(log(num_nights)),
+                     random = ~1|id,family = "poisson",
+                     data = overnight_alarms,
+                     correlation = corCAR1(form = ~numeric_time))
+results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
+results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" )
+results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 3)
+results[,c("estimate","conf.low","conf.high")] = lapply(results[,c("estimate","conf.low","conf.high")],exp)
+# Anova
+an_res <- as.data.frame(Anova(mod_ri_car1))
+# Print
+kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 3)
+```
+
+There was a significant effect of timepoint on the rate of HCL alarms per night after adjusting for time in AM (overall p = `r round(an_res["timepoint",3],3)`). There was also a significant effect of time in AM on the rate of alarms per night (overall p < 0.001). The estimates presented above are interpreted as incidence rate ratios.
+
+### Number of Observations at Each Timepoint
+
+```{r echo=FALSE,message=FALSE}
+alarm_obs <- overnight_alarms %>% group_by(timepoint) %>% count(!is.na(hcl_alarms))
+kable(alarm_obs[,c("timepoint","n")])
+```
+
+## Pump Alarms per Night By Timepoint
+
+### Plot
+
+```{r echo=FALSE,warning=FALSE,dpi=600}
+alarms_over_time <- 
+  ggplot(overnight_alarms,aes(x = timepoint, y = pump_alarms_per_night,group = id)) + 
+  geom_line(aes(color=factor(id))) + theme_bw() + 
+  xlab("Timepoint") + ylab("Pump Alarms per Night") + 
+  theme(legend.position = "none")
+alarms_over_time
+```
+
+### Model Results - Unadjusted
+
+```{r echo=FALSE,message=FALSE}
+# Random intercept (not enough data for a random slope)
+mod_ri_car1 <- glmmPQL(pump_alarms ~ timepoint + offset(log(num_nights)),
+                     random = ~1|id,family = "poisson",
+                     data = overnight_alarms,
+                     correlation = corCAR1(form = ~numeric_time))
+results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
+results$term <- sub("timepoint","",results$term)
+results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 3)
+results[,c("estimate","conf.low","conf.high")] = lapply(results[,c("estimate","conf.low","conf.high")],exp)
+# Anova
+an_res <- as.data.frame(Anova(mod_ri_car1))
+# Print
+kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 3)
+```
+
+There was a significant effect of timepoint on the rate of pump alarms per night (overall p = `r round(an_res["timepoint",3],3)`). The estimates presented above are interpreted as incidence rate ratios.
+
+### Model Results - Adjusted for Time in AM
+
+```{r echo=FALSE,message=FALSE}
+# Random intercept (not enough data for a random slope)
+mod_ri_car1 <- glmmPQL(pump_alarms ~ timepoint + time_am + offset(log(num_nights)),
+                     random = ~1|id,family = "poisson",
+                     data = overnight_alarms,
+                     correlation = corCAR1(form = ~numeric_time))
+results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
+results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" )
+results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 3)
+results[,c("estimate","conf.low","conf.high")] = lapply(results[,c("estimate","conf.low","conf.high")],exp)
+# Anova
+an_res <- as.data.frame(Anova(mod_ri_car1))
+# Print
+kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 3)
+```
+
+There was a significant effect of timepoint on the rate of pump alarms per night after adjusting for time in AM (overall p = `r round(an_res["timepoint",3],3)`). There was also a significant effect of time in AM on the rate of alarms per night (overall p = `r round(an_res["time_am",3],3)`). The estimates presented above are interpreted as incidence rate ratios.
+
+### Number of Observations at Each Timepoint
+
+```{r echo=FALSE,message=FALSE}
+alarm_obs <- overnight_alarms %>% group_by(timepoint) %>% count(!is.na(pump_alarms))
+kable(alarm_obs[,c("timepoint","n")])
+```
+
+## Other Alarms per Night By Timepoint
+
+### Plot
+
+```{r echo=FALSE,warning=FALSE,dpi=600}
+alarms_over_time <- 
+  ggplot(overnight_alarms,aes(x = timepoint, y = other_alarms_per_night,group = id)) + 
+  geom_line(aes(color=factor(id))) + theme_bw() + 
+  xlab("Timepoint") + ylab("Other Alarms per Night") + 
+  theme(legend.position = "none")
+alarms_over_time
+```
+
+### Model Results - Unadjusted
+
+```{r echo=FALSE,message=FALSE}
+# Random intercept (not enough data for a random slope)
+mod_ri_car1 <- glmmPQL(other_alarms ~ timepoint + offset(log(num_nights)),
+                     random = ~1|id,family = "poisson",
+                     data = overnight_alarms,
+                     correlation = corCAR1(form = ~numeric_time))
+results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
+results$term <- sub("timepoint","",results$term)
+results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 3)
+results[,c("estimate","conf.low","conf.high")] = lapply(results[,c("estimate","conf.low","conf.high")],exp)
+# Anova
+an_res <- as.data.frame(Anova(mod_ri_car1))
+# Print
+kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 3)
+```
+
+There was a significant effect of timepoint on the rate of other alarms per night (overall p = `r round(an_res["timepoint",3],3)`). The estimates presented above are interpreted as incidence rate ratios.
+
+### Model Results - Adjusted for Time in AM
+
+```{r echo=FALSE,message=FALSE}
+# Random intercept (not enough data for a random slope)
+mod_ri_car1 <- glmmPQL(other_alarms ~ timepoint + time_am + offset(log(num_nights)),
+                     random = ~1|id,family = "poisson",
+                     data = overnight_alarms,
+                     correlation = corCAR1(form = ~numeric_time))
+results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
+results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" )
+results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 3)
+results[,c("estimate","conf.low","conf.high")] = lapply(results[,c("estimate","conf.low","conf.high")],exp)
+# Anova
+an_res <- as.data.frame(Anova(mod_ri_car1))
+# Print
+kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 3)
+```
+
+There was a significant effect of timepoint on the rate of other alarms per night after adjusting for time in AM (overall p = `r round(an_res["timepoint",3],3)`). There was not significant effect of time in AM on the rate of alarms per night (overall p = `r round(an_res["time_am",3],3)`). The estimates presented above are interpreted as incidence rate ratios.
+
+### Number of Observations at Each Timepoint
+
+```{r echo=FALSE,message=FALSE}
+alarm_obs <- overnight_alarms %>% group_by(timepoint) %>% count(!is.na(other_alarms))
+kable(alarm_obs[,c("timepoint","n")])
+```

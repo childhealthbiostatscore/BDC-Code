@@ -1,0 +1,1293 @@
+---
+title: "Control IQ 6 Month Analysis"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+library(MASS)
+library(redcapAPI)
+library(reshape2)
+library(tidyverse)
+library(skimr)
+library(knitr)
+library(tableone)
+library(readxl)
+library(nlme)
+library(gridExtra)
+library(psych)
+library(stringr)
+library(dplyr)
+library(emmeans)
+library(patchwork)
+library(scales)
+knitr::opts_chunk$set(echo = FALSE)
+home_dir = ifelse(.Platform$OS.type != "unix",
+                  "\\ucdenver.pvt\\som\\peds\\RI Biostatistics Core\\Shared\\Shared Projects\\Laura\\BDC\\Projects","/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
+knitr::opts_knit$set(root.dir = home_dir)
+```
+
+```{r echo=FALSE,include=FALSE}
+source("./Cari Berget/Control IQ 6 Month MS/Data raw/ClinicalObservationC_R_2021-01-16_1439.r")
+child_full <- data
+# Calculate COGI:
+# TIR: Linear scoring between 0% and 100% TIR, ie, 67% TIR is assigned 66.7 points
+# TBR (< 70): 0% TBR is assigned 100 points 35%, TBR 15% and above is assigned 0 points, Linear scoring between 0% and 15% TBR, ie, 5% TBR is assigned 66.7 points
+# SD: SD 1 mmol/L (18 mg/dl) and below is assigned 100 points, SD 6 mmol/L (108 mg/dl) and above is assigned 0 points, Linear scoring between 1 and 6 mmol/L (18 and 108 mg/dl), ie, 2.7 mmol/L (48 mg/dl) is assigned 67 points
+# Weighting: 50% TIR, 35% TBR, and 15% SD
+# Threshold values
+child_full$cogi_tbr = child_full$sensor_u54 + child_full$sensor_54_69
+child_full$cogi_tbr[child_full$cogi_tbr > 15] = 15
+# COGI
+child_full$cogi_sd = child_full$sensor_sd
+child_full$cogi_sd[child_full$cogi_sd > 108] = 108
+child_full$cogi_sd[child_full$cogi_sd < 18] = 18
+
+child_full$cogi = 
+  round(child_full$sensor_70_180) * 0.5 + 
+  round(rescale(child_full$cogi_tbr,c(100,0),c(0,15))) * 0.35 +
+  round(rescale(child_full$sensor_sd,c(100,0),c(18,108))) * 0.15
+
+source("./Cari Berget/Control IQ 6 Month MS/Data raw/ClinicalObservationP_R_2021-01-16_1438.r")
+parent_full <- data
+
+# filter control IQ users
+child_full_iq <- child_full[child_full$record_id>=119,]
+
+# there were 4 ppts from adult clinic who should be removed
+child_full_iq <- child_full_iq[!(child_full_iq$record_id %in% c(181,182,183,184)),]
+
+# convert to numeric 
+child_full_iq$date_visit <- as.Date(as.character(child_full_iq$date_visit),format="%Y-%m-%d")
+child_full_iq$demographics_age <- as.numeric(as.character(child_full_iq$demographics_age))
+child_full_iq$hba1c <- as.numeric(as.character(child_full_iq$hba1c))
+
+# keep 6 months of data
+child_full_iq <- child_full_iq[child_full_iq$gyl_timepoint.factor %in% c("Baseline","Month 1/ Training F/U","3 Months",
+                                                                         "6 Months"),]
+child_full_iq$gyl_timepoint.factor <- droplevels(child_full_iq$gyl_timepoint.factor)
+
+# get rid of person with duplicate visit
+dat143 <- child_full_iq[child_full_iq$record_id==143,]
+write.csv(dat143,"./Cari Berget/Control IQ 6 Month MS/Data clean/data_143.csv")
+#child_full_iq <- child_full_iq[child_full_iq$record_id!=143,]
+
+# hardcode % CIQ time for ppt 160 at 6 months.  Should be 91% not 0%
+child_full_iq[child_full_iq$record_id==160 & child_full_iq$gyl_timepoint.factor=="6 Months",]$time_am <- 91
+
+# read in prior insulin mode
+ins <- read.csv("./Cari Berget/Control IQ 6 Month MS/Data raw/Prior_insulin_mode_11-16-2020.csv")
+ins$a <- NULL
+child_full_iq <- merge(child_full_iq,ins,by="record_id",all.x=T,all.y = F)
+child_full_iq$prior.insulin.mode <- as.factor(child_full_iq$prior.insulin.mode)
+
+# read in 6 month alarm data
+alarm <- read.csv("./Cari Berget/Control IQ 6 Month MS/Data raw/6 month_alerts_11-20-2020.csv")
+alarm$Start.date <- NULL
+alarm$end.date <- NULL
+alarm$HIGH.alarm.6mo <- alarm$HIGH
+alarm$LOW.alarm.6mo <- alarm$LOW
+alarm$HIGH <- NULL
+alarm$LOW <- NULL
+alarm <- alarm[!is.na(alarm$record_id),]
+child_full_iq <- merge(child_full_iq,alarm,by=c("record_id"),all.x=T,all.y = F)
+
+# classify age and A1c
+child_full_iq$age_cat <- ifelse(child_full_iq$demographics_age<=13,"<=13  years",
+                                ifelse(child_full_iq$demographics_age<=17,"14-17 years","18+ years"))
+child_full_iq$base_a1c_cat <- ifelse(child_full_iq$hba1c<=7,"<= 7%",ifelse(child_full_iq$hba1c<=9,">7% and <9%",">= 9%"))
+child_full_iq <- child_full_iq[!is.na(child_full_iq$record_id),]
+
+# create new CGM variables
+child_full_iq$sensor_u70 <- ifelse(is.na(child_full_iq$sensor_u54) & is.na(child_full_iq$sensor_54_69),NA,
+                                   rowSums(child_full_iq[,c("sensor_u54","sensor_54_69")],na.rm = T))
+child_full_iq$sensorg_180 <- ifelse(is.na(child_full_iq$sensor_181_250) & is.na(child_full_iq$sensor_g250),NA,
+                                   rowSums(child_full_iq[,c("sensor_181_250","sensor_g250")],na.rm = T))
+child_full_iq$gmi <- 3.31 + (0.02392 * child_full_iq$sensor_mean)
+
+# score INSPIRE
+# Baseline, under 18
+a <- child_full_iq[child_full_iq$demographics_age<18 & child_full_iq$gyl_timepoint.factor=="Baseline",]
+a <- a[,c("record_id","gyl_timepoint.factor","inspire_b1","inspire_b2","inspire_b3","inspire_b4","inspire_b5",
+          "inspire_b6","inspire_b7","inspire_b8","inspire_b9","inspire_b10","inspire_b11","inspire_b12",
+          "inspire_b13","inspire_b14","inspire_b15","inspire_b16","inspire_b17")]
+a$inspire_tot <- NA
+a$inspire_tot <- rowMeans(a[,-c(1:2)],na.rm = T)*25
+a <- a[,c("record_id","gyl_timepoint.factor","inspire_tot")]
+# follow-up, under 18
+b <- child_full_iq[child_full_iq$gyl_timepoint.factor %in% c("Month 1/ Training F/U","3 Months","6 Months"),]
+b <- b[,c("record_id","gyl_timepoint.factor","inspire_f1","inspire_f2","inspire_f3","inspire_f4","inspire_f5",
+          "inspire_f6","inspire_f7","inspire_f8","inspire_f9","inspire_f10","inspire_f11","inspire_f12",
+          "inspire_f13","inspire_f14","inspire_f15","inspire_f16","inspire_f17")]
+b <- b[!is.na(b$"inspire_f1"),]
+b$inspire_tot <- NA
+b$inspire_tot <- rowMeans(b[,-c(1:2)],na.rm = T)*25
+b <- b[,c("record_id","gyl_timepoint.factor","inspire_tot")]
+# combine scored INSPIRE and merge back
+inspire <- rbind(a,b)
+child_full_iq <- merge(child_full_iq,inspire,by=c("record_id","gyl_timepoint.factor"),all.x = T,all.y = T)
+child_full_iq <- child_full_iq[!is.na(child_full_iq$record_id),]
+
+# score PAID - child
+# there are no records with partial missing data, but I will include this code in case we need it in the future
+paid <- child_full_iq %>% dplyr::select(record_id,gyl_timepoint.factor,c_paid1:c_paid20)
+missing_threshold <- ceiling(length(3:ncol(paid)) * 0.25)
+for (r in 1:nrow(paid)) { # Couldn't get apply to work for some reason
+  x <- paid[r,3:ncol(paid)]
+  replacement <- mean(as.numeric(x),na.rm = T)
+  num_missing <- length(which(is.na(x)))
+  if (num_missing<=missing_threshold && num_missing>0) {
+    x[which(is.na(x))] <- replacement
+    } else if (num_missing > missing_threshold) {
+      x <- rep(NA,length(x))
+    }
+  paid[r,3:ncol(paid)] <- x
+}
+# subtract 1 from every variable
+paid[,3:ncol(paid)] <- lapply(paid[,3:ncol(paid)],function(x){as.numeric(x)-1})
+# score
+paid$paid_score_c <- apply(paid[3:ncol(paid)],1,function(x) (mean(4-x))*25)
+paid <- paid[,c("record_id","gyl_timepoint.factor","paid_score_c")]
+child_full_iq <- merge(child_full_iq,paid,by=c("record_id","gyl_timepoint.factor"), all.x = T, all.y = T)
+
+# score PAID YA
+paidya <- child_full_iq %>% dplyr::select(record_id,gyl_timepoint.factor,ya_paid1:ya_paid20)
+missing_threshold <- ceiling(length(3:ncol(paidya)) * 0.25)
+for (r in 1:nrow(paidya)) { # Couldn't get apply to work for some reason
+  x <- paidya[r,3:ncol(paidya)]
+  replacement <- mean(as.numeric(x),na.rm = T)
+  num_missing <- length(which(is.na(x)))
+  if (num_missing<=missing_threshold && num_missing>0) {
+    x[which(is.na(x))] <- replacement
+    } else if (num_missing > missing_threshold) {
+      x <- rep(NA,length(x))
+    }
+  paidya[r,3:ncol(paidya)] <- x
+}
+# score
+paidya$paid_score_ya <- apply(paidya[3:ncol(paidya)],1,function(x) (mean(4-x))*25)
+paidya <- paidya[,c("record_id","gyl_timepoint.factor","paid_score_ya")]
+child_full_iq <- merge(child_full_iq,paidya,by=c("record_id","gyl_timepoint.factor"), all.x = T, all.y = T)
+child_full_iq$paid_score <- NA
+child_full_iq$paid_score <- pmax(child_full_iq$paid_score_c,child_full_iq$paid_score_ya,na.rm = T)
+
+# score HFS child
+hfsc <- child_full_iq %>% dplyr::select(record_id,gyl_timepoint.factor,c_hfs_behave1:c_hfs_behave10,
+                                 c_hfs_worry11:c_hfs_worry25)
+missing_threshold <- ceiling(length(3:ncol(hfsc)) * 0.25)
+for (r in 1:nrow(hfsc)) { # Couldn't get apply to work for some reason
+  x <- hfsc[r,3:ncol(hfsc)]
+  replacement <- mean(as.numeric(x),na.rm = T)
+  num_missing <- length(which(is.na(x)))
+  if (num_missing<=missing_threshold && num_missing>0) {
+    x[which(is.na(x))] <- replacement
+    } else if (num_missing > missing_threshold) {
+      x <- rep(NA,length(x))
+    }
+  hfsc[r,3:ncol(hfsc)] <- x
+}
+hfsc$hfs_total_c <- apply(hfsc[,3:ncol(hfsc)],1,sum)
+hfsc$hfs_worry_c <- apply(hfsc[,3:12],1,sum)
+hfsc$hfs_behave_c <- apply(hfsc[,13:27],1,sum)
+hfsc <- hfsc[!is.na(hfsc$hfs_total_c),]
+hfsc <- hfsc[,c("record_id","gyl_timepoint.factor","hfs_total_c","hfs_behave_c","hfs_worry_c")]
+child_full_iq <- merge(child_full_iq,hfsc,by=c("record_id","gyl_timepoint.factor"),all.x = T,all.y = F)
+
+# score HFS YA - baseline and follow-up are separate
+# baseline
+hfsya_b <- child_full_iq %>% dplyr::select(record_id,gyl_timepoint.factor,ya_hfs_b_behave1:ya_hfs_b_behave15,
+                                 ya_hfs_b_worry16:ya_hfs_b_worry33)
+missing_threshold <- ceiling(length(3:ncol(hfsya_b)) * 0.25)
+for (r in 1:nrow(hfsya_b)) { # Couldn't get apply to work for some reason
+  x <- hfsya_b[r,3:ncol(hfsya_b)]
+  replacement <- mean(as.numeric(x),na.rm = T)
+  num_missing <- length(which(is.na(x)))
+  if (num_missing<=missing_threshold && num_missing>0) {
+    x[which(is.na(x))] <- replacement
+    } else if (num_missing > missing_threshold) {
+      x <- rep(NA,length(x))
+    }
+  hfsya_b[r,3:ncol(hfsya_b)] <- x
+}
+hfsya_b$hfs_total_ya <- apply(hfsya_b[,3:ncol(hfsya_b)],1,sum)
+hfsya_b$hfs_worry_ya <- apply(hfsya_b[,3:12],1,sum)
+hfsya_b$hfs_behave_ya <- apply(hfsya_b[,13:27],1,sum)
+hfsya_b <- hfsya_b[!is.na(hfsya_b$hfs_total_ya),]
+hfsya_b <- hfsya_b[,c("record_id","gyl_timepoint.factor","hfs_total_ya","hfs_worry_ya","hfs_behave_ya")]
+# follow-up
+hfsya_f <- child_full_iq %>% dplyr::select(record_id,gyl_timepoint.factor,ya_hfs_f_behave1:ya_hfs_f_behave15,
+                                 ya_hfs_f_worry16:ya_hfs_f_worry33)
+missing_threshold <- ceiling(length(3:ncol(hfsya_f)) * 0.25)
+for (r in 1:nrow(hfsya_f)) { # Couldn't get apply to work for some reason
+  x <- hfsya_f[r,3:ncol(hfsya_f)]
+  replacement <- mean(as.numeric(x),na.rm = T)
+  num_missing <- length(which(is.na(x)))
+  if (num_missing<=missing_threshold && num_missing>0) {
+    x[which(is.na(x))] <- replacement
+    } else if (num_missing > missing_threshold) {
+      x <- rep(NA,length(x))
+    }
+  hfsya_f[r,3:ncol(hfsya_f)] <- x
+}
+hfsya_f$hfs_total_ya <- apply(hfsya_f[,3:ncol(hfsya_f)],1,sum)
+hfsya_f$hfs_worry_ya <- apply(hfsya_f[,3:12],1,sum)
+hfsya_f$hfs_behave_ya <- apply(hfsya_f[,13:27],1,sum)
+hfsya_f <- hfsya_f[!is.na(hfsya_f$hfs_total_ya),]
+hfsya_f <- hfsya_f[,c("record_id","gyl_timepoint.factor","hfs_total_ya","hfs_behave_ya","hfs_worry_ya")]
+hfsya <- rbind(hfsya_b,hfsya_f)
+child_full_iq <- merge(child_full_iq,hfsya,by=c("record_id","gyl_timepoint.factor"),all.x = T,all.y = F)
+# NOW NEED TO CHOOSE BETWEEN CHILD AND YA SCORES FOR EACH OF THE SCALES
+child_full_iq$hfs_total <- NA
+child_full_iq$hfs_behave <- NA
+child_full_iq$hfs_worry <- NA
+child_full_iq$hfs_total <- pmax(child_full_iq$hfs_total_c,child_full_iq$hfs_total_ya,na.rm = T)
+child_full_iq$hfs_worry <- pmax(child_full_iq$hfs_worry_c,child_full_iq$hfs_worry_ya,na.rm = T)
+child_full_iq$hfs_behave <- pmax(child_full_iq$hfs_behave_c,child_full_iq$hfs_behave_ya,na.rm = T)
+
+# score technology attitudes
+tech <- child_full_iq[,c("record_id","gyl_timepoint.factor","tech1","tech2","tech3","tech4","tech5")]
+tech <- tech[!is.na(tech$tech1),]
+tech$tech1 <- tech$tech1+1
+tech$tech2 <- tech$tech2+1
+tech$tech3 <- tech$tech3+1
+tech$tech4 <- tech$tech4+1
+tech$tech5 <- tech$tech5+1
+tech$tech_sum <- NA
+tech$tech_sum <- rowSums(tech[,-c(1:2)],na.rm = T)
+tech <- tech[,c("record_id","gyl_timepoint.factor","tech_sum")]
+child_full_iq <- merge(child_full_iq,tech,by=c("record_id","gyl_timepoint.factor"),all.x = T, all.y = F)
+
+# find people with only baseline visit
+checkvisits <- child_full_iq[,c("record_id","gyl_timepoint.factor")]
+checkvisits$flag <- 1
+checkvisits_wide <- reshape(checkvisits,idvar = "record_id",timevar = "gyl_timepoint.factor",direction = "wide")
+
+never_trained <- checkvisits_wide[is.na(checkvisits_wide$`flag.Month 1/ Training F/U`) & 
+                               is.na(checkvisits_wide$`flag.3 Months`) &
+                               is.na(checkvisits_wide$`flag.6 Months`),]
+never_trained$trained <- 0
+never_trained <- never_trained[,c("record_id","trained")]
+trained_and_withdrawn <- checkvisits_wide[!is.na(checkvisits_wide$`flag.Month 1/ Training F/U`) & 
+                               is.na(checkvisits_wide$`flag.3 Months`) &
+                               is.na(checkvisits_wide$`flag.6 Months`),]
+trained_and_withdrawn$withdrawn <- 1
+trained_and_withdrawn <- trained_and_withdrawn[,c("record_id","withdrawn")]
+child_full_iq <- merge(child_full_iq,never_trained,by="record_id",all.x=T,all.y=T)
+child_full_iq <- merge(child_full_iq,trained_and_withdrawn,by="record_id",all.x=T,all.y=T)
+child_full_iq$trained <- ifelse(is.na(child_full_iq$trained),1,0)
+child_full_iq$withdrawn <- ifelse(is.na(child_full_iq$withdrawn),0,1)
+
+# check for discontinuers
+# discontinuation is defined as AM <10% at either time point
+child_full_iq$t1_discont <- ifelse(child_full_iq$trained==1 & child_full_iq$withdrawn==0 & 
+                                     child_full_iq$gyl_timepoint.factor=="3 Months" & 
+                                     (is.na(child_full_iq$time_am) | child_full_iq$time_am<10),1,0)
+child_full_iq$t2_discont <- ifelse(child_full_iq$trained==1 & child_full_iq$withdrawn==0 & 
+                                     child_full_iq$gyl_timepoint.factor=="6 Months" & 
+                                     (is.na(child_full_iq$time_am) | child_full_iq$time_am<10),1,0)
+t1_discont <- child_full_iq[,c("record_id","t1_discont")]
+t1_discont <- t1_discont[order(t1_discont$record_id,desc(t1_discont$t1_discont)),]
+t1_discont <- t1_discont %>% group_by(record_id) %>% filter(row_number() == 1)
+t2_discont <- child_full_iq[,c("record_id","t2_discont")]
+t2_discont <- t2_discont[order(t2_discont$record_id,desc(t2_discont$t2_discont)),]
+t2_discont <- t2_discont %>% group_by(record_id) %>% filter(row_number() == 1)
+child_full_iq$t1_discont <- NULL
+child_full_iq$t2_discont <- NULL
+child_full_iq <- merge(child_full_iq,t1_discont,by="record_id",all.x=T,all.y=T)
+child_full_iq <- merge(child_full_iq,t2_discont,by="record_id",all.x=T,all.y=T)
+#n_t1_discont <- length(unique(child_full_iq[child_full_iq$t1_discont==1,]$record_id))
+#n_t2_discont <- length(unique(child_full_iq[child_full_iq$t2_discont==1,]$record_id))
+a <- child_full_iq[child_full_iq$record_id==245,c("record_id","gyl_timepoint.factor","automode_start")]
+n_only_baseline <- length(unique(a$record_id))
+b <- child_full[child_full$record_id %in% c(276,300,313,318,321),c("record_id","gyl_timepoint.factor",
+                                                                  "date_visit","automode_start")]
+n_only_1mo <- length(unique(b$record_id))
+c <- child_full_iq[child_full_iq$t1_discont==1,c("record_id","gyl_timepoint.factor","time_am")]
+d <- child_full_iq[child_full_iq$t2_discont==1,c("record_id","gyl_timepoint.factor","date_visit","time_am")]
+#write.csv(c,"./Cari Berget/Control IQ 6 Month MS/Data clean/T1_discontinuers.csv")
+#write.csv(d,"./Cari Berget/Control IQ 6 Month MS/Data clean/T2_discontinuers.csv")
+
+# remove those never trained, withdrawn, discontinued at T1
+#child_full_iq <- child_full_iq[child_full_iq$trained==1 & child_full_iq$withdrawn==0 & child_full_iq$t1_discont==0,]
+# if discontinued at T2, remove T2
+#child_full_iq <- child_full_iq[!(child_full_iq$gyl_timepoint.factor=="6 Months" & child_full_iq$t2_discont==1),]
+
+# remove discontinuers per Cari instead of checking data
+cari_discont <- c(204, 243, 268, 284, 319)
+child_full_iq <- child_full_iq[!(child_full_iq$record_id %in% cari_discont),]
+n_t1_discont <- 5
+n_t2_discont <- 2
+
+
+final_n <- length(unique(child_full_iq$record_id))
+
+# make baseline dataset
+baseline <- child_full_iq[child_full_iq$gyl_timepoint.factor=="Baseline",]
+baseline$hba1c_date <- as.Date(baseline$hba1c_date)
+baseline$automode_start <- as.Date(baseline$automode_start)
+baseline$delta_base_a1c <- as.numeric(difftime(baseline$hba1c_date, baseline$automode_start, units = "days") )
+a <- baseline[baseline$delta_base_a1c>-90 & baseline$delta_base_a1c<7,]
+baseline$base_a1c_cat <- ifelse(baseline$delta_base_a1c>-90 & baseline$delta_base_a1c<7, baseline$base_a1c_cat,NA)
+baseline$hba1c <- ifelse(baseline$delta_base_a1c>-90 & baseline$delta_base_a1c<7, baseline$hba1c,NA)
+
+demovars <- c("demographics_age","age_cat","hba1c","base_a1c_cat","demographics_sex.factor",
+              "demographics_ethnicity.factor","demographics_race.factor","demographics_insurance.factor",
+              "prior.insulin.mode","HIGH.alarm.6mo","LOW.alarm.6mo" )
+
+# merge baseline A1c and age categories back to main dataset
+keepbase <- baseline[,c("record_id","base_a1c_cat","age_cat")]
+child_full_iq$base_a1c_cat <- NULL
+child_full_iq$age_cat <- NULL
+child_full_iq <- merge(child_full_iq,keepbase,by="record_id",all.x = T, all.y = T)
+
+# looking at time difference between baseline A1c and baseline visit
+# child_full_iq$hba1c_date <- as.Date(child_full_iq$hba1c_date)
+# child_full_iq$baseline_surveys_timestamp <- as.Date(child_full_iq$baseline_surveys_timestamp)
+# child_full_iq$delta_base_a1c <- as.numeric(difftime(child_full_iq$hba1c_date, child_full_iq$baseline_surveys_timestamp, units = "days") )
+# a <- child_full_iq[child_full_iq$gyl_timepoint.factor=="Baseline" & (child_full_iq$delta_base_a1c>-90 & 
+#                                                                        child_full_iq$delta_base_a1c<7),] 
+# a <- a[!is.na(a$record_id),]
+
+# write IDs included in dataset
+idlist <- baseline$record_id
+write.csv(idlist,"./Cari Berget/Control IQ 6 Month MS/Data clean/idlist.csv")
+
+# missing demographics data
+miss_demo <- baseline[is.na(baseline$demographics_age) | is.na(baseline$demographics_sex) |
+                                     is.na(baseline$demographics_ethnicity) |
+                                             is.na(baseline$demographics_race) |
+                                                   is.na(baseline$demographics_insurance),c("record_id",demovars)]
+write.csv(miss_demo,"./Cari Berget/Control IQ 6 Month MS/Data clean/missing demographics.csv")
+
+# table of demographics
+t1 <- CreateTableOne(vars=demovars,data=baseline)
+t1 <- print(t1,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T,nonnorm=c("hba1c","demographics_age"))
+
+# dataframe without M1 - for CGM variables and others that exist at baseline
+data_no_m1 <- child_full_iq[child_full_iq$gyl_timepoint.factor != "Month 1/ Training F/U",]
+data_no_m1$gyl_timepoint.factor <- droplevels(data_no_m1$gyl_timepoint.factor)
+
+# dataframe without baseline - for CIQ variables that don't exist at baseline
+data_no_baseline <- child_full_iq[child_full_iq$gyl_timepoint.factor != "Baseline",]
+data_no_baseline$gyl_timepoint.factor <- droplevels(data_no_baseline$gyl_timepoint.factor)
+
+# reorder baseline a1c factor so it shows up on figure correcctly
+data_no_m1$base_a1c_cat <- factor(data_no_m1$base_a1c_cat, levels=c(">= 9%",">7% and <9%","<= 7%"))
+
+# data frame with M3 and M6 only
+data_m3_m6 <- data_no_m1[data_no_m1$gyl_timepoint.factor != "Baseline",]
+
+# what % of participants have sleep mode set to >15 hours per day?
+data_no_baseline$sleep_gt15 <- as.factor(ifelse(is.na(data_no_baseline$sleep),NA,
+                                    ifelse(data_no_baseline$sleep>15,1,0)))
+sleeptab <- CreateTableOne(vars="sleep_gt15",data=data_no_baseline,strata="gyl_timepoint.factor",test = F)
+sleeptab <- print(sleeptab)
+
+# % time CIQ
+# AM time compare to 1 mo - dataset with no baseline
+amtime_mod <- lme(time_am ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_baseline,na.action = na.omit)
+amtime_mod_anova <- anova.lme(amtime_mod, type="marginal")
+# use emmeans 
+amtime_mod_means <- emmeans::emmeans(amtime_mod,"gyl_timepoint.factor")
+amtime_mod_pairs <-  pairs(amtime_mod_means,adjust="tukey")
+
+# sensor use
+sensor_wear_mod <- lme(sensor_wear ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+sensor_wear_mod_anova <- anova.lme(sensor_wear_mod, type="marginal")
+# use emmeans 
+sensor_wear_mod_means <- emmeans(sensor_wear_mod,"gyl_timepoint.factor")
+sensor_wear_mod_pairs <-  pairs(sensor_wear_mod_means,adjust="tukey")
+
+# BG checks
+#bg_mod <- lme(bg_checks ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+#bg_mod_anova <- anova.lme(bg_mod, type="marginal")
+# use emmeans 
+#bg_mod_means <- emmeans(bg_mod,"gyl_timepoint.factor")
+#bg_mod_pairs <-  pairs(bg_mod_means,adjust="tukey")
+
+# TDD
+tdd_mod <- lme(tdd ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+tdd_mod_anova <- anova.lme(tdd_mod, type="marginal")
+# use emmeans 
+tdd_mod_means <- emmeans(tdd_mod,"gyl_timepoint.factor")
+tdd_mod_pairs <-  pairs(tdd_mod_means,adjust="tukey")
+
+# meal boluses
+meal_mod <- lme(dailymealbolus ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+meal_mod_anova <- anova.lme(meal_mod, type="marginal")
+# use emmeans 
+meal_mod_means <- emmeans(meal_mod,"gyl_timepoint.factor")
+meal_mod_pairs <-  pairs(meal_mod_means,adjust="tukey")
+
+# sleep mode
+sleep_mod <- lme(sleep ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_baseline,na.action = na.omit)
+sleep_mod_anova <- anova.lme(sleep_mod, type="marginal")
+# use emmeans 
+sleep_mod_means <- emmeans(sleep_mod,"gyl_timepoint.factor")
+sleep_mod_pairs <-  pairs(sleep_mod_means,adjust="tukey")
+
+# exercise mode
+exer_mod <- lme(exercise ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_baseline,na.action = na.omit)
+exer_mod_anova <- anova.lme(exer_mod, type="marginal")
+# use emmeans 
+exer_mod_means <- emmeans(exer_mod,"gyl_timepoint.factor")
+exer_mod_pairs <-  pairs(exer_mod_means,adjust="tukey")
+
+# TIR
+tir_mod <- lme(sensor_70_180 ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+tir_mod_anova <- anova.lme(tir_mod, type="marginal")
+# use emmeans 
+tir_mod_means <- emmeans(tir_mod,"gyl_timepoint.factor")
+tir_mod_pairs <-  pairs(tir_mod_means,adjust="tukey")
+
+# GMI
+gmi_mod <- lme(gmi ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+gmi_mod_anova <- anova.lme(gmi_mod, type="marginal")
+# use emmeans 
+gmi_mod_means <- emmeans(gmi_mod,"gyl_timepoint.factor")
+gmi_mod_pairs <-  pairs(gmi_mod_means,adjust="tukey")
+
+# COGI
+cogi_mod <- lme(cogi ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+cogi_mod_anova <- anova.lme(cogi_mod, type="marginal")
+# use emmeans 
+cogi_mod_means <- emmeans(cogi_mod,"gyl_timepoint.factor")
+cogi_mod_pairs <-  pairs(cogi_mod_means,adjust="tukey")
+
+# mean glucose
+mean_mod <- lme(sensor_mean ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+mean_mod_anova <- anova.lme(mean_mod, type="marginal")
+# use emmeans 
+mean_mod_means <- emmeans(mean_mod,"gyl_timepoint.factor")
+mean_mod_pairs <-  pairs(mean_mod_means,adjust="tukey")
+
+# Under 54
+u54_mod <- lme(sensor_u54 ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+u54_mod_anova <- anova.lme(u54_mod, type="marginal")
+# use emmeans 
+u54_mod_means <- emmeans(u54_mod,"gyl_timepoint.factor")
+u54_mod_pairs <-  pairs(u54_mod_means,adjust="tukey")
+
+# Under 70
+u70_mod <- lme(sensor_u70 ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+u70_mod_anova <- anova.lme(u70_mod, type="marginal")
+# use emmeans 
+u70_mod_means <- emmeans(u70_mod,"gyl_timepoint.factor")
+u70_mod_pairs <-  pairs(u70_mod_means,adjust="tukey")
+
+# >180
+g180_mod <- lme(sensorg_180 ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+g180_mod_anova <- anova.lme(g180_mod, type="marginal")
+# use emmeans 
+g180_mod_means <- emmeans(g180_mod,"gyl_timepoint.factor")
+g180_mod_pairs <-  pairs(g180_mod_means,adjust="tukey")
+
+# >250
+g250_mod <- lme(sensor_g250 ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+g250_mod_anova <- anova.lme(g250_mod, type="marginal")
+# use emmeans 
+g250_mod_means <- emmeans(g250_mod,"gyl_timepoint.factor")
+g250_mod_pairs <-  pairs(g250_mod_means,adjust="tukey")
+
+# SD
+sd_mod <- lme(sensor_sd ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+sd_mod_anova <- anova.lme(sd_mod, type="marginal")
+# use emmeans 
+sd_mod_means <- emmeans(sd_mod,"gyl_timepoint.factor")
+sd_mod_pairs <-  pairs(sd_mod_means,adjust="tukey")
+
+# INSPIRE total
+insptot_mod <- lme(inspire_tot ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+insptot_mod_anova <- anova.lme(insptot_mod, type="marginal")
+# use emmeans 
+insptot_mod_means <- emmeans(insptot_mod,"gyl_timepoint.factor")
+insptot_mod_pairs <-  pairs(insptot_mod_means,adjust="tukey")
+
+# HFS total
+hfstot_mod <- lme(hfs_total ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+hfstot_mod_anova <- anova.lme(hfstot_mod, type="marginal")
+# use emmeans 
+hfstot_mod_means <- emmeans(hfstot_mod,"gyl_timepoint.factor")
+hfstot_mod_pairs <-  pairs(hfstot_mod_means,adjust="tukey")
+
+# HFS worry
+hfswor_mod <- lme(hfs_worry ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+hfswor_mod_anova <- anova.lme(hfswor_mod, type="marginal")
+# use emmeans 
+hfswor_mod_means <- emmeans(hfswor_mod,"gyl_timepoint.factor")
+hfswor_mod_pairs <-  pairs(hfswor_mod_means,adjust="tukey")
+
+# HFS behave
+hfsbe_mod <- lme(hfs_behave ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+hfsbe_mod_anova <- anova.lme(hfsbe_mod, type="marginal")
+# use emmeans 
+hfsbe_mod_means <- emmeans(hfsbe_mod,"gyl_timepoint.factor")
+hfsbe_mod_pairs <-  pairs(hfsbe_mod_means,adjust="tukey")
+
+# PAID
+paid_mod <- lme(paid_score ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+paid_mod_anova <- anova.lme(paid_mod, type="marginal")
+# use emmeans 
+paid_mod_means <- emmeans(paid_mod,"gyl_timepoint.factor")
+paid_mod_pairs <-  pairs(paid_mod_means,adjust="tukey")
+
+# technology acceptance
+tech_mod <- lme(tech_sum ~ gyl_timepoint.factor,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+tech_mod_anova <- anova.lme(tech_mod, type="marginal")
+# use emmeans 
+tech_mod_means <- emmeans(tech_mod,"gyl_timepoint.factor")
+tech_mod_pairs <-  pairs(tech_mod_means,adjust="tukey")
+
+# model for meal boluses and TIR
+meal_mod_tir <- lme(dailymealbolus ~ sensor_70_180,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+meal_mod_tir_anova <- anova.lme(meal_mod_tir, type="marginal")
+meal_mod_ttable <- summary(meal_mod_tir)$tTable
+ 
+# are alerts at 6 months associated with TIR or time<70
+
+# ++++++++++++++++++++++++++++
+# flattenCorrMatrix
+# ++++++++++++++++++++++++++++
+# cormat : matrix of the correlation coefficients
+# pmat : matrix of the correlation p-values
+flattenCorrMatrix <- function(cormat, pmat) {
+  ut <- upper.tri(cormat)
+  data.frame(
+    row = rownames(cormat)[row(cormat)[ut]],
+    column = rownames(cormat)[col(cormat)[ut]],
+    cor  =(cormat)[ut],
+    p = pmat[ut]
+    )
+}
+
+corr_alert <- rcorr(as.matrix(child_full_iq[child_full_iq$gyl_timepoint.factor=="6 Months", c('HIGH.alarm.6mo','LOW.alarm.6mo','sensor_70_180','sensor_u70')])
+                    ,type = "spearman")
+corr_alert <- flattenCorrMatrix(corr_alert$r, corr_alert$P)
+corr_alert <- corr_alert[corr_alert$row %in% c("HIGH.alarm.6mo","LOW.alarm.6mo"),]
+
+# meeting GMI and TIR goals over time
+child_full_iq$gmi_goal <- ifelse(is.na(child_full_iq$gmi),NA,
+                                 ifelse(child_full_iq$gmi<7,1,0))
+child_full_iq$tir_goal <- ifelse(is.na(child_full_iq$sensor_70_180),NA,
+                                 ifelse(child_full_iq$sensor_70_180>70,1,0))
+child_full_iq$gmi_goal <- as.factor(child_full_iq$gmi_goal)
+child_full_iq$tir_goal <- as.factor(child_full_iq$tir_goal)
+
+goal_table <- CreateTableOne(vars=c("tir_goal","gmi_goal"),data=child_full_iq,strata = "gyl_timepoint.factor")
+goal_table <- print(goal_table,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T)
+goal_table <- goal_table[,1:6]
+
+# TIR, GMI, and time<70 stratified by baseline A1c and age
+# TIR stratified by A1c
+tir_mod_strat_a1c <- lme(sensor_70_180 ~ gyl_timepoint.factor*base_a1c_cat,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+tir_mod_strat_a1c_anova <- anova.lme(tir_mod_strat_a1c, type="marginal")
+# use emmeans 
+tir_mod_strat_a1c_means <- emmeans(tir_mod_strat_a1c,c("gyl_timepoint.factor","base_a1c_cat"))
+tir_mod_strat_a1c_pairs <-  pairs(tir_mod_strat_a1c_means,adjust="tukey",simple="each")
+
+# GMI stratified by A1c
+gmi_mod_strat_a1c <- lme(gmi ~ gyl_timepoint.factor*base_a1c_cat,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+gmi_mod_strat_a1c_anova <- anova.lme(gmi_mod_strat_a1c, type="marginal")
+# use emmeans 
+gmi_mod_strat_a1c_means <- emmeans(gmi_mod_strat_a1c,c("gyl_timepoint.factor","base_a1c_cat"))
+gmi_mod_strat_a1c_pairs <-  pairs(gmi_mod_strat_a1c_means,adjust="tukey",simple="each")
+
+# COGI stratified by A1c
+cogi_mod_strat_a1c <- lme(cogi ~ gyl_timepoint.factor*base_a1c_cat,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+cogi_mod_strat_a1c_anova <- anova.lme(cogi_mod_strat_a1c, type="marginal")
+# use emmeans 
+cogi_mod_strat_a1c_means <- emmeans(cogi_mod_strat_a1c,c("gyl_timepoint.factor","base_a1c_cat"))
+cogi_mod_strat_a1c_pairs <-  pairs(cogi_mod_strat_a1c_means,adjust="tukey",simple="each")
+
+# U70 stratified by A1c
+u70_mod_strat_a1c <- lme(sensor_u70 ~ gyl_timepoint.factor*base_a1c_cat,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+u70_mod_strat_a1c_anova <- anova.lme(u70_mod_strat_a1c, type="marginal")
+# use emmeans 
+u70_mod_strat_a1c_means <- emmeans(u70_mod_strat_a1c,c("gyl_timepoint.factor","base_a1c_cat"))
+u70_mod_strat_a1c_pairs <-  pairs(u70_mod_strat_a1c_means,adjust="tukey",simple="each")
+
+# TIR stratified by age
+tir_mod_strat_age <- lme(sensor_70_180 ~ gyl_timepoint.factor*age_cat,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+tir_mod_strat_age_anova <- anova.lme(tir_mod_strat_age, type="marginal")
+# use emmeans 
+tir_mod_strat_age_means <- emmeans(tir_mod_strat_age,c("gyl_timepoint.factor","age_cat"))
+tir_mod_strat_age_pairs <-  pairs(tir_mod_strat_age_means,adjust="tukey",simple="each")
+
+# GMI stratified by age
+gmi_mod_strat_age <- lme(gmi ~ gyl_timepoint.factor*age_cat,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+gmi_mod_strat_age_anova <- anova.lme(gmi_mod_strat_age, type="marginal")
+# use emmeans 
+gmi_mod_strat_age_means <- emmeans(gmi_mod_strat_age,c("gyl_timepoint.factor","age_cat"))
+gmi_mod_strat_age_pairs <-  pairs(gmi_mod_strat_age_means,adjust="tukey",simple="each")
+
+# COGI stratified by age
+cogi_mod_strat_age <- lme(cogi ~ gyl_timepoint.factor*age_cat,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+cogi_mod_strat_age_anova <- anova.lme(cogi_mod_strat_age, type="marginal")
+# use emmeans 
+cogi_mod_strat_age_means <- emmeans(cogi_mod_strat_age,c("gyl_timepoint.factor","age_cat"))
+cogi_mod_strat_age_pairs <-  pairs(cogi_mod_strat_age_means,adjust="tukey",simple="each")
+
+# U70 stratified by age
+u70_mod_strat_age <- lme(sensor_u70 ~ gyl_timepoint.factor*age_cat,random=~1|record_id,data = data_no_m1,na.action = na.omit)
+u70_mod_strat_age_anova <- anova.lme(u70_mod_strat_age, type="marginal")
+# use emmeans 
+u70_mod_strat_age_means <- emmeans(u70_mod_strat_age,c("gyl_timepoint.factor","age_cat"))
+u70_mod_strat_age_pairs <-  pairs(u70_mod_strat_age_means,adjust="tukey",simple="each")
+
+# plots of stratified models
+p1 <- ggplot(data_no_m1[!is.na(data_no_m1$base_a1c_cat),],aes(x = gyl_timepoint.factor,y = sensor_70_180)) +
+  geom_smooth(aes(group = base_a1c_cat, linetype=base_a1c_cat), se = T, color="black") + 
+  theme_bw() + xlab("Timepoint") + ylab("TIR (%)") + labs(linetype ='Baseline HbA1c Category')
+
+p2 <- ggplot(data_no_m1[!is.na(data_no_m1$base_a1c_cat),],aes(x = gyl_timepoint.factor,y = sensor_u70)) +
+  geom_smooth(aes(group = base_a1c_cat, linetype=base_a1c_cat), se = T, color="black") + 
+  theme_bw() + xlab("Timepoint") + ylab("TBR (%)") + labs(linetype ='Baseline HbA1c Category')
+
+p3 <- ggplot(data_no_m1[!is.na(data_no_m1$base_a1c_cat),],aes(x = gyl_timepoint.factor,y = gmi)) +
+  geom_smooth(aes(group = base_a1c_cat, linetype=base_a1c_cat),se = T, color="black") +
+  theme_bw() + xlab("Timepoint") + ylab("GMI") + labs(linetype ='Baseline HbA1c Category') 
+
+p4 <- ggplot(data_no_m1[!is.na(data_no_m1$base_a1c_cat),],aes(x = gyl_timepoint.factor,y = cogi)) +
+  geom_smooth(aes(group = base_a1c_cat, linetype=base_a1c_cat),se = T, color="black") +
+  theme_bw() + xlab("Timepoint") + ylab("COGI")  + labs(linetype ='Baseline HbA1c Category') 
+# p4$labels$linetype <- "Baseline HbA1c category"
+
+png("./Cari Berget/Control IQ 6 Month MS/Dissemination/Manuscript/tir_gmi_figure.png", width = 800)
+p1 + p3 + p4 + plot_layout(guides = "collect")
+dev.off()
+
+# relationship between automode and TIR for control IQ and 670q
+lm_auto_tir_ciq <- lme(sensor_70_180 ~ gyl_timepoint.factor + time_am ,random=~1|record_id,data = data_m3_m6,na.action = na.omit)
+lm_auto_tir_ciq_anova <- anova.lme(lm_auto_tir_ciq, type="marginal")
+
+# read in 670g data and run the same model
+data670g <- read.csv("./Cari Berget/Control IQ 6 Month MS/Data raw/670g_am_tir_data.csv")
+data670g <- data670g[data670g$tpoint %in% c("T1","T2"),]
+lm_auto_tir_670g <- lme(sensor_70_180 ~ tpoint + am_time ,random=~1|record_id,data = data670g,na.action = na.omit)
+
+```
+
+# Background
+
+The purpose of this analysis is to examine changes in glycemia and adherence outcomes in Control IQ users after starting the system.
+
+# Methods
+
+Control IQ users were selected by selecting record IDs 119 and higher.  Four participants from adult clinic were excluded from analysis.  Six months of data were used for this analysis.  
+If baseline HbA1c was more than 90 days prior or more than 7 days after the automode start date, baseline A1c was set to missing.
+
+Mixed-effects models were used to examine changes in the outcomes over time.  For variables such as CGM measures that were recorded at baseline, the baseline visit was used as the comparison to months 3 and 6.  For Control IQ variables, month 1 was used as the comparison to months 3 and 6.  Pairwise comparisons of means at each visit were adjusted for multiple testing using a Tukey adjustment.
+
+# Results
+
+There were `r n_t1_discont` discontinuers at T1 (3 months).  All of these participants were removed from the dataset.  This left a total of `r final_n` participants, of which `r n_t2_discont` were discontinuers at T2 (6 months).
+
+```{r, echo=FALSE, message=FALSE}
+kable(t1,caption="Table 1. Demographics and clinical characteristics.")
+```
+
+```{r, echo=FALSE, message=FALSE}
+kable(sleeptab,caption="Table 2. Percentage of participants with sleep activity >15 hours/day.")
+```
+
+
+\newpage
+
+### Models for % time CIQ (variable = time_am)
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(amtime_mod_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(amtime_mod_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(amtime_mod_pairs,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for sensor wear (variable = sensor_wear)
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(sensor_wear_mod_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(sensor_wear_mod_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(sensor_wear_mod_pairs,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for BG checks (variable = BG_checks)
+
+BG check data was missing for all visits.
+
+\newpage
+
+### Models for TDD (variable = tdd)
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(tdd_mod_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(tdd_mod_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(tdd_mod_pairs,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for meal boluses (variable = dailymealbolus)
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(meal_mod_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(meal_mod_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(meal_mod_pairs,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for sleep mode (variable = sleep)
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(sleep_mod_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(sleep_mod_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(sleep_mod_pairs,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for exercise mode (variable = exercise)
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(exer_mod_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(exer_mod_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(exer_mod_pairs,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for TIR (variable = sensor_70_180)
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(tir_mod_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(tir_mod_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(tir_mod_pairs,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for GMI 
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(gmi_mod_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(gmi_mod_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(gmi_mod_pairs,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for COGI
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(cogi_mod_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(cogi_mod_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(cogi_mod_pairs,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for average glucose (variable = sensor_mean)
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(mean_mod_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(mean_mod_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(mean_mod_pairs,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for glucose <54 (variable = sensor_u54)
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(u54_mod_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(u54_mod_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(u54_mod_pairs,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for glucose <70 (variable = sensor_u54 + sensor_54_69)
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(u70_mod_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(u70_mod_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(u70_mod_pairs,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for glucose >180 (variable = sensor_181_250 + sensor_g250)
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(g180_mod_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(g180_mod_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(g180_mod_pairs,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for glucose >250 (variable = sensor_g250)
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(g250_mod_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(g250_mod_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(g250_mod_pairs,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for glucose SD (variable = sensor_sd)
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(sd_mod_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(sd_mod_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(sd_mod_pairs,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Correlations between alarms and glycemic variables at 6 months
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(corr_alert,format.args = list(scientific = FALSE))
+```
+
+<br>
+
+### Model for meal boluses and TIR
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(meal_mod_ttable,format.args = list(scientific = FALSE))
+```
+
+<br>
+
+### TIR and GMI goals
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(goal_table,format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for TIR (variable = sensor_70_180) stratified by baseline A1c
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(tir_mod_strat_a1c_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(tir_mod_strat_a1c_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(tir_mod_strat_a1c_pairs$`simple contrasts for base_a1c_cat`,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for GMI stratified by baseline A1c
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(gmi_mod_strat_a1c_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(gmi_mod_strat_a1c_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(gmi_mod_strat_a1c_pairs$`simple contrasts for base_a1c_cat`,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for COGI stratified by baseline A1c
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(cogi_mod_strat_a1c_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(cogi_mod_strat_a1c_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(cogi_mod_strat_a1c_pairs$`simple contrasts for base_a1c_cat`,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for time <70 (variable sensor_u70) stratified by baseline A1c
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(u70_mod_strat_a1c_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(u70_mod_strat_a1c_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(u70_mod_strat_a1c_pairs$`simple contrasts for base_a1c_cat`,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for TIR (variable = sensor_70_180) stratified by age
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(tir_mod_strat_age_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(tir_mod_strat_age_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(tir_mod_strat_age_pairs$`simple contrasts for age_cat`,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for GMI stratified by age
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(gmi_mod_strat_age_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(gmi_mod_strat_age_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(gmi_mod_strat_age_pairs$`simple contrasts for age_cat`,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for COGI stratified by age
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(cogi_mod_strat_age_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(cogi_mod_strat_age_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(cogi_mod_strat_age_pairs$`simple contrasts for age_cat`,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Models for time <70 (variable sensor_u70) stratified by age
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(u70_mod_strat_age_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(u70_mod_strat_age_means,caption="Time point means.",format.args = list(scientific = FALSE))
+```
+
+<br>
+
+```{r, echo=FALSE, message=FALSE}
+kable(u70_mod_strat_age_pairs$`simple contrasts for age_cat`,caption="Pair-wise comparisons.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+### Model for the relationship between time in AM and TIR, for Control IQ (Month 3 and Month 6 only)
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+summary(lm_auto_tir_ciq)
+
+hist(data_m3_m6$time_am)
+```
+
+\newpage
+
+### Model for the relationship between time in AM and TIR, for 670g (Month 3 and Month 6 only)
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+summary(lm_auto_tir_670g)
+
+hist(data670g$am_time)
+```
+
+\newpage
+
+### Figure 1: TIR by Baseline HbA1c 
+
+```{r warning=FALSE,message=FALSE,cache=TRUE,echo=FALSE}
+ggplot(data_no_m1,aes(x = gyl_timepoint.factor,y = sensor_70_180)) +
+  geom_smooth(aes(group = base_a1c_cat,color = base_a1c_cat),se = T) +
+  theme_bw() + xlab("Timepoint") + ylab("TIR (%)") +
+  scale_color_discrete(name = "Baseline HbA1c category")
+```
+
+### Figure 2: GMI by Baseline HbA1c 
+
+```{r warning=FALSE,message=FALSE,cache=TRUE,echo=FALSE}
+ggplot(data_no_m1,aes(x = gyl_timepoint.factor,y = gmi)) +
+  geom_smooth(aes(group = base_a1c_cat,color = base_a1c_cat),se = T) +
+  theme_bw() + xlab("Timepoint") + ylab("GMI") +
+  scale_color_discrete(name = "Baseline HbA1c category")
+```
+
+### Figure 3: Time <70 
+
+```{r warning=FALSE,message=FALSE,cache=TRUE,echo=FALSE}
+ggplot(data_no_m1,aes(x = gyl_timepoint.factor,y = sensor_u70)) +
+  geom_smooth(aes(group = base_a1c_cat,color = base_a1c_cat),se = T) +
+  theme_bw() + xlab("Timepoint") + ylab("Time <70 (%)") +
+  scale_color_discrete(name = "Baseline HbA1c category")
+```
+
+### Figure 3: Time <70 
+
+```{r warning=FALSE,message=FALSE,cache=TRUE,echo=FALSE}
+ggplot(data_no_m1,aes(x = gyl_timepoint.factor,y = cogi)) +
+  geom_smooth(aes(group = base_a1c_cat,color = base_a1c_cat),se = T) +
+  theme_bw() + xlab("Timepoint") + ylab("COGI") +
+  scale_color_discrete(name = "Baseline HbA1c category")
+```

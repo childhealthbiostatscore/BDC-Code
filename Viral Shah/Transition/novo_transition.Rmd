@@ -1,5 +1,5 @@
 ---
-title: "NOVO Transition Preliminary Analysis"
+title: "NOVO Transition"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
 output: word_document
@@ -7,119 +7,266 @@ output: word_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE,dpi = 600)
-knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/NOVO Transition/")
+knitr::opts_knit$set(root.dir = "/Users/timvigers/NOVO Transition")
 library(arsenal)
 library(skimr)
 library(knitr)
 library(cgmanalysis)
 library(tidyverse)
+library(XML)
 library(Hmisc)
+library(emmeans)
 ```
 
-```{r eval=FALSE}
-# Clean CGM data
-cleandata("./Data_Raw/randomization_cgm_files","./Data_Cleaned/full_cgm",
-          removegaps = F,gapfill = F,id_filename = T)
-# Pull first 72 hours from each
-files <- list.files("./Data_Cleaned/full_cgm",full.names = T)
-for (f in files) {
-  table <- read.csv(f,stringsAsFactors = F)
-  table$ timestamp <- lubridate::ymd_hms(table$timestamp)
-  end <- table$timestamp[1] + 72*60*60
-  table <- table[table$timestamp <= end,]
-  write.csv(table,file = paste0("./Data_Cleaned/cgm_72_hours/",basename(f)),
-            row.names = F)
-}
-# Calculate CGM variables
-cgmvariables("./Data_Cleaned/full_cgm","./Data_Cleaned",outputname = "full_cgm",
-             id_filename = T)
-cgmvariables("./Data_Cleaned/cgm_72_hours","./Data_Cleaned",outputname = "cgm_72_hours",
-             id_filename = T)
+```{r import}
+# Import
+source("/Users/timvigers/GitHub/BDC-Code/Viral Shah/Transition/data_import.R")
+# Subject id from record id (record_id = 1 dropped out)
+data$subject_id = data$record_id + 1
 ```
 
-## Results
-
-### Table 1: Descriptive Characteristics
-
-```{r results='asis'}
-# Import group assignment and demographics
-source("/Users/timvigers/Documents/GitHub/BDC-Code/Viral Shah/Transition/NOVOTransitionStudy-Table1_R_2020-08-26_0912.r")
-cgm_data = read.csv("./Data_Cleaned/full_cgm.csv",na.strings = "")
-# Format
-data$subject_id <- as.numeric(data$record_id + 1)
-data <- data[data$subject_id %in% cgm_data$subject_id,]
-# Combine insurance fields
-data$insurance_medicaid.factor[is.na(data$insurance_medicaid.factor)] <- "No"
-data$insurance_medical.factor[is.na(data$insurance_medical.factor)] <- "No"
-data$insurance_medicare.factor[is.na(data$insurance_medicare.factor)] <- "No"
-data$insurance_private.factor[is.na(data$insurance_private.factor)] <- "No"
-data$insurance_no_answer.factor[is.na(data$insurance_no_answer.factor)] <- "No"
-data$Insurance <- 
-  ifelse(data$insurance_private.factor == "Yes","Private",
-         ifelse(data$insurance_medicare.factor == "Yes","Medicare",
-                ifelse(data$insurance_medicaid.factor == "Yes","Medicaid",
-                       ifelse(data$insurance_medical.factor == "Yes","Medical","No Answer"))))
-data$Insurance <- as.factor(data$Insurance)
-# Drop empty levels
-drops <- c("gender.factor","insulin_pump.factor","education.factor")
-data[,drops] <- lapply(data[,drops], droplevels)
+```{r cgm,eval=FALSE}
+# Get cgm data function
+# This function will remove all data after the limit argument (in hours)
+cgm_by_timepoint = 
+  function(indir,outdir,regex,timepoint,limit = NULL,date_df = data,
+           date_col = "date_randomization", id_col = "subject_id"){
+    # List patient folders
+    l = list.files(indir)
+    l_full = list.files(indir,full.names = T)
+    l = l_full[!is.na(suppressWarnings(as.numeric(l)))]
+    # Find timepoint files in patient folders
+    f = lapply(l, function(f){
+      files = list.files(f,full.names = T,pattern = ".*.xml")
+      w = which(grepl(regex,tolower(files)))
+      files[w]
+    })
+    f = unlist(f)
+    # Import randomization files and write as csv to clean data folder
+    dir.create(outdir,showWarnings = FALSE)
+    lapply(f, function(file){
+      doc <- xmlParse(file)
+      l <- xmlToList(doc)
+      id = as.numeric(strsplit(file,"/")[[1]][4])
+      l <- l[["GlucoseReadings"]]
+      times <- lapply(l, function(x) {x[["DisplayTime"]]})
+      times <- do.call(rbind,times)
+      sensor <- lapply(l, function(x) {x[["Value"]]})
+      sensor <- do.call(rbind,sensor)
+      table <- as.data.frame(cbind(times,sensor))
+      colnames(table) <- c("timestamp","sensorglucose")
+      table$timestamp = lubridate::ymd_hms(table$timestamp)
+      table = table[order(table$timestamp),]
+      table$subjectid <- NA
+      table$subjectid[1] <- id
+      table <- table[,c("subjectid","timestamp","sensorglucose")]
+      # Trim
+      if (!is.null(limit)) {
+        limit_sec = limit * 60 * 60
+        date_limit = table$timestamp[1]
+        date_limit = date_limit + limit_sec
+        table = table[table$timestamp <= date_limit,]
+        filename = paste0(outdir,"/",id,"_",timepoint,"_",limit,"hours.csv")
+      } else {
+        filename = paste0(outdir,"/",id,"_",timepoint,"_all.csv")
+      }
+      write.csv(table,file = filename,row.names = F,na="")
+    })
+  }
+# Randomization
+cgm_by_timepoint(indir="./Data_Raw/Patient data",
+                 outdir = "./Data_Cleaned/Randomization/",
+                 regex = "random",
+                 timepoint = "randomization")
 # First 72 hours
-cgm_data72 = read.csv("./Data_Cleaned/cgm_72_hours.csv",na.strings = "")
-# Get TIR and group assignment
-cgm_data = left_join(cgm_data,data,by = "subject_id")
-cgm_data = left_join(cgm_data,cgm_data72,by = "subject_id") %>% 
-  select(subject_id,randomization_group.factor,
-         percent_time_70_180.x,percent_time_70_180.y,
-         percent_time_under_70.x,percent_time_under_70.y,
-         percent_time_over_180.x,percent_time_over_180.y,
-         percent_time_over_250.x,percent_time_over_250.y) %>%
-  arrange(subject_id)
+cgm_by_timepoint(indir="./Data_Raw/Patient data",
+                 outdir = "./Data_Cleaned/Randomization_72_Hours/",
+                 regex = "random",
+                 timepoint = "randomization",
+                 limit = 72)
+# 7 days
+cgm_by_timepoint(indir="./Data_Raw/Patient data",
+                 outdir = "./Data_Cleaned/Randomization_7_Days/",
+                 regex = "random",
+                 timepoint = "randomization",
+                 limit = 24*7)
+# Baseline
+cgm_by_timepoint(indir="./Data_Raw/Patient data",
+                 outdir = "./Data_Cleaned/Screening/",
+                 regex = "screen",
+                 timepoint = "screening")
+# First 72 hours
+cgm_by_timepoint(indir="./Data_Raw/Patient data",
+                 outdir = "./Data_Cleaned/Screening_72_Hours/",
+                 regex = "screen",
+                 timepoint = "screening",
+                 limit = 72)
+# 7 days
+cgm_by_timepoint(indir="./Data_Raw/Patient data",
+                 outdir = "./Data_Cleaned/Screening_7_Days/",
+                 regex = "screen",
+                 timepoint = "screening",
+                 limit = 24*7)
+# CGM variables
+# Randomization
+cgmvariables("./Data_Cleaned/Randomization/",
+             "./Data_Cleaned","cgm_randomization")
+cgmvariables("./Data_Cleaned/Randomization_72_Hours/",
+             "./Data_Cleaned","cgm_randomization_72_hours")
+cgmvariables("./Data_Cleaned/Randomization_7_Days/",
+             "./Data_Cleaned","cgm_randomization_7_days")
+# Screening
+cgmvariables("./Data_Cleaned/Screening/",
+             "./Data_Cleaned","cgm_screening")
+cgmvariables("./Data_Cleaned/Screening_72_Hours/",
+             "./Data_Cleaned","cgm_screening_72_hours")
+cgmvariables("./Data_Cleaned/Screening_7_Days/",
+             "./Data_Cleaned","cgm_screening_7_days")
+```
+
+```{r data clean}
+# Import CGM data
+cgm_randomization = read.csv("./Data_Cleaned/cgm_randomization.csv")
+colnames(cgm_randomization)[2:ncol(cgm_randomization)] = 
+  paste0(colnames(cgm_randomization)[2:ncol(cgm_randomization)],"_r")
+cgm_screening = read.csv("./Data_Cleaned/cgm_screening.csv")
+colnames(cgm_screening)[2:ncol(cgm_screening)] = 
+  paste0(colnames(cgm_screening)[2:ncol(cgm_screening)],"_s")
+# Import insulin data
+insulin = read.csv("./Data_Cleaned/insulin.csv",na.strings = "")
+insulin$subject_id = as.numeric(sapply(strsplit(insulin$Id,"-"),"[[",2))
+# Add to REDCap data
+data = full_join(data,insulin,by = "subject_id")
+data = full_join(data,cgm_randomization,by = "subject_id")
+data = full_join(data,cgm_screening,by = "subject_id")
+# Check if they have CGM data
+data$cgm_randomization = factor(!is.na(data$date_cgm_placement_r),
+                                labels = c("No","Yes"))
+# Surveys
+# IDSS score: mean of items 1-14 (reverse code items: 1, 3-4, 7-13)
+reverse = c("idss_complicated","idss_embarrassing","idss_hassle_to_use",
+            "idss_expensive","idss_spontaneous","idss_many_pieces",
+            "idss_benefit","idss_inconvinient","idss_time",
+            "idss_hassle_to_carry")
+reverse_v2 = paste0(reverse,"_randomization_v2")
+data[,reverse_v2] = lapply(data[,reverse_v2], function(x){6-x})
+all_idss = c(reverse,"idss_good_control","idss_control",
+             "idss_works_well","idss_future")
+all_idss_v2 = paste0(all_idss,"_randomization_v2")
+data$idss_randomization_v2 = 
+  apply(data,1,function(r){mean(as.numeric(r[all_idss_v2]))})
+# WPAI score
+wpai = read.csv("./Data_Cleaned/wpai.csv",na.strings = "")
+wpai$subject_id = wpai$record_id + 1
+q2 = wpai$wpai_missed_work_v2
+q4 = wpai$wpai_productivity_v2
+q5 = wpai$wpai_productivity_while_work_v2
+q6 = wpai$wpai_productivity_regular_activity_v2
+# Percent work time missed due to problem: Q2/(Q2+Q4)
+wpai$percent_work = q2/(q2+q4)
+# Percent impairment while working due to problem: Q5/10
+wpai$work_impairment = q5/10
+#Percent overall work impairment due to problem: Q2/(Q2+Q4)+[(1-(Q2/(Q2+Q4)))x(Q5/10)]
+wpai$overall_work_impairment = q2/(q2+q4) + (1-(q2/(q2+q4))*q5/10)
+# Percent activity impairment due to problem: Q6/10 
+wpai$activiy_impairment = q6/10
+# Merge back in
+wpai_vars = c("percent_work","work_impairment","overall_work_impairment",
+              "activiy_impairment")
+data = left_join(data,wpai[,c("subject_id",wpai_vars)],
+                 by = "subject_id")
+# Change in % time > 180
+data$change_time_over_180 = 
+  data$percent_time_over_180_r - data$percent_time_over_180_s
+# Insulin per kg
+data$basal_dose = data$V1.Basal.dose/data$weight
+data$bolus_dose = data$V1.Bolus.dose/data$weight
+```
+
+# Table 1: Descriptive Characteristics
+
+```{r results='asis',warning=FALSE}
 # Table 1
-t1 <- 
-  tableby(randomization_group.factor~age+a1c+diabetes_duration+bmi+fe(gender.factor)+
-            fe(insulin_pump.factor)+fe(cgm.factor)+fe(education.factor)+fe(Insurance),
-          data)
-summary(t1,pfootnote = T,
+t1_vars = c("age","gender.factor","bmi","gold_score.factor",
+            "diabetes_duration","a1c","insulin_pump.factor",
+            "basal_dose","bolus_dose","education.factor",
+            "insurance_private.factor","insurance_medicaid.factor",
+            "insurance_medicare.factor","insurance_medical.factor",
+            "insurance_no_answer.factor","household_income.factor",
+            "diab_conditions___1.factor","diab_conditions___2.factor",
+            "diab_conditions___3.factor","diab_conditions___4.factor",
+            "diab_conditions___5.factor","cgm_randomization")
+t1_form = as.formula(paste0("randomization_group.factor~",
+                            paste0(t1_vars,collapse = "+")))
+table_1 = 
+  tableby(t1_form,data = droplevels(data[data$cgm_randomization == "Yes",]))
+# Print
+summary(table_1,
         labelTranslations = 
-          list(gender.factor = "Gender",insulin_pump.factor = "Insulin Pump",
-               cgm.factor = "CGM",education.factor = "Education"))
+          list(age="Age",gender.factor="Gender",
+               gold_score.factor = "Gold Score",
+               insulin_pump.factor = "Insulin Pump",
+               basal_dose = "Basal Dose",bolus_dose="Bolus Dose",
+               education.factor = "Education",
+               insurance_medicaid.factor = "Medicaid",
+               insurance_medical.factor="No Medical Insurance",
+               insurance_medicare.factor="Medicare",
+               insurance_medicaid.factor="Medicaid",
+               insurance_private.factor="Private",
+               insurance_no_answer.factor="No Answer",
+               household_income.factor="Household Income",
+               diab_conditions___1.factor="Diabetic Retinopathy",
+               diab_conditions___2.factor="Diabetic Neuropathy",
+               diab_conditions___3.factor="Diabetic Nephropathy",
+               diab_conditions___4.factor="High Cholesterol",
+               diab_conditions___5.factor="High Blood Pressure",
+               cgm_randomization = "CGM Data at Randomization"))
 ```
 
-### Group Comparison
+# Figure 1: Percent time spent > 180 mg/dL
 
-```{r results='asis'}
-labels(cgm_data) = c(subject_id = "ID",group = "Group",
-                     percent_time_70_180.x = "% TIR",
-                     percent_time_70_180.y = "% TIR - First 72 Hours",
-                     percent_time_under_70.x = "% Time < 70",
-                     percent_time_under_70.y = "% Time < 70 - First 72 Hours",
-                     percent_time_over_180.x = "% Time > 180",
-                     percent_time_over_180.y = "% Time > 180 - First 72 Hours",
-                     percent_time_over_250.x = "% Time > 250",
-                     percent_time_over_250.y = "% Time > 250 - First 72 Hours")
-t = 
-  tableby(randomization_group.factor ~ kwt(percent_time_70_180.x,"median","q1q3") + 
-            kwt(percent_time_70_180.y,"median","q1q3") + 
-            kwt(percent_time_under_70.x,"median","q1q3") + 
-            kwt(percent_time_under_70.y,"median","q1q3") + 
-            kwt(percent_time_over_180.x,"median","q1q3") + 
-            kwt(percent_time_over_180.y,"median","q1q3") + 
-            kwt(percent_time_over_250.x,"median","q1q3") + 
-            kwt(percent_time_over_250.y,"median","q1q3"),
-            cgm_data)
-summary(t,pfootnote=T)
+```{r fig 1,warning=FALSE}
+ggplot(data[!is.na(data$randomization_group.factor),],
+       aes(x=randomization_group.factor,y=percent_time_over_180_r))+
+  geom_boxplot() + 
+  theme_bw() + xlab("") + ylab("% Time Above 180 mg/dL")
 ```
 
-```{r plots}
-boxplot(percent_time_70_180.x~randomization_group.factor,cgm_data,
-        ylab = "% TIR",xlab = "Randomization Group",ylim = c(0,90))
+# Figure 2: Change in percent time spent > 180 mg/dL
 
-boxplot(percent_time_70_180.y~randomization_group.factor,cgm_data,
-        ylab = "% TIR - First 72 Hours",xlab = "Randomization Group",ylim = c(0,90))
+```{r fig 2,warning=FALSE}
+ggplot(data[!is.na(data$randomization_group.factor),],
+       aes(x=randomization_group.factor,y=change_time_over_180))+
+  geom_boxplot() + 
+  theme_bw() + xlab("") + ylab("Change in % Time Above 180 mg/dL")
+```
 
-boxplot(percent_time_under_70.x~randomization_group.factor,cgm_data,
-        ylab = "% Time < 70",xlab = "Randomization Group",ylim = c(0,90))
+# Table 2: Differences between treatment group - unadjusted
 
-boxplot(percent_time_under_70.y~randomization_group.factor,cgm_data,
-        ylab = "% Time < 70 - First 72 Hours",xlab = "Randomization Group",ylim = c(0,90))
+```{r table 2,results="asis"}
+data$no_of_corrections = 
+  suppressWarnings(
+    as.numeric(
+      data$No.of.correction.boluses.in.first.72.hours.of.randomization))
+vars = list("% TIR"="percent_time_70_180_r",
+            "% > 180 mg/dL"="percent_time_over_180_r",
+            "Change in % > 180 mg/dL"="change_time_over_180",
+            "% Time < 70 mg/dL"="percent_time_under_70_r",
+            "% Time < 54 mg/dL"="percent_time_under_54_r",
+            "Number of correction boluses in first 72 hours"=
+              "no_of_corrections",
+            "IDSS"="idss_randomization_v2",
+            "Percent work time missed due to problem" = "percent_work",
+            "Percent impairment while working"="work_impairment",
+            "Percent overall work impairment"="overall_work_impairment",
+            "Percent activity impairment due to problem" = "activiy_impairment")
+t_vars = as.list(names(vars))
+names(t_vars) = as.character(vars)
+
+group = "randomization_group.factor"
+
+med_table = tableby(as.formula(paste0(group,"~",paste0(vars,collapse = "+"))),
+                    data=data[data$cgm_randomization=="Yes",],
+                    numeric.test="kwt",numeric.stats=c("Nmiss", "median", "q1q3"))
+summary(med_table,pfootnote=TRUE,labelTranslations = t_vars)
 ```

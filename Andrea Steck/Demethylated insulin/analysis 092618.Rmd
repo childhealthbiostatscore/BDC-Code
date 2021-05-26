@@ -1,0 +1,477 @@
+---
+title: "TrialNet INS ratio analyses"
+author: "Laura Pyle"
+date: "November 11, 2018"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#library(sqldf)
+library(dplyr)
+library(lubridate)
+library(graphics)
+library(ggplot2)
+library(Hmisc)
+library(Table1)
+library(knitr)
+
+# read in the data
+longitudinal_visit_info <- read.csv("\\\\ucdenver.pvt\\som-home\\pylell\\BDC\\Steck\\Trialnet progressors analysis\\Fourth analysis - demethylated insulin with updated dataset\\Data\\longitudinal 091818.csv")
+ParticipantInfo_risk <- read.csv("\\\\ucdenver.pvt\\som-home\\pylell\\BDC\\Steck\\Trialnet progressors analysis\\Fourth analysis - demethylated insulin with updated dataset\\Data\\Participant Info risk 091818.csv")
+
+# get rid of duplicates
+ParticipantInfo_risk <- unique(ParticipantInfo_risk)
+# no duplicates
+
+obslong <- nrow(longitudinal_visit_info)
+nppt <- nrow(ParticipantInfo_risk)
+
+# merge participant info and longitudinal data
+keep_ppt <- data.frame(ParticipantInfo_risk$TrialNet,
+                       ParticipantInfo_risk$T1D,
+                       ParticipantInfo_risk$Date.of.Diagnosis) 
+colnames(keep_ppt) <- c("Random_ID","T1D","Date_of_Diagnosis")
+keep_long <- data.frame(longitudinal_visit_info$PID,
+                        longitudinal_visit_info$Draw.Date,
+                        longitudinal_visit_info$GAD65,
+                        longitudinal_visit_info$GAD65H,
+                        longitudinal_visit_info$ICA512,
+                        longitudinal_visit_info$IA2H,
+                        longitudinal_visit_info$mIAA,
+                        longitudinal_visit_info$ZnT8,
+                        longitudinal_visit_info$ICA,
+                        longitudinal_visit_info$U.per.MplusU.Ratio.Zen,
+                        longitudinal_visit_info$ECL_GADA,
+                        longitudinal_visit_info$ECL_IA.2A,
+                        longitudinal_visit_info$ECL_IAA,
+                        longitudinal_visit_info$Proinsulin_pM.L,
+                        longitudinal_visit_info$PEP0)
+colnames(keep_long) <- c("Random_ID","Draw_Date","GAD65","GAD65H","ICA512","IA_2H","mIAA","ZnT8","ICA","U_MplusU_Ratio_Zen","ECL_GADA","ECL_IA2A","ECL_IAA","Proinsulin_pM_L","PEP0")
+
+# convert draw date to date
+#keep_long$Draw_Date <- mdy_hms(as.character(keep_long$Draw_Date))
+#keep_long$Draw_Date <- as.POSIXlt(as.character(keep_long$Draw_Date),format="%m%d%Y %H%M")
+keep_long$Draw_Date <- mdy_hm(as.character(keep_long$Draw_Date))
+
+# calculate fasting Cpeptide in pM/L
+keep_long$PEP0_pM_L <- keep_long$PEP0*331.09
+
+# calculate proinsulin/Cpep ratio
+keep_long$Pro_pep <- keep_long$Proinsulin_pM_L/keep_long$PEP0_pM_L*100
+
+# merge  datasets
+alldata <- merge(keep_ppt,keep_long,by="Random_ID",all.x=F,all.y=F)
+N <- length(unique(alldata$Random_ID))
+
+# labels
+label(alldata$U_MplusU_Ratio_Zen)='INS ratio'
+label(alldata$Pro_pep)='Proinsulin ratio'
+
+# first code each antibody as positive negative
+for(i in 1:nrow(alldata)){
+  ###coding for miaa
+  a <-ifelse(is.na(alldata$mIAA[i]), 
+             NA,
+             ifelse(alldata$mIAA[i] <= 0.01, 0, 1)
+  )
+  alldata$miaa_cat[i]<- a
+  ###coding for first form of gad65
+  b <-ifelse(is.na(alldata$GAD65[i]), 
+             NA,
+             ifelse(alldata$GAD65[i] <= 0.032, 0, 1)
+  )
+  alldata$gad65_cat[i]<- b
+  ###coding for second form of gad65
+  c<-ifelse(is.na(alldata$GAD65H[i]), 
+            NA,
+            ifelse(alldata$GAD65H[i] <= 20, 0, 1)
+  )
+  alldata$gad65h_cat[i]<- c
+  
+  ###coding for first form of ica512/ia2
+  d<-ifelse(is.na(alldata$ICA512[i]), 
+            NA,
+            ifelse(alldata$ICA512[i] <= 0.049, 0, 1)
+  )
+  alldata$ica512_cat[i]<- d
+  ###coding for second form of ica512/ia2
+  e<-ifelse(is.na(alldata$IA_2H[i]), 
+            NA,
+            ifelse(alldata$IA_2H[i] <= 5, 0, 1)
+  )
+  alldata$ia2h_cat[i]<- e
+  ###coding for znt8
+  f<-ifelse(is.na(alldata$ZnT8[i]), 
+            NA,
+            ifelse(alldata$ZnT8[i] <= 0.02, 0, 1)
+  )
+  alldata$znt8_cat[i]<- f
+}
+
+#####combining both forms of gad65 tests
+for(i in 1:nrow(alldata)){
+  test <- sum(alldata$ica512_cat[i],alldata$ia2h_cat[i],na.rm=TRUE)
+  de <- ifelse(is.na(alldata$ica512_cat[i]) & is.na(alldata$ia2h_cat[i]),
+               NA,
+               ifelse(test>=1,1,0))
+  alldata$ica512_ia2_cat[i]<- de    
+  test2 <- sum(alldata$gad65_cat[i],alldata$gad65h_cat[i],na.rm=TRUE)
+  bc <- ifelse(is.na(alldata$gad65_cat[i]) & is.na(alldata$gad65h_cat[i]),
+               1,
+               ifelse(test2>=1,1,0))
+  alldata$GAD65_combo_cat[i]<- bc   
+}  
+
+# if all ab results missing, delete the record
+misstwo <- alldata[is.na(alldata$mIAA) & is.na(alldata$ica512_ia2_cat),]
+alldata <- alldata[!is.na(alldata$mIAA) | !is.na(alldata$miaa_cat) | !is.na(alldata$ica512_ia2_cat),]
+# 36 records deleted
+
+# check if anyone is missing GAD, ICA/IA2, or mIAA
+missing <- alldata[is.na(alldata$GAD65_combo_cat) | is.na(alldata$miaa_cat) | is.na(alldata$ica512_ia2_cat),]
+write.csv(missing,file="missing.csv") 
+
+# get rid of visits with missing mIAA data
+missmiaa <- alldata[is.na(alldata$GAD65_combo_cat) | is.na(alldata$miaa_cat) | is.na(alldata$ica512_ia2_cat),]
+alldata <- alldata[!is.na(alldata$GAD65_combo_cat) & !is.na(alldata$miaa_cat) & !is.na(alldata$ica512_ia2_cat),]
+# 40 records deleted
+
+# calculate number of positive ab at each visit
+for(i in 1:nrow(alldata)){
+  alldata$numpos[i] <- sum(alldata$ica512_ia2_cat[i],alldata$GAD65_combo_cat[i],alldata$miaa_cat[i],alldata$znt8_cat[i],na.rm=T)
+}
+
+# calculate z-scores for GAD and IA2
+alldata$gad65z <- (alldata$GAD65 - mean(alldata$GAD65,na.rm = TRUE))/sd(alldata$GAD65,na.rm = TRUE)
+alldata$gad65hz <- (alldata$GAD65H - mean(alldata$GAD65H,na.rm = TRUE))/sd(alldata$GAD65H,na.rm = TRUE)
+alldata$gadz <- ifelse(!is.na(alldata$GAD65),alldata$gad65z,alldata$gad65hz)
+alldata$ica512z <- (alldata$ICA512 - mean(alldata$ICA512,na.rm = TRUE))/sd(alldata$ICA512,na.rm = TRUE)
+alldata$ia2hz <- (alldata$IA_2H - mean(alldata$IA_2H,na.rm = TRUE))/sd(alldata$IA_2H,na.rm = TRUE)
+alldata$ia2z <- ifelse(!is.na(alldata$ICA512),alldata$ica512z,alldata$ia2hz)
+
+# need to find out if anyone is missing proinsulin ratio at all visits
+sortds <- alldata[order(alldata$Random_ID,desc(alldata$Proinsulin_pM_L)),]
+hasproins <- sortds %>% group_by(Random_ID) %>% filter(row_number(Random_ID) == 1)
+a <- hasproins[is.na(hasproins$Proinsulin_pM_L),]
+a <- a[,1]
+misspro <- nrow(a)
+a$flag <- rep(1,nrow(a))
+# 12 subjects missing proinsulin - need to merge this back with original dataset and take those people out
+# keep only those IDs that are in both dataframes
+alldata <- merge(alldata,a,all.x=TRUE,by="Random_ID")
+alldata <- alldata[is.na(alldata$flag),]
+
+# who is missing T1D data?
+missingt1d <- alldata[is.na(alldata$T1D),]
+# no one is missing t1d status
+
+# group status at each visit - but people can change groups
+for(i in 1:nrow(alldata)) {
+  alldata$group[i] <- ifelse(alldata$T1D[i]=="Yes","T1D",
+                             ifelse(alldata$numpos[i]==0,"Negative",
+                                    ifelse(alldata$numpos[i]==1,"Single ab positive","Multiple ab positive")))
+}
+
+#-------------------------------------------------------------------------------
+# Tim's group status code.
+# Separate table for diagnosis.
+diagnosis.table <- alldata[,c("Random_ID","Draw_Date","group")]
+# save a copy of this data to merge back with the final dx
+allresults <- diagnosis.table
+# Count diagnoses per subject
+counts <- plyr::count(diagnosis.table,c("Random_ID","group"))
+# Find participants with only one single ab+
+single <- counts[counts$group == "Single ab positive",]
+single <- single[single$freq < 2,"Random_ID"]
+# Convert group to numeric
+diagnosis.table$group <- 
+  plyr::revalue(diagnosis.table$group,c("Negative" = 0,"Single ab positive" = 1,
+                                        "Multiple ab positive" = 2,"T1D" = 3))
+diagnosis.table$group <- as.numeric(diagnosis.table$group)
+# Aggregate diagnosis table taking the maximum value.
+diagnosis.table <- aggregate(group ~ Random_ID, data = diagnosis.table, max)
+# Find the single ab+ who were incorrectly categorized, set back to 0.
+recat <- single[
+  which(single %in% diagnosis.table[diagnosis.table$group == 1,"Random_ID"])]
+diagnosis.table[diagnosis.table$Random_ID %in% recat,"group"] <- 0
+colnames(diagnosis.table) <- c("Random_ID","final.group")
+
+
+# merge final group category with all results
+allresults <- merge(allresults,diagnosis.table,by="Random_ID")
+# make categorical variable for final group
+allresults$final.group[allresults$final.group==0] <- "Negative"
+allresults$final.group[allresults$final.group==1] <- "Single ab positive"
+allresults$final.group[allresults$final.group==2] <- "Multiple ab positive"
+allresults$final.group[allresults$final.group==3] <- "T1D"
+
+
+# Merge the diagnosis back into the full table.
+alldata <- merge(alldata,diagnosis.table,by = "Random_ID")
+#-------------------------------------------------------------------------------
+
+# counting number of INS ratios and proinsulin ratios per person
+#a <- nont1d %>% group_by(Random_ID) %>% filter(!is.na(Proinsulin_pM_L)) %>% summarize(count=n())
+# range from 1 proinsulin ratio to 9
+#b <- nont1d %>% group_by(Random_ID) %>% filter(!is.na(U_MplusU_Ratio_Zen)) %>% summarize(count=n())
+# range from 1 INS ratio to 3
+
+# find the first draw date
+alldata <- alldata[order(alldata$Random_ID,alldata$Draw_Date),]
+temp <- aggregate(alldata$Draw_Date,by=list(alldata$Random_ID),min)
+names(temp) <- c("Random_ID","first_date")
+temp$first_date <- as.Date(temp$first_date)
+alldata <- merge(alldata,temp,by = "Random_ID")
+alldata$Draw_Date <- as.Date(alldata$Draw_Date)
+alldata$time <- alldata$Draw_Date - alldata$first_date
+alldata$years <- alldata$time/365.25
+
+# check range of years for non-missing pro-pep
+a <- alldata[!is.na(alldata$Pro_pep),]
+hist(as.numeric(a$years))
+b <- alldata[!is.na(alldata$U_MplusU_Ratio_Zen),]
+hist(as.numeric(b$years))
+
+# spaghetti plots of outcomes
+qplot(years,Pro_pep,data=alldata,group=Random_ID,color=group,geom="line")
+qplot(years,U_MplusU_Ratio_Zen,data=alldata,group=Random_ID,color=group,geom="line")
+
+# now need to determine which INS ratio/proinsulin ratio to use for cross-sectional analyses
+# T1D: results closest to T1D onset 
+alldata$Date_of_Diagnosis <- as.Date(mdy(alldata$Date_of_Diagnosis))
+alldata$timec[alldata$final.group==3] <- abs(alldata$Draw_Date[alldata$final.group==3] - alldata$Date_of_Diagnosis[alldata$final.group==3])
+
+# create labeled factor for final.group
+#check <- alldata %>% distinct(Random_ID, .keep_all=TRUE)
+#table(check$final.group)
+alldata$final.group <- as.factor(alldata$final.group)
+#check <- alldata %>% distinct(Random_ID, .keep_all=TRUE)
+#table(check$final.group)
+levels(alldata$final.group) = c("Negative","Single ab positive","Multiple ab positive","T1D")
+#check <- alldata %>% distinct(Random_ID, .keep_all=TRUE)
+#table(check$final.group)
+
+# pull out T1D - if they have T1D at any time point, they are in the T1D group
+t1d <- alldata[alldata$T1D == "Yes",]
+t1d <- t1d[order(t1d$Random_ID, t1d$Draw_Date),]
+# pull out nonT1D
+nont1d <- alldata[alldata$T1D != "Yes",]
+nont1d <- nont1d[order(nont1d$Random_ID, nont1d$Draw_Date),]
+nneg <- length(unique(nont1d[nont1d$final.group==0,]$Random_ID))
+nsing <- length(unique(nont1d[nont1d$final.group==1,]$Random_ID))
+nmult <- length(unique(nont1d[nont1d$final.group==2,]$Random_ID))
+# total of 132 subjects, 15 in T1D and 117 nonT1D
+# pull out records with non-missing Pro_pep
+t1d_select_pro <- t1d[!is.na(t1d$Pro_pep),]
+temp <-  aggregate(t1d_select_pro$timec,by=list(t1d_select_pro$Random_ID),min)
+names(temp) <- c("Random_ID","time_from_diagnosis")
+t1d_select_pro <- merge(t1d_select_pro,temp,by = "Random_ID")
+t1d_select_pro <- t1d_select_pro[t1d_select_pro$time_from_diagnosis==t1d_select_pro$timec,]
+# pull out records with nonmissing ins ratio
+t1d_select_ins <- t1d[!is.na(t1d$U_MplusU_Ratio_Zen),]
+length(unique(t1d_select_ins$Random_ID))
+temp <-  aggregate(t1d_select_ins$timec,by=list(t1d_select_ins$Random_ID),min)
+names(temp) <- c("Random_ID","time_from_diagnosis")
+t1d_select_ins <- merge(t1d_select_ins,temp,by = "Random_ID")
+t1d_select_ins <- t1d_select_ins[t1d_select_ins$time_from_diagnosis==t1d_select_ins$timec,]
+
+# for negative, single ab positive, multiple ab positive: use most recent
+# pull out records with nonmissing propep
+nont1d_select_pro <- nont1d[!is.na(nont1d$Pro_pep),]
+# select the most recent record for each person
+temp <- aggregate(nont1d_select_pro$Draw_Date,by=list(nont1d_select_pro$Random_ID),max)
+names(temp) <- c("Random_ID","most_recent_draw")
+temp$most_recent_draw <- as.Date(temp$most_recent_draw)
+nont1d_select_pro <- merge(nont1d_select_pro,temp,by = "Random_ID")
+nont1d_select_pro <- nont1d_select_pro[nont1d_select_pro$Draw_Date==nont1d_select_pro$most_recent_draw,]
+# pull out records with nonmissing ins ratio
+nont1d_select_ins <-nont1d[!is.na(nont1d$U_MplusU_Ratio_Zen),]
+# select the most recent record for each person
+temp <- aggregate(nont1d_select_ins$Draw_Date,by=list(nont1d_select_ins$Random_ID),max)
+names(temp) <- c("Random_ID","most_recent_draw")
+temp$most_recent_draw <- as.Date(temp$most_recent_draw)
+nont1d_select_ins <- merge(nont1d_select_ins,temp,by = "Random_ID")
+nont1d_select_ins <- nont1d_select_ins[nont1d_select_ins$Draw_Date==nont1d_select_ins$most_recent_draw,]
+
+
+# # negative: use most recent
+# neg <- alldata[alldata$final.group==0,]
+# neg <- neg[order(neg$Random_ID, neg$Draw_Date),]
+# # pull out records with nonmissing propep
+# neg_select_pro <- neg[!is.na(neg$Pro_pep),]
+# # select the most recent record for each person
+# temp <- aggregate(neg_select_pro$Draw_Date,by=list(neg_select_pro$Random_ID),max)
+# names(temp) <- c("Random_ID","most_recent_draw")
+# temp$most_recent_draw <- as.Date(temp$most_recent_draw)
+# neg_select_pro <- merge(neg_select_pro,temp,by = "Random_ID")
+# length(unique(neg_select_pro$Random_ID))
+# neg_select_pro <- neg_select_pro[neg_select_pro$Draw_Date==neg_select_pro$most_recent_draw,]
+# # pull out records with nonmissing ins ratio
+# neg_select_ins <-neg[!is.na(neg$U_MplusU_Ratio_Zen),]
+# # select the most recent record for each person
+# temp <- aggregate(neg_select_ins$Draw_Date,by=list(neg_select_ins$Random_ID),max)
+# names(temp) <- c("Random_ID","most_recent_draw")
+# temp$most_recent_draw <- as.Date(temp$most_recent_draw)
+# neg_select_ins <- merge(neg_select_ins,temp,by = "Random_ID")
+# neg_select_ins <- neg_select_ins[neg_select_ins$Draw_Date==neg_select_ins$most_recent_draw,]
+# 
+# # Multiple ab positive: results closest to multiple ab positivity
+# # if anyone has more than one set of results that meets the above criteria, take the most recent result
+# # first need to find the first date of multiple ab positivity
+# mult <- alldata[alldata$final.group==2,]
+# mult <- mult[order(mult$Random_ID, mult$Draw_Date),]
+# mult_find_first <- mult[mult$group=="Multiple ab positive",]
+# mult_find_first <- aggregate(mult_find_first$Draw_Date,by=list(mult_find_first$Random_ID),min)
+# names(mult_find_first) <- c("Random_ID","first_mult_date")
+# mult <- merge(mult,mult_find_first,by="Random_ID")
+# # calculate difference between draw date and date of multiple ab positivity
+# mult$timec <- mult$Draw_Date - mult$first_mult_date
+# View(mult[c("Random_ID","group","final.group","Draw_Date","first_mult_date","timec")])
+# # pull out records with non-missing Pro_pep
+# mult_select_pro <- mult[!is.na(mult$Pro_pep),]
+# length(unique(mult_select_pro$Random_ID))
+# mult_select_pro <- mult_select_pro[abs(mult_select_pro$timec)<=60,]
+# length(unique(mult_select_pro$Random_ID))
+# 
+# # single ab positive: results at time of confirmation
+# # if anyone has more than one set of results that meets the above criteria, take the most recent result
+
+# combine the results for the pro-pep analysis
+t1d_select_pro$most_recent_draw <- NA
+nont1d_select_pro$time_from_diagnosis <- NA
+allpro <- rbind(nont1d_select_pro,t1d_select_pro)
+# combine the results for the INS analysis
+t1d_select_ins$most_recent_draw <- NA
+nont1d_select_ins$time_from_diagnosis <- NA
+allins <- rbind(nont1d_select_ins,t1d_select_ins)
+
+# compare unmethylated INS ratios between T1D, Ab-, single Ab+, multiple Ab+
+allins$l_U_MplusU_Ratio_Zen=log(allins$U_MplusU_Ratio_Zen)
+# lm.ins = with(allins, lm(U_MplusU_Ratio_Zen ~ as.factor(final.group))) 
+# summary(lm.ins)
+# anova(lm.ins)
+# plot(lm.ins)
+# lm.ins <- aov(lm.ins)
+# summary(lm.ins)
+# anova(lm.ins)
+# TukeyHSD(lm.ins)
+# log transformed
+lm.ins = with(allins, lm(l_U_MplusU_Ratio_Zen ~ as.factor(final.group))) 
+summary(lm.ins)
+anova(lm.ins)
+lm.ins <- aov(lm.ins)
+summary(lm.ins)
+anova(lm.ins)
+TukeyHSD(lm.ins)
+
+tab_ins <- final_table(allins,'U_MplusU_Ratio_Zen',group=allins$final.group,margin=2,single=0,ron=2)
+
+# do ins ratios correlate with biochemical and ECL antibody levels
+# ++++++++++++++++++++++++++++
+# flattenCorrMatrix
+# ++++++++++++++++++++++++++++
+# cormat : matrix of the correlation coefficients
+# pmat : matrix of the correlation p-values
+flattenCorrMatrix <- function(cormat, pmat) {
+  ut <- upper.tri(cormat)
+  data.frame(
+    row = rownames(cormat)[row(cormat)[ut]],
+    column = rownames(cormat)[col(cormat)[ut]],
+    cor  =(cormat)[ut],
+    p = pmat[ut]
+    )
+}
+corr_ins <- rcorr(as.matrix(allins[, c( "U_MplusU_Ratio_Zen","gadz","ia2z","mIAA","ZnT8","ICA",
+                                        "ECL_GADA","ECL_IA2A","ECL_IAA")])
+                  ,type = "spearman")
+corr_ins <- flattenCorrMatrix(corr_ins$r, corr_ins$P)
+corr_ins <- corr_ins[corr_ins$row=="U_MplusU_Ratio_Zen",]
+
+# compare proinsulin ratios between T1D, Ab-, single Ab+, multiple Ab+
+allpro$l_Pro_pep=log(allpro$Pro_pep)
+# lm.pro = with(allpro, lm(Pro_pep ~ as.factor(final.group))) 
+# summary(lm.pro)
+# anova(lm.pro)
+# plot(lm.pro)
+# lm.pro <- aov(lm.pro)
+# summary(lm.pro)
+# anova(lm.pro)
+# TukeyHSD(lm.pro)
+# log transformed
+lm.pro = with(allpro, lm(l_Pro_pep ~ as.factor(final.group))) 
+summary(lm.pro)
+anova(lm.pro)
+lm.pro <- aov(lm.pro)
+summary(lm.pro)
+anova(lm.pro)
+TukeyHSD(lm.pro)
+tab_pro <- final_table(allpro,'Pro_pep',group=as.factor(allpro$final.group),margin=2,single=0,ron=2)
+
+# do proinsulin ratios correlate with biochemical and ECL antibody levels
+corr_pro <- rcorr(as.matrix(allpro[, c( "Pro_pep","gadz","ia2z","mIAA","ZnT8","ICA",
+                                        "ECL_GADA","ECL_IA2A","ECL_IAA")])
+                  ,type = "spearman")
+corr_pro <- flattenCorrMatrix(corr_pro$r, corr_pro$P)
+corr_pro <- corr_pro[corr_pro$row=="Pro_pep",]
+
+
+```
+
+## Background
+
+The purpose of this analysis is to test whether unmethylated INS ratios and proinsulin ratios differ between 4 groups of TrialNet subjects: T1D, multiple antibody positive, single antibody positive, and negative.  The correlation of unmethylated INS ratios and proinsulin ratios with biochemical and ECL antibody levels was also examined.
+
+## Methods
+
+There were `r obslong` records in the initial longitudinal dataset, and `r nppt` participants in the participant database.
+
+The following data manipulation and cleaning steps were performed:
+
+1) Fasting C-peptide in pM/L was calculated as fasting C-peptide*331.09.
+2) Proinsulin ratios were calculated as proinsulin (pM/L) / C-peptide (pM/L) *100
+3) There were `r nrow(misstwo)` records deleted that were missing both mIAA and ICA512/IA2H results.
+4) There were an additional `r nrow(missmiaa)` records deleted that were missing just mIAA.
+5) Antibody results were classifed as positive/negative using the following cutoff values:
++ mIAA, 0.01
++ GAD65, 0.032
++ GAD65H, 20
++ ICA512, 0.049
++ IA_2H, 5
++ ZnT8, 0.02
+6) The categorical variables (positive/negative) for GAD65 and GAD65H were combined into one variable, as were the categorical variables for ICA512 and IA_2H.
+7) The number of positive antibodies at each visit was calculated as the sum of ICA512/IA2H, GAD65/GAD65H, mIAA, and ZnT8.
+8) For analyses using the continuous value of the antibodies, GAD65 and GAD65H were combined by calculating the Z-score of each variable and then combining the Z-scores into one variable.  The same procedure was followed for ICA512/IA2H.
+9) There were `r misspro` subjects who did not have any proinsulin results who were excluded from analysis.
+10) Participants were classified in the T1D group if they ever had a diagnosis of T1D.  
+11) If a participant was not in the T1D group, they were classfied by antibody status as below.  This resulted in `r length(unique(t1d$Random_ID))` participants in the T1D group, `r nmult` participants in the multiple antibody positive group, `r nsing` participants in the single antibody positive group, and `r nneg` participants in the negative group.
++ If they were multiple antibody positive at any visit, they were classified as multiple antibody positive.
++ If they were never multiple antibody positive, but were single antibody positive at 2 or more visits, they were classified as single antibody positive.
++ Otherwise, they were classified as antibody negative.
+12) For cross-sectional analyses, unmethylated INS ratios and proinsulin ratios were selected as follows:
++ For the T1D group, the result closest to the date of diagnosis was used.
++ For all other groups, the most recent result was used.
+
+## Results
+
+Tables 2 and 3 show the results of the group comparisons for unmethylated INS ratio and proinsulin ratio.
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(tab_ins,caption="Table 2.  Unmethylated insulin ratios.")
+```
+\
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(tab_pro,caption="Table 3.  Proinsulin ratios.")
+```
+\
+
+Tables 4 and 5 show the correlations of unmethylated INS and proinsulin ratios with continuous antibody levels.
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(corr_ins,caption="Table 4.  Correlation of unmethylated insulin ratios with antibody levels.")
+```
+\
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(corr_pro,caption="Table 5.  Correlation of proinsulin ratios with antibody levels.")
+```
+\

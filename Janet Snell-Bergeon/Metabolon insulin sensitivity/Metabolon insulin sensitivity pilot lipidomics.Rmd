@@ -1,0 +1,289 @@
+---
+title: "Metabolon insulin sensitivity pilot - lipidomics"
+author: "Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+
+knitr::opts_chunk$set(echo = FALSE,cache = FALSE, warning=FALSE)
+
+library(dplyr)
+library(tableone)
+library(limma)
+library(mixOmics)
+library(tableone)
+
+# read in data
+lipids <- read.csv("T:\\CACTI\\Metabolon insulin resistance pilot\\Lipidomics\\Data_raw\\Lipidomics_Cleaning_Final_combined.csv")
+# fix typo
+lipids[lipids$StudyID==2008,]$StudyID <- 1008
+# convert all values to numeric
+for (i in 3:ncol(lipids)){
+  lipids[,i] <- as.numeric(as.character(lipids[,i]))
+}
+
+lipids_log <- lipids
+# log 2 transform
+# convert all values to numeric
+for (i in 3:ncol(lipids)){
+  lipids_log[,i] <-log2(lipids[,i])
+}
+
+# read in clamp data
+# tertiles of GIR are 3.8 and 5.4 for T1D, for control are 10.3 and 13.67
+# tertile 1 has lowest GIR
+clamp <- read.csv("T:\\CACTI\\Metabolon insulin resistance pilot\\Lipidomics\\Data_raw\\QClampHormones_All Dataset.csv")
+clamp$diabetes <- ifelse(!is.na(clamp$duration),1,0)
+clamp$bmi <- clamp$Wt/((clamp$Ht/100)^2)
+sampledata <- clamp[,c("StudyID","S3_GIR","diabetes","bmi")]
+sampledata$GIR_cat <- ifelse((sampledata$diabetes==1 & sampledata$S3_GIR<3.8) |
+                               (sampledata$diabetes==0 & sampledata$S3_GIR<10.3),1,
+                             ifelse((sampledata$diabetes==1 & sampledata$S3_GIR<5.4) |
+                                      (sampledata$diabetes==0 & sampledata$S3_GIR<13.67),2,3))
+
+# merge lipidomics and clamp data
+alldata <- merge(lipids,sampledata,by="StudyID",all.x = T,all.y = F)
+
+# create separate dataframes for T1D and GIR comparisons, since we want to get rid of GIRcat=2
+girdata <- alldata[alldata$GIR_cat==1 | alldata$GIR_cat==3,]
+girdata_t1d <- girdata[girdata$diabetes==1,]
+girdata_control <- girdata[girdata$diabetes==0,]
+
+# create correct matrix for limma
+# first the comparison of T1D vs. control
+dia_contrast <- ifelse(alldata$diabetes==1,1,0)
+dia_contrast <- cbind(rep(1,nrow(alldata)),dia_contrast)
+# diabetes specific tertiles of GFR
+# this is comparing tertile 3 to tertile 1, so highest vs. lowest tertile
+GIR_contrast <- ifelse(girdata$GIR_cat==3,1,0)
+GIR_contrast <- cbind(rep(1,nrow(girdata)),GIR_contrast)
+GIR_contrast_t1d <- ifelse(girdata_t1d$GIR_cat==3,1,0)
+GIR_contrast_t1d <- cbind(rep(1,nrow(girdata_t1d)),GIR_contrast_t1d)
+GIR_contrast_control <- ifelse(girdata_control$GIR_cat==3,1,0)
+GIR_contrast_control <- cbind(rep(1,nrow(girdata_control)),GIR_contrast_control)
+  
+# pull out the lipids and transpose for limma
+ymat <- t(alldata[,3:147])
+# model for T1D vs. control
+fit_dia <- lmFit(ymat,dia_contrast)
+fit_dia <- eBayes(fit_dia)
+# format results
+results_dia <- topTable(fit_dia,coef = 2,number = nrow(ymat))
+write.csv(results_dia,"T:\\CACTI\\Metabolon insulin resistance pilot\\Reports\\lipidomics_T1D.csv")
+
+# model for GIR
+ymat <- t(girdata[,3:147])
+fit_gir <- lmFit(ymat,GIR_contrast)
+fit_gir <- eBayes(fit_gir)
+# format results
+results_gir <- topTable(fit_gir,coef = 2,number = nrow(ymat))
+write.csv(results_gir,"T:\\CACTI\\Metabolon insulin resistance pilot\\Reports\\lipidomics_gir.csv")
+
+# model for GIR adjusted for BMI
+GIR_contrast_adj <- model.matrix(~GIR_cat + bmi, data=girdata)
+fit_gir_adj <- lmFit(ymat,GIR_contrast_adj)
+fit_gir_adj <- eBayes(fit_gir_adj)
+# format results
+results_gir_adj <- topTable(fit_gir_adj,coef = 2,number = nrow(ymat))
+write.csv(results_gir_adj,"T:\\CACTI\\Metabolon insulin resistance pilot\\Reports\\lipidomics_gir_adj.csv")
+
+# merge the sig results from GIR unadjusted and GIR adjusted
+results_gir_sig <- results_gir[results_gir$P.Value<0.05,]
+results_gir_sig <- results_gir_sig[,c("logFC","P.Value")]
+colnames(results_gir_sig) <- c("logFC_unadj","P.Value_unadj")
+results_gir_sig$metabolite <- row.names(results_gir_sig)
+results_gir_adj_sig <- results_gir_adj[results_gir_adj$P.Value<0.05,]
+results_gir_adj_sig <- results_gir_adj_sig[,c("logFC","P.Value")]
+colnames(results_gir_adj_sig) <- c("logFC_adj","P.Value_adj")
+results_gir_adj_sig$metabolite <- row.names(results_gir_adj_sig)
+all_sig <- merge(results_gir_sig,results_gir_adj_sig,by="metabolite",all.x = T,all.y=T)
+write.csv(all_sig,"T:\\CACTI\\Metabolon insulin resistance pilot\\Reports\\lipidomics_gir_unadj_adj_comparison.csv")
+
+# GIR analysis stratified by T1D and control
+# T1D
+ymat_t1d <- t(girdata_t1d[,3:147])
+fit_gir_t1d <- lmFit(ymat_t1d,GIR_contrast_t1d)
+fit_gir_t1d <- eBayes(fit_gir_t1d)
+# format results
+results_gir_t1d <- topTable(fit_gir_t1d,coef = 2,number = nrow(ymat_t1d))
+write.csv(results_gir_t1d,"T:\\CACTI\\Metabolon insulin resistance pilot\\Reports\\lipidomics_gir_t1d.csv")
+# control
+ymat_control <- t(girdata_control[,3:147])
+fit_gir_control <- lmFit(ymat_control,GIR_contrast_control)
+fit_gir_control <- eBayes(fit_gir_control)
+# format results
+results_gir_control <- topTable(fit_gir_control,coef = 2,number = nrow(ymat_control))
+write.csv(results_gir_control,"T:\\CACTI\\Metabolon insulin resistance pilot\\Reports\\lipidomics_gir_control.csv")
+
+# now merge sig results for T1D and control
+results_gir_sig_t1d <- results_gir_t1d[results_gir_t1d$P.Value<0.05,]
+results_gir_sig_t1d <- results_gir_sig_t1d[,c("logFC","P.Value")]
+colnames(results_gir_sig_t1d) <- c("logFC_t1d","P.Value_t1d")
+results_gir_sig_t1d$metabolite <- row.names(results_gir_sig_t1d)
+results_gir_sig_control <- results_gir_control[results_gir_control$P.Value<0.05,]
+results_gir_sig_control <- results_gir_sig_control[,c("logFC","P.Value")]
+colnames(results_gir_sig_control) <- c("logFC_control","P.Value_control")
+results_gir_sig_control$metabolite <- row.names(results_gir_sig_control)
+all_sig_stratified <- merge(results_gir_sig_t1d,results_gir_sig_control,by="metabolite",all.x = T,all.y=T)
+write.csv(all_sig_stratified,"T:\\CACTI\\Metabolon insulin resistance pilot\\Reports\\lipidomics_gir_stratified_comparison.csv")
+
+# get means and SDs in each tertile, stratified by T1D, for all of the significant compounds
+means_stratified <- all_sig_stratified
+keep_t1d <- girdata_t1d[,colnames(girdata_t1d) %in% c(means_stratified$metabolite,"GIR_cat","StudyID")]
+t1d_table <- tableone::CreateTableOne(data = keep_t1d,vars = means_stratified$metabolite,strata = "GIR_cat")
+t1d_table <-  print(t1d_table,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T)
+keep_control <- girdata_control[,colnames(girdata_control) %in% c(means_stratified$metabolite,"GIR_cat","StudyID")]
+control_table <- tableone::CreateTableOne(data = keep_control,vars = means_stratified$metabolite,strata = "GIR_cat")
+control_table <-  print(control_table,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T)
+
+# now make one big sheet with unadjusted, adjusted, T1D and control
+sig4 <- merge(all_sig,all_sig_stratified,by="metabolite",all.x=T,all.y=T)
+#sig4 <- sig4 %>% mutate_at(c(2,4,6,8), round, 4)
+#sig4 <- sig4 %>% mutate_at(c(3,5,7,9), round, 3)
+write.csv(sig4,"T:\\CACTI\\Metabolon insulin resistance pilot\\Reports\\lipidomics_unadj_adj_t1d_control_comparison.csv")
+
+# sPLS-DA analysis for T1D vs. control
+plsda_t1d <- splsda(alldata[,c(3:147)],Y=as.factor(alldata$diabetes))
+```
+
+# Descriptive statistics in GIR tertiles, stratified by diabetes
+
+```{r, echo=FALSE}
+kable(t1d_table,caption="Descriptive statistics by GIR tertile in T1D")
+```
+
+```{r, echo=FALSE}
+kable(control_table,caption="Descriptive statistics by GIR tertile in control")
+```
+
+
+# Individual plot from sPLS-DA by diabetes status
+
+```{r, echo=FALSE}
+plotIndiv(plsda_t1d, comp = c(1,2),
+          ind.names = FALSE, 
+          ellipse = TRUE, legend = TRUE, title="")
+```
+
+
+```{r, echo=FALSE}
+t1d_top_1 <- selectVar(plsda_t1d,comp=1)
+t1d_top_2 <- selectVar(plsda_t1d,comp=2)
+```
+
+# Ranking of lipids in terms of discrimination of diabetes status, for component 1
+
+```{r, echo=FALSE}
+t1d_top_1$value
+```
+
+# Ranking of lipids in terms of discrimination of diabetes status, for component 2
+
+```{r, echo=FALSE}
+t1d_top_2$value
+```
+
+
+```{r, echo=FALSE}
+plsda.perf.t1d = perf(plsda_t1d, validation = 'Mfold', folds = 5, 
+                           progressBar = FALSE, nrepeat = 10, dist = 'max.dist',auc=TRUE)
+auc_save <- plsda.perf.t1d$auc$`comp1`[1]    
+auc_true <- as.numeric(plsda.perf.t1d$auc$comp1["AUC.mean"])
+```
+
+# Evaluation of sPLS-DA model by diabetes status
+
+Leave-one-out cross-validation was used to examine the performance of the sPLS-DA model: 
+
+ Overall Error rate : `r plsda.perf.t1d$error.rate$overall[1,1]`
+ AUC: `r auc_save[1]`
+
+
+```{r plsda,cache=TRUE, warning=FALSE}
+# Permutation testing - takes forever, make sure to cache
+n_perm <- 1000
+aucs <- vector(mode="numeric", length=n_perm)
+for (i in 1:n_perm) {
+  Y <- sample(as.factor(alldata$diabetes),replace = F)
+  plsda_res <- plsda(alldata[,c(3:147)],Y,ncomp = 1)
+  perf_plsda <- perf(plsda_res,progressBar=FALSE, auc=TRUE,
+                   validation = "loo")
+  aucs[i] <- as.numeric(perf_plsda$auc$comp1["AUC.mean"])
+}
+ggplot(as.data.frame(aucs),aes(x=aucs)) + 
+  geom_histogram(binwidth = 0.01) + 
+  geom_vline(aes(xintercept=auc_true),color="red") + 
+  theme_bw() + xlab("AUC")
+```
+
+Group labels were permuted `r n_perm` times. One component PLS-DA was run for each permutation and AUC was calculated using leave one out cross-validation. Red line indicates the AUC calculated for non-permuted data.
+
+
+```{r, echo=FALSE}
+# sPLS-DA analysis for GIR tertile
+plsda_gir <- splsda(girdata[,c(3:147)],Y=as.factor(girdata$GIR_cat))
+```
+
+# Individual plot from sPLS-DA by diabetes-specific GIR tertiles
+
+```{r, echo=FALSE}
+plotIndiv(plsda_gir, comp = c(1,2),
+          ind.names = FALSE, 
+          ellipse = TRUE, legend = TRUE, title="")
+```
+
+
+```{r, echo=FALSE}
+gir_top_1 <- selectVar(plsda_gir,comp=1)
+gir_top_2 <- selectVar(plsda_gir,comp=2)
+```
+
+# Ranking of lipids in terms of discrimination of diabetes-specific GIR tertiles, for component 1
+
+```{r, echo=FALSE}
+gir_top_1$value
+```
+
+# Ranking of lipids in terms of discrimination of diabetes-specific GIR tertiles, for component 2
+
+```{r, echo=FALSE}
+gir_top_2$value
+```
+
+```{r, echo=FALSE}
+plsda.perf.gir = perf(plsda_gir, validation = 'Mfold', folds = 5, 
+                           progressBar = FALSE, nrepeat = 10, dist = 'max.dist',auc=TRUE)
+auc_save_gir <- plsda.perf.gir$auc$`comp1`[1]    
+auc_true_gir <- as.numeric(plsda.perf.gir$auc$comp1["AUC.mean"])
+```
+
+# Evaluation of sPLS-DA model by diabetes-specific GIR tertiles
+
+Leave-one-out cross-validation was used to examine the performance of the sPLS-DA model: 
+
+ Overall Error rate : `r plsda.perf.gir$error.rate$overall[1,1]`
+ AUC: `r auc_save_gir[1]`
+
+```{r plsda2,cache=TRUE, warning=FALSE}
+# Permutation testing - takes forever, make sure to cache
+n_perm <- 1000
+aucs <- vector(mode="numeric", length=n_perm)
+for (i in 1:n_perm) {
+  Y <- sample(as.factor(girdata$GIR_cat),replace = F)
+  plsda_res <- plsda(girdata[,c(3:147)],Y,ncomp = 1)
+  perf_plsda <- perf(plsda_res,progressBar=FALSE, auc=TRUE,
+                   validation = "loo")
+  aucs[i] <- as.numeric(perf_plsda$auc$comp1["AUC.mean"])
+}
+ggplot(as.data.frame(aucs),aes(x=aucs)) + 
+  geom_histogram(binwidth = 0.01) + 
+  geom_vline(aes(xintercept=auc_true),color="red") + 
+  theme_bw() + xlab("AUC")
+```
+
+Group labels were permuted `r n_perm` times. One component PLS-DA was run for each permutation and AUC was calculated using leave one out cross-validation. Red line indicates the AUC calculated for non-permuted data.
+
+

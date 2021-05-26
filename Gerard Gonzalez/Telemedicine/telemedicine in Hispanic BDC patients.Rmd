@@ -1,0 +1,440 @@
+---
+title: "Telehealth and Hispanic patients at the BDC"
+author: "Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(Hmisc)
+library(knitr)
+library(readxl)
+library(dplyr)
+library(tableone)
+library(car)
+
+clinical_h <- read_excel("B:\\Projects\\Andrea Gerard Gonzalez\\Transition to telehealth\\Data_raw\\Telemed Data Cleaup RJJ042021.xlsx", 
+                         sheet = "Rpt3_Enc_Hispanic",na=c(""," ","N/A","NULL"))
+clinical_nh <- read_excel("B:\\Projects\\Andrea Gerard Gonzalez\\Transition to telehealth\\Data_raw\\Telemed Data Cleaup RJJ042021.xlsx", 
+                         sheet = "Rpt4_Enc_NonHispanic",na=c(""," ","N/A","NULL"))
+clinical_lc <- read_excel("B:\\Projects\\Andrea Gerard Gonzalez\\Transition to telehealth\\Data_raw\\Telemed Data Cleaup RJJ042021.xlsx", 
+                         sheet = "Rpt_Enc_LatinoClinic",na=c(""," ","N/A","NULL"))
+noshow_h <- read_excel("B:\\Projects\\Andrea Gerard Gonzalez\\Transition to telehealth\\Data_raw\\Telemed Data Cleaup RJJ042021.xlsx", 
+                         sheet = "Rpt5_CancelNoShow_Hispanic",na=c(""," ","N/A","NULL"))
+noshow_nh <- read_excel("B:\\Projects\\Andrea Gerard Gonzalez\\Transition to telehealth\\Data_raw\\Telemed Data Cleaup RJJ042021.xlsx", 
+                         sheet = "Rpt6_CancelNoShow_NonHispanic",na=c(""," ","N/A","NULL"))
+noshow_lc <- read_excel("B:\\Projects\\Andrea Gerard Gonzalez\\Transition to telehealth\\Data_raw\\Telemed Data Cleaup RJJ042021.xlsx", 
+                         sheet = "Rp_CancelNoShow_LatinoClinic",na=c(""," ","N/A","NULL"))
+
+clinical_h$group <- "Hispanic"
+clinical_nh$group <- "Non-Hispanic"
+clinical_lc$group <- "Latino Clinic"
+noshow_h$group <- "Hispanic"
+noshow_nh$group <- "Non-Hispanic"
+noshow_lc$group <- "Latino Clinic"
+clinical <- rbind(clinical_h,clinical_nh,clinical_lc)
+noshow <- rbind(noshow_h,noshow_nh,noshow_lc)
+
+# get rid of duplicate rows
+clinical <- unique(clinical)
+
+# get rid of appointment types we are not interested in
+clinical <- clinical[!(clinical$`Appointment Notes` %in% c("BDC PSYCH VISIT","CASPER WY-FU TELEMED", "CHEYENNE WY-FU TELEMED", "DURANGO CO-FU TELEMED", "GRAND JUNC CO-FU TELEMED", 
+                                                  "RIFLE FU TELEMED")),]
+noshow <- noshow[!(noshow$ApptType %in% c("BDC PSYCH VISIT","CASPER WY-FU TELEMED", "CHEYENNE WY-FU TELEMED", "DURANGO CO-FU TELEMED", "GRAND JUNC CO-FU TELEMED", 
+                                                  "RIFLE FU TELEMED")),]
+
+# need to figure out if same EPIC MRN in different files is showing up in different groups
+clingroup <- clinical[,c("EPICMRN","group")]
+noshowgroup <- noshow[,c("EPICMRN","group")]
+check <- merge(clingroup,noshowgroup,by="EPICMRN",all.x=F,all.y=F)
+check <- unique(check)
+check <- check[check$group.x == check$group.y,]
+# all looks OK
+
+# get rid of patients over 23
+clinical <- clinical[clinical$Age_VisitDate<=23,]
+noshow <- noshow[noshow$Age_ApptDate<=23,]
+
+# fix Ethnicity
+clinical$Ethnicity <- ifelse(clinical$Ethnicity=="HISPANIC OR LATINO","Hispanic or Latino",clinical$Ethnicity)
+clinical$Ethnicity <- ifelse(clinical$Ethnicity=="NOT HISPANIC OR LATINO","Not Hispanic or Latino",clinical$Ethnicity)
+clinical$Ethnicity <- ifelse(clinical$Ethnicity %in% c("Not Reported","NOT REPORTED","Unknown","UNKNOWN"),"Unknown",clinical$Ethnicity)
+                                                       
+# fix Race
+clinical$Race <- ifelse(clinical$Race=="OTHER","Other",clinical$Race)
+clinical$Race <- ifelse(clinical$Race=="WHITE","White",clinical$Race)
+
+# fix language
+clinical$Language <- ifelse(clinical$Language=="ENGLISH","English",clinical$Language)
+clinical$Language <- ifelse(clinical$Language=="SPANISH","Spanish",clinical$Language)
+# make new variable
+clinical$newlang <- ifelse(is.na(clinical$Language),NA,
+                           ifelse((clinical$group=="Hispanic" & clinical$Language=="English") | (clinical$group=="Latino Clinic" & clinical$Language=="English"), "Bilingual",
+                                  ifelse(clinical$Language=="English","English",
+                                         ifelse(clinical$Language=="Spanish","Spanish","Other"))))
+
+# need to classify people wrt insulin regimen and tech use - can change over time
+# first find # of different insulin regimens per person
+insct <- clinical %>% group_by(EPICMRN) %>% count(InsulinRegimen)
+insctct <- insct %>% group_by(EPICMRN) %>% count()
+# about 15% have 2 types, only 1 person has 3, just use most recent
+most_recent <- arrange(clinical,EPICMRN,desc(VisitDate))
+most_recent <- most_recent %>% group_by(EPICMRN) %>% slice_head(n=1)
+most_recent <- most_recent[,c("EPICMRN","InsulinRegimen","CGM")]
+colnames(most_recent) <- c("EPICMRN","most_recent_ins","most_recent_CGM")
+clinical <- merge(clinical,most_recent,by="EPICMRN",all.x = T,all.y = T)
+# binary variables for models
+clinical$pump <- ifelse(clinical$most_recent_ins=="Insulin Pump",1,0)
+clinical$cgmbin <- ifelse(clinical$most_recent_CGM=="No",0,1)
+
+# count number of visits, number of telehealth visits, number of noshows, number of cancellations
+# total visits
+visitnum <- clinical %>% group_by(EPICMRN) %>% count()
+colnames(visitnum) <- c("EPICMRN","visitnum")
+clinical <- merge(clinical,visitnum,by="EPICMRN",all.x=T,all.y=T)
+# telemedicine visits
+tele <- clinical[clinical$EncounterType=="TELEHEALTH",]
+telenum <- tele %>% group_by(EPICMRN) %>% count()
+colnames(telenum) <- c("EPICMRN","telenum")
+clinical <- merge(clinical,telenum,by="EPICMRN",all.x = T,all.y = T)
+# noshows
+ns <- noshow[noshow$ApptStatus=="No Show",]
+nsnum <- ns %>% group_by(EPICMRN) %>% count()
+colnames(nsnum) <- c("EPICMRN","nsnum")
+ns <- merge(ns,nsnum,by="EPICMRN",all.x = T,all.y = T)
+ns <- ns[,c("EPICMRN","nsnum","group")]
+# now add by clinic and telemed to ns dataframe
+ns_clinic <- noshow[noshow$ApptStatus=="No Show" & !(noshow$ApptType %in% c("DURANGO CO-FU TELEMED","RIFLE FU TELEMED","SS HOME TELEMED LATINO GROUP",
+                                                                            "TELEMEDICINE FOLLOW UP")),]
+nsnum_clinic <- ns_clinic %>% group_by(EPICMRN) %>% count()
+colnames(nsnum_clinic) <- c("EPICMRN","nsnum_clinic")
+ns <- merge(ns,nsnum_clinic,by="EPICMRN",all.x = T,all.y = T)
+ns_tele <- noshow[noshow$ApptStatus=="No Show" & (noshow$ApptType %in% c("DURANGO CO-FU TELEMED","RIFLE FU TELEMED","SS HOME TELEMED LATINO GROUP",
+                                                                            "TELEMEDICINE FOLLOW UP")),]
+nsnum_tele <- ns_tele %>% group_by(EPICMRN) %>% count()
+colnames(nsnum_tele) <- c("EPICMRN","nsnum_tele")
+ns <- merge(ns,nsnum_tele,by="EPICMRN",all.x = T,all.y = T)
+# WHEN I MERGE IN NS, THE FREQ OF GROUP.X CHANGES
+clinical <- merge(clinical,ns,by="EPICMRN",all.x = T,all.y = T)
+clinical$group <- ifelse(!is.na(clinical$group.x),clinical$group.x,clinical$group.y)
+clinical$group.x <- NULL
+clinical$group.y <- NULL
+# cancellations
+canc <- noshow[noshow$ApptStatus=="Canceled",]
+cancnum <- canc %>% group_by(EPICMRN) %>% count()
+colnames(cancnum) <- c("EPICMRN","cancnum")
+canc <- merge(canc,cancnum,by="EPICMRN",all.x = T,all.y = T)
+canc <- canc[,c("EPICMRN","cancnum","group")]
+# add in variables by clinic and tele
+canc_clinic <- noshow[noshow$ApptStatus=="Canceled" & !(noshow$ApptType %in% c("DURANGO CO-FU TELEMED","RIFLE FU TELEMED","SS HOME TELEMED LATINO GROUP",
+                                                                            "TELEMEDICINE FOLLOW UP")),]
+cancnum_clinic <- canc_clinic %>% group_by(EPICMRN) %>% count()
+colnames(cancnum_clinic) <- c("EPICMRN","cancnum_clinic")
+canc <- merge(canc,cancnum_clinic,by="EPICMRN",all.x = T,all.y = T)
+canc_tele <- noshow[noshow$ApptStatus=="Canceled" & (noshow$ApptType %in% c("DURANGO CO-FU TELEMED","RIFLE FU TELEMED","SS HOME TELEMED LATINO GROUP",
+                                                                            "TELEMEDICINE FOLLOW UP")),]
+cancnum_tele <- canc_tele %>% group_by(EPICMRN) %>% count()
+colnames(cancnum_tele) <- c("EPICMRN","cancnum_tele")
+canc <- merge(canc,cancnum_tele,by="EPICMRN",all.x = T,all.y = T)
+clinical <- merge(clinical,canc,by="EPICMRN",all.x = T,all.y = T)
+clinical$group <- ifelse(!is.na(clinical$group.x),clinical$group.x,clinical$group.y)
+clinical$group.x <- NULL
+clinical$group.y <- NULL
+# set any missing visit types to 0
+clinical$visitnum <- ifelse(is.na(clinical$visitnum),0,clinical$visitnum)
+clinical[is.na(clinical$telenum),]$telenum <- 0
+clinical[is.na(clinical$nsnum),]$nsnum <- 0
+clinical[is.na(clinical$cancnum),]$cancnum <- 0
+clinical[is.na(clinical$nsnum_clinic),]$nsnum_clinic <- 0
+clinical[is.na(clinical$nsnum_tele),]$nsnum_tele <- 0
+clinical[is.na(clinical$cancnum_clinic),]$cancnum_clinic <- 0
+clinical[is.na(clinical$cancnum_tele),]$cancnum_tele <- 0
+clinical$per_tele <- clinical$telenum/clinical$visitnum*100
+clinical[is.na(clinical$per_tele),]$per_tele <- 0
+# new variable that is total of in clinic visits, telehealth visits, cancellations and noshows
+clinical$contacts <- rowSums(clinical[,c("visitnum","telenum","nsnum","cancnum")],na.rm = T)
+
+# new way 
+clinical$per_ns <- clinical$nsnum/(clinical$contacts)*100
+clinical$per_ns_clinic <- clinical$nsnum_clinic/((clinical$visitnum-clinical$telenum)+clinical$nsnum_clinic+clinical$cancnum_clinic)*100
+clinical$per_ns_tele <- clinical$nsnum_tele/(clinical$telenum+clinical$nsnum_tele+clinical$cancnum_tele)*100
+clinical$per_canc <- clinical$cancnum/clinical$contacts*100
+clinical$per_canc_clinic <- clinical$cancnum_clinic/((clinical$visitnum-clinical$telenum)+clinical$nsnum_clinic+clinical$cancnum_clinic)*100
+clinical$per_canc_tele <- clinical$cancnum_tele/(clinical$telenum+clinical$nsnum_tele+clinical$cancnum_tele)*100
+
+# how to summarize A1c, CGM % time - just take the average?  most recent?
+med_a1c <- clinical %>% group_by(EPICMRN) %>% summarise(med_a1c=median(A1cValue,na.rm=T))
+clinical <- merge(clinical,med_a1c,by="EPICMRN",all.x = T,all.y = T)
+med_cgmuse <- clinical[clinical$CGM=="Yes",] %>% group_by(EPICMRN) %>% summarise(med_cgmuse=median(CGMUsePercent,na.rm=T))
+clinical <- merge(clinical,med_cgmuse,by="EPICMRN",all.x = T,all.y = T)
+clinical <- clinical[!is.na(clinical$EPICMRN),]
+
+# stratify by high or low telemedicine use
+clinical$telegroup <- ifelse(clinical$per_tele<25,"Below median % tele","At or Above median % tele")
+
+# labels
+label(clinical$med_cgmuse)="Median % CGM use (if using CGM)"
+label(clinical$most_recent_ins)="Most recent insulin regimen"
+label(clinical$most_recent_CGM)="Most recent CGM use"
+label(clinical$visitnum)="Number of in-person or telehealth visits"
+label(clinical$telenum)="Number of telehealth visits"
+label(clinical$per_tele)="% of in-person or telehealth visits as telehealth"
+label(clinical$nsnum)="Number of no-shows"
+label(clinical$per_ns)="No-shows as % of visits+no-shows+cancellations"
+label(clinical$cancnum)="Number of cancellations"
+label(clinical$per_canc)="Cancellations as % of visits+no-shows+cancellations"
+label(clinical$med_a1c)="Median A1c"
+label(clinical$per_canc_clinic)="In-clinic cancellations as % of in-clinic visits + in-clinic no-shows + in-clinic cancellations"
+label(clinical$per_canc_tele)="Telemedicine cancellations as % of telehealth visits + telehealth no-shows + telehealth cancellations"
+label(clinical$per_ns_clinic)="In-clinic no-shows as % of in-clinic visits + in-clinic no-shows + in-clinic cancellations"
+label(clinical$per_ns_tele)="Telemedicine no-shows as % of telehealth visits + telehealth no-shows + telehealth cancellations"
+label(clinical$Language)="Original language variable"
+label(clinical$newlang)="Recoded language variable"
+
+# need to have just 1 obs per person in clinical dataset
+clinsum <- clinical %>% group_by(EPICMRN) %>% slice_head(n=1)
+
+# make baseline dataframe using first visit 
+clinical <- arrange(clinical,EPICMRN,VisitDate)
+baseline <- clinical %>% group_by(EPICMRN) %>% slice_head(n=1)
+
+# read in survey data
+survey <- read.csv("B:\\Projects\\Andrea Gerard Gonzalez\\Transition to telehealth\\Data_raw\\BDCStaffTelemedicine_DATA_LABELS_2021-04-05_0956 skip pattern.csv",
+                   na.strings = c(NA,""))
+write.csv(colnames(survey),"C:\\Temp\\colnames.csv")
+survey_names <- colnames(survey)
+
+# survey tables
+surv_res <- vector(mode = "list", length = 61-8)
+for (i in 8:61) {
+  surv_res[[i]] <- table(survey[,i])
+}
+
+# read om survey data for comparison of opinions on Spanish speakers and English speakers
+survey_comp <- read.csv("B:\\Projects\\Andrea Gerard Gonzalez\\Transition to telehealth\\Data_raw\\Copy of BDCStaffTelemedicine_DATA_LABELS_2021-04-20_AL.csv")
+# remove records about Spanish speakers for people who did not coordinate their care
+survey_comp <- survey_comp[!(survey_comp$Patient.Population=="Spanish speakers" & survey_comp$Did.you.help.coordinate.or.participate.in.telemedicine.encounters.with.Spanish.speaking.patients.in.2020.and.or.2021.=="No"),]
+vars_survey_comp <- c("Lack.of.patient.family.access.to.technology","Lack.of.patient.family.access.to.data.and.or.internet",
+                      "Patient.family.difficulty.connecting.to.appointment","Poor.video.quality","Poor.sound.quality",
+                      "Lack.of.private.setting.for.patient.to.take.appointment",
+                      "Lack.of.patient.family.awareness.of.telemedicine.appointments","Lack.of.patient.family.interest.in.scheduling.a.telemedicine.appointment",
+                      "Lack.of.patient.family.engagement.during.a.telemedicine.appointment",
+                      "Unable.to.collect.blood.sugar.monitoring.data..CGM..glucometer..or.insulin.data..insulin.pump.",
+                      "Lack.of.remote.monitoring.technologies","Greater.flexibility.in.scheduling.appointments","Patient.family.misses.less.work.or.school",
+                      "Patient.family.saves.money.on.travel..food..and.or.overnight.accommodations",
+                      "Patient.family.was.more.engaged.during.appointments","Patient.family.was.more.likely.to.schedule.via.telemedicine.than.in.person",
+                      "Patient.family.felt.more.comfortable.seeking.care.from.home",
+                      "How.satisfied.are.you.with.the.care.you.are.able.to.provide.Spanish.English.speaking.patients.via.telemedicine." )
+survey_comp[,vars_survey_comp] <- apply(survey_comp[,vars_survey_comp],2,as.factor)
+
+# Baseline table
+t1 <- CreateTableOne(vars=c("Age_VisitDate","Race","Ethnicity","Gender","Language","newlang","InsuranceType_LastVisitDate","DiabetesDuration_LastVisitDate"), 
+                     data=baseline, strata="group", test=TRUE)
+t1 <- print(t1,varLabels=TRUE,showAllLevels=TRUE,nonnorm="DiabetesDuration_LastVisitDate")
+
+t1_hlc <- CreateTableOne(vars=c("Age_VisitDate","Race","Ethnicity","Gender","Language","newlang","InsuranceType_LastVisitDate","DiabetesDuration_LastVisitDate"), 
+                     data=baseline[baseline$group != "Non-Hispanic",], strata="group", test=TRUE)
+t1_hlc <- print(t1_hlc,varLabels=TRUE,showAllLevels=TRUE,nonnorm="DiabetesDuration_LastVisitDate")
+
+# Baseline table by high/low telemedicine use
+t1a <- CreateTableOne(vars=c("Age_VisitDate","Race","Ethnicity","Gender","Language","newlang","InsuranceType_LastVisitDate","DiabetesDuration_LastVisitDate"), 
+                     data=baseline, strata="telegroup", test=TRUE)
+t1a <- print(t1a,varLabels=TRUE,showAllLevels=TRUE,nonnorm="DiabetesDuration_LastVisitDate")
+
+# Clinical and visit table
+clintab <- CreateTableOne(vars=c("most_recent_ins","most_recent_CGM","visitnum","telenum","per_tele","nsnum","per_ns","per_ns_clinic","per_ns_tele",
+                                 "cancnum","per_canc","per_canc_clinic","per_canc_tele","med_a1c","med_cgmuse"), data=clinsum, strata="group", test=TRUE)
+clintab <- print(clintab,varLabels=TRUE,showAllLevels=TRUE,nonnorm=c("med_a1c","visitnum","telenum","per_tele","nsnum","per_ns","per_ns_clinic","per_ns_tele",
+                                                                     "cancnum","per_canc","per_canc_clinic","per_canc_tele","med_cgmuse"),minMax=T)
+
+# Clinical and visit table
+clintab_hlc <- CreateTableOne(vars=c("most_recent_ins","most_recent_CGM","visitnum","telenum","per_tele","nsnum","per_ns","per_ns_clinic","per_ns_tele",
+                              "cancnum","per_canc","per_canc_clinic","per_canc_tele","med_a1c","med_cgmuse"), data=clinsum[clinsum$group != "Non-Hispanic",], 
+                              strata="group", test=TRUE)
+clintab_hlc <- print(clintab_hlc,varLabels=TRUE,showAllLevels=TRUE,nonnorm=c("med_a1c","visitnum","telenum","per_tele","nsnum","per_ns","per_ns_clinic","per_ns_tele",
+                                                                     "cancnum","per_canc","per_canc_clinic","per_canc_tele","med_cgmuse"),minMax=T)
+
+# Clinical and visit table by high/low telemedicine use
+clintaba <- CreateTableOne(vars=c("most_recent_ins","most_recent_CGM","visitnum","telenum","per_tele","nsnum","per_ns","per_ns_clinic","per_ns_tele",
+                                 "cancnum","per_canc","per_canc_clinic","per_canc_tele","med_a1c","med_cgmuse"), data=clinsum, strata="telegroup", test=TRUE)
+clintaba <- print(clintaba,varLabels=TRUE,showAllLevels=TRUE,nonnorm=c("med_a1c","visitnum","telenum","per_tele","nsnum","per_ns","per_ns_clinic","per_ns_tele",
+                                                                     "cancnum","per_canc","per_canc_clinic","per_canc_tele","med_cgmuse"),minMax=T)
+
+# compare survey responses
+survey_comp_tab <- CreateTableOne(vars=vars_survey_comp, data=survey_comp, strata="Patient.Population", test=TRUE)
+survey_comp_tab <- print(survey_comp_tab,varLabels=TRUE,showAllLevels=TRUE)
+
+# now need to model interaction of telehealth and group
+mod_pump <- glm(pump~telegroup*group,data=clinsum,family = "binomial")
+mod_pump.anova <- Anova(mod_pump,type="III")
+
+mod_cgm <- glm(cgmbin~telegroup*group,data=clinsum,family = "binomial")
+mod_cgm.anova <- Anova(mod_cgm,type="III")
+
+mod_visitnum <- lm(visitnum~telegroup*group,data=clinsum)
+mod_visitnum.anova <- Anova(mod_visitnum,type="III")
+
+mod_nsnum <- lm(nsnum~telegroup*group,data=clinsum)
+mod_nsnum.anova <- Anova(mod_nsnum,type="III")
+
+mod_perns <- lm(per_ns~telegroup*group,data=clinsum)
+mod_perns.anova <- Anova(mod_perns,type="III")
+mod_perns_means <- emmeans::emmeans(mod_perns,~telegroup*group)
+mod_perns_pairs <-  pairs(mod_perns_means,adjust="tukey")
+
+mod_cancnum <- lm(cancnum~telegroup*group,data=clinsum)
+mod_cancnum.anova <- Anova(mod_cancnum,type="III")
+
+mod_percanc <- lm(per_canc~telegroup*group,data=clinsum)
+mod_percanc.anova <- Anova(mod_percanc,type="III")
+
+mod_medcgm <- lm(med_cgmuse~telegroup*group,data=clinsum)
+mod_medcgm.anova <- Anova(mod_medcgm,type="III")
+
+mod_meda1c <- lm(med_a1c~telegroup*group,data=clinsum)
+mod_meda1c.anova <- Anova(mod_meda1c,type="III")
+
+
+```
+# Background
+
+The purpose of this analysis is to examine clinical outcomes including technology use and visit patterns in (1) non-Hispanic BDC patients (2) Hispanic BDC patients not in Latino Clinic and (3) patients in Latino Clinic. 
+
+# Methods
+
+Duplicates (records that contained exactly the same information as in other records) were deleted.  Patients over the age of 23 at the time of the visit were removed from analysis.
+
+Patients were grouped by insulin regimen using the most recent information.  Only about 15% of patients had 2 types of insulin regimen recorded, and only 1 patient had 3 types recorded.
+
+The total number of visits (in-person and telehealth), telehealth visits, no-shows, and cancellations were tabulated for each person.  Percent of visits that were telehealth was calculated as # of telehealth visits/# of visits (in-person and telehealth).  The total number of contacts was calculated as total number of visits + number of noshows + number of cancellations.  The overall percent of no-shows and cancellations was calculated using the total number of contacts as the denominator.  The percent of no-shows and cancellations for telehealth visits was calculated using (# of telehealth visits + # of cancellations for telehealth + # no-shows for telehealth) as the denominator.  The percent of no-shows and cancellations for in-clinic visits was calculated using (# of in-clinic visits + # of cancellations for in-clinic + # no-shows for in-clinic) as the denominator.  
+
+HbA1c and % CGM use (for those using CGM) were summarized as the median of all values recorded.
+
+Patients were stratified above and below the median of percent of visits that were telehealth.
+
+Groups were compared using t-tests or Wilcoxon tests for continuous variables and the chi-square test for categorical variables.  Whether the effect of high vs. low telemedicine use differed by the 3 groups of patients was tested using generalized linear models with an interaction term between patient group and telemedicine group.
+
+For the survey data, if a respondent indicated that they did not help coordinate or participate in telemedicine encounters with Spanish speaking patients, all questions about Spanish speaking patients were set to missing instead of unchecked.
+
+All analyses were performed using R version 4.0.3 (R Core Team, Vienna).
+
+\newpage
+
+# Results
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(t1,caption="Table 1.  Baseline descriptive statistics by group.")
+```
+
+\newpage
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(t1_hlc,caption="Table 1a.  Baseline descriptive statistics by group, Hispanic and Latino Clinic groups only.")
+```
+
+\newpage
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(t1a,caption="Table 1b.  Baseline descriptive statistics by high vs. low telemedicine use.")
+```
+
+\newpage
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(clintab,caption="Table 2.  Clinical and visit characteristics by group.")
+```
+
+\newpage
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(clintab_hlc,caption="Table 2a.  Clinical and visit characteristics by group, Hispanic and Latino Clinic groups only.")
+```
+
+\newpage
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(clintaba,caption="Table 2b.  Clinical and visit characteristics by high vs. low telemedicine use.")
+```
+
+\newpage
+
+The interaction term "telegroup:group" tests whether the effect of high vs. low telemedicine use differs by group (Hispanic, LC, non-Hispanic).  The interaction was not significant for any of the models except no-show percent (Table 7a).  Because the interaction was significant for no-show percent, additional information was provided: Table 7b shows the means for each combination of group and telegroup, and Table 7c shows the pairwise comparisons for each of the means in Table 7b.  The figure after Table 7c is provided to visualize the distribution of no-show percent in the groups.
+
+```{r, echo=FALSE, message=FALSE}
+kable(mod_pump.anova,caption="Table 3.  Pump use - test of interaction between high/low telemedicine use and group.  The right-most column contains the p-value; the telegroup:group term is the interaction effect.",format.args = list(scientific = FALSE))
+```
+
+```{r, echo=FALSE, message=FALSE}
+kable(mod_cgm.anova,caption="Table 4.  CGM use - test of interaction between high/low telemedicine use and group.  The right-most column contains the p-value; the telegroup:group term is the interaction effect.",format.args = list(scientific = FALSE))
+```
+
+```{r, echo=FALSE, message=FALSE}
+kable(mod_visitnum.anova,caption="Table 5.  Visit number - test of interaction between high/low telemedicine use and group.  The right-most column contains the p-value; the telegroup:group term is the interaction effect.",format.args = list(scientific = FALSE))
+```
+
+```{r, echo=FALSE, message=FALSE}
+kable(mod_nsnum.anova,caption="Table 6.  No-show number - test of interaction between high/low telemedicine use and group.  The right-most column contains the p-value; the telegroup:group term is the interaction effect.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+```{r, echo=FALSE, message=FALSE}
+kable(mod_perns.anova,caption="Table 7a.  No-show percent - test of interaction between high/low telemedicine use and group.  The right-most column contains the p-value; the telegroup:group term is the interaction effect.",format.args = list(scientific = FALSE))
+```
+
+```{r, echo=FALSE, message=FALSE}
+kable(mod_perns_means,caption="Table 7b.  No-show percent - group means.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+```{r, echo=FALSE, message=FALSE}
+kable(mod_perns_pairs,caption="Table 7c.  No-show percent - pairwise comparisons of group means.",format.args = list(scientific = FALSE))
+```
+
+```{r warning=FALSE,message=FALSE,cache=TRUE,echo=FALSE}
+p <- ggplot(clinsum, aes(x=group, y=per_ns, fill=telegroup)) + geom_boxplot() + 
+  xlab("") + ylab("No-shows (%)") + scale_fill_grey() + theme_classic() + 
+  guides(fill=guide_legend(title="")) 
+p
+```
+
+\newpage
+
+```{r, echo=FALSE, message=FALSE}
+kable(mod_cancnum.anova,caption="Table 8.  Cancellation number - test of interaction between high/low telemedicine use and group.  The right-most column contains the p-value; the telegroup:group term is the interaction effect.",format.args = list(scientific = FALSE))
+```
+
+```{r, echo=FALSE, message=FALSE}
+kable(mod_percanc.anova,caption="Table 9.  Percent cancellation - test of interaction between high/low telemedicine use and group.  The right-most column contains the p-value; the telegroup:group term is the interaction effect.",format.args = list(scientific = FALSE))
+```
+
+```{r, echo=FALSE, message=FALSE}
+kable(mod_medcgm.anova,caption="Table 10.  Median % CGM use - test of interaction between high/low telemedicine use and group.  The right-most column contains the p-value; the telegroup:group term is the interaction effect.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+```{r, echo=FALSE, message=FALSE}
+kable(mod_meda1c.anova,caption="Table 11.  Median A1c - test of interaction between high/low telemedicine use and group.  The right-most column contains the p-value; the telegroup:group term is the interaction effect.",format.args = list(scientific = FALSE))
+```
+
+\newpage
+
+```{r, echo=FALSE, message=FALSE}
+
+for (i in 8:61) {
+  print(survey_names[i])
+  print(surv_res[[i]])
+  print(prop.table(surv_res[[i]]))
+}
+```
+
+\newpage
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(survey_comp_tab,caption="Table 12.  Comparison of survey responses about Spanish speaking and English speaking patients.")
+```

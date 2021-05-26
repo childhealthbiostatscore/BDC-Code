@@ -1,0 +1,247 @@
+---
+title: "EDIC Lipidomics"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+#knitr::opts_knit$set(root.dir = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/EDIC/Lipidomics")
+knitr::opts_knit$set(root.dir = "~/Dropbox/Work/Janet Snell-Bergeon/EDIC/Lipidomics")
+library(PCAtools)
+library(readxl)
+library(tidyverse)
+library(limma)
+library(knitr)
+```
+
+```{r include=FALSE}
+# Import
+intensities = read.csv("./Data_Raw/EDIC lipidomics data matrix_Skyline_2021.02.25.csv",stringsAsFactors = F)
+# Get compound info in separate frame
+compound_info = intensities[,"LipidSpecies"]
+intensities$LipidSpecies = NULL
+# Transpose and format
+intensities = as.data.frame(t(intensities))
+names(compound_info) = colnames(intensities)
+intensities$sample_id = gsub("\\.","-",rownames(intensities))
+intensities = intensities %>% select(sample_id,everything())
+intensities[,2:ncol(intensities)] = lapply(intensities[,2:ncol(intensities)],function(c){log(as.numeric(c))})
+# Import sample injection order
+injection_order = read_excel("./Data_Raw/EDIC lipidomics run order.xlsx")
+colnames(injection_order) = "sample_id"
+injection_order$sample_id = sub("QC-EDIC","EDIC-QC",injection_order$sample_id)
+injection_order$sample_id[is.na(injection_order$sample_id)] = paste0("Failed-QC-",1:sum(is.na(injection_order$sample_id))) # For now assume that the missing are QCs
+injection_order$injection_order = 1:nrow(injection_order)
+# Batch information
+batches = diff(c(0,grep("QC",injection_order$sample_id),nrow(injection_order)))
+injection_order$batch = rep(1:length(batches),times = batches)
+# Remove duplicates and QC for now
+injection_order = injection_order[-c(which(duplicated(injection_order$sample_id)),grep("Failed-QC",injection_order$sample_id)),]
+# Get sample info
+sample.info = read.csv("./Data_Raw/QEDIC_WP_DDA_60SPD_StudyInformat.csv")
+# Get sample IDs, add leading zeroes and "EDIC" to number
+sample.info$sample_id = sample.info$ProteomicsSampleID
+sample.info$sample_id = paste0("EDIC-",str_pad(sample.info$sample_id,3,"left",0))
+sample.info = sample.info %>% select(sample_id,everything())
+# Combine
+sample.info = merge(injection_order,sample.info,all = T,by = "sample_id")
+sample.info = sample.info[order(sample.info$injection_order),]
+# Try two batches
+sample.info$batch2 = ifelse(sample.info$batch < 6,1,2)
+# Plot by HARD status
+sample.info$class = sample.info$HARD
+sample.info$class[which(is.na(sample.info$class))] = "QC"
+sample.info$class = factor(sample.info$class)
+# Column names
+colnames(intensities)[2:ncol(intensities)] = compound_info
+```
+
+# Moderated T Tests
+
+## CARV
+
+### All
+
+Moderated t tests were performed to test for differences in lipids between those who experienced CARV and those who did not. The results immediately below were not stratified by sex or storage time.
+
+```{r results='asis'}
+# limma stratified by storage time
+sample.info$storage_time = sample.info$VisitAge - sample.info$AGE00
+sample.info$storage_time = cut(sample.info$storage_time,2,labels = c("< 14",">= 14"))
+low = sample.info[sample.info$storage_time=="< 14",]
+high = sample.info[sample.info$storage_time==">= 14",]
+# Make design matrix
+carv <- model.matrix(~CARV,sample.info[!is.na(sample.info$storage_time),])
+# Unadjusted models
+y <- t(intensities[intensities$sample_id %in% sample.info[!is.na(sample.info$storage_time),"sample_id"],2:ncol(intensities)])
+fit <- lmFit(y,carv)
+fit <- eBayes(fit)
+# Results
+kable(topTable(fit,coef = 2))
+```
+
+#### Adjusted for sex, age, diabetes duration, treatment group
+
+```{r results='asis'}
+# Make design matrix
+carv <- model.matrix(~CARV+SEX+AGE+DURATION+GROUP,sample.info)
+# Unadjusted models
+fit <- lmFit(y,carv)
+fit <- eBayes(fit)
+# Results
+res = topTable(fit,coef = 2,number = nrow(y))
+kable(head(res,10),caption = "Not adjusted for storage time")
+```
+
+There were `r sum(res$P.Value < 0.05)` significant lipids.
+
+```{r results='asis'}
+# Make design matrix
+carv <- model.matrix(~CARV+SEX+AGE+DURATION+GROUP+storage_time,sample.info)
+# Unadjusted models
+fit <- lmFit(y,carv)
+fit <- eBayes(fit)
+# Results
+res = topTable(fit,coef = 2,number = nrow(y))
+kable(head(res,10),caption = "Adjusted for storage time")
+```
+
+There were `r sum(res$P.Value < 0.05)` significant lipids.
+
+### Stratified by Above or Below Median Storage Time
+
+```{r results='asis'}
+# Make design matrices
+carv_low <- model.matrix(~CARV,low)
+carv_high <- model.matrix(~CARV,high)
+# Unadjusted models
+y_low <- t(intensities[intensities$sample_id %in% low$sample_id,2:ncol(intensities)])
+y_high <- t(intensities[intensities$sample_id %in% high$sample_id,2:ncol(intensities)])
+fit_low <- lmFit(y_low,carv_low)
+fit_low <- eBayes(fit_low)
+fit_high <- lmFit(y_high,carv_high)
+fit_high <- eBayes(fit_high)
+# Results
+low_res = topTable(fit_low,coef = 2,number = nrow(y_low))
+kable(head(low_res,10),caption = "Low Storage Time")
+high_res = topTable(fit_high,coef = 2,number = nrow(y_high))
+kable(head(high_res,10),caption = "High Storage Time")
+```
+
+There were `r sum(low_res$P.Value < 0.05)` significant lipids in the low group and `r sum(high_res$P.Value < 0.05)` in the high group.
+
+### Stratified by Sex
+
+```{r results='asis'}
+# Split sample info
+male = sample.info[sample.info$SEX == "M",]
+female = sample.info[sample.info$SEX == "F",]
+# Make design matrices
+carv_male <- model.matrix(~CARV,male)
+carv_female <- model.matrix(~CARV,female)
+# Unadjusted models
+y_male <- t(intensities[intensities$sample_id %in% male$sample_id,2:ncol(intensities)])
+y_female <- t(intensities[intensities$sample_id %in% female$sample_id,2:ncol(intensities)])
+fit_male <- lmFit(y_male,carv_male)
+fit_male <- eBayes(fit_male)
+fit_female <- lmFit(y_female,carv_female)
+fit_female <- eBayes(fit_female)
+# Results
+male_res = topTable(fit_male,coef = 2,number = nrow(y_low))
+kable(head(male_res,10),caption = "Males")
+female_res = topTable(fit_female,coef = 2,number = nrow(y_high))
+kable(head(female_res,10),caption = "Females")
+```
+
+There were `r sum(male_res$P.Value < 0.05)` significant lipids in the male group and `r sum(female_res$P.Value < 0.05)` in the female group.
+
+## HARD
+
+### All
+
+Moderated t tests were performed to test for differences in lipids between those who experienced HARD and those who did not. The results immediately below were not stratified by sex or storage time.
+
+```{r results='asis'}
+# Make design matrix
+hard <- model.matrix(~HARD,sample.info[!is.na(sample.info$storage_time),])
+# Unadjusted models
+y <- t(intensities[intensities$sample_id %in% sample.info[!is.na(sample.info$storage_time),"sample_id"],2:ncol(intensities)])
+fit <- lmFit(y,hard)
+fit <- eBayes(fit)
+# Results
+kable(topTable(fit_low,coef = 2))
+```
+
+### Adjusted for sex, age, diabetes duration, treatment group
+
+```{r results='asis'}
+# Make design matrix
+hard <- model.matrix(~HARD+SEX+AGE+DURATION+GROUP,sample.info)
+# Unadjusted models
+fit <- lmFit(y,hard)
+fit <- eBayes(fit)
+# Results
+res = topTable(fit,coef = 2,number = nrow(y))
+kable(head(res,10),caption = "Not adjusted for storage time")
+```
+
+There were `r sum(res$P.Value < 0.05)` significant lipids.
+
+```{r results='asis'}
+# Make design matrix
+hard <- model.matrix(~HARD+SEX+AGE+DURATION+GROUP+storage_time,sample.info)
+# Unadjusted models
+fit <- lmFit(y,hard)
+fit <- eBayes(fit)
+# Results
+res = topTable(fit,coef = 2,number = nrow(y))
+kable(head(res,10),caption = "Adjusted for storage time")
+```
+
+There were `r sum(res$P.Value < 0.05)` significant lipids.
+
+### Stratified by Above or Below Median Storage Time
+
+```{r results='asis'}
+# Make design matrices
+hard_low <- model.matrix(~HARD,low)
+hard_high <- model.matrix(~HARD,high)
+# Unadjusted models
+y_low <- t(intensities[intensities$sample_id %in% low$sample_id,2:ncol(intensities)])
+y_high <- t(intensities[intensities$sample_id %in% high$sample_id,2:ncol(intensities)])
+fit_low <- lmFit(y_low,hard_low)
+fit_low <- eBayes(fit_low)
+fit_high <- lmFit(y_high,hard_high)
+fit_high <- eBayes(fit_high)
+# Results
+low_res = topTable(fit_low,coef = 2,number = nrow(y_low))
+kable(head(low_res,10),caption = "Low Storage Time")
+high_res = topTable(fit_high,coef = 2,number = nrow(y_high))
+kable(head(high_res,10),caption = "High Storage Time")
+```
+
+There were `r sum(low_res$P.Value < 0.05)` significant lipids in the low group and `r sum(high_res$P.Value < 0.05)` in the high group.
+
+### Stratified by Sex
+
+```{r results='asis'}
+# Make design matrices
+hard_male <- model.matrix(~HARD,male)
+hard_female <- model.matrix(~HARD,female)
+# Unadjusted models
+y_male <- t(intensities[intensities$sample_id %in% male$sample_id,2:ncol(intensities)])
+y_female <- t(intensities[intensities$sample_id %in% female$sample_id,2:ncol(intensities)])
+fit_male <- lmFit(y_male,hard_male)
+fit_male <- eBayes(fit_male)
+fit_female <- lmFit(y_female,hard_female)
+fit_female <- eBayes(fit_female)
+# Results
+male_res = topTable(fit_male,coef = 2,number = nrow(y_low))
+kable(head(male_res,10),caption = "Males")
+female_res = topTable(fit_female,coef = 2,number = nrow(y_high))
+kable(head(female_res,10),caption = "Females")
+```
+
+There were `r sum(male_res$P.Value < 0.05)` significant lipids in the male group and `r sum(female_res$P.Value < 0.05)` in the female group.

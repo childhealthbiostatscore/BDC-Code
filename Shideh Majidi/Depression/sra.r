@@ -1,6 +1,6 @@
-library(Hmisc)
+library(Hmisc) 
 #Read Data
-data=read.csv('/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Shideh Majidi/Depression/Data_Cleaned/sra.csv')
+data=read.csv('./Data_Cleaned/sra.csv')
 #Setting Labels
 label(data$record_id)="Record ID"
 label(data$redcap_survey_identifier)="Survey Identifier"
@@ -641,13 +641,9 @@ levels(data$after_dur_6.factor)=c("Never","< 1 month","1 to < 3 months","3 to < 
 levels(data$resource_use_survey_complete.factor)=c("Incomplete","Unverified","Complete")
 levels(data$followupsi)=c("No","Yes")
 # Drop levels
-data$race.factor <- droplevels(data$race.factor)
 data$sex.factor <- droplevels(data$sex.factor)
 data$insurace.factor <- droplevels(data$insurance.factor)
 data$pump_use.factor <- droplevels(data$pump_use.factor)
 data$cgm.factor <- droplevels(data$cgm.factor)
-# Collapse race, ethnicity, and insurance levels
-levels(data$race.factor) <- c("White","Non-white","Non-white",
-                              "Non-white","Non-white","Non-white")
-levels(data$ethnicity.factor) <- c("Non-Hispanic/Unknown","Hispanic or Latino","Non-Hispanic/Unknown")
-levels(data$insurance.factor) <- c("Other","Private","Other","Other","Other","Other","Other")
+data$race.factor = droplevels(data$race.factor)
+data$ethnicity.factor = droplevels(data$ethnicity.factor)

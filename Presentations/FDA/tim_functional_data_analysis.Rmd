@@ -1,0 +1,141 @@
+---
+title: "Functional Data Analysis"
+author: "Tim Vigers"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: beamer_presentation
+header-includes:
+  \usepackage{bm}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(ggplot2)
+library(patchwork)
+library(HRW)
+library(mgcv)
+data("WarsawApts")
+```
+
+```{r}
+dat = read.csv("/Users/timvigers/Dropbox/Work/Presentations/BDC/for_jm_v3_kaci.csv")
+par(mfrow=c(2,4),oma=c(0,0,2,0),mar=c(3,2,2,1))
+
+##plot 1
+  patient<-subset(dat,dat$idn==320)
+  patient<-patient[order(patient$visit_num),] 
+  plot(patient$tac_months,patient$TAC,xlim=c(1,48),ylim=c(0,20),xlab="Months Post-Tx",ylab="TAC Trough Level",xaxt="n")
+  axis(1,at=c(1,3,6,12,24,36,48))
+  lines(patient$tac_months,patient$TAC)
+  abline(v=patient$left_months[1],lty=2)
+  abline(v=patient$right_months[1])
+##plot 2
+  patient<-subset(dat,dat$idn==14)
+  patient<-patient[order(patient$visit_num),] 
+  plot(patient$tac_months,patient$TAC,xlim=c(1,48),ylim=c(0,20),ylab="",xlab="",xaxt="n")
+  axis(1,at=c(1,3,6,12,24,36,48))
+  lines(patient$tac_months,patient$TAC)
+  abline(v=patient$left_months[1],lty=2)
+  abline(v=patient$right_months[1])
+##plot 3
+  patient<-subset(dat,dat$idn==189)
+  patient<-patient[order(patient$visit_num),] 
+  plot(patient$tac_months,patient$TAC,xlim=c(1,48),ylim=c(0,20),ylab="",xlab="",xaxt="n")
+  axis(1,at=c(1,3,6,12,24,36,48))
+  lines(patient$tac_months,patient$TAC)
+  abline(v=patient$left_months[1],lty=2)
+  abline(v=patient$right_months[1])
+##plot 4
+  patient<-subset(dat,dat$idn==465)
+  patient<-patient[order(patient$visit_num),] 
+  plot(patient$tac_months,patient$TAC,xlim=c(1,48),ylim=c(0,20),ylab="",xlab="",xaxt="n")
+  axis(1,at=c(1,3,6,12,24,36,48))
+  lines(patient$tac_months,patient$TAC)
+  abline(v=patient$left_months[1],lty=2)
+  abline(v=patient$right_months[1])
+mtext('4 Random Individuals with dnDSA', side=3, line=0, outer=TRUE,cex=0.8,font=2)
+```
+
+## What Is Functional Data Analysis (FDA)?
+
+- Most statistics we are familiar with use some sort of parametric model $p(x|\bm{\theta})$, and we try to estimate the parameters of *p*.
+  - For example, we might assume the data are normally distributed $N(\mu,\sigma^2)$ and use the sample mean $\bar{x}$ as an estimate of the location parameter $\mu$.
+- Sometimes, however, we do not want to assume a density function in advance, and are interested in estimating $p$ itself (the smooth function that we assume generates our data).
+  
+## Goals and Uses
+
+- The goals of FDA are essentially the same as other areas of statistics:
+  1. Represent data to aid in analysis and to highlight characteristics
+  2. Study patterns and sources of variation
+  3. Explain variation in an outcome using independent variables
+  
+- Common uses of FDA:
+  - Growth data
+  - Imaging data 
+  - Wearable device data
+    - Accelerometry (physical activity) 
+    - Heart rate
+    - **Continuous glucose monitoring** (CGM)
+
+## Semi- and Non-Parametric Regression (Scatterplot Smoothing)
+
+- The basic linear model is: $y_i= \beta_0+\beta_1 x_i+\epsilon_i$ for $1\leq i \leq n$
+  - Each predictor in our model has a simple form, and the overall shape is determined by the model rather than the data (e.g. a straight line in a linear model, one bend in a quadratic model, etc.)
+- The non-parametric version of this model is: $y_i = f(x_i)+\epsilon_i$
+  - $f(x_i)$ is an arbitrary function.
+  - The only constraint is that $f(x_i)$ must be a smooth function, so this model is much more flexible.
+- A semi-parametric model essentially uses parametric models for some predictors, and non-parametric models for others.
+
+## Penalized Splines
+
+- A natural question at this point is: "What do you mean $f(x_i)$ is an arbitrary smooth function? Can you give us an example?"
+- A penalized spline model is one relatively simple option for $f(x_i)$: $$f(x)=\beta_0+\beta_1 x + \sum_{k=1}^K{u_k(x-\kappa_k)_+}$$ where $x_+\equiv max(x,0)$ and the $\kappa_ks$ are pre-set values that we choose.
+- In other words, we are fitting multiple short lines that meet at our $\kappa_ks$ (often called "knots").
+
+## Penalized Splines (for Stats Nerds)
+
+- Estimation of the model coefficients is a fairly straightforward constrained optimization problem where we want to minimize $$\sum_{i=1}^n{(y_i - f(x_i))^2}\text{ with }\sum_{k=1}^K{u_k^2}\leq C$$
+
+- This is equivalent to penalized least squares with smoothing parameter $\lambda\geq0$, where we want to minimize: $$\sum_{i=1}^n{(y_i - f(x_i))^2}+\lambda\sum_{k=1}^K{u_k^2}$$
+
+## A Penalized Splines Example
+
+```{r}
+l = ggplot(WarsawApts,aes(x=construction.date,y = areaPerMzloty)) +
+  geom_point() + 
+  geom_smooth(method='lm',formula=y~x,se=F) +
+  theme_bw() + ggtitle("Linear") +
+  xlab("Construction Date") + ylab(bquote(m^2~"per million zloty"))
+
+q = ggplot(WarsawApts,aes(x=construction.date,y = areaPerMzloty)) +
+  geom_point() + 
+  geom_smooth(method='lm',formula=y~x+I(x^2),se=F) +
+  theme_bw() + ggtitle("Quadratic") +
+  xlab("Construction Date") + ylab(bquote(m^2~"per million zloty"))
+
+c = ggplot(WarsawApts,aes(x=construction.date,y = areaPerMzloty)) +
+  geom_point() + 
+  geom_smooth(method='lm',formula=y~x+I(x^2)+I(x^3),se=F) +
+  theme_bw() + ggtitle("Cubic") +
+  xlab("Construction Date") + ylab(bquote(m^2~"per million zloty"))
+
+(l + q) / c
+```
+
+```{r}
+x = WarsawApts$construction.date
+a = 1.01*min(x)-0.01*max(x)
+b = 1.01*max(x)-0.01*min(x)
+numIntKnots = 20
+intKnots = quantile(unique(x),seq(0,1,length = (numIntKnots+2))[-c(1,(numIntKnots+2))])
+xg <- seq(a,b,length = 1001)
+Zg = ZOSull(xg,range.x = c(a,b),intKnots = intKnots)
+# Plot
+plot(0,type = "n",xlim=range(xg),ylim=range(Zg),bty="l",
+     xlab="Construction date",ylab="Spline basis function")
+```
+
+## References
+
+1. Ramsay, J. O., and B. W. Silverman. Functional Data Analysis. 2nd ed. Springer Series in Statistics. New York: Springer, 2005.
+
+2. Harezlak J, Ruppert D, Wand MP. Semiparametric Regression with R. 1st ed. 2018. Springer New York: Imprint: Springer; 2018. doi:10.1007/978-1-4939-8853-2

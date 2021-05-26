@@ -1,0 +1,491 @@
+---
+title: "Metabolon insulin sensitivity pilot analysis"
+author: "Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+#########################################
+## NOTE: MUST RUN CODE BEFORE KNITTING ##
+#########################################
+
+library(knitr)
+
+knitr::opts_chunk$set(echo = FALSE,cache = FALSE)
+knitr::opts_knit$set(root.dir = "S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Data_raw")
+
+setwd("S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Data_raw")
+
+library(readxl)
+# load NormalizeMets first, metabolomics second
+library(NormalizeMets)
+#library(metabolomics)
+library(pca3d)
+library(pcaMethods)
+library(ggplot2)
+library(rgl)
+library(stringr)
+library(data.table)
+library(dplyr)
+library(mixOmics)
+library(Hmisc)
+library("FactoMineR")
+library("factoextra")
+library(tableone)
+library(reshape2)
+library(corrplot)
+library(car)
+
+source("C:\\Users\\pylell\\Documents\\GitHub\\General-code\\foldchange.r")
+source("C:\\Users\\pylell\\Documents\\GitHub\\General-code\\editcolnames.r")
+
+options(contrasts = c("contr.sum", "contr.poly"))
+
+# read metabolite data
+#metabolite <- read.csv("S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Data_raw\\UNCO-01-19ML CDT scaled imputed metabolites.csv")
+metabolite <- read.csv("S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Data_raw\\UNCO-01-19ML CDT origscale metabolites.csv")
+row.names(metabolite) <- metabolite$COMP.ID
+# add a column for pos/neg
+metabolite$mode <- ifelse(metabolite$PLATFORM %in% c("LC/MS Neg","LC/MS Polar"),"negative","positive")
+
+# read feature data
+#featuredata <- read.csv("S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Data_raw\\UNCO-01-19ML CDT scaled imputed features.csv")
+featuredata <- read.csv("S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Data_raw\\UNCO-01-19ML CDT origscale features.csv")
+# convert featuredata to numeric
+nocommas <- function(df) {
+  for(i in 1:ncol(df)){
+    df[,i] <- gsub(",","",df[,i])
+  }
+  return(df)
+}
+featuredata <- nocommas(featuredata)
+featuredata <- apply(featuredata,2,as.character)
+featuredata <- as.data.frame(featuredata)
+featuredata <- apply(featuredata,2,as.numeric)
+featuredata <- as.data.frame(featuredata)
+row.names(featuredata) <- featuredata$X
+featuredata$X <- NULL
+featuredata <- t(featuredata)
+featuredata <- featuredata[order(row.names(featuredata)),]
+keep_id <- as.data.frame(row.names(featuredata))
+colnames(keep_id) <- "temp"
+
+
+# read in clamp data
+# tertiles of GIR are 3.8 and 5.4 for T1D, for control are 10.3 and 13.67
+clamp <- read.csv("S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Data_raw\\QClampHormones_All Dataset.csv")
+clamp$diabetes <- ifelse(!is.na(clamp$duration),1,0)
+sampledata <- clamp[,c("StudyID","S3_GIR","diabetes")]
+sampledata$GIR_cat <- ifelse((sampledata$diabetes==1 & sampledata$S3_GIR<3.8) |
+                               (sampledata$diabetes==0 & sampledata$S3_GIR<10.3),1,
+                             ifelse((sampledata$diabetes==1 & sampledata$S3_GIR<5.4) |
+                                      (sampledata$diabetes==0 & sampledata$S3_GIR<13.67),2,3))
+sampledata$temp <- ifelse(sampledata$StudyID %in% c("2064","2758","1343","1718","2661","1674"), paste0("X",sampledata$StudyID,"_CACTI"),
+                                                       paste0("X",sampledata$StudyID,"_WISH"))
+sampledata <- sampledata[order(row.names(sampledata)),]
+# merge keep_id so we know which data to keep
+sampledata <- merge(sampledata,keep_id,by="temp",all.x = FALSE,all.y = TRUE)
+row.names(sampledata) <- sampledata$temp
+sampledata$full_id <- sampledata$temp
+#sampledata$temp <- NULL
+# now get rid of people in the middle tertile from all 3 dataframes
+sampledata <- sampledata[sampledata$GIR_cat!=2,]
+not_t2 <- as.data.frame(sampledata$temp)
+colnames(not_t2) <- "temp"
+blah <- as.data.frame(row.names(featuredata))
+colnames(blah) <- "temp"
+featuredata <- cbind(blah,featuredata)
+# create correct matrix for limma
+GIR_contrast <- ifelse(sampledata$GIR_cat==3,1,0)
+GIR_contrast <- cbind(rep(1,nrow(sampledata)),GIR_contrast)
+
+featuredata <- featuredata[featuredata$temp %in% not_t2$temp,]
+featuredata$temp <- NULL
+#featuredata <- merge(not_t2,featuredata,by="temp",all.x=T,all.y=F)
+#row.names(featuredata) <- featuredata$temp
+
+# create data file for cytoscape
+# this just creates a file with intensities, not fold change
+# if I need to do this, will need to create the raw file from the original scale data
+# cyto <- read.csv("S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Data_raw\\UNCO-01-19ML CDT origscale cytoscape.csv",
+#                  na.strings = c(" ",""))
+# cyto <- cyto[!is.na(cyto$KEGG),]
+# cyto <- as.data.frame(t(cyto))
+# cc <- as.data.frame(row.names(cyto))
+# colnames(cc) <- "temp"
+# cyto <- cbind(cc,cyto)
+# savecol <- as.data.frame(cyto[1,])
+# cyto <- merge(cyto,sampledata,by="temp",all.x=F,all.y=T)
+# cyto$temp <- paste0(cyto$GIR_cat,cyto$temp)
+# cyto <- cyto[, -which(names(cyto) %in% c( "StudyID","S3_GIR","diabetes","GIR_cat","full_id"))]
+# cyto <- as.data.frame(t(cyto))
+# cyto <- cbind(as.data.frame(t(savecol)),cyto)
+# cyto[1,1] <- ""
+# write.csv(cyto,"S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Data_raw\\cyto final.csv",na = "",
+#           row.names = F,col.names = F)
+
+# create a file for Metaboanalyst
+# x <- sampledata[,c("temp","GIR_cat")]
+# metaboanalyst <- merge(featuredata,x,by="temp")
+# sampledata$temp <- NULL
+# featuredata$temp <- NULL
+# metaboanalyst <- t(metaboanalyst)
+# row.names(metaboanalyst) <- c("Sample",row.names(metaboanalyst[2:947,]))
+# write.csv(metaboanalyst,"S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Data_clean\\Metaboanalyst GIR tertiles.csv")
+
+# combine the three dataframes
+alldata <- list(featuredata=featuredata,sampledata=sampledata,metabolitedata=metabolite)
+
+# get rid of metabolites missing 80% of the time
+alldata <- MissingValues(featuredata = alldata$featuredata,sampledata = alldata$sampledata,
+                         metabolitedata = alldata$metabolitedata,feature.cutoff = 0.8,
+                         method="none")
+
+# log transform
+logdata <- LogTransform(alldata$featuredata)
+
+# trying PCA plot with confidence ellipses
+res.pca <- PCA(logdata$featuredata, graph = FALSE)
+png("C:\\temp\\pca_ellipse_metabolon.png")
+plot1 <- fviz_pca_ind(res.pca,
+             geom.ind = "point", # show points only (nbut not "text")
+             col.ind = as.factor(alldata$sampledata$GIR_cat), # color by groups
+             palette = c("#00AFBB", "#E7B800"),
+             addEllipses = TRUE, # Concentration ellipse
+             title=""
+             )
+ggpubr::ggpar(plot1,
+              title = "",
+              subtitle = "",
+              caption = "",
+              xlab = "PC1", ylab = "PC2",
+              ggtheme = theme_gray(), palette = "jco")
+plot1 + scale_color_manual(labels=c("Tertile 1","Tertile 3"),values= c("#00AFBB", "#E7B800"),"Group") +
+        scale_fill_manual(guide = 'none', values=c("#00AFBB", "#E7B800")) +
+        scale_shape_manual(guide = 'none', values=c(1,2))  +
+        labs(x="PC1",y="PC2")
+dev.off()
+
+
+# CORRECTED linear model fit with moderated statistics
+modFit<-LinearModelFit(featuredata=logdata$featuredata,
+                       ruv2=FALSE,
+                       moderated=TRUE,
+                       factormat=GIR_contrast,
+                       outputname = "S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Data_raw\\modFit_contrast",
+                       saveoutput = TRUE)
+
+modFit_sig <- read.csv("S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Data_raw\\modFit_contrast.csv")
+modFit_sig <- modFit_sig[modFit_sig$Adjusted.t.p.value.GIR_contrast<0.05,]
+modFit_sig$COMP.ID <- modFit_sig$X
+modFit_sig$X <- NULL
+modFit_sig <- modFit_sig[!is.na(modFit_sig$COMP.ID),]
+modFit_sig <- merge(modFit_sig,metabolite,by="COMP.ID",all.x = TRUE,all.y=FALSE)
+# Save names of significant compounds for BoxPlots 
+keep <- as.data.frame(cbind(as.character(modFit_sig$BIOCHEMICAL),modFit_sig$COMP.ID,as.character(modFit_sig$SUB.PATHWAY)))
+names(keep) <- c("BIOCHEMICAL","COMP.ID","SUB.PATHWAY")
+
+# create df of fold change - need KEGG ID, FC, P-value (adjusted or raw?)
+#FC <- as.data.frame(cbind(alldata$metabolitedata$MASS,alldata$metabolitedata$mode,modFit$coefficients,
+#                                                       modFit$p.value,modFit$adj.p.value))
+modFit_file <- read.csv("S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Data_raw\\modFit_contrast.csv")
+FC <- as.data.frame(cbind(alldata$metabolitedata$MASS,alldata$metabolitedata$mode,modFit_file$t.p.value.GIR_contrast,
+                          modFit_file$t.stat.GIR_contrast))
+colnames(FC) <- c("m.z","mode","p.value","t.score")
+write.csv(FC,"S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Data_clean\\FC diabetes specific GIR tertiles.csv",row.names = F)
+
+# create new variable for tertilesxdiabetes
+alldata$sampledata$GIR_dia <- ifelse(alldata$sampledata$diabetes==1 & alldata$sampledata$GIR_cat==1,"T1D tertile 1",
+                                     ifelse(alldata$sampledata$diabetes==1 & alldata$sampledata$GIR_cat==3,"T1D tertile 3",
+                                            ifelse(alldata$sampledata$diabetes==0 & alldata$sampledata$GIR_cat==1,
+                                                   "Control tertile 1","Control tertile 3")))
+
+# create file with ANOVA p-values for Metaboanalyst
+Fpvals <- NULL
+for (i in 1:ncol(logdata$featuredata)) {
+  print(i)
+  if (sum(!is.na(logdata$featuredata[,i]))<3) {
+    a <- NA
+    p <- NA
+  } else {
+  temp <- lm(logdata$featuredata[,i] ~ alldata$sampledata$GIR_dia)
+  if (is.na(summary(temp)$coeff[2,4])) {
+    a <- NA
+    p <- NA
+  } else {
+    a <- Anova(temp, type="III")
+    p <- round(a[row.names(a)=="alldata$sampledata$GIR_dia",]$`Pr(>F)`,4)
+  }}
+  Fpvals <- c(Fpvals,p)
+}
+Fpadj <- p.adjust(Fpvals,method="fdr",n=length(Fpvals))
+FC4 <- as.data.frame(cbind(alldata$metabolitedata$MASS,Fpadj))
+colnames(FC4) <- c("MASS","Adj p")
+write.csv(FC4,"S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Data_clean\\FC 4 group.csv",row.names = F)
+
+# now create files of GIR tertiles stratified by diabetes status
+# problem is we need to keep rows in feature data that correspond to either T1D or control
+dia <- alldata$sampledata[alldata$sampledata$diabetes==1,]$temp
+con <- alldata$sampledata[alldata$sampledata$diabetes==0,]$temp
+GIR_cat_dia <- alldata$sampledata[alldata$sampledata$temp %in% dia,]$GIR_cat
+GIR_cat_con <- alldata$sampledata[alldata$sampledata$temp %in% con,]$GIR_cat
+logdata_featuredata_dia <- logdata$featuredata[row.names(logdata$featuredata) %in% dia,]
+logdata_featuredata_con <- logdata$featuredata[row.names(logdata$featuredata) %in% con,]
+
+# create correct matrix for limma
+GIR_contrast_dia <- ifelse(GIR_cat_dia==3,1,0)
+GIR_contrast_dia <- cbind(rep(1,length(GIR_cat_dia)),GIR_contrast_dia)
+
+GIR_contrast_con <- ifelse(GIR_cat_con==3,1,0)
+GIR_contrast_con <- cbind(rep(1,length(GIR_cat_con)),GIR_contrast_con)
+
+modFit_dia<-LinearModelFit(featuredata=logdata_featuredata_dia,
+                       ruv2=FALSE,
+                       moderated=TRUE,
+                       factormat=GIR_contrast_dia,
+                       outputname = "S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Data_raw\\modFit_dia_GIR_contrast",
+                       saveoutput = TRUE)
+modFit_con<-LinearModelFit(featuredata=logdata_featuredata_con,
+                       ruv2=FALSE,
+                       moderated=TRUE,
+                       factormat=GIR_contrast_con,
+                       outputname = "S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Data_raw\\modFit_con_GIR_contrast",
+                       saveoutput = TRUE)
+# df fold change diabetes
+modFit_dia_file <- read.csv("S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Data_raw\\modFit_dia_GIR_contrast.csv")
+FC_dia <- as.data.frame(cbind(alldata$metabolitedata$MASS,alldata$metabolitedata$mode,                                                     modFit_dia_file$t.p.value.GIR_contrast_dia,modFit_dia_file$t.stat.GIR_contrast_dia))
+colnames(FC_dia) <- c("m.z","mode","p.value","t.score")
+write.csv(FC_dia,"S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Data_clean\\FC T1D GIR top vs bottom GIR tertile.csv",row.names = F)
+# df fold change con
+modFit_con_file <- read.csv("S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Data_raw\\modFit_con_GIR_contrast.csv")
+FC_con <- as.data.frame(cbind(alldata$metabolitedata$MASS,alldata$metabolitedata$mode,
+                              modFit_con_file$t.p.value.GIR_contrast_con,modFit_con_file$t.stat.GIR_contrast_con))
+colnames(FC_con) <- c("m.z","mode","p.value","t.score")
+write.csv(FC_con,"S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Data_clean\\FC con GIR top vs bottom GIR tertile.csv",row.names = F)
+
+# correlations of GIR with compounds
+# cor1 <- as.data.frame(sampledata[,c("full_id","S3_GIR")])
+# cor2 <- as.data.frame(alldata$featuredata)
+# cor2$full_id <- rownames(cor2)
+# cor <- merge(cor1,cor2,by="full_id",all.x = TRUE,all.y = TRUE)
+# cor$full_id <- NULL
+# cor_res <- NULL
+# cor_sum <- NULL
+# for (i in 2:946) {
+#   cor_res$estimate[i-1] <- round(cor.test(cor$S3_GIR,cor[,i])$estimate,4)
+#   cor_res$pvalue[i-1] <- round(cor.test(cor$S3_GIR,cor[,i])$p.value,4)
+# }
+# cor_res$padj <- round(p.adjust(cor_res$pvalue,method="fdr"),4)
+# cor_sum <- as.data.frame(cbind(cor_res$estimate,as.numeric(as.character(cor_res$pvalue)),
+#                                as.character(metabolite$BIOCHEMICAL)))
+# colnames(cor_sum) <- c("Estimate","Pvalue","Biochemical")
+# cor_sum$Pvalue <- as.numeric(as.character(cor_sum$Pvalue))
+# cor_sum <- cor_sum[order(cor_sum$Pvalue),]
+# cor_sum_sig <- subset(cor_sum,cor_sum$Pvalue<0.05)
+
+# create dataset for PLS-DA
+# first need to impute
+nomissknn <- MissingValues(featuredata = alldata$featuredata,sampledata = alldata$sampledata,
+                                 metabolitedata=alldata$metdata,feature.cutoff=0.8,method="knn",
+                                 seed=3654, saveoutput = TRUE,
+                                 outputname = "C:\\Temp\\final_nomissknn")
+
+
+plsda1 <- as.data.frame(nomissknn$sampledata[,c("full_id","S3_GIR","GIR_cat")])
+plsda2 <- as.data.frame(nomissknn$featuredata)
+plsda2 <- as.data.frame(t(plsda2))
+plsda2$COMP.ID <- rownames(plsda2)
+names <- metabolite[,c("COMP.ID","BIOCHEMICAL")]
+plsda2 <- merge(plsda2,names,by="COMP.ID",all.x = TRUE,all.y = TRUE)
+rownames(plsda2) <- plsda2$BIOCHEMICAL
+plsda2$COMP.ID <- NULL
+plsda2$BIOCHEMICAL <- NULL
+plsda2 <- as.data.frame(t(plsda2))
+plsda2$full_id <- rownames(plsda2)
+plsda <- merge(plsda1,plsda2,by="full_id",all.x = TRUE,all.y = TRUE)
+plsda <- plsda[!is.na(plsda$GIR_cat),]
+rownames(plsda) <- plsda$full_id
+
+write.csv(plsda,"S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Data_raw\\plsda.csv")
+
+# sPLS-DA analysis
+plsda.res = splsda(X = plsda[,c(4:948)], Y=as.factor(plsda$GIR_cat), ncomp = 2)
+png(filename="plotIndiv.png")
+plotIndiv(plsda.res, comp = c(1,2),
+          ind.names = FALSE, 
+          ellipse = TRUE, legend = TRUE, title="")
+listvar <- selectVar(plsda.res)
+set.seed(34)  # for reproducible results for this code
+plsda.perf = perf(plsda.res, validation = 'Mfold', folds = 5, 
+                           progressBar = FALSE, nrepeat = 10, dist = 'max.dist',auc=TRUE)
+plsda.perf$error.rate
+auc_save <- plsda.perf$auc$`comp1`[1]
+auc_true <- as.numeric(plsda.perf$auc$comp1["AUC.mean"])
+png(filename="plsda_perf.png")
+plot(plsda.perf)
+dev.new()
+cim(plsda.res, row.sideColors = color.mixo(as.factor(plsda$GIR_cat)), row.names = FALSE, col.names=FALSE,
+    legend=list(legend=c("1st tertile","3rd tertile")),
+    save="jpeg",
+    name.save = "cim")
+dev.off()
+#plsda.perf.loo = perf(plsda.res, validation = 'loo', 
+                        #progressBar = FALSE, auc=TRUE)
+#auc_save <- plsda.perf.loo$auc$`comp 1`[1]
+#auroc <- auroc(plsda.res)
+
+# biplot with top 20 compounds
+plsda20 = splsda(X = plsda[,c(4:948)], Y=as.factor(plsda$GIR_cat), 
+                     ncomp = 2, keepX = c(20, 20))
+ind.coord <- plsda20$variates$X[, 1:2]
+var.coord = plotVar(plsda20,var.names = FALSE)[,c("x","y")]
+png("biplot_top20.png")
+biplot(ind.coord,var.coord,xlabs=as.factor(plsda$GIR_cat))
+abline(h=0,v=0,lty=2)
+dev.new()
+cim(plsda20, row.sideColors = color.mixo(as.factor(plsda$GIR_cat)), row.names = TRUE, col.names=TRUE,
+    legend=list(legend=c("1st tertile","3rd tertile")),
+    save="jpeg",
+    name.save = "cim20",margins = c(15,10))
+dev.off()
+
+# loadings plot
+png("loadings_top20.png")
+plotLoadings(plsda20)
+
+# get list of top 20 compounds
+top20 <- selectVar(plsda20,comp=1)
+top20_2 <- selectVar(plsda20,comp=2)
+# merge with pathway information
+path <- alldata$metabolitedata
+path <- path[,c("BIOCHEMICAL","SUPER.PATHWAY","SUB.PATHWAY")]
+path$name <- path$BIOCHEMICAL
+path$BIOCHEMICAL <- NULL
+top20 <- merge(top20,path,by="name",all.x=T,all.y=F)
+top20_2 <- merge(top20_2,path,by="name",all.x=T,all.y=F)
+
+# correlations of GIR with hormones
+cor_res_hormones <- NULL
+hormones <- c("Estradiol","Progesterone","SHBG","Testosterone")
+for (i in 1:length(hormones)) {
+  cor_res_hormones$estimate[i] <- round(cor.test(clamp$S3_GIR,clamp[,paste0(hormones[i])])$estimate,4)
+  cor_res_hormones$pvalue[i] <- round(cor.test(clamp$S3_GIR,clamp[,paste0(hormones[i])])$p.value,4)
+}
+cor_sum_hormones <- as.data.frame(cbind(cor_res_hormones$estimate,as.numeric(as.character(cor_res_hormones$pvalue)),hormones))
+colnames(cor_sum_hormones) <- c("Estimate","Pvalue","Hormone")
+
+
+```
+
+
+# PCA with confidence ellipses by GIR tertile
+```{r, echo=FALSE}
+knitr::include_graphics("C:\\temp\\pca_ellipse_metabolon.png")
+```
+
+
+# Boxplots for compounds that were significantly different (after FDR adjustment) by GIR tertile by moderated t-test
+```{r plotnumeric, echo=FALSE}
+#suppressPackageStartupMessages(library(metabolomics))
+for (i in 1:length(keep$COMP.ID)) {
+  boxplot(logdata$featuredata[,paste0(keep$COMP.ID[i])]~alldata$sampledata$GIR_cat,names=c("1st tertile","3rd tertile"),main=c(paste0(keep$BIOCHEMICAL[i]),paste0(keep$SUB.PATHWAY[i])),ylab="",xlab="")
+}
+```
+
+
+# Individual plot from sPLS-DA by GIR tertile
+
+```{r, echo=FALSE}
+#knitr::include_graphics("plotIndiv.png")
+plotIndiv(plsda.res, comp = c(1,2),
+          ind.names = FALSE, 
+          ellipse = TRUE, legend = TRUE, title="")
+```
+
+# Clustered image map by GIR category tertile
+
+This plot is similar to a heat map but based on sPLS analysis.
+
+```{r, echo=FALSE}
+knitr::include_graphics("S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Data_raw\\cim.jpeg")
+#par(mar=c(1,1,1,1))
+#cim(plsda.res, row.sideColors = color.mixo(as.factor(plsda$GIR_cat)), row.names = FALSE, col.names=FALSE,
+#    legend=list(legend=c("1st tertile","3rd tertile")))
+```
+
+# Clustered image map by GIR category tertile, top 20 compounds (from both component 1 and component 2)
+
+```{r, echo=FALSE}
+knitr::include_graphics("S:\\Shared Projects\\Laura\\BDC\\Projects\\CACTI\\Metabolon insulin resistance pilot\\Data_raw\\cim20.jpeg")
+```
+
+# List of top 20 compounds in terms of discrimination of GIR tertile, for component 1
+
+```{r, echo=FALSE}
+top20
+```
+
+# List of top 20 compounds in terms of discrimination of GIR tertile, for component 2
+
+```{r, echo=FALSE}
+top20_2
+```
+
+# Biplot of top 20 compounds by GIR tertile
+
+```{r, echo=FALSE}
+#knitr::include_graphics("biplot_top20.png")
+biplot(ind.coord,var.coord,xlabs=as.factor(plsda$GIR_cat))
+abline(h=0,v=0,lty=2)
+```
+
+
+# Loadings plot of top 20 compounds by GIR tertile, for component 1
+
+A positive value indicates the compound is higher in the 1st tertile compared to the 3rd
+
+```{r, echo=FALSE}
+#knitr::include_graphics("loadings_top20.png")
+plotLoadings(plsda20,comp=1)
+```
+
+# Loadings plot of top 20 compounds by GIR tertile, for component 2
+
+A positive value indicates the compound is higher in the 1st tertile compared to the 3rd
+
+```{r, echo=FALSE}
+#knitr::include_graphics("loadings_top20.png")
+plotLoadings(plsda20,comp=2)
+```
+
+
+# Evaluation of sPLS-DA model by GIR tertile
+
+Leave-one-out cross-validation was used to examine the performance of the sPLS-DA model: 
+
+ Overall Error rate : `r plsda.perf$error.rate$overall[1,1]`
+ AUC: `r auc_save[1]`
+
+
+```{r plsda,cache=TRUE}
+# Permutation testing - takes forever, make sure to cache
+n_perm <- 1000
+aucs <- vector(mode="numeric", length=n_perm)
+for (i in 1:n_perm) {
+  Y <- sample(as.factor(plsda$GIR_cat),replace = F)
+  plsda_res <- plsda(plsda[,c(4:948)],Y,ncomp = 1)
+  perf_plsda <- perf(plsda_res,progressBar=FALSE, auc=TRUE,
+                   validation = "loo")
+  aucs[i] <- as.numeric(perf_plsda$auc$comp1["AUC.mean"])
+}
+ggplot(as.data.frame(aucs),aes(x=aucs)) + 
+  geom_histogram(binwidth = 0.01) + 
+  geom_vline(aes(xintercept=auc_true),color="red") + 
+  theme_bw() + xlab("AUC")
+````
+
+
+Group labels were permuted `r n_perm` times. One component PLS-DA was run for each permutation and AUC was calculated using leave one out cross-validation. Red line indicates the AUC calculated for non-permuted data.
+

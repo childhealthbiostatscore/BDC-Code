@@ -1,0 +1,245 @@
+---
+title: "TrialNet ECL/HLA analysis for ADA"
+author: "Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+
+
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tableone)
+library(sjlabelled)
+library(ggplot2)
+library(dplyr)
+
+# read in data
+data <- read.csv("S:\\Shared Projects\\Laura\\BDC\\Projects\\Andrea Steck\\ECL ab and genotype\\Data\\191015 final dataset 1287 subjects with genotype.csv",
+                 na.strings = c("NA",""," "))
+keep <- data
+keep <- data[,c("PTID","ECL.IAA.visit.1","ECL.GADA.visit.1","HLA.DR3.4","Genotype","DR.3.present","DR4.Present","Age.at.visit.1",
+                "Gender","Number.of.positive.biochemical.antibodies.visit.1")]
+keep$numpos <- as.factor(keep$Number.of.positive.biochemical.antibodies.visit.1)
+
+keep$biochem_status[keep$Number.of.positive.biochemical.antibodies.visit.1==0] <- 'Ab negative'
+keep$biochem_status[keep$Number.of.positive.biochemical.antibodies.visit.1==1] <- 'Single ab positive'
+keep$biochem_status[keep$Number.of.positive.biochemical.antibodies.visit.1>1] <- 'Multiple ab positive'
+set_label(keep$biochem_status)="Biochemical ab status"
+
+# remove people who do not have HLA data
+keep <- keep[keep$HLA.DR3.4!='Missing',]
+keep$HLA.DR3.4 <- droplevels(as.factor(keep$HLA.DR3.4))
+
+# remove participant 136806 because mIAA Z-score is >20, not plausible
+keep <- keep[keep$PTID != "136806",]
+
+# merge in race/ethnicity
+race <- read.csv("S:\\Shared Projects\\Laura\\BDC\\Projects\\Andrea Steck\\ECL ab and genotype\\Data\\Copy of 1287 subjects_RaceEthnicity.csv",
+                 na.strings = c("NA",""," "))
+race$race_eth <- ifelse(is.na(race$Race) | is.na(race$Ethnicity),NA,
+                        ifelse(race$Ethnicity=="Hispanic or Latino","Hispanic",
+                        ifelse(race$Race=="White","Non-Hispanic White","Other")))
+keep <- merge(keep,race,by="PTID",all.x=T, all.y=F)
+
+# calculate Z-score for ECL variables
+# IAA mean 0.008839 SD 0.04763116
+# GADA 0.8606 SD 2.081496
+keep$ecl_iaa_z <- (keep$ECL.IAA.visit.1 - 0.008839) / 0.04763116
+keep$ecl_gada_z <- (keep$ECL.GADA.visit.1 - 0.8606) / 2.081496
+
+# categorize ECL variables
+keep$ecl_iaa_pos <- as.factor(ifelse(keep$ECL.IAA.visit.1>0.006,"Positive","Negative"))
+keep$ecl_gada_pos <- as.factor(ifelse(keep$ECL.GADA.visit.1>0.023,"Positive","Negative"))
+keep$ecl_either_pos <- ifelse(keep$ecl_iaa_pos=="Positive" | keep$ecl_gada_pos=="Positive", "Positive", "Negative")
+set_label(keep$ecl_either_pos)="ECL ab positive"
+keep$ecl_cat <- ifelse(keep$ecl_iaa_pos=="Positive" & keep$ecl_gada_pos=="Positive", "ECL IAA and GADA +", 
+                       ifelse(keep$ecl_iaa_pos=="Positive" & keep$ecl_gada_pos=="Negative","ECL IAA +",
+                              ifelse(keep$ecl_iaa_pos=="Negative" & keep$ecl_gada_pos=="Positive","ECL GADA +","ECL -")))
+
+
+#write.csv(keep,"S:\\Shared Projects\\Laura\\BDC\\Projects\\Andrea Steck\\ECL ab and genotype\\Data\\ecl_hla_export.csv")
+
+# number of subjects is the number with non-missing ECL values
+n <- nrow(keep[!is.na(keep$ECL.IAA.visit.1) | !is.na(keep$ECL.GADA.visit.1),])
+
+# make dataframe without DRx/x
+keep_nox <- keep[keep$Genotype != "DR x/x",]
+keep_nox$Genotype <- droplevels(as.factor(keep_nox$Genotype))
+
+# Table 1
+tab1vars <- c("Age.at.visit.1","Gender","race_eth","HLA.DR3.4","Genotype","DR.3.present","DR4.Present","biochem_status")
+tab1 <- CreateTableOne(vars=tab1vars, data=keep[keep$HLA.DR3.4!="Missing",])
+tab1 <- print(tab1,varLabels=TRUE,showAllLevels=TRUE)
+tab1a <- CreateTableOne(vars=tab1vars, data=keep, strata="ecl_either_pos", test=TRUE)
+tab1a <- print(tab1a,varLabels=TRUE,showAllLevels=TRUE)
+
+minage <- min(keep$Age.at.visit.1)
+maxage <- max(keep$Age.at.visit.1)
+
+# Z-scores by genotype and haplotype
+ecl_cont_vars <- c("ecl_iaa_z","ecl_gada_z","ecl_iaa_pos","ecl_gada_pos")
+#nonnorm <- c("ecl_iaa_z","ecl_gada_z")
+nonnorm <- NULL
+tab2 <- CreateTableOne(vars=ecl_cont_vars, data=keep, strata="Genotype", test=TRUE)
+tab2 <- print(tab2,varLabels=TRUE,showAllLevels=TRUE,nonnormal = nonnorm)
+tab2a <- CreateTableOne(vars=ecl_cont_vars, data=keep_nox, strata="Genotype", test=TRUE)
+tab2a <- print(tab2a,varLabels=TRUE,showAllLevels=TRUE,nonnormal = nonnorm)
+tab2b <- CreateTableOne(vars=ecl_cont_vars, data=keep, strata="HLA.DR3.4", test=TRUE)
+tab2b <- print(tab2b,varLabels=TRUE,showAllLevels=TRUE,nonnormal = nonnorm)
+tab3 <- CreateTableOne(vars=ecl_cont_vars, data=keep, strata="DR.3.present", test=TRUE)
+tab3 <- print(tab3,varLabels=TRUE,showAllLevels=TRUE,nonnormal = nonnorm)
+tab4 <- CreateTableOne(vars=ecl_cont_vars, data=keep, strata="DR4.Present", test=TRUE)
+tab4 <- print(tab4,varLabels=TRUE,showAllLevels=TRUE,nonnormal = nonnorm)
+
+# Percentage DR3 and DR4 by ECL category
+dr3 <- keep %>% group_by(ecl_cat) %>% count(DR.3.present) %>% mutate(perc=(n/rowsum(n,ecl_cat))*100)
+dr3 <- dr3[dr3$DR.3.present=="yes",]
+dr4 <- keep %>% group_by(ecl_cat) %>% count(DR4.Present) %>% mutate(perc=(n/rowsum(n,ecl_cat))*100)
+dr4 <- dr4[dr4$DR4.Present=="yes",]
+
+f1 <- ggplot(keep, aes(x=Genotype,y=ecl_iaa_z)) + geom_boxplot() + labs(y="ECL IAA Z-score") + annotate("text", x=1, y=4.5, label="p=0.474")
+
+f1a <- ggplot(keep_nox, aes(x=Genotype,y=ecl_iaa_z)) + geom_boxplot() + labs(y="ECL IAA Z-score") + annotate("text", x=1, y=4.5, label="p=0.363")
+
+f2 <- ggplot(keep, aes(x=Genotype,y=ecl_gada_z)) + geom_boxplot() + labs(y="ECL GADA Z-score") + annotate("text", x=1, y=6, label="p=0.012")
+
+f2a <- ggplot(keep_nox, aes(x=Genotype,y=ecl_gada_z)) + geom_boxplot() + labs(y="ECL GADA Z-score") + annotate("text", x=1, y=6, label="p=0.550")
+
+f3 <- ggplot(keep, aes(x=DR.3.present,y=ecl_iaa_z)) + geom_boxplot() + labs(y="ECL IAA Z-score") + annotate("text", x=0.75, y=6, label="p=0.176")
+
+f4 <- ggplot(keep, aes(x=DR.3.present,y=ecl_gada_z)) + geom_boxplot() + labs(y="ECL GADA Z-score") + annotate("text", x=0.75, y=7, label="p<0.001")
+
+f5 <- ggplot(keep, aes(x=DR4.Present,y=ecl_iaa_z)) + geom_boxplot() + labs(y="ECL IAA Z-score") + annotate("text", x=0.75, y=6, label="p=0.042")
+
+f6 <- ggplot(keep, aes(x=DR4.Present,y=ecl_gada_z)) + geom_boxplot() + labs(y="ECL GADA Z-score") + annotate("text", x=0.75, y=7, label="p=0.745")
+
+f7_tbl <- table(keep$DR.3.present,keep$ecl_cat)
+f7_p <- round(chisq.test(f7_tbl)$p.value,3)
+f7 <- ggplot(dr3, aes(x=ecl_cat,y=perc)) + geom_bar(stat="identity",position = position_dodge(width=2), width=0.5) + labs(x="",y="%") + annotate("text", x=1, y=45, label="p=0.001")
+
+f8_tbl <- table(keep$DR4.Present,keep$ecl_cat)
+f8_p <- round(chisq.test(f8_tbl)$p.value,3)
+f8 <- ggplot(dr4, aes(x=ecl_cat,y=perc)) + geom_bar(stat="identity",position = position_dodge(width=2), width=0.5) + labs(x="",y="%") + annotate("text", x=1, y=60, label="p=0.001")
+```
+
+# Introduction
+
+The purpose of this analysis is to examine the association between ECL antibodies and HLA genotype/haplotype in the TrialNet cohort at visit 1.
+
+Subject 136806 was excluded from analysis because the mIAA Z-score at visit 1 was equal to 21.04.
+
+# Methods
+
+Z-scores for ECL GADA (ecl_gada_z) and ECL IAA (ecl_iaa_z) were calculated as (subject's ab level - mean) / SD.  Subjects were classified as positive for ECL IAA (ecl_iaa_pos) if their value was >0.006, and were classified as positive for ECL GADA (ecl_gada_pos) if their value was >0.023.
+
+ECL Z-scores were not normally distributed, and were compared using the Kruskal-Wallis test.  ECL positivity was compared using the chi-square test.
+
+# Results
+
+There were `r n` subjects with ECL antibody results and HLA genotyping included in this analysis.
+
+Table 1 shows descriptive statistics for the entire cohort, and Table 1a shows descriptive statistics by ECL positivity.  The minimum age was `r minage` and the maximum age was `r maxage`.
+
+# Table 1 - Descriptive statistics for the entire cohort
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(tab1)
+```
+<br>
+
+# Table 1a - descriptive statistics by ECL positivity
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(tab1a)
+```
+<br>
+
+The comparison of ECL antibodies by genotype is shown in Table 2.
+
+# Table 2 - ECL antibodies by genotype
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(tab2)
+```
+<br>
+
+The comparison of ECL antibodies by genotype (excluding DRx/x)is shown in Table 2a.
+
+# Table 2a - ECL antibodies by genotype (excluding DR x/x)
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(tab2a)
+```
+<br>
+
+The comparison of antibodies in DR3/4 vs. all others is shown in Table 2b.
+
+# Table 2b - antibodies in DR3/4 vs. all others
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(tab2b)
+```
+<br>
+
+The comparison of ECL antibodies by DR3 haplotype is shown in Table 3.
+
+# Table 3 - ECL antibodies by DR3 haplotype
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(tab3)
+```
+<br>
+
+The comparison of ECL antibodies by DR4 haplotype is shown in Table 4.
+
+# Table 4 - ECL antibodies by DR4 haplotype
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(tab4)
+```
+
+# Figure 1 - ECL IAA Z-score by genotype
+```{r, echo=FALSE}
+f1
+```
+
+# Figure 1a - ECL IAA Z-score by genotype (excluding DRx/x)
+```{r, echo=FALSE}
+f1a
+```
+
+# Figure 2 - ECL GADA Z-score by genotype
+```{r, echo=FALSE}
+f2
+```
+
+# Figure 2a - ECL GADA Z-score by genotype (excluding DRx/x)
+```{r, echo=FALSE}
+f2a
+```
+
+# Figure 3 - ECL IAA Z-score by DR3 haplotype
+```{r, echo=FALSE}
+f3
+```
+
+# Figure 4 - ECL GADA Z-score by DR3 haplotype
+```{r, echo=FALSE}
+f4
+```
+
+# Figure 5 - ECL IAA Z-score by DR4 haplotype
+```{r, echo=FALSE}
+f5
+```
+
+# Figure 6 - ECL GADA Z-score by DR4 haplotype
+```{r, echo=FALSE}
+f6
+```
+
+# Figure 7 - DR3 haplotype by ECL status
+```{r, echo=FALSE}
+f7
+```
+
+# Figure 8 - DR4 haplotype by ECL status
+```{r, echo=FALSE}
+f8
+```
