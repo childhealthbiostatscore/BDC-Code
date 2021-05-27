@@ -25,6 +25,12 @@ lmm_1a_slopediff<-lme(A1C_Value~a1c_baseline+days_from_first_visit+Gender+insura
 
 lmm_1a<-lme(A1C_Value~a1c_baseline+days_from_first_visit+Gender+insurance_2+Race.Ethnicity_2+time_period*RTC_visits_cat_2
             ,random=~1|MRN/days_from_first_visit,data=dat.c.all)
+#added this on 9/30/2020:
+lmm_1a_continuous<-lme(A1C_Value~a1c_baseline+days_from_first_visit+Gender+insurance_2+Race.Ethnicity_2+time_period*total_RTC
+            ,random=~1|MRN/days_from_first_visit,data=dat.c.all)
+summary(lmm_1a_continuous)
+anova(lmm_1a_continuous)
+
 lmm_1a_sum<-summary(lmm_1a)
 lmm_1a_sum<-lmm_1a_sum$tTable[,c(1,2,5)]
 lmm_1a_sum<-as.data.frame(lmm_1a_sum)
@@ -64,6 +70,10 @@ lmm_slopediff<-lme(A1C_Value~a1c_baseline+days_from_first_visit+days_from_first_
 
 lmm_1b<-lme(A1C_Value~a1c_baseline+days_from_first_visit+RTC_visits_cat_2*time_period
             ,random=~1|MRN/days_from_first_visit,data=dat.c.all)
+lmm_1b_continuous<-lme(A1C_Value~a1c_baseline+days_from_first_visit+total_RTC*time_period
+            ,random=~1|MRN/days_from_first_visit,data=dat.c.all)
+summary(lmm_1b_continuous)
+anova(lmm_1b_continuous)
 
 lmm_1b_sum<-summary(lmm_1b)
 lmm_1b_sum<-lmm_1b_sum$tTable[,c(1,2,5)]
