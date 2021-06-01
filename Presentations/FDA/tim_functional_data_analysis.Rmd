@@ -11,9 +11,8 @@ header-includes:
 knitr::opts_chunk$set(echo = FALSE)
 library(ggplot2)
 library(patchwork)
-library(HRW)
-library(mgcv)
-data("WarsawApts")
+library(splines)
+data("Wage",package = "ISLR")
 ```
 
 ```{r}
@@ -97,42 +96,52 @@ mtext('4 Random Individuals with dnDSA', side=3, line=0, outer=TRUE,cex=0.8,font
 
 - This is equivalent to penalized least squares with smoothing parameter $\lambda\geq0$, where we want to minimize: $$\sum_{i=1}^n{(y_i - f(x_i))^2}+\lambda\sum_{k=1}^K{u_k^2}$$
 
-## A Penalized Splines Example
+## Polynomial Examples
 
 ```{r}
-l = ggplot(WarsawApts,aes(x=construction.date,y = areaPerMzloty)) +
+l = ggplot(Wage,aes(x=age,y=wage)) +
   geom_point() + 
   geom_smooth(method='lm',formula=y~x,se=F) +
   theme_bw() + ggtitle("Linear") +
-  xlab("Construction Date") + ylab(bquote(m^2~"per million zloty"))
+  xlab("Age") + ylab("Wage")
 
-q = ggplot(WarsawApts,aes(x=construction.date,y = areaPerMzloty)) +
+q = ggplot(Wage,aes(x=age,y=wage)) +
   geom_point() + 
   geom_smooth(method='lm',formula=y~x+I(x^2),se=F) +
   theme_bw() + ggtitle("Quadratic") +
-  xlab("Construction Date") + ylab(bquote(m^2~"per million zloty"))
+  xlab("Age") + ylab("Wage")
 
-c = ggplot(WarsawApts,aes(x=construction.date,y = areaPerMzloty)) +
+c = ggplot(Wage,aes(x=age,y=wage)) +
   geom_point() + 
   geom_smooth(method='lm',formula=y~x+I(x^2)+I(x^3),se=F) +
   theme_bw() + ggtitle("Cubic") +
-  xlab("Construction Date") + ylab(bquote(m^2~"per million zloty"))
+  xlab("Age") + ylab("Wage")
 
-(l + q) / c
+q2 = ggplot(Wage,aes(x=age,y=wage)) +
+  geom_point() + 
+  geom_smooth(method='lm',formula=y~x+I(x^2)+I(x^3)+I(x^4),se=F) +
+  theme_bw() + ggtitle("Quartic") +
+  xlab("Age") + ylab("Wage")
+
+(l + q) / (c+q2)
 ```
+
+## Splines
 
 ```{r}
-x = WarsawApts$construction.date
-a = 1.01*min(x)-0.01*max(x)
-b = 1.01*max(x)-0.01*min(x)
-numIntKnots = 20
-intKnots = quantile(unique(x),seq(0,1,length = (numIntKnots+2))[-c(1,(numIntKnots+2))])
-xg <- seq(a,b,length = 1001)
-Zg = ZOSull(xg,range.x = c(a,b),intKnots = intKnots)
-# Plot
-plot(0,type = "n",xlim=range(xg),ylim=range(Zg),bty="l",
-     xlab="Construction date",ylab="Spline basis function")
+age_grid = seq(min(Wage$age),max(Wage$age))
+fit = lm(wage~bs(age,knots=c(25,40,60)),data = Wage)
+pred = predict(fit,newdata = list(age = age_grid),se = T)
+pred = data.frame(cbind(age_grid,pred$fit,pred$se.fit))
+ggplot(pred,aes(x=age_grid,y=V2)) + geom_point()
 ```
+
+## Generalized Additive Models (GAMs)
+
+- GAMs are a non-parametric extension of generalized linear models.
+- Generalized linear models relax some of the assumptions of a linear model.
+- We replace $E(\bm{Y}|\bm{X})=\sum_1^p\beta_j X_j$ with the additive model $E(\bm{Y}|\bm{X})=\sum_1^p s_j(X_j)$
+ - The conditional mean of the response is modeled using the sum of smooth functions of the predictors. 
 
 ## References
 
