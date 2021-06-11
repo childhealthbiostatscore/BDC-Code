@@ -10,9 +10,13 @@ header-includes:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 library(ggplot2)
+library(dplyr)
 library(patchwork)
 library(splines)
 library(gam)
+library(knitr)
+library(kableExtra)
+library(visreg)
 data(Wage,package = "ISLR")
 data(cancer, package="survival")
 ```
@@ -139,48 +143,61 @@ ggplot(pred,aes(x=age_grid,y=pred)) +
 - We can think of splines are an extension of simple linear regression (1 predictor) and GAMs as an extension of multiple linear regression.
 - For the wage dataset we can adjust the model for year and education: $wage = \beta_0+f_1(year)+f_2(age)+f_3(education)+\epsilon$
 
-## Wage GAM
-
-```{r}
-gam = gam(wage~s(year,4)+s(age,5)+education,data = Wage)
-par(mfrow=c(1,3))
-plot(gam)
-```
-
-## GAM Summary
-
-```{r}
-summary(gam)
-```
-
 ## Application to Survival Analysis
 
+- If we fit a GAM with no smoothed parameters, we obtain essentially the same results as the Cox PH model:
+
 ```{r}
-surv_gam = gam(tac_months~factor(hlamis)+factor(Ethnic_group)+s(age),
-           family=cox.ph(),data=dat,weights=dsa_yn)
+# Race and age as factors
+dat$age_group = cut(dat$age,breaks = c(-Inf,30,50,Inf),labels = c("Young","Middle","Old"),
+                    right = F)
+dat$race_ethnicity = factor(dat$Ethnic_group,labels = c("Caucasian","African American",
+                                                        "Hispanic","Other"))
+# Mean TAC to compare results to Kristen
+dat = dat %>% group_by(idn) %>% mutate(mean_TAC = mean(TAC,na.rm=T))
+# Fit
+surv_gam = mgcv::gam(tac_months~hlamis+race_ethnicity+age_group+mean_TAC,
+           family=mgcv::cox.ph(),data=dat,weights=dsa_yn)
+# Format results
+res = broom::tidy(surv_gam,parametric = T,conf.int = T)
+res[,c("estimate","conf.low","conf.high")] = 
+  lapply(res[,c("estimate","conf.low","conf.high")],exp)
+res$statistic = NULL
+res$statistic = NULL
+res$std.error = NULL
+kable(res,digits = 2,format="latex") %>% 
+  kable_styling(latex_options = "scale_down")
+```
 
-summary(surv_gam)
+## Application to Survival Analysis (Continued)
 
+```{r}
+par(mfrow=c(2, 2))
+visreg(surv_gam)
+```
 
-np <- 300
-j <- 320
-newd <- data.frame(time=seq(0,3000,length=np))
-dname <- names(dat)
-for (n in dname) newd[[n]] <- rep(dat[[n]][j],np)
-newd$time <- seq(0,3000,length=np)
-fv <- predict(surv_gam,newdata=newd,type="response",se=TRUE)
-plot(newd$time,fv$fit,type="l",ylim=c(0,1),xlab="time",ylab="survival")
-lines(newd$time,fv$fit+2*fv$se.fit,col=2)
-lines(newd$time,fv$fit-2*fv$se.fit,col=2)
+## Smooth Function of TAC
 
+\tiny
 
-patient<-subset(dat,dat$idn==320)
-patient<-patient[order(patient$visit_num),] 
-plot(patient$tac_months,patient$TAC,xlim=c(1,48),ylim=c(0,20),xlab="Months Post-Tx",ylab="TAC Trough Level",xaxt="n")
-axis(1,at=c(1,3,6,12,24,36,48))
-lines(patient$tac_months,patient$TAC)
-abline(v=patient$left_months[1],lty=2)
-abline(v=patient$right_months[1])
+```{r}
+# FDA
+fda_gam = mgcv::gam(tac_months~hlamis+race_ethnicity+age_group+s(TAC),
+           family=mgcv::cox.ph(),data=dat,weights=dsa_yn)
+summary(fda_gam)
+```
+
+## Smooth Function of TAC (Continued)
+
+```{r}
+par(mfrow=c(2, 2))
+visreg(fda_gam)
+```
+
+## Interpreting our GAM
+
+```{r}
+
 ```
 
 ## References
