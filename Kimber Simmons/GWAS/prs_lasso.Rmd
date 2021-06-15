@@ -12,90 +12,32 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-library(lassosum)
-library(data.table)
-library(methods)
-library(magrittr)
-library(parallel)
 library(ggplot2)
+library(pROC)
 knitr::opts_chunk$set(echo = FALSE)
 home_dir = ifelse(.Platform$OS.type != "unix","T:/",
                   "~/Dropbox/Work/Kimber Simmons/GWAS/Data_Cleaned/biobank_analysis/imputed/")
 knitr::opts_knit$set(root.dir = home_dir)
 ```
 
-```{r}
-pc_num = 4
-# Read in and process the covariates
-covariate <- read.delim("p.phen",header = F)
-colnames(covariate) = c("FID","IID","Sex","Pheno")
-pcs <- fread(paste0(pc_num,"pcs"))
-colnames(pcs) = c("FID","IID", paste0("PC",1:(ncol(pcs)-2)))
-covariate$Pheno = NULL
-covariate = merge(covariate,pcs)
-covariate$Sex = covariate$Sex - 1
-write.table(covariate,"./covar.txt",quote = F,sep = "\t",row.names = F)
-# Read in phenotype
-pheno <- read.delim("p.phen",header = F)
-colnames(pheno) = c("FID","IID","Sex","Pheno")
-pheno$Sex = NULL
-write.table(pheno,"./pheno.txt",quote = F,sep = "\t",row.names = F)
-```
-
 # Traditional PGRS Approach
 
-```{r cache=TRUE}
-pgrs_nums = read.delim("./prsice_test.prsice")
-ggplot(pgrs_nums[1:50,],aes(x=Threshold,y=Num_SNP)) + geom_point()
+```{r message=FALSE}
+p_threshold = read.delim("range_list",header = F,sep = " ")
+for(i in p_threshold$V1){
+    prs = read.table(paste0("test.",i,".profile"),header = T)
+    roc(prs$PHENO,prs$SCORE,plot = T)
+}
 ```
 
-```{r cache=TRUE,include=FALSE}
-# Summary statistics from plink logistic regression
-ss <- read.delim(paste0("logistic_",pc_num,"pcs.PHENO1.glm.logistic.hybrid"))
-ss <- ss[ss$TEST=="ADD",]
-# Remove P-value = 0, which causes problem in the transformation
-ss <- ss[ss$P != 0,]
-# Transform the P-values into correlation
-cor <- p2cor(p = ss$P,
-        n = nrow(pheno),
-        sign = log(ss$OR)
-        )
-# Run the lassosum pipeline
-# The cluster parameter is used for multi-threading
-cl <- makeCluster(4)
-out <- lassosum.pipeline(
-    cor = cor,
-    chr = ss$X.CHROM,
-    pos = ss$POS,
-    A1 = ss$A1,
-    test.bfile = "merged_imputed_qc",
-    LDblocks = "AFR.hg38", 
-    cluster=cl
-)
-stopCluster(cl)
-```
+# Lasso results
 
 ```{r}
-cl <- makeCluster(4)
-v <- validate(out, pheno = pheno, covar=covariate,cluster=cl)
-# Split-validation
-sv <- splitvalidate(out,cluster=cl)
-# Pseudo-validation
-pv <- pseudovalidate(out,cluster=cl)
-stopCluster(cl)
+prs = read.table("plink.profile",header = T)
+roc(prs$PHENO,prs$SCORE,plot = T)
 ```
-
-```{r}
-# Pull out lasso betas to identify SNPs in the model
-betas = v$best.beta
-```
-
-0 of the 11345 significant SNPs from the GWAS were in Erin’s list, and 0 from the lasso were in the list. After merging and QCing the the data, there were 31 and after TOPMed imputation there was only 1.
 
 # Questions 
-1. How do we validate the PRS? Is there publicly available European data that we can compare this to?
-2. What kind of validation (regular, pseudo, or split) would be best?
-3. We are getting a huge number of significant SNPs (likely due at least partially to batch effects) in the PRS. We can use different p value cutoffs to only take the very top SNPS. What is a good number to aim for? This may result in much lower predictive ability.
-  - Adjusting for 2 PCs results in 1762
-  - Adjusting for 3 PCs results in 2077
-  - Adjusting for 4 PCs results in 2077
+1. plink's lasso function requires an $h^2$ estimate. Lam et al. table suggests 0.6 is reasonable, is this right?
+![](/Users/timvigers/Dropbox/Work/Kimber Simmons/GWAS/Data_Cleaned/biobank_analysis/imputed/h2_table.png)
+2. How do we validate these scores with external data? The AUC is really good for all models, which is concerning from an over-fitting point of view.
