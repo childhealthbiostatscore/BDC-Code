@@ -24,19 +24,34 @@ home_dir = ifelse(.Platform$OS.type != "unix","T:/",
 knitr::opts_knit$set(root.dir = home_dir)
 ```
 
-```{r cache=TRUE,include=FALSE}
+```{r}
+pc_num = 4
 # Read in and process the covariates
 covariate <- read.delim("p.phen",header = F)
 colnames(covariate) = c("FID","IID","Sex","Pheno")
-pcs <- fread("3pcs")
+pcs <- fread(paste0(pc_num,"pcs"))
 colnames(pcs) = c("FID","IID", paste0("PC",1:(ncol(pcs)-2)))
 covariate$Pheno = NULL
+covariate = merge(covariate,pcs)
+covariate$Sex = covariate$Sex - 1
+write.table(covariate,"./covar.txt",quote = F,sep = "\t",row.names = F)
 # Read in phenotype
 pheno <- read.delim("p.phen",header = F)
 colnames(pheno) = c("FID","IID","Sex","Pheno")
 pheno$Sex = NULL
+write.table(pheno,"./pheno.txt",quote = F,sep = "\t",row.names = F)
+```
+
+# Traditional PGRS Approach
+
+```{r cache=TRUE}
+pgrs_nums = read.delim("./prsice_test.prsice")
+ggplot(pgrs_nums[1:50,],aes(x=Threshold,y=Num_SNP)) + geom_point()
+```
+
+```{r cache=TRUE,include=FALSE}
 # Summary statistics from plink logistic regression
-ss <- read.delim("logistic_3pcs.PHENO1.glm.logistic.hybrid")
+ss <- read.delim(paste0("logistic_",pc_num,"pcs.PHENO1.glm.logistic.hybrid"))
 ss <- ss[ss$TEST=="ADD",]
 # Remove P-value = 0, which causes problem in the transformation
 ss <- ss[ss$P != 0,]
@@ -63,10 +78,10 @@ stopCluster(cl)
 ```{r}
 cl <- makeCluster(4)
 v <- validate(out, pheno = pheno, covar=covariate,cluster=cl)
-# # Split-validation
-# sv <- splitvalidate(out,cluster=cl)
-# # Pseudo-validation
-# pv <- pseudovalidate(out,cluster=cl)
+# Split-validation
+sv <- splitvalidate(out,cluster=cl)
+# Pseudo-validation
+pv <- pseudovalidate(out,cluster=cl)
 stopCluster(cl)
 ```
 
