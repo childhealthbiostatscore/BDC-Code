@@ -92,13 +92,10 @@ cut -f1,2,3,4,5 merged_imputed_qc.eigenvec > 3pcs
 cut -f1,2,3,4,5,6 merged_imputed_qc.eigenvec > 4pcs
 # Get sex and phenotype
 cut -f1,2,5,6 merged_imputed_qc.fam > p.phen
-# Logistic regression - effect sizes
-plink2 --bfile merged_imputed_qc --extract merged_imputed_qc.prune.in --glm 
-plink2 --bfile merged_imputed_qc --extract merged_imputed_qc.prune.in --glm --covar 2pcs --out logistic_2pcs
-plink2 --bfile merged_imputed_qc --extract merged_imputed_qc.prune.in --glm --covar 3pcs --out logistic_3pcs
-plink2 --bfile merged_imputed_qc --extract merged_imputed_qc.prune.in --glm --covar 4pcs --out logistic_4pcs
-# Make covariate and p values files
+# Make covariate files
 Rscript ~/GitHub/BDC-Code/Kimber\ Simmons/GWAS/regression_covariates.R
+# Logistic regression - effect sizes
+plink2 --bfile merged_imputed_qc --extract merged_imputed_qc.prune.in --glm --covar covar.txt
 # Lasso - requires h2 estimate
 plink --bfile merged_imputed_qc --extract merged_imputed_qc.prune.in --covar covar.txt --lasso 0.6
 plink --bfile merged_imputed_qc --score plink.lasso 2 header sum
