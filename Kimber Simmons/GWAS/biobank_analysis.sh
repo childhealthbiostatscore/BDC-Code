@@ -92,25 +92,12 @@ cut -f1,2,3,4,5 merged_imputed_qc.eigenvec > 3pcs
 cut -f1,2,3,4,5,6 merged_imputed_qc.eigenvec > 4pcs
 # Get sex and phenotype
 cut -f1,2,5,6 merged_imputed_qc.fam > p.phen
-# Make covariate files
+# Make covariate files and test/train sets
 Rscript ~/GitHub/BDC-Code/Kimber\ Simmons/GWAS/regression_covariates.R
-# Logistic regression - effect sizes
-plink2 --bfile merged_imputed_qc --extract merged_imputed_qc.prune.in --glm --covar covar.txt
-# Lasso - requires h2 estimate
-plink --bfile merged_imputed_qc --extract merged_imputed_qc.prune.in --covar covar.txt --lasso 0.6
-plink --bfile merged_imputed_qc --score plink.lasso 2 header sum
-# P value thresholds)
-echo "1e-20 0 1e-20" > range_list 
-echo "1e-19 0 1e-19" >> range_list
-echo "1e-18 0 1e-18" >> range_list
-echo "1e-17 0 1e-17" >> range_list
-echo "1e-16 0 1e-16" >> range_list
-echo "1e-15 0 1e-15" >> range_list
-echo "1e-14 0 1e-14" >> range_list
-# Plink with p values thresholds
-plink \
-    --bfile merged_imputed_qc \
-    --score effect_sizes 1 2 3 header \
-    --q-score-range range_list SNP.pvalue \
-    --extract merged_imputed_qc.prune.in \
-    --out test
+# Basic regression for choosing the SNPs that go into the lasso
+plink2 --bfile merged_imputed_qc --extract merged_imputed_qc.prune.in --keep train_samples --glm
+# Lasso on the training set - h2 estimate comes from Lam et al. 
+plink --bfile merged_imputed_qc --extract merged_imputed_qc.prune.in --keep train_samples --covar covar.txt --lasso 0.6
+# Get scores for training set and test set
+plink --bfile merged_imputed_qc --keep train_samples --score plink.lasso 2 header sum --out train
+plink --bfile merged_imputed_qc --keep test_samples --score plink.lasso 2 header sum --out test
