@@ -14,44 +14,38 @@ output:
 ```{r setup, include=FALSE}
 library(ggplot2)
 library(pROC)
-library(caret)
-library(parallel)
 knitr::opts_chunk$set(echo = FALSE)
 home_dir = ifelse(.Platform$OS.type != "unix","T:/",
                   "~/Dropbox/Work/Kimber Simmons/GWAS/Data_Cleaned/biobank_analysis/imputed/")
 knitr::opts_knit$set(root.dir = home_dir)
 ```
 
-# Traditional PGRS Approach
+# Methods
 
-## Number of significant SNPs by p-value cutoff
+First, various p value thresholds were evaluated as outlined in `https://choishingwan.github.io/PRS-Tutorial/`. Because our p values are under-inflated, I used a range from $10^{-20}$ to $10^{-14}$. However, this approach has some serious drawbacks from a statistical point of view. In particular it is generally recommended that analysts choose a p value threshold that results in a "best fit" PRS, rather than choosing the threshold based on the number of SNPs it produces. 
 
-```{r}
-logistic_res = read.delim("./plink2.PHENO1.glm.logistic",header = T)
-logistic_res = logistic_res[logistic_res$TEST == "ADD",]
-```
+Because these p value cutoffs produced a similar number of SNPs as the lasso (~100), I decided to continue with the lasso approach to avoid extra multiple comparison problems. Applying the lasso to the top 100 SNPs did not significantly reduce the number of SNPs in the final PRS.
 
-There are `r sum(logistic_res$P<1e-30,na.rm=T)` significant SNPs at the $p<10^{-30}$ level, `r sum(logistic_res$P<1e-25,na.rm=T)` significant SNPs at the $p<10^{-25}$ level, and `r sum(logistic_res$P<1e-20,na.rm=T)` significant SNPs at the $p<10^{-20}$ level. So, I generated a PRS from the SNPs significant at the $p<10^{-30}$ level.
+All analyses were adjusted for 4 principal components in order to account for population stratification and batch effect.
 
 # Lasso results
 
-```{r}
-
+```{r message=FALSE}
+train_res = read.table("./train.profile",header = T)
+test_res = read.table("./test.profile",header = T)
+roc(test_res$PHENO,test_res$SCORESUM,plot = T)
 ```
 
-# Test and Training Split
+This PRS results in excellent prediction in this dataset. However, it is likely overfit to our data and should be validated on an external T1D dataset.
+
+# SNP information
 
 ```{r}
-pheno = read.table("./merged_imputed_qc.fam")
-train_index = createDataPartition(pheno$V6,p=0.75,list=F)
-
-```
-
-```{r eval=FALSE}
-pruned = read.table("merged_imputed_qc.prune.in")
-sample = read.plink("./merged_imputed_qc.bed",
-                 "./merged_imputed_qc.bim",
-                 "./merged_imputed_qc.fam",select.snps=pruned$V1)
+# Import lasso variants
+lasso_snps = read.table("plink.lasso",header = T)
+chr = sapply(strsplit(lasso_snps$SNP,":"),"[[",1)
+pos = sapply(strsplit(lasso_snps$SNP,":"),"[[",2)
+write.csv(paste0(chr,":",pos),"./lasso_snp_positions.csv",row.names = F)
 ```
 
 # Questions 
