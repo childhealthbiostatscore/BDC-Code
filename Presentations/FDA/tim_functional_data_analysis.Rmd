@@ -1,6 +1,6 @@
 ---
 title: "Functional Data Analysis"
-author: "Tim Vigers"
+author: "Tim Vigers & Kristen Campbell"
 date: "`r format(Sys.time(), '%d %B %Y')`"
 output: beamer_presentation
 header-includes:
@@ -18,7 +18,6 @@ library(knitr)
 library(kableExtra)
 library(visreg)
 data(WarsawApts, package = "HRW")
-data(Wage,package = "ISLR")
 dat = read.csv("/Users/timvigers/Dropbox/Work/Presentations/BDC/for_jm_v3_kaci.csv")
 ```
 
@@ -50,9 +49,8 @@ dat = read.csv("/Users/timvigers/Dropbox/Work/Presentations/BDC/for_jm_v3_kaci.c
 ## Semi- and Non-Parametric Regression
 
 - The basic linear model is: $y_i= \beta_0+\beta_1 x_i+\epsilon_i$ for $1\leq i \leq n$
-- Each predictor has a simple form, and 
-  - The overall shape is determined by the model rather than the data
-    - e.g. a straight line in a linear model, one bend in a quadratic model, etc.
+- Each predictor has a simple form
+  - The overall shape is determined by the model rather than the data.
 - The non-parametric version of this model is: $y_i = f(x_i)+\epsilon_i$
 
 ## Semi- and Non-Parametric Regression
@@ -62,20 +60,13 @@ dat = read.csv("/Users/timvigers/Dropbox/Work/Presentations/BDC/for_jm_v3_kaci.c
   - This model is much more flexible than parametric.
 - A semi-parametric model essentially uses parametric models for some predictors, and non-parametric models for others.
 
-## Penalized Splines
+## Basis Functions
 
-- A natural question at this point is: "What do you mean $f(x_i)$ is an arbitrary smooth function? Can you give us an example?"
-- A penalized spline model is one relatively simple option for $f(x_i)$: $$f(x)=\beta_0+\beta_1 x + \sum_{k=1}^K{u_k(x-\kappa_k)_+}$$ 
-  - $x_+\equiv max(x,0)$ and the $\kappa_ks$ are pre-set values that we choose.
-- We are fitting multiple short lines that meet at our $\kappa_ks$ (often called "knots").
+- How do we represent $f(x)$?
+- If $b_j(x)$ is the $j^{th}$ basis function, then: $$f(x)=\sum_{j=1}^k \beta_j b_j(x)$$
+- Polynomials are a simple form of basis function: $$f(x)=\beta_1+\beta_2x+\beta_3x^2+\beta_4x^3+\beta_5x^4$$ and $$y_i=\beta_1+\beta_2x+\beta_3x^2+\beta_4x^3+\beta_5x^4+\epsilon_i$$
 
-## Penalized Splines (for Stats Nerds)
-
-- Estimation of the model coefficients is a fairly straightforward constrained optimization problem where we want to minimize $$\sum_{i=1}^n{(y_i - f(x_i))^2}\text{ with }\sum_{k=1}^K{u_k^2}\leq C$$
-
-- This is equivalent to penalized least squares with smoothing parameter $\lambda\geq0$, where we want to minimize: $$\sum_{i=1}^n{(y_i - f(x_i))^2}+\lambda\sum_{k=1}^K{u_k^2}$$
-
-## Linear Model
+## Polynomial Models
 
 ```{r}
 ggplot(WarsawApts,aes(x=construction.date,y=areaPerMzloty)) +
@@ -85,7 +76,7 @@ ggplot(WarsawApts,aes(x=construction.date,y=areaPerMzloty)) +
   ylab("Area per Million Zloty") + xlab("Date")
 ```
 
-## Quadratic Model
+## Polynomial Models
 
 ```{r}
 ggplot(WarsawApts,aes(x=construction.date,y=areaPerMzloty)) +
@@ -95,37 +86,86 @@ ggplot(WarsawApts,aes(x=construction.date,y=areaPerMzloty)) +
   ylab("Area per Million Zloty") + xlab("Date")
 ```
 
-## Cubic Model
+## Polynomial Models
 
 ```{r}
 ggplot(WarsawApts,aes(x=construction.date,y=areaPerMzloty)) +
   geom_point(alpha=0.3) + 
   geom_smooth(method='lm',formula=y~x+I(x^2)+I(x^3),se=F,color="blue",size=1) +
-  theme_bw() + ggtitle("Quadratic") +
+  theme_bw() + ggtitle("Cubic") +
   ylab("Area per Million Zloty") + xlab("Date")
 ```
 
-## Spline Model
+## Splines
+
+- Instead of a polynomial model across all of $X$, we can fit several models over different regions of $X$.
+- With the constraint that they "join up" at each knot.
+
+- For the simplest example we use a single knot $c$, which splits $X$ into two regions. 
+  - Then we fit a linear model through each region:
+  
+$$
+y_i=
+    \begin{cases}
+      \beta_{01}+\beta_{11}x_i, & \text{if}\ x_i<c \\
+      \beta_{02}+\beta_{12}x_i, & \text{if}\ x_i\geq c
+    \end{cases}
+$$
+
+## Spline Models
 
 ```{r}
-fit = gam(areaPerMzloty~bs(construction.date,knots = quantile(WarsawApts$construction.date,seq(0,1,1/19))),data = WarsawApts)
+fit = gam(areaPerMzloty~bs(construction.date,df = 2,degree = 1),data = WarsawApts)
 
 ggplot(WarsawApts,aes(x=construction.date,y=areaPerMzloty)) +
   geom_point(alpha=0.3) + 
   geom_line(aes(y = predict(fit)),color="blue",size=1) +
-  theme_bw() + ggtitle("Splines with 20 Knots") +
+  theme_bw() + ggtitle("Linear Splines with 1 Knot") +
   ylab("Area per Million Zloty") + xlab("Date")
 ```
 
-## Spline Model
+## Improving the Fit
+
+- We can increase the number of knots (K) and the degree to obtain a better fit.
+- One way is to increase K until it produces the best looking curve.
+  - Or can use cross validation (usually 10-fold) to see which K produces the lowest mean squared error (MSE).
+- In practice piecewise cubic fits are often used.
+  - Smoother
+  - Nice numerical properties
+
+## Spline Models
 
 ```{r}
-fit = gam(areaPerMzloty~bs(construction.date,knots = quantile(WarsawApts$construction.date,seq(0,1,1/4))),data = WarsawApts)
+fit = gam(areaPerMzloty~bs(construction.date,df = 21,degree = 1),data = WarsawApts)
 
 ggplot(WarsawApts,aes(x=construction.date,y=areaPerMzloty)) +
   geom_point(alpha=0.3) + 
   geom_line(aes(y = predict(fit)),color="blue",size=1) +
-  theme_bw() + ggtitle("Splines with 5 Knots") +
+  theme_bw() + ggtitle("Linear Splines with 20 Knots") +
+  ylab("Area per Million Zloty") + xlab("Date")
+```
+
+## Spline Models
+
+```{r}
+fit = gam(areaPerMzloty~bs(construction.date,df = 24,degree = 3),data = WarsawApts)
+
+ggplot(WarsawApts,aes(x=construction.date,y=areaPerMzloty)) +
+  geom_point(alpha=0.3) + 
+  geom_line(aes(y = predict(fit)),color="blue",size=1) +
+  theme_bw() + ggtitle("Cubic Splines with 20 Knots") +
+  ylab("Area per Million Zloty") + xlab("Date")
+```
+
+## Spline Models
+
+```{r}
+fit = gam(areaPerMzloty~bs(construction.date,df = 8,degree = 3),data = WarsawApts)
+
+ggplot(WarsawApts,aes(x=construction.date,y=areaPerMzloty)) +
+  geom_point(alpha=0.3) + 
+  geom_line(aes(y = predict(fit)),color="blue",size=1) +
+  theme_bw() + ggtitle("Cubic Splines with 5 Knots") +
   ylab("Area per Million Zloty") + xlab("Date")
 ```
 
@@ -138,8 +178,12 @@ ggplot(WarsawApts,aes(x=construction.date,y=areaPerMzloty)) +
   
 ## Generalized Additive Models (GAMs)
 
-- We can think of splines are an extension of simple linear regression (1 predictor) and GAMs as an extension of multiple linear regression.
-- For the wage dataset we can adjust the model for year and education: $wage = \beta_0+f_1(year)+f_2(age)+f_3(education)+\epsilon$
+- We can think of splines as an extension of simple linear regression (1 predictor) and GAMs as an extension of multiple linear regression.
+- For the Warsaw apartments dataset we can adjust the model for apartment floor and district: $Area = \beta_0+f_1(Date)+f_2(Floor)+f_3(District)+\epsilon$.
+- Or for a survival analysis we could fit the model: $$time=hla+race/ethnicity+age group+TAC$$
+  - In the GAM setting, we choose which variables are smoothed, so we might fit the model:
+  
+  $$time=hla+race/ethnicity+age group+f(TAC)$$
 
 ## Application to Survival Analysis
 
@@ -186,6 +230,8 @@ fda_gam = mgcv::gam(tac_months~hlamis+race_ethnicity+age_group+s(TAC),
 summary(fda_gam)
 ```
 
+- The p value for our smoothed term "s(TAC)" is for the null hypothesis of a linear relationship vs. a non-linear relationship.
+
 ## Smooth Function of TAC (Continued)
 
 ```{r}
@@ -196,10 +242,19 @@ visreg(fda_gam)
 ## Interpreting our GAM
 
 - *Note*: This model was fit using the default settings in the `gam` package.
+  - Thin plate regression splines
 - The parameters that are not smoothed functions are interpreted the same way as a Cox regression.
 - There appears to be reduced hazard for TAC in the 5 - 10 range.
   - This matches the therapeutic range recommended in other papers.
 
+## Pros and Cons
+
+- GAMs allow us to automatically model non-linear relationships. 
+  - We don't need to test lots of different models and variable transformations.
+- Non-linear models are often better at predicting $Y$ 
+- Interpretation is similar to multiple regression. 
+  - However, we don't get the simple $\beta$ coefficient that most journals like.
+- Incorporating interaction terms is a little tricky and limited compared to additive variables.
 
 ## References
 
