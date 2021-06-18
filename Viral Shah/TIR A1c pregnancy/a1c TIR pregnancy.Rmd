@@ -18,6 +18,8 @@ library(knitr)
 library(sjlabelled)
 library(dplyr)
 library(car)
+library(blandr)
+library(patchwork)
 
 # read in data from Sarit's primary analysis
 alldata <- read.csv("T:\\Viral Shah\\TIR and A1c in pregnancy\\Data Cleaned\\for_viral.csv")
@@ -189,13 +191,16 @@ unique <- alldata %>% group_by(subject_id,trimester) %>% filter(row_number()==1)
 # keep only the variables we need
 # make a dataset with one record per trimester
 final <- alldata[c("subject_id","trimester","visit","a1c_trimester_mean","per_in_range_63_140","percent_time_over_140",
-                   "percent_time_under_63","gmi","estimated_a1c","smbg_tir_mean","smbg_tbr_mean","smbg_tar_mean",
+                   "percent_time_under_63","gmi","estimated_a1c","smbg_tir_mean","smbg_tbr_mean","smbg_tar_mean","num_days_cgm_wear",
                    "num_days_good_data","average_sensor","standard_deviation")]
 final <- final[with(final, order(subject_id,trimester,-smbg_tir_mean)), ]
 final <- final %>% group_by(subject_id,trimester) %>% filter(row_number()==1)
 final$tirge70 <- ifelse(is.na(final$per_in_range_63_140),NA,
                       ifelse(final$per_in_range_63_140>=70,1,0))
 final$tirge70 <- as.factor(final$tirge70)
+
+# percent of days with good data
+final$per_good_data <- (final$num_days_good_data/final$num_days_cgm_wear)*100
 
 # create new variable for difference between GMI and HbA1c
 final$delta <- final$a1c_trimester_mean - final$gmi
@@ -243,7 +248,7 @@ cor_delta_sd <- ddply(final, .(trimester), summarise,corr=round(corfun(delta,sta
 
 taboutvars <- c("a1c_trimester_mean","per_in_range_63_140","percent_time_over_140", "percent_time_under_63",
                 "gmi","estimated_a1c","smbg_tir_mean","smbg_tbr_mean","smbg_tar_mean","num_days_good_data",
-                "tirge70","average_sensor")
+                "tirge70","average_sensor","per_good_data")
 t1 <- CreateTableOne(vars = taboutvars,data = final, strata = "trimester")
 t1 <- print(t1,printToggle = F,varLabels=TRUE,missing=T)
 
@@ -321,6 +326,19 @@ modint_tir_gmi_anova <- Anova(modint_tir_gmi, contrasts=list(topic=contr.sum, sy
 # GMI and A1c
 modint_gmi_a1c <- lm(gmi ~ a1c_trimester_mean*trimester, data=final)
 modint_gmi_a1c_anova <- Anova(modint_gmi_a1c, contrasts=list(topic=contr.sum, sys=contr.sum), type=3)
+
+# BA plots
+# trimester 1
+ba1 <- blandr.draw(final[final$trimester==1,]$a1c_trimester_mean,final[final$trimester==1,]$gmi,
+                        ciDisplay = F) + theme_bw() + ggtitle("Trimester 1")
+
+# trimester 2
+ba2 <- blandr.draw(final[final$trimester==2,]$a1c_trimester_mean,final[final$trimester==2,]$gmi,
+                        ciDisplay = F) + theme_bw() + ggtitle("Trimester 2")
+
+# trimester 3
+ba3 <- blandr.draw(final[final$trimester==3,]$a1c_trimester_mean,final[final$trimester==3,]$gmi,
+                        ciDisplay = F) + theme_bw() + ggtitle("Trimester 3")
 
 ```
 
@@ -502,5 +520,18 @@ modint_gmi_a1c_anova
 ```
 <br>
 
+\newpage
 
+## Bland-Altman plots of GIR and A1c by trimester
 
+```{r,echo=FALSE,warning=F}
+ba1 
+```
+
+```{r,echo=FALSE,warning=F}
+ba2 
+```
+
+```{r,echo=FALSE,warning=F}
+ba3 
+```
