@@ -1,6 +1,6 @@
 library(biomaRt)
 # Import
-snps = read.csv("/Users/timvigers/Dropbox/Work/Kimber Simmons/GWAS/Data_Cleaned/Variants in any T1D GRS.csv")
+snps = read.csv("/home/tim/Dropbox/Work/Kimber Simmons/GWAS/Data_Cleaned/Variants in any T1D GRS.csv")
 # Ensembl
 snp_mart = useMart(biomart="ENSEMBL_MART_SNP",host="grch37.ensembl.org",dataset="hsapiens_snp")
 locations <- getBM(attributes = c('refsnp_id','chr_name','chrom_start'), filters = c('snp_filter'), 
