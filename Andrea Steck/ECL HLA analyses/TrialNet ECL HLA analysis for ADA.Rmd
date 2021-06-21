@@ -21,7 +21,7 @@ data <- read.csv("S:\\Shared Projects\\Laura\\BDC\\Projects\\Andrea Steck\\ECL a
                  na.strings = c("NA",""," "))
 keep <- data
 keep <- data[,c("PTID","ECL.IAA.visit.1","ECL.GADA.visit.1","HLA.DR3.4","Genotype","DR.3.present","DR4.Present","Age.at.visit.1",
-                "Gender","Number.of.positive.biochemical.antibodies.visit.1")]
+                "Gender","Number.of.positive.biochemical.antibodies.visit.1","mIAA.visit.1","GAD65.visit.1","miaa_cat_2","gad65_cat_2")]
 keep$numpos <- as.factor(keep$Number.of.positive.biochemical.antibodies.visit.1)
 
 keep$biochem_status[keep$Number.of.positive.biochemical.antibodies.visit.1==0] <- 'Ab negative'
@@ -59,6 +59,31 @@ keep$ecl_cat <- ifelse(keep$ecl_iaa_pos=="Positive" & keep$ecl_gada_pos=="Positi
                        ifelse(keep$ecl_iaa_pos=="Positive" & keep$ecl_gada_pos=="Negative","ECL IAA +",
                               ifelse(keep$ecl_iaa_pos=="Negative" & keep$ecl_gada_pos=="Positive","ECL GADA +","ECL -")))
 
+# calculate Z-score for antibodies
+# mIAA mean 0.02715 SD 0.1160666
+# GAD65 0.2618 SD 0.3162107
+keep$miaa_z <- (keep$mIAA.visit.1 - 0.02715) / 0.1160666
+keep$gad65_z <- (keep$GAD65.visit.1 - 0.2618) / 0.3162107
+
+# categorize antibodies
+keep$miaa_pos <- as.factor(ifelse(keep$mIAA.visit.1>0.01,"Positive","Negative"))
+keep$gad65_pos <- as.factor(ifelse(keep$GAD65.visit.1>0.032,"Positive","Negative"))
+# for those who are single ab positive, do not count them as positive unless the ab was confirmed
+keep[keep$`Number.of.positive.biochemical.antibodies.visit.1`==1 & keep$miaa_pos=="Positive" & 
+       keep$miaa_cat_2==0,]$miaa_pos <- "Negative"
+keep[keep$`Number.of.positive.biochemical.antibodies.visit.1`==1 & keep$gad65_pos=="Positive" & 
+       !is.na(keep$gad65_cat_2) & keep$gad65_cat_2==0,]$gad65_pos <- "Negative"
+keep$either_pos <- ifelse(keep$miaa_pos=="Positive" | keep$gad65_pos=="Positive", "Positive", "Negative")
+set_label(keep$either_pos)="mIAA or GAD65 ab positive"
+keep$ab_cat <- ifelse(keep$miaa_pos=="Positive" & keep$gad65_pos=="Positive", "mIAA and GAD65 +", 
+                       ifelse(keep$miaa_pos=="Positive" & keep$gad65_pos=="Negative","mIAA +",
+                              ifelse(keep$miaa_pos=="Negative" & keep$gad65_pos=="Positive","GAD65 +","Ab -")))
+
+# what % of those who are RBA positive for IAA/GADA are also ECL positive?
+keep$rba_ecl_miaa <- as.factor(ifelse(keep$miaa_pos !="Positive",NA,
+                            ifelse(keep$miaa_pos =="Positive" & keep$ecl_iaa_pos=="Positive",1,0)))
+keep$rba_ecl_gad65 <- as.factor(ifelse(keep$gad65_pos !="Positive",NA,
+                            ifelse(keep$gad65_pos =="Positive" & keep$ecl_gada_pos=="Positive",1,0)))
 
 #write.csv(keep,"S:\\Shared Projects\\Laura\\BDC\\Projects\\Andrea Steck\\ECL ab and genotype\\Data\\ecl_hla_export.csv")
 
@@ -68,6 +93,18 @@ n <- nrow(keep[!is.na(keep$ECL.IAA.visit.1) | !is.na(keep$ECL.GADA.visit.1),])
 # make dataframe without DRx/x
 keep_nox <- keep[keep$Genotype != "DR x/x",]
 keep_nox$Genotype <- droplevels(as.factor(keep_nox$Genotype))
+
+# overall table of antibody positivity
+abtab <- CreateTableOne(vars="ecl_cat",data=keep)
+abtab <- print(abtab)
+
+# table of those with RBA positivity by whether they are also ECL positive
+rba_ecl_miaa_tab <- CreateTableOne(vars="rba_ecl_miaa",data=keep)
+rba_ecl_miaa_tab <- print(rba_ecl_miaa_tab)
+
+rba_ecl_gad65_tab <- CreateTableOne(vars="rba_ecl_gad65",data=keep)
+rba_ecl_gad65_tab <- print(rba_ecl_gad65_tab)
+
 
 # Table 1
 tab1vars <- c("Age.at.visit.1","Gender","race_eth","HLA.DR3.4","Genotype","DR.3.present","DR4.Present","biochem_status")
@@ -135,13 +172,33 @@ Subject 136806 was excluded from analysis because the mIAA Z-score at visit 1 wa
 
 Z-scores for ECL GADA (ecl_gada_z) and ECL IAA (ecl_iaa_z) were calculated as (subject's ab level - mean) / SD.  Subjects were classified as positive for ECL IAA (ecl_iaa_pos) if their value was >0.006, and were classified as positive for ECL GADA (ecl_gada_pos) if their value was >0.023.
 
-ECL Z-scores were not normally distributed, and were compared using the Kruskal-Wallis test.  ECL positivity was compared using the chi-square test.
-
 # Results
 
 There were `r n` subjects with ECL antibody results and HLA genotyping included in this analysis.
 
 Table 1 shows descriptive statistics for the entire cohort, and Table 1a shows descriptive statistics by ECL positivity.  The minimum age was `r minage` and the maximum age was `r maxage`.
+
+# Overall frequency of ECL antibody positivity
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(abtab)
+```
+<br>
+
+# Of those who were RBA IAA positive, what % were ECL IAA positive?
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(rba_ecl_miaa_tab)
+```
+<br>
+
+# Of those who were RBA GADA positive, what % were ECL GADA positive?
+
+```{r, results='asis',tidy=TRUE, echo=FALSE}
+kable(rba_ecl_gad65_tab)
+```
+<br>
+
 
 # Table 1 - Descriptive statistics for the entire cohort
 ```{r, results='asis',tidy=TRUE, echo=FALSE}
