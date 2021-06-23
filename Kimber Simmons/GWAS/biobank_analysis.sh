@@ -92,9 +92,12 @@ cut -f1,2,3,4,5 merged_imputed_qc.eigenvec > 3pcs
 cut -f1,2,3,4,5,6 merged_imputed_qc.eigenvec > 4pcs
 # Get sex and phenotype
 cut -f1,2,5,6 merged_imputed_qc.fam > p.phen
-# Logistic regression
-plink2 --bfile merged_imputed_qc --extract merged_imputed_qc.prune.in --glm 'allow-no-covars' # will adjust for PCs later during the lasso
-plink2 --bfile merged_imputed_qc --extract merged_imputed_qc.prune.in --glm --covar 2pcs --out logistic_2pcs
-plink2 --bfile merged_imputed_qc --extract merged_imputed_qc.prune.in --glm --covar 3pcs --out logistic_3pcs
-plink2 --bfile merged_imputed_qc --extract merged_imputed_qc.prune.in --glm --covar 4pcs --out logistic_4pcs
-# From here, the R package lassosum can be used to generate a PRS
+# Make covariate files and test/train sets
+Rscript ~/GitHub/BDC-Code/Kimber\ Simmons/GWAS/regression_covariates.R
+# Basic regression for choosing the SNPs that go into the lasso
+plink2 --bfile merged_imputed_qc --extract merged_imputed_qc.prune.in --keep train_samples --glm
+# Lasso on the training set - h2 estimate comes from Lam et al. 
+plink --bfile merged_imputed_qc --extract merged_imputed_qc.prune.in --keep train_samples --covar covar.txt --lasso 0.6
+# Get scores for training set and test set
+plink --bfile merged_imputed_qc --keep train_samples --score plink.lasso 2 header sum --out train
+plink --bfile merged_imputed_qc --keep test_samples --score plink.lasso 2 header sum --out test

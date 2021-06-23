@@ -50,6 +50,22 @@ child_check <- child_check[!(child_check$record_id %in% c(121,221)),]
 demo_adult <- merge(demo_adult,child_check,by="record_id",all.x=T, all.y = T)
 demo_adult$child_check_glucose_cat <- as.factor(demo_adult$child_check_glucose_cat)
 
+# now need to read in updated REDCap report which has the nighttime and evening glycemic variables
+# because other participants have been added since, need to keep only these variables in the ppts already included in analysis
+source("T:\\Erin Cobry\\Prospective HCL and sleep study\\Data raw\\AdvancedHybridClosed-ATTDAbstracts2021_R_2021-06-09_1219.r")
+new_vars <- data
+data <- NULL
+new_vars_keep <- new_vars[,c("record_id","redcap_event_name","eve_sensor_low","eve_sensor_below","eve_sensor_target","eve_sensor_high",
+                             "night_sensor_low","night_sensor_below","night_sensor_target","night_sensor_high")]
+colnames(new_vars_keep) <- c("record_id","redcap_event_name","percent_u54_eve","percent_55_69_eve","percent_70_180_eve","percent_251_eve",
+                             "percent_u54_night","percent_55_69_night","percent_70_180_night","percent_251_night")
+new_vars_keep$percent_u70_eve <- rowSums(new_vars_keep[,c("percent_u54_eve","percent_55_69_eve")])
+new_vars_keep$percent_u70_night <- rowSums(new_vars_keep[,c("percent_u54_night","percent_55_69_night")])
+new_vars_keep <- new_vars_keep[new_vars_keep$record_id>=200,]
+new_var_list <- c("percent_u54_eve","percent_55_69_eve","percent_70_180_eve","percent_251_eve",
+                             "percent_u54_night","percent_55_69_night","percent_70_180_night","percent_251_night",
+                              "percent_u70_eve","percent_u70_night")
+
 source("T:\\Erin Cobry\\Prospective HCL and sleep study\\Data raw\\AdvancedHybridClosed-ATTDAbstracts2021_R_2020-12-17_1331.r")
 data <- data[!(data$record_id %in% c(121,221)),]
 # fix total sleep variable
@@ -58,20 +74,32 @@ data$hours <-  as.numeric(word(data$totalsleep_avg,1,sep=":"))
 data$minutes <- as.numeric(word(data$totalsleep_avg,2,sep=":"))
 data$totalsleep_avg_num <- data$hours + (data$minutes/60)
 data$redcap_event_name.factor <- droplevels(data$redcap_event_name.factor)
-
 # calculate time under 70
 data$sensor_u70 <- NA
 data$sensor_u70 <- ifelse(is.na(data$sensor_u54) | is.na(data$sensor_55_69), NA, rowSums(data[,c("sensor_u54","sensor_55_69")]))
+# figure out which record IDs we need from the new glycemic variables
+new_vars_keep <- new_vars_keep[new_vars_keep$record_id %in% data$record_id,]
+data <- merge(data,new_vars_keep,by=c("record_id","redcap_event_name"),all.x=T,all.y=F)
 
 child <- data[data$record_id>=200,]
 adult <- data[data$record_id<200,]
 # merge sensor data from child with parent
-tir <- child[,c("record_id","sensor_70_180","sensor_55_69","sensor_u54","sensor_u70")]
+tir <- child[,c("record_id","sensor_70_180","sensor_55_69","sensor_u54","sensor_u70",new_var_list)]
 tir$record_id <- tir$record_id-100
 adult$sensor_70_180 <- NULL
 adult$sensor_55_69 <- NULL
 adult$sensor_u54 <- NULL
 adult$sensor_u70 <- NULL
+adult$percent_u54_eve <- NULL
+adult$percent_55_69_eve <- NULL
+adult$percent_70_180_eve <- NULL
+adult$percent_251_eve <- NULL
+adult$percent_u54_night <- NULL
+adult$percent_55_69_night <- NULL
+adult$percent_70_180_night <- NULL
+adult$percent_251_night <- NULL
+adult$percent_u70_eve <- NULL
+adult$percent_u70_night <- NULL
 adult <- merge(adult,tir,by="record_id",all.x=T,all.y=T)
 
 # get child a1c from glycemic data and merge into demo data
@@ -80,8 +108,8 @@ demo_child <- merge(demo_child,child_a1c,by="record_id",all.x=T,all.y=T)
 demo_child$hba1c <- as.numeric(demo_child$hba1c)
 
 # write record IDs included for Angela
-write.csv(demo_child[,"record_id"],"B:\\Projects\\Erin Cobry\\Prospective HCL and sleep study\\Data clean\\ids TIR and sleep.csv",
-          row.names = F,col.names = F)
+#write.csv(demo_child[,"record_id"],"B:\\Projects\\Erin Cobry\\Prospective HCL and sleep study\\Data clean\\ids TIR and sleep.csv",
+#          row.names = F,col.names = F)
 
 # adult demo table
 # need to add child BG checks when those data are clean
@@ -265,6 +293,126 @@ totsleep_child_mod_u70 <- lme(totalsleep_avg_num ~ sensor_u70,random=~1|record_i
 awake_child_mod_u70 <- lme(awake_avg ~ sensor_u70,random=~1|record_id,data = child,na.action = na.omit)
 eff_child_mod_u70 <- lme(sleepefficency_avg ~ sensor_u70,random=~1|record_id,data = child,na.action = na.omit)
 waso_child_mod_u70 <- lme(waso_avg ~ sensor_u70,random=~1|record_id,data = child,na.action = na.omit)
+
+# percent_u54_eve 
+# first adults
+totsleep_adult_mod_u54_eve <- lme(totalsleep_avg_num ~ percent_u54_eve,random=~1|record_id,data = adult,na.action = na.omit)
+awake_adult_mod_u54_eve <- lme(awake_avg ~ percent_u54_eve,random=~1|record_id,data = adult,na.action = na.omit)
+eff_adult_mod_u54_eve <- lme(sleepefficency_avg ~ percent_u54_eve,random=~1|record_id,data = adult,na.action = na.omit)
+waso_adult_mod_u54_eve <- lme(waso_avg ~ percent_u54_eve,random=~1|record_id,data = adult,na.action = na.omit)
+# then kids
+totsleep_child_mod_u54_eve <- lme(totalsleep_avg_num ~ percent_u54_eve,random=~1|record_id,data = child,na.action = na.omit)
+awake_child_mod_u54_eve <- lme(awake_avg ~ percent_u54_eve,random=~1|record_id,data = child,na.action = na.omit)
+eff_child_mod_u54_eve <- lme(sleepefficency_avg ~ percent_u54_eve,random=~1|record_id,data = child,na.action = na.omit)
+waso_child_mod_u54_eve <- lme(waso_avg ~ percent_u54_eve,random=~1|record_id,data = child,na.action = na.omit)
+
+# percent_55_69_eve 
+# first adults
+totsleep_adult_mod_55_69_eve <- lme(totalsleep_avg_num ~ percent_55_69_eve,random=~1|record_id,data = adult,na.action = na.omit)
+awake_adult_mod_55_69_eve <- lme(awake_avg ~ percent_55_69_eve,random=~1|record_id,data = adult,na.action = na.omit)
+eff_adult_mod_55_69_eve <- lme(sleepefficency_avg ~ percent_55_69_eve,random=~1|record_id,data = adult,na.action = na.omit)
+waso_adult_mod_55_69_eve <- lme(waso_avg ~ percent_55_69_eve,random=~1|record_id,data = adult,na.action = na.omit)
+# then kids
+totsleep_child_mod_55_69_eve <- lme(totalsleep_avg_num ~ percent_55_69_eve,random=~1|record_id,data = child,na.action = na.omit)
+awake_child_mod_55_69_eve <- lme(awake_avg ~ percent_55_69_eve,random=~1|record_id,data = child,na.action = na.omit)
+eff_child_mod_55_69_eve <- lme(sleepefficency_avg ~ percent_55_69_eve,random=~1|record_id,data = child,na.action = na.omit)
+waso_child_mod_55_69_eve <- lme(waso_avg ~ percent_55_69_eve,random=~1|record_id,data = child,na.action = na.omit)
+
+# percent_u70_eve 
+# first adults
+totsleep_adult_mod_u70_eve <- lme(totalsleep_avg_num ~ percent_u70_eve,random=~1|record_id,data = adult,na.action = na.omit)
+awake_adult_mod_u70_eve <- lme(awake_avg ~ percent_u70_eve,random=~1|record_id,data = adult,na.action = na.omit)
+eff_adult_mod_u70_eve <- lme(sleepefficency_avg ~ percent_u70_eve,random=~1|record_id,data = adult,na.action = na.omit)
+waso_adult_mod_u70_eve <- lme(waso_avg ~ percent_u70_eve,random=~1|record_id,data = adult,na.action = na.omit)
+# then kids
+totsleep_child_mod_u70_eve <- lme(totalsleep_avg_num ~ percent_u70_eve,random=~1|record_id,data = child,na.action = na.omit)
+awake_child_mod_u70_eve <- lme(awake_avg ~ percent_u70_eve,random=~1|record_id,data = child,na.action = na.omit)
+eff_child_mod_u70_eve <- lme(sleepefficency_avg ~ percent_u70_eve,random=~1|record_id,data = child,na.action = na.omit)
+waso_child_mod_u70_eve <- lme(waso_avg ~ percent_u70_eve,random=~1|record_id,data = child,na.action = na.omit)
+
+# percent_70_180_eve 
+# first adults
+totsleep_adult_mod_70_180_eve <- lme(totalsleep_avg_num ~ percent_70_180_eve,random=~1|record_id,data = adult,na.action = na.omit)
+awake_adult_mod_70_180_eve <- lme(awake_avg ~ percent_70_180_eve,random=~1|record_id,data = adult,na.action = na.omit)
+eff_adult_mod_70_180_eve <- lme(sleepefficency_avg ~ percent_70_180_eve,random=~1|record_id,data = adult,na.action = na.omit)
+waso_adult_mod_70_180_eve <- lme(waso_avg ~ percent_70_180_eve,random=~1|record_id,data = adult,na.action = na.omit)
+# then kids
+totsleep_child_mod_70_180_eve <- lme(totalsleep_avg_num ~ percent_70_180_eve,random=~1|record_id,data = child,na.action = na.omit)
+awake_child_mod_70_180_eve <- lme(awake_avg ~ percent_70_180_eve,random=~1|record_id,data = child,na.action = na.omit)
+eff_child_mod_70_180_eve <- lme(sleepefficency_avg ~ percent_70_180_eve,random=~1|record_id,data = child,na.action = na.omit)
+waso_child_mod_70_180_eve <- lme(waso_avg ~ percent_70_180_eve,random=~1|record_id,data = child,na.action = na.omit)
+
+# percent_251_eve 
+# first adults
+totsleep_adult_mod_251_eve <- lme(totalsleep_avg_num ~ percent_251_eve,random=~1|record_id,data = adult,na.action = na.omit)
+awake_adult_mod_251_eve <- lme(awake_avg ~ percent_251_eve,random=~1|record_id,data = adult,na.action = na.omit)
+eff_adult_mod_251_eve <- lme(sleepefficency_avg ~ percent_251_eve,random=~1|record_id,data = adult,na.action = na.omit)
+waso_adult_mod_251_eve <- lme(waso_avg ~ percent_251_eve,random=~1|record_id,data = adult,na.action = na.omit)
+# then kids
+totsleep_child_mod_251_eve <- lme(totalsleep_avg_num ~ percent_251_eve,random=~1|record_id,data = child,na.action = na.omit)
+awake_child_mod_251_eve <- lme(awake_avg ~ percent_251_eve,random=~1|record_id,data = child,na.action = na.omit)
+eff_child_mod_251_eve <- lme(sleepefficency_avg ~ percent_251_eve,random=~1|record_id,data = child,na.action = na.omit)
+waso_child_mod_251_eve <- lme(waso_avg ~ percent_251_eve,random=~1|record_id,data = child,na.action = na.omit)
+
+# percent_u54_night 
+# first adults
+totsleep_adult_mod_u54_night <- lme(totalsleep_avg_num ~ percent_u54_night,random=~1|record_id,data = adult,na.action = na.omit)
+awake_adult_mod_u54_night <- lme(awake_avg ~ percent_u54_night,random=~1|record_id,data = adult,na.action = na.omit)
+eff_adult_mod_u54_night <- lme(sleepefficency_avg ~ percent_u54_night,random=~1|record_id,data = adult,na.action = na.omit)
+waso_adult_mod_u54_night <- lme(waso_avg ~ percent_u54_night,random=~1|record_id,data = adult,na.action = na.omit)
+# then kids
+totsleep_child_mod_u54_night <- lme(totalsleep_avg_num ~ percent_u54_night,random=~1|record_id,data = child,na.action = na.omit)
+awake_child_mod_u54_night <- lme(awake_avg ~ percent_u54_night,random=~1|record_id,data = child,na.action = na.omit)
+eff_child_mod_u54_night <- lme(sleepefficency_avg ~ percent_u54_night,random=~1|record_id,data = child,na.action = na.omit)
+waso_child_mod_u54_night <- lme(waso_avg ~ percent_u54_night,random=~1|record_id,data = child,na.action = na.omit)
+
+# percent_55_69_night 
+# first adults
+totsleep_adult_mod_55_69_night <- lme(totalsleep_avg_num ~ percent_55_69_night,random=~1|record_id,data = adult,na.action = na.omit)
+awake_adult_mod_55_69_night <- lme(awake_avg ~ percent_55_69_night,random=~1|record_id,data = adult,na.action = na.omit)
+eff_adult_mod_55_69_night <- lme(sleepefficency_avg ~ percent_55_69_night,random=~1|record_id,data = adult,na.action = na.omit)
+waso_adult_mod_55_69_night <- lme(waso_avg ~ percent_55_69_night,random=~1|record_id,data = adult,na.action = na.omit)
+# then kids
+totsleep_child_mod_55_69_night <- lme(totalsleep_avg_num ~ percent_55_69_night,random=~1|record_id,data = child,na.action = na.omit)
+awake_child_mod_55_69_night <- lme(awake_avg ~ percent_55_69_night,random=~1|record_id,data = child,na.action = na.omit)
+eff_child_mod_55_69_night <- lme(sleepefficency_avg ~ percent_55_69_night,random=~1|record_id,data = child,na.action = na.omit)
+waso_child_mod_55_69_night <- lme(waso_avg ~ percent_55_69_night,random=~1|record_id,data = child,na.action = na.omit)
+
+# percent_u70_night 
+# first adults
+totsleep_adult_mod_u70_night <- lme(totalsleep_avg_num ~ percent_u70_night,random=~1|record_id,data = adult,na.action = na.omit)
+awake_adult_mod_u70_night <- lme(awake_avg ~ percent_u70_night,random=~1|record_id,data = adult,na.action = na.omit)
+eff_adult_mod_u70_night <- lme(sleepefficency_avg ~ percent_u70_night,random=~1|record_id,data = adult,na.action = na.omit)
+waso_adult_mod_u70_night <- lme(waso_avg ~ percent_u70_night,random=~1|record_id,data = adult,na.action = na.omit)
+# then kids
+totsleep_child_mod_u70_night <- lme(totalsleep_avg_num ~ percent_u70_night,random=~1|record_id,data = child,na.action = na.omit)
+awake_child_mod_u70_night <- lme(awake_avg ~ percent_u70_night,random=~1|record_id,data = child,na.action = na.omit)
+eff_child_mod_u70_night <- lme(sleepefficency_avg ~ percent_u70_night,random=~1|record_id,data = child,na.action = na.omit)
+waso_child_mod_u70_night <- lme(waso_avg ~ percent_u70_night,random=~1|record_id,data = child,na.action = na.omit)
+
+# percent_70_180_night 
+# first adults
+totsleep_adult_mod_70_180_night <- lme(totalsleep_avg_num ~ percent_70_180_night,random=~1|record_id,data = adult,na.action = na.omit)
+awake_adult_mod_70_180_night <- lme(awake_avg ~ percent_70_180_night,random=~1|record_id,data = adult,na.action = na.omit)
+eff_adult_mod_70_180_night <- lme(sleepefficency_avg ~ percent_70_180_night,random=~1|record_id,data = adult,na.action = na.omit)
+waso_adult_mod_70_180_night <- lme(waso_avg ~ percent_70_180_night,random=~1|record_id,data = adult,na.action = na.omit)
+# then kids
+totsleep_child_mod_70_180_night <- lme(totalsleep_avg_num ~ percent_70_180_night,random=~1|record_id,data = child,na.action = na.omit)
+awake_child_mod_70_180_night <- lme(awake_avg ~ percent_70_180_night,random=~1|record_id,data = child,na.action = na.omit)
+eff_child_mod_70_180_night <- lme(sleepefficency_avg ~ percent_70_180_night,random=~1|record_id,data = child,na.action = na.omit)
+waso_child_mod_70_180_night <- lme(waso_avg ~ percent_70_180_night,random=~1|record_id,data = child,na.action = na.omit)
+
+# percent_251_night
+# first adults
+totsleep_adult_mod_251_night <- lme(totalsleep_avg_num ~ percent_251_night,random=~1|record_id,data = adult,na.action = na.omit)
+awake_adult_mod_251_night <- lme(awake_avg ~ percent_251_night,random=~1|record_id,data = adult,na.action = na.omit)
+eff_adult_mod_251_night <- lme(sleepefficency_avg ~ percent_251_night,random=~1|record_id,data = adult,na.action = na.omit)
+waso_adult_mod_251_night <- lme(waso_avg ~ percent_251_night,random=~1|record_id,data = adult,na.action = na.omit)
+# then kids
+totsleep_child_mod_251_night <- lme(totalsleep_avg_num ~ percent_251_night,random=~1|record_id,data = child,na.action = na.omit)
+awake_child_mod_251_night <- lme(awake_avg ~ percent_251_night,random=~1|record_id,data = child,na.action = na.omit)
+eff_child_mod_251_night <- lme(sleepefficency_avg ~ percent_251_night,random=~1|record_id,data = child,na.action = na.omit)
+waso_child_mod_251_night <- lme(waso_avg ~ percent_251_night,random=~1|record_id,data = child,na.action = na.omit)
 
 ```
 
@@ -639,4 +787,644 @@ Model testing association between child WASO and sensor <70, using both baseline
 
 ```{r, echo=FALSE, message=FALSE}
 round(summary(waso_child_mod_u70)$tTable,4)
+```
+
+\newpage
+
+Model testing association between adult total sleep and sensor <54 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(totsleep_adult_mod_u54_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult awakenings and sensor <54 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(awake_adult_mod_u54_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult sleep efficiency and sensor <54 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(eff_adult_mod_u54_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult WASO and sensor <54 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(waso_adult_mod_u54_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between child total sleep time and sensor <54 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(totsleep_child_mod_u54_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between child awakenings and sensor <54 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(awake_child_mod_u54_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between child sleep efficiency and sensor <54 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(eff_child_mod_u54_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between child WASO and sensor <54 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(waso_child_mod_u54_eve)$tTable,4)
+```
+
+\newpage
+
+Model testing association between adult total sleep and sensor 55-69 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(totsleep_adult_mod_55_69_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult awakenings and sensor 55-69 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(awake_adult_mod_55_69_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult sleep efficiency and sensor 55-69 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(eff_adult_mod_55_69_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult WASO and sensor 55-69 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(waso_adult_mod_55_69_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between child total sleep time and sensor 55-69 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(totsleep_child_mod_55_69_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between child awakenings and sensor 55-69 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(awake_child_mod_55_69_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between child sleep efficiency and sensor 55-69 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(eff_child_mod_55_69_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between child WASO and sensor 55-69 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(waso_child_mod_55_69_eve)$tTable,4)
+```
+
+\newpage
+
+Model testing association between adult total sleep and sensor <70 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(totsleep_adult_mod_u70_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult awakenings and sensor <70 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(awake_adult_mod_u70_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult sleep efficiency and sensor <70 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(eff_adult_mod_u70_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult WASO and sensor <70 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(waso_adult_mod_u70_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between child total sleep time and sensor <70 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(totsleep_child_mod_u70_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between child awakenings and sensor <70 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(awake_child_mod_u70_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between child sleep efficiency and sensor <70 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(eff_child_mod_u70_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between child WASO and sensor <70 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(waso_child_mod_u70_eve)$tTable,4)
+```
+ 
+\newpage
+
+Model testing association between adult total sleep and sensor 70-180 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(totsleep_adult_mod_70_180_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult awakenings and sensor 70-180 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(awake_adult_mod_70_180_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult sleep efficiency and sensor 70-180 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(eff_adult_mod_70_180_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult WASO and sensor 70-180 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(waso_adult_mod_70_180_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between child total sleep time and sensor 70-180 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(totsleep_child_mod_70_180_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between child awakenings and sensor 70-180 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(awake_child_mod_70_180_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between child sleep efficiency and sensor 70-180 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(eff_child_mod_70_180_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between child WASO and sensor 70-180 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(waso_child_mod_70_180_eve)$tTable,4)
+```
+
+\newpage
+
+Model testing association between adult total sleep and sensor >251 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(totsleep_adult_mod_251_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult awakenings and sensor >251 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(awake_adult_mod_251_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult sleep efficiency and sensor >251 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(eff_adult_mod_251_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult WASO and sensor 70-180 >251, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(waso_adult_mod_251_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between child total sleep time and sensor >251 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(totsleep_child_mod_251_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between child awakenings and sensor >251 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(awake_child_mod_251_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between child sleep efficiency and sensor >251 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(eff_child_mod_251_eve)$tTable,4)
+```
+
+<br>
+
+Model testing association between child WASO and sensor >251 evening, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(waso_child_mod_251_eve)$tTable,4)
+```
+
+\newpage
+
+Model testing association between adult total sleep and sensor <54 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(totsleep_adult_mod_u54_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult awakenings and sensor <54 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(awake_adult_mod_u54_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult sleep efficiency and sensor <54 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(eff_adult_mod_u54_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult WASO and sensor <54 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(waso_adult_mod_u54_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between child total sleep time and sensor <54 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(totsleep_child_mod_u54_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between child awakenings and sensor <54 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(awake_child_mod_u54_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between child sleep efficiency and sensor <54 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(eff_child_mod_u54_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between child WASO and sensor <54 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(waso_child_mod_u54_night)$tTable,4)
+```
+
+\newpage
+
+Model testing association between adult total sleep and sensor 55-69 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(totsleep_adult_mod_55_69_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult awakenings and sensor 55-69 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(awake_adult_mod_55_69_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult sleep efficiency and sensor 55-69 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(eff_adult_mod_55_69_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult WASO and sensor 55-69 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(waso_adult_mod_55_69_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between child total sleep time and sensor 55-69 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(totsleep_child_mod_55_69_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between child awakenings and sensor 55-69 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(awake_child_mod_55_69_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between child sleep efficiency and sensor 55-69 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(eff_child_mod_55_69_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between child WASO and sensor 55-69 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(waso_child_mod_55_69_night)$tTable,4)
+```
+
+\newpage
+
+Model testing association between adult total sleep and sensor <70 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(totsleep_adult_mod_u70_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult awakenings and sensor <70 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(awake_adult_mod_u70_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult sleep efficiency and sensor <70 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(eff_adult_mod_u70_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult WASO and sensor <70 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(waso_adult_mod_u70_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between child total sleep time and sensor <70 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(totsleep_child_mod_u70_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between child awakenings and sensor <70 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(awake_child_mod_u70_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between child sleep efficiency and sensor <70 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(eff_child_mod_u70_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between child WASO and sensor <70 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(waso_child_mod_u70_night)$tTable,4)
+```
+ 
+\newpage
+
+Model testing association between adult total sleep and sensor 70-180 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(totsleep_adult_mod_70_180_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult awakenings and sensor 70-180 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(awake_adult_mod_70_180_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult sleep efficiency and sensor 70-180 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(eff_adult_mod_70_180_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult WASO and sensor 70-180 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(waso_adult_mod_70_180_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between child total sleep time and sensor 70-180 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(totsleep_child_mod_70_180_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between child awakenings and sensor 70-180 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(awake_child_mod_70_180_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between child sleep efficiency and sensor 70-180 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(eff_child_mod_70_180_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between child WASO and sensor 70-180 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(waso_child_mod_70_180_night)$tTable,4)
+```
+
+\newpage
+
+Model testing association between adult total sleep and sensor >251 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(totsleep_adult_mod_251_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult awakenings and sensor >251 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(awake_adult_mod_251_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult sleep efficiency and sensor >251 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(eff_adult_mod_251_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between adult WASO and sensor 70-180 >251, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(waso_adult_mod_251_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between child total sleep time and sensor >251 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(totsleep_child_mod_251_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between child awakenings and sensor >251 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(awake_child_mod_251_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between child sleep efficiency and sensor >251 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(eff_child_mod_251_night)$tTable,4)
+```
+
+<br>
+
+Model testing association between child WASO and sensor >251 night, using both baseline and 1 week timepoints.  
+
+```{r, echo=FALSE, message=FALSE}
+round(summary(waso_child_mod_251_night)$tTable,4)
 ```

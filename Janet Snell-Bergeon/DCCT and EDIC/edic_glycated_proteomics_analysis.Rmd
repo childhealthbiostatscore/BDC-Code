@@ -1,12 +1,18 @@
 ---
-title: "EDIC Glycated Proteomics"
+title: ""
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: html_document
+output:
+  html_document:
+    number_sections: yes
+    theme: readable
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
 #knitr::opts_knit$set(root.dir = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/EDIC/Lipidomics")
 knitr::opts_knit$set(root.dir = "~/Dropbox/Work/Janet Snell-Bergeon/EDIC/Proteomics")
 library(tidyverse)
@@ -18,9 +24,15 @@ library(knitr)
 # Import
 intensities = read.csv("./Data_Clean/peptide_groups.csv",stringsAsFactors = F)
 # Get compound info in separate frame
-compound_info = intensities[,"Sequence"]
-intensities = intensities[,grep("Abundance_Sample",colnames(intensities))]
+info = read.csv("./Data_Clean/protein_info.csv",stringsAsFactors = F)
+accession = sapply(strsplit(intensities[,"Master.Protein.Accessions"],"; "),"[[",1)
+sequence = intensities$Sequence
+compound_info = data.frame(cbind(accession,sequence))
+compound_info$mol_function = 
+  info$Molecular.Function[match(compound_info$accession,info$Accession)]
+compound_info$Description = info$Description[match(compound_info$accession,info$Accession)]
 # Transpose and format
+intensities = intensities[,grep("Abundance_Sample",colnames(intensities))]
 intensities = as.data.frame(t(intensities))
 intensities$sample_id = gsub("Abundance_","",rownames(intensities))
 intensities = intensities %>% select(sample_id,everything())
@@ -47,7 +59,7 @@ Moderated t tests were performed to test for differences in proteins between tho
 ```{r results='asis'}
 # limma stratified by storage time
 sample.info$storage_time = sample.info$VisitAge - sample.info$AGE00
-#sample.info$storage_time = cut(sample.info$storage_time,2,labels = c("< 14",">= 14"))
+sample.info$storage_time = cut(sample.info$storage_time,2,labels = c("< 14",">= 14"))
 low = sample.info[sample.info$storage_time=="< 14",]
 high = sample.info[sample.info$storage_time==">= 14",]
 # Make design matrix
@@ -57,7 +69,10 @@ y <- t(intensities[,2:ncol(intensities)])
 fit <- lmFit(y,carv)
 fit <- eBayes(fit)
 # Results
-kable(topTable(fit,coef = 2,sort.by = "p"))
+res = topTable(fit,coef = 2,sort.by = "p")
+res$Name = compound_info$Description[as.numeric(sub("V","",rownames(res)))]
+res$Function = compound_info$mol_function[as.numeric(sub("V","",rownames(res)))]
+kable(res,row.names = F)
 ```
 
 #### Adjusted for sex, age, diabetes duration, treatment group
@@ -70,7 +85,9 @@ fit <- lmFit(y,carv)
 fit <- eBayes(fit)
 # Results
 res = topTable(fit,coef = 2,number = nrow(y),sort.by = "p")
-kable(head(res,10),caption = "Not adjusted for storage time")
+res$Name = compound_info$Description[as.numeric(sub("V","",rownames(res)))]
+res$Function = compound_info$mol_function[as.numeric(sub("V","",rownames(res)))]
+kable(head(res,10),caption = "Not adjusted for storage time",row.names = F)
 ```
 
 There were `r sum(res$P.Value < 0.05,na.rm=T)` nominally significant proteins.
@@ -83,7 +100,9 @@ fit <- lmFit(y,carv)
 fit <- eBayes(fit)
 # Results
 res = topTable(fit,coef = 2,number = nrow(y),sort.by = "p")
-kable(head(res,10),caption = "Adjusted for storage time")
+res$Name = compound_info$Description[as.numeric(sub("V","",rownames(res)))]
+res$Function = compound_info$mol_function[as.numeric(sub("V","",rownames(res)))]
+kable(head(res,10),caption = "Adjusted for storage time",row.names = F)
 ```
 
 There were `r sum(res$P.Value < 0.05,na.rm=T)` nominally significant proteins.
@@ -103,9 +122,13 @@ fit_high <- lmFit(y_high,carv_high)
 fit_high <- eBayes(fit_high)
 # Results
 low_res = topTable(fit_low,coef = 2,number = nrow(y_low),sort.by = "p")
-kable(head(low_res,10),caption = "Low Storage Time")
+low_res$Name = compound_info$Description[as.numeric(sub("V","",rownames(low_res)))]
+low_res$Function = compound_info$mol_function[as.numeric(sub("V","",rownames(low_res)))]
+kable(head(low_res,10),caption = "Low Storage Time",row.names = F)
 high_res = topTable(fit_high,coef = 2,number = nrow(y_high),sort.by = "p")
-kable(head(high_res,10),caption = "High Storage Time")
+high_res$Name = compound_info$Description[as.numeric(sub("V","",rownames(high_res)))]
+high_res$Function = compound_info$mol_function[as.numeric(sub("V","",rownames(high_res)))]
+kable(head(high_res,10),caption = "High Storage Time",row.names = F)
 ```
 
 There were `r sum(low_res$P.Value < 0.05,na.rm=T)` nominally significant proteins in the low group and `r sum(high_res$P.Value < 0.05,na.rm=T)` in the high group.
@@ -128,9 +151,13 @@ fit_female <- lmFit(y_female,carv_female)
 fit_female <- eBayes(fit_female)
 # Results
 male_res = topTable(fit_male,coef = 2,number = nrow(y_low),sort.by = "p")
-kable(head(male_res,10),caption = "Males")
+male_res$Name = compound_info$Description[as.numeric(sub("V","",rownames(male_res)))]
+male_res$Function = compound_info$mol_function[as.numeric(sub("V","",rownames(male_res)))]
+kable(head(male_res,10),caption = "Males",row.names = F)
 female_res = topTable(fit_female,coef = 2,number = nrow(y_high),sort.by = "p")
-kable(head(female_res,10),caption = "Females")
+female_res$Name = compound_info$Description[as.numeric(sub("V","",rownames(female_res)))]
+female_res$Function = compound_info$mol_function[as.numeric(sub("V","",rownames(female_res)))]
+kable(head(female_res,10),caption = "Females",row.names = F)
 ```
 
 There were `r sum(male_res$P.Value < 0.05,na.rm=T)` nominally significant proteins in the male group and `r sum(female_res$P.Value < 0.05,na.rm=T)` in the female group.
@@ -149,7 +176,10 @@ y <- t(intensities[intensities$sample_id %in% sample.info[!is.na(sample.info$sto
 fit <- lmFit(y,hard)
 fit <- eBayes(fit)
 # Results
-kable(topTable(fit_low,coef = 2,sort.by = "p"))
+res = topTable(fit_low,coef = 2,sort.by = "p")
+res$Name = compound_info$Description[as.numeric(sub("V","",rownames(res)))]
+res$Function = compound_info$mol_function[as.numeric(sub("V","",rownames(res)))]
+kable(res,row.names = F)
 ```
 
 ### Adjusted for sex, age, diabetes duration, treatment group
@@ -162,7 +192,9 @@ fit <- lmFit(y,hard)
 fit <- eBayes(fit)
 # Results
 res = topTable(fit,coef = 2,number = nrow(y),sort.by = "p")
-kable(head(res,10),caption = "Not adjusted for storage time")
+res$Name = compound_info$Description[as.numeric(sub("V","",rownames(res)))]
+res$Function = compound_info$mol_function[as.numeric(sub("V","",rownames(res)))]
+kable(head(res,10),caption = "Not adjusted for storage time",row.names = F)
 ```
 
 There were `r sum(res$P.Value < 0.05,na.rm=T)` nominally significant proteins.
@@ -175,7 +207,9 @@ fit <- lmFit(y,hard)
 fit <- eBayes(fit)
 # Results
 res = topTable(fit,coef = 2,number = nrow(y),sort.by = "p")
-kable(head(res,10),caption = "Adjusted for storage time")
+res$Name = compound_info$Description[as.numeric(sub("V","",rownames(res)))]
+res$Function = compound_info$mol_function[as.numeric(sub("V","",rownames(res)))]
+kable(head(res,10),caption = "Adjusted for storage time",row.names = F)
 ```
 
 There were `r sum(res$P.Value < 0.05,na.rm=T)` nominally significant proteins.
@@ -195,9 +229,13 @@ fit_high <- lmFit(y_high,hard_high)
 fit_high <- eBayes(fit_high)
 # Results
 low_res = topTable(fit_low,coef = 2,number = nrow(y_low),sort.by = "p")
-kable(head(low_res,10),caption = "Low Storage Time")
+low_res$Name = compound_info$Description[as.numeric(sub("V","",rownames(low_res)))]
+low_res$Function = compound_info$mol_function[as.numeric(sub("V","",rownames(low_res)))]
+kable(head(low_res,10),caption = "Low Storage Time",row.names = F)
 high_res = topTable(fit_high,coef = 2,number = nrow(y_high),sort.by = "p")
-kable(head(high_res,10),caption = "High Storage Time")
+high_res$Name = compound_info$Description[as.numeric(sub("V","",rownames(high_res)))]
+high_res$Function = compound_info$mol_function[as.numeric(sub("V","",rownames(high_res)))]
+kable(head(high_res,10),caption = "High Storage Time",row.names = F)
 ```
 
 There were `r sum(low_res$P.Value < 0.05,na.rm=T)` nominally significant proteins in the low group and `r sum(high_res$P.Value < 0.05,na.rm=T)` in the high group.
@@ -217,9 +255,13 @@ fit_female <- lmFit(y_female,hard_female)
 fit_female <- eBayes(fit_female)
 # Results
 male_res = topTable(fit_male,coef = 2,number = nrow(y_low),sort.by = "p")
-kable(head(male_res,10),caption = "Males")
+male_res$Name = compound_info$Description[as.numeric(sub("V","",rownames(male_res)))]
+male_res$Function = compound_info$mol_function[as.numeric(sub("V","",rownames(male_res)))]
+kable(head(male_res,10),caption = "Males",row.names = F)
 female_res = topTable(fit_female,coef = 2,number = nrow(y_high),sort.by = "p")
-kable(head(female_res,10),caption = "Females")
+female_res$Name = compound_info$Description[as.numeric(sub("V","",rownames(female_res)))]
+female_res$Function = compound_info$mol_function[as.numeric(sub("V","",rownames(female_res)))]
+kable(head(female_res,10),caption = "Females",row.names = F)
 ```
 
 There were `r sum(male_res$P.Value < 0.05,na.rm=T)` nominally significant proteins in the male group and `r sum(female_res$P.Value < 0.05,na.rm=T)` in the female group.
@@ -239,7 +281,9 @@ fit <- lmFit(y,stor)
 fit <- eBayes(fit)
 # Results
 res = topTable(fit,coef = 2,sort.by = "p",number = nrow(y))
-kable(head(res,10))
+res$Name = compound_info$Description[as.numeric(sub("V","",rownames(res)))]
+res$Function = compound_info$mol_function[as.numeric(sub("V","",rownames(res)))]
+kable(head(res,10),row.names = F)
 ```
 
 There were `r sum(res$adj.P.Val < 0.05,na.rm=T)` proteins that were significantly different by storage time after FDR p value adjustment.
