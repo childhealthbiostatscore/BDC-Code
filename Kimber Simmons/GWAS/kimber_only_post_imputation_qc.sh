@@ -22,3 +22,7 @@ plink2 --bfile kimber_imputed_qc --maf 0.05 --make-bed --out kimber_imputed_qc
 plink2 --bfile kimber_imputed_qc --indep-pairwise 50 5 0.2 --out kimber_imputed_qc
 # Remove temporary files
 find . -name "*~" -delete
+# Regression
+plink2 --bfile kimber_imputed_qc --extract kimber_imputed_qc.prune.in --glm 'sex' --adjust
+# Get SNP frequencies and counts
+plink --bfile kimber_imputed_qc --freq 'case-control'
