@@ -1,0 +1,101 @@
+---
+title: "SNP Frequencies in T1D"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    theme: readable
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(biomaRt)
+library(purrr)
+library(dplyr)
+library(tidyr)
+knitr::opts_chunk$set(echo = FALSE)
+home_dir = ifelse(.Platform$OS.type != "unix","T:/",
+                  "~/Dropbox/Work/Kimber Simmons/GWAS/Data_Cleaned/kimber_only_analysis/imputed")
+knitr::opts_knit$set(root.dir = home_dir)
+```
+
+```{r}
+# Get Erin's SNP list
+snps = read.csv("/Users/timvigers/Dropbox/Work/Kimber Simmons/GWAS/Data_Cleaned/Variants in any T1D GRS.csv")
+# Locations from Ensembl - use GRCh38
+snp_mart = useMart(biomart="ENSEMBL_MART_SNP",dataset="hsapiens_snp")
+locations <- getBM(attributes = c('refsnp_id','chr_name','chrom_start'), 
+                   filters = c('snp_filter'),values = snps$SNP, mart = snp_mart)
+locations$CHR_POS = paste0("chr",locations$chr_name,":",locations$chrom_start)
+# Locations from Ensembl - use GRCh37
+snp_mart37 = useMart(biomart="ENSEMBL_MART_SNP",host="grch37.ensembl.org",dataset="hsapiens_snp")
+locations37 <- getBM(attributes = c('refsnp_id','chr_name','chrom_start'), 
+                   filters = c('snp_filter'),values = snps$SNP, mart = snp_mart)
+locations37$CHR_POS = paste0("chr",locations$chr_name,":",locations$chrom_start)
+```
+
+# Methods
+
+Kimber's data was QCed prior to imputation with the TOPMed server. Data underwent additional post-imputation QC. Logistic regression was performed with adjustment for sex, and Hispanic vs. non-Hispanic used as the outcome. The resulting p values were adjusted for genomic inflation and multiple comparisons. 
+
+# SNP Frequencies 
+
+```{r}
+# Logistic regression results
+logistic = read.delim("plink2.PHENO1.glm.logistic.adjusted")
+# Check against Erin's list
+logistic$CHR_POS = 
+  unlist(map(strsplit(logistic$ID,":"), function(x) paste0(x[[1]],":",x[[2]])))
+matched = logistic$ID[which(logistic$CHR_POS %in% locations$CHR_POS)]
+```
+
+Prior to imputation and QC, there were 84 SNPs in Kimber's raw data. After imputation and post-imputation QC, `r length(matched)` variants from Erin's list of T1D-related SNPs were present in the dataset. Of these, 1 was significantly different (at the genome-controlled p < 0.05 level) between Hispanic and non-Hispanic participants after adjusting for sex:
+
+```{r}
+# Format results with frequencies
+freq = read.table("plink.frq.cc",header = T)
+res = logistic[logistic$ID %in% matched,]
+res = left_join(res,freq,by = c("ID"="SNP"))
+res$ID = locations$refsnp_id[match(res$CHR_POS,locations$CHR_POS)]
+res = res %>% select(ID,CHR_POS,A1.x,A2,MAF_A,MAF_U,UNADJ,GC)
+colnames(res) = c("ID","Chromosome:Position","Allele 1","Allele 2",
+                  "Allele 1 frequency in Hispanic",
+                  "Allele 1 frequency in non-Hispanic","p value","Adjusted p value")
+# Get genes
+genes = getBM(attributes = c('refsnp_id',"associated_gene"), 
+                   filters = c('snp_filter'),values = res$ID, mart = snp_mart)
+genes$row = paste0("col",1:nrow(genes))
+genes = genes %>% pivot_wider(id_cols = refsnp_id,names_from = row,values_from = associated_gene)
+genes[genes==""] = NA
+genes = genes %>% unite(g,col1:col266,na.rm = T,sep = ",")
+genes$g = unlist(lapply(genes$g,function(c){
+  l = unique(strsplit(as.character(c),",")[[1]])
+  paste0(l,collapse = ", ")
+}))
+res$Genes = genes$g[match(res$ID,genes$refsnp_id)]
+# Print
+kable(res)
+```
+
+The SNPs not included in the QCed post-imputation data were:
+
+```{r}
+unmatched = unique(locations$refsnp_id[which(!locations$refsnp_id %in% res$ID)])
+# Get genes
+genes = getBM(attributes = c('refsnp_id',"associated_gene"), 
+                   filters = c('snp_filter'),values = unmatched, mart = snp_mart)
+genes$row = paste0("col",1:nrow(genes))
+genes = genes %>% pivot_wider(id_cols = refsnp_id,names_from = row,values_from = associated_gene)
+genes[genes==""] = NA
+genes = genes %>% unite(g,col1:col63,na.rm = T,sep = ",")
+genes$g = unlist(lapply(genes$g,function(c){
+  l = unique(strsplit(as.character(c),",")[[1]])
+  paste0(l,collapse = ", ")
+}))
+# Print
+kable(genes)
+```
