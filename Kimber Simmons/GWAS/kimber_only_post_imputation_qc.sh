@@ -2,7 +2,7 @@
 # Working directory
 cd ~/Dropbox/Work/Kimber\ Simmons/GWAS/Data_Cleaned/kimber_only_analysis/imputed
 # Merge together the results of imputation
-bcftools concat --threads 8 -O z -o kimber_imputed.vcf.gz *.vcf.gz 
+bcftools concat --threads 8 -O z -o kimber_imputed.vcf.gz *.vcf.gz
 # Convert to plink format
 plink2 --vcf kimber_imputed.vcf.gz --make-bed --out kimber_imputed --threads 8
 # Get sex and phenotype
@@ -26,3 +26,6 @@ find . -name "*~" -delete
 plink2 --bfile kimber_imputed_qc --extract kimber_imputed_qc.prune.in --glm 'sex' --adjust
 # Get SNP frequencies and counts
 plink --bfile kimber_imputed_qc --freq 'case-control'
+# Frequencies for the 1kG data (AMR only)
+cd ~/Dropbox/Work/GWAS/TGP
+plink2 --pfile all_phase3 --keep AMR_participants --extract t1d_snps --freq --out AMR_t1d_snps
