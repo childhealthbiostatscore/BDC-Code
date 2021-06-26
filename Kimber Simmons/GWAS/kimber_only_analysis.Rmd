@@ -2,13 +2,7 @@
 title: "SNP Frequencies in T1D"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output:
-  html_document:
-    number_sections: yes
-    theme: readable
-    toc: yes
-    toc_depth: 2
-    toc_float: yes
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
@@ -17,6 +11,7 @@ library(biomaRt)
 library(purrr)
 library(dplyr)
 library(tidyr)
+library(DT)
 knitr::opts_chunk$set(echo = FALSE)
 home_dir = ifelse(.Platform$OS.type != "unix","T:/",
                   "~/Dropbox/Work/Kimber Simmons/GWAS/Data_Cleaned/kimber_only_analysis/imputed")
@@ -56,8 +51,9 @@ matched = logistic$ID[which(logistic$CHR_POS %in% locations$CHR_POS)]
 Prior to imputation and QC, there were 84 SNPs in Kimber's raw data. After imputation and post-imputation QC, `r length(matched)` variants from Erin's list of T1D-related SNPs were present in the dataset. Of these, 1 was significantly different (at the genome-controlled p < 0.05 level) between Hispanic and non-Hispanic participants after adjusting for sex:
 
 ```{r}
-# Format results with frequencies
 freq = read.table("plink.frq.cc",header = T)
+tgp_amr_freq = read.delim("~/Dropbox/Work/GWAS/TGP/AMR_t1d_snps.afreq")
+# Format results with frequencies
 res = logistic[logistic$ID %in% matched,]
 res = left_join(res,freq,by = c("ID"="SNP"))
 res$ID = locations$refsnp_id[match(res$CHR_POS,locations$CHR_POS)]
@@ -66,19 +62,28 @@ colnames(res) = c("ID","Chromosome:Position","Allele 1","Allele 2",
                   "Allele 1 frequency in Hispanic",
                   "Allele 1 frequency in non-Hispanic","p value","Adjusted p value")
 # Get genes
-genes = getBM(attributes = c('refsnp_id',"associated_gene"), 
+genes = getBM(attributes = c('refsnp_id',"ensembl_gene_stable_id","associated_gene"), 
                    filters = c('snp_filter'),values = res$ID, mart = snp_mart)
 genes$row = paste0("col",1:nrow(genes))
-genes = genes %>% pivot_wider(id_cols = refsnp_id,names_from = row,values_from = associated_gene)
+genes = genes %>% pivot_wider(id_cols = c("refsnp_id","ensembl_gene_stable_id"),
+                              names_from = row,values_from = associated_gene)
 genes[genes==""] = NA
-genes = genes %>% unite(g,col1:col266,na.rm = T,sep = ",")
+genes = genes %>% unite(g,col1:col348,na.rm = T,sep = ",")
 genes$g = unlist(lapply(genes$g,function(c){
   l = unique(strsplit(as.character(c),",")[[1]])
   paste0(l,collapse = ", ")
 }))
-res$Genes = genes$g[match(res$ID,genes$refsnp_id)]
+genes = genes[,1:3]
+colnames(genes) = c("ID","Ensembl ID","Genes")
+res = left_join(res,genes,by = "ID")
+# TGP frequencies
+res = left_join(res,tgp_amr_freq[,c("ID","ALT","ALT_FREQS")],by = "ID") %>%
+  rename(`TGP MAF`= ALT_FREQS,`TGP Allele` = ALT)
+
 # Print
-kable(res)
+datatable(res)
+# Export
+write.csv(res,"~/Dropbox/Work/Kimber Simmons/GWAS/Reports/Hispanic vs. non-Hispanic Results.csv",row.names = F)
 ```
 
 # Missing SNPs
@@ -88,16 +93,10 @@ The SNPs not included in the QCed post-imputation data were:
 ```{r}
 unmatched = unique(locations$refsnp_id[which(!locations$refsnp_id %in% res$ID)])
 # Get genes
-genes = getBM(attributes = c('refsnp_id',"associated_gene"), 
+genes = getBM(attributes = c('refsnp_id',"ensembl_gene_stable_id","associated_gene"), 
                    filters = c('snp_filter'),values = unmatched, mart = snp_mart)
-genes$row = paste0("col",1:nrow(genes))
-genes = genes %>% pivot_wider(id_cols = refsnp_id,names_from = row,values_from = associated_gene)
-genes[genes==""] = NA
-genes = genes %>% unite(g,col1:col63,na.rm = T,sep = ",")
-genes$g = unlist(lapply(genes$g,function(c){
-  l = unique(strsplit(as.character(c),",")[[1]])
-  paste0(l,collapse = ", ")
-}))
+genes = genes[,c("refsnp_id","ensembl_gene_stable_id","associated_gene")]
+colnames(genes) = c("ID","Ensembl ID","Genes")
 # Print
-kable(genes)
+datatable(genes)
 ```
