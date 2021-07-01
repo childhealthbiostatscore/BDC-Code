@@ -1,12 +1,13 @@
 library(tidyverse)
 # Import data
-indir <- "/Users/timvigers/Work/td/tidepool_test/"
-outdir <- "/Users/timvigers/Work/td/"
+indir <- "/Users/timvigers/tidepool_clean/"
+outdir <- "/Users/timvigers/"
 files <- list.files(indir,full.names = T)
 # Make a summary variables table.
 summary <- data.frame(matrix(nrow = length(files),ncol = 0))
 # Iterate through each file
 for (f in 1:length(files)) {
+  print(f)
   # Read in
   table = read.csv(files[f],header = T,stringsAsFactors = FALSE,na.strings = "")
   if (nrow(table) == 0){
