@@ -22,13 +22,15 @@ library(ggrepel)
 
 code_dir = ifelse(.Platform$OS.type == "unix",
                   "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/Telemedicine/Data raw",
-                  "B:/Projects/Erin Cobry/Telemedicine/Data raw/")
+                  "T:\\Erin Cobry\\Telemedicine\\Data raw")
 setwd(code_dir)
 
 knitr::opts_chunk$set(echo = TRUE)
 
 # read in general clinic data
-allclinic <- read.csv("./General Clinic Master List_08-26-20 Rural.csv",na.strings = c(" ",""))
+# don't know why relative paths aren't working
+#allclinic <- read.csv("./General Clinic Master List_08-26-20 Rural.csv",na.strings = c(" ",""))
+allclinic <- read.csv("T:\\Erin Cobry\\Telemedicine\\Data raw\\General Clinic Master List_08-26-20 Rural.csv",na.strings = c(" ",""))
 allclinic$DiabetesDuration_12132019<- as.numeric(as.character(allclinic$DiabetesDuration_12132019))
 allclinic <- allclinic[allclinic$DiabetesDuration_12132019>0.5,]
 
@@ -89,14 +91,16 @@ allclinic$Rural <- ifelse(is.na(allclinic$Rural),"n","r")
 demo <- unique(allclinic)
 
 # read in telemedicine data
-data <- read.csv("./DiabetesTelemedicine-Cobry2020ADAAbstract_DATA_rural_distance_11-5-2020.csv")
+#data <- read.csv("./DiabetesTelemedicine-Cobry2020ADAAbstract_DATA_rural_distance_11-5-2020.csv")
+data <- read.csv("T:/Erin Cobry/Telemedicine/Data raw/DiabetesTelemedicine-Cobry2020ADAAbstract_DATA_rural_distance_11-5-2020.csv")
 #source("T:/Erin Cobry/Telemedicine/Data raw/DiabetesTelemedicine-Cobry2020ADAAbstract_R_2020-01-05_1613.r")
 
 # unique IDs before removing unconsented pts
 n_tele_all <- length(unique(data$study_id))
 
 # only include patients in the file Erin sent
-keep <- read.csv("./Telemedicine Study Patient MRNs.csv")
+#keep <- read.csv("./Telemedicine Study Patient MRNs.csv")
+keep <- read.csv("T:/Erin Cobry/Telemedicine/Data raw/Telemedicine Study Patient MRNs.csv")
 data <- merge(data,keep,by="study_id",all.x=F,all.y=T)
 #write.csv(data,"C:/Temp/Erin Cobry/Telemedicine/export_for_erin_telemed.csv")
 n_tele_consent <- length(unique(data$study_id))
@@ -164,7 +168,8 @@ tele[!is.na(tele$ins) & tele$ins==9,]$InsuranceType <- NA
 
 # find distance to BDC
 tele$zip_code_of_residence<- as.character(tele$zip_code_of_residence)
-allzip <- read.csv("./gaz1990zipcodecentroid.csv")
+#allzip <- read.csv("./gaz1990zipcodecentroid.csv")
+allzip <- read.csv("T:/Erin Cobry/Telemedicine/Data raw/gaz1990zipcodecentroid.csv")
 allzip$fipsst <- NULL
 names(allzip) <- c("zip_code_of_residence","lon_residence","lat_residence")
 tele <- merge(tele,allzip,by="zip_code_of_residence",all.x = T, all.y = F)
@@ -236,9 +241,14 @@ tele$Rural. <- droplevels(tele$Rural.)
 tele <- tele[tele$diabetes_duration>0.5,]
 n_tele_consent_6mo <- length(unique(tele$study_id))
 
+# new variables for tele
+tele$dob <- as.Date(tele$dod, format="%m/%d/%Y")
+tele <- tele %>% mutate(Age_12132019 = as.numeric(as.Date("2019-12-13") - dob) / 365.25)
+tele$Gender <- ifelse(tele$gender==1,"M","F")
+
 # make combined df with techgroup and A1c
 combclinic <- allclinic[,c("techgroup","LastA1C_OrderValue","Distance.to.Clinic.Driving..Km.","Distance.to.Clinic.Direct..Km.",
-                           "Rural","InsuranceType")]
+                           "Rural","InsuranceType","Age_12132019","Gender")]
 combclinic$hba1c <- combclinic$LastA1C_OrderValue
 combclinic$LastA1C_OrderValue <- NULL
 combclinic$Distance.to.clinic.driving..km. <- combclinic$Distance.to.Clinic.Driving..Km.
@@ -249,7 +259,7 @@ combclinic$Rural. <- combclinic$Rural
 combclinic$Rural <- NULL
 combclinic$group <- "Clinic"
 combtele <- tele[,c("techgroup","a1c_fup_telemed","Distance.to.clinic.direct..KM...as.the.crow.flies.","Distance.to.clinic.driving..km.",
-                    "Rural.","InsuranceType")]
+                    "Rural.","InsuranceType","Age_12132019","Gender")]
 combtele$hba1c <- combtele$a1c_fup_telemed
 combtele$a1c_fup_telemed <- NULL
 combtele$group <- "Telemedicine"
@@ -273,10 +283,11 @@ b <- tele[,c("pump","cgm","pump_cgm","InsuranceType")]
 b$group <- "Telemedicine"
 twogroup <- rbind(a,b)
 
-# table comparing tech use in the two groups
+# table comparing two groups (i.e., Clinic and Telemedicine)
 techtable <- CreateTableOne(vars=c("techgroup","anypump","anycgm","pumponly","cgmonly","pump_cgm","tech",
                                    "InsuranceType","Distance.to.clinic.driving..km.",
-                                   "Distance.to.clinic.direct..KM...as.the.crow.flies.","Rural." ), data=comb, strata="group", test=TRUE)
+                                   "Distance.to.clinic.direct..KM...as.the.crow.flies.","Rural.","Age_12132019","Gender" ), 
+                            data=comb, strata="group", test=TRUE)
 techtable <- print(techtable,varLabels=TRUE,showAllLevels=TRUE)
 
 # demographics in telemedicine patients
