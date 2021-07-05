@@ -15,13 +15,13 @@ library(stringr)
 library(DT)
 knitr::opts_chunk$set(echo = FALSE)
 home_dir = ifelse(.Platform$OS.type != "unix","T:/",
-                  "~/Dropbox/Work/Kimber Simmons/GWAS/Data_Cleaned/kimber_only_analysis/imputed")
+                  "~/Dropbox/Work/Kimber Simmons/GWAS/Data_Cleaned/")
 knitr::opts_knit$set(root.dir = home_dir)
 ```
 
 ```{r}
 # Get Erin's SNP list
-snps = read.csv("/Users/timvigers/Dropbox/Work/Kimber Simmons/GWAS/Data_Cleaned/Variants in any T1D GRS.csv")
+snps = read.csv("./Variants in any T1D GRS.csv")
 # Locations from Ensembl - use GRCh38
 snp_mart = useMart(biomart="ENSEMBL_MART_SNP",dataset="hsapiens_snp")
 locations <- getBM(attributes = c('refsnp_id','chr_name','chrom_start'), 
@@ -36,8 +36,9 @@ locations_w$chr_name = sapply(locations$chr_name, function(n){
     }
   as.numeric(num)
 })
-write.table(cbind(locations_w$chr_name,locations_w$chrom_start,locations_w$chrom_start),
-            file = "~/Dropbox/Work/Kimber Simmons/GWAS/Data_Cleaned/snp_locations_38",
+write.table(cbind(locations_w$chr_name,locations_w$chrom_start,
+                  locations_w$chrom_start,"ID38"),
+            file = "./snp_locations_38",
             row.names = F,quote = F,col.names = F)
 locations$CHR_POS = paste0("chr",locations$chr_name,":",locations$chrom_start)
 # Locations from Ensembl - use GRCh37
@@ -54,8 +55,9 @@ locations37_w$chr_name = sapply(locations37$chr_name, function(n){
     }
   as.numeric(num)
 })
-write.table(cbind(locations37_w$chr_name,locations37_w$chrom_start,locations37_w$chrom_start),
-            file = "~/Dropbox/Work/Kimber Simmons/GWAS/Data_Cleaned/snp_locations_37",
+write.table(cbind(locations37_w$chr_name,locations37_w$chrom_start,
+                  locations37_w$chrom_start,"ID37"),
+            file = "./snp_locations_37",
             row.names = F,quote = F,col.names = F)
 locations37$CHR_POS = paste0("chr",locations$chr_name,":",locations$chrom_start)
 ```
@@ -67,63 +69,37 @@ All data was QCed prior to imputation with 1000 Genomes data. Data underwent add
 # SNP Frequencies 
 
 ```{r}
-# Logistic regression results
-logistic = read.delim("plink2.PHENO1.glm.logistic.adjusted")
-# Check against Erin's list
-logistic$CHR_POS = 
-  unlist(map(strsplit(logistic$ID,":"), function(x) paste0(x[[1]],":",x[[2]])))
-matched = logistic$ID[which(logistic$CHR_POS %in% locations$CHR_POS)]
+# Get Caucasian and Hispanic T1D participants
+fam = read.table("./biobank_analysis/imputed/1KG/merged_imputed_qc.fam",header = F)
+eth = read.csv("./genotypehispanicnhw_deidentified 10232018 clean.csv")
+# Get T1D participants
+t1d = fam[fam$V6==2,]
+t1d$id = suppressWarnings(unlist(lapply(strsplit(t1d$V2,"_"),function(x){
+  max(as.numeric(x),na.rm = T)
+  })))
+t1d = t1d[t1d$id>1000,]
+t1d$eth = NA
+t1d$eth = eth$Hispanic..0.N..1.Y.[match(t1d$id,eth$correct_labID)]
+# All biobank cases are non-hispanic
+t1d$eth[is.na(t1d$eth)] = 0
+# Write lists
+write.table(t1d[t1d$eth==0,c("V1","V2")],col.names = F,row.names = F,quote = F,
+            file = "./caucasian_t1d")
+write.table(t1d[t1d$eth==1,c("V1","V2")],col.names = F,row.names = F,quote = F,
+            file = "./hispanic_t1d")
 ```
 
-Prior to imputation and QC, there were 84 SNPs in Kimber's raw data. After imputation and post-imputation QC, `r length(matched)` variants from Erin's list of T1D-related SNPs were present in the dataset. Of these, 1 was significantly different (at the genome-controlled p < 0.05 level) between Hispanic and non-Hispanic participants after adjusting for sex:
-
-```{r}
-freq = read.table("plink.frq.cc",header = T)
-tgp_amr_freq = read.delim("~/Dropbox/Work/GWAS/TGP/AMR_t1d_snps.afreq")
-# Format results with frequencies
-res = logistic[logistic$ID %in% matched,]
-res = left_join(res,freq,by = c("ID"="SNP"))
-res$ID = locations$refsnp_id[match(res$CHR_POS,locations$CHR_POS)]
-res = res %>% select(ID,CHR_POS,A1.x,A2,MAF_A,MAF_U,UNADJ,GC)
-colnames(res) = c("ID","Chromosome:Position","Allele 1","Allele 2",
-                  "Allele 1 frequency in Hispanic",
-                  "Allele 1 frequency in non-Hispanic","p value","Adjusted p value")
-# Get genes
-genes = getBM(attributes = c('refsnp_id',"ensembl_gene_stable_id","associated_gene"), 
-                   filters = c('snp_filter'),values = res$ID, mart = snp_mart)
-genes$row = paste0("col",1:nrow(genes))
-genes = genes %>% pivot_wider(id_cols = c("refsnp_id","ensembl_gene_stable_id"),
-                              names_from = row,values_from = associated_gene)
-genes[genes==""] = NA
-genes = genes %>% unite(g,col1:col348,na.rm = T,sep = ",")
-genes$g = unlist(lapply(genes$g,function(c){
-  l = unique(strsplit(as.character(c),",")[[1]])
-  paste0(l,collapse = ", ")
-}))
-genes = genes[,1:3]
-colnames(genes) = c("ID","Ensembl ID","Genes")
-res = left_join(res,genes,by = "ID")
-# TGP frequencies
-res = left_join(res,tgp_amr_freq[,c("ID","ALT","ALT_FREQS")],by = "ID") %>%
-  rename(`TGP MAF`= ALT_FREQS,`TGP Allele` = ALT)
-
-# Print
-datatable(res)
-# Export
-write.csv(res,"~/Dropbox/Work/Kimber Simmons/GWAS/Reports/Hispanic vs. non-Hispanic Results.csv",row.names = F)
-```
-
-# Missing SNPs
-
-The SNPs not included in the QCed post-imputation data were:
-
-```{r}
-unmatched = unique(locations$refsnp_id[which(!locations$refsnp_id %in% res$ID)])
-# Get genes
-genes = getBM(attributes = c('refsnp_id',"ensembl_gene_stable_id","associated_gene"), 
-                   filters = c('snp_filter'),values = unmatched, mart = snp_mart)
-genes = genes[,c("refsnp_id","ensembl_gene_stable_id","associated_gene")]
-colnames(genes) = c("ID","Ensembl ID","Genes")
-# Print
-datatable(genes)
+```{bash eval=F}
+# Caucasian T1D
+plink2 --bfile biobank_analysis/imputed/1KG/merged_imputed_qc --keep caucasian_t1d --extract range snp_locations_37 --freq --out caucasian_t1d
+plink2 --bfile biobank_analysis/imputed/1KG/merged_imputed_qc --keep caucasian_t1d --extract range snp_locations_37 --freq 'counts' --out caucasian_t1d
+# Hispanic T1D
+plink2 --bfile biobank_analysis/imputed/1KG/merged_imputed_qc --keep hispanic_t1d --extract range snp_locations_37 --freq --out hispanic_t1d
+plink2 --bfile biobank_analysis/imputed/1KG/merged_imputed_qc --keep hispanic_t1d --extract range snp_locations_37 --freq 'counts' --out hispanic_t1d
+# EUR 1KG
+plink2 --pfile ~/Dropbox/Work/GWAS/TGP/all_phase3 --keep /Users/timvigers/Dropbox/Work/GWAS/TGP/EUR_participants.txt --extract range snp_locations_37 --freq --out EUR_1KG
+plink2 --pfile ~/Dropbox/Work/GWAS/TGP/all_phase3 --keep /Users/timvigers/Dropbox/Work/GWAS/TGP/EUR_participants.txt --extract range snp_locations_37 --freq 'counts' --out EUR_1KG
+# AMR 1KG
+plink2 --pfile ~/Dropbox/Work/GWAS/TGP/all_phase3 --keep /Users/timvigers/Dropbox/Work/GWAS/TGP/AMR_participants.txt --extract range snp_locations_37 --freq --out AMR_1KG
+plink2 --pfile ~/Dropbox/Work/GWAS/TGP/all_phase3 --keep /Users/timvigers/Dropbox/Work/GWAS/TGP/AMR_participants.txt --extract range snp_locations_37 --freq 'counts' --out AMR_1KG
 ```
