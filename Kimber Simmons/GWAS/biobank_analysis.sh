@@ -58,6 +58,34 @@ do
    bgzip -c chr/chr$i.vcf > chr/chr$i.vcf.gz
    rm chr/chr$i.vcf
 done
+# Impute with 1kG
+cps=8
+for i in {1..22}
+do
+  minimac4\
+    --refHaps ~/Dropbox/Work/GWAS/Minimac/G1K_P3_M3VCF_FILES_WITH_ESTIMATES/$i.1000g.Phase3.v5.With.Parameter.Estimates.m3vcf.gz \
+    --haps chr/chr$i.vcf \
+    --prefix imputed/$i\
+    --cpus cps
+done
+# Open zip files, index them, and merge
+7z x "*.zip" -pQg3rpyfmH2PHNV -mmt 8
+for i in {1..22}
+do
+  tabix -p vcf chr$i.dose.vcf.gz
+done
+bcftools concat -a --threads 8 -O z -o merged_imputed.vcf.gz *.vcf.gz 
+# QC
+plink2 --vcf merged_imputed.vcf.gz --make-bed --out merged_imputed --threads 8
+plink2 --bfile merged_imputed --geno 0.02 --make-bed --out merged_imputed_qc
+plink2 --bfile merged_imputed_qc --mind 0.02 --make-bed --out merged_imputed_qc
+plink2 --bfile merged_imputed_qc  --hwe 1e-10 --make-bed --out merged_imputed_qc
+plink2 --bfile merged_imputed_qc --king-cutoff 0.25 --make-bed --out merged_imputed_qc
+plink2 --bfile merged_imputed_qc --maf 0.05 --make-bed --out merged_imputed_qc
+plink2 --bfile merged_imputed_qc --set-all-var-ids '@:#[b37]\$r,\$a' --new-id-max-allele-len 662 --rm-dup 'exclude-mismatch' --make-bed --out merged_imputed_qc
+plink2 --bfile merged_imputed_qc --indep-pairwise 50 5 0.2 --out merged_imputed_qc
+# Remove temporary files
+find . -name "*~" -delete
 # Use https://imputation.biodatacatalyst.nhlbi.nih.gov for imputation instead of local
 # GRCh37, r squared filter 0.3, QC frequency check vs. TOPMed
 # Post-imputation QC
