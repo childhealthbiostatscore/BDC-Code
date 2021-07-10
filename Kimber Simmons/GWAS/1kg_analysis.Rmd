@@ -1,0 +1,105 @@
+---
+title: "SNP Frequencies in T1D"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(biomaRt)
+library(purrr)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(DT)
+knitr::opts_chunk$set(echo = FALSE)
+home_dir = ifelse(.Platform$OS.type != "unix","T:/",
+                  "~/Dropbox/Work/Kimber Simmons/GWAS/Data_Cleaned/")
+knitr::opts_knit$set(root.dir = home_dir)
+```
+
+```{r}
+# Get Erin's SNP list
+snps = read.csv("./Variants in any T1D GRS.csv")
+# Locations from Ensembl - use GRCh38
+snp_mart = useMart(biomart="ENSEMBL_MART_SNP",dataset="hsapiens_snp")
+locations <- getBM(attributes = c('refsnp_id','chr_name','chrom_start'), 
+                   filters = c('snp_filter'),values = snps$SNP, mart = snp_mart)
+locations = locations[locations$chr_name != "X",]
+locations_w = locations
+locations_w$chr_name = sapply(locations$chr_name, function(n){
+  num = suppressWarnings(as.numeric(n))
+  if(is.na(num)){
+    num = str_extract(n,"CHR[[:digit:]]{1,2}")
+    num = sub("CHR","",num)
+    }
+  as.numeric(num)
+})
+write.table(cbind(locations_w$chr_name,locations_w$chrom_start,
+                  locations_w$chrom_start,"ID38"),
+            file = "./snp_locations_38",
+            row.names = F,quote = F,col.names = F)
+locations$CHR_POS = paste0("chr",locations$chr_name,":",locations$chrom_start)
+# Locations from Ensembl - use GRCh37
+snp_mart37 = useMart(biomart="ENSEMBL_MART_SNP",host="grch37.ensembl.org",dataset="hsapiens_snp")
+locations37 <- getBM(attributes = c('refsnp_id','chr_name','chrom_start'), 
+                   filters = c('snp_filter'),values = snps$SNP, mart = snp_mart)
+locations37 = locations37[locations37$chr_name != "X",]
+locations37_w = locations37
+locations37_w$chr_name = sapply(locations37$chr_name, function(n){
+  num = suppressWarnings(as.numeric(n))
+  if(is.na(num)){
+    num = str_extract(n,"CHR[[:digit:]]{1,2}")
+    num = sub("CHR","",num)
+    }
+  as.numeric(num)
+})
+write.table(cbind(locations37_w$chr_name,locations37_w$chrom_start,
+                  locations37_w$chrom_start,"ID37"),
+            file = "./snp_locations_37",
+            row.names = F,quote = F,col.names = F)
+locations37$CHR_POS = paste0("chr",locations$chr_name,":",locations$chrom_start)
+```
+
+# Methods
+
+All data was QCed prior to imputation with 1000 Genomes data. Data underwent additional post-imputation QC. 
+
+# SNP Frequencies 
+
+```{r}
+# Get Caucasian and Hispanic T1D participants
+fam = read.table("./biobank_analysis/imputed/1KG/merged_imputed_qc.fam",header = F)
+eth = read.csv("./genotypehispanicnhw_deidentified 10232018 clean.csv")
+# Get T1D participants
+t1d = fam[fam$V6==2,]
+t1d$id = suppressWarnings(unlist(lapply(strsplit(t1d$V2,"_"),function(x){
+  max(as.numeric(x),na.rm = T)
+  })))
+t1d = t1d[t1d$id>1000,]
+t1d$eth = NA
+t1d$eth = eth$Hispanic..0.N..1.Y.[match(t1d$id,eth$correct_labID)]
+# All biobank cases are non-hispanic
+t1d$eth[is.na(t1d$eth)] = 0
+# Write lists
+write.table(t1d[t1d$eth==0,c("V1","V2")],col.names = F,row.names = F,quote = F,
+            file = "./caucasian_t1d")
+write.table(t1d[t1d$eth==1,c("V1","V2")],col.names = F,row.names = F,quote = F,
+            file = "./hispanic_t1d")
+```
+
+```{bash eval=F}
+# Caucasian T1D
+plink2 --bfile biobank_analysis/imputed/1KG/merged_imputed_qc --keep caucasian_t1d --extract range snp_locations_37 --freq --out caucasian_t1d
+plink2 --bfile biobank_analysis/imputed/1KG/merged_imputed_qc --keep caucasian_t1d --extract range snp_locations_37 --freq 'counts' --out caucasian_t1d
+# Hispanic T1D
+plink2 --bfile biobank_analysis/imputed/1KG/merged_imputed_qc --keep hispanic_t1d --extract range snp_locations_37 --freq --out hispanic_t1d
+plink2 --bfile biobank_analysis/imputed/1KG/merged_imputed_qc --keep hispanic_t1d --extract range snp_locations_37 --freq 'counts' --out hispanic_t1d
+# EUR 1KG
+plink2 --pfile ~/Dropbox/Work/GWAS/TGP/all_phase3 --keep /Users/timvigers/Dropbox/Work/GWAS/TGP/EUR_participants.txt --extract range snp_locations_37 --freq --out EUR_1KG
+plink2 --pfile ~/Dropbox/Work/GWAS/TGP/all_phase3 --keep /Users/timvigers/Dropbox/Work/GWAS/TGP/EUR_participants.txt --extract range snp_locations_37 --freq 'counts' --out EUR_1KG
+# AMR 1KG
+plink2 --pfile ~/Dropbox/Work/GWAS/TGP/all_phase3 --keep /Users/timvigers/Dropbox/Work/GWAS/TGP/AMR_participants.txt --extract range snp_locations_37 --freq --out AMR_1KG
+plink2 --pfile ~/Dropbox/Work/GWAS/TGP/all_phase3 --keep /Users/timvigers/Dropbox/Work/GWAS/TGP/AMR_participants.txt --extract range snp_locations_37 --freq 'counts' --out AMR_1KG
+```
