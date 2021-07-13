@@ -2,18 +2,26 @@
 title: "Health Related Quality of Life During COVID"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: html_document
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 #knitr::opts_knit$set(root.dir = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/COVID Quality of Life")
-knitr::opts_knit$set(root.dir = "~/Dropbox/Work/Erin Cobry/COVID Quality of Life")
+knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/COVID Quality of Life")
 library(skimr)
 library(knitr)
 library(tidyverse)
 library(Hmisc)
 library(arsenal)
+library(emmeans)
+library(lme4)
+library(lmerTest)
 ```
 
 ```{r}
@@ -32,7 +40,7 @@ data = data[-exclude,]
 # Exposure
 exposure = data %>% select(record_id,redcap_event_name,stay_at_home.factor:died.factor)
 data$exposure_sum = apply(exposure[,3:ncol(exposure)],1,function(r){
-  length(which(r == "Yes"))
+  sum(r == "Yes")
 })
 # Impact
 impact = data %>% select(record_id,redcap_event_name,parenting:mood)
@@ -77,67 +85,97 @@ summary(t1,labelTranslations = newlabels)
 
 # CEFIS Scores
 
-## Change From Baseline
-
-```{r results='asis'}
+```{r}
 # Filter out unnecessary rows and rename time points ("arm" refers to child's age)
 scores = data %>% 
-  filter(as.numeric(substr(record_id,1,4))<2000,
-         grepl("baseline",redcap_event_name) | grepl("3_month",redcap_event_name)) %>%
+  filter(as.numeric(substr(record_id,1,4))<2000) %>%
   mutate(Timepoint = sub("_arm_.*","",redcap_event_name))
 scores$num_id = as.numeric(substr(scores$record_id,1,4))
-scores$Timepoint = factor(scores$Timepoint,levels = c("baseline","3_month"),
-                          labels = c("Baseline","3 Month"))
-# Compare timepoints
-t2 = paired(Timepoint~exposure_sum+impact_mean+distress+child_distress+family_distress,
-            id = record_id,data = scores,na.action = na.paired("fill"))
-labels = list(exposure_sum = "Exposure",impact_mean = "Impact",distress = "Distress",
-              child_distress="Child Distress",family_distress="Family Distress")
-summary(t2,labelTranslations = labels,pfootnote = T)
+scores$Timepoint = factor(scores$Timepoint,levels = c("baseline","3_month",
+                                                      "6_month","12_month"),
+                          labels = c("Baseline","3 Month","6 Month","12 Month"))
+scores$num_time = recode(scores$Timepoint,"Baseline" = 0,"3 Month" = 3,
+                         "6 Month" = 6,"12 Month" = 12)
 ```
 
-\newpage
+```{r plot function}
+model_and_plot = function(outcome_name,ylab,group_var,df){
+  mod = lmer(as.formula(paste0(outcome_name,"~Timepoint+(1|",group_var,")")),df)
+  means = as.data.frame(emmeans(mod,~Timepoint))
+  means$num_time = c(0,3,6)
+  p = ggplot(df,aes_string(x = "num_time",y = outcome_name, group = group_var)) +
+    geom_line(alpha=0.1) +
+    geom_line(data=means,aes(x=num_time,y=as.numeric(emmean),group=1),
+            size = 1,inherit.aes = F) +
+    theme_bw() +xlab("Timepoint") + ylab(ylab) +
+    scale_x_continuous(breaks=c(0,3,6),labels=c("Baseline","3 Month","6 Month"))
+  print(p)
+  kable(summary(mod)$coefficients,digits = 3)
+  kable(means,digits = 3)
+}
+```
 
-## Baseline CEFIS Score By T1D Duration
+## Exposure
 
 ```{r results='asis'}
-# Get T1D duration info
-t1d = data[!is.na(data$t1d_duration),]
-t1d$num_id = as.numeric(substr(t1d$record_id,1,4))-1000
-scores$t1d_duration = NULL
-scores$child_age = NULL
-scores = left_join(scores,t1d[,c("num_id","child_age","t1d_duration")],by = "num_id")
-scores$t1d_duration_cat = cut(scores$t1d_duration,breaks=c(-Inf,365.25,Inf),right = F,
-                              labels=c("< 1 yr.",">= 1 yr."))
-# Compare timepoints
-t3 = tableby(t1d_duration_cat~exposure_sum+impact_mean+distress+child_distress+family_distress,
-            data = scores[scores$Timepoint=="Baseline",])
-summary(t3,labelTranslations = labels,pfootnote = T)
+model_and_plot("exposure_sum","Exposure","record_id",scores[scores$num_time <= 6 & scores$exposure_sum>0,])
 ```
 
-\newpage
 
-## Baseline CEFIS Score By Age Group
+<!-- ## Change From Baseline -->
 
-```{r results='asis'}
-# Age category
-scores$child_age = scores$child_age / 365.25
-scores$age_cat = cut(scores$child_age,breaks=c(-Inf,12,Inf),right = F,
-                              labels=c("< 12 yr.",">= 12 yr."))
-# Compare timepoints
-t4 = tableby(age_cat~exposure_sum+impact_mean+distress+child_distress+family_distress,
-            data = scores[scores$Timepoint=="Baseline",])
-summary(t4,labelTranslations = labels,pfootnote = T)
-```
+<!-- ```{r results='asis'} -->
 
-\newpage
+<!-- # Compare timepoints -->
+<!-- t2 = paired(Timepoint~exposure_sum+impact_mean+distress+child_distress+family_distress, -->
+<!--             id = record_id,data = scores,na.action = na.paired("fill")) -->
+<!-- labels = list(exposure_sum = "Exposure",impact_mean = "Impact",distress = "Distress", -->
+<!--               child_distress="Child Distress",family_distress="Family Distress") -->
+<!-- summary(t2,labelTranslations = labels,pfootnote = T) -->
+<!-- ``` -->
 
-## Child Responses
+<!-- \newpage -->
 
-```{r results='asis'}
-t = data
-t$redcap_event_name = gsub("_arm.*","",t$redcap_event_name)
-t %>% filter(!is.na(child_question.factor)) %>% group_by(redcap_event_name) %>% 
-  count(child_question.factor)
-```
+<!-- ## Baseline CEFIS Score By T1D Duration -->
+
+<!-- ```{r results='asis'} -->
+<!-- # Get T1D duration info -->
+<!-- t1d = data[!is.na(data$t1d_duration),] -->
+<!-- t1d$num_id = as.numeric(substr(t1d$record_id,1,4))-1000 -->
+<!-- scores$t1d_duration = NULL -->
+<!-- scores$child_age = NULL -->
+<!-- scores = left_join(scores,t1d[,c("num_id","child_age","t1d_duration")],by = "num_id") -->
+<!-- scores$t1d_duration_cat = cut(scores$t1d_duration,breaks=c(-Inf,365.25,Inf),right = F, -->
+<!--                               labels=c("< 1 yr.",">= 1 yr.")) -->
+<!-- # Compare timepoints -->
+<!-- t3 = tableby(t1d_duration_cat~exposure_sum+impact_mean+distress+child_distress+family_distress, -->
+<!--             data = scores[scores$Timepoint=="Baseline",]) -->
+<!-- summary(t3,labelTranslations = labels,pfootnote = T) -->
+<!-- ``` -->
+
+<!-- \newpage -->
+
+<!-- ## Baseline CEFIS Score By Age Group -->
+
+<!-- ```{r results='asis'} -->
+<!-- # Age category -->
+<!-- scores$child_age = scores$child_age / 365.25 -->
+<!-- scores$age_cat = cut(scores$child_age,breaks=c(-Inf,12,Inf),right = F, -->
+<!--                               labels=c("< 12 yr.",">= 12 yr.")) -->
+<!-- # Compare timepoints -->
+<!-- t4 = tableby(age_cat~exposure_sum+impact_mean+distress+child_distress+family_distress, -->
+<!--             data = scores[scores$Timepoint=="Baseline",]) -->
+<!-- summary(t4,labelTranslations = labels,pfootnote = T) -->
+<!-- ``` -->
+
+<!-- \newpage -->
+
+<!-- ## Child Responses -->
+
+<!-- ```{r results='asis'} -->
+<!-- t = data -->
+<!-- t$redcap_event_name = gsub("_arm.*","",t$redcap_event_name) -->
+<!-- t %>% filter(!is.na(child_question.factor)) %>% group_by(redcap_event_name) %>%  -->
+<!--   count(child_question.factor) %>% kable() -->
+<!-- ``` -->
 
