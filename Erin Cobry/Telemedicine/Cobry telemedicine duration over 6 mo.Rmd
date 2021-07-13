@@ -23,7 +23,7 @@ library(ggrepel)
 code_dir = ifelse(.Platform$OS.type == "unix",
                   "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/Telemedicine/Data raw",
                   "T:\\Erin Cobry\\Telemedicine\\Data raw")
-setwd(code_dir)
+#setwd(code_dir)
 
 knitr::opts_chunk$set(echo = TRUE)
 
@@ -95,6 +95,11 @@ demo <- unique(allclinic)
 data <- read.csv("T:/Erin Cobry/Telemedicine/Data raw/DiabetesTelemedicine-Cobry2020ADAAbstract_DATA_rural_distance_11-5-2020.csv")
 #source("T:/Erin Cobry/Telemedicine/Data raw/DiabetesTelemedicine-Cobry2020ADAAbstract_R_2020-01-05_1613.r")
 
+dob <- read.csv("T:/Erin Cobry/Telemedicine/Data raw/DiabetesTelemedicine-Cobry2020ADAAbstract_DATA_2021-07-12_1543.csv",na.strings = c("NA",""))
+dob <- dob[,c("study_id","dob")]
+dob <- dob[!is.na(dob$dob),]
+data <- merge(data,dob,by="study_id",all.x = T, all.y = F)
+
 # unique IDs before removing unconsented pts
 n_tele_all <- length(unique(data$study_id))
 
@@ -106,14 +111,14 @@ data <- merge(data,keep,by="study_id",all.x=F,all.y=T)
 n_tele_consent <- length(unique(data$study_id))
 
 # reshape redcap dataset
-enroll <- data[,c("study_id","redcap_event_name", "age","dod","zip_code_of_residence","race_chart___1","race_chart___2","race_chart___3",
+enroll <- data[,c("study_id","redcap_event_name", "age","dod","dob","zip_code_of_residence","race_chart___1","race_chart___2","race_chart___3",
   "race_chart___4","race_chart___5","race_chart___8","race_chart___9","ethnicity_chart","insurance_prior_chart","pump_prior_chart","cgmuse_prior_chart","gender",
   "Rural.","Distance.to.clinic.direct..KM...as.the.crow.flies.","Distance.to.clinic.driving..km.")]
 enroll <- enroll[enroll$redcap_event_name=="enrollmentpatient_arm_1",]
 first <- data[,c("study_id","redcap_event_name","date_of_first_visit","age_1st_telemed","diabetes_duration","city_of_first_visit","a1c_1st_telemedicine",
                  "insurance_first_telemed","pumptype_first_telemed","cgmuse_first_telemed","zipcode_first_visit","q149")]
 first <- first[first$redcap_event_name=="first_telemedicine_arm_1",]
-fup <- data[, -which(names(data) %in% c("age","dod","zip_code_of_residence","race_chart___1","race_chart___2","race_chart___3",
+fup <- data[, -which(names(data) %in% c("age","dod","dob","zip_code_of_residence","race_chart___1","race_chart___2","race_chart___3",
   "race_chart___4","race_chart___5","race_chart___8","race_chart___9","ethnicity_chart","insurance_prior_chart","pump_prior_chart","cgmuse_prior_chart",
   "date_of_first_visit","age_1st_telemed","diabetes_duration","city_of_first_visit","a1c_1st_telemedicine",
                  "insurance_first_telemed","pumptype_first_telemed","cgmuse_first_telemed","zipcode_first_visit","q149","gender",
@@ -241,16 +246,34 @@ tele$Rural. <- droplevels(tele$Rural.)
 tele <- tele[tele$diabetes_duration>0.5,]
 n_tele_consent_6mo <- length(unique(tele$study_id))
 
+# read in longitudinal data
+long <- read.csv("B:\\Projects\\Erin Cobry\\Telemedicine\\Data raw\\DiabetesTelemedicine-FollowupVisitData_DATA_2021-07-12_1844.csv",
+                 na.strings = c("NA",""))
+# find IDs in the analysis
+long <- long[long$study_id %in% tele$study_id,]
+# find last A1c and then merge back into tele
+long <- long[!is.na(long$date_of_fup_visit),]
+long <- long %>% arrange(study_id,desc(date_of_fup_visit))
+long_last <- long %>% group_by(study_id) %>% slice_head(n=1)
+long_last$LastA1C_OrderValue <- long_last$a1c_fup_telemed
+long_last_a1c <- long_last[,c("study_id","LastA1C_OrderValue")]
+tele <- merge(tele,long_last_a1c,by="study_id",all.x = T, all.y=T)
+
+# number of telemedicine visits completed
+
+
 # new variables for tele
-tele$dob <- as.Date(tele$dod, format="%m/%d/%Y")
-tele <- tele %>% mutate(Age_12132019 = as.numeric(as.Date("2019-12-13") - dob) / 365.25)
+tele$date_of_dx <- as.Date(tele$dod, format="%m/%d/%Y")
+tele$date_of_birth <- as.Date(tele$dob, format="%Y-%m-%d")
+tele <- tele %>% mutate(Age_12132019 = as.numeric(as.Date("2019-12-13") - date_of_birth) / 365.25)
+tele <- tele %>% mutate(DiabetesDuration_12132019 = as.numeric(as.Date("2019-12-13") - date_of_dx) / 365.25)
 tele$Gender <- ifelse(tele$gender==1,"M","F")
 
 # make combined df with techgroup and A1c
 combclinic <- allclinic[,c("techgroup","LastA1C_OrderValue","Distance.to.Clinic.Driving..Km.","Distance.to.Clinic.Direct..Km.",
-                           "Rural","InsuranceType","Age_12132019","Gender")]
+                           "Rural","InsuranceType","Age_12132019","Gender","DiabetesDuration_12132019")]
 combclinic$hba1c <- combclinic$LastA1C_OrderValue
-combclinic$LastA1C_OrderValue <- NULL
+#combclinic$LastA1C_OrderValue <- NULL
 combclinic$Distance.to.clinic.driving..km. <- combclinic$Distance.to.Clinic.Driving..Km.
 combclinic$Distance.to.Clinic.Driving..Km. <- NULL
 combclinic$Distance.to.clinic.direct..KM...as.the.crow.flies. <- combclinic$Distance.to.Clinic.Direct..Km.
@@ -259,7 +282,7 @@ combclinic$Rural. <- combclinic$Rural
 combclinic$Rural <- NULL
 combclinic$group <- "Clinic"
 combtele <- tele[,c("techgroup","a1c_fup_telemed","Distance.to.clinic.direct..KM...as.the.crow.flies.","Distance.to.clinic.driving..km.",
-                    "Rural.","InsuranceType","Age_12132019","Gender")]
+                    "Rural.","InsuranceType","Age_12132019","Gender","DiabetesDuration_12132019","LastA1C_OrderValue")]
 combtele$hba1c <- combtele$a1c_fup_telemed
 combtele$a1c_fup_telemed <- NULL
 combtele$group <- "Telemedicine"
@@ -283,12 +306,14 @@ b <- tele[,c("pump","cgm","pump_cgm","InsuranceType")]
 b$group <- "Telemedicine"
 twogroup <- rbind(a,b)
 
+
 # table comparing two groups (i.e., Clinic and Telemedicine)
 techtable <- CreateTableOne(vars=c("techgroup","anypump","anycgm","pumponly","cgmonly","pump_cgm","tech",
                                    "InsuranceType","Distance.to.clinic.driving..km.",
-                                   "Distance.to.clinic.direct..KM...as.the.crow.flies.","Rural.","Age_12132019","Gender" ), 
+                                   "Distance.to.clinic.direct..KM...as.the.crow.flies.","Rural.","Age_12132019","Gender","DiabetesDuration_12132019",
+                                   "LastA1C_OrderValue"), 
                             data=comb, strata="group", test=TRUE)
-techtable <- print(techtable,varLabels=TRUE,showAllLevels=TRUE)
+techtable <- print(techtable,varLabels=TRUE,showAllLevels=TRUE,nonnorm="DiabetesDuration_12132019")
 
 # demographics in telemedicine patients
 demovars <- c("age_1st_telemed","race2","gender","cgmuse_prior_chart","pump_prior_chart","diabetes_duration","InsuranceType",
