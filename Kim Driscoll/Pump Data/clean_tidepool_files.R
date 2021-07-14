@@ -2,8 +2,8 @@ library(tidyverse)
 library(readxl)
 library(tools)
 # Original files
-indir = "/Users/timvigers/tidepool_test"
-outdir = "/Users/timvigers/tidepool_clean"
+indir = "/Users/timvigers/Dropbox/Work/Tidepool Test/raw"
+outdir = "/Users/timvigers/Dropbox/Work/Tidepool Test/cleaned"
 files = list.files(indir,full.names = T)
 # Iterate through
 for (f in files) {
@@ -35,7 +35,7 @@ for (f in files) {
   # Carbs and bolus recommendation if available
   if ("Bolus Calculator" %in% tabs) {
     carbs = suppressWarnings(read_excel(f,"Bolus Calculator"))
-    carbs = carbs %>% select(`Local Time`,`Carb Input`,`Recommended Correction`)
+    carbs = carbs %>% select(`Local Time`,`Carb Input`,`Recommended Net`)
   } else {
     carbs = matrix(nrow = 1,ncol = 3)
   }

@@ -1,7 +1,7 @@
 library(tidyverse)
 # Import data
-indir <- "/Users/timvigers/tidepool_clean/"
-outdir <- "/Users/timvigers/"
+indir <- "/Users/timvigers/Dropbox/Work/Tidepool Test/cleaned/"
+outdir <- "/Users/timvigers/Dropbox/Work/Tidepool Test/"
 files <- list.files(indir,full.names = T)
 # Make a summary variables table.
 summary <- data.frame(matrix(nrow = length(files),ncol = 0))
@@ -227,7 +227,9 @@ for (f in 1:length(files)) {
   # Get dates with bolus gaps >= 6 hours
   bolus_time_df <- as.data.frame(bolus_datetimes,stringsAsFactors = F)
   bolus_time_df$date <- as.Date(bolus_time_df$bolus_datetimes)
-  bolus_time_df$time <- lubridate::hour(bolus_time_df$bolus_datetimes)
+  if (nrow(bolus_time_df) > 0){
+    bolus_time_df$time <- lubridate::hour(bolus_time_df$bolus_datetimes)
+  }
   bolus_time_df$bolus_datetimes <- lubridate::ymd_hms(bolus_time_df$bolus_datetimes)
   bolus_time_df <- bolus_time_df %>%
     mutate(diff = (bolus_datetimes - lag(bolus_datetimes))/60)
