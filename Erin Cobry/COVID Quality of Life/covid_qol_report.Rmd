@@ -102,6 +102,17 @@ scores$Timepoint = factor(scores$Timepoint,levels = c("baseline","3_month",
                           labels = c("Baseline","3 Month","6 Month","12 Month"))
 scores$num_time = recode(scores$Timepoint,"Baseline" = 0,"3 Month" = 3,
                          "6 Month" = 6,"12 Month" = 12)
+
+scores_child = data %>% 
+  filter(as.numeric(substr(record_id,1,4))>=2000) %>%
+  mutate(Timepoint = sub("_arm_.*","",redcap_event_name))
+scores_child$num_id = as.numeric(substr(scores_child$record_id,1,4))
+scores_child$Timepoint = factor(scores_child$Timepoint,levels = c("baseline","3_month",
+                                                      "6_month","12_month"),
+                          labels = c("Baseline","3 Month","6 Month","12 Month"))
+scores_child$num_time = recode(scores_child$Timepoint,"Baseline" = 0,"3 Month" = 3,
+                         "6 Month" = 6,"12 Month" = 12)
+
 ```
 
 ```{r plot function}
@@ -122,6 +133,30 @@ model_and_plot = function(outcome_name,ylab,group_var,df,pois = F){
     scale_x_continuous(breaks=c(0,3,6),labels=c("Baseline","3 Month","6 Month"))
   # Print plot and model results
   print(p)
+  print(kable(anova(mod),digits = 3,caption = "Type III ANOVA"))
+  print(kable(summary(mod)$coefficients,digits = 3,caption = "Fixed Effects"))
+}
+```
+
+```{r tvc function}
+# Trying to make a function for a mixed model with time varying covariates
+tvc = function(outcome_name,group_var,df,pois = F){
+  # Convert to numeric
+  df[,outcome_name] = as.numeric(df[,outcome_name])
+  # Fit a mixed model. Some of these are essentially count data and may require a Poisson model
+  mod = lmer(as.formula(paste0(outcome_name,"~num_time +",group_var,"+ (num_time|record_id)")),df)
+  # Means by timepoint
+  #means = as.data.frame(emmeans(mod,~Timepoint))
+  #means$num_time = c(0,3,6)
+  # Plot
+  #p = ggplot(df,aes_string(x = "num_time",y = outcome_name, group = group_var)) +
+  #  geom_line(alpha=0.1) +
+  #  geom_line(data=means,aes(x=num_time,y=as.numeric(emmean),group=1),
+  #          size = 1,inherit.aes = F) +
+  #  theme_bw() +xlab("Timepoint") + ylab(ylab) +
+  #  scale_x_continuous(breaks=c(0,3,6),labels=c("Baseline","3 Month","6 Month"))
+  # Print plot and model results
+  #print(p)
   print(kable(anova(mod),digits = 3,caption = "Type III ANOVA"))
   print(kable(summary(mod)$coefficients,digits = 3,caption = "Fixed Effects"))
 }
@@ -156,6 +191,8 @@ model_and_plot("child_distress","Child Distress","record_id",scores[scores$num_t
 ```{r results='asis'}
 model_and_plot("family_distress","Family Distress","record_id",scores[scores$num_time <= 6 & scores$exposure_sum>0,])
 ```
+
+\newpage
 
 # Peds-QL Diabetes Module Scores
 
@@ -252,4 +289,33 @@ model_and_plot("comm_score","Communication score","record_id",parent_pedsql[pare
 
 ```{r results='asis'}
 model_and_plot("pedsql_total_score","Total score","record_id",parent_pedsql[parent_pedsql$num_time <= 6 & parent_pedsql$pedsql_total_score>0,])
+```
+
+# Association between Peds-QL Diabetes Module Scores and CEFIS scores
+
+How to interpret these models: in the table labeled "Fixed Effects," the estimate for the CEFIS measure is the change in the Peds-QL measure for a one unit change in the CEFIS measure.
+
+```{r}
+# Looks like children did not complete CEFIS
+#child_pedsql_cefis <- merge(child_pedsql,scores,by=c("record_id","Timepoint"),all.x = T, all.y = F)
+parent_pedsql_cefis <- merge(parent_pedsql,scores,by=c("record_id","Timepoint"),all.x = T, all.y = F)
+parent_pedsql_cefis$num_time <- parent_pedsql_cefis$num_time.x
+```
+
+## Exposure and Parent Total Score
+
+```{r results='asis'}
+tvc("pedsql_total_score","exposure_sum",parent_pedsql_cefis[parent_pedsql_cefis$num_time <= 6 & parent_pedsql_cefis$exposure_sum>0,])
+```
+
+## Impact and Parent Total Score
+
+```{r results='asis'}
+tvc("pedsql_total_score","impact_mean",parent_pedsql_cefis[parent_pedsql_cefis$num_time <= 6 & parent_pedsql_cefis$exposure_sum>0,])
+```
+
+## Distress and Parent Total Score
+
+```{r results='asis'}
+tvc("pedsql_total_score","distress",parent_pedsql_cefis[parent_pedsql_cefis$num_time <= 6 & parent_pedsql_cefis$exposure_sum>0,])
 ```
