@@ -1,4 +1,5 @@
 library(tidyverse)
+library(readxl)
 setwd("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant")
 # Sample info (cleaned for metabolomics)
 sample_info = read.csv("./Metabolomics/Data_Cleaned/targeted.csv",na.strings = "")
