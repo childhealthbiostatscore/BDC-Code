@@ -1,0 +1,200 @@
+---
+title: "Analysis of AHA omics data"
+author: "Laura Pyle & Tim Vigers"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    theme: readable
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
+library(arsenal)
+library(skimr)
+library(knitr)
+library(mixOmics)
+library(tidyverse)
+library(limma)
+library(webchem)
+library(omu)
+library(PCAtools)
+
+home_dir = ifelse(.Platform$OS.type != "unix","T:/Janet Snell-Bergeon/AHA collaborative grant",
+                  "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant")
+knitr::opts_knit$set(root.dir = home_dir)
+
+library(readxl)
+
+# Basic workflow:
+# Moderated t-tests
+# Linear model in limma containing interaction with sex
+# sPLS-DA
+# No multiple correction
+
+# LOG TRANSFORM PRIOR TO ALL ANALYSES?
+
+```
+
+```{r read untargeted metabolomics,echo=FALSE}
+# read in untargeted metabolomics
+raw_data <- 
+  read.csv("./Metabolomics/Data_Cleaned/metabolomics_without_imputation.csv",
+                     stringsAsFactors = F,na.strings = c("","NA"))
+# Format
+data <- raw_data %>% 
+  mutate(compound = coalesce(HMDB.No.,LI.Library.No.),
+         m.z = Neutral.Mass..Da.+1.0078,
+         rt = RT..s.,
+         masserror = coalesce(Mass.Error..ppm.,Mass.Error..ppm..1),
+         rterror = coalesce(RT.Error..s.,RT.Error..s..1)) %>%
+  select(compound,m.z,rt,masserror,rterror,
+         IsoMS_results_QC01_190618171010_converted.csv:
+           IsoMS_results_S227_Batch07_1400_RA8_converted.csv)
+data$compound <- paste(data$compound,data$m.z,data$rt,sep = "_")
+# Rename columns
+colnames(data) <- gsub("IsoMS_results_","",colnames(data))
+colnames(data) <- gsub("*_.*","",colnames(data))
+# Import clinical data and sample list
+clinical <- read.csv("./Metabolomics/Data_Cleaned/targeted.csv",stringsAsFactors = F)
+# Three progression groups
+cac_groups <- 
+  read.table("./Metabolomics/Data_Raw/CAC Trajectories 3 groups.txt",sep = "\t",
+                         header = T)
+# CAC progression - increase in square root calcium volume >= 2.5 between baseline and visit 3
+clinical$CACp <- 
+  as.factor(ifelse(clinical$c3 - clinical$c1 >= 2.5,"Progression","No Progression"))
+# New CAC groups
+clinical <- left_join(clinical,cac_groups[,c("StudyID","GROUP")],by = "StudyID")
+samples <- read.csv("./Metabolomics/Data_Cleaned/sample_list.csv")
+# Match sample number to subject ID
+clinical$GlobalSampleID <- 
+  as.character(samples$Injection[match(clinical$StudyID,samples$SampleID)])
+# Relevant columns
+clinical <- clinical %>%
+  select(GlobalSampleID,age,sex,race,bmiV1,acV1,CACp,GROUP) %>%
+  filter(!is.na(GlobalSampleID))
+# Names
+names <- data$compound
+# Data matrix
+data <- data %>% select(QC01:S227) %>%
+  t(.) %>% as.data.frame(.) # Transpose - samples in rows
+# Format columns
+colnames(data) <- names
+data$GlobalSampleID <- as.character(rownames(data))
+# Add clinical data
+data <- left_join(data,clinical,by = "GlobalSampleID")
+data <- data %>% select(GlobalSampleID:GROUP,everything())
+data$GROUP[grepl("QC",data$GlobalSampleID)] <- "QC"
+data$GROUP <- as.factor(data$GROUP)
+# QC batch info
+# Injection order
+sampledata <- read.csv("./Metabolomics/Data_Cleaned/injection_seq.csv",
+                       stringsAsFactors = F)
+sampledata$batch <- sapply(strsplit(sampledata$SampleName,"_"),`[`,2)
+sampledata$batch[nrow(sampledata)] <- sampledata$batch[(nrow(sampledata)-1)]
+sampledata$batch <- sub("Batch0","",sampledata$batch)
+sampledata <- sampledata %>% fill(batch,.direction = "up") %>%
+  mutate(order = 1:n())
+# Merge
+data <- left_join(data,sampledata[,c("GlobalSampleID","batch")],
+                  by = "GlobalSampleID")
+data$batch <- as.factor(data$batch)
+# Order columns
+data <- data %>% select(GlobalSampleID:GROUP,batch,everything())
+# Column formats
+data[,c("GlobalSampleID","sex","race")] <- 
+  lapply(data[,c("GlobalSampleID","sex","race")],as.factor) 
+
+# pre-processing
+# Check for samples missing > 80% of compounds, remove them
+missing <- which(rowSums(is.na(data[,10:ncol(data)])) / length(10:ncol(data)) > 0.8)
+data <- data[-missing,]
+# Same for 0 instead of NA - none
+missing0 <- which(rowSums(data[,10:ncol(data)] == 0) / length(10:ncol(data)) > 0.8)
+# Check for and remove compounds with > 20% missing in research - none
+research <- which(colSums(is.na(data[!grepl("QC",data$GlobalSampleID),])) / 
+                    (nrow(data))-13 > 0.2)
+# or > 80% missing in QC - none
+qc <- names(which(colSums(is.na(data[grepl("QC",data$GlobalSampleID),10:ncol(data)])) / 
+                    13 > 0.2))
+data <- data[,!(names(data) %in% qc)]
+# Check for compounds with CV > 0.3 in QC samples
+qc_cv <- names(which(lapply(data[grepl("QC",data$GlobalSampleID),10:ncol(data)],function(x){
+  sd(x,na.rm = T)/mean(x,na.rm = T)
+}) > 0.3))
+data <- data[,!(names(data) %in% qc_cv)]
+# Remove bad name compound
+data[,grep("314_",colnames(data))] <- NULL
+
+untargeted_metabolomics <- data
+
+skim(untargeted_metabolomics)
+```
+
+```{r read targeted metabolomics,echo=FALSE}
+# read in targeted metabolomics
+# Import new data
+targeted <- read.csv("./Metabolomics/Data_Cleaned/targeted.csv")
+# Three progression groups
+cac_groups <- read.table("./Metabolomics/Data_Raw/CAC Trajectories 3 groups.txt",sep = "\t",
+                         header = T)
+# CAC progression - increase in square root calcium volume >= 2.5 between baseline and visit 3
+targeted$CACp <- as.factor(ifelse(targeted$c3 - targeted$c1 >= 2.5,"Progression","No Progression"))
+# New CAC groups
+targeted <- left_join(targeted,cac_groups[,c("StudyID","GROUP")],by = "StudyID")
+
+targeted_metabolomics <- targeted
+
+skim(targeted_metabolomics)
+```
+
+```{r read untargeted proteomics,echo=FALSE}
+# Import
+
+```
+
+
+```{r read glycated proteomics,echo=FALSE}
+# Protein abundance
+abundance <- read.csv("./Proteomics/Data_Cleaned/peptide_abundance.csv")
+# List protein names
+proteins <- colnames(abundance)[3:ncol(abundance)]
+# Add CAC group and demographic info 
+demographics <- read.csv("./Proteomics/Data_Cleaned/demographics.csv")
+cac_group <- read.csv("./Proteomics/Data_Cleaned/cac_groups.csv")
+abundance <- left_join(abundance,demographics,by = "StudyID")
+abundance <- left_join(abundance,cac_group[,c("StudyID","GROUP")],by = "StudyID")
+abundance$CACprog <- ifelse(abundance$c3 - abundance$c1 >= 2.5,
+                                         "Progression","No Progression")
+abundance$CACprog[is.na(abundance$CACprog)] <- "Unknown"
+# Remove, format, and order columns
+abundance$StudyID <- as.factor(abundance$StudyID)
+abundance <- abundance %>% 
+  dplyr::select(StudyID,gender,age,race,GROUP,CACprog,hba1cV1,all_of(proteins))
+# Peptide sequences
+sequence <- read.csv("./Proteomics/Data_Cleaned/peptide_sequence.csv")
+# Sample injection order
+sample_order <- read.csv("./Proteomics/Data_Cleaned/sample_acquisition.csv")
+
+glycated_proteomics <- abundance
+
+skim(glycated_proteomics)
+```
+
+```{r read lipidomics,echo=FALSE}
+```
+
+# Background
+
+# Methods
+
+# Results
+
+```{r echo=FALSE}
+#kable(t1,caption = "")
+```
+<br>
