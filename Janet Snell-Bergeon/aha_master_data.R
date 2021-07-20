@@ -5,9 +5,10 @@ setwd("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/
 sample_info = read.csv("./Metabolomics/Data_Cleaned/targeted.csv",na.strings = "")
 # Targeted metabolites
 targeted_metabs = colnames(sample_info)[which(colnames(sample_info)=="Betaine"):ncol(sample_info)]
-# Add three CAC groups
+# Add three CAC groups and progression
 three_group = read.delim("./Metabolomics/Data_Raw/CAC Trajectories 3 groups.txt",na.strings = "")
 sample_info = left_join(sample_info,three_group[,c("StudyID","GROUP")],by = "StudyID")
+sample_info$CACp = cut(sample_info$c3 - sample_info$c1,c(-Inf,2.5,Inf),labels = c("No","Yes"),right = F)
 # Add untargeted metabolites
 untargeted = read.csv("./Metabolomics/Data_Cleaned/complete_untargeted.csv",na.strings = "")
 untargeted_metabs = colnames(untargeted)[grep("GROUP",colnames(untargeted))+1:ncol(untargeted)]
