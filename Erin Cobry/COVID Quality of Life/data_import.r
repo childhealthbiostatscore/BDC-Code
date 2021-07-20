@@ -1,6 +1,5 @@
 #Read Data
-#data=read.csv('./Erin Cobry/COVID Quality of Life/Data_Raw/HealthRelatedQuality_DATA_2021-07-13_1006.csv',na.strings = "")
-data=read.csv('Y:\\COVID Quality of Life\\Data_Raw\\HealthRelatedQuality_DATA_2021-07-13_1006.csv',na.strings = "")
+data=read.csv('./Erin Cobry/COVID Quality of Life/Data_Raw/HealthRelatedQuality_DATA_2021-07-13_1006.csv',na.strings = "")
 
 #Setting Labels
 label(data$record_id)="Record ID"
