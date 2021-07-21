@@ -77,24 +77,24 @@ reverse57$tx2_score <- NA
 reverse57$worry_score <- NA
 reverse57$comm_score <- NA
 for (j in 1:nrow(reverse57)) {
-  reverse57[j,]$diabetes_score <- ifelse(reverse57[j,]$nmissdiabetes<=(length(diabetes)*0.5),apply(reverse57[j,diabetes],1,sum,na.rm=T),NA)
+  reverse57[j,]$diabetes_score <- ifelse(reverse57[j,]$nmissdiabetes<=(length(diabetes)*0.5),apply(reverse57[j,diabetes],1,mean,na.rm=T),NA)
 }
 for (j in 1:nrow(reverse57)) {
-  reverse57[j,]$tx1_score <- ifelse(reverse57[j,]$nmisstx1<=(length(tx1)*0.5),apply(reverse57[j,tx1],1,sum,na.rm=T),NA)
+  reverse57[j,]$tx1_score <- ifelse(reverse57[j,]$nmisstx1<=(length(tx1)*0.5),apply(reverse57[j,tx1],1,mean,na.rm=T),NA)
 }
 for (j in 1:nrow(reverse57)) {
-  reverse57[j,]$tx2_score <- ifelse(reverse57[j,]$nmisstx2<=(length(tx2)*0.5),apply(reverse57[j,tx2],1,sum,na.rm=T),NA)
+  reverse57[j,]$tx2_score <- ifelse(reverse57[j,]$nmisstx2<=(length(tx2)*0.5),apply(reverse57[j,tx2],1,mean,na.rm=T),NA)
 }
 for (j in 1:nrow(reverse57)) {
-  reverse57[j,]$worry_score <- ifelse(reverse57[j,]$nmissworry<=(length(worry)*0.5),apply(reverse57[j,worry],1,sum,na.rm=T),NA)
+  reverse57[j,]$worry_score <- ifelse(reverse57[j,]$nmissworry<=(length(worry)*0.5),apply(reverse57[j,worry],1,mean,na.rm=T),NA)
 }
 for (j in 1:nrow(reverse57)) {
-  reverse57[j,]$comm_score <- ifelse(reverse57[j,]$nmisscomm<=(length(comm)*0.5),apply(reverse57[j,comm],1,sum,na.rm=T),NA)
+  reverse57[j,]$comm_score <- ifelse(reverse57[j,]$nmisscomm<=(length(comm)*0.5),apply(reverse57[j,comm],1,mean,na.rm=T),NA)
 }
 # calculate total scores
 scalescores <- c("diabetes_score","tx1_score","tx2_score","worry_score","comm_score")
-reverse57$nmissscales <- apply(is.na(reverse57[,scalescores]), 1, sum)
-reverse57$pedsql_total_score <- ifelse(reverse57$nmissscales<5,apply(reverse57[,scalescores],1,sum,na.rm=T),NA) 
+#reverse57$nmissscales <- apply(is.na(reverse57[,scalescores]), 1, sum)
+reverse57$pedsql_total_score <- apply(reverse57[,scalescores],1,mean,na.rm=T)
 # clean up
 diabetes <- NULL
 tx1 <- NULL
@@ -186,24 +186,24 @@ reverse817$tx2_score <- NA
 reverse817$worry_score <- NA
 reverse817$comm_score <- NA
 for (j in 1:nrow(reverse817)) {
-  reverse817[j,]$diabetes_score <- ifelse(reverse817[j,]$nmissdiabetes<=(length(diabetes)*0.5),apply(reverse817[j,diabetes],1,sum,na.rm=T),NA)
+  reverse817[j,]$diabetes_score <- ifelse(reverse817[j,]$nmissdiabetes<=(length(diabetes)*0.5),apply(reverse817[j,diabetes],1,mean,na.rm=T),NA)
 }
 for (j in 1:nrow(reverse817)) {
-  reverse817[j,]$tx1_score <- ifelse(reverse817[j,]$nmisstx1<=(length(tx1)*0.5),apply(reverse817[j,tx1],1,sum,na.rm=T),NA)
+  reverse817[j,]$tx1_score <- ifelse(reverse817[j,]$nmisstx1<=(length(tx1)*0.5),apply(reverse817[j,tx1],1,mean,na.rm=T),NA)
 }
 for (j in 1:nrow(reverse817)) {
-  reverse817[j,]$tx2_score <- ifelse(reverse817[j,]$nmisstx2<=(length(tx2)*0.5),apply(reverse817[j,tx2],1,sum,na.rm=T),NA)
+  reverse817[j,]$tx2_score <- ifelse(reverse817[j,]$nmisstx2<=(length(tx2)*0.5),apply(reverse817[j,tx2],1,mean,na.rm=T),NA)
 }
 for (j in 1:nrow(reverse817)) {
-  reverse817[j,]$worry_score <- ifelse(reverse817[j,]$nmissworry<=(length(worry)*0.5),apply(reverse817[j,worry],1,sum,na.rm=T),NA)
+  reverse817[j,]$worry_score <- ifelse(reverse817[j,]$nmissworry<=(length(worry)*0.5),apply(reverse817[j,worry],1,mean,na.rm=T),NA)
 }
 for (j in 1:nrow(reverse817)) {
-  reverse817[j,]$comm_score <- ifelse(reverse817[j,]$nmisscomm<=(length(comm)*0.5),apply(reverse817[j,comm],1,sum,na.rm=T),NA)
+  reverse817[j,]$comm_score <- ifelse(reverse817[j,]$nmisscomm<=(length(comm)*0.5),apply(reverse817[j,comm],1,mean,na.rm=T),NA)
 }
 # calculate total scores
 scalescores <- c("diabetes_score","tx1_score","tx2_score","worry_score","comm_score")
-reverse817$nmissscales <- apply(is.na(reverse817[,scalescores]), 1, sum)
-reverse817$pedsql_total_score <- ifelse(reverse817$nmissscales<5,apply(reverse817[,scalescores],1,sum,na.rm=T),NA) 
+#reverse817$nmissscales <- apply(is.na(reverse817[,scalescores]), 1, sum)
+reverse817$pedsql_total_score <- apply(reverse817[,scalescores],1,mean,na.rm=T)
 # clean up
 diabetes <- NULL
 tx1 <- NULL
@@ -296,24 +296,24 @@ reverseparent$tx2_score <- NA
 reverseparent$worry_score <- NA
 reverseparent$comm_score <- NA
 for (j in 1:nrow(reverseparent)) {
-  reverseparent[j,]$diabetes_score <- ifelse(reverseparent[j,]$nmissdiabetes<=(length(diabetes)*0.5),apply(reverseparent[j,diabetes],1,sum,na.rm=T),NA)
+  reverseparent[j,]$diabetes_score <- ifelse(reverseparent[j,]$nmissdiabetes<=(length(diabetes)*0.5),apply(reverseparent[j,diabetes],1,mean,na.rm=T),NA)
 }
 for (j in 1:nrow(reverseparent)) {
-  reverseparent[j,]$tx1_score <- ifelse(reverseparent[j,]$nmisstx1<=(length(tx1)*0.5),apply(reverseparent[j,tx1],1,sum,na.rm=T),NA)
+  reverseparent[j,]$tx1_score <- ifelse(reverseparent[j,]$nmisstx1<=(length(tx1)*0.5),apply(reverseparent[j,tx1],1,mean,na.rm=T),NA)
 }
 for (j in 1:nrow(reverseparent)) {
-  reverseparent[j,]$tx2_score <- ifelse(reverseparent[j,]$nmisstx2<=(length(tx2)*0.5),apply(reverseparent[j,tx2],1,sum,na.rm=T),NA)
+  reverseparent[j,]$tx2_score <- ifelse(reverseparent[j,]$nmisstx2<=(length(tx2)*0.5),apply(reverseparent[j,tx2],1,mean,na.rm=T),NA)
 }
 for (j in 1:nrow(reverseparent)) {
-  reverseparent[j,]$worry_score <- ifelse(reverseparent[j,]$nmissworry<=(length(worry)*0.5),apply(reverseparent[j,worry],1,sum,na.rm=T),NA)
+  reverseparent[j,]$worry_score <- ifelse(reverseparent[j,]$nmissworry<=(length(worry)*0.5),apply(reverseparent[j,worry],1,mean,na.rm=T),NA)
 }
 for (j in 1:nrow(reverseparent)) {
-  reverseparent[j,]$comm_score <- ifelse(reverseparent[j,]$nmisscomm<=(length(comm)*0.5),apply(reverseparent[j,comm],1,sum,na.rm=T),NA)
+  reverseparent[j,]$comm_score <- ifelse(reverseparent[j,]$nmisscomm<=(length(comm)*0.5),apply(reverseparent[j,comm],1,mean,na.rm=T),NA)
 }
 # calculate total scores
 scalescores <- c("diabetes_score","tx1_score","tx2_score","worry_score","comm_score")
 reverseparent$nmissscales <- apply(is.na(reverseparent[,scalescores]), 1, sum)
-reverseparent$pedsql_total_score <- ifelse(reverseparent$nmissscales<5,apply(reverseparent[,scalescores],1,sum,na.rm=T),NA) 
+reverseparent$pedsql_total_score <- apply(reverseparent[,scalescores],1,mean,na.rm=T)
 # clean up
 diabetes <- NULL
 tx1 <- NULL
