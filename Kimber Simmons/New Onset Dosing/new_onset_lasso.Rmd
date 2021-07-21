@@ -1,0 +1,79 @@
+---
+title: ""
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(glinternet)
+library(knitr)
+```
+
+# 10-Fold Cross Validation
+
+```{r}
+# Format data for glinternet
+df = read.csv("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kimber Simmons/New Onset Dosing/Data_Cleaned/cleaned_data.csv",stringsAsFactors = T)
+df = df %>% select(Age,Sex,Race,Initial_A1c,DKA,Wt_onset,Average_TDD)
+df = df[complete.cases(df),]
+Y = df$Average_TDD
+X = df %>% select(Age,Sex,Race,Initial_A1c,DKA,Wt_onset)
+numLevels = unlist(lapply(X,function(c){length(levels(c))}))
+numLevels[numLevels==0] = 1
+X = as.data.frame(lapply(X,function(x){as.numeric(x)-1}))
+# CV
+cv_fit = glinternet.cv(X, Y, numLevels)
+# Plot
+plot(cv_fit)
+# Best lambda
+best_lambda <- which(cv_fit$lambdaHat == cv_fit$lambda)
+```
+
+The lambda index with the lowest error was number `r which(cv_fit$lambdaHat == cv_fit$lambda)`, so this value was used to find the correct model. The value which produced the simplest model within 1 SD of the minimum error resulted in only age being selected, which is not clinically useful. 
+
+# Selected Coefficients
+
+```{r}
+cat = names(numLevels)[numLevels > 1]
+cont = names(numLevels)[numLevels == 1]
+# Get coefficients
+coefs <- coef(cv_fit$glinternetFit)[[best_lambda]]
+```
+
+## Continuous Main Effects
+
+```{r}
+kable(cont[coefs$mainEffects$cont],col.names = "")
+```
+
+## Categorical Main Effects
+
+```{r}
+kable(cat[coefs$mainEffects$cat],col.names = "")
+```
+
+## Continuous-Continuous Interaction Effects
+
+```{r}
+kable(cont[coefs$interactions$contcont],
+      col.names = "")
+```
+
+## Categorical-Categorical Interaction Effects
+
+```{r}
+kable(cat[coefs$interactions$catcat],
+      col.names = "")
+```
+
+## Continuous-categorical Interaction Effects.
+
+None
