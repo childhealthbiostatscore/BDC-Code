@@ -49,14 +49,24 @@ df <- df[!is.na(df$CACp),]
 # remove low variance items
 no_var = caret::nearZeroVar(df[,c(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins,lipids)])
 df = df[,-c(no_var)]
+
+# remove the compounds with missing data and low variance from the strings of names
 untargeted_metabs <- untargeted_metabs[untargeted_metabs %in% colnames(df)]
 targeted_metabs <- targeted_metabs[targeted_metabs %in% colnames(df)]
 global_proteins <- global_proteins[global_proteins %in% colnames(df)]
 glycated_proteins <- glycated_proteins[glycated_proteins %in% colnames(df)]
+lipids <- lipids[lipids %in% colnames(df)]
 
-temp = df[,c(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins,lipids)]
-X = df[,-c(which(colMeans(is.na())>=0.8))]
+# remove markers with >=80% missing
+df[,c(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins,lipids)] = 
+  df[,-c(which(colMeans(is.na(df[,c(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins,lipids)]))>=0.8))]
 
+# remove the compounds with missing data and low variance from the strings of names
+untargeted_metabs <- untargeted_metabs[untargeted_metabs %in% colnames(df)]
+targeted_metabs <- targeted_metabs[targeted_metabs %in% colnames(df)]
+global_proteins <- global_proteins[global_proteins %in% colnames(df)]
+glycated_proteins <- glycated_proteins[glycated_proteins %in% colnames(df)]
+lipids <- lipids[lipids %in% colnames(df)]
 ```
 
 ```{r moderated ttests,echo=FALSE}
@@ -64,7 +74,10 @@ cac_contrast <- ifelse(df$CACp=="Yes",1,0)
 cac_contrast <- cbind(rep(1,nrow(df)),cac_contrast)
 
 # untargeted metabolites
+a <- t(df)
+b <- a[,names(a) %in% untargeted_metabs]
 ymat <- t(df[,names(df) %in% untargeted_metabs])
+temp <- as.data.frame(ymat)
 fit <- lmFit(ymat,cac_contrast)
 fit <- eBayes(fit)
 results_untargeted_metabs <- topTable(fit,coef = 2,number = nrow(ymat))
@@ -195,9 +208,7 @@ The purpose of this analysis is to examine differences in targeted and untargete
 
 # Methods
 
-DO WE NEED TO FILTER THOSE W/ TOO MUCH MISSING DATA, NEAR ZERO VARIANCE, ETC?  if so, add to below
-
-Data were log transformed prior to analysis.  
+Data were log transformed prior to analysis.  Markers with >=80% missing data or near-zero variance were removed prior to analysis.
 
 Moderated t-tests were used to compare CAC progression groups.  Linear models were used to test whether there was a significant interaction between CAC progression groups and sex.
 
@@ -273,19 +284,19 @@ auc_save <- plsda.perf$auc$`comp1`[1]
 auc_true <- as.numeric(plsda.perf$auc$comp1["AUC.mean"])
 
 # Permutation testing - takes forever, make sure to cache
-n_perm <- 1000
-aucs <- vector(mode="numeric", length=n_perm)
-for (i in 1:n_perm) {
- Y <- sample(as.factor(df$CACp),replace = F)
- plsda_res <- plsda(df[,names(df) %in% targeted_metabs],Y,ncomp = 2)
- perf_plsda <- perf(plsda_res,progressBar=FALSE, auc=TRUE,
-                  validation = "loo")
- aucs[i] <- as.numeric(perf_plsda$auc$comp1["AUC.mean"])
-}
-ggplot(as.data.frame(aucs),aes(x=aucs)) +
-geom_histogram(binwidth = 0.01) +
-geom_vline(aes(xintercept=auc_true),color="red") +
-theme_bw() + xlab("AUC")
+# n_perm <- 1000
+# aucs <- vector(mode="numeric", length=n_perm)
+# for (i in 1:n_perm) {
+#  Y <- sample(as.factor(df$CACp),replace = F)
+#  plsda_res <- plsda(df[,names(df) %in% targeted_metabs],Y,ncomp = 2)
+#  perf_plsda <- perf(plsda_res,progressBar=FALSE, auc=TRUE,
+#                   validation = "loo")
+#  aucs[i] <- as.numeric(perf_plsda$auc$comp1["AUC.mean"])
+# }
+# ggplot(as.data.frame(aucs),aes(x=aucs)) +
+# geom_histogram(binwidth = 0.01) +
+# geom_vline(aes(xintercept=auc_true),color="red") +
+# theme_bw() + xlab("AUC")
 
 ```
 
@@ -314,19 +325,19 @@ auc_save <- plsda.perf$auc$`comp1`[1]
 auc_true <- as.numeric(plsda.perf$auc$comp1["AUC.mean"])
 
 # Permutation testing - takes forever, make sure to cache
-n_perm <- 1000
-aucs <- vector(mode="numeric", length=n_perm)
-for (i in 1:n_perm) {
- Y <- sample(as.factor(df$CACp),replace = F)
- plsda_res <- plsda(df[,names(df) %in% global_proteins],Y,ncomp = 2)
- perf_plsda <- perf(plsda_res,progressBar=FALSE, auc=TRUE,
-                  validation = "loo")
- aucs[i] <- as.numeric(perf_plsda$auc$comp1["AUC.mean"])
-}
-ggplot(as.data.frame(aucs),aes(x=aucs)) +
-geom_histogram(binwidth = 0.01) +
-geom_vline(aes(xintercept=auc_true),color="red") +
-theme_bw() + xlab("AUC")
+# n_perm <- 1000
+# aucs <- vector(mode="numeric", length=n_perm)
+# for (i in 1:n_perm) {
+#  Y <- sample(as.factor(df$CACp),replace = F)
+#  plsda_res <- plsda(df[,names(df) %in% global_proteins],Y,ncomp = 2)
+#  perf_plsda <- perf(plsda_res,progressBar=FALSE, auc=TRUE,
+#                   validation = "loo")
+#  aucs[i] <- as.numeric(perf_plsda$auc$comp1["AUC.mean"])
+# }
+# ggplot(as.data.frame(aucs),aes(x=aucs)) +
+# geom_histogram(binwidth = 0.01) +
+# geom_vline(aes(xintercept=auc_true),color="red") +
+# theme_bw() + xlab("AUC")
 
 ```
 
@@ -355,19 +366,19 @@ auc_save <- plsda.perf$auc$`comp1`[1]
 auc_true <- as.numeric(plsda.perf$auc$comp1["AUC.mean"])
 
 # Permutation testing - takes forever, make sure to cache
-n_perm <- 1000
-aucs <- vector(mode="numeric", length=n_perm)
-for (i in 1:n_perm) {
- Y <- sample(as.factor(df$CACp),replace = F)
- plsda_res <- plsda(df[,names(df) %in% glycated_proteins],Y,ncomp = 2)
- perf_plsda <- perf(plsda_res,progressBar=FALSE, auc=TRUE,
-                  validation = "loo")
- aucs[i] <- as.numeric(perf_plsda$auc$comp1["AUC.mean"])
-}
-ggplot(as.data.frame(aucs),aes(x=aucs)) +
-geom_histogram(binwidth = 0.01) +
-geom_vline(aes(xintercept=auc_true),color="red") +
-theme_bw() + xlab("AUC")
+# n_perm <- 1000
+# aucs <- vector(mode="numeric", length=n_perm)
+# for (i in 1:n_perm) {
+#  Y <- sample(as.factor(df$CACp),replace = F)
+#  plsda_res <- plsda(df[,names(df) %in% glycated_proteins],Y,ncomp = 2)
+#  perf_plsda <- perf(plsda_res,progressBar=FALSE, auc=TRUE,
+#                   validation = "loo")
+#  aucs[i] <- as.numeric(perf_plsda$auc$comp1["AUC.mean"])
+# }
+# ggplot(as.data.frame(aucs),aes(x=aucs)) +
+# geom_histogram(binwidth = 0.01) +
+# geom_vline(aes(xintercept=auc_true),color="red") +
+# theme_bw() + xlab("AUC")
 
 ```
 
@@ -396,19 +407,19 @@ auc_save <- plsda.perf$auc$`comp1`[1]
 auc_true <- as.numeric(plsda.perf$auc$comp1["AUC.mean"])
 
 # Permutation testing - takes forever, make sure to cache
-n_perm <- 1000
-aucs <- vector(mode="numeric", length=n_perm)
-for (i in 1:n_perm) {
- Y <- sample(as.factor(df$CACp),replace = F)
- plsda_res <- plsda(df[,names(df) %in% lipids],Y,ncomp = 2)
- perf_plsda <- perf(plsda_res,progressBar=FALSE, auc=TRUE,
-                  validation = "loo")
- aucs[i] <- as.numeric(perf_plsda$auc$comp1["AUC.mean"])
-}
-ggplot(as.data.frame(aucs),aes(x=aucs)) +
-geom_histogram(binwidth = 0.01) +
-geom_vline(aes(xintercept=auc_true),color="red") +
-theme_bw() + xlab("AUC")
+# n_perm <- 1000
+# aucs <- vector(mode="numeric", length=n_perm)
+# for (i in 1:n_perm) {
+#  Y <- sample(as.factor(df$CACp),replace = F)
+#  plsda_res <- plsda(df[,names(df) %in% lipids],Y,ncomp = 2)
+#  perf_plsda <- perf(plsda_res,progressBar=FALSE, auc=TRUE,
+#                   validation = "loo")
+#  aucs[i] <- as.numeric(perf_plsda$auc$comp1["AUC.mean"])
+# }
+# ggplot(as.data.frame(aucs),aes(x=aucs)) +
+# geom_histogram(binwidth = 0.01) +
+# geom_vline(aes(xintercept=auc_true),color="red") +
+# theme_bw() + xlab("AUC")
 
 ```
 
@@ -437,18 +448,18 @@ auc_save <- plsda.perf$auc$`comp1`[1]
 auc_true <- as.numeric(plsda.perf$auc$comp1["AUC.mean"])
 
 # Permutation testing - takes forever, make sure to cache
-n_perm <- 1000
-aucs <- vector(mode="numeric", length=n_perm)
-for (i in 1:n_perm) {
- Y <- sample(as.factor(df$CACp),replace = F)
- plsda_res <- plsda(df[,names(df) %in% c(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins,lipids)],Y,ncomp = 2)
- perf_plsda <- perf(plsda_res,progressBar=FALSE, auc=TRUE,
-                  validation = "loo")
- aucs[i] <- as.numeric(perf_plsda$auc$comp1["AUC.mean"])
-}
-ggplot(as.data.frame(aucs),aes(x=aucs)) +
-geom_histogram(binwidth = 0.01) +
-geom_vline(aes(xintercept=auc_true),color="red") +
-theme_bw() + xlab("AUC")
+# n_perm <- 1000
+# aucs <- vector(mode="numeric", length=n_perm)
+# for (i in 1:n_perm) {
+#  Y <- sample(as.factor(df$CACp),replace = F)
+#  plsda_res <- plsda(df[,names(df) %in% c(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins,lipids)],Y,ncomp = 2)
+#  perf_plsda <- perf(plsda_res,progressBar=FALSE, auc=TRUE,
+#                   validation = "loo")
+#  aucs[i] <- as.numeric(perf_plsda$auc$comp1["AUC.mean"])
+# }
+# ggplot(as.data.frame(aucs),aes(x=aucs)) +
+# geom_histogram(binwidth = 0.01) +
+# geom_vline(aes(xintercept=auc_true),color="red") +
+# theme_bw() + xlab("AUC")
 
 ```
