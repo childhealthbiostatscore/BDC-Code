@@ -98,7 +98,7 @@ kable(summary(mod)$coefficients)
 
 ## Methods
 
-Week 1 bolus values were assumed to be independent of TDD. For each participant, we calculated $$y_i = \text{Correction}_i*\text{TDD}_i$$. Next, we regressed $y_i$ (the numerator in the correction equation) on age, to see if there was an association with age.
+Week 1 bolus values were assumed to be independent of TDD. For each participant, we calculated $$y_i = \text{Correction}_i*\text{TDD}_i$$ Next, we regressed $y_i$ (the numerator in the correction equation) on age, to see if there was any association. Finally, we used a 10,000 sample bootstrap to calculate confidence intervals for $y_i$ using the percentile method.
 
 ## BG Correction
 
@@ -109,7 +109,7 @@ Week 1 bolus values were assumed to be independent of TDD. For each participant,
 df$week1_correction1 = as.numeric(as.character(df$week1_correction1))
 df$short_acting = df$week1_correction1 * df$Average_TDD
 # Categorical age
-df$age_cat = cut(df$Age,c(12,36,120,Inf),labels = c("Toddler","Elementary","Adolescent"))
+df$age_cat = cut(df$Age,c(12,36,156,Inf),labels = c("Toddler","Elementary","Adolescent"))
 # Association with age
 mod = lm(short_acting~Age,df)
 ggplot(df,aes(x = Age,y = short_acting)) + 
@@ -119,12 +119,43 @@ kable(summary(mod)$coefficients)
 ```
 
 There does not appear to be a significant association with age. This was also true when age was converted to a categorical variable. 
-### Mean Numerator
+
+### Numerator
 
 ```{r}
 y = df$short_acting[!is.na(df$short_acting)]
 m = function(data,i){
   mean(data[i],na.rm = T)
 }
-b = boot(data = y,statistic = m,R = 1000,parallel = "multicore",ncpus = 8)
+b = boot(data = y,statistic = m,R = 10000,parallel = "multicore",ncpus = 8)
+ci = boot.ci(b,type = "perc")
 ```
+
+The average numerator in this group was `r round((mean(df$short_acting,na.rm=T)))`, with a 95% confidence interval of (`r round(ci$percent[4])` - `r round(ci$percent[5])`).
+
+## I:C Correction
+
+### Association with age
+
+```{r warning=FALSE,message=FALSE}
+# Create "X" variable
+df$short_acting = rowMeans(df[,c("week1_carbbreakfast","week1_carblunch","week1_carbdinner")]) * df$Average_TDD
+# Association with age
+mod = lm(short_acting~Age,df)
+ggplot(df,aes(x = Age,y = short_acting)) + 
+  geom_point() + geom_smooth(method = "lm",color="blue",se=F) +
+  theme_bw() + ylab("Numerator") + xlab("Age (months)")
+kable(summary(mod)$coefficients)
+```
+
+There does not appear to be a significant association with age. This was also true when age was converted to a categorical variable. 
+
+### Numerator
+
+```{r}
+y = df$short_acting
+b = boot(data = y,statistic = m,R = 10000,parallel = "multicore",ncpus = 8)
+ci = boot.ci(b,type = "perc")
+```
+
+The average numerator in this group was `r round((mean(df$short_acting,na.rm=T)))`, with a 95% confidence interval of (`r round(ci$percent[4])` - `r round(ci$percent[5])`).
