@@ -14,10 +14,18 @@ output:
 knitr::opts_chunk$set(echo = FALSE)
 library(tidyverse)
 library(glinternet)
+library(boot)
 library(knitr)
+set.seed(1000)
 ```
 
 # TDD Model
+
+## Methods
+
+All analyses were performed using R version 4.1.0. Model selection was based on 10-fold cross validation with hierarchical group-lasso regularization as implemented in the glinternet R package, version 1.0.11. Model selection was performed on variables: Age, Sex, Race/Ethnicity, Initial_A1c, DKA, and Wt_onset and all interactions with Average_TDD as the outcome. Bicarb was categorized as a  into severe (< 5), moderate (5 - 10), and mild (> 10). Race and Ethnicity were combined per Kimber's 6/22 email.
+
+Next, a linear model was re-fit. A linear mixed model with random effect for provider produced convergence warnings and was not much better than a simple linear model. 
 
 ## 10-Fold Cross Validation
 
@@ -26,6 +34,7 @@ library(knitr)
 df = read.csv("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kimber Simmons/New Onset Dosing/Data_Cleaned/cleaned_data.csv",stringsAsFactors = T,na.strings = "")
 lasso_df = df %>% select(Age,Sex,Race,Initial_A1c,DKA,Wt_onset,Average_TDD)
 lasso_df = lasso_df[complete.cases(lasso_df),]
+lasso_df$Race = droplevels(lasso_df$Race)
 Y = lasso_df$Average_TDD
 X = lasso_df %>% select(Age,Sex,Race,Initial_A1c,DKA,Wt_onset)
 numLevels = unlist(lapply(X,function(c){length(levels(c))}))
@@ -36,10 +45,10 @@ cv_fit = glinternet.cv(X, Y, numLevels)
 # Plot
 plot(cv_fit)
 # Best lambda
-best_lambda <- which(cv_fit$lambdaHat == cv_fit$lambda)
+best_lambda <- which(cv_fit$lambda == cv_fit$lambdaHat)
 ```
 
-The lambda index with the lowest error was number `r which(cv_fit$lambdaHat == cv_fit$lambda)`, so this value was used to find the correct model. The value which produced the simplest model within 1 SD of the minimum error resulted in only age being selected, which is not clinically useful. 
+The lambda index with the lowest error was number `r which(cv_fit$lambdaHat == cv_fit$lambda)`, so this value was used to find the correct model. The value which produced the simplest model within 1 SD of the minimum error resulted in only age being selected, which is not particularly useful. 
 
 ```{r}
 cat = names(numLevels)[numLevels > 1]
@@ -63,15 +72,13 @@ kable(cat[coefs$mainEffects$cat],col.names = "")
 ## Continuous-Continuous Interaction Effects
 
 ```{r}
-kable(cont[coefs$interactions$contcont],
-      col.names = "")
+kable(cont[coefs$interactions$contcont],col.names = "")
 ```
 
 ## Categorical-Categorical Interaction Effects
 
 ```{r}
-kable(cat[coefs$interactions$catcat],
-      col.names = "")
+kable(cat[coefs$interactions$catcat],col.names = "")
 ```
 
 ## Continuous-categorical Interaction Effects.
@@ -80,75 +87,75 @@ None
 
 ## Final Model Coefficients
 
-```{r}
-mod = lm(Average_TDD~Age+Initial_A1c*Wt_onset+Sex*DKA,df)
-kable(summary(mod)$coefficients)
-```
-
-# TDD Model
-
-## 10-Fold Cross Validation
-
-```{r}
-# Format data for glinternet
-df = read.csv("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kimber Simmons/New Onset Dosing/Data_Cleaned/cleaned_data.csv",stringsAsFactors = T,na.strings = "")
-lasso_df = df %>% select(Age,Sex,Race,Initial_A1c,DKA,Wt_onset,Average_TDD)
-lasso_df = lasso_df[complete.cases(lasso_df),]
-Y = lasso_df$Average_TDD
-X = lasso_df %>% select(Age,Sex,Race,Initial_A1c,DKA,Wt_onset)
-numLevels = unlist(lapply(X,function(c){length(levels(c))}))
-numLevels[numLevels==0] = 1
-X = as.data.frame(lapply(X,function(x){as.numeric(x)-1}))
-# CV
-cv_fit = glinternet.cv(X, Y, numLevels)
-# Plot
-plot(cv_fit)
-# Best lambda
-best_lambda <- which(cv_fit$lambdaHat == cv_fit$lambda)
-```
-
-The lambda index with the lowest error was number `r which(cv_fit$lambdaHat == cv_fit$lambda)`, so this value was used to find the correct model. The value which produced the simplest model within 1 SD of the minimum error resulted in only age being selected, which is not clinically useful. 
-
-```{r}
-cat = names(numLevels)[numLevels > 1]
-cont = names(numLevels)[numLevels == 1]
-# Get coefficients
-coefs <- coef(cv_fit$glinternetFit)[[best_lambda]]
-```
-
-## Continuous Main Effects
-
-```{r}
-kable(cont[coefs$mainEffects$cont],col.names = "")
-```
-
-## Categorical Main Effects
-
-```{r}
-kable(cat[coefs$mainEffects$cat],col.names = "")
-```
-
-## Continuous-Continuous Interaction Effects
-
-```{r}
-kable(cont[coefs$interactions$contcont],
-      col.names = "")
-```
-
-## Categorical-Categorical Interaction Effects
-
-```{r}
-kable(cat[coefs$interactions$catcat],
-      col.names = "")
-```
-
-## Continuous-categorical Interaction Effects.
-
-None
-
-## Final Model Coefficients
+Race was not included in the final model because there are too many categories for an interpretable model.
 
 ```{r}
 mod = lm(Average_TDD~Age+Initial_A1c*Wt_onset+Sex*DKA,df)
 kable(summary(mod)$coefficients)
 ```
+
+# Correction Equations
+
+## Methods
+
+Week 1 bolus values were assumed to be independent of TDD. For each participant, we calculated $$y_i = \text{Correction}_i*\text{TDD}_i$$ Next, we regressed $y_i$ (the numerator in the correction equation) on age, to see if there was any association. Finally, we used a 10,000 sample bootstrap to calculate confidence intervals for $y_i$ using the percentile method.
+
+## BG Correction
+
+### Association with age
+
+```{r warning=FALSE,message=FALSE}
+# Create "X" variable
+df$week1_correction1 = as.numeric(as.character(df$week1_correction1))
+df$short_acting = df$week1_correction1 * df$Average_TDD
+# Categorical age
+df$age_cat = cut(df$Age,c(12,36,156,Inf),labels = c("Toddler","Elementary","Adolescent"))
+# Association with age
+mod = lm(short_acting~Age,df)
+ggplot(df,aes(x = Age,y = short_acting)) + 
+  geom_point() + geom_smooth(method = "lm",color="blue",se=F) +
+  theme_bw() + ylab("Numerator") + xlab("Age (months)")
+kable(summary(mod)$coefficients)
+```
+
+There does not appear to be a significant association with age. This was also true when age was converted to a categorical variable. 
+
+### Numerator
+
+```{r}
+y = df$short_acting[!is.na(df$short_acting)]
+m = function(data,i){
+  mean(data[i],na.rm = T)
+}
+b = boot(data = y,statistic = m,R = 10000,parallel = "multicore",ncpus = 8)
+ci = boot.ci(b,type = "perc")
+```
+
+The average numerator in this group was `r round((mean(df$short_acting,na.rm=T)))`, with a 95% confidence interval of (`r round(ci$percent[4])` - `r round(ci$percent[5])`).
+
+## I:C Correction
+
+### Association with age
+
+```{r warning=FALSE,message=FALSE}
+# Create "X" variable
+df$short_acting = rowMeans(df[,c("week1_carbbreakfast","week1_carblunch","week1_carbdinner")]) * df$Average_TDD
+# Association with age
+mod = lm(short_acting~Age,df)
+ggplot(df,aes(x = Age,y = short_acting)) + 
+  geom_point() + geom_smooth(method = "lm",color="blue",se=F) +
+  theme_bw() + ylab("Numerator") + xlab("Age (months)")
+kable(summary(mod)$coefficients)
+```
+
+There does not appear to be a significant association with age. This was also true when age was converted to a categorical variable. 
+
+### Numerator
+
+```{r}
+y = df$short_acting
+b = boot(data = y,statistic = m,R = 10000,parallel = "multicore",ncpus = 8)
+ci = boot.ci(b,type = "perc")
+```
+
+The average numerator in this group was `r round((mean(df$short_acting,na.rm=T)))`, with a 95% confidence interval of (`r round(ci$percent[4])` - `r round(ci$percent[5])`).
