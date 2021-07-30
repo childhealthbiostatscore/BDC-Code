@@ -1,13 +1,13 @@
 library(tidyverse)
 # Import data
-indir <- "/Users/timvigers/Dropbox/Work/Tidepool Test/cleaned/"
-outdir <- "/Users/timvigers/Dropbox/Work/Tidepool Test/"
+indir <- "/Users/timvigers/Documents/Work/Tidepool Test/cleaned/"
+outdir <- "/Users/timvigers/Documents/Work/Tidepool Test/"
 files <- list.files(indir,full.names = T)
 # Make a summary variables table.
 summary <- data.frame(matrix(nrow = length(files),ncol = 0))
 # Iterate through each file
 for (f in 1:length(files)) {
-  print(f)
+  print(files[f])
   # Read in
   table = read.csv(files[f],header = T,stringsAsFactors = FALSE,na.strings = "")
   if (nrow(table) == 0){
@@ -28,7 +28,7 @@ for (f in 1:length(files)) {
   # Date time column
   table$datetime <- paste(table$Date,table$Time)
   table$datetime <- lubridate::parse_date_time(table$datetime,
-                                               orders = c("mdyHMS","ymdHMS"))
+                                               orders = c("mdyHMS","mdyHM","ymdHMS","ymdHM"))
   table = table[!is.na(table$datetime),]
   # Sort by datetime
   table = table[order(table$datetime),]
@@ -42,8 +42,14 @@ for (f in 1:length(files)) {
   weekends <- length(which(day_table$day %in% c(1,7)))
   # Combine BG columns
   if (!("bg" %in% colnames(table))){
-    table$bg <- pmax(table$BG.Reading..mg.dL.,table$BWZ.BG.Input..mg.dL.,na.rm = T)
-    table$bg <- pmax(table$bg,table$Sensor.Calibration.BG..mg.dL.,na.rm = T)
+    if ("BWZ.BG.Input..mg.dL." %in% colnames(table) & 
+        "Sensor.Calibration.BG..mg.dL." %in% colnames(table)){
+      table$bg <- pmax(table$BG.Reading..mg.dL.,table$BWZ.BG.Input..mg.dL.,na.rm = T)
+      table$bg <- pmax(table$bg,table$Sensor.Calibration.BG..mg.dL.,na.rm = T)
+    } else {
+      table$bg = NA
+    }
+    
   }
   table$bg[table$bg == 0] <- NA
   # Get rewind times
@@ -107,7 +113,9 @@ for (f in 1:length(files)) {
   # Get dates with bg gaps >= 6 hours
   bg_time_df <- as.data.frame(bg_datetimes,stringsAsFactors = F)
   bg_time_df$date <- as.Date(bg_time_df$bg_datetimes)
-  bg_time_df$time <- lubridate::hour(bg_time_df$bg_datetimes)
+  if (nrow(bg_time_df) > 0){
+    bg_time_df$time <- lubridate::hour(bg_time_df$bg_datetimes)
+  }
   bg_time_df$bg_datetimes <- lubridate::parse_date_time(bg_time_df$bg_datetimes,
                                                         c("ymd HMS","ymd"))
   bg_time_df <- bg_time_df %>%
