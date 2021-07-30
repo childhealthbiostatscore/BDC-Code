@@ -4,7 +4,7 @@ import pickle
 import pandas as pd
 from ExtractTable import ExtractTable
 # API for table extraction
-api_key = '7HVnbtmnuTtN10Ks177BPkKL3XEmdN1CLbGSqoV4'
+api_key = 'Kr5kmFv60TbpnFKfFWE3UNxnuWFq8o2Mu868Nlau'
 et_sess = ExtractTable(api_key)
 # Get all files recursively
 top_dir = "/Users/timvigers/Desktop/G4 Cleaned"
