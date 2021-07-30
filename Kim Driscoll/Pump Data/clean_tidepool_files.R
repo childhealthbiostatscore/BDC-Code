@@ -8,6 +8,7 @@ files = list.files(indir,full.names = T)
 # Iterate through
 for (f in files) {
   id = file_path_sans_ext(basename(f))
+  print(id)
   if (file_ext(f) == "csv"){
     df = read.csv(f,stringsAsFactors = F,na.strings = "")
     if (ncol(df) > 25){
@@ -31,6 +32,12 @@ for (f in files) {
       t = suppressWarnings(read_excel(f,"Insulin use and carbs"))
       t = t %>% rename(`Bolus Volume Delivered (U)` = `Bolus Volume (U)`,
                        `BWZ Carb Input (grams)` = `Carbs(g)`)
+      smbg = suppressWarnings(read_excel(f,"Name and glucose"))
+      start = which(smbg[,1]=="Time")
+      colnames(smbg) = smbg[start,]
+      smbg = smbg[-c(0:start+1),]
+      colnames(smbg)[tolower(colnames(smbg)) == "mg/dl"] = 'bg'
+      t = full_join(t,smbg[,c("Time","bg")],by = "Time")
       t$Date = sapply(strsplit(t$Time," "),"[[",1)
       t$Time = sub(".* ","",t$Time)
     } else {
