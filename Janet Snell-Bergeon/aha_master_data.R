@@ -1,35 +1,25 @@
 library(tidyverse)
 library(readxl)
 setwd("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant")
+# Import SERRF normalization R code from Fiehn lab
+source("~/GitHub/BDC-Code/Janet Snell-Bergeon/AHA Lipidomics/serrf.R")
 # Sample info (cleaned for metabolomics)
 sample_info = read.csv("./Metabolomics/Data_Cleaned/targeted.csv",na.strings = "")
 # Delete empty columns
 sample_info[,which(colSums(is.na(sample_info))==nrow(sample_info))] = NULL
+# Targeted metabolites
+targeted_metabs = 
+  colnames(sample_info)[which(colnames(sample_info)=="Betaine"):ncol(sample_info)]
 # Add three CAC groups and progression
 three_group = read.delim("./Metabolomics/Data_Raw/CAC Trajectories 3 groups.txt",
                          na.strings = "")
 sample_info = left_join(sample_info,three_group[,c("StudyID","GROUP")],by = "StudyID")
 sample_info$CACp = cut(sample_info$c3 - sample_info$c1,c(-Inf,2.5,Inf),
                        labels = c("No","Yes"),right = F)
-# Targeted metabolites
-targeted_metabs = 
-  colnames(sample_info)[which(colnames(sample_info)=="Betaine"):ncol(sample_info)]
-# Format for normalization - need to save as a new file then re-import
-
-# Normalize
-o = normalize(file_location,methods = "SERRF",scatter_plot = F,detectcores_ratio = 0.5)
-# Untargeted metabolites
-untargeted = read.csv("./Metabolomics/Data_Cleaned/metabolomics_without_imputation.csv",
-                      na.strings = "")
-untargeted_metabs = paste0(untargeted$LI.Library.No.,untargeted$Neutral.Mass..Da.,
-                           untargeted$RT..s.)
-rownames(untargeted) = untargeted_metabs
-untargeted = untargeted %>% select(IsoMS_results_QC01_190618171010_converted.csv:
-                                     IsoMS_results_S227_Batch07_1400_RA8_converted.csv)
-# Format for normalization - need to save as a new file then re-import
-
-# Normalize
-o = normalize("/Users/timvigers/Desktop/test.csv",methods = "SERRF",scatter_plot = F,detectcores_ratio = 0.5)
+# Add untargeted metabolites
+untargeted = read.csv("./Metabolomics/Data_Cleaned/complete_untargeted.csv",na.strings = "")
+untargeted_metabs = 
+  colnames(untargeted)[grep("GROUP",colnames(untargeted))+1:ncol(untargeted)]
 untargeted_metabs = untargeted_metabs[!is.na(untargeted_metabs)]
 untarget_samples = read.csv("./Metabolomics/Data_Cleaned/sample_list.csv")
 untargeted$StudyID = 
