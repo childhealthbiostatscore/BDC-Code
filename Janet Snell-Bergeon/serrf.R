@@ -1,4 +1,4 @@
-normalize = function(file_location = file.choose(new = FALSE), methods=c("SERRF","nomis"), scatter_plot = T, detectcores_ratio = 0.1){
+normalize = function(file_location, methods=c("SERRF","nomis"), scatter_plot = F, cores = 4){
   
   
   # file_location = file.choose(new = FALSE);
@@ -611,7 +611,7 @@ normalize = function(file_location = file.choose(new = FALSE), methods=c("SERRF"
       
       
       loess_fun_cv = function(e,train.index = QC.index,test.index=NULL,batch,time){
-        cl = makeCluster(detectCores() * detectcores_ratio)
+        cl = makeCluster(cores)
         e_norm = parSapply(cl, X=1:nrow(e), function(i,e,train.index,batch,time,remove_outlier,loess_wrapper_extrapolate){
           
           e_norm = tryCatch({
@@ -725,7 +725,7 @@ normalize = function(file_location = file.choose(new = FALSE), methods=c("SERRF"
       num = 10
       start = Sys.time();
       
-      cl = makeCluster(detectCores() * detectcores_ratio)
+      cl = makeCluster(cores)
       
       # e_train = e_qc
       # e_target = e_validates[["Biorec"]]
@@ -1046,7 +1046,7 @@ normalize = function(file_location = file.choose(new = FALSE), methods=c("SERRF"
         QC.index.test[[j]] = QC.index.test.
       }
       svm_fun_cv = function(e,train.index = QC.index,test.index=NULL,batch,time){
-        cl = makeCluster(detectCores() * detectcores_ratio)
+        cl = makeCluster(cores)
         e_norm = parSapply(cl, X=1:nrow(e), function(i,e,train.index,batch,time,remove_outlier,trainControl,train){
           # for(i in 1:nrow(e)){
           tryCatch({
@@ -1436,6 +1436,4 @@ normalize = function(file_location = file.choose(new = FALSE), methods=c("SERRF"
   cat(paste0("Good Job! All the normalizations are finished!\nPlease check your folder: '",dir,"'.\n"))
   return(list(normalized_dataset = normalized_dataset,qc_RSDs = qc_RSDs,calculation_times=calculation_times,serrf_cross_validated_qc = serrf_cross_validated_qc))
 }
-
-o = normalize(methods = "all",scatter_plot = F,detectcores_ratio = 1)
 # methods can be either "all" a c() which can include mTIC,sum,median,PQN,contrast,quantile,linear,liwong,cubic,batch_ratio,batch_loess,SERRF,svm,nomis or bmis.
