@@ -1,24 +1,35 @@
 library(tidyverse)
 library(readxl)
 setwd("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant")
+# Import SERRF normalization R code from Fiehn lab
+source("~/GitHub/BDC-Code/Janet Snell-Bergeon/AHA Lipidomics/serrf.R")
 # Sample info (cleaned for metabolomics)
 sample_info = read.csv("./Metabolomics/Data_Cleaned/targeted.csv",na.strings = "")
+# Delete empty columns
+sample_info[,which(colSums(is.na(sample_info))==nrow(sample_info))] = NULL
 # Targeted metabolites
-targeted_metabs = colnames(sample_info)[which(colnames(sample_info)=="Betaine"):ncol(sample_info)]
+targeted_metabs = 
+  colnames(sample_info)[which(colnames(sample_info)=="Betaine"):ncol(sample_info)]
 # Add three CAC groups and progression
-three_group = read.delim("./Metabolomics/Data_Raw/CAC Trajectories 3 groups.txt",na.strings = "")
+three_group = read.delim("./Metabolomics/Data_Raw/CAC Trajectories 3 groups.txt",
+                         na.strings = "")
 sample_info = left_join(sample_info,three_group[,c("StudyID","GROUP")],by = "StudyID")
-sample_info$CACp = cut(sample_info$c3 - sample_info$c1,c(-Inf,2.5,Inf),labels = c("No","Yes"),right = F)
+sample_info$CACp = cut(sample_info$c3 - sample_info$c1,c(-Inf,2.5,Inf),
+                       labels = c("No","Yes"),right = F)
 # Add untargeted metabolites
 untargeted = read.csv("./Metabolomics/Data_Cleaned/complete_untargeted.csv",na.strings = "")
-untargeted_metabs = colnames(untargeted)[grep("GROUP",colnames(untargeted))+1:ncol(untargeted)]
+untargeted_metabs = 
+  colnames(untargeted)[grep("GROUP",colnames(untargeted))+1:ncol(untargeted)]
 untargeted_metabs = untargeted_metabs[!is.na(untargeted_metabs)]
 untarget_samples = read.csv("./Metabolomics/Data_Cleaned/sample_list.csv")
-untargeted$StudyID = untarget_samples$SampleID[match(untargeted$GlobalSampleID,untarget_samples$Injection)]
+untargeted$StudyID = 
+  untarget_samples$SampleID[match(untargeted$GlobalSampleID,
+                                  untarget_samples$Injection)]
 untargeted = untargeted[,c("StudyID",untargeted_metabs)]
 sample_info = left_join(sample_info,untargeted,by = "StudyID",na.strings = "")
 # Add lipidomics
-lipid_df = read.csv("./Lipidomics/Data_Raw/20210517 Lipid list (ANA-239) by Skyline_Final.csv",stringsAsFactors = F,na.strings = "")
+lipid_df = read.csv("./Lipidomics/Data_Cleaned/aha_lipidomics_new_annotation.csv",
+                    stringsAsFactors = F,na.strings = "")
 lipids = lipid_df$LipidMolec
 lipid_df[,1:5] = NULL
 lipid_df = as.data.frame(t(lipid_df))
