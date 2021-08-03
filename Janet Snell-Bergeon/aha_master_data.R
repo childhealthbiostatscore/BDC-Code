@@ -1,8 +1,6 @@
 library(tidyverse)
 library(readxl)
 setwd("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant")
-# Import SERRF normalization R code from Fiehn lab
-source("~/GitHub/BDC-Code/Janet Snell-Bergeon/AHA Lipidomics/serrf.R")
 # Sample info (cleaned for metabolomics)
 sample_info = read.csv("./Metabolomics/Data_Cleaned/targeted.csv",na.strings = "")
 # Delete empty columns
