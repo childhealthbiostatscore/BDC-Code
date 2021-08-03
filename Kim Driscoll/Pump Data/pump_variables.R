@@ -1,7 +1,7 @@
 library(tidyverse)
 # Import data
-indir <- "/Users/timvigers/Documents/Work/Tidepool Test/cleaned/"
-outdir <- "/Users/timvigers/Documents/Work/Tidepool Test/"
+indir <- "/Users/timvigers/Dropbox/Work/Tidepool Test/cleaned/"
+outdir <- "/Users/timvigers/Dropbox/Work/Tidepool Test/"
 files <- list.files(indir,full.names = T)
 # Make a summary variables table.
 summary <- data.frame(matrix(nrow = length(files),ncol = 0))
@@ -41,7 +41,7 @@ for (f in 1:length(files)) {
   weekdays <- length(which(day_table$day %in% c(2:6)))
   weekends <- length(which(day_table$day %in% c(1,7)))
   # Combine BG columns
-  if (!("bg" %in% colnames(table))){
+  if (!("bg" %in% colnames(table)) | sum(is.na(table$bg)) == nrow(table)){
     if ("BWZ.BG.Input..mg.dL." %in% colnames(table) & 
         "Sensor.Calibration.BG..mg.dL." %in% colnames(table)){
       table$bg <- pmax(table$BG.Reading..mg.dL.,table$BWZ.BG.Input..mg.dL.,na.rm = T)
