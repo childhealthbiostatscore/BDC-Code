@@ -7,7 +7,7 @@ library(statTarget)
 # Can do LOESS of random forest normalization
 # I (Tim) found it easiest to format the input files by hand
 # After comparing the plots for RF and LOESS, we decided to go with RF
-shared_folder = '/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant/'
+shared_folder = '/run/user/1001/gvfs/smb-share:server=ucdenver.pvt,share=som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant/'
 # Untargeted metabolomics
 setwd(paste0(shared_folder,'Metabolomics/Data_Cleaned/untargeted_normalization'))
 shiftCor('untargeted_metabolomics_order.csv',
