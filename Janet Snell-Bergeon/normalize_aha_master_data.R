@@ -1,5 +1,5 @@
 set.seed(1017)
-setwd("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant")
+setwd("/run/user/1001/gvfs/smb-share:server=ucdenver.pvt,share=som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant")
 # SERRF normalization code
 source("~/GitHub/BDC-Code/Janet Snell-Bergeon/serrf.R")
 # Normalization function
