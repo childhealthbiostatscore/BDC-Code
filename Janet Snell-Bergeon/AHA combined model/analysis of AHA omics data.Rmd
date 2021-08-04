@@ -25,6 +25,7 @@ library(PCAtools)
 library(openxlsx)
 library(dplyr)
 library(multtest)
+library(pls)
 
 home_dir = ifelse(.Platform$OS.type != "unix","T:\\Janet Snell-Bergeon\\AHA collaborative grant",
                   "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant")
@@ -41,6 +42,9 @@ knitr::opts_knit$set(root.dir = home_dir)
 ```{r read AHA data,echo=FALSE}
 load(file="T:/Janet Snell-Bergeon/AHA collaborative grant/aha_master_data.Rdata")
 
+# before log transform, convert 0 lineolic acid to a small number
+df$linoleic.acid <- ifelse(df$linoleic.acid==0,0.001,df$linoleic.acid)
+
 # log-transform
 # NOTE: per Qibin, lipids are already log transformed
 df[,c(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins)] = 
@@ -50,9 +54,8 @@ df[,c(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins)] =
 df <- df[!is.na(df$CACp),]
 
 # remove low variance items
-no_var = caret::nearZeroVar(df[,c(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins,lipids)])
+no_var = caret::nearZeroVar(df[,colnames(df) %in% c(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins,lipids)])
 df = df[,-c(no_var)]
-# removed 23 columns, leaves 1816 columns
 
 # remove the compounds with missing data and low variance from the strings of names
 untargeted_metabs <- untargeted_metabs[untargeted_metabs %in% colnames(df)]
@@ -61,11 +64,11 @@ global_proteins <- global_proteins[global_proteins %in% colnames(df)]
 glycated_proteins <- glycated_proteins[glycated_proteins %in% colnames(df)]
 lipids <- lipids[lipids %in% colnames(df)]
 
-# remove markers with >=80% missing - 61 columns
-miss <- df[,which(colMeans(is.na(df[,c(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins,lipids)]))>=0.8)]
+# remove markers with >=80% missing 
+miss <- df[,colnames(df) %in% c(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins,lipids)] %>% select(where(~mean(is.na(.)) > 0.8))
+# don't want to select clinical variables with >80% missing
 miss <- miss[,colnames(miss) %in% c(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins,lipids)]
 df <- df %>% select(-one_of(colnames(miss)))
-# left with 1755 columns
 
 # remove the compounds with missing data and low variance from the strings of names
 untargeted_metabs <- untargeted_metabs[untargeted_metabs %in% colnames(df)]
@@ -73,6 +76,11 @@ targeted_metabs <- targeted_metabs[targeted_metabs %in% colnames(df)]
 global_proteins <- global_proteins[global_proteins %in% colnames(df)]
 glycated_proteins <- glycated_proteins[glycated_proteins %in% colnames(df)]
 lipids <- lipids[lipids %in% colnames(df)]
+
+# calculate change in square-root transformed CAC volume
+df$delta_cac_v2 <- (df$c2 - df$c1)
+df$delta_cac_v3 <- (df$c3 - df$c1)
+df$delta_cac_v4 <- (df$c4 - df$c1)
 ```
 
 ```{r moderated ttests,echo=FALSE}
@@ -258,6 +266,8 @@ Sparse PLS-DA was used to identify markers that best discriminated between the C
 
 For moderated t-tests and linear models with interaction between CACp and sex, see separate files
 
+## sPLS-DA of untargeted metabolites
+
 ```{r splsda utm,echo=FALSE,cache=TRUE,warning=FALSE,message=FALSE, comment=""}
 # untargeted metabolites
 Y <- df$CACp
@@ -298,13 +308,26 @@ top_2d
 
 ```
 
+## PLS regression of untargeted metabolites, change in CAC volume from v1-v4
+
+```{r PLSR utm,echo=FALSE,cache=TRUE,warning=FALSE,message=FALSE, comment=""}
+## PLS regression of untargeted metabolites
+plsrx <- as.matrix(df[,names(df) %in% untargeted_metabs])
+plsr_utm <- plsr(df$delta_cac_v4 ~ plsrx, ncomp=20, validation="LOO")
+ncomp_utm <- selectNcomp(plsr_utm, method="randomization", plot=TRUE)
+# selects 0 components (error keeps increasing!)
+plsr_utm <- plsr(df$delta_cac_v4 ~ plsrx, ncomp=2, validation="LOO")
+```
+
+## sPLS-DA of targeted metabolites
+
 ```{r splsda tm,echo=FALSE,cache=TRUE,warning=FALSE,message=FALSE, comment=""}
 # targeted metabolites
 Y <- df$CACp
-X <- df[,names(df) %in% targeted_metabs]
-#tune.splsda <- tune.splsda(X, Y, ncomp = 2) 
-#choice.keepX <- tune.splsda$choice.keepX[1:2]
-choice.keepX <- 10
+X <- df[,colnames(df) %in% targeted_metabs]
+tune.splsda <- tune.splsda(X, Y, ncomp=5) 
+choice.keepX <- tune.splsda$choice.keepX[1:2]
+#choice.keepX <- 10
 ## sPLS-DA function
 splsda.tm <- splsda(X, Y, ncomp = 2, keepX = choice.keepX)
 plotIndiv(splsda.tm,title = "sPLS-DA of targeted metabolites by CACp",
@@ -339,13 +362,25 @@ top_2d
 
 ```
 
+## PLS regression of targeted metabolites, change in CAC volume from v1-v4
+
+```{r PLSR tm,echo=FALSE,cache=TRUE,warning=FALSE,message=FALSE, comment=""}
+## PLS regression of targeted metabolites
+plsrx <- as.matrix(df[,colnames(df) %in% targeted_metabs])
+plsr_tm <- plsr(df$delta_cac_v4 ~ plsrx, ncomp=20, validation="LOO")
+ncomp_tm <- selectNcomp(plsr_tm, method="randomization", plot=TRUE)
+
+```
+
+## sPLS-DA of global proteins
+
 ```{r splsda gp,echo=FALSE,cache=TRUE,warning=FALSE,message=FALSE, comment=""}
 # global proteins
 Y <- df$CACp
 X <- df[,names(df) %in% global_proteins]
-#tune.splsda <- tune.splsda(X, Y, ncomp =  2) 
-#choice.keepX <- tune.splsda$choice.keepX[1:2]
-choice.keepX <- 10
+tune.splsda <- tune.splsda(X, Y, ncomp =  5) 
+choice.keepX <- tune.splsda$choice.keepX[1:2]
+#choice.keepX <- 10
 ## sPLS-DA function
 splsda.globalp <- splsda(X, Y, ncomp = 2, keepX = choice.keepX)
 plotIndiv(splsda.globalp,title = "sPLS-DA of global proteins by CACp",
@@ -379,6 +414,22 @@ top_2d
 # theme_bw() + xlab("AUC")
 
 ```
+
+## PLS regression of global proteins, change in CAC volume from v1-v4
+
+```{r PLSR globp,echo=FALSE,cache=TRUE,warning=FALSE,message=FALSE, comment=""}
+#plsrx <- df[,names(df) %in% c("delta_cac_v4",global_proteins)]
+#plsrx <- plsrx[!is.na(plsrx$delta_cac_v4),]
+#plsry <- plsrx$delta_cac_v4
+#plsrx <- as.matrix(select(plsrx,-delta_cac_v4))
+
+plsrx <- as.matrix(df[,colnames(df) %in% global_proteins])
+plsr_globalp <- plsr(df$delta_cac_v4 ~ plsrx, validation="LOO", na.rm=TRUE)
+ncomp_globalp <- selectNcomp(plsr_globalp, method="randomization", plot=TRUE)
+# why are there variables with every value missing? e.g. P06753-2
+```
+
+## sPLS-DA of glycated proteins
 
 ```{r splsda glyp,echo=FALSE,cache=TRUE,warning=FALSE,message=FALSE, comment=""}
 # glycated proteins
@@ -420,6 +471,8 @@ top_2d
 
 ```
 
+## sPLS-DA of lipids
+
 ```{r splsda lipids,echo=FALSE,cache=TRUE,warning=FALSE,message=FALSE, comment=""}
 # lipids
 Y <- df$CACp
@@ -460,13 +513,15 @@ top_2d
 
 ```
 
+## sPLS-DA of all data combined
+
 ```{r splsda all,echo=FALSE,cache=TRUE,warning=FALSE,message=FALSE, comment=""}
 # everything
 Y <- df$CACp
 X <- df[,names(df) %in% c(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins,lipids)]
-#tune.splsda <- tune.splsda(X, Y, ncomp = 5) 
-#choice.keepX <- tune.splsda$choice.keepX[1:2]
-choice.keepX <- 10
+tune.splsda <- tune.splsda(X, Y, ncomp = 5) 
+choice.keepX <- tune.splsda$choice.keepX[1:2]
+#choice.keepX <- 10
 ## sPLS-DA function
 splsda.all <- splsda(X, Y, ncomp = 2, keepX = choice.keepX)
 plotIndiv(splsda.all,title = "sPLS-DA of all markers by CACp",
