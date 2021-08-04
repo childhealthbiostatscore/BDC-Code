@@ -1,4 +1,5 @@
-#setwd("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant")
+set.seed(1017)
+setwd("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant")
 # SERRF normalization code
 source("~/GitHub/BDC-Code/Janet Snell-Bergeon/serrf.R")
 # Normalization function
@@ -10,8 +11,8 @@ serrf = function(file_in,file_out,cores_ratio = 0.5){
   normed = t(o$normalized_dataset$SERRF)
   rownames(normed) = n_labels
   colnames(normed) = p_labels
-  write.csv(normed,file = file_out,row.names = T,col.names = T,na = "")
+  write.csv(normed,file = file_out,row.names = T,na = "")
 }
-# Test
-serrf("/Users/timvigers/Desktop/test.csv","/Users/timvigers/Desktop/test_normalized.csv")
 # Untargeted metabolomics
+serrf("./Metabolomics/Data_Cleaned/untargeted_metabolomics_for_SERRF.csv",
+      "./Metabolomics/Data_Cleaned/untargeted_metabolomics_normalized_SERRF.csv")
