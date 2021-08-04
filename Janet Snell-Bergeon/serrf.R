@@ -1,4 +1,5 @@
-normalize = function(file_location, methods=c("SERRF","nomis"), scatter_plot = F, cores = 4){
+normalize = function(file_location, methods=c("SERRF","nomis"), 
+                     scatter_plot = F, detectcores_ratio = 0.5){
   
   
   # file_location = file.choose(new = FALSE);
@@ -139,7 +140,7 @@ normalize = function(file_location, methods=c("SERRF","nomis"), scatter_plot = F
   # !!! when there is no na, this needs modification.
   p_empty_sampleType = p[is.na(p$sampleType), ]
   e_empty_sampleType = e[,is.na(p$sampleType)]
-  if(class(e_empty_sampleType) == 'numeric'){
+  if('numeric' %in% class(e_empty_sampleType)){
     e_empty_sampleType = matrix(e_empty_sampleType, ncol = 1)
   }
   colnames(e_empty_sampleType) = p_empty_sampleType$sample_index
@@ -611,7 +612,7 @@ normalize = function(file_location, methods=c("SERRF","nomis"), scatter_plot = F
       
       
       loess_fun_cv = function(e,train.index = QC.index,test.index=NULL,batch,time){
-        cl = makeCluster(cores)
+        cl = makeCluster(detectCores() * detectcores_ratio)
         e_norm = parSapply(cl, X=1:nrow(e), function(i,e,train.index,batch,time,remove_outlier,loess_wrapper_extrapolate){
           
           e_norm = tryCatch({
@@ -725,7 +726,7 @@ normalize = function(file_location, methods=c("SERRF","nomis"), scatter_plot = F
       num = 10
       start = Sys.time();
       
-      cl = makeCluster(cores)
+      cl = makeCluster(detectCores() * detectcores_ratio)
       
       # e_train = e_qc
       # e_target = e_validates[["Biorec"]]
@@ -1013,7 +1014,7 @@ normalize = function(file_location, methods=c("SERRF","nomis"), scatter_plot = F
     })
     
   }
-  
+  stopCluster(cl)
   if('svm' %in% methods){
     normalized_dataset[['svm']] = tryCatch({
       cat("<!--------- svm --------->\n(This may take a while...)\n")
@@ -1046,7 +1047,7 @@ normalize = function(file_location, methods=c("SERRF","nomis"), scatter_plot = F
         QC.index.test[[j]] = QC.index.test.
       }
       svm_fun_cv = function(e,train.index = QC.index,test.index=NULL,batch,time){
-        cl = makeCluster(cores)
+        cl = makeCluster(detectCores() * detectcores_ratio)
         e_norm = parSapply(cl, X=1:nrow(e), function(i,e,train.index,batch,time,remove_outlier,trainControl,train){
           # for(i in 1:nrow(e)){
           tryCatch({
@@ -1242,19 +1243,14 @@ normalize = function(file_location, methods=c("SERRF","nomis"), scatter_plot = F
   
   
   
-  if(grepl("\\\\",file_location)){
-    comp = strsplit(file_location,"\\\\")[[1]]
+  if(grepl("//",file_location)){
+    comp = strsplit(file_location,"//")[[1]]
   }else{
     comp = strsplit(file_location,"/")[[1]]
   }
-  
-  filename = gsub("\\.csv|\\.xlsx","",comp[length(comp)])
-  root = paste0(paste0(comp[-length(comp)],collapse = "\\"),"\\")
-  dir = paste0(root,filename," - normalization result")
-  dir.create(dir)
+
   
   
-  png(filename=paste0(dir,"\\","Bar Plot and PCA plot.png"), width = 2000, height = 1000 * ifelse(with_validate,3,2))
   qc_RSD_performance = sapply(qc_RSDs,median, na.rm = TRUE)
   qc_RSD_performance = sort(qc_RSD_performance,decreasing = TRUE)
   qc_RSD_performance_color = rep("grey",length(qc_RSD_performance))
@@ -1279,11 +1275,6 @@ normalize = function(file_location, methods=c("SERRF","nomis"), scatter_plot = F
     layout(matrix(c(1,1,2,3), 2, 2, byrow = TRUE))
   }
   
-  par(lty = 0)
-  par(mar=c(5,4,4,2)*3)
-  bp = barplot(qc_RSD_performance*100, main="QC RSD", xlab="", ylab="RSD (%)",col = qc_RSD_performance_color,width = 1,las=2,cex.axis =5, cex.names=5,cex.main = 5)
-  text(bp[which(names(qc_RSD_performance)=='none'),1], qc_RSD_performance['none']*100, paste0(signif(qc_RSD_performance['none'],4)*100,"%"), cex = 5, pos = 3)
-  text(bp[nrow(bp),1], qc_RSD_performance[length(qc_RSD_performance)]*100, paste0(signif(qc_RSD_performance[length(qc_RSD_performance)],4)*100,"%"), cex = 5, pos = 3)
   
   
   if(with_validate){
@@ -1312,9 +1303,6 @@ normalize = function(file_location, methods=c("SERRF","nomis"), scatter_plot = F
   
   
   
-  par(mar=c(4,2,4,2)*3)
-  plot(pca_before$x[,1],pca_before$x[,2], col = factor(comb_p$sampleType, levels = c('sample','qc',validate_types,"NA")),main = 'Before',xlab='raw data',cex.lab=5,yaxt='n', cex.axis=5, cex.main=5, cex.sub=5,ylab="", xaxt='n',cex = 5,pch = dots)
-  
   if(!length(infinite_index)==0){
     sds = apply(normalized_dataset[[names(qc_RSD_performance)[length(qc_RSD_performance)]]][-infinite_index,],1,sd)
     
@@ -1325,12 +1313,6 @@ normalize = function(file_location, methods=c("SERRF","nomis"), scatter_plot = F
     pca_after = prcomp(t(normalized_dataset[[names(qc_RSD_performance)[length(qc_RSD_performance)]]][!sds==0,]),scale. = TRUE)
   }
   
-  plot(pca_after$x[,1],pca_after$x[,2], col = pca_color,main = 'After',xlab = names(qc_RSD_performance)[length(qc_RSD_performance)],cex.lab=5, cex.axis=5, cex.main=5, cex.sub=5,ylab="",yaxt='n', xaxt='n',cex = 5,pch = dots)
-  
-  dev.off()
-  
-  
-  dir.create(paste0(dir,"\\normalized datasets"))
   for(i in 1:length(normalized_dataset)){
     method = names(normalized_dataset[i])
     if(identical(class(normalized_dataset[[i]]),"matrix")){
@@ -1343,9 +1325,6 @@ normalize = function(file_location, methods=c("SERRF","nomis"), scatter_plot = F
       
       
       
-      fwrite(data.table(label = f$label,normalized_dataset[[i]]),paste0(dir,"\\normalized datasets\\normalized by - ",method,'.csv'))
-    }else{
-      cat("Error in ",method,": ", normalized_dataset[[i]])
     }
   }
   if(!length(infinite_index)==0){
@@ -1359,7 +1338,6 @@ normalize = function(file_location, methods=c("SERRF","nomis"), scatter_plot = F
   
   
   
-  fwrite(data.table(label = f$label, do.call('cbind',qc_RSDs)),paste0(dir,"//","QC - RSD.csv"))
   if(with_validate){
     
     for(validate_type in validate_types){
@@ -1377,7 +1355,6 @@ normalize = function(file_location, methods=c("SERRF","nomis"), scatter_plot = F
       
       
       
-      fwrite(data.table(label = f$label, do.call('cbind',val_RSDs[[validate_type]])),paste0(dir,"//","Validate Samples - ",validate_type," - RSD.csv"))
       
     }
     
@@ -1393,21 +1370,21 @@ normalize = function(file_location, methods=c("SERRF","nomis"), scatter_plot = F
   if(scatter_plot){ # time consuming.
     comb_p$sampleType[is.na(comb_p$sampleType)] = "NA"
     cat("Generating scatter plots for each compounds. Please be patient...\n")
-    dir.create(paste0(dir,"\\scatter plots"))
+    dir.create(paste0(dir,"/scatter plots"))
     for(i in 1:length(normalized_dataset)){
       
       method = names(normalized_dataset)[i]
       
       if(identical(class(normalized_dataset[[i]]),"matrix")){
         normalized = normalized_dataset[[i]]
-        dir.create(paste0(dir,"\\scatter plots\\",method))
+        dir.create(paste0(dir,"/scatter plots/",method))
         e =     normalized_dataset[['none']] 
         for(j in 1:nrow(e)){
           
           if(!j %in% infinite_index){
             
             
-            png(paste0(dir,"\\scatter plots\\",method,"\\",j,"th.png"), width = 480*2, height = 480)
+            png(paste0(dir,"/scatter plots/",method,"/",j,"th.png"), width = 480*2, height = 480)
             par(mfrow=c(1,2))
             ylim = c(min(e[j,],normalized[j,]), max(e[j,],normalized[j,]))
             if(Inf %in% ylim){
@@ -1433,7 +1410,6 @@ normalize = function(file_location, methods=c("SERRF","nomis"), scatter_plot = F
   }
   
   
-  cat(paste0("Good Job! All the normalizations are finished!\nPlease check your folder: '",dir,"'.\n"))
   return(list(normalized_dataset = normalized_dataset,qc_RSDs = qc_RSDs,calculation_times=calculation_times,serrf_cross_validated_qc = serrf_cross_validated_qc))
 }
 # methods can be either "all" a c() which can include mTIC,sum,median,PQN,contrast,quantile,linear,liwong,cubic,batch_ratio,batch_loess,SERRF,svm,nomis or bmis.
