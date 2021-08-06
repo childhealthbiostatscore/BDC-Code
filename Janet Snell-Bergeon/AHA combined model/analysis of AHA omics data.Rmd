@@ -25,7 +25,7 @@ library(PCAtools)
 library(openxlsx)
 library(dplyr)
 library(multtest)
-library(pls)
+#library(pls)
 
 home_dir = ifelse(.Platform$OS.type != "unix","T:\\Janet Snell-Bergeon\\AHA collaborative grant",
                   "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant")
@@ -83,7 +83,7 @@ df$delta_cac_v3 <- (df$c3 - df$c1)
 df$delta_cac_v4 <- (df$c4 - df$c1)
 ```
 
-```{r moderated ttests,echo=FALSE}
+```{r moderated ttests,echo=FALSE, message=FALSE, results="hide"}
 cac_contrast <- ifelse(df$CACp=="Yes",1,0)
 cac_contrast <- cbind(rep(1,nrow(df)),cac_contrast)
 
@@ -312,11 +312,43 @@ top_2d
 
 ```{r PLSR utm,echo=FALSE,cache=TRUE,warning=FALSE,message=FALSE, comment=""}
 ## PLS regression of untargeted metabolites
-plsrx <- as.matrix(df[,names(df) %in% untargeted_metabs])
-plsr_utm <- plsr(df$delta_cac_v4 ~ plsrx, ncomp=20, validation="LOO")
-ncomp_utm <- selectNcomp(plsr_utm, method="randomization", plot=TRUE)
-# selects 0 components (error keeps increasing!)
-plsr_utm <- plsr(df$delta_cac_v4 ~ plsrx, ncomp=2, validation="LOO")
+nomiss <- df[!is.na(df$delta_cac_v4),]
+plsrx <- as.matrix(nomiss[,names(nomiss) %in% untargeted_metabs])
+# get rid of rows with all missing
+missrow <- apply(plsrx, 1, function(x) all(is.na(x)))
+plsrx <- plsrx[!missrow,]
+plsry <- as.matrix(nomiss$delta_cac_v4)
+# remove rows of y corresponding to missrow
+plsry <- plsry[!missrow,]
+
+# nipals algorithm to impute missings
+# once we get rid of rows with all missing, there are no missing values
+#nipals.tune = nipals(plsrx, ncomp = 10)$eig
+#barplot(nipals.tune, xlab = 'number of components', ylab = 'explained variance')
+#nipals.X <- impute.nipals(plsrx, ncomp = 5)$rec
+
+#SPLS
+spls_utm <- spls(plsrx, plsry, ncomp = 2, mode = "regression",keepX = c(20,20))  # where ncomp is the number of dimensions/components to choose
+# can't get tuning function to work
+#tune.spls <- tune.spls(plsrx, plsry, ncomp=5, folds=5, measure="MSE", test.keepX = c(10,10,10,10,10), nrepeat = 3)
+#plot(tune.pls$measures$Q2.total$values)
+#plotIndiv(spls_utm)
+#plotVar(spls_utm)
+#par(mar=c(0.1,0.1,0.1,0.1))
+#network(spls_utm, comp = 1:2, shape.node = c("rectangle", "rectangle"),
+#        color.node = c("white", "pink"), color.edge =  color.GreenRed(50), )
+c1 <- spls_utm$loadings$X[,1]
+c1 <- as.data.frame(c1[c1 != 0])
+c2 <- spls_utm$loadings$X[,2]
+c2 <- as.data.frame(c2[c2 != 0])
+colnames(c1) <- "Loading"
+c1 <- c1 %>% arrange(Loading)
+colnames(c2) <- "Loading"
+c2 <- c2 %>% arrange(Loading) 
+
+kable(c1)
+kable(c2)
+
 ```
 
 ## sPLS-DA of targeted metabolites
@@ -365,10 +397,39 @@ top_2d
 ## PLS regression of targeted metabolites, change in CAC volume from v1-v4
 
 ```{r PLSR tm,echo=FALSE,cache=TRUE,warning=FALSE,message=FALSE, comment=""}
-## PLS regression of targeted metabolites
-plsrx <- as.matrix(df[,colnames(df) %in% targeted_metabs])
-plsr_tm <- plsr(df$delta_cac_v4 ~ plsrx, ncomp=20, validation="LOO")
-ncomp_tm <- selectNcomp(plsr_tm, method="randomization", plot=TRUE)
+nomiss <- df[!is.na(df$delta_cac_v4),]
+plsrx <- as.matrix(nomiss[,names(nomiss) %in% targeted_metabs])
+# get rid of rows with all missing
+missrow <- apply(plsrx, 1, function(x) all(is.na(x)))
+plsrx <- plsrx[!missrow,]
+plsry <- as.matrix(nomiss$delta_cac_v4)
+# remove rows of y corresponding to missrow
+plsry <- plsry[!missrow,]
+
+#SPLS
+spls_tm <- spls(plsrx, plsry, ncomp = 2, mode = "regression",keepX = c(20,20))  # where ncomp is the number of dimensions/components to choose
+# can't get tuning function to work
+#tune.spls <- tune.spls(plsrx, plsry, ncomp=5, folds=5, measure="MSE", test.keepX = c(10,10,10,10,10), nrepeat = 3)
+#plot(tune.pls$measures$Q2.total$values)
+#plotIndiv(spls_utm)
+#plotVar(spls_utm)
+#par(mar=c(0.1,0.1,0.1,0.1))
+#network(spls_utm, comp = 1:2, shape.node = c("rectangle", "rectangle"),
+#        color.node = c("white", "pink"), color.edge =  color.GreenRed(50), )
+c1 <- spls_tm$loadings$X[,1]
+c1 <- as.data.frame(c1[c1 != 0])
+c2 <- spls_tm$loadings$X[,2]
+c2 <- as.data.frame(c2[c2 != 0])
+colnames(c1) <- "Loading"
+c1 <- c1 %>% arrange(Loading)
+colnames(c2) <- "Loading"
+c2 <- c2 %>% arrange(Loading) 
+
+kable(c1)
+kable(c2)
+
+kable(c1)
+kable(c2)
 
 ```
 
@@ -418,15 +479,39 @@ top_2d
 ## PLS regression of global proteins, change in CAC volume from v1-v4
 
 ```{r PLSR globp,echo=FALSE,cache=TRUE,warning=FALSE,message=FALSE, comment=""}
-#plsrx <- df[,names(df) %in% c("delta_cac_v4",global_proteins)]
-#plsrx <- plsrx[!is.na(plsrx$delta_cac_v4),]
-#plsry <- plsrx$delta_cac_v4
-#plsrx <- as.matrix(select(plsrx,-delta_cac_v4))
+nomiss <- df[!is.na(df$delta_cac_v4),]
+plsrx <- as.matrix(nomiss[,names(nomiss) %in% global_proteins])
+# get rid of rows with all missing
+missrow <- apply(plsrx, 1, function(x) all(is.na(x)))
+plsrx <- plsrx[!missrow,]
+plsry <- as.matrix(nomiss$delta_cac_v4)
+# remove rows of y corresponding to missrow
+plsry <- plsry[!missrow,]
 
-plsrx <- as.matrix(df[,colnames(df) %in% global_proteins])
-plsr_globalp <- plsr(df$delta_cac_v4 ~ plsrx, validation="LOO", na.rm=TRUE)
-ncomp_globalp <- selectNcomp(plsr_globalp, method="randomization", plot=TRUE)
-# why are there variables with every value missing? e.g. P06753-2
+#SPLS
+spls_globalp <- spls(plsrx, plsry, ncomp = 2, mode = "regression",keepX = c(20,20))  # where ncomp is the number of dimensions/components to choose
+# can't get tuning function to work
+#tune.spls <- tune.spls(plsrx, plsry, ncomp=5, folds=5, measure="MSE", test.keepX = c(10,10,10,10,10), nrepeat = 3)
+#plot(tune.pls$measures$Q2.total$values)
+#plotIndiv(spls_utm)
+#plotVar(spls_utm)
+#par(mar=c(0.1,0.1,0.1,0.1))
+#network(spls_utm, comp = 1:2, shape.node = c("rectangle", "rectangle"),
+#        color.node = c("white", "pink"), color.edge =  color.GreenRed(50), )
+c1 <- spls_globalp$loadings$X[,1]
+c1 <- as.data.frame(c1[c1 != 0])
+c2 <- spls_globalp$loadings$X[,2]
+c2 <- as.data.frame(c2[c2 != 0])
+colnames(c1) <- "Loading"
+c1 <- c1 %>% arrange(Loading)
+colnames(c2) <- "Loading"
+c2 <- c2 %>% arrange(Loading) 
+
+kable(c1)
+kable(c2)
+
+kable(c1)
+kable(c2)
 ```
 
 ## sPLS-DA of glycated proteins
@@ -471,6 +556,44 @@ top_2d
 
 ```
 
+## PLS regression of glycated proteins, change in CAC volume from v1-v4
+
+```{r PLSR glyp,echo=FALSE,cache=TRUE,warning=FALSE,message=FALSE, comment=""}
+nomiss <- df[!is.na(df$delta_cac_v4),]
+plsrx <- as.matrix(nomiss[,names(nomiss) %in% glycated_proteins])
+# get rid of rows with all missing
+missrow <- apply(plsrx, 1, function(x) all(is.na(x)))
+plsrx <- plsrx[!missrow,]
+plsry <- as.matrix(nomiss$delta_cac_v4)
+# remove rows of y corresponding to missrow
+plsry <- plsry[!missrow,]
+
+#SPLS
+spls_glyp <- spls(plsrx, plsry, ncomp = 2, mode = "regression",keepX = c(20,20))  # where ncomp is the number of dimensions/components to choose
+# can't get tuning function to work
+#tune.spls <- tune.spls(plsrx, plsry, ncomp=5, folds=5, measure="MSE", test.keepX = c(10,10,10,10,10), nrepeat = 3)
+#plot(tune.pls$measures$Q2.total$values)
+#plotIndiv(spls_utm)
+#plotVar(spls_utm)
+#par(mar=c(0.1,0.1,0.1,0.1))
+#network(spls_utm, comp = 1:2, shape.node = c("rectangle", "rectangle"),
+#        color.node = c("white", "pink"), color.edge =  color.GreenRed(50), )
+c1 <- spls_glyp$loadings$X[,1]
+c1 <- as.data.frame(c1[c1 != 0])
+c2 <- spls_glyp$loadings$X[,2]
+c2 <- as.data.frame(c2[c2 != 0])
+colnames(c1) <- "Loading"
+c1 <- c1 %>% arrange(Loading)
+colnames(c2) <- "Loading"
+c2 <- c2 %>% arrange(Loading) 
+
+kable(c1)
+kable(c2)
+
+kable(c1)
+kable(c2)
+```
+
 ## sPLS-DA of lipids
 
 ```{r splsda lipids,echo=FALSE,cache=TRUE,warning=FALSE,message=FALSE, comment=""}
@@ -511,6 +634,44 @@ top_2d
 # geom_vline(aes(xintercept=auc_true),color="red") +
 # theme_bw() + xlab("AUC")
 
+```
+
+## PLS regression of lipids, change in CAC volume from v1-v4
+
+```{r PLSR lipids,echo=FALSE,cache=TRUE,warning=FALSE,message=FALSE, comment=""}
+nomiss <- df[!is.na(df$delta_cac_v4),]
+plsrx <- as.matrix(nomiss[,names(nomiss) %in% lipids])
+# get rid of rows with all missing
+missrow <- apply(plsrx, 1, function(x) all(is.na(x)))
+plsrx <- plsrx[!missrow,]
+plsry <- as.matrix(nomiss$delta_cac_v4)
+# remove rows of y corresponding to missrow
+plsry <- plsry[!missrow,]
+
+#SPLS
+spls_lipids <- spls(plsrx, plsry, ncomp = 2, mode = "regression",keepX = c(20,20))  # where ncomp is the number of dimensions/components to choose
+# can't get tuning function to work
+#tune.spls <- tune.spls(plsrx, plsry, ncomp=5, folds=5, measure="MSE", test.keepX = c(10,10,10,10,10), nrepeat = 3)
+#plot(tune.pls$measures$Q2.total$values)
+#plotIndiv(spls_utm)
+#plotVar(spls_utm)
+#par(mar=c(0.1,0.1,0.1,0.1))
+#network(spls_utm, comp = 1:2, shape.node = c("rectangle", "rectangle"),
+#        color.node = c("white", "pink"), color.edge =  color.GreenRed(50), )
+c1 <- spls_lipids$loadings$X[,1]
+c1 <- as.data.frame(c1[c1 != 0])
+c2 <- spls_lipids$loadings$X[,2]
+c2 <- as.data.frame(c2[c2 != 0])
+colnames(c1) <- "Loading"
+c1 <- c1 %>% arrange(Loading)
+colnames(c2) <- "Loading"
+c2 <- c2 %>% arrange(Loading) 
+
+kable(c1)
+kable(c2)
+
+kable(c1)
+kable(c2)
 ```
 
 ## sPLS-DA of all data combined
@@ -554,4 +715,42 @@ top_2d
 # geom_vline(aes(xintercept=auc_true),color="red") +
 # theme_bw() + xlab("AUC")
 
+```
+
+## PLS regression of all data, change in CAC volume from v1-v4
+
+```{r PLSR all,echo=FALSE,cache=TRUE,warning=FALSE,message=FALSE, comment=""}
+nomiss <- df[!is.na(df$delta_cac_v4),]
+plsrx <- as.matrix(nomiss[,names(nomiss) %in% c(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins,lipids)])
+# get rid of rows with all missing
+missrow <- apply(plsrx, 1, function(x) all(is.na(x)))
+plsrx <- plsrx[!missrow,]
+plsry <- as.matrix(nomiss$delta_cac_v4)
+# remove rows of y corresponding to missrow
+plsry <- plsry[!missrow,]
+
+#SPLS
+spls_all <- spls(plsrx, plsry, ncomp = 2, mode = "regression",keepX = c(20,20))  # where ncomp is the number of dimensions/components to choose
+# can't get tuning function to work
+#tune.spls <- tune.spls(plsrx, plsry, ncomp=5, folds=5, measure="MSE", test.keepX = c(10,10,10,10,10), nrepeat = 3)
+#plot(tune.pls$measures$Q2.total$values)
+#plotIndiv(spls_utm)
+#plotVar(spls_utm)
+#par(mar=c(0.1,0.1,0.1,0.1))
+#network(spls_utm, comp = 1:2, shape.node = c("rectangle", "rectangle"),
+#        color.node = c("white", "pink"), color.edge =  color.GreenRed(50), )
+c1 <- spls_all$loadings$X[,1]
+c1 <- as.data.frame(c1[c1 != 0])
+c2 <- spls_all$loadings$X[,2]
+c2 <- as.data.frame(c2[c2 != 0])
+colnames(c1) <- "Loading"
+c1 <- c1 %>% arrange(Loading)
+colnames(c2) <- "Loading"
+c2 <- c2 %>% arrange(Loading) 
+
+kable(c1)
+kable(c2)
+
+kable(c1)
+kable(c2)
 ```
