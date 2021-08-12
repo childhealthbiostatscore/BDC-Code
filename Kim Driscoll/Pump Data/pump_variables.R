@@ -49,7 +49,6 @@ for (f in 1:length(files)) {
     } else {
       table$bg = NA
     }
-    
   }
   table$bg[table$bg == 0] <- NA
   # Get rewind times
@@ -112,18 +111,17 @@ for (f in 1:length(files)) {
   skip <- c()
   # Get dates with bg gaps >= 6 hours
   bg_time_df <- as.data.frame(bg_datetimes,stringsAsFactors = F)
-  bg_time_df$date <- as.Date(bg_time_df$bg_datetimes)
-  if (nrow(bg_time_df) > 0){
-    bg_time_df$time <- lubridate::hour(bg_time_df$bg_datetimes)
-  }
   bg_time_df$bg_datetimes <- lubridate::parse_date_time(bg_time_df$bg_datetimes,
-                                                        c("ymd HMS","ymd"))
-  bg_time_df <- bg_time_df %>%
-    mutate(diff = (bg_datetimes - lag(bg_datetimes))/60)
-  bg_time_df <- bg_time_df[bg_time_df$time %in% c(6:11),]
-  bg_time_df <- bg_time_df %>% group_by(date) %>% 
-    summarise(m = suppressWarnings(max(diff,na.rm = T)),.groups="drop_last") %>% 
-    filter(m > -Inf)
+                                                        c("ymd HMS","ymd HM","ymd"))
+  bg_time_df$time = lubridate::hour(bg_time_df$bg_datetimes) + 
+    lubridate::minute(bg_time_df$bg_datetimes)*0.01
+  bg_time_df$date = as.Date(bg_time_df$bg_datetimes)
+  bg_time_df <- bg_time_df %>% filter(time >=6 & time < 23) %>% group_by(date) %>%
+    mutate(diff = difftime(bg_datetimes,lag(bg_datetimes),units = "hours"))
+  bg_diffs <- bg_time_df %>%
+    summarise(m = suppressWarnings(max(diff,na.rm = T)),.groups="drop_last")
+  n = bg_time_df %>% count()
+  bg_days_6 = sum(c(n$n == 1,bg_diffs$m >=6))
   # Count carb behaviors
   table$BWZ.Carb.Input..grams.[table$BWZ.Carb.Input..grams. == 0] <- NA
   # Carb counters
@@ -306,7 +304,7 @@ for (f in 1:length(files)) {
   summary[f,"total_above_250"] <- total_above_250
   summary[f,"total_above_400"] <- total_above_400
   summary[f,"days_4_bgs"] <- length(which(table(bg_dates)>=4))
-  summary[f,"days_bg_>=6_hours"] <- length(which(bg_time_df$m >= 6))
+  summary[f,"days_bg_>=6_hours"] <- nrow(bg_time_df)
   # Carbs
   summary[f,"total_carbs"] <- total_carbs
   summary[f,"weekday_carbs"] <- weekday_carbs
