@@ -1,7 +1,7 @@
 library(tidyverse)
 # Import data
-indir <- "/Users/timvigers/Dropbox/Work/Tidepool Test/cleaned/"
-outdir <- "/Users/timvigers/Dropbox/Work/Tidepool Test/"
+indir <- "/home/tim/.local/share/Cryptomator/mnt/Vault/Work/Tidepool Test/cleaned_run"
+outdir <- "/home/tim/.local/share/Cryptomator/mnt/Vault/Work/Tidepool Test"
 files <- list.files(indir,full.names = T)
 # Make a summary variables table.
 summary <- data.frame(matrix(nrow = length(files),ncol = 0))
@@ -27,8 +27,12 @@ for (f in 1:length(files)) {
   id <- sub("T._","",id)
   # Date time column
   table$datetime <- paste(table$Date,table$Time)
-  table$datetime <- lubridate::parse_date_time(table$datetime,
-                                               orders = c("mdyHMS","mdyHM","ymdHMS","ymdHM"))
+  table$datetime <- 
+    lubridate::parse_date_time(table$datetime,exact = T,
+                               orders = c("%m/%d/%Y %H:%M","%m/%d/%Y %H:%M:%S",
+                                          "%m/%d/%y %H:%M","%m/%d/%y %H:%M:%S",
+                                          "%Y/%m/%d %H:%M","%Y/%m/%d %H:%M:%S",
+                                          "%Y-%m-%d %H:%M","%Y-%m-%d %H:%M:%S"))
   table = table[!is.na(table$datetime),]
   # Sort by datetime
   table = table[order(table$datetime),]
@@ -42,10 +46,12 @@ for (f in 1:length(files)) {
   weekends <- length(which(day_table$day %in% c(1,7)))
   # Combine BG columns
   if (!("bg" %in% colnames(table)) | sum(is.na(table$bg)) == nrow(table)){
-    if ("BWZ.BG.Input..mg.dL." %in% colnames(table) & 
-        "Sensor.Calibration.BG..mg.dL." %in% colnames(table)){
-      table$bg <- pmax(table$BG.Reading..mg.dL.,table$BWZ.BG.Input..mg.dL.,na.rm = T)
-      table$bg <- pmax(table$bg,table$Sensor.Calibration.BG..mg.dL.,na.rm = T)
+    bg_cols = c("BG.Reading..mg.dL.","BWZ.BG.Input..mg.dL.","Sensor.Calibration.BG..mg.dL.")
+    if (any(bg_cols %in% colnames(table))){
+      m = match(bg_cols,colnames(table))
+      m = m[!is.na(m)]
+      table$bg <- suppressWarnings(apply(table[,m],1,function(r){max(r,na.rm = T)}))
+      table$bg[table$bg == -Inf] = NA
     } else {
       table$bg = NA
     }
@@ -56,7 +62,7 @@ for (f in 1:length(files)) {
   rewind_diffs = as.numeric(diff(rewind_datetimes))
   if (length(rewind_diffs) > 0) {
     mean_rewind = mean(rewind_diffs,na.rm = T)
-    } else {mean_rewind = NA}
+  } else {mean_rewind = NA}
   # Simplify table
   table <- table %>% select(Date,datetime,weekday,bg,BWZ.Carb.Input..grams.,
                             BWZ.Estimate..U.,Bolus.Volume.Delivered..U.,Bolus.Type)
@@ -113,15 +119,29 @@ for (f in 1:length(files)) {
   bg_time_df <- as.data.frame(bg_datetimes,stringsAsFactors = F)
   bg_time_df$bg_datetimes <- lubridate::parse_date_time(bg_time_df$bg_datetimes,
                                                         c("ymd HMS","ymd HM","ymd"))
+  bg_time_df$bg_datetimes <- lubridate::round_date(bg_time_df$bg_datetimes, unit = "min")
   bg_time_df$time = lubridate::hour(bg_time_df$bg_datetimes) + 
     lubridate::minute(bg_time_df$bg_datetimes)*0.01
   bg_time_df$date = as.Date(bg_time_df$bg_datetimes)
+  # Create fake BG checks at 6am and 11pm
   bg_time_df <- bg_time_df %>% filter(time >=6 & time < 23) %>% group_by(date) %>%
+    group_modify(~ add_row(.,time = 6.0,.before=0)) %>%
+    group_modify(~ add_row(.,time = 23.0)) %>% ungroup
+  bg_time_df$time_char = 
+    sapply(strsplit(as.character(bg_time_df$time),"\\."),
+           function(x){
+             if (length(x) > 1) {
+               paste(x,collapse = ":")
+             } else if (length(x == 1)) {
+               paste(c(x,'00'),collapse = ":")
+             }})
+  bg_time_df$bg_datetimes = 
+    lubridate::ymd_hm(paste(bg_time_df$date,bg_time_df$time_char))
+  bg_time_df = bg_time_df %>% 
     mutate(diff = difftime(bg_datetimes,lag(bg_datetimes),units = "hours"))
-  bg_diffs <- bg_time_df %>%
+  bg_diffs <- bg_time_df %>% group_by(date) %>%
     summarise(m = suppressWarnings(max(diff,na.rm = T)),.groups="drop_last")
-  n = bg_time_df %>% count()
-  bg_days_6 = sum(c(n$n == 1,bg_diffs$m >=6))
+  bg_days_6 = sum(bg_diffs$m >= 6)
   # Count carb behaviors
   table$BWZ.Carb.Input..grams.[table$BWZ.Carb.Input..grams. == 0] <- NA
   # Carb counters
@@ -278,7 +298,7 @@ for (f in 1:length(files)) {
   # Of all boluses given, how many a BG reading within 15 minutes prior
   bolus_within_15_of_bg = 0
   for (d in bolus_datetimes) {
-    if (any(bg_datetimes > (d - 15*60) & bg_datetimes < d)) {
+    if (any(bg_datetimes > (d - 15*60) & bg_datetimes <= d)) {
       bolus_within_15_of_bg = bolus_within_15_of_bg + 1
     }
   }
@@ -304,7 +324,7 @@ for (f in 1:length(files)) {
   summary[f,"total_above_250"] <- total_above_250
   summary[f,"total_above_400"] <- total_above_400
   summary[f,"days_4_bgs"] <- length(which(table(bg_dates)>=4))
-  summary[f,"days_bg_>=6_hours"] <- nrow(bg_time_df)
+  summary[f,"days_bg_>=6_hours"] <- bg_days_6
   # Carbs
   summary[f,"total_carbs"] <- total_carbs
   summary[f,"weekday_carbs"] <- weekday_carbs
@@ -343,5 +363,5 @@ for (f in 1:length(files)) {
   print(paste0(round(f / length(files) * 100,1),"% complete"))
 }
 # Write summary variables
-filename <- paste0(outdir,"summary.csv")
+filename <- paste0(outdir,"/summary.csv")
 write.csv(summary,file = filename,row.names = F,na = "")

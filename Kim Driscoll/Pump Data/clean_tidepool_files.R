@@ -2,8 +2,8 @@ library(tidyverse)
 library(readxl)
 library(tools)
 # Original files
-indir = "/Users/timvigers/Documents/Work/Tidepool Test/raw"
-outdir = "/Users/timvigers/Documents/Work/Tidepool Test/cleaned"
+indir = "/home/tim/.local/share/Cryptomator/mnt/Vault/Work/Tidepool Test/raw"
+outdir = "/home/tim/.local/share/Cryptomator/mnt/Vault/Work/Tidepool Test/cleaned"
 files = list.files(indir,full.names = T)
 # Iterate through
 for (f in files) {
