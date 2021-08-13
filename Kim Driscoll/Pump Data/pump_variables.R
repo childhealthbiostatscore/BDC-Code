@@ -116,32 +116,39 @@ for (f in 1:length(files)) {
   }
   skip <- c()
   # Get dates with bg gaps >= 6 hours
+  bg_days_6 = 0
   bg_time_df <- as.data.frame(bg_datetimes,stringsAsFactors = F)
-  bg_time_df$bg_datetimes <- lubridate::parse_date_time(bg_time_df$bg_datetimes,
-                                                        c("ymd HMS","ymd HM","ymd"))
-  bg_time_df$bg_datetimes <- lubridate::round_date(bg_time_df$bg_datetimes, unit = "min")
-  bg_time_df$time = lubridate::hour(bg_time_df$bg_datetimes) + 
-    lubridate::minute(bg_time_df$bg_datetimes)*0.01
-  bg_time_df$date = as.Date(bg_time_df$bg_datetimes)
-  # Create fake BG checks at 6am and 11pm
-  bg_time_df <- bg_time_df %>% filter(time >=6 & time < 23) %>% group_by(date) %>%
-    group_modify(~ add_row(.,time = 6.0,.before=0)) %>%
-    group_modify(~ add_row(.,time = 23.0)) %>% ungroup
-  bg_time_df$time_char = 
-    sapply(strsplit(as.character(bg_time_df$time),"\\."),
-           function(x){
-             if (length(x) > 1) {
-               paste(x,collapse = ":")
-             } else if (length(x == 1)) {
-               paste(c(x,'00'),collapse = ":")
-             }})
-  bg_time_df$bg_datetimes = 
-    lubridate::ymd_hm(paste(bg_time_df$date,bg_time_df$time_char))
-  bg_time_df = bg_time_df %>% 
-    mutate(diff = difftime(bg_datetimes,lag(bg_datetimes),units = "hours"))
-  bg_diffs <- bg_time_df %>% group_by(date) %>%
-    summarise(m = suppressWarnings(max(diff,na.rm = T)),.groups="drop_last")
-  bg_days_6 = sum(bg_diffs$m >= 6)
+  if (nrow(bg_time_df)>0){
+    bg_time_df$bg_datetimes <- 
+      lubridate::parse_date_time(bg_time_df$bg_datetimes,exact = T,
+                                 orders = c("%m/%d/%Y %H:%M","%m/%d/%Y %H:%M:%S",
+                                            "%m/%d/%y %H:%M","%m/%d/%y %H:%M:%S",
+                                            "%Y/%m/%d %H:%M","%Y/%m/%d %H:%M:%S",
+                                            "%Y-%m-%d %H:%M","%Y-%m-%d %H:%M:%S"))
+    bg_time_df$bg_datetimes <- lubridate::round_date(bg_time_df$bg_datetimes, unit = "min")
+    bg_time_df$time = lubridate::hour(bg_time_df$bg_datetimes) + 
+      lubridate::minute(bg_time_df$bg_datetimes)*0.01
+    bg_time_df$date = as.Date(bg_time_df$bg_datetimes)
+    # Create fake BG checks at 6am and 11pm
+    bg_time_df <- bg_time_df %>% filter(time >=6 & time < 23) %>% group_by(date) %>%
+      group_modify(~ add_row(.,time = 6.0,.before=0)) %>%
+      group_modify(~ add_row(.,time = 23.0)) %>% ungroup
+    bg_time_df$time_char = 
+      sapply(strsplit(as.character(bg_time_df$time),"\\."),
+             function(x){
+               if (length(x) > 1) {
+                 paste(x,collapse = ":")
+               } else if (length(x == 1)) {
+                 paste(c(x,'00'),collapse = ":")
+               }})
+    bg_time_df$bg_datetimes = 
+      lubridate::ymd_hm(paste(bg_time_df$date,bg_time_df$time_char))
+    bg_time_df = bg_time_df %>% group_by(date) %>%
+      mutate(diff = difftime(bg_datetimes,lag(bg_datetimes),units = "hours"))
+    bg_diffs <- bg_time_df %>% 
+      summarise(m = suppressWarnings(max(diff,na.rm = T)),.groups="drop_last")
+    bg_days_6 = sum(bg_diffs$m >= 6)
+  }
   # Count carb behaviors
   table$BWZ.Carb.Input..grams.[table$BWZ.Carb.Input..grams. == 0] <- NA
   # Carb counters
@@ -251,22 +258,47 @@ for (f in 1:length(files)) {
     skip <- skip[skip > r]
   }
   # Get dates with bolus gaps >= 6 hours
+  bolus_days_6 = 0 
   bolus_time_df <- as.data.frame(bolus_datetimes,stringsAsFactors = F)
-  bolus_time_df$date <- as.Date(bolus_time_df$bolus_datetimes)
-  if (nrow(bolus_time_df) > 0){
-    bolus_time_df$time <- lubridate::hour(bolus_time_df$bolus_datetimes)
+  if (nrow(bolus_time_df)>0){
+    bolus_time_df$bolus_datetimes <- 
+      lubridate::parse_date_time(bolus_time_df$bolus_datetimes,exact = T,
+                                 orders = c("%m/%d/%Y %H:%M","%m/%d/%Y %H:%M:%S",
+                                            "%m/%d/%y %H:%M","%m/%d/%y %H:%M:%S",
+                                            "%Y/%m/%d %H:%M","%Y/%m/%d %H:%M:%S",
+                                            "%Y-%m-%d %H:%M","%Y-%m-%d %H:%M:%S"))
+    bolus_time_df$bolus_datetimes <- lubridate::round_date(bolus_time_df$bolus_datetimes, unit = "min")
+    bolus_time_df$time = lubridate::hour(bolus_time_df$bolus_datetimes) + 
+      lubridate::minute(bolus_time_df$bolus_datetimes)*0.01
+    bolus_time_df$date = as.Date(bolus_time_df$bolus_datetimes)
+    # Create fake boluses at 6am and 11pm
+    bolus_time_df <- bolus_time_df %>% filter(time >=6 & time < 23) %>% group_by(date) %>%
+      group_modify(~ add_row(.,time = 6.0,.before=0)) %>%
+      group_modify(~ add_row(.,time = 23.0)) %>% ungroup
+    bolus_time_df$time_char = 
+      sapply(strsplit(as.character(bolus_time_df$time),"\\."),
+             function(x){
+               if (length(x) > 1) {
+                 paste(x,collapse = ":")
+               } else if (length(x == 1)) {
+                 paste(c(x,'00'),collapse = ":")
+               }})
+    bolus_time_df$bolus_datetimes = 
+      lubridate::ymd_hm(paste(bolus_time_df$date,bolus_time_df$time_char))
+    bolus_time_df = bolus_time_df %>% group_by(date) %>%
+      mutate(diff = difftime(bolus_datetimes,lag(bolus_datetimes),units = "hours"))
+    bolus_diffs <- bolus_time_df %>% 
+      summarise(m = suppressWarnings(max(diff,na.rm = T)),.groups="drop_last")
+    bolus_days_6 = sum(bolus_diffs$m >= 6)
   }
-  bolus_time_df$bolus_datetimes <- lubridate::ymd_hms(bolus_time_df$bolus_datetimes)
-  bolus_time_df <- bolus_time_df %>%
-    mutate(diff = (bolus_datetimes - lag(bolus_datetimes))/60)
-  bolus_time_df <- bolus_time_df[bolus_time_df$time %in% c(6:11),]
-  bolus_time_df <- bolus_time_df %>% group_by(date) %>% 
-    summarise(m = suppressWarnings(max(diff,na.rm = T)),.groups="drop_last") %>% 
-    filter(m > -Inf)
   # Link behaviors
   carb_datetimes <- lubridate::ymd_hms(carb_datetimes)
   bolus_datetimes <- lubridate::ymd_hms(bolus_datetimes)
-  bg_datetimes <- lubridate::parse_date_time(bg_datetimes,c("ymd HMS","ymd"))
+  bg_datetimes <- lubridate::parse_date_time(bg_datetimes,exact = T,
+                                             orders = c("%m/%d/%Y %H:%M","%m/%d/%Y %H:%M:%S",
+                                                        "%m/%d/%y %H:%M","%m/%d/%y %H:%M:%S",
+                                                        "%Y/%m/%d %H:%M","%Y/%m/%d %H:%M:%S",
+                                                        "%Y-%m-%d %H:%M","%Y-%m-%d %H:%M:%S"))
   for (bgt in bg_datetimes[!is.na(bg_datetimes)]) {
     # Check for a carb input within 15 minutes
     bg <- unique(table$bg[which(table$datetime == bgt)])
@@ -340,7 +372,7 @@ for (f in 1:length(files)) {
   summary[f,"bolus_equal_bwz"] <- bolus_equal_bwz
   summary[f,"bolus_lower_bwz"] <- bolus_lower_bwz
   summary[f,"bolus_higher_bwz"] <- bolus_higher_bwz
-  summary[f,"days_bolus_>=6_hours"] <- length(which(bolus_time_df$m >= 6))
+  summary[f,"days_bolus_>=6_hours"] <- bolus_days_6
   # Link behaviors
   summary[f,"bg_under_70_with_bolus_only"] <- bg_with_bolus_70
   summary[f,"bg_under_70_with_carb_only"] <- bg_with_carb_70
