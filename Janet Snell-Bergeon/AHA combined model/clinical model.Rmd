@@ -1,13 +1,13 @@
 ---
 title: "AHA clinical model"
-author: "Laura Pyle"
+author: "Laura Pyle and Tim Vigers"
 date: "`r format(Sys.time(), '%d %B %Y')`"
 output:
   html_document:
     number_sections: yes
     theme: readable
     toc: yes
-    toc_depth: 2
+    toc_depth: 3
     toc_float: yes
 ---
 
@@ -16,15 +16,16 @@ library(sas7bdat)
 library(glmnet)
 library(tidyr)
 library(glinternet)
+library(dplyr)
 
 home_dir = ifelse(.Platform$OS.type == "unix",
-                  "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model",
-                  "B:/Projects/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model")
+                  "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant",
+                  "B:/Projects/Janet Snell-Bergeon/AHA collaborative grant")
 setwd(home_dir)
 
-allvisits_long <- read.sas7bdat("./allvisits_long.sas7bdat")
+allvisits_long <- read.sas7bdat("./Combined predictive model/allvisits_long.sas7bdat")
 v1 <- allvisits_long[allvisits_long$Visit==1,]
-v1 <- v1[,c("StudyID","age","duration","bmi","whr","onhypermeds","onlipidmeds","onstatinmeds","avediabp","avesystbp","smkstatus","ldl","hdlc","tri",
+v1 <- v1[,c("StudyID","age","duration","bmi","whr","onhypermeds","onstatinmeds","avediabp","avesystbp","smkstatus","ldl","hdlc","tri",
             "CKDepi","ac","albuminuria","insdoseperkg","hba1c","l45vsf","l45sqf","egdr","apob","crp","fib","homo","pai1")]
 
 cac <- read.csv("./Proteomics/Data_Cleaned/cac_groups.csv")
@@ -34,11 +35,11 @@ cac <- cac[,c("StudyID","CACprogV3")]
 
 final <- merge(cac,v1,by="StudyID",all.x = T, all.y = T)
 
-ua <- read.sas7bdat("./uricacid_b.sas7bdat")
+ua <- read.sas7bdat("./Combined predictive model//uricacid_b.sas7bdat")
 ua <- ua[,c("StudyID","UA")]
 final <- merge(final,ua,by="StudyID",all.x = T, all.y = F)
   
-pat <- read.sas7bdat("./PATwide.sas7bdat")
+pat <- read.sas7bdat("./Combined predictive model/PATwide.sas7bdat")
 pat$StudyID <- pat$STUDYID
 pat <- pat[,c("StudyID","pfatcm_v1")]
 final <- merge(final,pat,by="StudyID",all.x = T, all.y = F)
@@ -72,8 +73,12 @@ complete <- drop_na(final)
 
 ```
 
-```{r CAC LASSO statins, echo=FALSE}
+# LASSO without interactions, using statins and eGDR
 
+## LASSO
+
+```{r CAC LASSO statins, echo=FALSE, comment=""}
+set.seed(3654)
 # LASSO
 x <- as.matrix(subset(complete,select=-CACprogV3_num))
 glmmod1 <- glmnet(x, y=as.factor(complete$CACprogV3_num), alpha=1, family="binomial")
@@ -84,14 +89,126 @@ best.lambda <- cv.glmmod$lambda.min
 
 # coefficients at best lambda
 round(coef(glmmod1,s=cv.glmmod$lambda.min),4)
+```
 
+### GLM using variables selected by LASSO
+
+```{r CAC LASSO statins refit, echo=FALSE, comment=""}
 # Check coefficients
 refit_mod = glm(CACprogV3_num ~ age+duration+onhypermeds+onstatinmeds+avesystbp+
-                  hdlc+insdoseperkg+egdr+homo+UA+smknum,complete,family = binomial("logit"))
+                  hdlc+insdoseperkg+l45sqf+egdr+homo+UA+smknum,complete,family = binomial("logit"))
 summary(refit_mod)
 ```
 
+# LASSO with interactions, using statins and eGDR
 
-```{r CAC LASSO lipid lowering, echo=FALSE}
+## LASSO
+
+No interactions were retained.
+
+```{r CAC LASSO statins glinternet, echo=FALSE, comment=""}
+set.seed(3654)
+X <- complete %>% select(-CACprogV3_num)
+numLevels <- c(1,1,1,1,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2)
+a <- glinternet.cv(Y=complete$CACprogV3_num,X=X,numLevels = numLevels)
+coefs <- coef(a)
 ```
 
+```{r revised data, include=FALSE}
+# REVISE DATA TO INCLUDE LIPID MEDS INSTEAD OF STATINS
+
+home_dir = ifelse(.Platform$OS.type == "unix",
+                  "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant",
+                  "B:/Projects/Janet Snell-Bergeon/AHA collaborative grant")
+setwd(home_dir)
+
+allvisits_long <- read.sas7bdat("./Combined predictive model/allvisits_long.sas7bdat")
+v1 <- allvisits_long[allvisits_long$Visit==1,]
+v1 <- v1[,c("StudyID","age","duration","bmi","whr","onhypermeds","onlipidmeds","avediabp","avesystbp","smkstatus","ldl","hdlc","tri",
+            "CKDepi","ac","albuminuria","insdoseperkg","hba1c","l45vsf","l45sqf","egdr","apob","crp","fib","homo","pai1")]
+
+cac <- read.csv("./Proteomics/Data_Cleaned/cac_groups.csv")
+cac$CACprogV3 <- ifelse(cac$C3 - cac$C1 >= 2.5,"Progression","No Progression")
+cac$CACprogV3[is.na(cac$CACprogV3)] <- "Unknown"
+cac <- cac[,c("StudyID","CACprogV3")]
+
+final <- merge(cac,v1,by="StudyID",all.x = T, all.y = T)
+
+ua <- read.sas7bdat("./Combined predictive model//uricacid_b.sas7bdat")
+ua <- ua[,c("StudyID","UA")]
+final <- merge(final,ua,by="StudyID",all.x = T, all.y = F)
+  
+pat <- read.sas7bdat("./Combined predictive model/PATwide.sas7bdat")
+pat$StudyID <- pat$STUDYID
+pat <- pat[,c("StudyID","pfatcm_v1")]
+final <- merge(final,pat,by="StudyID",all.x = T, all.y = F)
+final <- final[,-1]
+final <- final[final$CACprogV3 != "Unknown",]
+
+final$CACprogV3_num <- ifelse(final$CACprogV3=="Progression",1,0)
+final$CACprogV3 <- NULL
+#final$alb_num <- as.factor(ifelse(final$albuminuria %in% c("mac","mic"),1,
+#                        ifelse(final$albuminuria=="non",0,NA)))
+final$alb_num <- ifelse(final$albuminuria %in% c("mac","mic"),1,
+                                  ifelse(final$albuminuria=="non",0,NA))
+final$albuminuria <- NULL
+#final$smknum <- as.factor(ifelse(final$smkstatus=="Current",1,
+#                       ifelse(final$smkstatus %in% c("Former","Never"),0,NA)))
+final$smknum <- ifelse(final$smkstatus=="Current",1,
+                                 ifelse(final$smkstatus %in% c("Former","Never"),0,NA))
+
+final$smkstatus <- NULL
+#final$onhypermeds <- as.factor(final$onhypermeds)
+#final$onlipidmeds <- as.factor(final$onlipidmeds)
+#final$onstatinmeds <- as.factor(final$onstatinmeds)
+
+# drop albuminuria status - we don't want it and AC together
+final$alb_num <- NULL
+
+#write.csv(final,"./Combined predictive model/clinical data for lasso.csv",row.names = F)
+
+# only complete cases
+complete <- drop_na(final)
+
+```
+
+# LASSO without interactions, using lipid lowering meds and eGDR
+
+## LASSO
+
+```{r CAC LASSO lipid lowering, echo=FALSE, comment=""}
+set.seed(3654)
+# LASSO
+x <- as.matrix(subset(complete,select=-CACprogV3_num))
+glmmod1 <- glmnet(x, y=as.factor(complete$CACprogV3_num), alpha=1, family="binomial")
+
+# find best value of lambda
+cv.glmmod <- cv.glmnet(x, y=complete$CACprogV3_num, alpha=1)
+best.lambda <- cv.glmmod$lambda.min
+
+# coefficients at best lambda
+round(coef(glmmod1,s=cv.glmmod$lambda.min),4)
+```
+
+### GLM using variables selected by LASSO
+
+```{r CAC LASSO lipid lowering refit, echo=FALSE, comment=""}
+# Check coefficients
+refit_mod = glm(CACprogV3_num ~ age+duration+onhypermeds+onlipidmeds+avesystbp+
+                  hdlc+insdoseperkg+l45sqf+egdr+homo+UA+smknum,complete,family = binomial("logit"))
+summary(refit_mod)
+```
+
+# LASSO with interactions, using lipid lowering meds and eGDR
+
+## LASSO
+
+No interactions were retained.
+
+```{r CAC LASSO lipids glinternet, echo=FALSE, comment=""}
+set.seed(3654)
+X <- complete %>% select(-CACprogV3_num)
+numLevels <- c(1,1,1,1,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2)
+a <- glinternet.cv(Y=complete$CACprogV3_num,X=X,numLevels = numLevels)
+coefs <- coef(a)
+```
