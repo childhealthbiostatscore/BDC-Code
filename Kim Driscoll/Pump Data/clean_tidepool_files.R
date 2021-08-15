@@ -15,6 +15,11 @@ for (f in files) {
       start = which(df[,3]=='Pump')
       colnames(df) = df[start+1,]
       df = df[-c(0:start+1),]
+      # Remove micro boluses
+      micro = which(df$`Bolus Source` == "CLOSED_LOOP_MICRO_BOLUS")
+      if (length(micro)>0){
+        df = df[-c(micro),]
+      }
       df$datetime = lubridate::mdy_hms(paste(df$Date,df$Time))
       t = df %>% arrange(datetime)
     } else if (ncol(df) == 2){
