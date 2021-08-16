@@ -28,7 +28,7 @@ d = 0.33
 t = d * sqrt(n)/2
 p = pt(t,df = n-1)
 # Minimum sample size
-max(which(p <= ci)) + 1
+n[max(which(p <= ci))]
 # N=26
 
 # Standardized effect size of 0.66 (i.e., 10%/15%)
@@ -42,5 +42,5 @@ d = 0.66
 t = d * sqrt(n)/2
 p = pt(t,df = n-1)
 # Minimum sample size
-max(which(p <= ci)) + 1
+n[max(which(p <= ci))]
 # N=7
