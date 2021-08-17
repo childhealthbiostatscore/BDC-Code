@@ -17,6 +17,7 @@ library(glmnet)
 library(tidyr)
 library(glinternet)
 library(dplyr)
+library(survival)
 
 home_dir = ifelse(.Platform$OS.type == "unix",
                   "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant",
@@ -213,7 +214,13 @@ a <- glinternet.cv(Y=complete$CACprogV3_num,X=X,numLevels = numLevels)
 coefs <- coef(a)
 ```
 
+
+# Regularlized Cox model for death without interactions, using statins and eGDR
+
+## Regularlized Cox model
+
 ```{r events data statins, include=FALSE}
+# DEATH OUTCOME, WITH STATINS
 home_dir = ifelse(.Platform$OS.type == "unix",
                   "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant",
                   "B:/Projects/Janet Snell-Bergeon/AHA collaborative grant")
@@ -232,13 +239,6 @@ pat <- read.sas7bdat("./Combined predictive model/PATwide.sas7bdat")
 pat$StudyID <- pat$STUDYID
 pat <- pat[,c("StudyID","pfatcm_v1")]
 final <- merge(final,pat,by="StudyID",all.x = T, all.y = F)
-final <- final[,-1]
-final <- final[final$CACprogV3 != "Unknown",]
-
-final$CACprogV3_num <- ifelse(final$CACprogV3=="Progression",1,0)
-final$CACprogV3 <- NULL
-#final$alb_num <- as.factor(ifelse(final$albuminuria %in% c("mac","mic"),1,
-#                        ifelse(final$albuminuria=="non",0,NA)))
 final$alb_num <- ifelse(final$albuminuria %in% c("mac","mic"),1,
                                   ifelse(final$albuminuria=="non",0,NA))
 final$albuminuria <- NULL
@@ -246,7 +246,6 @@ final$albuminuria <- NULL
 #                       ifelse(final$smkstatus %in% c("Former","Never"),0,NA)))
 final$smknum <- ifelse(final$smkstatus=="Current",1,
                                  ifelse(final$smkstatus %in% c("Former","Never"),0,NA))
-
 final$smkstatus <- NULL
 #final$onhypermeds <- as.factor(final$onhypermeds)
 #final$onlipidmeds <- as.factor(final$onlipidmeds)
@@ -259,8 +258,28 @@ final$alb_num <- NULL
 
 # read in event data
 event <- read.csv("./Combined predictive model/QVisits_LastVisit_8-10-21.csv")
+event <- event[,c("StudyID","Deceased","PersonYrsDeath")]
+event$death <- ifelse(event$Deceased=="Deceased",1,0)
+event$Deceased <- NULL
+final <- merge(final,event,by="StudyID",all.x=TRUE,all.y=FALSE)
 
 # only complete cases
 complete <- drop_na(final)
+```
 
+```{r Cox death LASSO statin, echo=FALSE, comment=""}
+set.seed(3654)
+Y <- complete[,c("death","PersonYrsDeath")]
+X <- complete %>% select(-c("StudyID","PersonYrsDeath","death"))
+S <- Surv(time = Y$PersonYrsDeath, event = Y$death)
+cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
+
+# coefficients at best lambda
+round(coef(cv.fit,s=cv.fit$lambda.min),4)
+
+```
+
+### Cox model using variables selected in regularized Cox model
+
+```{r death LASSO statin refit, echo=FALSE, comment=""}
 ```
