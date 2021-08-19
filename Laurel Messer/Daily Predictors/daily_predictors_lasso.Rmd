@@ -39,6 +39,8 @@ data$race = apply(data[,race_cols], 1, function(r){
 # Calculate age and duration
 data$age = as.numeric(ymd(data$pt_visit_date) - ymd(data$pt_dob))/365.25
 data$duration = as.numeric(ymd(data$pt_visit_date) - ymd(data$dxdate))/365.25
+# ID as factor for glmmLasso
+data$record_id = as.factor(data$record_id)
 ```
 
 # Participant Characteristics
@@ -70,12 +72,11 @@ morning_items = colnames(data)[grep("esq\\d+$",colnames(data))]
 evening_items = colnames(data)[grep("esq\\d+_eve$",colnames(data))]
 # Outcomes
 goal_survey = c("n_highalerts","dm_caretime","dm_thinktime","gsq1","gsq2","gsq3")
+outcomes = c("boluses","smg","tir",goal_survey)
 # ID Variables
 id_vars = c("record_id","redcap_event_name","es_datetimecapture")
 # Optimal lambda function = needs id variables, one outcome, and predictors (nothing else)
-find_lambda = function(df,outcome,metric = "bic",lambdas = seq(0,1000),cores = 8){
-  # IDs must be factor
-  df$record_id = as.factor(df$record_id)
+find_lambda = function(df,outcome,metric = "bic",lambdas = seq(0,200),cores = 8){
   # Make model formula
   pred = colnames(df)[which(!colnames(df) %in% c(outcome,id_vars))]
   form = as.formula(paste(outcome,"~",paste(pred,collapse = "+")))
@@ -89,7 +90,7 @@ find_lambda = function(df,outcome,metric = "bic",lambdas = seq(0,1000),cores = 8
   metrics = unlist(metrics)
   # Get the best lambda
   best_lambda = lambdas[which.min(metrics)]
-  return(best_lambda)
+  return(c(best_lambda,form))
 }
 ```
 
@@ -98,12 +99,19 @@ find_lambda = function(df,outcome,metric = "bic",lambdas = seq(0,1000),cores = 8
 ### Morning survey
 
 ```{r}
+# Get morning variables
 bolus_morning = data[,c(id_vars,morning_items,"boluses")]
 bolus_morning = bolus_morning[complete.cases(bolus_morning),]
-lambda = find_lambda(df = bolus_morning,outcome = "boluses")
+
+lambda = find_lambda(df = bolus_morning,outcome = "boluses",lambdas = seq(0,200))
+mod = glmmLasso(lambda[[2]], rnd = list(record_id=~1),data = bolus_morning,
+                lambda=lambda[[1]],control = list(method = "REML"))
+names(which(s$coefficients[,"Estimate"] != 0))
 ```
 
 ### Evening survey
+
+
 
 ```{r}
 # Example
