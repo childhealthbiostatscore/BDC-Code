@@ -1,6 +1,7 @@
 #Read Data
-data=read.csv('./Laurel Messer/Daily Predictors/Data_Raw/DailyPredictorsForDi_DATA_2021-08-19_1005.csv',na.strings = "")
+data=read.csv('./Laurel Messer/Daily Predictors/Data_Raw//DailyPredictorsForDi_DATA_2021-08-19_1235.csv',na.strings = "")
 #Setting Labels
+
 label(data$record_id)="Record ID"
 label(data$redcap_event_name)="Event Name"
 label(data$redcap_survey_identifier)="Survey Identifier"
