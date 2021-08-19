@@ -11,16 +11,51 @@ output:
 ---
 
 ```{r setup, include=FALSE}
+library(Hmisc)
 library(arsenal)
 library(skimr)
 library(knitr)
 library(tidyverse)
+library(lubridate)
 knitr::opts_chunk$set(echo = FALSE)
 home_dir = ifelse(.Platform$OS.type != "unix","T:/",
-                  "/mnt/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/")
+                  "/mnt/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
 knitr::opts_knit$set(root.dir = home_dir)
 ```
 
-```{r}
-
+```{r clean data}
+source('/home/tim/Documents/GitHub/BDC-Code/Laurel Messer/Daily Predictors/clean_data.r')
+# Combine race columns
+race_cols = paste0("pt_race___",1:6,".factor")
+races = c("White","Black or African American","American Indian or Alaskan Native",
+          "Asian","Native Hawaiian or Pacific Islander","Other")
+data$race = apply(data[,race_cols], 1, function(r){
+    paste0(races[which(r == "Checked")],collapse = ", ")
+})
+# Calculate age and duration
+data$age = as.numeric(ymd(data$pt_visit_date) - ymd(data$pt_dob))/365.25
+data$duration = as.numeric(ymd(data$pt_visit_date) - ymd(data$dxdate))/365.25
 ```
+
+# Participant Characteristics
+
+```{r table 1, results = 'asis'}
+# Get first row for each person
+demographics = data %>% group_by(record_id) %>% filter(row_number() == 1)
+# Table 
+t1 = tableby(~ age + duration + pt_a1c + pt_baseline1.factor + pt_baseline5.factor + 
+               pt_gender.factor + race + pt_eth.factor + p1_hedu.factor + 
+               p2_hedu.factor,demographics)
+# Labels
+new_labels = list(age = "Age", duration = "Diabetes Duration", pt_a1c = "Baseline HbA1c",
+                  pt_baseline1.factor = "Pump Hx",pt_baseline5.factor = "CGM Hx",
+                  pt_gender.factor = "Gender", race = "Race", pt_eth.factor = "Ethnicity", 
+                  p1_hedu.factor = "Parent 1 Education", p2_hedu.factor = "Parent 2 Education")
+summary(t1,labelTranslations = new_labels)
+```
+
+# Questions for Laurel and Emily
+
+1. How should we combine levels of race and parent education? White vs. non-white? Above a bachelor's degree vs. bachelor's and below?
+
+

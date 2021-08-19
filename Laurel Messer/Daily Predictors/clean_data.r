@@ -1,12 +1,6 @@
-#Clear existing data and graphics
-rm(list=ls())
-graphics.off()
-#Load Hmisc library
-library(Hmisc)
 #Read Data
-data=read.csv('DailyPredictorsForDi_DATA_2021-08-19_0921.csv')
+data=read.csv('./Laurel Messer/Daily Predictors/Data_Raw/DailyPredictorsForDi_DATA_2021-08-19_1005.csv',na.strings = "")
 #Setting Labels
-
 label(data$record_id)="Record ID"
 label(data$redcap_event_name)="Event Name"
 label(data$redcap_survey_identifier)="Survey Identifier"
