@@ -18,9 +18,11 @@ library(knitr)
 library(tidyverse)
 library(lubridate)
 library(redcapAPI)
+library(nlme)
 library(glmmLasso)
 library(parallel)
-knitr::opts_chunk$set(echo = F)
+library(caret)
+knitr::opts_chunk$set(echo = F,cache = T)
 home_dir = ifelse(.Platform$OS.type != "unix","T:/",
                   "/mnt/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
 knitr::opts_knit$set(root.dir = home_dir)
@@ -76,21 +78,54 @@ outcomes = c("boluses","smg","tir",goal_survey)
 # ID Variables
 id_vars = c("record_id","redcap_event_name","es_datetimecapture")
 # Optimal lambda function = needs id variables, one outcome, and predictors (nothing else)
-find_lambda = function(df,outcome,metric = "bic",lambdas = seq(0,200),cores = 8){
+lambda_cv = function(df,outcome,metric = "bic",folds = 5,
+                       lambdas = seq(0,200),cores = 8){
   # Make model formula
   pred = colnames(df)[which(!colnames(df) %in% c(outcome,id_vars))]
   form = as.formula(paste(outcome,"~",paste(pred,collapse = "+")))
+  # K-fold cross validation
+  k = folds
+  # Fit a starting model to speed up glmmLasso
+  start_mod = lme(form,random = ~1|record_id,data = df)
+  # Need to account for excluded data in starting values - replace with 0
+  start_rand = matrix(nrow = length(levels(df$record_id)),ncol = 1,
+                      dimnames = list(1:length(levels(df$record_id)),"(Intercept)"))
+  start_rand[,1] = 0
+  start_rand[rownames(start_mod$coefficients$random$record_id),] = start_mod$coefficients$random$record_id[,1]
+  # Vector of starting values
+  start_vals = as.numeric(c(start_mod$coefficients$fixed,start_rand))
   # Try all the different lambdas
   cl = makeCluster(cores,type = "FORK")
   metrics = parLapply(cl,lambdas, function(l){
-    mod <- try(glmmLasso(form, rnd = list(record_id=~1),data = df,lambda=l,
-                         control = list(method = "REML")))
-    ifelse(class(mod)!="try-error",mod[[metric]],NA)})
+    # Cross validate
+    sample <- groupKFold(df$record_id,k = k)
+    cv = lapply(sample, function(s){
+      # Training from group K
+      train  <- df[s, ]
+      # Test set
+      test <- df[-s, ]
+      # Fit - different results with REML vs. EM, so stick with REML for now (much slower)
+      mod <- try(suppressWarnings(glmmLasso(form, rnd = list(record_id=~1),data = train,lambda=l,
+                                            control = list(method = "REML",start = start_vals))),
+                 silent = T)
+      if(class(mod)!="try-error"){
+        # Model performance
+        predicted <- predict(mod, test)
+        data.frame(R2 = R2(predicted, test[,outcome]),
+                   RMSE = RMSE(predicted, test[,outcome]),
+                   MAE = MAE(predicted, test[,outcome]))
+      } else {
+        data.frame(R2 = NA,
+                   RMSE = NA,
+                   MAE = NA)
+      }
+    })
+    cv = do.call(rbind,cv)
+    return(colMeans(cv,na.rm = T))
+  })
   stopCluster(cl)
-  metrics = unlist(metrics)
-  # Get the best lambda
-  best_lambda = lambdas[which.min(metrics)]
-  return(c(best_lambda,form))
+  metrics = do.call(rbind,metrics)
+  return(metrics)
 }
 ```
 
@@ -102,11 +137,8 @@ find_lambda = function(df,outcome,metric = "bic",lambdas = seq(0,200),cores = 8)
 # Get morning variables
 bolus_morning = data[,c(id_vars,morning_items,"boluses")]
 bolus_morning = bolus_morning[complete.cases(bolus_morning),]
-
-lambda = find_lambda(df = bolus_morning,outcome = "boluses",lambdas = seq(0,200))
-mod = glmmLasso(lambda[[2]], rnd = list(record_id=~1),data = bolus_morning,
-                lambda=lambda[[1]],control = list(method = "REML"))
-names(which(s$coefficients[,"Estimate"] != 0))
+# CV for lambda values
+lambda_perf = lambda_cv(df = bolus_morning,outcome = "boluses",lambdas = seq(0,5))
 ```
 
 ### Evening survey
@@ -308,7 +340,7 @@ abline(v=lambda[opt3],lty=2)
 
 1. How many Lambda values to check?
 2. Is it okay to base lambda choice on BIC for now? 
-  - Should we use the best lambda within 1 SD of the lowest BIC?
+- Should we use the best lambda within 1 SD of the lowest BIC?
 
 # Questions for Laurel and Emily
 
