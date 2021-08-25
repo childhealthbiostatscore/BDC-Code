@@ -27,9 +27,20 @@ X = lapply(names(raw_data), function(x){
 df = X %>% reduce(full_join) %>% arrange(ID,time) %>% 
   select(ID,time,due_num,pair,y,everything())
 # Data cleaning (in parallel)
-cores = 6
+cores = 12
+# Remove columns with >= 80% missing and with CV > 30% (per Speake paper)
 cl = makeCluster(cores,type = "FORK")
-# Remove columns with CV > 30% (per Speake paper)
-cv = parLapply(cl,df[,6:ncol(df)],function(c){sd(c,na.rm = T)/mean(c,na.rm = T)})
+keep = parLapply(cl,names(df[,-c(1:5)]),function(n){
+  missing = mean(is.na(df[,n]))
+  cv = sd(df[,n],na.rm = T)/mean(df[,n],na.rm = T)
+  if (cv <= 0.3 & missing < 0.8){
+    return(n)
+  } else {
+    return(NA)
+  }
+})
+stopCluster(cl)
+keep = unlist(keep)[!is.na(keep)]
+df = df[,keep]
 # Save data
-# save(df,file = "./Data_Clean/rectangular_data.RData")
+save(df,file = "./Data_Clean/rectangular_data.RData")
