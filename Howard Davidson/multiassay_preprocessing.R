@@ -42,5 +42,7 @@ keep = parLapply(cl,names(df[,-c(1:5)]),function(n){
 stopCluster(cl)
 keep = c(colnames(df)[1:5],unlist(keep)[!is.na(keep)])
 df = df[,keep]
+# Delete rows with all missing (exclude ID, y, etc.)
+df = df[rowSums(is.na(df)) != ncol(df) - 5,]
 # Save data
-save(df,file = "./Data_Clean/rectangular_data.RData")
+save(df,file = "./Data_Clean/longitudinal_data.RData")
