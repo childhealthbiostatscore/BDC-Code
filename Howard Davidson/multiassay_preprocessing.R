@@ -4,6 +4,8 @@ library(parallel)
 # Import raw
 setwd("/mnt/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data")
 raw_data = readRDS("./Data_Raw/TEDDY_MP193_Data/raw_time_data.RDS")
+# ID columns (common to all stored dataframes)
+id_cols = c("y","ID","time","due_num","pair")
 # Loop through list, and pull out matrices
 X = lapply(names(raw_data), function(x){
   var = x
@@ -12,7 +14,7 @@ X = lapply(names(raw_data), function(x){
   ts = lapply(names(dats), function(t){
     d = dats[[t]]$X # Predictors (variable column numbers)
     y = dats[[t]]$Y
-    y = y[,c("y","ID","time","due_num","pair")] # All need same columns for y
+    y = y[,c(id_cols)] # All need same columns for y
     d = cbind(d,y)
     if(ncol(dats[[t]]$X) == 1){
       colnames(d)[1] = var
@@ -30,7 +32,7 @@ df = X %>% reduce(full_join) %>% arrange(ID,time) %>%
 cores = 12
 # Remove columns with >= 80% missing and with CV > 30% (per Speake paper)
 cl = makeCluster(cores,type = "FORK")
-keep = parLapply(cl,names(df[,-c(1:5)]),function(n){
+keep = parLapply(cl,names(df[,-c(1:length(id_cols))]),function(n){
   missing = mean(is.na(df[,n]))
   cv = sd(df[,n],na.rm = T)/mean(df[,n],na.rm = T)
   if (cv <= 0.3 & missing < 0.8){
@@ -40,9 +42,10 @@ keep = parLapply(cl,names(df[,-c(1:5)]),function(n){
   }
 })
 stopCluster(cl)
-keep = c(colnames(df)[1:5],unlist(keep)[!is.na(keep)])
+keep = c(id_cols,unlist(keep)[!is.na(keep)])
 df = df[,keep]
 # Delete rows with all missing (exclude ID, y, etc.)
-df = df[rowSums(is.na(df)) != ncol(df) - 5,]
+df = df[rowSums(is.na(df)) != ncol(df) - length(id_cols),]
+predictors = colnames(df)[-c(1:length(id_cols))]
 # Save data
-save(df,file = "./Data_Clean/longitudinal_data.RData")
+save(df,predictors,file = "./Data_Clean/longitudinal_data.RData")
