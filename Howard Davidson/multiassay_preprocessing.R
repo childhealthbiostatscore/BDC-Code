@@ -40,7 +40,7 @@ keep = parLapply(cl,names(df[,-c(1:5)]),function(n){
   }
 })
 stopCluster(cl)
-keep = unlist(keep)[!is.na(keep)]
+keep = c(colnames(df)[1:5],unlist(keep)[!is.na(keep)])
 df = df[,keep]
 # Save data
 save(df,file = "./Data_Clean/rectangular_data.RData")
