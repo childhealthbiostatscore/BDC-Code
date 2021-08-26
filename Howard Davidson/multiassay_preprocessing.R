@@ -28,24 +28,28 @@ X = lapply(names(raw_data), function(x){
 # Use purrr's reduce function to merge all dataframes
 df = X %>% reduce(full_join) %>% arrange(ID,time) %>% 
   select(ID,time,due_num,pair,y,everything())
-# Data cleaning (in parallel)
-cores = 12
-# Remove columns with >= 80% missing and with CV > 30% (per Speake paper)
-cl = makeCluster(cores,type = "FORK")
-keep = parLapply(cl,names(df[,-c(1:length(id_cols))]),function(n){
-  missing = mean(is.na(df[,n]))
-  cv = sd(df[,n],na.rm = T)/mean(df[,n],na.rm = T)
-  if (cv <= 0.3 & missing < 0.8){
-    return(n)
-  } else {
-    return(NA)
-  }
-})
-stopCluster(cl)
-keep = c(id_cols,unlist(keep)[!is.na(keep)])
-df = df[,keep]
-# Delete rows with all missing (exclude ID, y, etc.)
-df = df[rowSums(is.na(df)) != ncol(df) - length(id_cols),]
-predictors = colnames(df)[-c(1:length(id_cols))]
 # Save data
-save(df,predictors,file = "./Data_Clean/longitudinal_data.RData")
+save(df,predictors,file = "./Data_Clean/all_timepoints.RData")
+# Pull data by timepoint
+get_timepoint = function(data = raw_data,time){
+  timepoint = paste0("Time_",time)
+  t = lapply(names(raw_data), function(x){
+    var = x
+    var = tolower(gsub(" ","_",var))
+    dats = raw_data[[x]][[timepoint]]
+    if(ncol(dats$X)==1){colnames(dats$X) = var}
+    df = data.frame(cbind(dats$X,dats$Y))
+  })
+  t = t %>% reduce(full_join) %>%  
+    select(ID,time,due_num,pair,y,everything())
+  return(t)
+}
+# Get all times and save
+time_0 = get_timepoint(time = 0)
+time_minus_1 = get_timepoint(time = -1)
+time_minus_2 = get_timepoint(time = -2)
+time_minus_3 = get_timepoint(time = -3)
+time_minus_4 = get_timepoint(time = -4)
+# Save data
+save(time_0,time_minus_1,time_minus_2,time_minus_3,time_minus_4,
+     file = "./Data_Clean/separate_timepoints.RData")
