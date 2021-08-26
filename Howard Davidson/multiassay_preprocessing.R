@@ -29,7 +29,7 @@ X = lapply(names(raw_data), function(x){
 df = X %>% reduce(full_join) %>% arrange(ID,time) %>% 
   select(ID,time,due_num,pair,y,everything())
 # Save data
-save(df,predictors,file = "./Data_Clean/all_timepoints.RData")
+save(df,predictors,file = "./Data_Clean/all_timepoints_combined.RData")
 # Pull data by timepoint
 get_timepoint = function(data = raw_data,time){
   timepoint = paste0("Time_",time)
@@ -51,5 +51,10 @@ time_minus_2 = get_timepoint(time = -2)
 time_minus_3 = get_timepoint(time = -3)
 time_minus_4 = get_timepoint(time = -4)
 # Save data
+save(time_0,file = "./Data_Clean/time_0.RData")
+save(time_minus_1,file = "./Data_Clean/time_minus_1.RData")
+save(time_minus_2,file = "./Data_Clean/time_minus_2.RData")
+save(time_minus_3,file = "./Data_Clean/time_minus_3.RData")
+save(time_minus_4,file = "./Data_Clean/time_minus_4.RData")
 save(time_0,time_minus_1,time_minus_2,time_minus_3,time_minus_4,
-     file = "./Data_Clean/separate_timepoints.RData")
+     file = "./Data_Clean/all_timepoints_separate.RData")
