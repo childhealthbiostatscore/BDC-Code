@@ -1,7 +1,7 @@
 library(tidyverse)
 # Import data
-indir <- "/home/tim/.local/share/Cryptomator/mnt/Vault/Work/Tidepool Test/cleaned_run"
-outdir <- "/home/tim/.local/share/Cryptomator/mnt/Vault/Work/Tidepool Test"
+indir <- "~/Documents/Work/Tidepool Test/cleaned_run"
+outdir <- "~/Documents/Work/Tidepool Test"
 files <- list.files(indir,full.names = T)
 # Make a summary variables table.
 summary <- data.frame(matrix(nrow = length(files),ncol = 0))
@@ -303,7 +303,7 @@ for (f in 1:length(files)) {
     # Check for a carb input within 15 minutes
     bg <- unique(table$bg[which(table$datetime == bgt)])
     bg <- bg[!is.na(bg)][[1]]
-    time.range <- (bgt:(bgt+15*60))
+    time.range <- ((bgt-5*60):(bgt+15*60))
     # Count boluses with no carbs
     if (any(bolus_datetimes %in% time.range) & !any(carb_datetimes %in% time.range)) {
       # Count by BG level
