@@ -22,6 +22,7 @@ library(nlme)
 library(glmmLasso)
 library(parallel)
 library(caret)
+library(glmnet)
 knitr::opts_chunk$set(echo = F,cache = T)
 home_dir = ifelse(.Platform$OS.type != "unix","Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects",
                   "/mnt/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
@@ -78,8 +79,7 @@ outcomes = c("boluses","smg","tir",goal_survey)
 # ID Variables
 id_vars = c("record_id","redcap_event_name","es_datetimecapture")
 # Optimal lambda function = needs id variables, one outcome, and predictors (nothing else)
-lambda_cv = function(df,outcome_name,folds = 5,
-                       lambdas = seq(0,200),core_ratio = 0.5){
+lambda_cv = function(df,outcome_name,folds = 5,core_ratio = 0.5,n_lambda = 50){
   # Make model formula
   pred = colnames(df)[which(!colnames(df) %in% c(outcome_name,id_vars))]
   form = as.formula(paste(outcome_name,"~",paste(pred,collapse = "+")))
@@ -95,6 +95,10 @@ lambda_cv = function(df,outcome_name,folds = 5,
     start_mod$coefficients$random$record_id[,1]
   # Vector of starting values
   start_vals = as.numeric(c(start_mod$coefficients$fixed,start_rand))
+  # Select min and max lambda values to try using cv.glmnet on baseline values
+  t = df %>% group_by(record_id) %>% filter(row_number()==1)
+  lambdas = cv.glmnet(as.matrix(t[,pred]),as.matrix(t[,outcome_name]))$lambda
+  lambdas = seq(min(lambdas),max(lambdas),length.out = n_lambda)
   # Try all the different lambdas
   cl <- makeCluster(detectCores()*core_ratio, type='PSOCK')
   outcome_name = outcome_name
@@ -148,7 +152,7 @@ bolus_morning = bolus_morning[complete.cases(bolus_morning),]
 # CV for lambda values
 # Time this code
 ptm <- proc.time()
-lambda_perf = lambda_cv(df = bolus_morning,outcome_name = "boluses",lambdas = seq(0,10))
+lambda_perf = lambda_cv(df = bolus_morning,outcome_name = "boluses",n_lambda = 20)
 proc.time() - ptm
 best_lambda = lambda_perf$lambda[which.min(lambda_perf[,"RMSE"])]
 ```
