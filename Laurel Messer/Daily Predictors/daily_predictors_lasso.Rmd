@@ -23,14 +23,14 @@ library(glmmLasso)
 library(parallel)
 library(caret)
 knitr::opts_chunk$set(echo = F,cache = T)
-home_dir = ifelse(.Platform$OS.type != "unix","T:/",
+home_dir = ifelse(.Platform$OS.type != "unix","Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects",
                   "/mnt/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
 knitr::opts_knit$set(root.dir = home_dir)
 set.seed(1017)
 ```
 
 ```{r clean data}
-source("~/Documents/GitHub/BDC-Code/Laurel Messer/Daily Predictors/clean_data.r")
+source("~/GitHub/BDC-Code/Laurel Messer/Daily Predictors/clean_data.r")
 # Combine race columns
 race_cols = paste0("pt_race___",1:6)
 races = c("White","Black or African American","American Indian or Alaskan Native",
@@ -78,11 +78,11 @@ outcomes = c("boluses","smg","tir",goal_survey)
 # ID Variables
 id_vars = c("record_id","redcap_event_name","es_datetimecapture")
 # Optimal lambda function = needs id variables, one outcome, and predictors (nothing else)
-lambda_cv = function(df,outcome,metric = "bic",folds = 5,
-                       lambdas = seq(0,200),cores = 8){
+lambda_cv = function(df,outcome_name,folds = 5,
+                       lambdas = seq(0,200),core_ratio = 0.5){
   # Make model formula
-  pred = colnames(df)[which(!colnames(df) %in% c(outcome,id_vars))]
-  form = as.formula(paste(outcome,"~",paste(pred,collapse = "+")))
+  pred = colnames(df)[which(!colnames(df) %in% c(outcome_name,id_vars))]
+  form = as.formula(paste(outcome_name,"~",paste(pred,collapse = "+")))
   # K-fold cross validation
   k = folds
   # Fit a starting model to speed up glmmLasso
@@ -91,11 +91,16 @@ lambda_cv = function(df,outcome,metric = "bic",folds = 5,
   start_rand = matrix(nrow = length(levels(df$record_id)),ncol = 1,
                       dimnames = list(1:length(levels(df$record_id)),"(Intercept)"))
   start_rand[,1] = 0
-  start_rand[rownames(start_mod$coefficients$random$record_id),] = start_mod$coefficients$random$record_id[,1]
+  start_rand[rownames(start_mod$coefficients$random$record_id),] = 
+    start_mod$coefficients$random$record_id[,1]
   # Vector of starting values
   start_vals = as.numeric(c(start_mod$coefficients$fixed,start_rand))
   # Try all the different lambdas
-  cl = makeCluster(cores,type = "FORK")
+  cl <- makeCluster(detectCores()*core_ratio, type='PSOCK')
+  outcome_name = outcome_name
+  clusterExport(cl,list('groupKFold','glmmLasso','R2','RMSE','MAE',
+                        'outcome_name','form','start_vals','lambdas','df','k'),
+                envir=environment())
   metrics = parLapply(cl,lambdas, function(l){
     # Cross validate
     sample <- groupKFold(df$record_id,k = k)
@@ -113,9 +118,9 @@ lambda_cv = function(df,outcome,metric = "bic",folds = 5,
       if(class(mod)!="try-error"){
         # Model performance
         predicted <- predict(mod, test)
-        data.frame(R2 = R2(predicted, test[,outcome]),
-                   RMSE = RMSE(predicted, test[,outcome]),
-                   MAE = MAE(predicted, test[,outcome]))
+        data.frame(R2 = R2(predicted, test[,outcome_name]),
+                   RMSE = RMSE(predicted, test[,outcome_name]),
+                   MAE = MAE(predicted, test[,outcome_name]))
       } else {
         data.frame(R2 = NA,
                    RMSE = NA,
@@ -123,10 +128,11 @@ lambda_cv = function(df,outcome,metric = "bic",folds = 5,
       }
     })
     cv = do.call(rbind,cv)
-    return(colMeans(cv,na.rm = T))
+    return(c(l,colMeans(cv,na.rm = T)))
   })
   stopCluster(cl)
-  metrics = do.call(rbind,metrics)
+  metrics = data.frame(do.call(rbind,metrics))
+  colnames(metrics)[1] = "lambda"
   return(metrics)
 }
 ```
@@ -140,12 +146,11 @@ lambda_cv = function(df,outcome,metric = "bic",folds = 5,
 bolus_morning = data[,c(id_vars,morning_items,"boluses")]
 bolus_morning = bolus_morning[complete.cases(bolus_morning),]
 # CV for lambda values
-lambdas = seq(0,10)
 # Time this code
 ptm <- proc.time()
-lambda_perf = lambda_cv(df = bolus_morning,outcome = "boluses",lambdas = lambdas)
+lambda_perf = lambda_cv(df = bolus_morning,outcome_name = "boluses",lambdas = seq(0,10))
 proc.time() - ptm
-best_lambda = lambdas[which.min(lambda_perf[,"RMSE"])]
+best_lambda = lambda_perf$lambda[which.min(lambda_perf[,"RMSE"])]
 ```
 
 ### Evening survey
