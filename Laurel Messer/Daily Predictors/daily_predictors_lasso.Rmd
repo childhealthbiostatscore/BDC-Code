@@ -24,9 +24,9 @@ library(parallel)
 library(caret)
 library(glmnet)
 library(UpSetR)
-knitr::opts_chunk$set(echo = F,cache = T)
+knitr::opts_chunk$set(echo = F)
 home_dir = ifelse(.Platform$OS.type != "unix","Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects",
-                  "/mnt/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
+                  "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
 knitr::opts_knit$set(root.dir = home_dir)
 set.seed(1017)
 ```
@@ -81,16 +81,17 @@ outcomes = c("boluses","smg","tir",goal_survey)
 id_vars = c("record_id","redcap_event_name","es_datetimecapture")
 # Optimal lambda function = needs id variables, one outcome, and predictors (nothing else)
 lambda_cv = function(df,outcome_name,fam = "gaussian",
-                     folds = 5,core_ratio = 0.5,n_lambda = 20){
+                     folds = 5,core_ratio = 0.75,n_lambda = 100){
   # Make model formula
   pred = colnames(df)[which(!colnames(df) %in% c(outcome_name,id_vars))]
   form = as.formula(paste(outcome_name,"~",paste(pred,collapse = "+")))
   # K-fold cross validation
   k = folds
   # Select min and max lambda values to try using cv.glmnet on baseline values
-  t = df %>% group_by(record_id) %>% filter(row_number()==1)
-  lambdas = cv.glmnet(as.matrix(t[,pred]),as.matrix(t[,outcome_name]),family = fam)$lambda
-  lambdas = seq(min(lambdas),max(lambdas),length.out = n_lambda)
+  # t = df %>% group_by(record_id) %>% filter(row_number()==1)
+  # lambdas = cv.glmnet(as.matrix(t[,pred]),as.matrix(t[,outcome_name]),family = fam)$lambda
+  # lambdas = seq(min(lambdas),max(lambdas),length.out = n_lambda)
+  lambdas = seq(0,10,length.out = 200)
   # Try all the different lambdas
   cl <- makeCluster(detectCores()*core_ratio, type='PSOCK')
   clusterExport(cl,list('groupKFold','glmmLasso','R2','RMSE','MAE',
@@ -136,7 +137,7 @@ lambda_cv = function(df,outcome_name,fam = "gaussian",
 
 ### Number of boluses
 
-```{r echo=TRUE}
+```{r}
 fam = poisson(link = "log")
 # Get morning variables
 bolus_morning = data[,c(id_vars,morning_items,"boluses")]
@@ -181,19 +182,45 @@ smg_morning_coefs = names(smg_morning_mod$coefficients)[
           names(smg_morning_mod$coefficients) != "(Intercept)")]
 ```
 
+### TIR
+
+```{r}
+fam = gaussian()
+# Get morning variables
+tir_morning = data[,c(id_vars,morning_items,"tir")]
+tir_morning = tir_morning[complete.cases(tir_morning),]
+# CV for lambda values
+lambda_perf = lambda_cv(df = tir_morning,outcome_name = "tir",
+                        fam = fam)
+best_lambda = lambda_perf$lambda[which.min(lambda_perf$RMSE)]
+# Fit model
+form = as.formula(paste0("tir~",paste0(morning_items,collapse = "+")))
+tir_morning_mod = suppressWarnings(
+  glmmLasso(form, rnd = list(record_id=~1),
+            family = fam,data = tir_morning,lambda=best_lambda)
+)
+# Get coefficients
+tir_morning_coefs = names(tir_morning_mod$coefficients)[
+  which(tir_morning_mod$coefficients != 0 & 
+          names(tir_morning_mod$coefficients) != "(Intercept)")]
+```
+
 ### Upset plot
 
 ```{r}
 # Format output
 selected = do.call(rbind,list(
   morning_items %in% bolus_morning_coefs,
-  morning_items %in% smg_morning_coefs
+  morning_items %in% smg_morning_coefs,
+  morning_items %in% tir_morning_coefs
 ))
 colnames(selected) = morning_items
 selected = data.frame(apply(selected,2,as.numeric))
 # Plot
-upset(selected, sets = morning_items, order.by = "freq", empty.intersections = "on")
+upset(selected, sets = morning_items, order.by = "freq")
 ```
+
+
 
 ## Evening survey
 
