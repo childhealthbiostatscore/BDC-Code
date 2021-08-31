@@ -80,11 +80,24 @@ outcomes = c("boluses","smg","tir",goal_survey)
 # ID Variables
 id_vars = c("record_id","redcap_event_name","es_datetimecapture")
 # Optimal lambda function = needs id variables, one outcome, and predictors (nothing else)
-lambda_cv = function(df,outcome_name,fam = "gaussian",lambdas,
-                     folds = 5,core_ratio = 0.75){
+lambda_cv = function(df,outcome_name,fam = "gaussian",n_lambda = 200,folds = 5,
+                     core_ratio = 0.75,num_coef_higher = 10){
   # Make model formula
   pred = colnames(df)[which(!colnames(df) %in% c(outcome_name,id_vars))]
   form = as.formula(paste(outcome_name,"~",paste(pred,collapse = "+")))
+  # Find lambda starting values
+  starts = seq(0,5000,by = 100)
+  lambda_start = lapply(starts, function(l){
+    mod <- try(suppressWarnings(glmmLasso(form, rnd = list(record_id=~1),
+                                          family = fam,
+                                          data = df,lambda=l)),
+               silent = T)
+    num_coefs = ifelse(class(mod)!="try-error",sum(coef(mod) != 0),NA)
+  })
+  lambda_start = data.frame("starts" = starts,"coefs" = unlist(lambda_start))
+  max_lambda = lambda_start$starts[min(which(lambda_start[,2] <= num_coef_higher))]
+  min_lambda = lambda_start$starts[max(which(lambda_start[,2] == length(pred)))]
+  lambdas = seq(min_lambda,max_lambda,length.out = n_lambda)
   # K-fold cross validation
   k = folds
   # Try lots of different lambdas
@@ -92,7 +105,7 @@ lambda_cv = function(df,outcome_name,fam = "gaussian",lambdas,
   clusterExport(cl,list('groupKFold','glmmLasso','R2','RMSE','MAE',
                         'outcome_name','form','lambdas','df','k','fam'),
                 envir=environment())
-  metrics = parLapply(cl,lambdas, function(l){
+  metrics = parLapply(cl,lambdas,function(l){
     # Cross validate
     sample <- groupKFold(df$record_id,k = k)
     cv = lapply(sample, function(s){
@@ -157,8 +170,7 @@ fam = poisson(link = "log")
 bolus_morning = data[,c(id_vars,morning_items,"boluses")]
 bolus_morning = bolus_morning[complete.cases(bolus_morning),]
 # CV for lambda values
-lambda_perf = lambda_cv(df = bolus_morning,outcome_name = "boluses",fam = fam,
-                        lambdas = seq(0,200,by = 1))
+lambda_perf = lambda_cv(df = bolus_morning,outcome_name = "boluses",fam = fam)
 best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
 # Fit model
 form = as.formula(paste0("boluses~",paste0(morning_items,collapse = "+")))
@@ -180,8 +192,7 @@ fam = gaussian()
 smg_morning = data[,c(id_vars,morning_items,"smg")]
 smg_morning = smg_morning[complete.cases(smg_morning),]
 # CV for lambda values
-lambda_perf = lambda_cv(df = smg_morning,outcome_name = "smg",fam = fam,
-                        lambdas = seq(3000,4500,length.out = 200))
+lambda_perf = lambda_cv(df = smg_morning,outcome_name = "smg",fam = fam)
 best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
 # Fit model
 form = as.formula(paste0("smg~",paste0(morning_items,collapse = "+")))
@@ -203,8 +214,7 @@ fam = gaussian()
 tir_morning = data[,c(id_vars,morning_items,"tir")]
 tir_morning = tir_morning[complete.cases(tir_morning),]
 # CV for lambda values
-lambda_perf = lambda_cv(df = tir_morning,outcome_name = "tir",fam = fam,
-                        lambdas = seq(1500,2000,length.out = 200))
+lambda_perf = lambda_cv(df = tir_morning,outcome_name = "tir",fam = fam)
 best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
 # Fit model
 form = as.formula(paste0("tir~",paste0(morning_items,collapse = "+")))
