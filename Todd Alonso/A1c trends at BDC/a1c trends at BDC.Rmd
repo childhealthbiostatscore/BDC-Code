@@ -7,7 +7,7 @@ output:
     number_sections: yes
     theme: readable
     toc: yes
-    toc_depth: 2
+    toc_depth: 3
     toc_float: yes
 ---
 
@@ -21,6 +21,9 @@ library(dplyr)
 library(tidyr)
 library(nlme)
 library(ggplot2)
+library(performance)
+library(car)
+library(lme4)
 
 patientdata <- read_excel("T:\\Todd Alonso\\A1c trends at BDC\\A1cTrendsAtBDC_PatientLevel_03162021_stupdates_mas072321.xlsx",na=c("","NA","NULL"))
 patientdata <- unique(patientdata)
@@ -46,6 +49,9 @@ alldata$visityear <- format(alldata$VisitDate,format = "%Y")
 # exclude visityear 2011 and 2012
 alldata <- alldata[!alldata$visityear %in% c(2011,2012),]
 
+# exclude visityear 2020
+alldata <- alldata[!alldata$visityear==2020,]
+
 # create simpler race/ethnicity variable
 alldata$Race_Ethnicity_combined <- ifelse(alldata$Race_Ethnicity=="Hispanic","Hispanic",
                                           ifelse(alldata$Race_Ethnicity=="Non-Hispanic White","Non-Hispanic White","Other"))
@@ -66,8 +72,18 @@ a1c_year <- a1c_year[,c("EPICMRN","visityear","A1c_Mean")]
 alldata <- merge(alldata,a1c_year,by=c("EPICMRN","visityear"),all.x = T,all.y=T)
 
 # categorize the mean A1c value for the year as <6%, 6-12%, or 12%
-alldata$A1c_Mean_cat <- ifelse(alldata$A1c_Mean<6,"<6%",
-                               ifelse(alldata$A1c_Mean>12,">12%","6-12%"))
+alldata$A1c_Mean_cat <- ifelse(is.na(alldata$A1c_Mean),NA,
+                               ifelse(alldata$A1c_Mean<6,"<6%",
+                               ifelse(alldata$A1c_Mean>12,">12%","6-12%")))
+
+# categorize the mean A1c value for the year as <6%, 6-12%, or 12%
+alldata$A1c_Mean_cat2 <- ifelse(is.na(alldata$A1c_Mean),NA,
+                               ifelse(alldata$A1c_Mean<7,"<7%",
+                               ifelse(alldata$A1c_Mean>=7 & alldata$A1c_Mean<9,"7 - <9%",
+                                      ifelse(alldata$A1c_Mean>=9 & alldata$A1c_Mean<12,"9 - <12%",">=12%"))))
+
+# categorical variable for mean A1c >=12
+alldata$A1c_Mean_cat12 <- ifelse(alldata$A1c_Mean_cat==">12%",1,0)
 
 # count number of visits per year
 visittemp <- alldata[,c("EPICMRN","visityear")]
@@ -108,8 +124,9 @@ dat2016 <- alldata[alldata$visityear==2016,] %>% group_by(EPICMRN) %>% filter(ro
 dat2017 <- alldata[alldata$visityear==2017,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
 dat2018 <- alldata[alldata$visityear==2018,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
 dat2019 <- alldata[alldata$visityear==2019,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
-dat2020 <- alldata[alldata$visityear==2020,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
-demo_by_year <- rbind(dat2013,dat2014,dat2015,dat2016,dat2017,dat2018,dat2019,dat2020)
+#dat2020 <- alldata[alldata$visityear==2020,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
+#demo_by_year <- rbind(dat2013,dat2014,dat2015,dat2016,dat2017,dat2018,dat2019,dat2020)
+demo_by_year <- rbind(dat2013,dat2014,dat2015,dat2016,dat2017,dat2018,dat2019)
 
 # make a new df that will have every year for every patient
 # create variable for whether the patient was seen at least once in the last year, starting at their first visit
@@ -139,9 +156,11 @@ dat2016_expand <- alldata_expand[alldata_expand$visityear==2016,] %>% group_by(E
 dat2017_expand <- alldata_expand[alldata_expand$visityear==2017,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
 dat2018_expand <- alldata_expand[alldata_expand$visityear==2018,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
 dat2019_expand <- alldata_expand[alldata_expand$visityear==2019,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
-dat2020_expand <- alldata_expand[alldata_expand$visityear==2020,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
+#dat2020_expand <- alldata_expand[alldata_expand$visityear==2020,] %>% group_by(EPICMRN) %>% filter(row_number()==1)
+#demo_by_year_expand <- rbind(dat2013_expand,dat2014_expand,dat2015_expand,dat2016_expand,dat2017_expand,dat2018_expand,
+#                             dat2019_expand,dat2020_expand)
 demo_by_year_expand <- rbind(dat2013_expand,dat2014_expand,dat2015_expand,dat2016_expand,dat2017_expand,dat2018_expand,
-                             dat2019_expand,dat2020_expand)
+                             dat2019_expand)
 demo_by_year_expand <- demo_by_year_expand %>% arrange(EPICMRN,visityear)
 
 # box plot of mean A1c by age
@@ -174,9 +193,35 @@ t5 <- CreateTableOne(data=demo_by_year_expand[demo_by_year_expand$A1c_Mean_cat==
                                               & demo_by_year_expand$visityear!=2013,],vars="visit_last_year",strata="visityear")
 t5 <- print(t5)
 
+# table of patients with mean A1c <7% in a given year, and whether they had a visit the prior year
+t6 <- CreateTableOne(data=demo_by_year_expand[demo_by_year_expand$A1c_Mean_cat2=="<7%"
+                                              & demo_by_year_expand$visityear!=2013,],vars="visit_last_year",strata="visityear")
+t6 <- print(t6)
+
+# table of patients with mean A1c 7-9% in a given year, and whether they had a visit the prior year
+t7 <- CreateTableOne(data=demo_by_year_expand[demo_by_year_expand$A1c_Mean_cat2=="7 - <9%"
+                                              & demo_by_year_expand$visityear!=2013,],vars="visit_last_year",strata="visityear")
+t7 <- print(t7)
+
+# table of patients with mean A1c 9-12% in a given year, and whether they had a visit the prior year
+t8 <- CreateTableOne(data=demo_by_year_expand[demo_by_year_expand$A1c_Mean_cat2=="9 - <12%"
+                                              & demo_by_year_expand$visityear!=2013,],vars="visit_last_year",strata="visityear")
+t8 <- print(t8)
+
+# table of patients with mean A1c >12% in a given year, and whether they had a visit the prior year
+t9 <- CreateTableOne(data=demo_by_year_expand[demo_by_year_expand$A1c_Mean_cat2==">=12%"
+                                              & demo_by_year_expand$visityear!=2013,],vars="visit_last_year",strata="visityear")
+t9 <- print(t9)
+
+# table of number of visits per year in those with mean A1c >12%
+t10 <- CreateTableOne(data=demo_by_year_expand[demo_by_year_expand$A1c_Mean_cat2==">=12%"
+                                              & demo_by_year_expand$visityear!=2013,],vars="visitcount",strata="visityear")
+t10 <- print(t10)
+
+
 # mixed model of mean A1c by year
 mod <- lme(A1c_Mean ~ visityear + Race_Ethnicity_combined + Language_combined + InsuranceCategory_combined + DiabetesDuration_A1cResultDate +
-             a1c_agecat + DKAAtOnset + CGM + pump + visitcount,
+             a1c_agecat + DKAAtOnset + CGM + pump + visitcount + visitcount*visityear,
            random=~1|EPICMRN,data = demo_by_year_expand[demo_by_year_expand$visityear!=2013 & 
                                                 demo_by_year_expand$visityear != 2020,],na.action = na.omit)
 mod_anova <- anova.lme(mod, type="marginal")
@@ -184,6 +229,44 @@ mod_anova <- anova.lme(mod, type="marginal")
 # use emmeans 
 #amtime_mod_means <- emmeans::emmeans(amtime_mod,"gyl_timepoint.factor")
 #amtime_mod_pairs <-  pairs(amtime_mod_means,adjust="tukey")
+
+# what predicts A1c>12 in year 2014
+log2014 <- glm(A1c_Mean_cat12 ~ Race_Ethnicity_combined + Language_combined + InsuranceCategory_combined + DiabetesDuration_A1cResultDate +
+             a1c_agecat + DKAAtOnset + CGM + pump + visitcount,data = demo_by_year_expand[demo_by_year_expand$visityear==2014,],
+             family = "binomial")
+log2014_anova <- Anova(log2014,type="III")
+
+log2015 <- glm(A1c_Mean_cat12 ~ Race_Ethnicity_combined + Language_combined + InsuranceCategory_combined + DiabetesDuration_A1cResultDate +
+             a1c_agecat + DKAAtOnset + CGM + pump + visitcount,data = demo_by_year_expand[demo_by_year_expand$visityear==2015,],
+             family = "binomial")
+log2015_anova <- Anova(log2015,type="III")
+
+log2016 <- glm(A1c_Mean_cat12 ~ Race_Ethnicity_combined + Language_combined + InsuranceCategory_combined + DiabetesDuration_A1cResultDate +
+             a1c_agecat + DKAAtOnset + CGM + pump + visitcount,data = demo_by_year_expand[demo_by_year_expand$visityear==2016,],
+             family = "binomial")
+log2016_anova <- Anova(log2016,type="III")
+
+log2017 <- glm(A1c_Mean_cat12 ~ Race_Ethnicity_combined + Language_combined + InsuranceCategory_combined + DiabetesDuration_A1cResultDate +
+             a1c_agecat + DKAAtOnset + CGM + pump + visitcount,data = demo_by_year_expand[demo_by_year_expand$visityear==2017,],
+             family = "binomial")
+log2017_anova <- Anova(log2017,type="III")
+
+log2018 <- glm(A1c_Mean_cat12 ~ Race_Ethnicity_combined + Language_combined + InsuranceCategory_combined + DiabetesDuration_A1cResultDate +
+             a1c_agecat + DKAAtOnset + CGM + pump + visitcount,data = demo_by_year_expand[demo_by_year_expand$visityear==2018,],
+             family = "binomial")
+log2018_anova <- Anova(log2018,type="III")
+
+log2019 <- glm(A1c_Mean_cat12 ~ Race_Ethnicity_combined + Language_combined + InsuranceCategory_combined + DiabetesDuration_A1cResultDate +
+             a1c_agecat + DKAAtOnset + CGM + pump + visitcount,data = demo_by_year_expand[demo_by_year_expand$visityear==2019,],
+             family = "binomial")
+log2019_anova <- Anova(log2019,type="III")
+
+# could do a GLMM with interaction between each term and year
+#glmermod <- glmer(A1c_Mean_cat12 ~ Race_Ethnicity_combined|visityear + Language_combined|visityear + InsuranceCategory_combined|visityear 
+#                  + DiabetesDuration_A1cResultDate|visityear + a1c_agecat|visityear + DKAAtOnset|visityear + CGM|visityear + pump|visityear 
+#                  + visitcount|visityear  + (1 | EPICMRN),data = demo_by_year_expand,
+#             family = binomial,verbose = T)
+#glmermod_anova <- Anova(glmermod,type="III")
 
 ```
 
@@ -207,15 +290,23 @@ The following data manipulation steps were performed:
 
 - A variable was created to indicate whether each patient had a visit during the calendar year, beginning with the year of their first visit.
 
-Descriptive statistics reported are mean/SD and frequency/percentage.  Years and patient groups were compared using linear models for continuous variables and chi-square tests for categorical variables.  A mixed-effects model was used to model factors associated with HbA1c over time.
+Descriptive statistics reported are mean/SD and frequency/percentage.  Years and patient groups were compared using linear models for continuous variables and chi-square tests for categorical variables.  A mixed-effects model was used to model factors associated with HbA1c over time.  Logistic regression was used to examine variables associated with having a mean HbA1c >12%.
 
 Changes since original report:
 
 - Updated dataset
 
+- Excluded 2020
+
 - Coded insulin regmimen as pump/no-pump
 
 - Categorized age as: <6, 6-<12, 12-<18, 18-<22, >=22 and used that variable in the mixed model.
+
+- Added second variable categorizing A1c as <7%, 7 - <9%, 9 - <12%, >=12%
+
+- Added interaction between year and visit count to mixed model
+
+- Added logistic models examining factors associated with having A1c>12%
 
 # Results
 
@@ -262,11 +353,111 @@ kable(t5)
 ```
 <br>
 
+## Percentage of patients with mean A1c <7% in a given year who had a visit in the prior year.
+
+Note: the N reported in the first row is the total number of patients with mean A1c <7% in each year. Patients who had not yet had their first visit by the year prior have a missing value for the variable indicating whether they had a visit in the prior year, so the denominator for the percentages is the number of patients with mean A1c <7% and who had their first visit by the prior year.
+
+```{r echo=FALSE}
+kable(t6)
+```
+<br>
+
+## Percentage of patients with mean A1c 7 - <9% in a given year who had a visit in the prior year.
+
+Note: the N reported in the first row is the total number of patients with mean A1c 7 - <9% in each year. Patients who had not yet had their first visit by the year prior have a missing value for the variable indicating whether they had a visit in the prior year, so the denominator for the percentages is the number of patients with mean A1c 7 - <9% and who had their first visit by the prior year.
+
+```{r echo=FALSE}
+kable(t7)
+```
+<br>
+
+## Percentage of patients with mean A1c 9 - <12% in a given year who had a visit in the prior year.
+
+Note: the N reported in the first row is the total number of patients with mean A1c 9 - <12% in each year. Patients who had not yet had their first visit by the year prior have a missing value for the variable indicating whether they had a visit in the prior year, so the denominator for the percentages is the number of patients with mean A1c 9 - <12% and who had their first visit by the prior year.
+
+```{r echo=FALSE}
+kable(t8)
+```
+<br>
+
+## Percentage of patients with mean A1c >12% in a given year who had a visit in the prior year.
+
+Note: the N reported in the first row is the total number of patients with mean A1c >12% in each year. Patients who had not yet had their first visit by the year prior have a missing value for the variable indicating whether they had a visit in the prior year, so the denominator for the percentages is the number of patients with mean A1c >12% and who had their first visit by the prior year.
+
+```{r echo=FALSE}
+kable(t9)
+```
+<br>
+
+## Mean number of visits per year for patients with mean A1c >12% in a given year.
+
+```{r echo=FALSE}
+kable(t10)
+```
+<br>
+
 ## Mixed-effects model for mean A1c by year.
 
 ```{r echo=FALSE,comment=''}
 kable(mod_anova)
 
 summary(mod)
+```
+<br>
+
+## Models examining predictors of having mean A1c >12% by year
+
+
+### 2014
+
+```{r echo=FALSE,comment=''}
+kable(log2014_anova)
+
+summary(log2014)
+```
+<br>
+
+### 2015
+
+```{r echo=FALSE,comment=''}
+kable(log2015_anova)
+
+summary(log2015)
+```
+<br>
+
+### 2016
+
+```{r echo=FALSE,comment=''}
+kable(log2016_anova)
+
+summary(log2016)
+```
+<br>
+
+### 2017
+
+```{r echo=FALSE,comment=''}
+kable(log2017_anova)
+
+summary(log2017)
+```
+<br>
+
+### 2018
+
+```{r echo=FALSE,comment=''}
+kable(log2018_anova)
+
+summary(log2018)
+```
+<br>
+
+### 2019
+
+```{r echo=FALSE,comment=''}
+kable(log2019_anova)
+
+summary(log2019)
 ```
 <br>
