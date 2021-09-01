@@ -24,7 +24,7 @@ library(parallel)
 library(caret)
 library(glmnet)
 library(UpSetR)
-knitr::opts_chunk$set(echo = F)
+knitr::opts_chunk$set(echo = F,cache = T)
 home_dir = ifelse(.Platform$OS.type != "unix","Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects",
                   "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
 knitr::opts_knit$set(root.dir = home_dir)
@@ -45,6 +45,30 @@ data$age = as.numeric(ymd(data$pt_visit_date) - ymd(data$pt_dob))/365.25
 data$duration = as.numeric(ymd(data$pt_visit_date) - ymd(data$dxdate))/365.25
 # ID as factor for glmmLasso
 data$record_id = as.factor(data$record_id)
+# Correlation between engagement survey items and subscores and:
+#   Number of insulin boluses
+#   Average glucose level
+#   Percent time glucose levels 70-180 mg/dl (“Time-in-Range”, TIR)
+#   Goal Survey Scores
+morning_items = colnames(data)[grep("esq\\d+$",colnames(data))]
+evening_items = colnames(data)[grep("esq\\d+_eve$",colnames(data))]
+# Outcomes
+goal_survey = c("n_highalerts","dm_caretime","dm_thinktime","gsq1","gsq2","gsq3")
+outcomes = c("boluses","smg","tir",goal_survey)
+# ID Variables
+id_vars = c("record_id","redcap_event_name","date")
+# Combine date columns
+data$es_date = as.Date.character(lubridate::ymd_hm(data$es_datetimecapture))
+data$es_date_eve = as.Date.character(lubridate::ymd_hm(data$es_datetimecapture_eve))
+data = data %>% unite(date,dmi_date,es_date,es_date_eve,remove = F,na.rm = T)
+data$date = sapply(strsplit(data$date,"_"),function(x){
+  ifelse(length(x)==0,NA,
+         unique(strsplit(x,"_")[[1]]))
+})
+# Fill outcome in by date
+data = data %>% group_by(record_id,date) %>%
+  fill(all_of(outcomes),.direction = "downup") %>%
+  ungroup()
 ```
 
 # Participant Characteristics
@@ -67,21 +91,11 @@ summary(t1,labelTranslations = new_labels)
 # Regularization (LASSO) Results
 
 ```{r}
-# Correlation between engagement survey items and subscores and:
-#   Number of insulin boluses
-#   Average glucose level
-#   Percent time glucose levels 70-180 mg/dl (“Time-in-Range”, TIR)
-#   Goal Survey Scores
-morning_items = colnames(data)[grep("esq\\d+$",colnames(data))]
-evening_items = colnames(data)[grep("esq\\d+_eve$",colnames(data))]
-# Outcomes
-goal_survey = c("n_highalerts","dm_caretime","dm_thinktime","gsq1","gsq2","gsq3")
-outcomes = c("boluses","smg","tir",goal_survey)
-# ID Variables
-id_vars = c("record_id","redcap_event_name","es_datetimecapture")
 # Optimal lambda function = needs id variables, one outcome, and predictors (nothing else)
 lambda_cv = function(df,outcome_name,fam = "gaussian",n_lambda = 200,folds = 5,
                      core_ratio = 0.75,num_coef_higher = 10){
+  # Convert to dataframe since these functions can't handle tibbles
+  df = data.frame(df)
   # Make model formula
   pred = colnames(df)[which(!colnames(df) %in% c(outcome_name,id_vars))]
   form = as.formula(paste(outcome_name,"~",paste(pred,collapse = "+")))
