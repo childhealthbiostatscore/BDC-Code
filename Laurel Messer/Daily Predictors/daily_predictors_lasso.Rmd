@@ -80,24 +80,32 @@ outcomes = c("boluses","smg","tir",goal_survey)
 # ID Variables
 id_vars = c("record_id","redcap_event_name","es_datetimecapture")
 # Optimal lambda function = needs id variables, one outcome, and predictors (nothing else)
-lambda_cv = function(df,outcome_name,fam = "gaussian",
-                     folds = 5,core_ratio = 0.75,n_lambda = 100){
+lambda_cv = function(df,outcome_name,fam = "gaussian",n_lambda = 200,folds = 5,
+                     core_ratio = 0.75,num_coef_higher = 10){
   # Make model formula
   pred = colnames(df)[which(!colnames(df) %in% c(outcome_name,id_vars))]
   form = as.formula(paste(outcome_name,"~",paste(pred,collapse = "+")))
+  # Find lambda starting values
+  starts = seq(0,5000,by = 100)
+  lambda_start = lapply(starts, function(l){
+    mod <- try(suppressWarnings(glmmLasso(form, rnd = list(record_id=~1),
+                                          family = fam,
+                                          data = df,lambda=l)),
+               silent = T)
+    num_coefs = ifelse(class(mod)!="try-error",sum(coef(mod) != 0),NA)
+  })
+  lambda_start = data.frame("starts" = starts,"coefs" = unlist(lambda_start))
+  max_lambda = lambda_start$starts[min(which(lambda_start[,2] <= num_coef_higher))]
+  min_lambda = lambda_start$starts[max(which(lambda_start[,2] == length(pred)))]
+  lambdas = seq(min_lambda,max_lambda,length.out = n_lambda)
   # K-fold cross validation
   k = folds
-  # Select min and max lambda values to try using cv.glmnet on baseline values
-  # t = df %>% group_by(record_id) %>% filter(row_number()==1)
-  # lambdas = cv.glmnet(as.matrix(t[,pred]),as.matrix(t[,outcome_name]),family = fam)$lambda
-  # lambdas = seq(min(lambdas),max(lambdas),length.out = n_lambda)
-  lambdas = seq(0,100,length.out = 100)
-  # Try all the different lambdas
+  # Try lots of different lambdas
   cl <- makeCluster(detectCores()*core_ratio, type='PSOCK')
   clusterExport(cl,list('groupKFold','glmmLasso','R2','RMSE','MAE',
                         'outcome_name','form','lambdas','df','k','fam'),
                 envir=environment())
-  metrics = parLapply(cl,lambdas, function(l){
+  metrics = parLapply(cl,lambdas,function(l){
     # Cross validate
     sample <- groupKFold(df$record_id,k = k)
     cv = lapply(sample, function(s){
@@ -106,7 +114,6 @@ lambda_cv = function(df,outcome_name,fam = "gaussian",
       # Test set
       test <- df[-s, ]
       # Fit - fairly different model results with REML vs. EM, but REML is really slow.
-      # Use EM for cross validation, REML for final model fit.
       mod <- try(suppressWarnings(glmmLasso(form, rnd = list(record_id=~1),
                                             family = fam,
                                             data = train,lambda=l)),
@@ -124,12 +131,32 @@ lambda_cv = function(df,outcome_name,fam = "gaussian",
       }
     })
     cv = do.call(rbind,cv)
-    return(c(l,colMeans(cv,na.rm = T)))
+    # Fit again to get final number of coefficients
+    mod <- try(suppressWarnings(glmmLasso(form, rnd = list(record_id=~1),
+                                          family = fam,
+                                          data = df,lambda=l)),
+               silent = T)
+    num_coefs = ifelse(class(mod)!="try-error",sum(coef(mod) != 0),NA)
+    return(c(l,colMeans(cv,na.rm = T),num_coefs))
   })
   stopCluster(cl)
   metrics = data.frame(do.call(rbind,metrics))
   colnames(metrics)[1] = "lambda"
+  colnames(metrics)[5] = "num_coefs"
   return(metrics)
+}
+# Find lambda values where the performance is within 1 SD of the minimum and number of 
+# coefficients is between user-specified bounds. Of these, pick the lambda with 
+# the minimum error.
+best_lambdas = function(perf_metrics = lambda_perf,metric = "RMSE",
+                        num_coef_lower = 1,num_coef_higher = 10){
+  m = min(perf_metrics[,metric],na.rm = T)
+  s = sd(perf_metrics[,metric],na.rm = T)
+  sd1 = which(perf_metrics[,metric] >= m - s & perf_metrics[,metric] >= m + s &
+                perf_metrics[,"num_coefs"] <= num_coef_higher & 
+                perf_metrics[,"num_coefs"] >= num_coef_lower)
+  final = sd1[which.min(perf_metrics[sd1,metric])]
+  return(perf_metrics$lambda[final])
 }
 ```
 
@@ -143,38 +170,35 @@ fam = poisson(link = "log")
 bolus_morning = data[,c(id_vars,morning_items,"boluses")]
 bolus_morning = bolus_morning[complete.cases(bolus_morning),]
 # CV for lambda values
-lambda_perf = lambda_cv(df = bolus_morning,outcome_name = "boluses",
-                        fam = fam)
-best_lambda = lambda_perf$lambda[which.min(lambda_perf$RMSE)]
+lambda_perf = lambda_cv(df = bolus_morning,outcome_name = "boluses",fam = fam)
+best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
 # Fit model
 form = as.formula(paste0("boluses~",paste0(morning_items,collapse = "+")))
 bolus_morning_mod = suppressWarnings(
   glmmLasso(form, rnd = list(record_id=~1),family = fam,
-            data = bolus_morning,lambda=best_lambda)
+            data = bolus_morning,lambda=best)
 )
 # Get coefficients
 bolus_morning_coefs = names(bolus_morning_mod$coefficients)[
   which(bolus_morning_mod$coefficients != 0 & 
           names(bolus_morning_mod$coefficients) != "(Intercept)")]
-
 ```
 
 ### SMG
 
-```{r echo=TRUE}
+```{r}
 fam = gaussian()
 # Get morning variables
 smg_morning = data[,c(id_vars,morning_items,"smg")]
 smg_morning = smg_morning[complete.cases(smg_morning),]
 # CV for lambda values
-lambda_perf = lambda_cv(df = smg_morning,outcome_name = "smg",
-                        fam = fam)
-best_lambda = lambda_perf$lambda[which.min(lambda_perf$RMSE)]
+lambda_perf = lambda_cv(df = smg_morning,outcome_name = "smg",fam = fam)
+best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
 # Fit model
 form = as.formula(paste0("smg~",paste0(morning_items,collapse = "+")))
 smg_morning_mod = suppressWarnings(
-  glmmLasso(form, rnd = list(record_id=~1),
-            family = fam,data = smg_morning,lambda=best_lambda)
+  glmmLasso(form, rnd = list(record_id=~1),family = fam,
+            data = smg_morning,lambda=best)
 )
 # Get coefficients
 smg_morning_coefs = names(smg_morning_mod$coefficients)[
@@ -190,14 +214,13 @@ fam = gaussian()
 tir_morning = data[,c(id_vars,morning_items,"tir")]
 tir_morning = tir_morning[complete.cases(tir_morning),]
 # CV for lambda values
-lambda_perf = lambda_cv(df = tir_morning,outcome_name = "tir",
-                        fam = fam)
-best_lambda = lambda_perf$lambda[which.min(lambda_perf$RMSE)]
+lambda_perf = lambda_cv(df = tir_morning,outcome_name = "tir",fam = fam)
+best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
 # Fit model
 form = as.formula(paste0("tir~",paste0(morning_items,collapse = "+")))
 tir_morning_mod = suppressWarnings(
-  glmmLasso(form, rnd = list(record_id=~1),
-            family = fam,data = tir_morning,lambda=best_lambda)
+  glmmLasso(form, rnd = list(record_id=~1),family = fam,
+            data = tir_morning,lambda=best)
 )
 # Get coefficients
 tir_morning_coefs = names(tir_morning_mod$coefficients)[
@@ -217,12 +240,91 @@ selected = do.call(rbind,list(
 colnames(selected) = morning_items
 selected = data.frame(apply(selected,2,as.numeric))
 # Plot
-upset(selected, sets = morning_items, order.by = "freq")
+upset(selected, order.by = "freq")
 ```
 
-
-
 ## Evening survey
+
+### Number of boluses
+
+```{r}
+fam = poisson(link = "log")
+# Get evening variables
+bolus_evening = data[,c(id_vars,evening_items,"boluses")]
+bolus_evening = bolus_evening[complete.cases(bolus_evening),]
+# CV for lambda values
+lambda_perf = lambda_cv(df = bolus_evening,outcome_name = "boluses",fam = fam)
+best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
+# Fit model
+form = as.formula(paste0("boluses~",paste0(evening_items,collapse = "+")))
+bolus_evening_mod = suppressWarnings(
+  glmmLasso(form, rnd = list(record_id=~1),family = fam,
+            data = bolus_evening,lambda=best)
+)
+# Get coefficients
+bolus_evening_coefs = names(bolus_evening_mod$coefficients)[
+  which(bolus_evening_mod$coefficients != 0 & 
+          names(bolus_evening_mod$coefficients) != "(Intercept)")]
+```
+
+### SMG
+
+```{r}
+fam = gaussian()
+# Get evening variables
+smg_evening = data[,c(id_vars,evening_items,"smg")]
+smg_evening = smg_evening[complete.cases(smg_evening),]
+# CV for lambda values
+lambda_perf = lambda_cv(df = smg_evening,outcome_name = "smg",fam = fam)
+best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
+# Fit model
+form = as.formula(paste0("smg~",paste0(evening_items,collapse = "+")))
+smg_evening_mod = suppressWarnings(
+  glmmLasso(form, rnd = list(record_id=~1),family = fam,
+            data = smg_evening,lambda=best)
+)
+# Get coefficients
+smg_evening_coefs = names(smg_evening_mod$coefficients)[
+  which(smg_evening_mod$coefficients != 0 & 
+          names(smg_evening_mod$coefficients) != "(Intercept)")]
+```
+
+### TIR
+
+```{r}
+fam = gaussian()
+# Get evening variables
+tir_evening = data[,c(id_vars,evening_items,"tir")]
+tir_evening = tir_evening[complete.cases(tir_evening),]
+# CV for lambda values
+lambda_perf = lambda_cv(df = tir_evening,outcome_name = "tir",fam = fam)
+best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
+# Fit model
+form = as.formula(paste0("tir~",paste0(evening_items,collapse = "+")))
+tir_evening_mod = suppressWarnings(
+  glmmLasso(form, rnd = list(record_id=~1),family = fam,
+            data = tir_evening,lambda=best)
+)
+# Get coefficients
+tir_evening_coefs = names(tir_evening_mod$coefficients)[
+  which(tir_evening_mod$coefficients != 0 & 
+          names(tir_evening_mod$coefficients) != "(Intercept)")]
+```
+
+### Upset plot
+
+```{r}
+# Format output
+selected = do.call(rbind,list(
+  evening_items %in% bolus_evening_coefs,
+  evening_items %in% smg_evening_coefs,
+  evening_items %in% tir_evening_coefs
+))
+colnames(selected) = evening_items
+selected = data.frame(apply(selected,2,as.numeric))
+# Plot
+upset(selected, order.by = "freq")
+```
 
 
 
