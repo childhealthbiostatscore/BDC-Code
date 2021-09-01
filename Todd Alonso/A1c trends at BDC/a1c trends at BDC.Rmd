@@ -20,10 +20,14 @@ library(tableone)
 library(dplyr)
 library(tidyr)
 library(nlme)
+library(ggplot2)
 
 patientdata <- read_excel("T:\\Todd Alonso\\A1c trends at BDC\\A1cTrendsAtBDC_PatientLevel_03162021_stupdates_mas072321.xlsx",na=c("","NA","NULL"))
 patientdata <- unique(patientdata)
 # no dups
+
+# fix onset date for 1 patient
+patientdata[patientdata$EPICMRN==1412180,]$OnsetDate <- as.Date("2008-11-08")
 
 visitdata <- read_excel("T:\\Todd Alonso\\A1c trends at BDC\\A1cTrendsAtBDC_VisitLevel_03162021_stupdates.xlsx",na=c("","NA","NULL"))
 visitdata <- unique(visitdata)
@@ -81,6 +85,16 @@ colnames(firstvisit) <- c("EPICMRN","firstvisit")
 alldata$InsuranceCategory_combined <- ifelse(alldata$InsuranceCategory=="Medicaid","Public",
                                              ifelse(alldata$InsuranceCategory %in% c("Private","Military Plans"),"Private","Unknown"))
 
+# create new variable for pump/no pump
+alldata$pump <- as.factor(ifelse(is.na(alldata$InsulinRegimen),NA,ifelse(alldata$InsulinRegimen=="Insulin Pump",1,0)))
+
+# create categorical age variable
+alldata$a1c_agecat <- ifelse(is.na(alldata$Age_A1cResultDate),NA,
+                             ifelse(alldata$Age_A1cResultDate<6,"<6 years",
+                                    ifelse(alldata$Age_A1cResultDate>=6 & alldata$Age_A1cResultDate<12,"6 - <12 years",
+                                           ifelse(alldata$Age_A1cResultDate>=12 & alldata$Age_A1cResultDate<18,"12 - <18 years",
+                                                  ifelse(alldata$Age_A1cResultDate>= 18 & alldata$Age_A1cResultDate<22,"18 - <22 years",">=22 years")))))
+  
 # sort by EPICMRN and visit data
 alldata <- alldata[with(alldata,order(EPICMRN,VisitDate)),]
 
@@ -130,9 +144,12 @@ demo_by_year_expand <- rbind(dat2013_expand,dat2014_expand,dat2015_expand,dat201
                              dat2019_expand,dat2020_expand)
 demo_by_year_expand <- demo_by_year_expand %>% arrange(EPICMRN,visityear)
 
+# box plot of mean A1c by age
+p <- ggplot(demo_by_year, aes(x=a1c_agecat, y=A1c_Mean)) +  geom_boxplot()
+
 # create table of demographics and clinical characteristics by visit year
 demovars <- c("Gender","Race_Ethnicity_combined","Language_combined","InsuranceCategory_combined",
-              "DiabetesDuration_A1cResultDate","Age_A1cResultDate","DKAAtOnset","CGM","InsulinRegimen","A1c_Value","A1c_Mean","A1c_Mean_cat",
+              "DiabetesDuration_A1cResultDate","Age_A1cResultDate","a1c_agecat","DKAAtOnset","CGM","pump","A1c_Value","A1c_Mean","A1c_Mean_cat",
               "visitcount")
 t1 <- CreateTableOne(data=demo_by_year,vars=demovars,strata="visityear")
 t1 <- print(t1)
@@ -159,7 +176,7 @@ t5 <- print(t5)
 
 # mixed model of mean A1c by year
 mod <- lme(A1c_Mean ~ visityear + Race_Ethnicity_combined + Language_combined + InsuranceCategory_combined + DiabetesDuration_A1cResultDate +
-             Age_A1cResultDate + DKAAtOnset + CGM + InsulinRegimen + visitcount,
+             a1c_agecat + DKAAtOnset + CGM + pump + visitcount,
            random=~1|EPICMRN,data = demo_by_year_expand[demo_by_year_expand$visityear!=2013 & 
                                                 demo_by_year_expand$visityear != 2020,],na.action = na.omit)
 mod_anova <- anova.lme(mod, type="marginal")
@@ -192,6 +209,14 @@ The following data manipulation steps were performed:
 
 Descriptive statistics reported are mean/SD and frequency/percentage.  Years and patient groups were compared using linear models for continuous variables and chi-square tests for categorical variables.  A mixed-effects model was used to model factors associated with HbA1c over time.
 
+Changes since original report:
+
+- Updated dataset
+
+- Coded insulin regmimen as pump/no-pump
+
+- Categorized age as: <6, 6-<12, 12-<18, 18-<22, >=22 and used that variable in the mixed model.
+
 # Results
 
 ## Demographic and clinical characteristics of patients having a visit in each year.  The first visit in each year was included, except for the variable A1c_Mean, which represents the mean A1c value for all visits during that year, and the variable visitcount, which represents the number of visits per  year.
@@ -203,12 +228,16 @@ kable(t1)
 
 ## Percentage of patients with at least one visit in each year, starting with the year of their first visit.
 
+Note: the N reported in the first row is the total number of patients across all years, not the number of patients who had their first visit by that year.  Patients who had not yet had their first visit by that year have missing values for the variable indicating whether they had a visit in that year, so the denominator for the percentages is the number of patients who had their first visit by that year.
+
 ```{r echo=FALSE}
 kable(t2)
 ```
 <br>
 
 ## Percentage of patients with mean A1c <6% in a given year who had a visit in the prior year.
+
+Note: the N reported in the first row is the total number of patients with mean A1c <6% in each year. Patients who had not yet had their first visit by the year prior have a missing value for the variable indicating whether they had a visit in the prior year, so the denominator for the percentages is the number of patients with mean A1c <6% and who had their first visit by the prior year.
 
 ```{r echo=FALSE}
 kable(t3)
@@ -217,12 +246,16 @@ kable(t3)
 
 ## Percentage of patients with mean A1c 6-12% in a given year who had a visit in the prior year.
 
+Note: the N reported in the first row is the total number of patients with mean A1c 6-12% in each year. Patients who had not yet had their first visit by the year prior have a missing value for the variable indicating whether they had a visit in the prior year, so the denominator for the percentages is the number of patients with mean A1c 6-12% and who had their first visit by the prior year.
+
 ```{r echo=FALSE}
 kable(t4)
 ```
 <br>
 
 ## Percentage of patients with mean A1c >12% in a given year who had a visit in the prior year.
+
+Note: the N reported in the first row is the total number of patients with mean A1c >12% in each year. Patients who had not yet had their first visit by the year prior have a missing value for the variable indicating whether they had a visit in the prior year, so the denominator for the percentages is the number of patients with mean A1c >12% and who had their first visit by the prior year.
 
 ```{r echo=FALSE}
 kable(t5)
