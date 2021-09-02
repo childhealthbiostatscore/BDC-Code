@@ -1,14 +1,18 @@
 library(tidyverse)
 library(readxl)
 library(tools)
+library(lubridate)
 # Original files
-indir = "/home/tim/.local/share/Cryptomator/mnt/Vault/Work/Tidepool Test/raw"
-outdir = "/home/tim/.local/share/Cryptomator/mnt/Vault/Work/Tidepool Test/cleaned"
-files = list.files(indir,full.names = T)
+indir = "C:/Users/Tim Vigers/Desktop/T1 Device Data"
+outdir = "C:/Users/Tim Vigers/Desktop/T1 Device Data Cleaned"
+files = list.files(indir,full.names = T,recursive = T)
+dates = read_excel("C:/Users/Tim Vigers/Desktop/T1Visit Dates.xlsx")
+dates$id = sub("HRTM_","",dates$record_id)
 # Iterate through
 for (f in files) {
-  id = file_path_sans_ext(basename(f))
-  print(id)
+  if (!(file_ext(f) %in% c("csv","xls","xlsx"))){next}
+  file_id = file_path_sans_ext(basename(f))
+  print(file_id)
   if (file_ext(f) == "csv"){
     df = read.csv(f,stringsAsFactors = F,na.strings = "")
     if (ncol(df) > 25){
@@ -42,7 +46,11 @@ for (f in files) {
       colnames(smbg) = smbg[start,]
       smbg = smbg[-c(0:start+1),]
       colnames(smbg)[tolower(colnames(smbg)) == "mg/dl"] = 'bg'
-      t = full_join(t,smbg[,c("Time","bg")],by = "Time")
+      if (nrow(t) > 0) {
+        t = full_join(t,smbg[,c("Time","bg")],by = "Time")
+      } else {
+        t = smbg
+      }
       t$Date = sapply(strsplit(t$Time," "),"[[",1)
       t$Time = sub(".* ","",t$Time)
     } else {
@@ -94,6 +102,12 @@ for (f in files) {
            "Bolus Volume Delivered (U)","Bolus Type")
   missing = vars[which(!(vars %in% colnames(t)))]
   t[,missing] = NA
+  t$Date = parse_date_time(t$Date,orders = c("mdy","ymd"))
+  # Get dates
+  id = strsplit(file_id,"_")[[1]][2]
+  completed = dates$V1_Completed[match(id,dates$id)]
+  start = min(t$Date,na.rm = T)+60*60*24
+  t = t[t$Date >= start & t$Date < completed,]
   # Write
-  write.csv(t[,vars],file = paste0(outdir,"/",id,".csv"),row.names = F,na = "")
+  write.csv(t[,vars],file = paste0(outdir,"/",file_id,".csv"),row.names = F,na = "")
 }
