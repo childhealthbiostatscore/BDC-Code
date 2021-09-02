@@ -1,7 +1,7 @@
 library(tidyverse)
 # Import data
-indir <- "~/Documents/Work/Tidepool Test/cleaned_run"
-outdir <- "~/Documents/Work/Tidepool Test"
+indir <- "C:/Users/Tim Vigers/Desktop/T1 Device Data Cleaned"
+outdir <- "C:/Users/Tim Vigers/Desktop"
 files <- list.files(indir,full.names = T)
 # Make a summary variables table.
 summary <- data.frame(matrix(nrow = length(files),ncol = 0))
@@ -298,7 +298,8 @@ for (f in 1:length(files)) {
                                              orders = c("%m/%d/%Y %H:%M","%m/%d/%Y %H:%M:%S",
                                                         "%m/%d/%y %H:%M","%m/%d/%y %H:%M:%S",
                                                         "%Y/%m/%d %H:%M","%Y/%m/%d %H:%M:%S",
-                                                        "%Y-%m-%d %H:%M","%Y-%m-%d %H:%M:%S"))
+                                                        "%Y-%m-%d %H:%M","%Y-%m-%d %H:%M:%S",
+                                                        "%m/%d/%Y","%Y-%m-%d"))
   for (bgt in bg_datetimes[!is.na(bg_datetimes)]) {
     # Check for a carb input within 15 minutes
     bg <- unique(table$bg[which(table$datetime == bgt)])
