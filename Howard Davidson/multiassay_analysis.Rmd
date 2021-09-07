@@ -8,24 +8,50 @@ output: html_document
 ```{r setup, include=FALSE}
 library(mlr3verse)
 library(tidyverse)
-library(heatmaply)
+library(pheatmap)
+library(skimr)
+library(igraph)
 knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
-home_dir = ifelse(.Platform$OS.type != "unix","T:/",
+home_dir = ifelse(.Platform$OS.type != "unix",
+                  "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data",
                   "/mnt/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data")
 knitr::opts_knit$set(root.dir = home_dir)
 rm(home_dir)
 ```
 
-```{r load full df}
-load("./Data_Clean/separate_timepoints.RData")
+```{r data cleaning}
+load("./Data_Clean/time_0.RData")
+time_0$label = NULL
+all_vars = colnames(time_0)[6:ncol(time_0)]
+# Variables with lots of missing values
+missing = all_vars[which(colMeans(is.na(time_0[,all_vars]))>=0.8)]
+# Variables with high CV
+high_cv = lapply(setdiff(all_vars,missing), function(c){
+  cv = sd(time_0[,c],na.rm = T)/mean(time_0[,c],na.rm = T)
+  if(cv > 0.3){return(c)}else{NA}
+})
+high_cv = unlist(high_cv[!is.na(high_cv)])
+# Remove columns
+time_0 = time_0[,-which(colnames(time_0) %in% c(missing,high_cv))]
+# Remove rows with all missing
+initial_set = colnames(time_0)[6:ncol(time_0)]
+# Remove rows missing all retained variables
+rows_missing = rowSums(is.na(time_0[,initial_set]))
+time_0 = time_0[-which(rows_missing == length(initial_set)),]
+# Log transform and scale
+time_0[,initial_set] = lapply(time_0[,initial_set],function(c){
+  as.numeric(scale(log(c)))
+  })
 ```
 
 # Methods
 
-1. Data were combined into rectangular format.
-2. Columns with >= 80% missing data or CV < 30% were dropped. 468 variables remained after this step. 
-3. Rows missing all 468 of the retained variables from step 3 were dropped. 
-4. Correlation between 468 remaining predictors was examined visually using a heatmap, and predictors were clustered using the ... (add the clustering algorithm details here).
+1. Data were combined into rectangular format with a total of `r length(all_vars)` variables.
+2. Columns with >= 80% missing data or coefficient of variation (CV) > 30% were dropped. There were `r length(missing)` variables with too much missing data, and `r length(high_cv)` with a high CV. A total of `r ncol(time_0)-5` variables remained after this step. 
+3. Rows missing all of the retained variables from step 2 were dropped, resulting in `r nrow(time_0)` observations.
+4. Remaining variables were log-transformed and scaled prior to analysis.
+
+4. Correlation between the remaining predictors was examined visually using a heatmap, and predictors were clustered using the ... (add the clustering algorithm details here).
  - Dendrograms are colored according to the optimal number of groups. This is determined using the find_k() function ... (more details here).
 
 # Predictor Clustering
@@ -33,8 +59,25 @@ load("./Data_Clean/separate_timepoints.RData")
 ## Correlation with other predictors
 
 ```{r}
-corr_mat = cor(df[,predictors],use = "pairwise.complete.obs")
-heatmaply_cor(corr_mat,k_col = NA,k_row = NA,showticklabels = F,show_dendrogram	= c(F,T))
+corr_mat = data.frame(cor(time_0[,initial_set],use = "pairwise.complete.obs"))
+# Plot
+plot_mat = corr_mat
+blank = names(which(rowSums(is.na(plot_mat)) == ncol(plot_mat)))
+plot_mat[,blank] = NULL
+plot_mat = plot_mat[!(row.names(plot_mat) %in% blank),]
+pheatmap(plot_mat,show_rownames = F,show_colnames = F)
 ```
 
-To see which predictors are represented by a given cell, hover over the cell with the mouse.
+```{r}
+# Get pairs
+var_cor = corr_mat*lower.tri(corr_mat)
+# Correlation at least 0.7
+check_cor = which(var_cor >= 0.7, arr.ind=TRUE)
+# Convert correlated pairs into graph clusters
+graph_cor = graph.data.frame(check_cor, directed = FALSE)
+# Get names
+groups_cor = split(unique(as.vector(check_cor)), clusters(graph_cor)$membership)
+groups = lapply(groups_cor,FUN=function(list_cor){rownames(var_cor)[list_cor]})
+```
+
+Using a within cluster correlation cutoff of 0.7 results in `r length(groups)` clusters. 
