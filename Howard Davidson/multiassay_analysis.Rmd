@@ -10,17 +10,19 @@ library(mlr3verse)
 library(tidyverse)
 library(pheatmap)
 library(skimr)
-library(igraph)
 library(glmnet)
-knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
+library(knitr)
+library(igraph)
+library(networkD3)
+knitr::opts_chunk$set(echo = FALSE)
 home_dir = ifelse(.Platform$OS.type != "unix",
                   "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data",
-                  "/mnt/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data")
+                  "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data")
 knitr::opts_knit$set(root.dir = home_dir)
 rm(home_dir)
 ```
 
-```{r data cleaning}
+```{r data cleaning,message=FALSE}
 load("./Data_Clean/time_0.RData")
 time_0$label = NULL
 # Merge duplicated
@@ -32,7 +34,8 @@ time_0 = left_join(time_0,dups)
 # Get variables
 all_vars = colnames(time_0)[6:ncol(time_0)]
 # Variables with lots of missing values
-missing = all_vars[which(colMeans(is.na(time_0[,all_vars]))>=0.8)]
+missing_cutoff = 0.75
+missing = all_vars[which(colMeans(is.na(time_0[,all_vars]))>=missing_cutoff)]
 # Variables with high CV
 high_cv = lapply(setdiff(all_vars,missing), function(c){
   cv = sd(time_0[,c],na.rm = T)/mean(time_0[,c],na.rm = T)
@@ -48,17 +51,17 @@ rows_missing = rowSums(is.na(time_0[,initial_set]))
 time_0 = time_0[-which(rows_missing == length(initial_set)),]
 # Log transform and scale
 time_0[,initial_set] = lapply(time_0[,initial_set],function(c){
-  as.numeric(scale(log(c)))
-  })
+  as.numeric(scale(c))
+})
 ```
 
 # Methods
 
 1. Data were combined into rectangular format with a total of `r length(all_vars)` variables.
-2. Columns with >= 80% missing data or coefficient of variation (CV) > 30% were dropped. There were `r length(missing)` variables with too much missing data, and `r length(high_cv)` with a high CV. A total of `r ncol(time_0)-5` variables remained after this step. 
+2. Columns with >= `r missing_cutoff*100`% missing data or coefficient of variation (CV) > 30% were dropped. There were `r length(missing)` variables with too much missing data, and `r length(high_cv)` with a high CV. A total of `r ncol(time_0)-5` variables remained after this step. 
 3. Rows missing all of the retained variables from step 2 were dropped, resulting in `r nrow(time_0)` observations.
-4. Remaining variables were log-transformed and scaled prior to analysis.
-4. Correlation between the remaining predictors was examined visually using a heatmap, and predictors were clustered based on correlation coefficient. Correlations with an absolute value < 0.7 were excluded.
+4. Remaining variables were scaled prior to analysis.
+4. Correlation between the remaining predictors was examined visually using a heatmap, and predictors were clustered based on correlation coefficient. 
 5. Within each cluster, the variable with the strongest association with the outcome was selected to continue on to the lasso.
 
 # Predictor Clustering
@@ -82,8 +85,9 @@ pheatmap(plot_mat,show_rownames = F,show_colnames = F)
 ```{r}
 # Get pairs
 var_cor = corr_mat*lower.tri(corr_mat)
-# Correlation at least 0.7
-check_cor = which(var_cor >= 0.7, arr.ind=TRUE)
+# Correlation
+corr_cutoff = 0.7
+check_cor = which(abs(var_cor) >= corr_cutoff, arr.ind=TRUE)
 # Convert correlated pairs into graph clusters
 graph_cor = graph.data.frame(check_cor, directed = FALSE)
 # Get names
@@ -100,21 +104,61 @@ best_cor = lapply(groups, function(g){
   return(g[which.max(assocs)])
 })
 best_cor = as.character(best_cor)
-# Plot
+# Interactive plot
+int_plot_df = check_cor
+int_plot_df[,1] = rownames(corr_mat)[int_plot_df[,1]]
+int_plot_df[,2] = colnames(corr_mat)[as.numeric(int_plot_df[,2])]
 
+nodes <- data.frame(name = unique(c(int_plot_df[,1], int_plot_df[,2])), stringsAsFactors = FALSE)
+nodes$id <- 0:(nrow(nodes) - 1)
+
+edges <- int_plot_df %>% data.frame(.) %>%
+  left_join(nodes, by = c("row" = "name")) %>%
+  select(-row) %>%
+  rename(source = id) %>%
+  left_join(nodes, by = c("col" = "name")) %>%
+  select(-col) %>%
+  rename(target = id)
+
+edges$width <- 1
+
+nodes$group = sapply(nodes$name, function(n){
+  l = lapply(groups, function(x){
+    n %in% x
+  })
+  as.numeric(which(l == TRUE))
+})
+
+
+
+p = forceNetwork(Links = edges, Nodes = nodes, 
+             Source = "source",
+             Target = "target",
+             NodeID ="name",
+             Group = "group",
+             Value = "width",
+             opacity = 0.9,
+             zoom = TRUE)
+p
 ```
 
-Using a within cluster correlation cutoff of 0.7 results in `r length(groups)` clusters. However, some of these clusters contain a large number of variables (as much as 260). 
+Using a within cluster correlation cutoff of `r corr_cutoff` results in `r length(groups)` clusters. However, some of these clusters contain a large number of variables. 
 
 # Lasso
 
 ```{r}
-lasso_df1 = data.frame(time_0[,c(best_cor[1:4],"y")])
-lasso_df1 = lasso_df1[complete.cases(lasso_df1),]
-lasso_df2 = data.frame(time_0[,c(best_cor[5:length(best_cor)],"y")])
-lasso_df2 = lasso_df2[complete.cases(lasso_df2),]
+lasso_df = time_0[,c(best_cor,"y")]
+lasso_df = data.matrix(lasso_df[complete.cases(lasso_df),])
 # Use lambda.min from glmnet.cv
-cv = cv.glmnet(x = ,y = time_0[,"y"])
+cv = cv.glmnet(x = lasso_df[,1:(ncol(lasso_df)-1)],y = lasso_df[,"y"],family = "binomial")
+mod = glm.fit(x = lasso_df[,1:(ncol(lasso_df)-1)],y = lasso_df[,"y"],family = "binomial")
+cs = coef(mod)
+```
+
+The variables `r paste(best_cor,collapse = ", ")` were selected to continue to the lasso step. `r sum(coef(mod)>0)` were selected by the lasso:
+
+```{r}
+kable(rownames(cs)[which(cs[,1]!=0)],col.names = "")
 ```
 
 # Alternative approaches and questions
