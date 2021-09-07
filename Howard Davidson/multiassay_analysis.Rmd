@@ -11,6 +11,7 @@ library(tidyverse)
 library(pheatmap)
 library(skimr)
 library(igraph)
+library(glmnet)
 knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
 home_dir = ifelse(.Platform$OS.type != "unix",
                   "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data",
@@ -22,6 +23,13 @@ rm(home_dir)
 ```{r data cleaning}
 load("./Data_Clean/time_0.RData")
 time_0$label = NULL
+# Merge duplicated
+dups = time_0[duplicated(time_0$ID),]
+dups = dups[,-which(colSums(is.na(dups))==nrow(dups))]
+time_0 = time_0[!duplicated(time_0$ID),]
+time_0 = time_0[,-which(colSums(is.na(time_0))==nrow(time_0))]
+time_0 = left_join(time_0,dups)
+# Get variables
 all_vars = colnames(time_0)[6:ncol(time_0)]
 # Variables with lots of missing values
 missing = all_vars[which(colMeans(is.na(time_0[,all_vars]))>=0.8)]
@@ -50,13 +58,14 @@ time_0[,initial_set] = lapply(time_0[,initial_set],function(c){
 2. Columns with >= 80% missing data or coefficient of variation (CV) > 30% were dropped. There were `r length(missing)` variables with too much missing data, and `r length(high_cv)` with a high CV. A total of `r ncol(time_0)-5` variables remained after this step. 
 3. Rows missing all of the retained variables from step 2 were dropped, resulting in `r nrow(time_0)` observations.
 4. Remaining variables were log-transformed and scaled prior to analysis.
-
-4. Correlation between the remaining predictors was examined visually using a heatmap, and predictors were clustered using the ... (add the clustering algorithm details here).
- - Dendrograms are colored according to the optimal number of groups. This is determined using the find_k() function ... (more details here).
+4. Correlation between the remaining predictors was examined visually using a heatmap, and predictors were clustered based on correlation coefficient. Correlations with an absolute value < 0.7 were excluded.
+5. Within each cluster, the variable with the strongest association with the outcome was selected to continue on to the lasso.
 
 # Predictor Clustering
 
-## Correlation with other predictors
+## By correlation with other predictors
+
+### Heatmap of variable correlations
 
 ```{r}
 corr_mat = data.frame(cor(time_0[,initial_set],use = "pairwise.complete.obs"))
@@ -68,6 +77,8 @@ plot_mat = plot_mat[!(row.names(plot_mat) %in% blank),]
 pheatmap(plot_mat,show_rownames = F,show_colnames = F)
 ```
 
+### Variable network diagram
+
 ```{r}
 # Get pairs
 var_cor = corr_mat*lower.tri(corr_mat)
@@ -78,6 +89,38 @@ graph_cor = graph.data.frame(check_cor, directed = FALSE)
 # Get names
 groups_cor = split(unique(as.vector(check_cor)), clusters(graph_cor)$membership)
 groups = lapply(groups_cor,FUN=function(list_cor){rownames(var_cor)[list_cor]})
+# Find highest correlation within each group
+best_cor = lapply(groups, function(g){
+  assocs = lapply(g, function(v){
+    form = as.formula(paste0("y~",v))
+    mod = glm(form,time_0,family = "binomial")
+    coefs = summary(mod)$coefficients
+    return(abs(coefs[2,1]))
+  })
+  return(g[which.max(assocs)])
+})
+best_cor = as.character(best_cor)
+# Plot
+
 ```
 
-Using a within cluster correlation cutoff of 0.7 results in `r length(groups)` clusters. 
+Using a within cluster correlation cutoff of 0.7 results in `r length(groups)` clusters. However, some of these clusters contain a large number of variables (as much as 260). 
+
+# Lasso
+
+```{r}
+lasso_df1 = data.frame(time_0[,c(best_cor[1:4],"y")])
+lasso_df1 = lasso_df1[complete.cases(lasso_df1),]
+lasso_df2 = data.frame(time_0[,c(best_cor[5:length(best_cor)],"y")])
+lasso_df2 = lasso_df2[complete.cases(lasso_df2),]
+# Use lambda.min from glmnet.cv
+cv = cv.glmnet(x = ,y = time_0[,"y"])
+```
+
+# Alternative approaches and questions
+
+1. The DIFAcTO pipeline was not created to analyze longitudinal data. How should we adapt it for TEDDY?
+2. Using the DIFAcTO method of creating clusters results in a very small number of variables moving on to the lasso. We could try to optimize the correlation cutoff, or we could cut the cluster tree to create a pre-determined number of variables.
+3. The DIFAcTO methos also selects just one of the many correlated variables in a cluster, but this may be losing a huge amount of information, particularly in clusters with a large number of variables. Could we use elasticnet instead? This is an approach that is very similar to the lasso, but can select groups of correlated variables.
+4. What known factors should be included in the lasso (e.g. BMI, etc.)?
+5. Are there variables that should be combined? 
