@@ -2,14 +2,13 @@ library(tidyverse)
 library(caret)
 library(parallel)
 # Import raw
-setwd("/mnt/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data")
+setwd("Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data")
 raw_data = readRDS("./Data_Raw/TEDDY_MP193_Data/raw_time_data.RDS")
 # ID columns (common to all stored dataframes)
-id_cols = c("y","ID","time","due_num","pair")
+id_cols = c("y","ID","time")
 # Loop through list, and pull out matrices
 X = lapply(names(raw_data), function(x){
-  var = x
-  var = tolower(gsub(" ","_",var))
+  var = tolower(gsub(" ","_",x))
   dats = raw_data[[x]]
   ts = lapply(names(dats), function(t){
     d = dats[[t]]$X # Predictors (variable column numbers)
@@ -23,38 +22,9 @@ X = lapply(names(raw_data), function(x){
     }
     return(d)
   })
-  data.frame(do.call(rbind,ts)) # Bind together
+  df = data.frame(do.call(rbind,ts)) # Bind together
+  df = df[df$time == 0,] # time 0 only for now
 })
-# Use purrr's reduce function to merge all dataframes
-df = X %>% reduce(full_join) %>% arrange(ID,time) %>% 
-  select(ID,time,due_num,pair,y,everything())
-# Save data
-save(df,predictors,file = "./Data_Clean/all_timepoints_combined.RData")
-# Pull data by timepoint
-get_timepoint = function(data = raw_data,time){
-  timepoint = paste0("Time_",time)
-  t = lapply(names(raw_data), function(x){
-    var = x
-    var = tolower(gsub(" ","_",var))
-    dats = raw_data[[x]][[timepoint]]
-    if(ncol(dats$X)==1){colnames(dats$X) = var}
-    df = data.frame(cbind(dats$X,dats$Y))
-  })
-  t = t %>% reduce(full_join) %>%  
-    select(ID,time,due_num,pair,y,everything())
-  return(t)
-}
-# Get all times and save
-time_0 = get_timepoint(time = 0)
-time_minus_1 = get_timepoint(time = -1)
-time_minus_2 = get_timepoint(time = -2)
-time_minus_3 = get_timepoint(time = -3)
-time_minus_4 = get_timepoint(time = -4)
-# Save data
-save(time_0,file = "./Data_Clean/time_0.RData")
-save(time_minus_1,file = "./Data_Clean/time_minus_1.RData")
-save(time_minus_2,file = "./Data_Clean/time_minus_2.RData")
-save(time_minus_3,file = "./Data_Clean/time_minus_3.RData")
-save(time_minus_4,file = "./Data_Clean/time_minus_4.RData")
-save(time_0,time_minus_1,time_minus_2,time_minus_3,time_minus_4,
-     file = "./Data_Clean/all_timepoints_separate.RData")
+names(X) = tolower(gsub(" ","_",names(raw_data)))
+# Save data as a list with a dataframe for each assay
+save(X,file = "./Data_Clean/all_timepoints.RData")
