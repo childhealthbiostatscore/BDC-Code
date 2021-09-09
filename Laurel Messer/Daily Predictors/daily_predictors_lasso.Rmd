@@ -53,7 +53,7 @@ data$record_id = as.factor(data$record_id)
 morning_items = colnames(data)[grep("esq\\d+$",colnames(data))]
 evening_items = colnames(data)[grep("esq\\d+_eve$",colnames(data))]
 # Outcomes
-outcomes = c("boluses","smg","tir","n_highalerts","dm_caretime","dm_thinktime","gsq")
+outcomes = c("boluses","smg","tir","n_highalerts","dm_caretime","dm_thinktime","gsq","combined")
 # ID Variables
 id_vars = c("record_id","redcap_event_name","date")
 # Combine date columns
@@ -67,11 +67,24 @@ data$date = sapply(strsplit(data$date,"_"),function(x){
 # Average gsq scores
 data$gsq = rowMeans(data[,c("gsq1","gsq2","gsq3")],na.rm = T)
 data$gsq[is.nan(data$gsq)] = NA
+# % of HA per day that had either a 1 for HAB or 1 for bgdrop or 1 for both
+for (i in 1:10) {
+  vars = c(paste0("hab",i),paste0("bgdrop_ha",i)) # Each alert has two separate columns that need to be combined
+  n = paste0("combined_hab",i)
+  data = data %>% unite(!!n,all_of(vars),remove = F)
+  data[,n] = sapply(data[,n],function(x){
+    if(x == "NA_NA"){NA}else{as.numeric(grepl("1",x))} # Don't count NAs as 1 or 0
+    })
+}
+combined = paste0("combined_hab",1:10)
+data$combined = rowMeans(data[,combined],na.rm = T) # Percentage of 1s
+data$combined[is.nan(data$combined)] = NA
+data$combined = cut(data$combined,c(-Inf,0.5,Inf),right = T)
+data$combined = as.numeric(data$combined)-1
 # Fill outcome in by date
 data = data %>% group_by(record_id,date) %>%
   fill(all_of(outcomes),.direction = "downup") %>%
   ungroup()
-# % of HA per day that had either a 1 for HAB or 1 for bgdrop or 1 for both
 # Remove outcomes not on a 24 hour scale
 data = data[-which(data$n_highalerts > 500),]
 data = data[-which(data$dm_thinktime > 12000),]
@@ -184,8 +197,6 @@ best_lambdas = function(perf_metrics = lambda_perf,metric = "RMSE",
 
 ### Number of boluses
 
-#### Selected variables
-
 ```{r}
 fam = poisson(link = "log")
 # Get morning variables
@@ -210,8 +221,6 @@ kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 ```
 
 ### SMG
-
-#### Selected variables
 
 ```{r}
 fam = gaussian()
@@ -238,8 +247,6 @@ kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 
 ### TIR
 
-#### Selected variables
-
 ```{r}
 fam = gaussian()
 # Get morning variables
@@ -265,8 +272,6 @@ kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 
 ### Number of high alerts
 
-#### Selected variables
-
 ```{r}
 fam = poisson(link = "log")
 # Get morning variables
@@ -291,8 +296,6 @@ kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 ```
 
 ### Time spent caring for diabetes
-
-#### Selected variables
 
 ```{r}
 fam = poisson(link = "log")
@@ -321,8 +324,6 @@ kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 
 ### Time spent thinking about diabetes
 
-#### Selected variables
-
 ```{r}
 fam = poisson(link = "log")
 # Get morning variables
@@ -348,9 +349,7 @@ l = labels(data[,thinktime_morning_coefs])
 kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 ```
 
-### Average GSQ score
-
-#### Selected variables
+### Average of 3 GSQ scores
 
 ```{r}
 fam = gaussian()
@@ -375,6 +374,33 @@ l = labels(data[,gsq_morning_coefs])
 kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 ```
 
+### Combined alert outcome
+
+Each participant has data entries for up to 10 high BG alerts. For each alert, the "hab" column indicates whether the participant bolused in response, and the "bgdrop_ha" column indicates whether BG dropped below 200 after 2 hours. The combined alert outcome represents the percentage of alerts with a "1" in either column. Because the majority of participants responded to either all or none of their alerts, this variable was dichotomized into $\leq$50% vs. $>$50%.
+
+```{r}
+fam = binomial()
+# Get morning variables
+combined_morning = data[,c(id_vars,morning_items,"combined")]
+combined_morning = combined_morning[complete.cases(combined_morning),]
+# CV for lambda values
+lambda_perf = lambda_cv(df = combined_morning,outcome_name = "combined",fam = fam)
+best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
+# Fit model
+form = as.formula(paste0("combined~",paste0(morning_items,collapse = "+")))
+combined_morning_mod = suppressWarnings(
+  glmmLasso(form, rnd = list(record_id=~1),family = fam,
+            data = combined_morning,lambda=best)
+)
+# Get coefficients
+combined_morning_coefs = names(combined_morning_mod$coefficients)[
+  which(combined_morning_mod$coefficients != 0 & 
+          names(combined_morning_mod$coefficients) != "(Intercept)")]
+# Print
+l = labels(data[,combined_morning_coefs])
+kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
+```
+
 ### Upset plot
 
 ```{r}
@@ -386,7 +412,8 @@ selected_morning = do.call(rbind,list(
   morning_items %in% alerts_morning_coefs,
   morning_items %in% caretime_morning_coefs,
   morning_items %in% thinktime_morning_coefs,
-  morning_items %in% gsq_morning_coefs
+  morning_items %in% gsq_morning_coefs,
+  morning_items %in% combined_morning_coefs
 ))
 colnames(selected_morning) = morning_items
 selected_morning = data.frame(apply(selected_morning,2,as.numeric))
@@ -397,8 +424,6 @@ upset(selected_morning,nsets = ncol(selected_morning),order.by = "freq")
 ## Evening survey
 
 ### Number of boluses
-
-#### Selected variables
 
 ```{r}
 fam = poisson(link = "log")
@@ -425,8 +450,6 @@ kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 
 ### SMG
 
-#### Selected variables
-
 ```{r}
 fam = gaussian()
 # Get evening variables
@@ -451,8 +474,6 @@ kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 ```
 
 ### TIR
-
-#### Selected variables
 
 ```{r}
 fam = gaussian()
@@ -479,8 +500,6 @@ kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 
 ### Number of high alerts
 
-#### Selected variables
-
 ```{r}
 fam = poisson(link = "log")
 # Get evening variables
@@ -505,8 +524,6 @@ kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 ```
 
 ### Time spent caring for diabetes
-
-#### Selected variables
 
 ```{r}
 fam = poisson(link = "log")
@@ -535,8 +552,6 @@ kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 
 ### Time spent thinking about diabetes
 
-#### Selected variables
-
 ```{r}
 fam = poisson(link = "log")
 # Get evening variables
@@ -562,9 +577,7 @@ l = labels(data[,thinktime_evening_coefs])
 kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 ```
 
-### Average GSQ score
-
-#### Selected variables
+### Average of 3 GSQ scores
 
 ```{r}
 fam = gaussian()
@@ -589,6 +602,31 @@ l = labels(data[,gsq_evening_coefs])
 kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 ```
 
+### Combined alert outcome
+
+```{r}
+fam = binomial()
+# Get evening variables
+combined_evening = data[,c(id_vars,evening_items,"combined")]
+combined_evening = combined_evening[complete.cases(combined_evening),]
+# CV for lambda values
+lambda_perf = lambda_cv(df = combined_evening,outcome_name = "combined",fam = fam)
+best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
+# Fit model
+form = as.formula(paste0("combined~",paste0(evening_items,collapse = "+")))
+combined_evening_mod = suppressWarnings(
+  glmmLasso(form, rnd = list(record_id=~1),family = fam,
+            data = combined_evening,lambda=best)
+)
+# Get coefficients
+combined_evening_coefs = names(combined_evening_mod$coefficients)[
+  which(combined_evening_mod$coefficients != 0 & 
+          names(combined_evening_mod$coefficients) != "(Intercept)")]
+# Print
+l = labels(data[,combined_evening_coefs])
+kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
+```
+
 ### Upset plot
 
 ```{r}
@@ -600,7 +638,8 @@ selected_evening = do.call(rbind,list(
   evening_items %in% alerts_evening_coefs,
   evening_items %in% caretime_evening_coefs,
   evening_items %in% thinktime_evening_coefs,
-  evening_items %in% gsq_evening_coefs
+  evening_items %in% gsq_evening_coefs,
+  evening_items %in% combined_evening_coefs
 ))
 colnames(selected_evening) = evening_items
 selected_evening = data.frame(apply(selected_evening,2,as.numeric))
