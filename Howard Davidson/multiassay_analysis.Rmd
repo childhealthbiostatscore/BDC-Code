@@ -24,35 +24,48 @@ rm(home_dir)
 
 ```{r data cleaning,message=FALSE}
 load("./Data_Clean/time_0.RData")
-time_0$label = NULL
-# Merge duplicated
-dups = time_0[duplicated(time_0$ID),]
-dups = dups[,-which(colSums(is.na(dups))==nrow(dups))]
-time_0 = time_0[!duplicated(time_0$ID),]
-time_0 = time_0[,-which(colSums(is.na(time_0))==nrow(time_0))]
-time_0 = left_join(time_0,dups)
-# Get variables
-all_vars = colnames(time_0)[6:ncol(time_0)]
-# Variables with lots of missing values
-missing_cutoff = 0.75
-missing = all_vars[which(colMeans(is.na(time_0[,all_vars]))>=missing_cutoff)]
-# Variables with high CV
-high_cv = lapply(setdiff(all_vars,missing), function(c){
-  cv = sd(time_0[,c],na.rm = T)/mean(time_0[,c],na.rm = T)
-  if(cv > 0.3){return(c)}else{NA}
-})
-high_cv = unlist(high_cv[!is.na(high_cv)])
-# Remove columns
-time_0 = time_0[,-which(colnames(time_0) %in% c(missing,high_cv))]
-# Remove rows with all missing
-initial_set = colnames(time_0)[6:ncol(time_0)]
-# Remove rows missing all retained variables
-rows_missing = rowSums(is.na(time_0[,initial_set]))
-time_0 = time_0[-which(rows_missing == length(initial_set)),]
-# Log transform and scale
-time_0[,initial_set] = lapply(time_0[,initial_set],function(c){
-  as.numeric(scale(c))
-})
+```
+
+```{r functions}
+# Clean data (standard pipeline)
+data_preprocces = function(df,missing_cutoff = 0.8,cv_cutoff = NULL,
+                           log_transform = F,scale = T,
+                           outcome = "y",id_cols = c("id","time")){
+  # Get predictors
+  pred = colnames(df)[which(!(colnames(df) %in% c(outcome,id_cols)))]
+  # Predictors with too much missing data
+  if(!is.null(missing_cutoff)){
+    missing = pred[which(colMeans(is.na(df[,pred]))>=missing_cutoff)]
+  } else {missing = c()}
+  # Predictors with high CV
+  if(!is.null(cv_cutoff)){
+    cvs = sapply(df[,pred], function(c){
+      sd(c,na.rm = T) / mean(c,na.rm = T)
+    })
+    high_cv = pred[which(cvs > cv_cutoff)]
+  } else {high_cv = list()}
+  # Remove columns
+  initial_set = setdiff(pred,c(missing,high_cv))
+  df = df[,c(id_cols,initial_set,outcome)]
+  # Remove rows with all missing
+  rows_missing = rowSums(is.na(df[,initial_set]))
+  df = df[which(rows_missing < length(initial_set)),]
+  # Log transform
+  if(log_transform){
+    df[,initial_set] = lapply(df[,initial_set],log)
+    if(any(df == -Inf)){warning("-Inf present after log transform")}
+  }
+  # Scale
+  if(scale){
+    df[,initial_set] = lapply(df[,initial_set],scale)
+  }
+  return(df)
+}
+# Cluster variables according to DIFAcTO pipeline
+corr_cluster = function(df,corr_cutoff = 0.7,core_ratio = 0.5){
+  
+}
+
 ```
 
 # Methods
@@ -132,13 +145,13 @@ nodes$group = sapply(nodes$name, function(n){
 
 
 p = forceNetwork(Links = edges, Nodes = nodes, 
-             Source = "source",
-             Target = "target",
-             NodeID ="name",
-             Group = "group",
-             Value = "width",
-             opacity = 0.9,
-             zoom = TRUE)
+                 Source = "source",
+                 Target = "target",
+                 NodeID ="name",
+                 Group = "group",
+                 Value = "width",
+                 opacity = 0.9,
+                 zoom = TRUE)
 p
 ```
 
