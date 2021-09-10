@@ -27,4 +27,4 @@ X = lapply(names(raw_data), function(x){
 })
 names(X) = tolower(gsub(" ","_",names(raw_data)))
 # Save data as a list with a dataframe for each assay
-save(X,file = "./Data_Clean/all_timepoints.RData")
+save(X,file = "./Data_Clean/time_0.RData")
