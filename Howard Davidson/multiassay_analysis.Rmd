@@ -62,100 +62,102 @@ data_preprocces = function(df,missing_cutoff = 0.8,cv_cutoff = NULL,
   return(df)
 }
 # Cluster variables according to DIFAcTO pipeline
-corr_cluster = function(df,corr_cutoff = 0.7,core_ratio = 0.5){
-  
+corr_cluster = function(df,corr_cutoff = 0.7,parallel_ratio = 0.5,
+                        outcome = "y",id_cols = c("id","time"),
+                        heatmap = T,heatmap_params = list(show_rownames = F,show_colnames = F),
+                        network = T){
+  # Get predictors
+  pred = setdiff(colnames(df),c(id_cols,outcome))
+  # Correlations between predictors
+  corr_mat = cor(df[,initial_set],use = "pairwise.complete.obs")
+  # Get pairs
+  var_cor = corr_mat*lower.tri(corr_mat)
+  # Correlation cutoff
+  check_cor = which(abs(var_cor) >= corr_cutoff, arr.ind=TRUE)
+  # Convert correlated pairs into graph clusters
+  graph_cor = graph.data.frame(check_cor, directed = FALSE)
+  # Get names
+  groups_cor = split(unique(as.vector(check_cor)), clusters(graph_cor)$membership)
+  groups = lapply(groups_cor,FUN=function(list_cor){rownames(var_cor)[list_cor]})
+  # Find highest correlation within each group
+  best_cor = lapply(groups, function(g){
+    assocs = lapply(g, function(v){
+      form = as.formula(paste0(outcome,"~",v))
+      mod = glm(form,df,family = "binomial")
+      coefs = summary(mod)$coefficients
+      return(abs(coefs[2,1]))
+    })
+    return(g[which.max(assocs)])
+  })
+  best_cor = as.character(best_cor)
+  # Plots
+  if(heatmap){
+    heatmap_params[["mat"]] = corr_mat
+    heat = do.call(pheatmap,heatmap_params)
+  }
+  if(network){
+    # Interactive plot
+    int_plot_df = check_cor
+    int_plot_df[,1] = rownames(corr_mat)[int_plot_df[,1]]
+    int_plot_df[,2] = colnames(corr_mat)[as.numeric(int_plot_df[,2])]
+    # Node DF
+    nodes <- data.frame(name = unique(c(int_plot_df[,1], int_plot_df[,2])), stringsAsFactors = FALSE)
+    nodes$id <- 0:(nrow(nodes) - 1)
+    # Edges DF
+    edges <- int_plot_df %>% data.frame(.) %>%
+      left_join(nodes, by = c("row" = "name")) %>%
+      select(-row) %>%
+      rename(source = id) %>%
+      left_join(nodes, by = c("col" = "name")) %>%
+      select(-col) %>%
+      rename(target = id)
+    # PLot parameters
+    edges$width <- 1
+    # Color by group
+    nodes$group = sapply(nodes$name, function(n){
+      l = lapply(groups, function(x){
+        n %in% x
+      })
+      as.numeric(which(l == TRUE))
+    })
+    # Plot
+    p = forceNetwork(Links = edges, Nodes = nodes, 
+                     Source = "source",
+                     Target = "target",
+                     NodeID ="name",
+                     Group = "group",
+                     Value = "width",
+                     opacity = 0.9,
+                     zoom = TRUE)
+  }
+  if(heatmap & network){
+    return(list("best" = best_cor,"heatmap" = heat,"network" = p))
+  } else if (heatmap & !network){
+    return(list("best" = best_cor,"heatmap" = heat))
+  } else if (!heatmap & network){
+      return(list("best" = best_cor,"network" = p))
+    } else {return(best_cor)}
 }
-
 ```
 
 # Methods
 
-1. Data were combined into rectangular format with a total of `r length(all_vars)` variables.
-2. Columns with >= `r missing_cutoff*100`% missing data or coefficient of variation (CV) > 30% were dropped. There were `r length(missing)` variables with too much missing data, and `r length(high_cv)` with a high CV. A total of `r ncol(time_0)-5` variables remained after this step. 
-3. Rows missing all of the retained variables from step 2 were dropped, resulting in `r nrow(time_0)` observations.
+1. Columns with >= 80% missing data were dropped. 
+3. Rows missing all of the retained variables from step 1 were dropped.
 4. Remaining variables were scaled prior to analysis.
 4. Correlation between the remaining predictors was examined visually using a heatmap, and predictors were clustered based on correlation coefficient. 
 5. Within each cluster, the variable with the strongest association with the outcome was selected to continue on to the lasso.
 
 # Predictor Clustering
 
-## By correlation with other predictors
-
-### Heatmap of variable correlations
+## Carotenoids
 
 ```{r}
-corr_mat = data.frame(cor(time_0[,initial_set],use = "pairwise.complete.obs"))
-# Plot
-plot_mat = corr_mat
-blank = names(which(rowSums(is.na(plot_mat)) == ncol(plot_mat)))
-plot_mat[,blank] = NULL
-plot_mat = plot_mat[!(row.names(plot_mat) %in% blank),]
-pheatmap(plot_mat,show_rownames = F,show_colnames = F)
+d = data_preprocces(X$carotenoids)
+res = corr_cluster(d)
+res$heatmap
+res$network
 ```
-
-### Variable network diagram
-
-```{r}
-# Get pairs
-var_cor = corr_mat*lower.tri(corr_mat)
-# Correlation
-corr_cutoff = 0.7
-check_cor = which(abs(var_cor) >= corr_cutoff, arr.ind=TRUE)
-# Convert correlated pairs into graph clusters
-graph_cor = graph.data.frame(check_cor, directed = FALSE)
-# Get names
-groups_cor = split(unique(as.vector(check_cor)), clusters(graph_cor)$membership)
-groups = lapply(groups_cor,FUN=function(list_cor){rownames(var_cor)[list_cor]})
-# Find highest correlation within each group
-best_cor = lapply(groups, function(g){
-  assocs = lapply(g, function(v){
-    form = as.formula(paste0("y~",v))
-    mod = glm(form,time_0,family = "binomial")
-    coefs = summary(mod)$coefficients
-    return(abs(coefs[2,1]))
-  })
-  return(g[which.max(assocs)])
-})
-best_cor = as.character(best_cor)
-# Interactive plot
-int_plot_df = check_cor
-int_plot_df[,1] = rownames(corr_mat)[int_plot_df[,1]]
-int_plot_df[,2] = colnames(corr_mat)[as.numeric(int_plot_df[,2])]
-
-nodes <- data.frame(name = unique(c(int_plot_df[,1], int_plot_df[,2])), stringsAsFactors = FALSE)
-nodes$id <- 0:(nrow(nodes) - 1)
-
-edges <- int_plot_df %>% data.frame(.) %>%
-  left_join(nodes, by = c("row" = "name")) %>%
-  select(-row) %>%
-  rename(source = id) %>%
-  left_join(nodes, by = c("col" = "name")) %>%
-  select(-col) %>%
-  rename(target = id)
-
-edges$width <- 1
-
-nodes$group = sapply(nodes$name, function(n){
-  l = lapply(groups, function(x){
-    n %in% x
-  })
-  as.numeric(which(l == TRUE))
-})
-
-
-
-p = forceNetwork(Links = edges, Nodes = nodes, 
-                 Source = "source",
-                 Target = "target",
-                 NodeID ="name",
-                 Group = "group",
-                 Value = "width",
-                 opacity = 0.9,
-                 zoom = TRUE)
-p
-```
-
-Using a within cluster correlation cutoff of `r corr_cutoff` results in `r length(groups)` clusters. However, some of these clusters contain a large number of variables. 
 
 # Lasso
 
