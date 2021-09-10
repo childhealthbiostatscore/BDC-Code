@@ -64,12 +64,12 @@ data_preprocces = function(df,missing_cutoff = 0.8,cv_cutoff = NULL,
 # Cluster variables according to DIFAcTO pipeline
 corr_cluster = function(df,corr_cutoff = 0.7,parallel_ratio = 0.5,
                         outcome = "y",id_cols = c("id","time"),
-                        heatmap = T,heatmap_params = list(show_rownames = F,show_colnames = F),
+                        heatmap = T,heatmap_params = list(show_rownames = T,show_colnames = T),
                         network = T){
   # Get predictors
   pred = setdiff(colnames(df),c(id_cols,outcome))
   # Correlations between predictors
-  corr_mat = cor(df[,initial_set],use = "pairwise.complete.obs")
+  corr_mat = cor(df[,pred],use = "pairwise.complete.obs")
   # Get pairs
   var_cor = corr_mat*lower.tri(corr_mat)
   # Correlation cutoff
@@ -127,8 +127,10 @@ corr_cluster = function(df,corr_cutoff = 0.7,parallel_ratio = 0.5,
                      NodeID ="name",
                      Group = "group",
                      Value = "width",
-                     opacity = 0.9,
-                     zoom = TRUE)
+                     zoom = TRUE,
+                     opacity = 1,
+                     height = 720,
+                     width = 720)
   }
   if(heatmap & network){
     return(list("best" = best_cor,"heatmap" = heat,"network" = p))
@@ -153,33 +155,68 @@ corr_cluster = function(df,corr_cutoff = 0.7,parallel_ratio = 0.5,
 ## Carotenoids
 
 ```{r}
-d = data_preprocces(X$carotenoids)
-res = corr_cluster(d)
-res$heatmap
-res$network
+carotenoids = data_preprocces(X$carotenoids)
+carotenoids_best = corr_cluster(carotenoids)
+carotenoids_best$heatmap
+carotenoids_best$network
+kable(carotenoids_best$best,col.names = "Selected variables")
+```
+
+## Fatty acids
+
+```{r}
+fa = data_preprocces(X$fatty_acids)
+fa_best = corr_cluster(fa)
+fa_best$heatmap
+fa_best$network
+kable(fa_best$best,col.names = "Selected variables")
+```
+
+## Metabolomics
+
+```{r}
+metab = data_preprocces(X$metabolomics)
+metab_best = corr_cluster(metab,heatmap_params = list(show_rownames = F,show_colnames = F))
+metab_best$heatmap
+metab_best$network
+kable(metab_best$best,col.names = "Selected variables")
+```
+
+## Transcriptomics
+
+```{r eval=FALSE}
+transcript = data_preprocces(X$transcriptomics)
+transcript_best = corr_cluster(transcript,heatmap_params = list(show_rownames = F,show_colnames = F))
+transcript_best$heatmap
+transcript_best$network
+kable(transcript_best$best,col.names = "Selected variables")
+```
+
+## Negative lipidomics
+
+```{r}
+negative = data_preprocces(X$negative_lipidomics)
+negative_best = corr_cluster(negative,heatmap_params = list(show_rownames = F,show_colnames = F))
+negative_best$heatmap
+negative_best$network
+kable(negative_best$best,col.names = "Selected variables")
+```
+
+## Positive lipidomics
+
+```{r}
+positive = data_preprocces(X$positive_lipidomics)
+positive_best = corr_cluster(positive,heatmap_params = list(show_rownames = F,show_colnames = F))
+positive_best$heatmap
+positive_best$network
+kable(positive_best$best,col.names = "Selected variables")
 ```
 
 # Lasso
 
-```{r}
-lasso_df = time_0[,c(best_cor,"y")]
-lasso_df = data.matrix(lasso_df[complete.cases(lasso_df),])
-# Use lambda.min from glmnet.cv
-cv = cv.glmnet(x = lasso_df[,1:(ncol(lasso_df)-1)],y = lasso_df[,"y"],family = "binomial")
-mod = glm.fit(x = lasso_df[,1:(ncol(lasso_df)-1)],y = lasso_df[,"y"],family = "binomial")
-cs = coef(mod)
-```
-
-The variables `r paste(best_cor,collapse = ", ")` were selected to continue to the lasso step. `r sum(coef(mod)>0)` were selected by the lasso:
+In addition to the selected variables from the 'omics assays above, all variables from assays with 3 or fewer measures (ascorbic acid, cholesterol, growth, etc.) were included in the lasso. 
 
 ```{r}
-kable(rownames(cs)[which(cs[,1]!=0)],col.names = "")
+
 ```
 
-# Alternative approaches and questions
-
-1. The DIFAcTO pipeline was not created to analyze longitudinal data. How should we adapt it for TEDDY?
-2. Using the DIFAcTO method of creating clusters results in a very small number of variables moving on to the lasso. We could try to optimize the correlation cutoff, or we could cut the cluster tree to create a pre-determined number of variables.
-3. The DIFAcTO methos also selects just one of the many correlated variables in a cluster, but this may be losing a huge amount of information, particularly in clusters with a large number of variables. Could we use elasticnet instead? This is an approach that is very similar to the lasso, but can select groups of correlated variables.
-4. What known factors should be included in the lasso (e.g. BMI, etc.)?
-5. Are there variables that should be combined? 
