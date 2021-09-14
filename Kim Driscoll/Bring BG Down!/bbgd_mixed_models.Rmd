@@ -15,14 +15,156 @@ library(arsenal)
 library(skimr)
 library(knitr)
 library(tidyverse)
+library(caret)
+library(glmnet)
+library(Hmisc)
+library(UpSetR)
+library(lme4)
+library(lmerTest)
+library(car)
 knitr::opts_chunk$set(echo = FALSE)
 home_dir = ifelse(.Platform$OS.type != "unix","T:/",
-                  "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/BBGD/")
+                  "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Bring BG Down/")
 knitr::opts_knit$set(root.dir = home_dir)
+set.seed(1017)
+```
+
+```{r data}
+df = read.csv("./Data_Cleaned/cleaned_df.csv",na.strings = "")
+# Variable formatting
+df$X = NULL
+df$c_gender = factor(df$c_gender)
+# Dichotomize variables
+df$Total.Household.Income = factor(df$Total.Household.Income)
+levels(df$Total.Household.Income) = 
+  c("$90K+","<$90K","<$90K","<$90K","<$90K","<$90K","<$90K","<$90K","<$90K","$90K+","<$90K")
+df$Highest.Degree.Parent.Completed = factor(df$Highest.Degree.Parent.Completed)
+levels(df$Highest.Degree.Parent.Completed) = 
+  c("Associate's or High School","Bachelor's or above","Bachelor's or above",
+    "Associate's or High School","Bachelor's or above")
 ```
 
 # Table 1: Participant Characteristics
 
-```{r}
-df = read.csv("./Data_Cleaned/cleaned_df.csv")
+```{r results='asis'}
+# Table 1
+t1 = tableby(treatment_group~age+c_gender+Parent.Maintain.High.BG.of.HFS+Parent.Worry.Helplessness.Subscale.of.HFS+Parent.Social.Consequences.Subscale.of.HFS+Parent.GAD.7.Score+Private.Insurance+fe(Total.Household.Income)+fe(Parent.s.Marital.Status)+fe(Highest.Degree.Parent.Completed)+fe(Parent.Race)+fe(Parent.Ethnicity)+fe(Primary.Male.Caretaker),
+             data = df[df$studyvisit == 1,])
+summary(t1,pfootnote = T)
 ```
+
+# Methods
+
+All variables from Table 1 were included as covariates in model selection despite not being significantly different in univariate tests. Model selection for covariates was performed at study visit 1, because elasticnet regularization has not been implemented for longitudinal models. Time was treated as a continuous variable, and final models were re-fit using all timepoints. Elasticnet was used in place of the lasso because it is more effective when selecting between correlated variables. Optimal tuning parameters were selected to minimize root mean square error based on leave one out cross validation.
+
+Household income and education were dichotomized into >= \$90K vs. < $90K and associate's degree or high school vs. bachelor's degree and above. Age, gender, income, marital status, and race were selected for all outcomes, and were thus included in the final model results.
+
+# Model selection
+
+```{r}
+model_select = function(outcome,df = vis_1,fam = "gaussian",pred = predictors){
+  df = df[,c(outcome,pred)]
+  # CV
+  cv = trainControl(method = "LOOCV")
+  # Fit
+  form = as.formula(paste0(outcome,"~",paste0(pred,collapse = "+")))
+  hit_elnet = train(form, data = df,method = "glmnet",trControl = cv,
+                    na.action = "na.omit",family = fam)
+  # Best
+  best = hit_elnet$bestTune
+  # Final model 
+  lasso_df = df[complete.cases(df),]
+  mod = glmnet(y = data.matrix(lasso_df[,outcome]),x = data.matrix(lasso_df[,pred]),
+               alpha = as.numeric(best["alpha"]),lambda = as.numeric(best["lambda"]),
+               family = fam)
+  return(rownames(coef(mod))[which(round(coef(mod),3)!=0 & rownames(coef(mod)) != "(Intercept)")])
+}
+# Just baseline obs. for model selection
+vis_1 = df[df$studyvisit == 1,]
+# Predictors
+predictors = c("treatment_group","age","c_gender","Private.Insurance","Total.Household.Income",
+               "Parent.s.Marital.Status","Highest.Degree.Parent.Completed","Parent.Race",
+               "Parent.Ethnicity","Primary.Male.Caretaker")
+```
+
+## Parent Maintain High BG of HFS
+
+```{r}
+maintain_coefs = model_select(outcome = "Parent.Maintain.High.BG.of.HFS")
+kable(maintain_coefs,col.names = "Selected Variables")
+```
+
+## Parent Worry/Helplessness Subscale of HFS
+
+```{r}
+worry_coefs = model_select(outcome = "Parent.Worry.Helplessness.Subscale.of.HFS")
+kable(worry_coefs,col.names = "Selected Variables")
+```
+
+## Parent Social Consequences Subscale of HFS
+
+This outcome was dichotomized as [0, 6) vs [6,max] in order to obtain approximately even groups
+
+```{r}
+vis_1$Parent.Social.Consequences.Subscale.of.HFS = cut2(vis_1$Parent.Social.Consequences.Subscale.of.HFS,g=2)
+social_coefs = model_select(outcome = "Parent.Social.Consequences.Subscale.of.HFS",fam = "binomial")
+kable(social_coefs,col.names = "Selected Variables")
+```
+
+## Parent GAD-7 Score
+
+This outcome was dichotomized as [7,13) vs. [13,max] in order to obtain approximately even groups
+
+```{r}
+vis_1$Parent.GAD.7.Score = cut2(vis_1$Parent.GAD.7.Score,g=2)
+gad_coefs = model_select(outcome = "Parent.GAD.7.Score",fam = "binomial")
+kable(gad_coefs,col.names = "Selected Variables")
+```
+
+## Upset plot
+
+```{r}
+# Format output
+selected = do.call(rbind,list(
+  predictors %in% maintain_coefs,
+  predictors %in% social_coefs,
+  predictors %in% worry_coefs,
+  predictors %in% gad_coefs
+))
+colnames(selected) = predictors
+selected = data.frame(apply(selected,2,as.numeric))
+# Plot
+upset(selected,nsets = ncol(selected),order.by = "freq")
+```
+
+# Model results
+
+```{r}
+fit_mod = function(outcome,pred = predictors,dat = df,fam = "gaussian"){
+  form = as.formula(paste0(outcome,"~","studyvisit*treatment_group+",
+                           paste0(pred,collapse = "+"),"+(1|participant_id)"))
+  if(fam == "gaussian"){
+    mod = lmer(form,data = dat,na.action = "na.omit")
+  } else {
+    mod = glmer(form,data = dat,na.action = "na.omit",family = fam)
+  }
+  return(mod)
+}
+# Selected predictors
+predictors = 
+  c("age","c_gender","Private.Insurance","Total.Household.Income","Parent.s.Marital.Status","Parent.Race")
+# Fill down
+df = df %>% group_by(participant_id) %>% 
+  fill(all_of(c("Private.Insurance","Total.Household.Income","Parent.s.Marital.Status","Parent.Race")))
+```
+
+## Parent Maintain High BG of HFS
+
+```{r}
+mod = fit_mod(outcome = "Parent.Maintain.High.BG.of.HFS")
+kable(Anova(mod,type = "III"),caption = "Type III Tests of Fixed Effects")
+kable(summary(mod)$coefficients,caption = "Mixed Model Coefficients")
+```
+
+# Questions for Kim and Holly
+ 1. Participant 420's DOB appears to be incorrect, could you send the correct date?
