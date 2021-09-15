@@ -14,12 +14,14 @@ library(glmnet)
 library(knitr)
 library(igraph)
 library(networkD3)
+library(car)
 knitr::opts_chunk$set(echo = FALSE)
 home_dir = ifelse(.Platform$OS.type != "unix",
                   "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data",
                   "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data")
 knitr::opts_knit$set(root.dir = home_dir)
 rm(home_dir)
+set.seed(1017)
 ```
 
 ```{r data}
@@ -111,7 +113,7 @@ corr_cluster = function(df,corr_cutoff = 0.7,parallel_ratio = 0.5,
       left_join(nodes, by = c("col" = "name")) %>%
       select(-col) %>%
       rename(target = id)
-    # PLot parameters
+    # Plot parameters
     edges$width <- 1
     # Color by group
     nodes$group = sapply(nodes$name, function(n){
@@ -149,7 +151,7 @@ corr_cluster = function(df,corr_cutoff = 0.7,parallel_ratio = 0.5,
 4. Remaining variables were scaled prior to analysis.
 4. Correlation between the remaining predictors was examined visually using a heatmap, and predictors were clustered based on correlation coefficient. 
 5. Within each cluster, the variable with the strongest association with the outcome was selected to continue on to the lasso.
-6. A lasso model was fit using the variables selected from previous steps.
+6. A lasso model was fit using the variables selected from previous steps. Using the lambda value that results in minimum error selects 0 predictors. So instead we used the lambda value that results in the largest model that is still within 1SD of the minimum error, and fits without numerical probabilities of 0 or 1 occurring.
 
 # Predictor Clustering
 
@@ -185,18 +187,16 @@ kable(metab_best$best,col.names = "Selected variables")
 
 ## Transcriptomics
 
-```{r}
-transcript = data_preprocces(X$transcriptomics)
-transcript_best = corr_cluster(transcript,heatmap_params = list(show_rownames = F,show_colnames = F))
-transcript_best$heatmap
-transcript_best$network
-kable(transcript_best$best,col.names = "Selected variables")
+```{r cache=TRUE}
+transcript = data_preprocces(X$transcriptomics,cv_cutoff = 0.2)
+transcript_best = corr_cluster(transcript,heatmap=F,network=F)
+kable(transcript_best,col.names = "Selected variables")
 ```
 
 ## Negative lipidomics
 
 ```{r}
-negative = data_preprocces(X$negative_lipidomics)
+negative = data_preprocces(X$negative_lipidomics,cv_cutoff = 0.2)
 negative_best = corr_cluster(negative,heatmap_params = list(show_rownames = F,show_colnames = F))
 negative_best$heatmap
 negative_best$network
@@ -220,7 +220,7 @@ In addition to the selected variables from the 'omics assays above, all variable
 ```{r}
 # All variables selected above
 lasso_vars = c("ascorbic_acid",carotenoids_best$best,"cholesterol",
-               fa_best$best,metab_best$best,transcript_best$best,
+               fa_best$best,metab_best$best,transcript_best,
                "height_cm","weight_kg","agemos",negative_best$best,positive_best$best,
                "alphatocopherol","gammatocopherol","vitamin_d")
 lasso_form = as.formula(paste0("y~",paste0(lasso_vars,collapse = "+")))
@@ -229,30 +229,37 @@ smaller_dfs = lapply(X, function(d){
   d = d[,which(colnames(d) %in% c("ID","id","time","y",lasso_vars))]
 })
 # Combine into single dataframe
-lasso_df = full_join(smaller_dfs[[1]],smaller_dfs[[2]],by = c("ID"="id","time","y"))
-lasso_df = full_join(lasso_df,smaller_dfs[[3]],by = c("ID","y","time"))
-lasso_df = full_join(lasso_df,smaller_dfs[[4]],by = c("ID"="id","time","y"))
-lasso_df = full_join(lasso_df,smaller_dfs[[5]],by = c("ID"="id","time","y"))
-lasso_df = full_join(lasso_df,smaller_dfs[[6]],by = c("ID"="id","time","y"))
-lasso_df = full_join(lasso_df,smaller_dfs[[7]],by = c("ID"="id","time","y"))
-lasso_df = full_join(lasso_df,smaller_dfs[[8]],by = c("ID"="id","time","y"))
-lasso_df = left_join(lasso_df,smaller_dfs[[9]],by = c("ID"="id","time","y"))
-lasso_df[,grep("\\.y",colnames(lasso_df))] = NULL
-colnames(lasso_df)[grep("\\.x",colnames(lasso_df))] = 
-  sub("\\.x","",colnames(lasso_df)[grep("\\.x",colnames(lasso_df))])
-lasso_df = left_join(lasso_df,smaller_dfs[[10]],by = c("ID"="id","time","y"))
-lasso_df = left_join(lasso_df,smaller_dfs[[11]],by = c("y", "ID", "time"))
+df = full_join(smaller_dfs[[1]],smaller_dfs[[2]],by = c("ID"="id","time","y"))
+df = full_join(df,smaller_dfs[[3]],by = c("ID","y","time"))
+df = full_join(df,smaller_dfs[[4]],by = c("ID"="id","time","y"))
+df = full_join(df,smaller_dfs[[5]],by = c("ID"="id","time","y"))
+df = full_join(df,smaller_dfs[[6]],by = c("ID"="id","time","y"))
+df = full_join(df,smaller_dfs[[7]],by = c("ID"="id","time","y"))
+df = full_join(df,smaller_dfs[[8]],by = c("ID"="id","time","y"))
+df = left_join(df,smaller_dfs[[9]],by = c("ID"="id","time","y"))
+df[,grep("\\.y",colnames(df))] = NULL
+colnames(df)[grep("\\.x",colnames(df))] = 
+  sub("\\.x","",colnames(df)[grep("\\.x",colnames(df))])
+df = left_join(df,smaller_dfs[[10]],by = c("ID"="id","time","y"))
+df = left_join(df,smaller_dfs[[11]],by = c("y", "ID", "time"))
 # Remove missing
-#lasso_df = data_preprocces(lasso_df,id_cols = c("ID","time"))
-lasso_df = lasso_df[complete.cases(lasso_df),]
+lasso_df = df[complete.cases(df),]
 # CV
 cv_fit = cv.glmnet(x = data.matrix(lasso_df[,lasso_vars]), 
                    y = factor(lasso_df[,"y"]), family = "binomial")
+# Fit
 mod = glmnet(x = data.matrix(lasso_df[,lasso_vars]), 
              y = factor(lasso_df[,"y"]), 
-             family = "binomial",lambda = cv_fit$lambda.min)
-# Fit
-mod = glm(lasso_form,lasso_df,family = "binomial")
+             family = "binomial",lambda = cv_fit$lambda[20])
+kable(rownames(coef(mod))[which(coef(mod) != 0)],col.names = "Selected variables")
 ```
 
+The lasso is most likely picking variables that are highly correlated. Variable inflation factors for the final model are:
 
+```{r}
+pred = rownames(coef(mod))[which(coef(mod) != 0)]
+pred = pred[pred != "(Intercept)"]
+form = as.formula(paste0("y~",paste0(pred,collapse = "+")))
+mod = glm(form,data = df,family = "binomial")
+vif(mod)
+```
