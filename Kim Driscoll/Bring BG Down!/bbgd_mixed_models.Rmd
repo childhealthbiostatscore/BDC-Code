@@ -42,6 +42,17 @@ df$Highest.Degree.Parent.Completed = factor(df$Highest.Degree.Parent.Completed)
 levels(df$Highest.Degree.Parent.Completed) = 
   c("Associate's or High School","Bachelor's or above","Bachelor's or above",
     "Associate's or High School","Bachelor's or above")
+df$Parent.Social.Consequences.Subscale.of.HFS = 
+  cut(df$Parent.Social.Consequences.Subscale.of.HFS,right = F,
+      breaks = c(-Inf,9,Inf),labels = c("Not Elevated","Elevated"))
+df$Parent.GAD.7.Score = 
+  cut(df$Parent.GAD.7.Score,right = F,
+      breaks = c(-Inf,10,Inf),labels = c("Not Elevated","Elevated"))
+# Fix birthdays and age
+df$c_dob[df$participant_id == 420] = "2007-05-15"
+df$c_dob[df$participant_id == 429] = "2008-01-08"
+df$age = as.numeric(difftime(lubridate::ymd(df$t1_date),lubridate::ymd(df$c_dob),
+                             units = "days"))/365.25
 ```
 
 # Table 1: Participant Characteristics
@@ -103,31 +114,29 @@ kable(worry_coefs,col.names = "Selected Variables")
 
 ## Parent Social Consequences Subscale of HFS
 
-This outcome was dichotomized in order to obtain approximately even groups
+This outcome was dichotomized as >= 9 vs. < 9. However, the models failed to converge due to lack of variability in the outcome.
 
-```{r}
-vis_1$Parent.Social.Consequences.Subscale.of.HFS = cut2(vis_1$Parent.Social.Consequences.Subscale.of.HFS,g=2)
+```{r eval=FALSE}
 social_coefs = model_select(outcome = "Parent.Social.Consequences.Subscale.of.HFS",fam = "binomial")
-kable(social_coefs,col.names = "Selected Variables")
 ```
 
 ## Parent GAD-7 Score
 
-This outcome was dichotomized in order to obtain approximately even groups.
+This outcome was dichotomized as >= 10 vs. < 10.
 
 ```{r}
-vis_1$Parent.GAD.7.Score = cut2(vis_1$Parent.GAD.7.Score,g=2)
 gad_coefs = model_select(outcome = "Parent.GAD.7.Score",fam = "binomial")
 kable(gad_coefs,col.names = "Selected Variables")
 ```
 
 ## Upset plot
 
+Social consequences were not included in model selection due to model instability (very view people had elevated scores).
+
 ```{r}
 # Format output
 selected = do.call(rbind,list(
   predictors %in% maintain_coefs,
-  predictors %in% social_coefs,
   predictors %in% worry_coefs,
   predictors %in% gad_coefs
 ))
@@ -146,16 +155,17 @@ fit_mod = function(outcome,pred = predictors,dat = df,fam = "gaussian"){
   if(fam == "gaussian"){
     mod = lmer(form,data = dat,na.action = "na.omit")
   } else {
-    mod = glmer(form,data = dat,na.action = "na.omit",family = fam)
+    mod = glmer(form,data = dat,na.action = "na.omit",family = fam,
+                control=glmerControl(optCtrl=list(maxfun=20000)))
   }
   return(mod)
 }
 # Selected predictors
 predictors = 
-  c("age","c_gender","Private.Insurance","Total.Household.Income","Parent.s.Marital.Status","Parent.Race")
+  c("age","c_gender","Total.Household.Income","Parent.s.Marital.Status","Parent.Race")
 # Fill down
 df = df %>% group_by(participant_id) %>% 
-  fill(all_of(c("Private.Insurance","Total.Household.Income","Parent.s.Marital.Status","Parent.Race")))
+  fill(all_of(predictors))
 ```
 
 ## Parent Maintain High BG of HFS
@@ -176,28 +186,25 @@ kable(summary(mod)$coefficients,caption = "Mixed Model Coefficients")
 
 ## Parent Social Consequences Subscale of HFS
 
-Failed to converge.
+Would only converge when including age and gender.
 
-```{r eval=FALSE}
+```{r}
 df$Parent.Social.Consequences.Subscale.of.HFS = 
-  as.numeric(cut2(df$Parent.Social.Consequences.Subscale.of.HFS,g = 2))-1
-mod = fit_mod(outcome = "Parent.Worry.Helplessness.Subscale.of.HFS",fam = "binomial")
+  as.numeric(df$Parent.Social.Consequences.Subscale.of.HFS) - 1
+mod = fit_mod(outcome = "Parent.Social.Consequences.Subscale.of.HFS",
+              fam = "binomial",pred = predictors[c(1,2)])
 kable(Anova(mod,type = "III"),caption = "Type III Tests of Fixed Effects")
 kable(summary(mod)$coefficients,caption = "Mixed Model Coefficients")
 ```
 
 ## Parent GAD-7 Score
 
-Failed to converge.
+Would only converge when including age and gender.
 
-```{r eval=FALSE}
-df$Parent.GAD.7.Score = 
-  as.numeric(cut2(df$Parent.GAD.7.Score,g = 2))-1
-mod = fit_mod(outcome = "Parent.GAD.7.Score",fam = "binomial")
+```{r}
+df$Parent.GAD.7.Score = as.numeric(df$Parent.GAD.7.Score)-1
+mod = fit_mod(outcome = "Parent.GAD.7.Score",fam = "binomial",
+              pred = predictors[c(1,2)])
 kable(Anova(mod,type = "III"),caption = "Type III Tests of Fixed Effects")
 kable(summary(mod)$coefficients,caption = "Mixed Model Coefficients")
 ```
-
-# Questions for Kim and Holly
- 1. Participant 420's DOB appears to be incorrect, could you send the correct date?
- 2. How should we dichotomize the last two outcomes? What makes the most clinical sense?
