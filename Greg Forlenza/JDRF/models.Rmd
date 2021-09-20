@@ -7,7 +7,7 @@ output: word_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE,dpi = 600)
-knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Greg Forlenza/JDRF")
+knitr::opts_knit$set(root.dir = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Greg Forlenza/JDRF")
 library(Hmisc)
 library(arsenal)
 library(skimr)
@@ -100,6 +100,8 @@ levels(df$demographics_cgmhx.factor) =
 levels(df$demographics_pumphx.factor) = 
   c("<= 6 months","<= 6 months","6+ months","6+ months","6+ months","6+ months",
     "<= 6 months")
+df$demographics_ethnicity.factor = 
+  relevel(df$demographics_ethnicity.factor, ref = "NOT Hispanic or Latino")
 # Make df for lasso
 lasso <- df %>% select(-ya_paid_total,-ya_hfs_behave_total,-ya_hfs_worry_total,
                        -c_paid_total,-c_hfs_behave_total,-c_hfs_worry_total)
@@ -258,6 +260,8 @@ stan_df$demographics_ethnicity.factor <-
   factor(stan_df$demographics_ethnicity.factor)
 levels(stan_df$demographics_ethnicity.factor) <- 
   levels(df$demographics_ethnicity.factor)
+stan_df$demographics_ethnicity.factor = 
+  relevel(stan_df$demographics_ethnicity.factor,ref = "NOT Hispanic or Latino")
 # Get am use at final timepoint
 success <- stanford %>% group_by(Participant.ID) %>%
   filter(Event.Name == "12 month visit" | 
@@ -329,13 +333,17 @@ summary(t1,labelTranslations = label_list,pfootnote=T)
 
 ### Final model (1 month variables)
 
+$$
+log_e(\frac{p}{1-p}) = \beta_0+\beta_1*\text{HbA1c}+\beta_2*\text{Time in AM}+\beta_3*\text{TIR}+\beta_4*\text{Daily Boluses}+\beta_5*\text{Male}+\beta_6*\text{Hispanic}
+$$
+
 ```{r m1 time_am,echo=FALSE}
 final_model <- as.formula("success ~ scale(hba1c,scale=F) + scale(m1_time_am,scale=F) +
              scale(m1_tir,scale=F) + scale(m1_boluses,scale=F) + demographics_sex.factor +
              demographics_ethnicity.factor")
 final_mod = glm(final_model,family = "binomial",df)
 t = broom::tidy(final_mod,conf.int = T,exponentiate=T)
-t$term[2:nrow(t)] = c("Baseline HbA1c","M1 AM %","M1 TIR","M1 Boluses per Day","Male","NOT Hispanic or Latino")
+#t$term[2:nrow(t)] = c("Baseline HbA1c","M1 AM %","M1 TIR","M1 Boluses per Day","Male","Hispanic or Latino")
 t[,2:ncol(t)] <- lapply(t[,2:ncol(t)],function(x){round(x,4)})
 
 r = ROC(form = final_model,data = df,MX=F,MI=F,PV=F,plot = "ROC",
@@ -350,8 +358,8 @@ final_model <- as.formula("success ~ scale(hba1c,scale=F) + scale(m3_time_am,sca
              scale(m3_tir,scale=F) + scale(m3_boluses,scale=F) + demographics_sex.factor +
              demographics_ethnicity.factor")
 final_mod = glm(final_model,family = "binomial",df)
-t = broom::tidy(final_mod,conf.int = T)
-t$term[2:nrow(t)] = c("Baseline HbA1c","M3 AM %","M3 TIR","M3 Boluses per Day","Male","NOT Hispanic or Latino")
+t = broom::tidy(final_mod,conf.int = T,exponentiate = T)
+#t$term[2:nrow(t)] = c("Baseline HbA1c","M3 AM %","M3 TIR","M3 Boluses per Day","Male","Hispanic or Latino")
 t[,2:ncol(t)] <- lapply(t[,2:ncol(t)],function(x){round(x,4)})
 
 r = ROC(form = final_model,data = df,MX=F,MI=F,PV=F,plot = "ROC",main = "3-Month Model")

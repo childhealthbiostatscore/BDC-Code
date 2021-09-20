@@ -103,6 +103,8 @@ for (f in files) {
   missing = vars[which(!(vars %in% colnames(t)))]
   t[,missing] = NA
   t$Date = parse_date_time(t$Date,orders = c("mdy","ymd"))
+  # Remove dates with year 2009
+  t = t[year(t$Date)!=2009,]
   # Get dates
   id = strsplit(file_id,"_")[[1]][2]
   completed = dates$V1_Completed[match(id,dates$id)]

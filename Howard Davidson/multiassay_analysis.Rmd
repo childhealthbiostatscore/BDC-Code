@@ -8,33 +8,258 @@ output: html_document
 ```{r setup, include=FALSE}
 library(mlr3verse)
 library(tidyverse)
-library(heatmaply)
-knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
-home_dir = ifelse(.Platform$OS.type != "unix","T:/",
-                  "/mnt/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data")
+library(pheatmap)
+library(skimr)
+library(glmnet)
+library(knitr)
+library(igraph)
+library(networkD3)
+library(car)
+knitr::opts_chunk$set(echo = FALSE)
+home_dir = ifelse(.Platform$OS.type != "unix",
+                  "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data",
+                  "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data")
 knitr::opts_knit$set(root.dir = home_dir)
 rm(home_dir)
+set.seed(1017)
 ```
 
-```{r load full df}
-load("./Data_Clean/separate_timepoints.RData")
+```{r data}
+load("./Data_Clean/time_0.RData")
+```
+
+```{r functions}
+# Clean data (standard pipeline)
+data_preprocces = function(df,missing_cutoff = 0.8,cv_cutoff = NULL,
+                           log_transform = F,scale = T,
+                           outcome = "y",id_cols = c("id","time")){
+  # Get predictors
+  pred = colnames(df)[which(!(colnames(df) %in% c(outcome,id_cols)))]
+  # Predictors with too much missing data
+  if(!is.null(missing_cutoff)){
+    missing = pred[which(colMeans(is.na(df[,pred]))>=missing_cutoff)]
+  } else {missing = c()}
+  # Predictors with high CV
+  if(!is.null(cv_cutoff)){
+    cvs = sapply(df[,pred], function(c){
+      sd(c,na.rm = T) / mean(c,na.rm = T)
+    })
+    high_cv = pred[which(cvs > cv_cutoff)]
+  } else {high_cv = list()}
+  # Remove columns
+  initial_set = setdiff(pred,c(missing,high_cv))
+  df = df[,c(id_cols,initial_set,outcome)]
+  # Remove rows with all missing
+  rows_missing = rowSums(is.na(df[,initial_set]))
+  df = df[which(rows_missing < length(initial_set)),]
+  # Log transform
+  if(log_transform){
+    df[,initial_set] = lapply(df[,initial_set],log)
+    if(any(df == -Inf)){warning("-Inf present after log transform")}
+  }
+  # Scale
+  if(scale){
+    df[,initial_set] = lapply(df[,initial_set],scale)
+  }
+  return(df)
+}
+# Cluster variables according to DIFAcTO pipeline
+corr_cluster = function(df,corr_cutoff = 0.7,parallel_ratio = 0.5,
+                        outcome = "y",id_cols = c("id","ID","time"),
+                        heatmap = T,heatmap_params = list(show_rownames = T,show_colnames = T),
+                        network = T){
+  # Get predictors
+  pred = setdiff(colnames(df),c(id_cols,outcome))
+  # Correlations between predictors
+  corr_mat = cor(df[,pred],use = "pairwise.complete.obs")
+  # Get pairs
+  var_cor = corr_mat*lower.tri(corr_mat)
+  # Correlation cutoff
+  check_cor = which(abs(var_cor) >= corr_cutoff, arr.ind=TRUE)
+  # Convert correlated pairs into graph clusters
+  graph_cor = graph.data.frame(check_cor, directed = FALSE)
+  # Get names
+  groups_cor = split(unique(as.vector(check_cor)), clusters(graph_cor)$membership)
+  groups = lapply(groups_cor,FUN=function(list_cor){rownames(var_cor)[list_cor]})
+  # Find highest correlation within each group
+  best_cor = lapply(groups, function(g){
+    assocs = lapply(g, function(v){
+      form = as.formula(paste0(outcome,"~",v))
+      mod = glm(form,df,family = "binomial")
+      coefs = summary(mod)$coefficients
+      return(abs(coefs[2,1]))
+    })
+    return(g[which.max(assocs)])
+  })
+  best_cor = as.character(best_cor)
+  # Plots
+  if(heatmap){
+    heatmap_params[["mat"]] = corr_mat
+    heat = do.call(pheatmap,heatmap_params)
+  }
+  if(network){
+    # Interactive plot
+    int_plot_df = check_cor
+    int_plot_df[,1] = rownames(corr_mat)[int_plot_df[,1]]
+    int_plot_df[,2] = colnames(corr_mat)[as.numeric(int_plot_df[,2])]
+    # Node DF
+    nodes <- data.frame(name = unique(c(int_plot_df[,1], int_plot_df[,2])), stringsAsFactors = FALSE)
+    nodes$id <- 0:(nrow(nodes) - 1)
+    # Edges DF
+    edges <- int_plot_df %>% data.frame(.) %>%
+      left_join(nodes, by = c("row" = "name")) %>%
+      select(-row) %>%
+      rename(source = id) %>%
+      left_join(nodes, by = c("col" = "name")) %>%
+      select(-col) %>%
+      rename(target = id)
+    # Plot parameters
+    edges$width <- 1
+    # Color by group
+    nodes$group = sapply(nodes$name, function(n){
+      l = lapply(groups, function(x){
+        n %in% x
+      })
+      as.numeric(which(l == TRUE))
+    })
+    # Plot
+    p = forceNetwork(Links = edges, Nodes = nodes, 
+                     Source = "source",
+                     Target = "target",
+                     NodeID ="name",
+                     Group = "group",
+                     Value = "width",
+                     zoom = TRUE,
+                     opacity = 1,
+                     height = 720,
+                     width = 720)
+  }
+  if(heatmap & network){
+    return(list("best" = best_cor,"heatmap" = heat,"network" = p))
+  } else if (heatmap & !network){
+    return(list("best" = best_cor,"heatmap" = heat))
+  } else if (!heatmap & network){
+    return(list("best" = best_cor,"network" = p))
+  } else {return(best_cor)}
+}
 ```
 
 # Methods
 
-1. Data were combined into rectangular format.
-2. Columns with >= 80% missing data or CV < 30% were dropped. 468 variables remained after this step. 
-3. Rows missing all 468 of the retained variables from step 3 were dropped. 
-4. Correlation between 468 remaining predictors was examined visually using a heatmap, and predictors were clustered using the ... (add the clustering algorithm details here).
- - Dendrograms are colored according to the optimal number of groups. This is determined using the find_k() function ... (more details here).
+1. Columns with >= 80% missing data were dropped. 
+3. Rows missing all of the retained variables from step 1 were dropped.
+4. Remaining variables were scaled prior to analysis.
+4. Correlation between the remaining predictors was examined visually using a heatmap, and predictors were clustered based on correlation coefficient. 
+5. Within each cluster, the variable with the strongest association with the outcome was selected to continue on to the lasso.
+6. A lasso model was fit using the variables selected from previous steps. Using the lambda value that results in minimum error selects 0 predictors. So instead we used the lambda value that results in the largest model that is still within 1SD of the minimum error, and fits without numerical probabilities of 0 or 1 occurring.
 
 # Predictor Clustering
 
-## Correlation with other predictors
+## Carotenoids
 
 ```{r}
-corr_mat = cor(df[,predictors],use = "pairwise.complete.obs")
-heatmaply_cor(corr_mat,k_col = NA,k_row = NA,showticklabels = F,show_dendrogram	= c(F,T))
+carotenoids = data_preprocces(X$carotenoids)
+carotenoids_best = corr_cluster(carotenoids)
+carotenoids_best$heatmap
+carotenoids_best$network
+kable(carotenoids_best$best,col.names = "Selected variables")
 ```
 
-To see which predictors are represented by a given cell, hover over the cell with the mouse.
+## Fatty acids
+
+```{r}
+fa = data_preprocces(X$fatty_acids)
+fa_best = corr_cluster(fa)
+fa_best$heatmap
+fa_best$network
+kable(fa_best$best,col.names = "Selected variables")
+```
+
+## Metabolomics
+
+```{r}
+metab = data_preprocces(X$metabolomics)
+metab_best = corr_cluster(metab,heatmap_params = list(show_rownames = F,show_colnames = F))
+metab_best$heatmap
+metab_best$network
+kable(metab_best$best,col.names = "Selected variables")
+```
+
+## Transcriptomics
+
+```{r cache=TRUE}
+transcript = data_preprocces(X$transcriptomics,cv_cutoff = 0.2)
+transcript_best = corr_cluster(transcript,heatmap=F,network=F)
+kable(transcript_best,col.names = "Selected variables")
+```
+
+## Negative lipidomics
+
+```{r}
+negative = data_preprocces(X$negative_lipidomics,cv_cutoff = 0.2)
+negative_best = corr_cluster(negative,heatmap_params = list(show_rownames = F,show_colnames = F))
+negative_best$heatmap
+negative_best$network
+kable(negative_best$best,col.names = "Selected variables")
+```
+
+## Positive lipidomics
+
+```{r}
+positive = data_preprocces(X$positive_lipidomics)
+positive_best = corr_cluster(positive,heatmap_params = list(show_rownames = F,show_colnames = F))
+positive_best$heatmap
+positive_best$network
+kable(positive_best$best,col.names = "Selected variables")
+```
+
+# Lasso
+
+In addition to the selected variables from the 'omics assays above, all variables from assays with 3 or fewer measures (ascorbic acid, cholesterol, growth, etc.) were included in the lasso. 
+
+```{r}
+# All variables selected above
+lasso_vars = c("ascorbic_acid",carotenoids_best$best,"cholesterol",
+               fa_best$best,metab_best$best,transcript_best,
+               "height_cm","weight_kg","agemos",negative_best$best,positive_best$best,
+               "alphatocopherol","gammatocopherol","vitamin_d")
+lasso_form = as.formula(paste0("y~",paste0(lasso_vars,collapse = "+")))
+# Pull out selected variables
+smaller_dfs = lapply(X, function(d){
+  d = d[,which(colnames(d) %in% c("ID","id","time","y",lasso_vars))]
+})
+# Combine into single dataframe
+df = full_join(smaller_dfs[[1]],smaller_dfs[[2]],by = c("ID"="id","time","y"))
+df = full_join(df,smaller_dfs[[3]],by = c("ID","y","time"))
+df = full_join(df,smaller_dfs[[4]],by = c("ID"="id","time","y"))
+df = full_join(df,smaller_dfs[[5]],by = c("ID"="id","time","y"))
+df = full_join(df,smaller_dfs[[6]],by = c("ID"="id","time","y"))
+df = full_join(df,smaller_dfs[[7]],by = c("ID"="id","time","y"))
+df = full_join(df,smaller_dfs[[8]],by = c("ID"="id","time","y"))
+df = left_join(df,smaller_dfs[[9]],by = c("ID"="id","time","y"))
+df[,grep("\\.y",colnames(df))] = NULL
+colnames(df)[grep("\\.x",colnames(df))] = 
+  sub("\\.x","",colnames(df)[grep("\\.x",colnames(df))])
+df = left_join(df,smaller_dfs[[10]],by = c("ID"="id","time","y"))
+df = left_join(df,smaller_dfs[[11]],by = c("y", "ID", "time"))
+# Remove missing
+lasso_df = df[complete.cases(df),]
+# CV
+cv_fit = cv.glmnet(x = data.matrix(lasso_df[,lasso_vars]), 
+                   y = factor(lasso_df[,"y"]), family = "binomial")
+# Fit
+mod = glmnet(x = data.matrix(lasso_df[,lasso_vars]), 
+             y = factor(lasso_df[,"y"]), 
+             family = "binomial",lambda = cv_fit$lambda[20])
+kable(rownames(coef(mod))[which(coef(mod) != 0)],col.names = "Selected variables")
+```
+
+The lasso is most likely picking variables that are highly correlated. Variable inflation factors for the final model are:
+
+```{r}
+pred = rownames(coef(mod))[which(coef(mod) != 0)]
+pred = pred[pred != "(Intercept)"]
+form = as.formula(paste0("y~",paste0(pred,collapse = "+")))
+mod = glm(form,data = df,family = "binomial")
+vif(mod)
+```

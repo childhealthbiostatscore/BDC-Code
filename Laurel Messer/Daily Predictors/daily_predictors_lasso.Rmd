@@ -24,7 +24,9 @@ library(parallel)
 library(caret)
 library(glmnet)
 library(UpSetR)
-knitr::opts_chunk$set(echo = F,cache = F)
+library(lme4)
+library(lmerTest)
+knitr::opts_chunk$set(echo = F,cache = T)
 home_dir = ifelse(.Platform$OS.type != "unix","Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects",
                   "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
 knitr::opts_knit$set(root.dir = home_dir)
@@ -53,8 +55,7 @@ data$record_id = as.factor(data$record_id)
 morning_items = colnames(data)[grep("esq\\d+$",colnames(data))]
 evening_items = colnames(data)[grep("esq\\d+_eve$",colnames(data))]
 # Outcomes
-goal_survey = c("n_highalerts","dm_caretime","dm_thinktime","gsq1","gsq2","gsq3")
-outcomes = c("boluses","smg","tir",goal_survey)
+outcomes = c("boluses","smg","tir","n_highalerts","dm_caretime","dm_thinktime","gsq","combined")
 # ID Variables
 id_vars = c("record_id","redcap_event_name","date")
 # Combine date columns
@@ -65,10 +66,30 @@ data$date = sapply(strsplit(data$date,"_"),function(x){
   ifelse(length(x)==0,NA,
          unique(strsplit(x,"_")[[1]]))
 })
+# Average gsq scores
+data$gsq = rowMeans(data[,c("gsq1","gsq2","gsq3")],na.rm = T)
+data$gsq[is.nan(data$gsq)] = NA
+# % of HA per day that had either a 1 for HAB or 1 for bgdrop or 1 for both
+for (i in 1:10) {
+  vars = c(paste0("hab",i),paste0("bgdrop_ha",i)) # Each alert has two separate columns that need to be combined
+  n = paste0("combined_hab",i)
+  data = data %>% unite(!!n,all_of(vars),remove = F)
+  data[,n] = sapply(data[,n],function(x){
+    if(x == "NA_NA"){NA}else{as.numeric(grepl("1",x))} # Don't count NAs as 1 or 0
+  })
+}
+combined = paste0("combined_hab",1:10)
+data$combined = rowMeans(data[,combined],na.rm = T) # Percentage of 1s
+data$combined[is.nan(data$combined)] = NA
+data$combined = cut(data$combined,c(-Inf,0.5,Inf),right = T)
+data$combined = as.numeric(data$combined)-1
 # Fill outcome in by date
 data = data %>% group_by(record_id,date) %>%
   fill(all_of(outcomes),.direction = "downup") %>%
   ungroup()
+# Remove outcomes not on a 24 hour scale
+data = data[-which(data$n_highalerts > 500),]
+data = data[-which(data$dm_thinktime > 12000),]
 ```
 
 # Participant Characteristics
@@ -92,7 +113,7 @@ summary(t1,labelTranslations = new_labels)
 
 ```{r}
 # Optimal lambda function = needs id variables, one outcome, and predictors (nothing else)
-lambda_cv = function(df,outcome_name,fam = "gaussian",n_lambda = 200,folds = 5,
+lambda_cv = function(df,outcome_name,fam = "gaussian",n_lambda = 1000,folds = 5,
                      core_ratio = 0.75,num_coef_higher = 10){
   # Convert to dataframe since these functions can't handle tibbles
   df = data.frame(df)
@@ -196,6 +217,9 @@ bolus_morning_mod = suppressWarnings(
 bolus_morning_coefs = names(bolus_morning_mod$coefficients)[
   which(bolus_morning_mod$coefficients != 0 & 
           names(bolus_morning_mod$coefficients) != "(Intercept)")]
+# Print
+l = labels(data[,bolus_morning_coefs])
+kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 ```
 
 ### SMG
@@ -218,6 +242,9 @@ smg_morning_mod = suppressWarnings(
 smg_morning_coefs = names(smg_morning_mod$coefficients)[
   which(smg_morning_mod$coefficients != 0 & 
           names(smg_morning_mod$coefficients) != "(Intercept)")]
+# Print
+l = labels(data[,smg_morning_coefs])
+kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 ```
 
 ### TIR
@@ -240,21 +267,160 @@ tir_morning_mod = suppressWarnings(
 tir_morning_coefs = names(tir_morning_mod$coefficients)[
   which(tir_morning_mod$coefficients != 0 & 
           names(tir_morning_mod$coefficients) != "(Intercept)")]
+# Print
+l = labels(data[,tir_morning_coefs])
+kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
+```
+
+### Number of high alerts
+
+```{r}
+fam = poisson(link = "log")
+# Get morning variables
+alerts_morning = data[,c(id_vars,morning_items,"n_highalerts")]
+alerts_morning = alerts_morning[complete.cases(alerts_morning),]
+# CV for lambda values
+lambda_perf = lambda_cv(df = alerts_morning,outcome_name = "n_highalerts",fam = fam)
+best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
+# Fit model
+form = as.formula(paste0("n_highalerts~",paste0(morning_items,collapse = "+")))
+alerts_morning_mod = suppressWarnings(
+  glmmLasso(form, rnd = list(record_id=~1),family = fam,
+            data = alerts_morning,lambda=best)
+)
+# Get coefficients
+alerts_morning_coefs = names(alerts_morning_mod$coefficients)[
+  which(alerts_morning_mod$coefficients != 0 & 
+          names(alerts_morning_mod$coefficients) != "(Intercept)")]
+# Print
+l = labels(data[,alerts_morning_coefs])
+kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
+```
+
+### Time spent caring for diabetes
+
+```{r}
+fam = poisson(link = "log")
+# Get morning variables
+caretime_morning = data[,c(id_vars,morning_items,"dm_caretime")]
+caretime_morning = caretime_morning[complete.cases(caretime_morning),]
+# Transform outcome - cube root
+caretime_morning$dm_caretime = (caretime_morning$dm_caretime)^(1/3)
+# CV for lambda values
+lambda_perf = lambda_cv(df = caretime_morning,outcome_name = "dm_caretime",fam = fam)
+best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
+# Fit model
+form = as.formula(paste0("dm_caretime~",paste0(morning_items,collapse = "+")))
+caretime_morning_mod = suppressWarnings(
+  glmmLasso(form, rnd = list(record_id=~1),family = fam,
+            data = caretime_morning,lambda=best)
+)
+# Get coefficients
+caretime_morning_coefs = names(caretime_morning_mod$coefficients)[
+  which(caretime_morning_mod$coefficients != 0 & 
+          names(caretime_morning_mod$coefficients) != "(Intercept)")]
+# Print
+l = labels(data[,caretime_morning_coefs])
+kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
+```
+
+### Time spent thinking about diabetes
+
+```{r}
+fam = poisson(link = "log")
+# Get morning variables
+thinktime_morning = data[,c(id_vars,morning_items,"dm_thinktime")]
+thinktime_morning = thinktime_morning[complete.cases(thinktime_morning),]
+# Transform outcome - cube root
+thinktime_morning$dm_thinktime = (thinktime_morning$dm_thinktime)^(1/3)
+# CV for lambda values
+lambda_perf = lambda_cv(df = thinktime_morning,outcome_name = "dm_thinktime",fam = fam)
+best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
+# Fit model
+form = as.formula(paste0("dm_thinktime~",paste0(morning_items,collapse = "+")))
+thinktime_morning_mod = suppressWarnings(
+  glmmLasso(form, rnd = list(record_id=~1),family = fam,
+            data = thinktime_morning,lambda=best)
+)
+# Get coefficients
+thinktime_morning_coefs = names(thinktime_morning_mod$coefficients)[
+  which(thinktime_morning_mod$coefficients != 0 & 
+          names(thinktime_morning_mod$coefficients) != "(Intercept)")]
+# Print
+l = labels(data[,thinktime_morning_coefs])
+kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
+```
+
+### Average of 3 GSQ scores
+
+```{r}
+fam = gaussian()
+# Get morning variables
+gsq_morning = data[,c(id_vars,morning_items,"gsq")]
+gsq_morning = gsq_morning[complete.cases(gsq_morning),]
+# CV for lambda values
+lambda_perf = lambda_cv(df = gsq_morning,outcome_name = "gsq",fam = fam)
+best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
+# Fit model
+form = as.formula(paste0("gsq~",paste0(morning_items,collapse = "+")))
+gsq_morning_mod = suppressWarnings(
+  glmmLasso(form, rnd = list(record_id=~1),family = fam,
+            data = gsq_morning,lambda=best)
+)
+# Get coefficients
+gsq_morning_coefs = names(gsq_morning_mod$coefficients)[
+  which(gsq_morning_mod$coefficients != 0 & 
+          names(gsq_morning_mod$coefficients) != "(Intercept)")]
+# Print
+l = labels(data[,gsq_morning_coefs])
+kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
+```
+
+### Combined alert outcome
+
+Each participant has data entries for up to 10 high BG alerts. For each alert, the "hab" column indicates whether the participant bolused in response, and the "bgdrop_ha" column indicates whether BG dropped below 200 after 2 hours. The combined alert outcome represents the percentage of alerts with a "1" in either column. Because the majority of participants responded to either all or none of their alerts, this variable was dichotomized into $\leq$50% vs. $>$50%.
+
+```{r}
+fam = binomial()
+# Get morning variables
+combined_morning = data[,c(id_vars,morning_items,"combined")]
+combined_morning = combined_morning[complete.cases(combined_morning),]
+# CV for lambda values
+lambda_perf = lambda_cv(df = combined_morning,outcome_name = "combined",fam = fam)
+best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
+# Fit model
+form = as.formula(paste0("combined~",paste0(morning_items,collapse = "+")))
+combined_morning_mod = suppressWarnings(
+  glmmLasso(form, rnd = list(record_id=~1),family = fam,
+            data = combined_morning,lambda=best)
+)
+# Get coefficients
+combined_morning_coefs = names(combined_morning_mod$coefficients)[
+  which(combined_morning_mod$coefficients != 0 & 
+          names(combined_morning_mod$coefficients) != "(Intercept)")]
+# Print
+l = labels(data[,combined_morning_coefs])
+kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 ```
 
 ### Upset plot
 
 ```{r}
 # Format output
-selected = do.call(rbind,list(
+selected_morning = do.call(rbind,list(
   morning_items %in% bolus_morning_coefs,
   morning_items %in% smg_morning_coefs,
-  morning_items %in% tir_morning_coefs
+  morning_items %in% tir_morning_coefs,
+  morning_items %in% alerts_morning_coefs,
+  morning_items %in% caretime_morning_coefs,
+  morning_items %in% thinktime_morning_coefs,
+  morning_items %in% gsq_morning_coefs,
+  morning_items %in% combined_morning_coefs
 ))
-colnames(selected) = morning_items
-selected = data.frame(apply(selected,2,as.numeric))
+colnames(selected_morning) = morning_items
+selected_morning = data.frame(apply(selected_morning,2,as.numeric))
 # Plot
-upset(selected, order.by = "freq")
+upset(selected_morning,nsets = ncol(selected_morning),order.by = "freq")
 ```
 
 ## Evening survey
@@ -279,6 +445,9 @@ bolus_evening_mod = suppressWarnings(
 bolus_evening_coefs = names(bolus_evening_mod$coefficients)[
   which(bolus_evening_mod$coefficients != 0 & 
           names(bolus_evening_mod$coefficients) != "(Intercept)")]
+# Print
+l = labels(data[,bolus_evening_coefs])
+kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 ```
 
 ### SMG
@@ -301,6 +470,9 @@ smg_evening_mod = suppressWarnings(
 smg_evening_coefs = names(smg_evening_mod$coefficients)[
   which(smg_evening_mod$coefficients != 0 & 
           names(smg_evening_mod$coefficients) != "(Intercept)")]
+# Print
+l = labels(data[,smg_evening_coefs])
+kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 ```
 
 ### TIR
@@ -323,25 +495,369 @@ tir_evening_mod = suppressWarnings(
 tir_evening_coefs = names(tir_evening_mod$coefficients)[
   which(tir_evening_mod$coefficients != 0 & 
           names(tir_evening_mod$coefficients) != "(Intercept)")]
+# Print
+l = labels(data[,tir_evening_coefs])
+kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
+```
+
+### Number of high alerts
+
+```{r}
+fam = poisson(link = "log")
+# Get evening variables
+alerts_evening = data[,c(id_vars,evening_items,"n_highalerts")]
+alerts_evening = alerts_evening[complete.cases(alerts_evening),]
+# CV for lambda values
+lambda_perf = lambda_cv(df = alerts_evening,outcome_name = "n_highalerts",fam = fam)
+best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
+# Fit model
+form = as.formula(paste0("n_highalerts~",paste0(evening_items,collapse = "+")))
+alerts_evening_mod = suppressWarnings(
+  glmmLasso(form, rnd = list(record_id=~1),family = fam,
+            data = alerts_evening,lambda=best)
+)
+# Get coefficients
+alerts_evening_coefs = names(alerts_evening_mod$coefficients)[
+  which(alerts_evening_mod$coefficients != 0 & 
+          names(alerts_evening_mod$coefficients) != "(Intercept)")]
+# Print
+l = labels(data[,alerts_evening_coefs])
+kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
+```
+
+### Time spent caring for diabetes
+
+```{r}
+fam = poisson(link = "log")
+# Get evening variables
+caretime_evening = data[,c(id_vars,evening_items,"dm_caretime")]
+caretime_evening = caretime_evening[complete.cases(caretime_evening),]
+# Transform outcome - cube root
+caretime_evening$dm_caretime = (caretime_evening$dm_caretime)^(1/3)
+# CV for lambda values
+lambda_perf = lambda_cv(df = caretime_evening,outcome_name = "dm_caretime",fam = fam)
+best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
+# Fit model
+form = as.formula(paste0("dm_caretime~",paste0(evening_items,collapse = "+")))
+caretime_evening_mod = suppressWarnings(
+  glmmLasso(form, rnd = list(record_id=~1),family = fam,
+            data = caretime_evening,lambda=best)
+)
+# Get coefficients
+caretime_evening_coefs = names(caretime_evening_mod$coefficients)[
+  which(caretime_evening_mod$coefficients != 0 & 
+          names(caretime_evening_mod$coefficients) != "(Intercept)")]
+# Print
+l = labels(data[,caretime_evening_coefs])
+kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
+```
+
+### Time spent thinking about diabetes
+
+```{r}
+fam = poisson(link = "log")
+# Get evening variables
+thinktime_evening = data[,c(id_vars,evening_items,"dm_thinktime")]
+thinktime_evening = thinktime_evening[complete.cases(thinktime_evening),]
+# Transform outcome - cube root
+thinktime_evening$dm_thinktime = (thinktime_evening$dm_thinktime)^(1/3)
+# CV for lambda values
+lambda_perf = lambda_cv(df = thinktime_evening,outcome_name = "dm_thinktime",fam = fam)
+best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
+# Fit model
+form = as.formula(paste0("dm_thinktime~",paste0(evening_items,collapse = "+")))
+thinktime_evening_mod = suppressWarnings(
+  glmmLasso(form, rnd = list(record_id=~1),family = fam,
+            data = thinktime_evening,lambda=best)
+)
+# Get coefficients
+thinktime_evening_coefs = names(thinktime_evening_mod$coefficients)[
+  which(thinktime_evening_mod$coefficients != 0 & 
+          names(thinktime_evening_mod$coefficients) != "(Intercept)")]
+# Print
+l = labels(data[,thinktime_evening_coefs])
+kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
+```
+
+### Average of 3 GSQ scores
+
+```{r}
+fam = gaussian()
+# Get evening variables
+gsq_evening = data[,c(id_vars,evening_items,"gsq")]
+gsq_evening = gsq_evening[complete.cases(gsq_evening),]
+# CV for lambda values
+lambda_perf = lambda_cv(df = gsq_evening,outcome_name = "gsq",fam = fam)
+best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
+# Fit model
+form = as.formula(paste0("gsq~",paste0(evening_items,collapse = "+")))
+gsq_evening_mod = suppressWarnings(
+  glmmLasso(form, rnd = list(record_id=~1),family = fam,
+            data = gsq_evening,lambda=best)
+)
+# Get coefficients
+gsq_evening_coefs = names(gsq_evening_mod$coefficients)[
+  which(gsq_evening_mod$coefficients != 0 & 
+          names(gsq_evening_mod$coefficients) != "(Intercept)")]
+# Print
+l = labels(data[,gsq_evening_coefs])
+kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
+```
+
+### Combined alert outcome
+
+```{r}
+fam = binomial()
+# Get evening variables
+combined_evening = data[,c(id_vars,evening_items,"combined")]
+combined_evening = combined_evening[complete.cases(combined_evening),]
+# CV for lambda values
+lambda_perf = lambda_cv(df = combined_evening,outcome_name = "combined",fam = fam)
+best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
+# Fit model
+form = as.formula(paste0("combined~",paste0(evening_items,collapse = "+")))
+combined_evening_mod = suppressWarnings(
+  glmmLasso(form, rnd = list(record_id=~1),family = fam,
+            data = combined_evening,lambda=best)
+)
+# Get coefficients
+combined_evening_coefs = names(combined_evening_mod$coefficients)[
+  which(combined_evening_mod$coefficients != 0 & 
+          names(combined_evening_mod$coefficients) != "(Intercept)")]
+# Print
+l = labels(data[,combined_evening_coefs])
+kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 ```
 
 ### Upset plot
 
 ```{r}
 # Format output
-selected = do.call(rbind,list(
+selected_evening = do.call(rbind,list(
   evening_items %in% bolus_evening_coefs,
   evening_items %in% smg_evening_coefs,
-  evening_items %in% tir_evening_coefs
+  evening_items %in% tir_evening_coefs,
+  evening_items %in% alerts_evening_coefs,
+  evening_items %in% caretime_evening_coefs,
+  evening_items %in% thinktime_evening_coefs,
+  evening_items %in% gsq_evening_coefs,
+  evening_items %in% combined_evening_coefs
 ))
-colnames(selected) = evening_items
-selected = data.frame(apply(selected,2,as.numeric))
+colnames(selected_evening) = evening_items
+selected_evening = data.frame(apply(selected_evening,2,as.numeric))
 # Plot
-upset(selected, order.by = "freq")
+upset(selected_evening,nsets = ncol(selected_evening),order.by = "freq")
 ```
 
+# Final Models
 
+9 Items: 1, 7, 10, 12, 14, 20 21, 23, 25 -- combination of 8 constructs
+6 items: 1, 7, 10, 21, 23, 25
 
-# Questions for Laurel and Emily
+Mixed model $R^2$ was calculated using the method presented in Nakagawa and Schielzeth (2013). Marginal $R^2$ represents the variability explained by just the fixed effects (survey questions), and conditional $R^2$ can be interpreted as the variance explained by the entire model (including random intercepts for each participant).
 
-1. How should we combine levels of race and parent education? White vs. non-white? Above a bachelor's degree vs. bachelor's and below?
+```{r}
+# Predictors
+final_mod_6 = c(1, 7, 10, 21, 23, 25)
+final_mod_9 = c(1, 7, 10, 12, 14, 20, 21, 23, 25)
+final_mod_6_morn = paste0("esq",final_mod_6)
+final_mod_9_morn = paste0("esq",final_mod_9)
+final_mod_6_eve = paste0(final_mod_6_morn,"_eve")
+final_mod_9_eve = paste0(final_mod_9_morn,"_eve")
+# Scale
+data[,c(final_mod_9_morn,final_mod_9_eve)] = 
+  lapply(data[,c(final_mod_9_morn,final_mod_9_eve)],scale)
+# Model function
+fit_final = function(outcome,predictors,df = data,fam = "gaussian"){
+  form = as.formula(paste0(outcome,"~",paste0(predictors,collapse = "+"),"+(1|record_id)"))
+  if(fam == "gaussian"){
+    mod = lmer(form,data = df,na.action = "na.omit")
+    sigma_d = 0
+  } else if (fam == "poisson") {
+    df[,outcome] = sapply(df[,outcome],as.integer)
+    mod = glmer(form,data = df,family = fam,na.action = "na.omit")
+    sigma_d = log((1/exp(summary(mod)$coefficients[1,1]))+1)
+  } else if (fam == "binomial"){
+    sigma_d = (pi^2)/3
+  }
+  sigma_f = var(predict(mod,re.form = NA))
+  sigma_r = VarCorr(mod)$record_id[1]
+  r2_m = sigma_f/(sigma_f + sigma_r + sigma_d)
+  r2_c = (sigma_f + sigma_r)/(sigma_f + sigma_r + sigma_d)
+  res = list("fixed" = summary(mod)$coefficients,"marginal" = r2_m,"conditional" = r2_c)
+  res = lapply(res, function(x){round(x,3)})
+  return(res)
+}
+```
+
+## Number of boluses
+
+Because this is count data, we used a Poisson model for this outcome. Coefficients are interpreted on the log count scale.
+
+### Morning survey
+
+#### 6 item model
+
+```{r}
+m = fit_final(outcome = "boluses",predictors = final_mod_6_morn,fam = "poisson")
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+#### 9 item model
+
+```{r}
+m = fit_final(outcome = "boluses",predictors = final_mod_9_morn,fam = "poisson")
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+### Evening survey
+
+#### 6 item model
+
+```{r}
+m = fit_final(outcome = "boluses",predictors = final_mod_6_eve,fam = "poisson")
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+#### 9 item model
+
+```{r}
+m = fit_final(outcome = "boluses",predictors = final_mod_9_eve,fam = "poisson")
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+## High alerts
+
+Because this is count data, we used a Poisson model for this outcome. Coefficients are interpreted on the log count scale.
+
+### Morning survey
+
+#### 6 item model
+
+```{r}
+m = fit_final(outcome = "n_highalerts",predictors = final_mod_6_morn,fam = "poisson")
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+#### 9 item model
+
+```{r}
+m = fit_final(outcome = "n_highalerts",predictors = final_mod_9_morn,fam = "poisson")
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+### Evening survey
+
+#### 6 item model
+
+```{r}
+m = fit_final(outcome = "n_highalerts",predictors = final_mod_6_eve,fam = "poisson")
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+#### 9 item model
+
+```{r}
+m = fit_final(outcome = "n_highalerts",predictors = final_mod_9_eve,fam = "poisson")
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+## SMG
+
+### Morning survey
+
+#### 6 item model
+
+```{r}
+m = fit_final(outcome = "smg",predictors = final_mod_6_morn)
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+#### 9 item model
+
+```{r}
+m = fit_final(outcome = "smg",predictors = final_mod_9_morn)
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+### Evening survey
+
+#### 6 item model
+
+```{r}
+m = fit_final(outcome = "smg",predictors = final_mod_6_eve)
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+#### 9 item model
+
+```{r}
+m = fit_final(outcome = "smg",predictors = final_mod_9_eve)
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+## TIR
+
+### Morning survey
+
+#### 6 item model
+
+```{r}
+m = fit_final(outcome = "tir",predictors = final_mod_6_morn)
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+#### 9 item model
+
+```{r}
+m = fit_final(outcome = "tir",predictors = final_mod_9_morn)
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+### Evening survey
+
+#### 6 item model
+
+```{r}
+m = fit_final(outcome = "tir",predictors = final_mod_6_eve)
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+#### 9 item model
+
+```{r}
+m = fit_final(outcome = "tir",predictors = final_mod_9_eve)
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
