@@ -26,7 +26,8 @@ library(glmnet)
 library(UpSetR)
 library(lme4)
 library(lmerTest)
-knitr::opts_chunk$set(echo = F,cache = T)
+library(performance)
+knitr::opts_chunk$set(echo = F,cache = F)
 home_dir = ifelse(.Platform$OS.type != "unix","Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects",
                   "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
 knitr::opts_knit$set(root.dir = home_dir)
@@ -90,6 +91,18 @@ data = data %>% group_by(record_id,date) %>%
 # Remove outcomes not on a 24 hour scale
 data = data[-which(data$n_highalerts > 500),]
 data = data[-which(data$dm_thinktime > 12000),]
+# Evening outcomes - look at association with the next day's outcome
+data = data %>% group_by(record_id) %>% 
+  mutate(next_day_boluses = lead(boluses),
+         next_day_smg = lead(smg),
+         next_day_tir = lead(tir),
+         next_day_n_highalerts = lead(n_highalerts),
+         next_day_dm_caretime = lead(dm_caretime),
+         next_day_dm_thinktime = lead(dm_thinktime),
+         next_day_gsq = lead(gsq),
+         next_day_combined = lead(combined))
+# Convert to dataframe since these functions can't handle tibbles
+data = data.frame(data)
 ```
 
 # Participant Characteristics
@@ -113,10 +126,8 @@ summary(t1,labelTranslations = new_labels)
 
 ```{r}
 # Optimal lambda function = needs id variables, one outcome, and predictors (nothing else)
-lambda_cv = function(df,outcome_name,fam = "gaussian",n_lambda = 1000,folds = 5,
+lambda_cv = function(df,outcome_name,fam = "gaussian",n_lambda = 50,folds = 5,
                      core_ratio = 0.75,num_coef_higher = 10){
-  # Convert to dataframe since these functions can't handle tibbles
-  df = data.frame(df)
   # Make model formula
   pred = colnames(df)[which(!colnames(df) %in% c(outcome_name,id_vars))]
   form = as.formula(paste(outcome_name,"~",paste(pred,collapse = "+")))
@@ -430,13 +441,13 @@ upset(selected_morning,nsets = ncol(selected_morning),order.by = "freq")
 ```{r}
 fam = poisson(link = "log")
 # Get evening variables
-bolus_evening = data[,c(id_vars,evening_items,"boluses")]
+bolus_evening = data[,c(id_vars,evening_items,"next_day_boluses")]
 bolus_evening = bolus_evening[complete.cases(bolus_evening),]
 # CV for lambda values
-lambda_perf = lambda_cv(df = bolus_evening,outcome_name = "boluses",fam = fam)
+lambda_perf = lambda_cv(df = bolus_evening,outcome_name = "next_day_boluses",fam = fam)
 best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
 # Fit model
-form = as.formula(paste0("boluses~",paste0(evening_items,collapse = "+")))
+form = as.formula(paste0("next_day_boluses~",paste0(evening_items,collapse = "+")))
 bolus_evening_mod = suppressWarnings(
   glmmLasso(form, rnd = list(record_id=~1),family = fam,
             data = bolus_evening,lambda=best)
@@ -455,13 +466,13 @@ kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 ```{r}
 fam = gaussian()
 # Get evening variables
-smg_evening = data[,c(id_vars,evening_items,"smg")]
+smg_evening = data[,c(id_vars,evening_items,"next_day_smg")]
 smg_evening = smg_evening[complete.cases(smg_evening),]
 # CV for lambda values
-lambda_perf = lambda_cv(df = smg_evening,outcome_name = "smg",fam = fam)
+lambda_perf = lambda_cv(df = smg_evening,outcome_name = "next_day_smg",fam = fam)
 best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
 # Fit model
-form = as.formula(paste0("smg~",paste0(evening_items,collapse = "+")))
+form = as.formula(paste0("next_day_smg~",paste0(evening_items,collapse = "+")))
 smg_evening_mod = suppressWarnings(
   glmmLasso(form, rnd = list(record_id=~1),family = fam,
             data = smg_evening,lambda=best)
@@ -480,13 +491,13 @@ kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 ```{r}
 fam = gaussian()
 # Get evening variables
-tir_evening = data[,c(id_vars,evening_items,"tir")]
+tir_evening = data[,c(id_vars,evening_items,"next_day_tir")]
 tir_evening = tir_evening[complete.cases(tir_evening),]
 # CV for lambda values
-lambda_perf = lambda_cv(df = tir_evening,outcome_name = "tir",fam = fam)
+lambda_perf = lambda_cv(df = tir_evening,outcome_name = "next_day_tir",fam = fam)
 best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
 # Fit model
-form = as.formula(paste0("tir~",paste0(evening_items,collapse = "+")))
+form = as.formula(paste0("next_day_tir~",paste0(evening_items,collapse = "+")))
 tir_evening_mod = suppressWarnings(
   glmmLasso(form, rnd = list(record_id=~1),family = fam,
             data = tir_evening,lambda=best)
@@ -505,13 +516,13 @@ kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 ```{r}
 fam = poisson(link = "log")
 # Get evening variables
-alerts_evening = data[,c(id_vars,evening_items,"n_highalerts")]
+alerts_evening = data[,c(id_vars,evening_items,"next_day_n_highalerts")]
 alerts_evening = alerts_evening[complete.cases(alerts_evening),]
 # CV for lambda values
-lambda_perf = lambda_cv(df = alerts_evening,outcome_name = "n_highalerts",fam = fam)
+lambda_perf = lambda_cv(df = alerts_evening,outcome_name = "next_day_n_highalerts",fam = fam)
 best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
 # Fit model
-form = as.formula(paste0("n_highalerts~",paste0(evening_items,collapse = "+")))
+form = as.formula(paste0("next_day_n_highalerts~",paste0(evening_items,collapse = "+")))
 alerts_evening_mod = suppressWarnings(
   glmmLasso(form, rnd = list(record_id=~1),family = fam,
             data = alerts_evening,lambda=best)
@@ -530,15 +541,15 @@ kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 ```{r}
 fam = poisson(link = "log")
 # Get evening variables
-caretime_evening = data[,c(id_vars,evening_items,"dm_caretime")]
+caretime_evening = data[,c(id_vars,evening_items,"next_day_dm_caretime")]
 caretime_evening = caretime_evening[complete.cases(caretime_evening),]
 # Transform outcome - cube root
-caretime_evening$dm_caretime = (caretime_evening$dm_caretime)^(1/3)
+caretime_evening$next_day_dm_caretime = (caretime_evening$next_day_dm_caretime)^(1/3)
 # CV for lambda values
-lambda_perf = lambda_cv(df = caretime_evening,outcome_name = "dm_caretime",fam = fam)
+lambda_perf = lambda_cv(df = caretime_evening,outcome_name = "next_day_dm_caretime",fam = fam)
 best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
 # Fit model
-form = as.formula(paste0("dm_caretime~",paste0(evening_items,collapse = "+")))
+form = as.formula(paste0("next_day_dm_caretime~",paste0(evening_items,collapse = "+")))
 caretime_evening_mod = suppressWarnings(
   glmmLasso(form, rnd = list(record_id=~1),family = fam,
             data = caretime_evening,lambda=best)
@@ -557,15 +568,15 @@ kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 ```{r}
 fam = poisson(link = "log")
 # Get evening variables
-thinktime_evening = data[,c(id_vars,evening_items,"dm_thinktime")]
+thinktime_evening = data[,c(id_vars,evening_items,"next_day_dm_thinktime")]
 thinktime_evening = thinktime_evening[complete.cases(thinktime_evening),]
 # Transform outcome - cube root
-thinktime_evening$dm_thinktime = (thinktime_evening$dm_thinktime)^(1/3)
+thinktime_evening$next_day_dm_thinktime = (thinktime_evening$next_day_dm_thinktime)^(1/3)
 # CV for lambda values
-lambda_perf = lambda_cv(df = thinktime_evening,outcome_name = "dm_thinktime",fam = fam)
+lambda_perf = lambda_cv(df = thinktime_evening,outcome_name = "next_day_dm_thinktime",fam = fam)
 best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
 # Fit model
-form = as.formula(paste0("dm_thinktime~",paste0(evening_items,collapse = "+")))
+form = as.formula(paste0("next_day_dm_thinktime~",paste0(evening_items,collapse = "+")))
 thinktime_evening_mod = suppressWarnings(
   glmmLasso(form, rnd = list(record_id=~1),family = fam,
             data = thinktime_evening,lambda=best)
@@ -584,13 +595,13 @@ kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 ```{r}
 fam = gaussian()
 # Get evening variables
-gsq_evening = data[,c(id_vars,evening_items,"gsq")]
+gsq_evening = data[,c(id_vars,evening_items,"next_day_gsq")]
 gsq_evening = gsq_evening[complete.cases(gsq_evening),]
 # CV for lambda values
-lambda_perf = lambda_cv(df = gsq_evening,outcome_name = "gsq",fam = fam)
+lambda_perf = lambda_cv(df = gsq_evening,outcome_name = "next_day_gsq",fam = fam)
 best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
 # Fit model
-form = as.formula(paste0("gsq~",paste0(evening_items,collapse = "+")))
+form = as.formula(paste0("next_day_gsq~",paste0(evening_items,collapse = "+")))
 gsq_evening_mod = suppressWarnings(
   glmmLasso(form, rnd = list(record_id=~1),family = fam,
             data = gsq_evening,lambda=best)
@@ -609,13 +620,13 @@ kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 ```{r}
 fam = binomial()
 # Get evening variables
-combined_evening = data[,c(id_vars,evening_items,"combined")]
+combined_evening = data[,c(id_vars,evening_items,"next_day_combined")]
 combined_evening = combined_evening[complete.cases(combined_evening),]
 # CV for lambda values
-lambda_perf = lambda_cv(df = combined_evening,outcome_name = "combined",fam = fam)
+lambda_perf = lambda_cv(df = combined_evening,outcome_name = "next_day_combined",fam = fam)
 best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
 # Fit model
-form = as.formula(paste0("combined~",paste0(evening_items,collapse = "+")))
+form = as.formula(paste0("next_day_combined~",paste0(evening_items,collapse = "+")))
 combined_evening_mod = suppressWarnings(
   glmmLasso(form, rnd = list(record_id=~1),family = fam,
             data = combined_evening,lambda=best)
@@ -649,215 +660,270 @@ selected_evening = data.frame(apply(selected_evening,2,as.numeric))
 upset(selected_evening,nsets = ncol(selected_evening),order.by = "freq")
 ```
 
-# Final Models
+<!-- # Final Models -->
 
-9 Items: 1, 7, 10, 12, 14, 20 21, 23, 25 -- combination of 8 constructs
-6 items: 1, 7, 10, 21, 23, 25
+<!-- 9 Items: 1, 7, 10, 12, 14, 20 21, 23, 25 -- combination of 8 constructs -->
+<!-- 6 items: 1, 7, 10, 21, 23, 25 -->
 
-Mixed model $R^2$ was calculated using the method presented in Nakagawa and Schielzeth (2013). Marginal $R^2$ represents the variability explained by just the fixed effects (survey questions), and conditional $R^2$ can be interpreted as the variance explained by the entire model (including random intercepts for each participant).
+<!-- Mixed model $R^2$ was calculated using the method presented in Nakagawa and Schielzeth (2013). Marginal $R^2$ represents the variability explained by just the fixed effects (survey questions), and conditional $R^2$ can be interpreted as the variance explained by the entire model (including random intercepts for each participant). -->
+
+<!-- ```{r} -->
+<!-- # Predictors -->
+<!-- final_mod_6 = c(1, 7, 10, 21, 23, 25) -->
+<!-- final_mod_9 = c(1, 7, 10, 12, 14, 20, 21, 23, 25) -->
+<!-- final_mod_6_morn = paste0("esq",final_mod_6) -->
+<!-- final_mod_9_morn = paste0("esq",final_mod_9) -->
+<!-- final_mod_6_eve = paste0(final_mod_6_morn,"_eve") -->
+<!-- final_mod_9_eve = paste0(final_mod_9_morn,"_eve") -->
+<!-- # Scale -->
+<!-- data[,c(final_mod_9_morn,final_mod_9_eve)] =  -->
+<!--   lapply(data[,c(final_mod_9_morn,final_mod_9_eve)],scale) -->
+<!-- # Model function -->
+<!-- fit_final = function(outcome,predictors,df = data,fam = "gaussian"){ -->
+<!--   form = as.formula(paste0(outcome,"~",paste0(predictors,collapse = "+"),"+(1|record_id)")) -->
+<!--   if(fam == "gaussian"){ -->
+<!--     mod = lmer(form,data = df,na.action = "na.omit") -->
+<!--   } else if (fam == "poisson") { -->
+<!--     df[,outcome] = sapply(df[,outcome],as.integer) -->
+<!--     mod = glmer(form,data = df,family = fam,na.action = "na.omit") -->
+<!--   } else if (fam == "binomial"){ -->
+<!--     mod = glmer(form,data = df,family = fam,na.action = "na.omit") -->
+<!--   } -->
+<!--   r2 = r2_nakagawa(mod) -->
+<!--   res = list("fixed" = summary(mod)$coefficients,"marginal" = r2$R2_marginal,"conditional" = r2$R2_conditional) -->
+<!--   res = lapply(res, function(x){round(x,3)}) -->
+<!--   return(res) -->
+<!-- } -->
+<!-- ``` -->
+
+<!-- ## Number of boluses -->
+
+<!-- Because this is count data, we used a Poisson model for this outcome. Coefficients are interpreted on the log count scale. -->
+
+<!-- ### Morning survey -->
+
+<!-- #### 6 item model -->
+
+<!-- ```{r cache=FALSE,warning=FALSE} -->
+<!-- m = fit_final(outcome = "boluses",predictors = final_mod_6_morn,fam = "poisson") -->
+<!-- kable(m$fixed,caption = "Fixed Effects Coefficients") -->
+<!-- ``` -->
+
+<!-- Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`. -->
+
+<!-- #### 9 item model -->
+
+<!-- ```{r cache=FALSE,warning=FALSE} -->
+<!-- m = fit_final(outcome = "boluses",predictors = final_mod_9_morn,fam = "poisson") -->
+<!-- kable(m$fixed,caption = "Fixed Effects Coefficients") -->
+<!-- ``` -->
+
+<!-- Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`. -->
+
+<!-- ### Evening survey -->
+
+<!-- #### 6 item model -->
+
+<!-- ```{r} -->
+<!-- m = fit_final(outcome = "boluses",predictors = final_mod_6_eve,fam = "poisson") -->
+<!-- kable(m$fixed,caption = "Fixed Effects Coefficients") -->
+<!-- ``` -->
+
+<!-- Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`. -->
+
+<!-- #### 9 item model -->
+
+<!-- ```{r} -->
+<!-- m = fit_final(outcome = "boluses",predictors = final_mod_9_eve,fam = "poisson") -->
+<!-- kable(m$fixed,caption = "Fixed Effects Coefficients") -->
+<!-- ``` -->
+
+<!-- Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`. -->
+
+<!-- ## Combined alert -->
+
+<!-- Because this is a binary outcome, we used a logistic model. Coefficients are interpreted on the log odds scale. -->
+
+<!-- ### Morning survey -->
+
+<!-- #### 6 item model -->
+
+<!-- ```{r cache=FALSE} -->
+<!-- m = fit_final(outcome = "combined",predictors = final_mod_6_morn,fam = "binomial") -->
+<!-- kable(m$fixed,caption = "Fixed Effects Coefficients") -->
+<!-- ``` -->
+
+<!-- Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`. -->
+
+<!-- #### 9 item model -->
+
+<!-- Model did not converge. -->
+
+<!-- ```{r eval=F} -->
+<!-- m = fit_final(outcome = "combined",predictors = final_mod_9_morn,fam = "binomial") -->
+<!-- kable(m$fixed,caption = "Fixed Effects Coefficients") -->
+<!-- ``` -->
+
+<!-- Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`. -->
+
+<!-- ### Evening survey -->
+
+<!-- #### 6 item model -->
+
+<!-- ```{r} -->
+<!-- m = fit_final(outcome = "combined",predictors = final_mod_6_eve,fam = "binomial") -->
+<!-- kable(m$fixed,caption = "Fixed Effects Coefficients") -->
+<!-- ``` -->
+
+<!-- Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`. -->
+
+<!-- #### 9 item model -->
+
+<!-- ```{r} -->
+<!-- m = fit_final(outcome = "combined",predictors = final_mod_9_eve,fam = "binomial") -->
+<!-- kable(m$fixed,caption = "Fixed Effects Coefficients") -->
+<!-- ``` -->
+
+<!-- Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`. -->
+
+<!-- ## SMG -->
+
+<!-- ### Morning survey -->
+
+<!-- #### 6 item model -->
+
+<!-- ```{r cache=FALSE} -->
+<!-- m = fit_final(outcome = "smg",predictors = final_mod_6_morn) -->
+<!-- kable(m$fixed,caption = "Fixed Effects Coefficients") -->
+<!-- ``` -->
+
+<!-- Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`. -->
+
+<!-- #### 9 item model -->
+
+<!-- ```{r cache=FALSE} -->
+<!-- m = fit_final(outcome = "smg",predictors = final_mod_9_morn) -->
+<!-- kable(m$fixed,caption = "Fixed Effects Coefficients") -->
+<!-- ``` -->
+
+<!-- Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`. -->
+
+<!-- ### Evening survey -->
+
+<!-- #### 6 item model -->
+
+<!-- ```{r} -->
+<!-- m = fit_final(outcome = "smg",predictors = final_mod_6_eve) -->
+<!-- kable(m$fixed,caption = "Fixed Effects Coefficients") -->
+<!-- ``` -->
+
+<!-- Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`. -->
+
+<!-- #### 9 item model -->
+
+<!-- ```{r} -->
+<!-- m = fit_final(outcome = "smg",predictors = final_mod_9_eve) -->
+<!-- kable(m$fixed,caption = "Fixed Effects Coefficients") -->
+<!-- ``` -->
+
+<!-- Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`. -->
+
+<!-- ## TIR -->
+
+<!-- ### Morning survey -->
+
+<!-- #### 6 item model -->
+
+<!-- ```{r cache=FALSE} -->
+<!-- m = fit_final(outcome = "tir",predictors = final_mod_6_morn) -->
+<!-- kable(m$fixed,caption = "Fixed Effects Coefficients") -->
+<!-- ``` -->
+
+<!-- Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`. -->
+
+<!-- #### 9 item model -->
+
+<!-- ```{r cache=FALSE} -->
+<!-- m = fit_final(outcome = "tir",predictors = final_mod_9_morn) -->
+<!-- kable(m$fixed,caption = "Fixed Effects Coefficients") -->
+<!-- ``` -->
+
+<!-- Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`. -->
+
+<!-- ### Evening survey -->
+
+<!-- #### 6 item model -->
+
+<!-- ```{r} -->
+<!-- m = fit_final(outcome = "tir",predictors = final_mod_6_eve) -->
+<!-- kable(m$fixed,caption = "Fixed Effects Coefficients") -->
+<!-- ``` -->
+
+<!-- Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`. -->
+
+<!-- #### 9 item model -->
+
+<!-- ```{r} -->
+<!-- m = fit_final(outcome = "tir",predictors = final_mod_9_eve) -->
+<!-- kable(m$fixed,caption = "Fixed Effects Coefficients") -->
+<!-- ``` -->
+
+<!-- Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`. -->
+
+<!-- ## GSQ -->
+
+<!-- ### Morning survey -->
+
+<!-- #### 6 item model -->
+
+<!-- ```{r cache=FALSE} -->
+<!-- m = fit_final(outcome = "gsq",predictors = final_mod_6_morn) -->
+<!-- kable(m$fixed,caption = "Fixed Effects Coefficients") -->
+<!-- ``` -->
+
+<!-- Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`. -->
+
+<!-- #### 9 item model -->
+
+<!-- ```{r cache=FALSE} -->
+<!-- m = fit_final(outcome = "gsq",predictors = final_mod_9_morn) -->
+<!-- kable(m$fixed,caption = "Fixed Effects Coefficients") -->
+<!-- ``` -->
+
+<!-- Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`. -->
+
+<!-- ### Evening survey -->
+
+<!-- #### 6 item model -->
+
+<!-- ```{r} -->
+<!-- m = fit_final(outcome = "gsq",predictors = final_mod_6_eve) -->
+<!-- kable(m$fixed,caption = "Fixed Effects Coefficients") -->
+<!-- ``` -->
+
+<!-- Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`. -->
+
+<!-- #### 9 item model -->
+
+<!-- ```{r} -->
+<!-- m = fit_final(outcome = "gsq",predictors = final_mod_9_eve) -->
+<!-- kable(m$fixed,caption = "Fixed Effects Coefficients") -->
+<!-- ``` -->
+
+<!-- Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`. -->
+
+# Survey item definitions
+
+## Morning items
 
 ```{r}
-# Predictors
-final_mod_6 = c(1, 7, 10, 21, 23, 25)
-final_mod_9 = c(1, 7, 10, 12, 14, 20, 21, 23, 25)
-final_mod_6_morn = paste0("esq",final_mod_6)
-final_mod_9_morn = paste0("esq",final_mod_9)
-final_mod_6_eve = paste0(final_mod_6_morn,"_eve")
-final_mod_9_eve = paste0(final_mod_9_morn,"_eve")
-# Scale
-data[,c(final_mod_9_morn,final_mod_9_eve)] = 
-  lapply(data[,c(final_mod_9_morn,final_mod_9_eve)],scale)
-# Model function
-fit_final = function(outcome,predictors,df = data,fam = "gaussian"){
-  form = as.formula(paste0(outcome,"~",paste0(predictors,collapse = "+"),"+(1|record_id)"))
-  if(fam == "gaussian"){
-    mod = lmer(form,data = df,na.action = "na.omit")
-    sigma_d = 0
-  } else if (fam == "poisson") {
-    df[,outcome] = sapply(df[,outcome],as.integer)
-    mod = glmer(form,data = df,family = fam,na.action = "na.omit")
-    sigma_d = log((1/exp(summary(mod)$coefficients[1,1]))+1)
-  } else if (fam == "binomial"){
-    sigma_d = (pi^2)/3
-  }
-  sigma_f = var(predict(mod,re.form = NA))
-  sigma_r = VarCorr(mod)$record_id[1]
-  r2_m = sigma_f/(sigma_f + sigma_r + sigma_d)
-  r2_c = (sigma_f + sigma_r)/(sigma_f + sigma_r + sigma_d)
-  res = list("fixed" = summary(mod)$coefficients,"marginal" = r2_m,"conditional" = r2_c)
-  res = lapply(res, function(x){round(x,3)})
-  return(res)
-}
+kable(cbind(morning_items,labels(data[,morning_items])),
+      col.names = c("Item","Question"),row.names = F)
 ```
 
-## Number of boluses
-
-Because this is count data, we used a Poisson model for this outcome. Coefficients are interpreted on the log count scale.
-
-### Morning survey
-
-#### 6 item model
+## Evening items
 
 ```{r}
-m = fit_final(outcome = "boluses",predictors = final_mod_6_morn,fam = "poisson")
-kable(m$fixed,caption = "Fixed Effects Coefficients")
+kable(cbind(evening_items,labels(data[,evening_items])),
+      col.names = c("Item","Question"),row.names = F)
 ```
-
-Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
-
-#### 9 item model
-
-```{r}
-m = fit_final(outcome = "boluses",predictors = final_mod_9_morn,fam = "poisson")
-kable(m$fixed,caption = "Fixed Effects Coefficients")
-```
-
-Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
-
-### Evening survey
-
-#### 6 item model
-
-```{r}
-m = fit_final(outcome = "boluses",predictors = final_mod_6_eve,fam = "poisson")
-kable(m$fixed,caption = "Fixed Effects Coefficients")
-```
-
-Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
-
-#### 9 item model
-
-```{r}
-m = fit_final(outcome = "boluses",predictors = final_mod_9_eve,fam = "poisson")
-kable(m$fixed,caption = "Fixed Effects Coefficients")
-```
-
-Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
-
-## High alerts
-
-Because this is count data, we used a Poisson model for this outcome. Coefficients are interpreted on the log count scale.
-
-### Morning survey
-
-#### 6 item model
-
-```{r}
-m = fit_final(outcome = "n_highalerts",predictors = final_mod_6_morn,fam = "poisson")
-kable(m$fixed,caption = "Fixed Effects Coefficients")
-```
-
-Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
-
-#### 9 item model
-
-```{r}
-m = fit_final(outcome = "n_highalerts",predictors = final_mod_9_morn,fam = "poisson")
-kable(m$fixed,caption = "Fixed Effects Coefficients")
-```
-
-Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
-
-### Evening survey
-
-#### 6 item model
-
-```{r}
-m = fit_final(outcome = "n_highalerts",predictors = final_mod_6_eve,fam = "poisson")
-kable(m$fixed,caption = "Fixed Effects Coefficients")
-```
-
-Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
-
-#### 9 item model
-
-```{r}
-m = fit_final(outcome = "n_highalerts",predictors = final_mod_9_eve,fam = "poisson")
-kable(m$fixed,caption = "Fixed Effects Coefficients")
-```
-
-Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
-
-## SMG
-
-### Morning survey
-
-#### 6 item model
-
-```{r}
-m = fit_final(outcome = "smg",predictors = final_mod_6_morn)
-kable(m$fixed,caption = "Fixed Effects Coefficients")
-```
-
-Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
-
-#### 9 item model
-
-```{r}
-m = fit_final(outcome = "smg",predictors = final_mod_9_morn)
-kable(m$fixed,caption = "Fixed Effects Coefficients")
-```
-
-Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
-
-### Evening survey
-
-#### 6 item model
-
-```{r}
-m = fit_final(outcome = "smg",predictors = final_mod_6_eve)
-kable(m$fixed,caption = "Fixed Effects Coefficients")
-```
-
-Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
-
-#### 9 item model
-
-```{r}
-m = fit_final(outcome = "smg",predictors = final_mod_9_eve)
-kable(m$fixed,caption = "Fixed Effects Coefficients")
-```
-
-Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
-
-## TIR
-
-### Morning survey
-
-#### 6 item model
-
-```{r}
-m = fit_final(outcome = "tir",predictors = final_mod_6_morn)
-kable(m$fixed,caption = "Fixed Effects Coefficients")
-```
-
-Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
-
-#### 9 item model
-
-```{r}
-m = fit_final(outcome = "tir",predictors = final_mod_9_morn)
-kable(m$fixed,caption = "Fixed Effects Coefficients")
-```
-
-Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
-
-### Evening survey
-
-#### 6 item model
-
-```{r}
-m = fit_final(outcome = "tir",predictors = final_mod_6_eve)
-kable(m$fixed,caption = "Fixed Effects Coefficients")
-```
-
-Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
-
-#### 9 item model
-
-```{r}
-m = fit_final(outcome = "tir",predictors = final_mod_9_eve)
-kable(m$fixed,caption = "Fixed Effects Coefficients")
-```
-
-Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
