@@ -25,34 +25,32 @@ home_dir = ifelse(.Platform$OS.type == "unix",
                   "B:/Projects/Janet Snell-Bergeon/AHA collaborative grant")
 setwd(home_dir)
 
+# NEED TO MAKE 4 DFS - EGDR AND COMPONENTS, STATINS AND LIPID MEDS
+# THEN DELETE ALL DATA PROCESSING IN OTHER CHUNKS AND BE SURE I AM USING CORRECT DFS
+
+#### DATA FRAME WITH STATINS AND EGDR
 allvisits_long <- read.sas7bdat("./Combined predictive model/allvisits_long.sas7bdat")
 #allvisits_long <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_long.sas7bdat")
 allvisits_long <- allvisits_long[allvisits_long$StudyID != 2389,]
 v1 <- allvisits_long[allvisits_long$Visit==1,]
 v1 <- v1[,c("StudyID","age","duration","bmi","whr","onhypermeds","onstatinmeds","avediabp","avesystbp","smkstatus","ldl","hdlc","tri",
             "CKDepi","ac","albuminuria","insdoseperkg","hba1c","l45vsf","l45sqf","egdr","apob","crp","fib","homo","pai1","sex")]
-
 cac <- read.csv("./Proteomics/Data_Cleaned/cac_groups.csv")
 #cac <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Proteomics/Data_Cleaned/cac_groups.csv")
 cac$CACprogV3 <- ifelse(cac$C3 - cac$C1 >= 2.5,"Progression","No Progression")
 cac$CACprogV3[is.na(cac$CACprogV3)] <- "Unknown"
 cac <- cac[,c("StudyID","CACprogV3")]
-
 final <- merge(cac,v1,by="StudyID",all.x = T, all.y = T)
-
 ua <- read.sas7bdat("./Combined predictive model//uricacid_b.sas7bdat")
 #ua <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/uricacid_b.sas7bdat")
 ua <- ua[,c("StudyID","UA")]
 final <- merge(final,ua,by="StudyID",all.x = T, all.y = F)
-  
 pat <- read.sas7bdat("./Combined predictive model/PATwide.sas7bdat")
 #pat <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/PATwide.sas7bdat")
 pat$StudyID <- pat$STUDYID
 pat <- pat[,c("StudyID","pfatcm_v1")]
 final <- merge(final,pat,by="StudyID",all.x = T, all.y = F)
-final <- final[,-1]
 final <- final[final$CACprogV3 != "Unknown",]
-
 final$CACprogV3_num <- ifelse(final$CACprogV3=="Progression",1,0)
 final$CACprogV3 <- NULL
 #final$alb_num <- as.factor(ifelse(final$albuminuria %in% c("mac","mic"),1,
@@ -64,110 +62,46 @@ final$albuminuria <- NULL
 #                       ifelse(final$smkstatus %in% c("Former","Never"),0,NA)))
 final$smknum <- ifelse(final$smkstatus=="Current",1,
                                  ifelse(final$smkstatus %in% c("Former","Never"),0,NA))
-
 final$smkstatus <- NULL
 #final$onhypermeds <- as.factor(final$onhypermeds)
 #final$onlipidmeds <- as.factor(final$onlipidmeds)
 #final$onstatinmeds <- as.factor(final$onstatinmeds)
-
 # drop albuminuria status - we don't want it and AC together
 final$alb_num <- NULL
-
 # recode sex
 final$sex_0m1f <- ifelse(final$sex==1,0,1) 
 final$sex <- NULL
-
-#write.csv(final,"./Combined predictive model/clinical data for lasso.csv",row.names = F)
-
+# drop a1c, WHR, onhypermeds
+final$hba1c <- NULL
+final$whr <- NULL
+final$onhypermeds <- NULL
 # only complete cases
-complete <- drop_na(final)
+complete_statin_egdr <- drop_na(final)
+#### 
 
-
-```
-
-# LASSO for CAC progression without interactions, using statins and eGDR
-
-## LASSO
-
-```{r CAC LASSO statins, echo=FALSE, comment=""}
-set.seed(3654)
-# LASSO
-x <- as.matrix(subset(complete,select=-CACprogV3_num))
-glmmod1 <- glmnet(x, y=as.factor(complete$CACprogV3_num), alpha=0.5, family="binomial")
-
-# find best value of lambda
-cv.glmmod <- cv.glmnet(x, y=complete$CACprogV3_num, alpha=1)
-best.lambda <- cv.glmmod$lambda.min
-
-# coefficients at best lambda
-round(coef(glmmod1,s=cv.glmmod$lambda.min),4)
-
-# testing collinearity
-glmtest <- glm(CACprogV3_num ~ age + duration + bmi + whr + onhypermeds + onstatinmeds + avediabp + avesystbp + ldl + hdlc + tri + CKDepi + ac + insdoseperkg + 
-hba1c + l45vsf + l45sqf + egdr + apob + crp + fib + homo + pai1 + UA + pfatcm_v1 + smknum + sex_0m1f ,data=complete,family = binomial("logit"))
-check_collinearity(glmtest)
-```
-
-## GLM using variables selected by LASSO
-
-```{r CAC LASSO statins refit, echo=FALSE, comment=""}
-# Check coefficients
-# sex added to LASSO
-refit_mod = glm(CACprogV3_num ~ age+duration+onhypermeds+onstatinmeds+avesystbp+
-                  hdlc+insdoseperkg+l45sqf+egdr+homo+UA+smknum,complete,family = binomial("logit"))
-summary(refit_mod)
-```
-
-# LASSO for CAC progression with interactions, using statins and eGDR
-
-## LASSO
-
-No interactions were retained.
-
-```{r CAC LASSO statins glinternet, echo=FALSE, comment=""}
-set.seed(3654)
-X <- complete %>% select(-CACprogV3_num)
-numLevels <- c(1,1,1,1,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2)
-a <- glinternet.cv(Y=complete$CACprogV3_num,X=X,numLevels = numLevels)
-coefs <- coef(a)
-```
-
-```{r revised data, include=FALSE}
-# REVISE DATA TO INCLUDE LIPID MEDS INSTEAD OF STATINS
-
-home_dir = ifelse(.Platform$OS.type == "unix",
-                  "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant",
-                  "B:/Projects/Janet Snell-Bergeon/AHA collaborative grant")
-setwd(home_dir)
-
+#### DATA FRAME WITH STATINS AND EGDR COMPONENTS
 allvisits_long <- read.sas7bdat("./Combined predictive model/allvisits_long.sas7bdat")
 #allvisits_long <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_long.sas7bdat")
 allvisits_long <- allvisits_long[allvisits_long$StudyID != 2389,]
 v1 <- allvisits_long[allvisits_long$Visit==1,]
-v1 <- v1[,c("StudyID","age","duration","bmi","whr","onhypermeds","onlipidmeds","avediabp","avesystbp","smkstatus","ldl","hdlc","tri",
+v1 <- v1[,c("StudyID","age","duration","bmi","whr","onhypermeds","onstatinmeds","avediabp","avesystbp","smkstatus","ldl","hdlc","tri",
             "CKDepi","ac","albuminuria","insdoseperkg","hba1c","l45vsf","l45sqf","egdr","apob","crp","fib","homo","pai1","sex")]
-
 cac <- read.csv("./Proteomics/Data_Cleaned/cac_groups.csv")
 #cac <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Proteomics/Data_Cleaned/cac_groups.csv")
 cac$CACprogV3 <- ifelse(cac$C3 - cac$C1 >= 2.5,"Progression","No Progression")
 cac$CACprogV3[is.na(cac$CACprogV3)] <- "Unknown"
 cac <- cac[,c("StudyID","CACprogV3")]
-
 final <- merge(cac,v1,by="StudyID",all.x = T, all.y = T)
-
 ua <- read.sas7bdat("./Combined predictive model//uricacid_b.sas7bdat")
 #ua <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/uricacid_b.sas7bdat")
 ua <- ua[,c("StudyID","UA")]
 final <- merge(final,ua,by="StudyID",all.x = T, all.y = F)
-
 pat <- read.sas7bdat("./Combined predictive model/PATwide.sas7bdat")
 #pat <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/PATwide.sas7bdat")
 pat$StudyID <- pat$STUDYID
 pat <- pat[,c("StudyID","pfatcm_v1")]
 final <- merge(final,pat,by="StudyID",all.x = T, all.y = F)
-final <- final[,-1]
 final <- final[final$CACprogV3 != "Unknown",]
-
 final$CACprogV3_num <- ifelse(final$CACprogV3=="Progression",1,0)
 final$CACprogV3 <- NULL
 #final$alb_num <- as.factor(ifelse(final$albuminuria %in% c("mac","mic"),1,
@@ -179,865 +113,549 @@ final$albuminuria <- NULL
 #                       ifelse(final$smkstatus %in% c("Former","Never"),0,NA)))
 final$smknum <- ifelse(final$smkstatus=="Current",1,
                                  ifelse(final$smkstatus %in% c("Former","Never"),0,NA))
-
 final$smkstatus <- NULL
 #final$onhypermeds <- as.factor(final$onhypermeds)
 #final$onlipidmeds <- as.factor(final$onlipidmeds)
 #final$onstatinmeds <- as.factor(final$onstatinmeds)
-
 # drop albuminuria status - we don't want it and AC together
 final$alb_num <- NULL
-
-#write.csv(final,"./Combined predictive model/clinical data for lasso.csv",row.names = F)
-
 # recode sex
 final$sex_0m1f <- ifelse(final$sex==1,0,1) 
 final$sex <- NULL
-
+# drop egdr
+final$egdr <- NULL
 # only complete cases
-complete <- drop_na(final)
+complete_statin_egdr_components <- drop_na(final)
+#####
+
+#### DATA FRAME WITH LIPID MEDS AND EGDR 
+allvisits_long <- read.sas7bdat("./Combined predictive model/allvisits_long.sas7bdat")
+#allvisits_long <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_long.sas7bdat")
+allvisits_long <- allvisits_long[allvisits_long$StudyID != 2389,]
+v1 <- allvisits_long[allvisits_long$Visit==1,]
+v1 <- v1[,c("StudyID","age","duration","bmi","whr","onhypermeds","onlipidmeds","avediabp","avesystbp","smkstatus","ldl","hdlc","tri",
+            "CKDepi","ac","albuminuria","insdoseperkg","hba1c","l45vsf","l45sqf","egdr","apob","crp","fib","homo","pai1","sex")]
+cac <- read.csv("./Proteomics/Data_Cleaned/cac_groups.csv")
+#cac <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Proteomics/Data_Cleaned/cac_groups.csv")
+cac$CACprogV3 <- ifelse(cac$C3 - cac$C1 >= 2.5,"Progression","No Progression")
+cac$CACprogV3[is.na(cac$CACprogV3)] <- "Unknown"
+cac <- cac[,c("StudyID","CACprogV3")]
+final <- merge(cac,v1,by="StudyID",all.x = T, all.y = T)
+ua <- read.sas7bdat("./Combined predictive model//uricacid_b.sas7bdat")
+#ua <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/uricacid_b.sas7bdat")
+ua <- ua[,c("StudyID","UA")]
+final <- merge(final,ua,by="StudyID",all.x = T, all.y = F)
+pat <- read.sas7bdat("./Combined predictive model/PATwide.sas7bdat")
+#pat <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/PATwide.sas7bdat")
+pat$StudyID <- pat$STUDYID
+pat <- pat[,c("StudyID","pfatcm_v1")]
+final <- merge(final,pat,by="StudyID",all.x = T, all.y = F)
+final <- final[final$CACprogV3 != "Unknown",]
+final$CACprogV3_num <- ifelse(final$CACprogV3=="Progression",1,0)
+final$CACprogV3 <- NULL
+#final$alb_num <- as.factor(ifelse(final$albuminuria %in% c("mac","mic"),1,
+#                        ifelse(final$albuminuria=="non",0,NA)))
+final$alb_num <- ifelse(final$albuminuria %in% c("mac","mic"),1,
+                                  ifelse(final$albuminuria=="non",0,NA))
+final$albuminuria <- NULL
+#final$smknum <- as.factor(ifelse(final$smkstatus=="Current",1,
+#                       ifelse(final$smkstatus %in% c("Former","Never"),0,NA)))
+final$smknum <- ifelse(final$smkstatus=="Current",1,
+                                 ifelse(final$smkstatus %in% c("Former","Never"),0,NA))
+final$smkstatus <- NULL
+#final$onhypermeds <- as.factor(final$onhypermeds)
+#final$onlipidmeds <- as.factor(final$onlipidmeds)
+#final$onstatinmeds <- as.factor(final$onstatinmeds)
+# drop albuminuria status - we don't want it and AC together
+final$alb_num <- NULL
+# recode sex
+final$sex_0m1f <- ifelse(final$sex==1,0,1) 
+final$sex <- NULL
+# drop a1c, WHR, onhypermeds
+final$hba1c <- NULL
+final$whr <- NULL
+final$onhypermeds <- NULL
+# only complete cases
+complete_lipidmeds_egdr <- drop_na(final)
+######
+
+#### DATA FRAME WITH LIPID MEDS AND EGDR COMPONENTS
+allvisits_long <- read.sas7bdat("./Combined predictive model/allvisits_long.sas7bdat")
+#allvisits_long <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_long.sas7bdat")
+allvisits_long <- allvisits_long[allvisits_long$StudyID != 2389,]
+v1 <- allvisits_long[allvisits_long$Visit==1,]
+v1 <- v1[,c("StudyID","age","duration","bmi","whr","onhypermeds","onlipidmeds","avediabp","avesystbp","smkstatus","ldl","hdlc","tri",
+            "CKDepi","ac","albuminuria","insdoseperkg","hba1c","l45vsf","l45sqf","egdr","apob","crp","fib","homo","pai1","sex")]
+cac <- read.csv("./Proteomics/Data_Cleaned/cac_groups.csv")
+#cac <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Proteomics/Data_Cleaned/cac_groups.csv")
+cac$CACprogV3 <- ifelse(cac$C3 - cac$C1 >= 2.5,"Progression","No Progression")
+cac$CACprogV3[is.na(cac$CACprogV3)] <- "Unknown"
+cac <- cac[,c("StudyID","CACprogV3")]
+final <- merge(cac,v1,by="StudyID",all.x = T, all.y = T)
+ua <- read.sas7bdat("./Combined predictive model//uricacid_b.sas7bdat")
+#ua <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/uricacid_b.sas7bdat")
+ua <- ua[,c("StudyID","UA")]
+final <- merge(final,ua,by="StudyID",all.x = T, all.y = F)
+pat <- read.sas7bdat("./Combined predictive model/PATwide.sas7bdat")
+#pat <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/PATwide.sas7bdat")
+pat$StudyID <- pat$STUDYID
+pat <- pat[,c("StudyID","pfatcm_v1")]
+final <- merge(final,pat,by="StudyID",all.x = T, all.y = F)
+final <- final[final$CACprogV3 != "Unknown",]
+final$CACprogV3_num <- ifelse(final$CACprogV3=="Progression",1,0)
+final$CACprogV3 <- NULL
+#final$alb_num <- as.factor(ifelse(final$albuminuria %in% c("mac","mic"),1,
+#                        ifelse(final$albuminuria=="non",0,NA)))
+final$alb_num <- ifelse(final$albuminuria %in% c("mac","mic"),1,
+                                  ifelse(final$albuminuria=="non",0,NA))
+final$albuminuria <- NULL
+#final$smknum <- as.factor(ifelse(final$smkstatus=="Current",1,
+#                       ifelse(final$smkstatus %in% c("Former","Never"),0,NA)))
+final$smknum <- ifelse(final$smkstatus=="Current",1,
+                                 ifelse(final$smkstatus %in% c("Former","Never"),0,NA))
+final$smkstatus <- NULL
+#final$onhypermeds <- as.factor(final$onhypermeds)
+#final$onlipidmeds <- as.factor(final$onlipidmeds)
+#final$onstatinmeds <- as.factor(final$onstatinmeds)
+# drop albuminuria status - we don't want it and AC together
+final$alb_num <- NULL
+# recode sex
+final$sex_0m1f <- ifelse(final$sex==1,0,1) 
+final$sex <- NULL
+# drop egdr
+final$egdr <- NULL
+# only complete cases
+complete_lipidmeds_egdr_components <- drop_na(final)
+######
+
+### make dfs with event data
+event <- read.csv("./Combined predictive model/QVisits_LastVisit_8-10-21.csv")
+
+# death
+death <- event[,c("StudyID","Deceased","PersonYrsDeath")]
+death$death <- ifelse(event$Deceased=="Deceased",1,0)
+death$Deceased <- NULL
+complete_statin_egdr_components_death <- merge(complete_statin_egdr_components,death,by="StudyID",all.x = T,all.y = F)
+complete_statin_egdr_components_death$CACprogV3_num <- NULL
+complete_lipidmeds_egdr_components_death <- merge(complete_lipidmeds_egdr_components,death,by="StudyID",all.x = T,all.y = F)
+complete_lipidmeds_egdr_components_death$CACprogV3_num <- NULL
+
+# CAD
+cad <- event[,c("StudyID","CAD","PersonYrsCAD")]
+complete_statin_egdr_components_cad <- merge(complete_statin_egdr_components,cad,by="StudyID",all.x = T,all.y = F)
+complete_statin_egdr_components_cad$CACprogV3_num <- NULL
+complete_lipidmeds_egdr_components_cad<- merge(complete_lipidmeds_egdr_components,cad,by="StudyID",all.x = T,all.y = F)
+complete_lipidmeds_egdr_components_cad$CACprogV3_num <- NULL
+
+# HardCAD
+hardcad <- event[,c("StudyID","HardCAD","PersonYrsHardCAD")]
+complete_statin_egdr_components_hardcad <- merge(complete_statin_egdr_components,hardcad,by="StudyID",all.x = T,all.y = F)
+complete_statin_egdr_components_hardcad$CACprogV3_num <- NULL
+complete_lipidmeds_egdr_components_hardcad<- merge(complete_lipidmeds_egdr_components,hardcad,by="StudyID",all.x = T,all.y = F)
+complete_lipidmeds_egdr_components_hardcad$CACprogV3_num <- NULL
+
+# CVD
+cvd <- event[,c("StudyID","CVD","PersonYrsCVD")]
+complete_statin_egdr_components_cvd <- merge(complete_statin_egdr_components,cvd,by="StudyID",all.x = T,all.y = F)
+complete_statin_egdr_components_cvd$CACprogV3_num <- NULL
+complete_lipidmeds_egdr_components_cvd<- merge(complete_lipidmeds_egdr_components,cvd,by="StudyID",all.x = T,all.y = F)
+complete_lipidmeds_egdr_components_cvd$CACprogV3_num <- NULL
+
+# HardCVD
+hardcvd <- event[,c("StudyID","HardCVD","PersonYrsHardCVD")]
+complete_statin_egdr_components_hardcvd <- merge(complete_statin_egdr_components,hardcvd,by="StudyID",all.x = T,all.y = F)
+complete_statin_egdr_components_hardcvd$CACprogV3_num <- NULL
+complete_lipidmeds_egdr_components_hardcvd<- merge(complete_lipidmeds_egdr_components,hardcvd,by="StudyID",all.x = T,all.y = F)
+complete_lipidmeds_egdr_components_hardcvd$CACprogV3_num <- NULL
+####
+
+# set number of levels for glinternet
+numLevels_statin_egdr <- c(1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2)
+numLevels_statin_egdr_components <- c(1,1,1,1,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2)
+numLevels_lipidmeds_egdr <- c(1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2)
+numLevels_lipidmeds_egdr_components <- c(1,1,1,1,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2)
 
 ```
 
-# LASSO for CAC progression without interactions, using lipid lowering meds and eGDR
+# LASSO for CAC progression, using statins and eGDR
 
-## LASSO
+## LASSO without interactions
 
-```{r CAC LASSO lipid lowering, echo=FALSE, comment=""}
+```{r, echo=FALSE, comment=""}
 set.seed(3654)
 # LASSO
-x <- as.matrix(subset(complete,select=-CACprogV3_num))
-glmmod1 <- glmnet(x, y=as.factor(complete$CACprogV3_num), alpha=0.5, family="binomial")
-
+x <- as.matrix(subset(complete_statin_egdr,select=-c(CACprogV3_num,StudyID)))
+glmmod1 <- glmnet(x, y=as.factor(complete_statin_egdr$CACprogV3_num), alpha=0.5, family="binomial")
 # find best value of lambda
-cv.glmmod <- cv.glmnet(x, y=complete$CACprogV3_num, alpha=1)
+cv.glmmod <- cv.glmnet(x, y=complete_statin_egdr$CACprogV3_num, alpha=1)
 best.lambda <- cv.glmmod$lambda.min
+# coefficients at best lambda
+round(coef(glmmod1,s=cv.glmmod$lambda.min),4)
+```
 
+## GLM using variables selected by LASSO 
+
+```{r, echo=FALSE, comment=""}
+# Check coefficients
+# sex added to LASSO
+refit_mod = glm(CACprogV3_num ~ age+duration+onstatinmeds+avediabp+avesystbp+ldl+
+                  hdlc+CKDepi+ac+insdoseperkg+l45sqf+egdr+apob+homo+pai1+UA+smknum,complete_statin_egdr,family = binomial("logit"))
+summary(refit_mod)
+```
+
+## LASSO with interactions
+
+No interactions were retained.
+
+```{r, echo=FALSE, comment=""}
+set.seed(3654)
+X <- complete_statin_egdr %>% select(-c(CACprogV3_num,StudyID))
+numLevels <- c(1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2)
+a <- glinternet.cv(Y=complete_statin_egdr$CACprogV3_num,X=X,numLevels = numLevels_statin_egdr)
+coefs <- coef(a)
+```
+
+# LASSO for CAC progression, using statins, A1c, WHR, onhypermeds
+
+## LASSO without interactions
+
+```{r, echo=FALSE, comment=""}
+set.seed(3654)
+# LASSO
+x <- as.matrix(subset(complete_statin_egdr_components,select=-c(CACprogV3_num,StudyID)))
+glmmod1 <- glmnet(x, y=as.factor(complete_statin_egdr_components$CACprogV3_num), alpha=0.5, family="binomial")
+# find best value of lambda
+cv.glmmod <- cv.glmnet(x, y=complete_statin_egdr_components$CACprogV3_num, alpha=1)
+best.lambda <- cv.glmmod$lambda.min
 # coefficients at best lambda
 round(coef(glmmod1,s=cv.glmmod$lambda.min),4)
 ```
 
 ## GLM using variables selected by LASSO
 
-```{r CAC LASSO lipid lowering refit, echo=FALSE, comment=""}
-# Check coefficients
-# sex added to LASSO
-refit_mod = glm(CACprogV3_num ~ age+duration+onhypermeds+onlipidmeds+avesystbp+
-                  hdlc+insdoseperkg+l45sqf+egdr+homo+UA+smknum,complete,family = binomial("logit"))
+```{r, echo=FALSE, comment=""}
+refit_mod = glm(CACprogV3_num ~ age+duration+bmi+onhypermeds+onstatinmeds+avediabp+avesystbp+ldl+
+                  hdlc+CKDepi+ac+insdoseperkg+hba1c+l45sqf+homo+pai1+UA+smknum+sex_0m1f,complete_statin_egdr_components,family = binomial("logit"))
 summary(refit_mod)
 ```
 
-# LASSO for CAC progression with interactions, using lipid lowering meds and eGDR
+## LASSO with interactions
 
-## LASSO
-
-No interactions were retained.
-
-```{r CAC LASSO lipids glinternet, echo=FALSE, comment=""}
+```{r, echo=FALSE, comment=""}
 set.seed(3654)
-X <- complete %>% select(-CACprogV3_num)
-numLevels <- c(1,1,1,1,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2)
-a <- glinternet.cv(Y=complete$CACprogV3_num,X=X,numLevels = numLevels)
+X <- complete_statin_egdr_components %>% select(-c(CACprogV3_num,StudyID))
+a <- glinternet.cv(Y=complete_statin_egdr_components$CACprogV3_num,X=X,numLevels = numLevels_statin_egdr_components)
 coefs <- coef(a)
 ```
 
-# Regularized Cox model for death without interactions, using statins and eGDR
+## GLM using variables selected by LASSO with interactions 
+
+```{r, echo=FALSE, comment=""}
+refit_mod_int = glm(CACprogV3_num ~ onhypermeds+onstatinmeds+smknum+sex_0m1f
+                                + onhypermeds*onstatinmeds + onstatinmeds*smknum + smknum*sex_0m1f
+                                + age+duration+whr+avesystbp+hdlc+insdoseperkg+hba1c+l45vsf+homo+UA+ldl+bmi+avediabp+fib
+                                + duration*ldl + bmi*insdoseperkg + avediabp*hdlc + hba1c*fib,complete_statin_egdr_components,family = binomial("logit"))
+summary(refit_mod_int)
+```
+
+# LASSO for CAC progression, using lipid lowering meds and eGDR
+
+## LASSO without interactions
+
+```{r, echo=FALSE, comment=""}
+set.seed(3654)
+# LASSO
+x <- as.matrix(subset(complete_lipidmeds_egdr,select=-c(CACprogV3_num,StudyID)))
+glmmod1 <- glmnet(x, y=as.factor(complete_lipidmeds_egdr$CACprogV3_num), alpha=0.5, family="binomial")
+# find best value of lambda
+cv.glmmod <- cv.glmnet(x, y=complete_lipidmeds_egdr$CACprogV3_num, alpha=1)
+best.lambda <- cv.glmmod$lambda.min
+# coefficients at best lambda
+round(coef(glmmod1,s=cv.glmmod$lambda.min),4)
+```
+
+## GLM using variables selected by LASSO 
+
+```{r, echo=FALSE, comment=""}
+# Check coefficients
+# sex added to LASSO
+refit_mod = glm(CACprogV3_num ~ age+duration+onlipidmeds+avediabp+avesystbp+ldl+
+                  hdlc+CKDepi+ac+insdoseperkg+l45sqf+egdr+homo+pai1+UA+smknum,complete_lipidmeds_egdr,family = binomial("logit"))
+summary(refit_mod)
+```
+
+## LASSO with interactions
+
+No interactions were retained.
+
+```{r, echo=FALSE, comment=""}
+set.seed(3654)
+X <- complete_lipidmeds_egdr %>% select(-c(CACprogV3_num,StudyID))
+a <- glinternet.cv(Y=complete_lipidmeds_egdr$CACprogV3_num,X=X,numLevels = numLevels)
+coefs <- coef(a)
+```
+
+# LASSO for CAC progression, using lipid lowering meds and A1c, WHR, onhypermeds
+
+## LASSO without interactions
+
+```{r, echo=FALSE, comment=""}
+set.seed(3654)
+# LASSO
+x <- as.matrix(subset(complete_lipidmeds_egdr_components,select=-c(CACprogV3_num,StudyID)))
+glmmod1 <- glmnet(x, y=as.factor(complete_lipidmeds_egdr_components$CACprogV3_num), alpha=0.5, family="binomial")
+# find best value of lambda
+cv.glmmod <- cv.glmnet(x, y=complete_lipidmeds_egdr_components$CACprogV3_num, alpha=1)
+best.lambda <- cv.glmmod$lambda.min
+# coefficients at best lambda
+round(coef(glmmod1,s=cv.glmmod$lambda.min),4)
+```
+
+## GLM using variables selected by LASSO
+
+```{r, echo=FALSE, comment=""}
+refit_mod = glm(CACprogV3_num ~ age+duration+bmi+onhypermeds+onlipidmeds+avediabp+avesystbp+ldl+
+                  hdlc+tri+CKDepi+ac+insdoseperkg+hba1c+l45vsf+l45sqf+homo+pai1+UA+smknum+sex_0m1f,complete_lipidmeds_egdr_components,family = binomial("logit"))
+summary(refit_mod)
+```
+
+## LASSO with interactions
+
+```{r, echo=FALSE, comment=""}
+set.seed(3654)
+X <- complete_lipidmeds_egdr_components %>% select(-c(CACprogV3_num,StudyID))
+a <- glinternet.cv(Y=complete_lipidmeds_egdr_components$CACprogV3_num,X=X,numLevels = numLevels_lipidmeds_egdr_components)
+coefs <- coef(a)
+```
+
+## GLM using variables selected by LASSO with interactions
+
+```{r, echo=FALSE, comment=""}
+refit_mod_int = glm(CACprogV3_num ~ onhypermeds+onstatinmeds
+                                + onhypermeds*onstatinmeds + 
+                                + age+duration+whr+avesystbp+hdlc+insdoseperkg+hba1c+l45vsf+homo+UA+bmi+fib
+                                + bmi*insdoseperkg + hba1c*fib,complete_statin_egdr_components,family = binomial("logit"))
+summary(refit_mod_int)
+```
+
+# Regularized Cox model for death without interactions, using statins and A1c, WHR, onhypermeds
 
 ## Regularized Cox model
 
-```{r events data statins, include=FALSE}
-home_dir = ifelse(.Platform$OS.type == "unix",
-                  "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant",
-                  "B:/Projects/Janet Snell-Bergeon/AHA collaborative grant")
-setwd(home_dir)
-
-allvisits_long <- read.sas7bdat("./Combined predictive model/allvisits_long.sas7bdat")
-#allvisits_long <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_long.sas7bdat")
-allvisits_long <- allvisits_long[allvisits_long$StudyID != 2389,]
-v1 <- allvisits_long[allvisits_long$Visit==1,]
-v1 <- v1[,c("StudyID","age","duration","bmi","whr","onhypermeds","onstatinmeds","avediabp","avesystbp","smkstatus","ldl","hdlc","tri",
-            "CKDepi","ac","albuminuria","insdoseperkg","hba1c","l45vsf","l45sqf","egdr","apob","crp","fib","homo","pai1","sex")]
-
-ua <- read.sas7bdat("./Combined predictive model/uricacid_b.sas7bdat")
-#ua <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/uricacid_b.sas7bdat")
-ua <- ua[,c("StudyID","UA")]
-final <- merge(v1,ua,by="StudyID",all.x = T, all.y = F)
-  
-pat <- read.sas7bdat("./Combined predictive model/PATwide.sas7bdat")
-#pat <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/PATwide.sas7bdat")
-pat$StudyID <- pat$STUDYID
-pat <- pat[,c("StudyID","pfatcm_v1")]
-final <- merge(final,pat,by="StudyID",all.x = T, all.y = F)
-final$alb_num <- ifelse(final$albuminuria %in% c("mac","mic"),1,
-                                  ifelse(final$albuminuria=="non",0,NA))
-final$albuminuria <- NULL
-#final$smknum <- as.factor(ifelse(final$smkstatus=="Current",1,
-#                       ifelse(final$smkstatus %in% c("Former","Never"),0,NA)))
-final$smknum <- ifelse(final$smkstatus=="Current",1,
-                                 ifelse(final$smkstatus %in% c("Former","Never"),0,NA))
-final$smkstatus <- NULL
-#final$onhypermeds <- as.factor(final$onhypermeds)
-#final$onlipidmeds <- as.factor(final$onlipidmeds)
-#final$onstatinmeds <- as.factor(final$onstatinmeds)
-
-# drop albuminuria status - we don't want it and AC together
-final$alb_num <- NULL
-
-#write.csv(final,"./Combined predictive model/clinical data for lasso.csv",row.names = F)
-
-# read in event data
-event <- read.csv("./Combined predictive model/QVisits_LastVisit_8-10-21.csv")
-#event <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/QVisits_LastVisit_8-10-21.csv")
-event <- event[,c("StudyID","Deceased","PersonYrsDeath")]
-event$death <- ifelse(event$Deceased=="Deceased",1,0)
-event$Deceased <- NULL
-final <- merge(final,event,by="StudyID",all.x=TRUE,all.y=FALSE)
-
-# recode sex
-final$sex_0m1f <- ifelse(final$sex==1,0,1) 
-final$sex <- NULL
-
-# only complete cases
-complete <- drop_na(final)
-```
-
-```{r Cox death LASSO statin, echo=FALSE, comment=""}
+```{r, echo=FALSE, comment=""}
 set.seed(3654)
-Y <- complete[,c("death","PersonYrsDeath")]
-X <- complete %>% select(-c("StudyID","PersonYrsDeath","death"))
+Y <- complete_statin_egdr_components_death[,c("death","PersonYrsDeath")]
+X <- complete_statin_egdr_components_death %>% select(-c("StudyID","PersonYrsDeath","death"))
 S <- Surv(time = Y$PersonYrsDeath, event = Y$death)
 cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
-
 # coefficients at best lambda
 round(coef(cv.fit,s=cv.fit$lambda.min),4)
-
 ```
 
 ## Cox model using variables selected in regularized Cox model
 
-```{r death LASSO statin refit, echo=FALSE, comment=""}
+```{r, echo=FALSE, comment=""}
 # sex added to LASSO
-c <- coxph(Surv(PersonYrsDeath,death) ~ age + onhypermeds + onstatinmeds + avesystbp + CKDepi + ac + hba1c + apob + fib + pai1 + smknum
-           + sex_0m1f, data=complete)
-summary(c)
+c <- coxph(Surv(PersonYrsDeath,death) ~ age + onhypermeds + onstatinmeds + tri + CKDepi + hba1c + apob + pai1 + smknum,
+           data=complete_statin_egdr_components_death)
+c
 ```
 
-# Regularized Cox model for death without interactions, using lipid lowering meds and eGDR
+# Regularized Cox model for death without interactions, using lipid lowering meds and A1c, WHR, onhypermeds
 
 ## Regularized Cox model
 
-```{r events data lipid meds, include=FALSE}
-home_dir = ifelse(.Platform$OS.type == "unix",
-                  "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant",
-                  "B:/Projects/Janet Snell-Bergeon/AHA collaborative grant")
-setwd(home_dir)
-
-allvisits_long <- read.sas7bdat("./Combined predictive model/allvisits_long.sas7bdat")
-#allvisits_long <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_long.sas7bdat")
-allvisits_long <- allvisits_long[allvisits_long$StudyID != 2389,]
-v1 <- allvisits_long[allvisits_long$Visit==1,]
-v1 <- v1[,c("StudyID","age","duration","bmi","whr","onhypermeds","onlipidmeds","avediabp","avesystbp","smkstatus","ldl","hdlc","tri",
-            "CKDepi","ac","albuminuria","insdoseperkg","hba1c","l45vsf","l45sqf","egdr","apob","crp","fib","homo","pai1","sex")]
-
-ua <- read.sas7bdat("./Combined predictive model/uricacid_b.sas7bdat")
-#ua <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/uricacid_b.sas7bdat")
-ua <- ua[,c("StudyID","UA")]
-final <- merge(v1,ua,by="StudyID",all.x = T, all.y = F)
-  
-pat <- read.sas7bdat("./Combined predictive model/PATwide.sas7bdat")
-#pat <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/PATwide.sas7bdat")
-pat$StudyID <- pat$STUDYID
-pat <- pat[,c("StudyID","pfatcm_v1")]
-final <- merge(final,pat,by="StudyID",all.x = T, all.y = F)
-final$alb_num <- ifelse(final$albuminuria %in% c("mac","mic"),1,
-                                  ifelse(final$albuminuria=="non",0,NA))
-final$albuminuria <- NULL
-#final$smknum <- as.factor(ifelse(final$smkstatus=="Current",1,
-#                       ifelse(final$smkstatus %in% c("Former","Never"),0,NA)))
-final$smknum <- ifelse(final$smkstatus=="Current",1,
-                                 ifelse(final$smkstatus %in% c("Former","Never"),0,NA))
-final$smkstatus <- NULL
-#final$onhypermeds <- as.factor(final$onhypermeds)
-#final$onlipidmeds <- as.factor(final$onlipidmeds)
-#final$onstatinmeds <- as.factor(final$onstatinmeds)
-
-# drop albuminuria status - we don't want it and AC together
-final$alb_num <- NULL
-
-#write.csv(final,"./Combined predictive model/clinical data for lasso.csv",row.names = F)
-
-# read in event data
-event <- read.csv("./Combined predictive model/QVisits_LastVisit_8-10-21.csv")
-#event <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/QVisits_LastVisit_8-10-21.csv")
-event <- event[,c("StudyID","Deceased","PersonYrsDeath")]
-event$death <- ifelse(event$Deceased=="Deceased",1,0)
-event$Deceased <- NULL
-final <- merge(final,event,by="StudyID",all.x=TRUE,all.y=FALSE)
-
-# recode sex
-final$sex_0m1f <- ifelse(final$sex==1,0,1) 
-final$sex <- NULL
-
-# only complete cases
-complete <- drop_na(final)
-```
-
-```{r Cox death LASSO lipid meds, echo=FALSE, comment=""}
+```{r, echo=FALSE, comment=""}
 set.seed(3654)
-Y <- complete[,c("death","PersonYrsDeath")]
-X <- complete %>% select(-c("StudyID","PersonYrsDeath","death"))
+Y <- complete_lipidmeds_egdr_components_death[,c("death","PersonYrsDeath")]
+X <- complete_lipidmeds_egdr_components_death %>% select(-c("StudyID","PersonYrsDeath","death"))
 S <- Surv(time = Y$PersonYrsDeath, event = Y$death)
 cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
-
 # coefficients at best lambda
 round(coef(cv.fit,s=cv.fit$lambda.min),4)
-
 ```
 
 ## Cox model using variables selected in regularized Cox model
 
-```{r death LASSO lipid meds refit, echo=FALSE, comment=""}
+```{r, echo=FALSE, comment=""}
 # sex added to LASSO
-c <- coxph(Surv(PersonYrsDeath,death) ~ onhypermeds + onlipidmeds + avediabp + avesystbp + CKDepi + ac + hba1c + apob + fib + pai1 + smknum, data=complete)
-summary(c)
+c <- coxph(Surv(PersonYrsDeath,death) ~ age + onhypermeds + onlipidmeds + avesystbp + hdlc + tri + CKDepi + hba1c + l45vsf + apob + pai1 + UA + smknum, 
+           data=complete_lipidmeds_egdr_components_death)
+c
 ```
 
-# Regularized Cox model for CAD without interactions, using statins and eGDR
+# Regularized Cox model for CAD without interactions, using statins and A1c, WHR, onhypermeds
 
 ## Regularized Cox model
 
-```{r CAD data statins, include=FALSE}
-home_dir = ifelse(.Platform$OS.type == "unix",
-                  "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant",
-                  "B:/Projects/Janet Snell-Bergeon/AHA collaborative grant")
-setwd(home_dir)
-
-allvisits_long <- read.sas7bdat("./Combined predictive model/allvisits_long.sas7bdat")
-#allvisits_long <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_long.sas7bdat")
-allvisits_long <- allvisits_long[allvisits_long$StudyID != 2389,]
-v1 <- allvisits_long[allvisits_long$Visit==1,]
-v1 <- v1[,c("StudyID","age","duration","bmi","whr","onhypermeds","onstatinmeds","avediabp","avesystbp","smkstatus","ldl","hdlc","tri",
-            "CKDepi","ac","albuminuria","insdoseperkg","hba1c","l45vsf","l45sqf","egdr","apob","crp","fib","homo","pai1","sex")]
-
-ua <- read.sas7bdat("./Combined predictive model/uricacid_b.sas7bdat")
-#ua <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/uricacid_b.sas7bdat")
-ua <- ua[,c("StudyID","UA")]
-final <- merge(v1,ua,by="StudyID",all.x = T, all.y = F)
-  
-pat <- read.sas7bdat("./Combined predictive model/PATwide.sas7bdat")
-#pat <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/PATwide.sas7bdat")
-pat$StudyID <- pat$STUDYID
-pat <- pat[,c("StudyID","pfatcm_v1")]
-final <- merge(final,pat,by="StudyID",all.x = T, all.y = F)
-final$alb_num <- ifelse(final$albuminuria %in% c("mac","mic"),1,
-                                  ifelse(final$albuminuria=="non",0,NA))
-final$albuminuria <- NULL
-#final$smknum <- as.factor(ifelse(final$smkstatus=="Current",1,
-#                       ifelse(final$smkstatus %in% c("Former","Never"),0,NA)))
-final$smknum <- ifelse(final$smkstatus=="Current",1,
-                                 ifelse(final$smkstatus %in% c("Former","Never"),0,NA))
-final$smkstatus <- NULL
-#final$onhypermeds <- as.factor(final$onhypermeds)
-#final$onlipidmeds <- as.factor(final$onlipidmeds)
-#final$onstatinmeds <- as.factor(final$onstatinmeds)
-
-# drop albuminuria status - we don't want it and AC together
-final$alb_num <- NULL
-
-#write.csv(final,"./Combined predictive model/clinical data for lasso.csv",row.names = F)
-
-# read in event data
-event <- read.csv("./Combined predictive model/QVisits_LastVisit_8-10-21.csv")
-#event <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/QVisits_LastVisit_8-10-21.csv")
-event <- event[,c("StudyID","CAD","PersonYrsCAD")]
-final <- merge(final,event,by="StudyID",all.x=TRUE,all.y=FALSE)
-
-# recode sex
-final$sex_0m1f <- ifelse(final$sex==1,0,1) 
-final$sex <- NULL
-
-# only complete cases
-complete <- drop_na(final)
-# some 0 times for PersonYrsCAD
-complete <- complete[complete$PersonYrsCAD>0,]
-```
-
-```{r Cox CAD LASSO statin, echo=FALSE, comment=""}
+```{r, echo=FALSE, comment=""}
 set.seed(3654)
-Y <- complete[,c("CAD","PersonYrsCAD")]
-X <- complete %>% select(-c("StudyID","PersonYrsCAD","CAD"))
+Y <- complete_statin_egdr_components_cad[,c("CAD","PersonYrsCAD")]
+X <- complete_statin_egdr_components_cad %>% select(-c("StudyID","PersonYrsCAD","CAD"))
 S <- Surv(time = Y$PersonYrsCAD, event = Y$CAD)
 cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
-
 # coefficients at best lambda
 round(coef(cv.fit,s=cv.fit$lambda.min),4)
-
 ```
 
 ## Cox model using variables selected in regularized Cox model
 
-```{r CAD LASSO statin refit, echo=FALSE, comment=""}
-# sex added to LASSO
-# this is the last one I fixed prior to evaluating collinearity
-c <- coxph(Surv(PersonYrsCAD,CAD) ~ age + duration + whr + onstatinmeds + avediabp + avesystbp + tri + CKDepi + l45sqf +
-             egdr + apob + homo + pai1 + smknum, data=complete)
-summary(c)
+```{r, echo=FALSE, comment=""}
+c <- coxph(Surv(PersonYrsCAD,CAD) ~ age + duration + whr + onhypermeds + onstatinmeds + avesystbp + hdlc + tri + CKDepi + 
+             insdoseperkg + hba1c + l45sqf +
+             homo + pai1 + pfatcm_v1 + smknum + sex_0m1f, data=complete_statin_egdr_components_cad)
+c
 ```
 
-# Regularized Cox model for CAD without interactions, using lipid lowering meds and eGDR
+# Regularized Cox model for CAD without interactions, using lipid lowering meds and A1c, WHR, onhypermeds
 
 ## Regularized Cox model
 
-```{r CAD data lipid meds, include=FALSE}
-home_dir = ifelse(.Platform$OS.type == "unix",
-                  "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant",
-                  "B:/Projects/Janet Snell-Bergeon/AHA collaborative grant")
-setwd(home_dir)
-
-allvisits_long <- read.sas7bdat("./Combined predictive model/allvisits_long.sas7bdat")
-#allvisits_long <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_long.sas7bdat")
-allvisits_long <- allvisits_long[allvisits_long$StudyID != 2389,]
-v1 <- allvisits_long[allvisits_long$Visit==1,]
-v1 <- v1[,c("StudyID","age","duration","bmi","whr","onhypermeds","onlipidmeds","avediabp","avesystbp","smkstatus","ldl","hdlc","tri",
-            "CKDepi","ac","albuminuria","insdoseperkg","hba1c","l45vsf","l45sqf","egdr","apob","crp","fib","homo","pai1","sex")]
-
-ua <- read.sas7bdat("./Combined predictive model/uricacid_b.sas7bdat")
-#ua <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/uricacid_b.sas7bdat")
-ua <- ua[,c("StudyID","UA")]
-final <- merge(v1,ua,by="StudyID",all.x = T, all.y = F)
-  
-pat <- read.sas7bdat("./Combined predictive model/PATwide.sas7bdat")
-#pat <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/PATwide.sas7bdat")
-pat$StudyID <- pat$STUDYID
-pat <- pat[,c("StudyID","pfatcm_v1")]
-final <- merge(final,pat,by="StudyID",all.x = T, all.y = F)
-final$alb_num <- ifelse(final$albuminuria %in% c("mac","mic"),1,
-                                  ifelse(final$albuminuria=="non",0,NA))
-final$albuminuria <- NULL
-#final$smknum <- as.factor(ifelse(final$smkstatus=="Current",1,
-#                       ifelse(final$smkstatus %in% c("Former","Never"),0,NA)))
-final$smknum <- ifelse(final$smkstatus=="Current",1,
-                                 ifelse(final$smkstatus %in% c("Former","Never"),0,NA))
-final$smkstatus <- NULL
-#final$onhypermeds <- as.factor(final$onhypermeds)
-#final$onlipidmeds <- as.factor(final$onlipidmeds)
-#final$onstatinmeds <- as.factor(final$onstatinmeds)
-
-# drop albuminuria status - we don't want it and AC together
-final$alb_num <- NULL
-
-#write.csv(final,"./Combined predictive model/clinical data for lasso.csv",row.names = F)
-
-# read in event data
-event <- read.csv("./Combined predictive model/QVisits_LastVisit_8-10-21.csv")
-#event <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/QVisits_LastVisit_8-10-21.csv")
-event <- event[,c("StudyID","CAD","PersonYrsCAD")]
-final <- merge(final,event,by="StudyID",all.x=TRUE,all.y=FALSE)
-
-# recode sex
-final$sex_0m1f <- ifelse(final$sex==1,0,1) 
-final$sex <- NULL
-
-# only complete cases
-complete <- drop_na(final)
-# some 0 times for PersonYrsCAD
-complete <- complete[complete$PersonYrsCAD>0,]
-```
-
-```{r Cox CAD LASSO lipid meds, echo=FALSE, comment=""}
+```{r, echo=FALSE, comment=""}
 set.seed(3654)
-Y <- complete[,c("CAD","PersonYrsCAD")]
-X <- complete %>% select(-c("StudyID","PersonYrsCAD","CAD"))
+Y <- complete_lipidmeds_egdr_components_cad[,c("CAD","PersonYrsCAD")]
+X <- complete_lipidmeds_egdr_components_cad %>% select(-c("StudyID","PersonYrsCAD","CAD"))
 S <- Surv(time = Y$PersonYrsCAD, event = Y$CAD)
 cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
-
 # coefficients at best lambda
 round(coef(cv.fit,s=cv.fit$lambda.min),4)
-
 ```
 
 ## Cox model using variables selected in regularized Cox model
 
-```{r CAD LASSO lipid meds refit, echo=FALSE, comment=""}
-c <- coxph(Surv(PersonYrsCAD,CAD) ~ age + duration + whr + onlipidmeds + avediabp + avesystbp + tri + CKDepi + l45sqf +
-             egdr + apob + homo + pai1 + smknum, data=complete)
-summary(c)
+```{r, echo=FALSE, comment=""}
+c <- coxph(Surv(PersonYrsCAD,CAD) ~ age + duration + whr + onhypermeds + onlipidmeds + avesystbp + hdlc + tri + CKDepi + 
+             insdoseperkg + hba1c + l45sqf +
+             homo + pai1 + pfatcm_v1 + smknum + sex_0m1f, data=complete_lipidmeds_egdr_components_cad)
+c
 ```
 
-# Regularized Cox model for hard CAD without interactions, using statins and eGDR
+# Regularized Cox model for hard CAD without interactions, using statins and A1c, WHR, onhypermeds
 
 ## Regularized Cox model
 
-```{r hard CAD data statins, include=FALSE}
-home_dir = ifelse(.Platform$OS.type == "unix",
-                  "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant",
-                  "B:/Projects/Janet Snell-Bergeon/AHA collaborative grant")
-setwd(home_dir)
-
-allvisits_long <- read.sas7bdat("./Combined predictive model/allvisits_long.sas7bdat")
-#allvisits_long <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_long.sas7bdat")
-allvisits_long <- allvisits_long[allvisits_long$StudyID != 2389,]
-v1 <- allvisits_long[allvisits_long$Visit==1,]
-v1 <- v1[,c("StudyID","age","duration","bmi","whr","onhypermeds","onstatinmeds","avediabp","avesystbp","smkstatus","ldl","hdlc","tri",
-            "CKDepi","ac","albuminuria","insdoseperkg","hba1c","l45vsf","l45sqf","egdr","apob","crp","fib","homo","pai1","sex")]
-
-ua <- read.sas7bdat("./Combined predictive model/uricacid_b.sas7bdat")
-#ua <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/uricacid_b.sas7bdat")
-ua <- ua[,c("StudyID","UA")]
-final <- merge(v1,ua,by="StudyID",all.x = T, all.y = F)
-  
-pat <- read.sas7bdat("./Combined predictive model/PATwide.sas7bdat")
-#pat <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/PATwide.sas7bdat")
-pat$StudyID <- pat$STUDYID
-pat <- pat[,c("StudyID","pfatcm_v1")]
-final <- merge(final,pat,by="StudyID",all.x = T, all.y = F)
-final$alb_num <- ifelse(final$albuminuria %in% c("mac","mic"),1,
-                                  ifelse(final$albuminuria=="non",0,NA))
-final$albuminuria <- NULL
-#final$smknum <- as.factor(ifelse(final$smkstatus=="Current",1,
-#                       ifelse(final$smkstatus %in% c("Former","Never"),0,NA)))
-final$smknum <- ifelse(final$smkstatus=="Current",1,
-                                 ifelse(final$smkstatus %in% c("Former","Never"),0,NA))
-final$smkstatus <- NULL
-#final$onhypermeds <- as.factor(final$onhypermeds)
-#final$onlipidmeds <- as.factor(final$onlipidmeds)
-#final$onstatinmeds <- as.factor(final$onstatinmeds)
-
-# drop albuminuria status - we don't want it and AC together
-final$alb_num <- NULL
-
-#write.csv(final,"./Combined predictive model/clinical data for lasso.csv",row.names = F)
-
-# read in event data
-event <- read.csv("./Combined predictive model/QVisits_LastVisit_8-10-21.csv")
-#event <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/QVisits_LastVisit_8-10-21.csv")
-event <- event[,c("StudyID","HardCAD","PersonYrsHardCAD")]
-final <- merge(final,event,by="StudyID",all.x=TRUE,all.y=FALSE)
-
-# recode sex
-final$sex_0m1f <- ifelse(final$sex==1,0,1) 
-final$sex <- NULL
-
-# only complete cases
-complete <- drop_na(final)
-# some 0 times for PersonYrsCAD
-complete <- complete[complete$PersonYrsHardCAD>0,]
-```
-
-```{r Cox hard CAD LASSO statin, echo=FALSE, comment=""}
+```{r, echo=FALSE, comment=""}
 set.seed(3654)
-Y <- complete[,c("HardCAD","PersonYrsHardCAD")]
-X <- complete %>% select(-c("StudyID","PersonYrsHardCAD","HardCAD"))
+Y <- complete_statin_egdr_components_hardcad[,c("HardCAD","PersonYrsHardCAD")]
+X <- complete_statin_egdr_components_hardcad %>% select(-c("StudyID","PersonYrsHardCAD","HardCAD"))
 S <- Surv(time = Y$PersonYrsHardCAD, event = Y$HardCAD)
 cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
-
 # coefficients at best lambda
 round(coef(cv.fit,s=cv.fit$lambda.min),4)
-
 ```
 
 ## Cox model using variables selected in regularized Cox model
 
-```{r hard CAD LASSO statin refit, echo=FALSE, comment=""}
-c <- coxph(Surv(PersonYrsHardCAD,HardCAD) ~ duration + onstatinmeds + ac + hba1c + egdr + apob + homo + pai1 + smknum, data=complete)
-summary(c)
+```{r, echo=FALSE, comment=""}
+c <- coxph(Surv(PersonYrsHardCAD,HardCAD) ~ duration + onstatinmeds + CKDepi + hba1c + l45sqf + apob + homo + smknum, data=complete_statin_egdr_components_hardcad)
+c
 ```
 
-# Regularized Cox model for hard CAD without interactions, using lipid lowering meds and eGDR
+# Regularized Cox model for hard CAD without interactions, using lipid lowering meds and A1c, WHR, onhypermeds
 
 ## Regularized Cox model
 
-```{r hard CAD data lipid meds, include=FALSE}
-home_dir = ifelse(.Platform$OS.type == "unix",
-                  "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant",
-                  "B:/Projects/Janet Snell-Bergeon/AHA collaborative grant")
-setwd(home_dir)
-
-allvisits_long <- read.sas7bdat("./Combined predictive model/allvisits_long.sas7bdat")
-#allvisits_long <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_long.sas7bdat")
-allvisits_long <- allvisits_long[allvisits_long$StudyID != 2389,]
-v1 <- allvisits_long[allvisits_long$Visit==1,]
-v1 <- v1[,c("StudyID","age","duration","bmi","whr","onhypermeds","onlipidmeds","avediabp","avesystbp","smkstatus","ldl","hdlc","tri",
-            "CKDepi","ac","albuminuria","insdoseperkg","hba1c","l45vsf","l45sqf","egdr","apob","crp","fib","homo","pai1","sex")]
-
-ua <- read.sas7bdat("./Combined predictive model/uricacid_b.sas7bdat")
-#ua <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/uricacid_b.sas7bdat")
-ua <- ua[,c("StudyID","UA")]
-final <- merge(v1,ua,by="StudyID",all.x = T, all.y = F)
-  
-pat <- read.sas7bdat("./Combined predictive model/PATwide.sas7bdat")
-#pat <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/PATwide.sas7bdat")
-pat$StudyID <- pat$STUDYID
-pat <- pat[,c("StudyID","pfatcm_v1")]
-final <- merge(final,pat,by="StudyID",all.x = T, all.y = F)
-final$alb_num <- ifelse(final$albuminuria %in% c("mac","mic"),1,
-                                  ifelse(final$albuminuria=="non",0,NA))
-final$albuminuria <- NULL
-#final$smknum <- as.factor(ifelse(final$smkstatus=="Current",1,
-#                       ifelse(final$smkstatus %in% c("Former","Never"),0,NA)))
-final$smknum <- ifelse(final$smkstatus=="Current",1,
-                                 ifelse(final$smkstatus %in% c("Former","Never"),0,NA))
-final$smkstatus <- NULL
-#final$onhypermeds <- as.factor(final$onhypermeds)
-#final$onlipidmeds <- as.factor(final$onlipidmeds)
-#final$onstatinmeds <- as.factor(final$onstatinmeds)
-
-# drop albuminuria status - we don't want it and AC together
-final$alb_num <- NULL
-
-#write.csv(final,"./Combined predictive model/clinical data for lasso.csv",row.names = F)
-
-# read in event data
-event <- read.csv("./Combined predictive model/QVisits_LastVisit_8-10-21.csv")
-#event <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/QVisits_LastVisit_8-10-21.csv")
-event <- event[,c("StudyID","HardCAD","PersonYrsHardCAD")]
-final <- merge(final,event,by="StudyID",all.x=TRUE,all.y=FALSE)
-
-# recode sex
-final$sex_0m1f <- ifelse(final$sex==1,0,1) 
-final$sex <- NULL
-
-# only complete cases
-complete <- drop_na(final)
-# some 0 times for PersonYrsCAD
-complete <- complete[complete$PersonYrsHardCAD>0,]
-```
-
-```{r Cox hard CAD LASSO lipid meds, echo=FALSE, comment=""}
+```{r, echo=FALSE, comment=""}
 set.seed(3654)
-Y <- complete[,c("HardCAD","PersonYrsHardCAD")]
-X <- complete %>% select(-c("StudyID","PersonYrsHardCAD","HardCAD"))
+Y <- complete_lipidmeds_egdr_components_hardcad[,c("HardCAD","PersonYrsHardCAD")]
+X <- complete_lipidmeds_egdr_components_hardcad %>% select(-c("StudyID","PersonYrsHardCAD","HardCAD"))
 S <- Surv(time = Y$PersonYrsHardCAD, event = Y$HardCAD)
 cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
-
 # coefficients at best lambda
 round(coef(cv.fit,s=cv.fit$lambda.min),4)
-
 ```
 
 ## Cox model using variables selected in regularized Cox model
 
-```{r hard CAD LASSO lipid meds refit, echo=FALSE, comment=""}
-c <- coxph(Surv(PersonYrsHardCAD,HardCAD) ~ duration + whr + onlipidmeds + ac + hba1c + egdr + apob + homo + pai1 + smknum, data=complete)
-summary(c)
+```{r, echo=FALSE, comment=""}
+c <- coxph(Surv(PersonYrsHardCAD,HardCAD) ~ onlipidmeds + homo + smknum, data=complete_lipidmeds_egdr_components_hardcad)
+c
 ```
 
-# Regularized Cox model for CVD without interactions, using statins and eGDR
+# Regularized Cox model for CVD without interactions, using statins and eGDR components
 
 ## Regularized Cox model
 
-```{r CVD data statins, include=FALSE}
-home_dir = ifelse(.Platform$OS.type == "unix",
-                  "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant",
-                  "B:/Projects/Janet Snell-Bergeon/AHA collaborative grant")
-setwd(home_dir)
-
-allvisits_long <- read.sas7bdat("./Combined predictive model/allvisits_long.sas7bdat")
-#allvisits_long <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_long.sas7bdat")
-allvisits_long <- allvisits_long[allvisits_long$StudyID != 2389,]
-v1 <- allvisits_long[allvisits_long$Visit==1,]
-v1 <- v1[,c("StudyID","age","duration","bmi","whr","onhypermeds","onstatinmeds","avediabp","avesystbp","smkstatus","ldl","hdlc","tri",
-            "CKDepi","ac","albuminuria","insdoseperkg","hba1c","l45vsf","l45sqf","egdr","apob","crp","fib","homo","pai1","sex")]
-
-ua <- read.sas7bdat("./Combined predictive model/uricacid_b.sas7bdat")
-#ua <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/uricacid_b.sas7bdat")
-ua <- ua[,c("StudyID","UA")]
-final <- merge(v1,ua,by="StudyID",all.x = T, all.y = F)
-  
-pat <- read.sas7bdat("./Combined predictive model/PATwide.sas7bdat")
-#pat <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/PATwide.sas7bdat")
-pat$StudyID <- pat$STUDYID
-pat <- pat[,c("StudyID","pfatcm_v1")]
-final <- merge(final,pat,by="StudyID",all.x = T, all.y = F)
-final$alb_num <- ifelse(final$albuminuria %in% c("mac","mic"),1,
-                                  ifelse(final$albuminuria=="non",0,NA))
-final$albuminuria <- NULL
-#final$smknum <- as.factor(ifelse(final$smkstatus=="Current",1,
-#                       ifelse(final$smkstatus %in% c("Former","Never"),0,NA)))
-final$smknum <- ifelse(final$smkstatus=="Current",1,
-                                 ifelse(final$smkstatus %in% c("Former","Never"),0,NA))
-final$smkstatus <- NULL
-#final$onhypermeds <- as.factor(final$onhypermeds)
-#final$onlipidmeds <- as.factor(final$onlipidmeds)
-#final$onstatinmeds <- as.factor(final$onstatinmeds)
-
-# drop albuminuria status - we don't want it and AC together
-final$alb_num <- NULL
-
-#write.csv(final,"./Combined predictive model/clinical data for lasso.csv",row.names = F)
-
-# read in event data
-event <- read.csv("./Combined predictive model/QVisits_LastVisit_8-10-21.csv")
-#event <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/QVisits_LastVisit_8-10-21.csv")
-event <- event[,c("StudyID","CVD","PersonYrsCVD")]
-final <- merge(final,event,by="StudyID",all.x=TRUE,all.y=FALSE)
-
-# recode sex
-final$sex_0m1f <- ifelse(final$sex==1,0,1) 
-final$sex <- NULL
-
-# only complete cases
-complete <- drop_na(final)
-# some 0 times for PersonYrsCAD
-complete <- complete[complete$PersonYrsCVD>0,]
-```
-
-```{r Cox CVD LASSO statin, echo=FALSE, comment=""}
+```{r, echo=FALSE, comment=""}
 set.seed(3654)
-Y <- complete[,c("CVD","PersonYrsCVD")]
-X <- complete %>% select(-c("StudyID","PersonYrsCVD","CVD"))
+Y <- complete_statin_egdr_components_cvd[,c("CVD","PersonYrsCVD")]
+X <- complete_statin_egdr_components_cvd %>% select(-c("StudyID","PersonYrsCVD","CVD"))
 S <- Surv(time = Y$PersonYrsCVD, event = Y$CVD)
 cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
-
 # coefficients at best lambda
 round(coef(cv.fit,s=cv.fit$lambda.min),4)
-
 ```
 
 ## Cox model using variables selected in regularized Cox model
 
-```{r CVD LASSO statin refit, echo=FALSE, comment=""}
-c <- coxph(Surv(PersonYrsCVD,CVD) ~ age + duration + whr + onstatinmeds + avesystbp + CKDepi + insdoseperkg +
-             l45sqf + egdr + apob + fib + homo + pai1 + UA + smknum, data=complete)
-summary(c)
+```{r, echo=FALSE, comment=""}
+c <- coxph(Surv(PersonYrsCVD,CVD) ~ age + duration + whr + onhypermeds + onstatinmeds + CKDepi + insdoseperkg + hba1c + 
+             l45sqf + fib + homo + pai1 + pfatcm_v1 + smknum, data=complete_statin_egdr_components_cvd)
+c
 ```
 
-# Regularized Cox model for CVD without interactions, using lipid lowering meds and eGDR
+# Regularized Cox model for CVD without interactions, using lipid lowering meds and A1c, WHR, onhypermeds
 
 ## Regularized Cox model
 
-```{r CVD data lipid meds, include=FALSE}
-home_dir = ifelse(.Platform$OS.type == "unix",
-                  "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant",
-                  "B:/Projects/Janet Snell-Bergeon/AHA collaborative grant")
-setwd(home_dir)
-
-allvisits_long <- read.sas7bdat("./Combined predictive model/allvisits_long.sas7bdat")
-#allvisits_long <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_long.sas7bdat")
-allvisits_long <- allvisits_long[allvisits_long$StudyID != 2389,]
-v1 <- allvisits_long[allvisits_long$Visit==1,]
-v1 <- v1[,c("StudyID","age","duration","bmi","whr","onhypermeds","onlipidmeds","avediabp","avesystbp","smkstatus","ldl","hdlc","tri",
-            "CKDepi","ac","albuminuria","insdoseperkg","hba1c","l45vsf","l45sqf","egdr","apob","crp","fib","homo","pai1","sex")]
-
-ua <- read.sas7bdat("./Combined predictive model/uricacid_b.sas7bdat")
-#ua <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/uricacid_b.sas7bdat")
-ua <- ua[,c("StudyID","UA")]
-final <- merge(v1,ua,by="StudyID",all.x = T, all.y = F)
-  
-pat <- read.sas7bdat("./Combined predictive model/PATwide.sas7bdat")
-#pat <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/PATwide.sas7bdat")
-pat$StudyID <- pat$STUDYID
-pat <- pat[,c("StudyID","pfatcm_v1")]
-final <- merge(final,pat,by="StudyID",all.x = T, all.y = F)
-final$alb_num <- ifelse(final$albuminuria %in% c("mac","mic"),1,
-                                  ifelse(final$albuminuria=="non",0,NA))
-final$albuminuria <- NULL
-#final$smknum <- as.factor(ifelse(final$smkstatus=="Current",1,
-#                       ifelse(final$smkstatus %in% c("Former","Never"),0,NA)))
-final$smknum <- ifelse(final$smkstatus=="Current",1,
-                                 ifelse(final$smkstatus %in% c("Former","Never"),0,NA))
-final$smkstatus <- NULL
-#final$onhypermeds <- as.factor(final$onhypermeds)
-#final$onlipidmeds <- as.factor(final$onlipidmeds)
-#final$onstatinmeds <- as.factor(final$onstatinmeds)
-
-# drop albuminuria status - we don't want it and AC together
-final$alb_num <- NULL
-
-#write.csv(final,"./Combined predictive model/clinical data for lasso.csv",row.names = F)
-
-# read in event data
-event <- read.csv("./Combined predictive model/QVisits_LastVisit_8-10-21.csv")
-#event <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/QVisits_LastVisit_8-10-21.csv")
-event <- event[,c("StudyID","CVD","PersonYrsCVD")]
-final <- merge(final,event,by="StudyID",all.x=TRUE,all.y=FALSE)
-
-# recode sex
-final$sex_0m1f <- ifelse(final$sex==1,0,1) 
-final$sex <- NULL
-
-# only complete cases
-complete <- drop_na(final)
-# some 0 times for PersonYrsCAD
-complete <- complete[complete$PersonYrsCVD>0,]
-```
-
-```{r Cox CVD LASSO lipid meds, echo=FALSE, comment=""}
+```{r, echo=FALSE, comment=""}
 set.seed(3654)
-Y <- complete[,c("CVD","PersonYrsCVD")]
-X <- complete %>% select(-c("StudyID","PersonYrsCVD","CVD"))
+Y <- complete_lipidmeds_egdr_components_cvd[,c("CVD","PersonYrsCVD")]
+X <- complete_lipidmeds_egdr_components_cvd %>% select(-c("StudyID","PersonYrsCVD","CVD"))
 S <- Surv(time = Y$PersonYrsCVD, event = Y$CVD)
 cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
-
 # coefficients at best lambda
 round(coef(cv.fit,s=cv.fit$lambda.min),4)
-
 ```
 
 ## Cox model using variables selected in regularized Cox model
 
-```{r CVD LASSO lipid meds refit, echo=FALSE, comment=""}
-c <- coxph(Surv(PersonYrsCVD,CVD) ~ age + duration + whr + onlipidmeds + avesystbp + CKDepi + insdoseperkg +
-             l45sqf + egdr + apob + fib + homo + pai1 + UA + smknum, data=complete)
+```{r, echo=FALSE, comment=""}
+c <- coxph(Surv(PersonYrsCVD,CVD) ~ age + duration + whr + onhypermeds + onlipidmeds + CKDepi + insdoseperkg + hba1c + 
+             l45sqf + fib + homo + pai1 + pfatcm_v1 + smknum, data=complete_lipidmeds_egdr_components_cvd)
 summary(c)
 ```
 
-# Regularized Cox model for hard CVD without interactions, using statins and eGDR
+# Regularized Cox model for hard CVD without interactions, using statins and A1c, WHR, onhypermeds
 
 ## Regularized Cox model
 
-```{r hard CVD data statins, include=FALSE}
-home_dir = ifelse(.Platform$OS.type == "unix",
-                  "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant",
-                  "B:/Projects/Janet Snell-Bergeon/AHA collaborative grant")
-setwd(home_dir)
-
-allvisits_long <- read.sas7bdat("./Combined predictive model/allvisits_long.sas7bdat")
-#allvisits_long <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_long.sas7bdat")
-allvisits_long <- allvisits_long[allvisits_long$StudyID != 2389,]
-v1 <- allvisits_long[allvisits_long$Visit==1,]
-v1 <- v1[,c("StudyID","age","duration","bmi","whr","onhypermeds","onstatinmeds","avediabp","avesystbp","smkstatus","ldl","hdlc","tri",
-            "CKDepi","ac","albuminuria","insdoseperkg","hba1c","l45vsf","l45sqf","egdr","apob","crp","fib","homo","pai1","sex")]
-
-ua <- read.sas7bdat("./Combined predictive model/uricacid_b.sas7bdat")
-#ua <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/uricacid_b.sas7bdat")
-ua <- ua[,c("StudyID","UA")]
-final <- merge(v1,ua,by="StudyID",all.x = T, all.y = F)
-  
-pat <- read.sas7bdat("./Combined predictive model/PATwide.sas7bdat")
-#pat <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/PATwide.sas7bdat")
-pat$StudyID <- pat$STUDYID
-pat <- pat[,c("StudyID","pfatcm_v1")]
-final <- merge(final,pat,by="StudyID",all.x = T, all.y = F)
-final$alb_num <- ifelse(final$albuminuria %in% c("mac","mic"),1,
-                                  ifelse(final$albuminuria=="non",0,NA))
-final$albuminuria <- NULL
-#final$smknum <- as.factor(ifelse(final$smkstatus=="Current",1,
-#                       ifelse(final$smkstatus %in% c("Former","Never"),0,NA)))
-final$smknum <- ifelse(final$smkstatus=="Current",1,
-                                 ifelse(final$smkstatus %in% c("Former","Never"),0,NA))
-final$smkstatus <- NULL
-#final$onhypermeds <- as.factor(final$onhypermeds)
-#final$onlipidmeds <- as.factor(final$onlipidmeds)
-#final$onstatinmeds <- as.factor(final$onstatinmeds)
-
-# drop albuminuria status - we don't want it and AC together
-final$alb_num <- NULL
-
-#write.csv(final,"./Combined predictive model/clinical data for lasso.csv",row.names = F)
-
-# read in event data
-event <- read.csv("./Combined predictive model/QVisits_LastVisit_8-10-21.csv")
-#event <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/QVisits_LastVisit_8-10-21.csv")
-event <- event[,c("StudyID","HardCVD","PersonYrsHardCVD")]
-final <- merge(final,event,by="StudyID",all.x=TRUE,all.y=FALSE)
-
-# recode sex
-final$sex_0m1f <- ifelse(final$sex==1,0,1) 
-final$sex <- NULL
-
-# only complete cases
-complete <- drop_na(final)
-# some 0 times for PersonYrsCAD
-complete <- complete[complete$PersonYrsHardCVD>0,]
-```
-
-```{r Cox hard CVD LASSO statin, echo=FALSE, comment=""}
+```{r, echo=FALSE, comment=""}
 set.seed(3654)
-Y <- complete[,c("HardCVD","PersonYrsHardCVD")]
-X <- complete %>% select(-c("StudyID","PersonYrsHardCVD","HardCVD"))
+Y <- complete_statin_egdr_components_hardcvd[,c("HardCVD","PersonYrsHardCVD")]
+X <- complete_statin_egdr_components_hardcvd %>% select(-c("StudyID","PersonYrsHardCVD","HardCVD"))
 S <- Surv(time = Y$PersonYrsHardCVD, event = Y$HardCVD)
 cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
-
 # coefficients at best lambda
 round(coef(cv.fit,s=cv.fit$lambda.min),4)
-
 ```
 
 ## Cox model using variables selected in regularized Cox model
 
-```{r hard CVD LASSO statin refit, echo=FALSE, comment=""}
-c <- coxph(Surv(PersonYrsHardCVD,HardCVD) ~ duration + whr + onstatinmeds + CKDepi + ac +
-             hba1c + egdr + apob + fib + homo + smknum, data=complete)
-summary(c)
+```{r, echo=FALSE, comment=""}
+c <- coxph(Surv(PersonYrsHardCVD,HardCVD) ~ duration + onstatinmeds + CKDepi + 
+             apob + homo + smknum, data=complete_statin_egdr_components_hardcvd)
+c
 ```
 
-# Regularized Cox model for hard CVD without interactions, using lipid lowering meds and eGDR
+# Regularized Cox model for hard CVD without interactions, using lipid lowering meds and A1c, WHR, onhypermeds
 
 ## Regularized Cox model
 
-```{r hard CVD data lipid meds, include=FALSE}
-home_dir = ifelse(.Platform$OS.type == "unix",
-                  "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant",
-                  "B:/Projects/Janet Snell-Bergeon/AHA collaborative grant")
-setwd(home_dir)
-
-allvisits_long <- read.sas7bdat("./Combined predictive model/allvisits_long.sas7bdat")
-#allvisits_long <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_long.sas7bdat")
-allvisits_long <- allvisits_long[allvisits_long$StudyID != 2389,]
-v1 <- allvisits_long[allvisits_long$Visit==1,]
-v1 <- v1[,c("StudyID","age","duration","bmi","whr","onhypermeds","onlipidmeds","avediabp","avesystbp","smkstatus","ldl","hdlc","tri",
-            "CKDepi","ac","albuminuria","insdoseperkg","hba1c","l45vsf","l45sqf","egdr","apob","crp","fib","homo","pai1","sex")]
-
-ua <- read.sas7bdat("./Combined predictive model/uricacid_b.sas7bdat")
-#ua <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/uricacid_b.sas7bdat")
-ua <- ua[,c("StudyID","UA")]
-final <- merge(v1,ua,by="StudyID",all.x = T, all.y = F)
-  
-pat <- read.sas7bdat("./Combined predictive model/PATwide.sas7bdat")
-#pat <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/PATwide.sas7bdat")
-pat$StudyID <- pat$STUDYID
-pat <- pat[,c("StudyID","pfatcm_v1")]
-final <- merge(final,pat,by="StudyID",all.x = T, all.y = F)
-final$alb_num <- ifelse(final$albuminuria %in% c("mac","mic"),1,
-                                  ifelse(final$albuminuria=="non",0,NA))
-final$albuminuria <- NULL
-#final$smknum <- as.factor(ifelse(final$smkstatus=="Current",1,
-#                       ifelse(final$smkstatus %in% c("Former","Never"),0,NA)))
-final$smknum <- ifelse(final$smkstatus=="Current",1,
-                                 ifelse(final$smkstatus %in% c("Former","Never"),0,NA))
-final$smkstatus <- NULL
-#final$onhypermeds <- as.factor(final$onhypermeds)
-#final$onlipidmeds <- as.factor(final$onlipidmeds)
-#final$onstatinmeds <- as.factor(final$onstatinmeds)
-
-# drop albuminuria status - we don't want it and AC together
-final$alb_num <- NULL
-
-#write.csv(final,"./Combined predictive model/clinical data for lasso.csv",row.names = F)
-
-# read in event data
-event <- read.csv("./Combined predictive model/QVisits_LastVisit_8-10-21.csv")
-#event <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/QVisits_LastVisit_8-10-21.csv")
-event <- event[,c("StudyID","HardCVD","PersonYrsHardCVD")]
-final <- merge(final,event,by="StudyID",all.x=TRUE,all.y=FALSE)
-
-# recode sex
-final$sex_0m1f <- ifelse(final$sex==1,0,1) 
-final$sex <- NULL
-
-# only complete cases
-complete <- drop_na(final)
-# some 0 times for PersonYrsCAD
-complete <- complete[complete$PersonYrsHardCVD>0,]
-```
-
-```{r Cox hard CVD LASSO lipid meds, echo=FALSE, comment=""}
+```{r, echo=FALSE, comment=""}
 set.seed(3654)
-Y <- complete[,c("HardCVD","PersonYrsHardCVD")]
-X <- complete %>% select(-c("StudyID","PersonYrsHardCVD","HardCVD"))
+Y <- complete_lipidmeds_egdr_components_hardcvd[,c("HardCVD","PersonYrsHardCVD")]
+X <- complete_lipidmeds_egdr_components_hardcvd %>% select(-c("StudyID","PersonYrsHardCVD","HardCVD"))
 S <- Surv(time = Y$PersonYrsHardCVD, event = Y$HardCVD)
 cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
-
 # coefficients at best lambda
 round(coef(cv.fit,s=cv.fit$lambda.min),4)
-
 ```
 
 ## Cox model using variables selected in regularized Cox model
 
-```{r hard CVD LASSO lipid meds refit, echo=FALSE, comment=""}
-c <- coxph(Surv(PersonYrsHardCVD,HardCVD) ~ duration + whr + onlipidmeds + CKDepi + ac +
-             hba1c + egdr + apob + fib + homo + smknum, data=complete)
-summary(c)
+```{r, echo=FALSE, comment=""}
+c <- coxph(Surv(PersonYrsHardCVD,HardCVD) ~ duration + onlipidmeds + CKDepi + 
+             apob + homo + smknum, data=complete_lipidmeds_egdr_components_hardcvd)
+c
 ```
