@@ -351,6 +351,15 @@ r = ROC(form = final_model,data = df,MX=F,MI=F,PV=F,plot = "ROC",
 kable(t)
 ```
 
+#### Sensitivity analysis
+
+```{r}
+r = ROC(form = final_model,data = df[df$m1_sensor_wear > 83.5,],
+        MX=F,MI=F,PV=F,plot = "ROC",main = "1-Month Model (Sensor Wear >= Median)")
+r = ROC(form = final_model,data = df[df$m1_sensor_wear <+ 83.5,],
+        MX=F,MI=F,PV=F,plot = "ROC",main = "1-Month Model (Sensor Wear < Median)")
+```
+
 ### Final model (3 month variables)
 
 ```{r m3 time am model,echo=FALSE}
@@ -364,6 +373,15 @@ t[,2:ncol(t)] <- lapply(t[,2:ncol(t)],function(x){round(x,4)})
 
 r = ROC(form = final_model,data = df,MX=F,MI=F,PV=F,plot = "ROC",main = "3-Month Model")
 kable(t)
+```
+
+#### Sensitivity analysis
+
+```{r}
+r = ROC(form = final_model,data = df[df$m3_sensor_wear >= 72,],
+        MX=F,MI=F,PV=F,plot = "ROC",main = "3-Month Model (Sensor Wear >= Median)")
+r = ROC(form = final_model,data = df[df$m3_sensor_wear < 72,],
+        MX=F,MI=F,PV=F,plot = "ROC",main = "3-Month Model (Sensor Wear < Median)")
 ```
 
 ### Validation
@@ -397,6 +415,30 @@ p = ggplot(plot_df, aes(d = success, m = train_prob, linetype = Cohort)) +
   xlab("1 - Specificity") + ylab("Sensitivity")
 p
 ```
+
+# Visit frequencies etc. for revisions 
+
+```{r}
+# Time between visits
+data = data %>% unite(all_dates,date_visit,date,na.rm = T,remove = F)
+data$all_dates = lubridate::ymd(sapply(strsplit(data$all_dates,"_"),"[",1))
+data %>% group_by(record_id) %>% select(record_id,all_dates) %>%
+  mutate(time_between = as.numeric(all_dates - lag(all_dates),units = 'days')) %>%
+  filter(abs(time_between) <= 365*2) %>%
+  ungroup() %>%
+  summarise(avg = mean(time_between,na.rm=T),
+            sd = sd(time_between,na.rm=T),
+            med = median(time_between,na.rm=T),
+            lq = quantile(time_between,0.25,na.rm=T),
+            hq = quantile(time_between,0.75,na.rm=T)) %>% kable()
+# CGM wear without AM
+less_than_10 = data %>% select(record_id,gyl_timepoint.factor,sensor_wear,time_am) %>%
+  filter(time_am <= 10 & sensor_wear > 0)
+no_am = data %>% select(record_id,gyl_timepoint.factor,sensor_wear,time_am) %>%
+  filter(time_am == 0 & sensor_wear > 0)
+```
+
+`r length(unique(less_than_10$record_id))` participants had CGM wear > 0% and AM time $\leq$ 10% at at least one visit. Of these, `r length(unique(less_than_10$record_id[less_than_10$time_am==0]))` had 0% AM time.
 
 # References
 
