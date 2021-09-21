@@ -23,7 +23,8 @@ library(lme4)
 library(lmerTest)
 library(car)
 knitr::opts_chunk$set(echo = FALSE)
-home_dir = ifelse(.Platform$OS.type != "unix","T:/",
+home_dir = ifelse(.Platform$OS.type != "unix",
+                  "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Bring BG Down/",
                   "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Bring BG Down/")
 knitr::opts_knit$set(root.dir = home_dir)
 set.seed(1017)
@@ -42,6 +43,14 @@ df$Highest.Degree.Parent.Completed = factor(df$Highest.Degree.Parent.Completed)
 levels(df$Highest.Degree.Parent.Completed) = 
   c("Associate's or High School","Bachelor's or above","Bachelor's or above",
     "Associate's or High School","Bachelor's or above")
+df$Parent.s.Marital.Status = factor(df$Parent.s.Marital.Status)
+levels(df$Parent.s.Marital.Status) = 
+  c("Single","Living with Partner","Living with Partner","Single")
+df = df %>% unite(Parent.Race.Ethnicity,Parent.Ethnicity,Parent.Race,na.rm = T,remove = F)
+df$Parent.Race.Ethnicity[df$Parent.Race.Ethnicity == ""] = NA
+df$Parent.Race.Ethnicity = factor(df$Parent.Race.Ethnicity)
+levels(df$Parent.Race.Ethnicity) = c("Ethnic Minority","Ethnic Minority","White")
+# Outcome cutoffs
 df$Parent.Social.Consequences.Subscale.of.HFS = 
   cut(df$Parent.Social.Consequences.Subscale.of.HFS,right = F,
       breaks = c(-Inf,9,Inf),labels = c("Not Elevated","Elevated"))
@@ -59,7 +68,7 @@ df$age = as.numeric(difftime(lubridate::ymd(df$t1_date),lubridate::ymd(df$c_dob)
 
 ```{r results='asis'}
 # Table 1
-t1 = tableby(treatment_group~age+c_gender+Parent.Maintain.High.BG.of.HFS+Parent.Worry.Helplessness.Subscale.of.HFS+Parent.Social.Consequences.Subscale.of.HFS+Parent.GAD.7.Score+Private.Insurance+fe(Total.Household.Income)+fe(Parent.s.Marital.Status)+fe(Highest.Degree.Parent.Completed)+fe(Parent.Race)+fe(Parent.Ethnicity)+fe(Primary.Male.Caretaker),
+t1 = tableby(treatment_group~age+c_gender+Parent.Maintain.High.BG.of.HFS+Parent.Worry.Helplessness.Subscale.of.HFS+Parent.Social.Consequences.Subscale.of.HFS+Parent.GAD.7.Score+Private.Insurance+fe(Total.Household.Income)+fe(Parent.s.Marital.Status)+fe(Highest.Degree.Parent.Completed)+fe(Parent.Race.Ethnicity)+fe(Primary.Male.Caretaker),
              data = df[df$studyvisit == 1,])
 summary(t1,pfootnote = T)
 ```
@@ -68,7 +77,7 @@ summary(t1,pfootnote = T)
 
 All variables from Table 1 were included as covariates in model selection despite not being significantly different in univariate tests. Model selection for covariates was performed at study visit 1, because elasticnet regularization has not been implemented for longitudinal models. Time was treated as a continuous variable, and final models were re-fit using all timepoints. Elasticnet was used in place of the lasso because it is more effective when selecting between correlated variables. Optimal tuning parameters were selected to minimize root mean square error based on leave one out cross validation.
 
-Household income and education were dichotomized into >= \$90K vs. < $90K and associate's degree or high school vs. bachelor's degree and above. Age, gender, income, marital status, and race were selected for all outcomes, and were thus included in the final model results.
+Household income and education were dichotomized into >= \$90K vs. < $90K and associate's degree or high school vs. bachelor's degree and above. Gender, income, and race were selected for all outcomes, and were thus included in the final model results (along with age, which is of clinical interest).
 
 # Model selection
 
@@ -88,14 +97,15 @@ model_select = function(outcome,df = vis_1,fam = "gaussian",pred = predictors){
   mod = glmnet(y = data.matrix(lasso_df[,outcome]),x = data.matrix(lasso_df[,pred]),
                alpha = as.numeric(best["alpha"]),lambda = as.numeric(best["lambda"]),
                family = fam)
-  return(rownames(coef(mod))[which(round(coef(mod),3)!=0 & rownames(coef(mod)) != "(Intercept)")])
+  return(rownames(coef(mod))[which(round(coef(mod),3)!=0 & 
+                                     rownames(coef(mod)) != "(Intercept)")])
 }
 # Just baseline obs. for model selection
 vis_1 = df[df$studyvisit == 1,]
 # Predictors
 predictors = c("treatment_group","age","c_gender","Private.Insurance","Total.Household.Income",
-               "Parent.s.Marital.Status","Highest.Degree.Parent.Completed","Parent.Race",
-               "Parent.Ethnicity","Primary.Male.Caretaker")
+               "Parent.s.Marital.Status","Highest.Degree.Parent.Completed",
+               "Parent.Race.Ethnicity")
 ```
 
 ## Parent Maintain High BG of HFS
@@ -153,16 +163,15 @@ fit_mod = function(outcome,pred = predictors,dat = df,fam = "gaussian"){
   form = as.formula(paste0(outcome,"~","studyvisit*treatment_group+",
                            paste0(pred,collapse = "+"),"+(1|participant_id)"))
   if(fam == "gaussian"){
-    mod = lmer(form,data = dat,na.action = "na.omit")
+    mod = lmer(form,data = dat)
   } else {
-    mod = glmer(form,data = dat,na.action = "na.omit",family = fam,
-                control=glmerControl(optCtrl=list(maxfun=20000)))
+    mod = glmer(form,data = dat,family = fam)
   }
   return(mod)
 }
 # Selected predictors
 predictors = 
-  c("age","c_gender","Total.Household.Income","Parent.s.Marital.Status","Parent.Race")
+  c("age","c_gender","Total.Household.Income","Parent.Race.Ethnicity")
 # Fill down
 df = df %>% group_by(participant_id) %>% 
   fill(all_of(predictors))
