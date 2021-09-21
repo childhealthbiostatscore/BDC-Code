@@ -270,6 +270,7 @@ complete_lipidmeds_egdr_components_hardcvd$CACprogV3_num <- NULL
 ####
 
 #### check missingness of CAC variables and calculate change in CAC per year
+cac <- read.csv("./Proteomics/Data_Cleaned/cac_groups.csv")
 x <- cac[,c("StudyID","C1","C2","C3","C4")]
 x$last <- ifelse(!is.na(x$C4),4,
                  ifelse(!is.na(x$C3),3,
@@ -278,10 +279,14 @@ x$cac_change_per_yr <- ifelse(x$last==4,(x$C4-x$C1)/12,
                               ifelse(x$last==3,(x$C3-x$C1)/6,(x$C2-x$C1)/3))
 x <- x[,c("StudyID","cac_change_per_yr")]
 
-complete_lipidmeds_egdr <- merge(complete_lipidmeds_egdr,x,by="StudyID",all.x = T,all.y = F)
-complete_lipidmeds_egdr_components <- merge(complete_lipidmeds_egdr_components,x,by="StudyID",all.x = T,all.y = F)
-complete_statin_egdr <- merge(complete_statin_egdr,x,by="StudyID",all.x = T,all.y = F)
-complete_statin_egdr_components <- merge(complete_statin_egdr_components,x,by="StudyID",all.x = T,all.y = F)
+complete_lipidmeds_egdr_ccc <- merge(complete_lipidmeds_egdr,x,by="StudyID",all.x = T,all.y = F)
+complete_lipidmeds_egdr_ccc$CACprogV3_num <- NULL
+complete_lipidmeds_egdr_components_ccc <- merge(complete_lipidmeds_egdr_components,x,by="StudyID",all.x = T,all.y = F)
+complete_lipidmeds_egdr_components_ccc$CACprogV3_num <- NULL
+complete_statin_egdr_ccc <- merge(complete_statin_egdr,x,by="StudyID",all.x = T,all.y = F)
+complete_statin_egdr_ccc$CACprogV3_num <- NULL
+complete_statin_egdr_components_ccc <- merge(complete_statin_egdr_components,x,by="StudyID",all.x = T,all.y = F)
+complete_statin_egdr_components_ccc$CACprogV3_num <- NULL
 ####
 
 # set number of levels for glinternet
@@ -392,8 +397,6 @@ round(coef(glmmod1,s=cv.glmmod$lambda.min),4)
 ## GLM using variables selected by LASSO 
 
 ```{r, echo=FALSE, comment=""}
-# Check coefficients
-# sex added to LASSO
 refit_mod = glm(CACprogV3_num ~ age+duration+onlipidmeds+avediabp+avesystbp+ldl+
                   hdlc+CKDepi+ac+insdoseperkg+l45sqf+egdr+homo+pai1+UA+smknum,complete_lipidmeds_egdr,family = binomial("logit"))
 summary(refit_mod)
@@ -424,6 +427,8 @@ cv.glmmod <- cv.glmnet(x, y=complete_lipidmeds_egdr_components$CACprogV3_num, al
 best.lambda <- cv.glmmod$lambda.min
 # coefficients at best lambda
 round(coef(glmmod1,s=cv.glmmod$lambda.min),4)
+prog_noint_coefs <- as.matrix(round(coef(glmmod1,s=cv.glmmod$lambda.min),4))
+prog_noint_coefs <- prog_noint_coefs[prog_noint_coefs$s1!="."]
 ```
 
 ## GLM using variables selected by LASSO
@@ -451,6 +456,94 @@ refit_mod_int = glm(CACprogV3_num ~ onhypermeds+onstatinmeds
                                 + age+duration+whr+avesystbp+hdlc+insdoseperkg+hba1c+l45vsf+homo+UA+bmi+fib
                                 + bmi*insdoseperkg + hba1c*fib,complete_statin_egdr_components,family = binomial("logit"))
 summary(refit_mod_int)
+```
+
+# LASSO for change in CAC per year using statins and A1c, WHR, onhypermeds
+
+## LASSO without interactions
+
+```{r, echo=FALSE, comment=""}
+set.seed(3654)
+# LASSO
+x <- as.matrix(subset(complete_statin_egdr_components_ccc,select=-c(cac_change_per_yr,StudyID)))
+glmmod1 <- glmnet(x, y=complete_statin_egdr_components_ccc$cac_change_per_yr, alpha=0.5, family="gaussian")
+# find best value of lambda
+cv.glmmod <- cv.glmnet(x, y=complete_statin_egdr_components_ccc$cac_change_per_yr, alpha=1)
+best.lambda <- cv.glmmod$lambda.min
+# coefficients at best lambda
+round(coef(glmmod1,s=cv.glmmod$lambda.min),4)
+```
+
+## GLM using variables selected by LASSO
+
+```{r, echo=FALSE, comment=""}
+refit_mod = glm(cac_change_per_yr ~ age+duration+bmi+whr+onhypermeds+onstatinmeds+avediabp+avesystbp+hdlc+tri+CKDepi+
+                  ac+insdoseperkg+hba1c+l45vsf+l45sqf+apob+crp+fib+homo+pai1+UA+pfatcm_v1+smknum+sex_0m1f,
+                complete_statin_egdr_components_ccc,family = "gaussian")
+summary(refit_mod)
+```
+
+## LASSO with interactions
+
+```{r, echo=FALSE, comment=""}
+set.seed(3654)
+X <- complete_statin_egdr_components_ccc %>% select(-c(cac_change_per_yr,StudyID))
+a <- glinternet.cv(Y=complete_statin_egdr_components_ccc$cac_change_per_yr,X=X,numLevels = numLevels_statin_egdr_components)
+coefs <- coef(a)
+```
+
+## GLM using variables selected by LASSO with interactions
+
+```{r, echo=FALSE, comment=""}
+refit_mod = glm(cac_change_per_yr ~ onhypermeds+onstatinmeds+
+                  age+duration+whr+hdlc+CKDepi+hba1c+l45vsf+l45sqf+UA+avesystbp+crp+avediabp+pfatcm_v1+homo+
+                  age*avesystbp+duration*whr+duration*ldl+duration*l45sqf+duration*UA+whr*crp+avediabp*hdlc+hdlc*pfatcm_v1+hba1c*homo+onhypermeds*homo,
+                complete_statin_egdr_components_ccc,family = "gaussian")
+summary(refit_mod)
+```
+
+# LASSO for change in CAC per year using lipid lowering meds and A1c, WHR, onhypermeds
+
+## LASSO without interactions
+
+```{r, echo=FALSE, comment=""}
+set.seed(3654)
+# LASSO
+x <- as.matrix(subset(complete_lipidmeds_egdr_components_ccc,select=-c(cac_change_per_yr,StudyID)))
+glmmod1 <- glmnet(x, y=complete_lipidmeds_egdr_components_ccc$cac_change_per_yr, alpha=0.5, family="gaussian")
+# find best value of lambda
+cv.glmmod <- cv.glmnet(x, y=complete_lipidmeds_egdr_components_ccc$cac_change_per_yr, alpha=1)
+best.lambda <- cv.glmmod$lambda.min
+# coefficients at best lambda
+round(coef(glmmod1,s=cv.glmmod$lambda.min),4)
+```
+
+## GLM using variables selected by LASSO
+
+```{r, echo=FALSE, comment=""}
+refit_mod = glm(cac_change_per_yr ~ age+duration+bmi+whr+onhypermeds+onlipidmeds+avediabp+avesystbp+hdlc+tri+CKDepi+
+                  ac+insdoseperkg+hba1c+l45vsf+l45sqf+apob+crp+fib+homo+pai1+UA+pfatcm_v1+smknum+sex_0m1f,
+                complete_lipidmeds_egdr_components_ccc,family = "gaussian")
+summary(refit_mod)
+```
+
+## LASSO with interactions
+
+```{r, echo=FALSE, comment=""}
+set.seed(3654)
+X <- complete_lipidmeds_egdr_components_ccc %>% select(-c(cac_change_per_yr,StudyID))
+a <- glinternet.cv(Y=complete_lipidmeds_egdr_components_ccc$cac_change_per_yr,X=X,numLevels = numLevels_statin_egdr_components)
+coefs <- coef(a)
+```
+
+## GLM using variables selected by LASSO with interactions
+
+```{r, echo=FALSE, comment=""}
+refit_mod = glm(cac_change_per_yr ~ onhypermeds+onlipidmeds+
+                  age+duration+whr+hdlc+CKDepi+hba1c+l45vsf+l45sqf+UA+avesystbp+crp+avediabp+pfatcm_v1+homo+
+                  age*avesystbp+duration*whr+duration*ldl+duration*l45sqf+duration*UA+whr*crp+avediabp*hdlc+hdlc*pfatcm_v1+hba1c*homo+onlipidmeds*homo,
+                complete_lipidmeds_egdr_components_ccc,family = "gaussian")
+summary(refit_mod)
 ```
 
 # Regularized Cox model for death without interactions, using statins and A1c, WHR, onhypermeds
