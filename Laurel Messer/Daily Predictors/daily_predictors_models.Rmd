@@ -1,0 +1,365 @@
+---
+title: "Daily Predictors for Diabetes Management"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(arsenal)
+library(skimr)
+library(knitr)
+library(tidyverse)
+library(Hmisc)
+library(lubridate)
+knitr::opts_chunk$set(echo = FALSE)
+home_dir = ifelse(.Platform$OS.type != "unix",
+                  "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects",
+                  "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/")
+knitr::opts_knit$set(root.dir = home_dir)
+```
+
+```{r clean data}
+source("~/GitHub/BDC-Code/Laurel Messer/Daily Predictors/clean_data.r")
+# Combine race columns
+race_cols = paste0("pt_race___",1:6)
+races = c("White","Black or African American","American Indian or Alaskan Native",
+          "Asian","Native Hawaiian or Pacific Islander","Other")
+data$race = apply(data[,race_cols], 1, function(r){
+  paste0(races[which(r == 1)],collapse = ", ")
+})
+# Calculate age and duration
+data$age = as.numeric(ymd(data$pt_visit_date) - ymd(data$pt_dob))/365.25
+data$duration = as.numeric(ymd(data$pt_visit_date) - ymd(data$dxdate))/365.25
+# ID as factor for glmmLasso
+data$record_id = as.factor(data$record_id)
+# Correlation between engagement survey items and subscores and:
+#   Number of insulin boluses
+#   Average glucose level
+#   Percent time glucose levels 70-180 mg/dl (“Time-in-Range”, TIR)
+#   Goal Survey Scores
+morning_items = colnames(data)[grep("esq\\d+$",colnames(data))]
+evening_items = colnames(data)[grep("esq\\d+_eve$",colnames(data))]
+# Outcomes
+outcomes = c("boluses","smg","tir","n_highalerts","dm_caretime","dm_thinktime","gsq","combined")
+# ID Variables
+id_vars = c("record_id","redcap_event_name","date")
+# Combine date columns
+data$es_date = as.Date.character(lubridate::ymd_hm(data$es_datetimecapture))
+data$es_date_eve = as.Date.character(lubridate::ymd_hm(data$es_datetimecapture_eve))
+data = data %>% unite(date,dmi_date,es_date,es_date_eve,remove = F,na.rm = T)
+data$date = sapply(strsplit(data$date,"_"),function(x){
+  ifelse(length(x)==0,NA,
+         unique(strsplit(x,"_")[[1]]))
+})
+# Average gsq scores
+data$gsq = rowMeans(data[,c("gsq1","gsq2","gsq3")],na.rm = T)
+data$gsq[is.nan(data$gsq)] = NA
+# % of HA per day that had either a 1 for HAB or 1 for bgdrop or 1 for both
+for (i in 1:10) {
+  vars = c(paste0("hab",i),paste0("bgdrop_ha",i)) # Each alert has two separate columns that need to be combined
+  n = paste0("combined_hab",i)
+  data = data %>% unite(!!n,all_of(vars),remove = F)
+  data[,n] = sapply(data[,n],function(x){
+    if(x == "NA_NA"){NA}else{as.numeric(grepl("1",x))} # Don't count NAs as 1 or 0
+  })
+}
+combined = paste0("combined_hab",1:10)
+data$combined = rowMeans(data[,combined],na.rm = T) # Percentage of 1s
+data$combined[is.nan(data$combined)] = NA
+data$combined = cut(data$combined,c(-Inf,0.5,Inf),right = T)
+data$combined = as.numeric(data$combined)-1
+# Fill outcome in by date
+data = data %>% group_by(record_id,date) %>%
+  fill(all_of(outcomes),.direction = "downup") %>%
+  ungroup()
+# Remove outcomes not on a 24 hour scale
+data = data[-which(data$n_highalerts > 500),]
+data = data[-which(data$dm_thinktime > 12000),]
+# Evening outcomes - look at association with the next day's outcome
+data = data %>% group_by(record_id) %>% 
+  mutate(next_day_boluses = lead(boluses),
+         next_day_smg = lead(smg),
+         next_day_tir = lead(tir),
+         next_day_n_highalerts = lead(n_highalerts),
+         next_day_dm_caretime = lead(dm_caretime),
+         next_day_dm_thinktime = lead(dm_thinktime),
+         next_day_gsq = lead(gsq),
+         next_day_combined = lead(combined))
+# Convert to dataframe since these functions can't handle tibbles
+data = data.frame(data)
+```
+
+# Participant Characteristics
+
+```{r results = 'asis'}
+# Get first row for each person
+demographics = data %>% group_by(record_id) %>% filter(row_number() == 1)
+# Table 
+t1 = tableby(~ age + duration + pt_a1c + pt_baseline1.factor + pt_baseline5.factor + 
+               pt_gender.factor + race + pt_eth.factor + p1_hedu.factor + 
+               p2_hedu.factor,demographics)
+# Labels
+new_labels = list(age = "Age", duration = "Diabetes Duration", pt_a1c = "Baseline HbA1c",
+                  pt_baseline1.factor = "Pump Hx",pt_baseline5.factor = "CGM Hx",
+                  pt_gender.factor = "Gender", race = "Race", pt_eth.factor = "Ethnicity", 
+                  p1_hedu.factor = "Parent 1 Education", p2_hedu.factor = "Parent 2 Education")
+summary(t1,labelTranslations = new_labels)
+```
+
+# Final Models
+
+9 Items: 1, 7, 10, 12, 14, 20 21, 23, 25 -- combination of 8 constructs
+6 items: 1, 7, 10, 21, 23, 25
+
+Mixed model $R^2$ was calculated using the method presented in Nakagawa and Schielzeth (2013). Marginal $R^2$ represents the variability explained by just the fixed effects (survey questions), and conditional $R^2$ can be interpreted as the variance explained by the entire model (including random intercepts for each participant).
+
+```{r}
+# Predictors
+final_mod_6 = c(1, 7, 10, 21, 23, 25)
+final_mod_9 = c(1, 7, 10, 12, 14, 20, 21, 23, 25)
+final_mod_6_morn = paste0("esq",final_mod_6)
+final_mod_9_morn = paste0("esq",final_mod_9)
+final_mod_6_eve = paste0(final_mod_6_morn,"_eve")
+final_mod_9_eve = paste0(final_mod_9_morn,"_eve")
+# Scale
+data[,c(final_mod_9_morn,final_mod_9_eve)] =
+  lapply(data[,c(final_mod_9_morn,final_mod_9_eve)],scale)
+# Model function
+fit_final = function(outcome,predictors,df = data,fam = "gaussian"){
+  form = as.formula(paste0(outcome,"~",paste0(predictors,collapse = "+"),"+(1|record_id)"))
+  if(fam == "gaussian"){
+    mod = lmer(form,data = df,na.action = "na.omit")
+  } else if (fam == "poisson") {
+    df[,outcome] = sapply(df[,outcome],as.integer)
+    mod = glmer(form,data = df,family = fam,na.action = "na.omit")
+  } else if (fam == "binomial"){
+    mod = glmer(form,data = df,family = fam,na.action = "na.omit")
+  }
+  r2 = r2_nakagawa(mod)
+  res = list("fixed" = summary(mod)$coefficients,"marginal" = r2$R2_marginal,"conditional" = r2$R2_conditional)
+  res = lapply(res, function(x){round(x,3)})
+  return(res)
+}
+```
+
+## Number of boluses
+
+Because this is count data, we used a Poisson model for this outcome. Coefficients are interpreted on the log count scale.
+
+### Morning survey
+
+#### 6 item model
+
+```{r cache=FALSE,warning=FALSE}
+m = fit_final(outcome = "boluses",predictors = final_mod_6_morn,fam = "poisson")
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+#### 9 item model
+
+```{r cache=FALSE,warning=FALSE}
+m = fit_final(outcome = "boluses",predictors = final_mod_9_morn,fam = "poisson")
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+### Evening survey
+
+#### 6 item model
+
+```{r}
+m = fit_final(outcome = "boluses",predictors = final_mod_6_eve,fam = "poisson")
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+#### 9 item model
+
+```{r}
+m = fit_final(outcome = "boluses",predictors = final_mod_9_eve,fam = "poisson")
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+## Combined alert
+
+Because this is a binary outcome, we used a logistic model. Coefficients are interpreted on the log odds scale.
+
+### Morning survey
+
+#### 6 item model
+
+```{r cache=FALSE}
+m = fit_final(outcome = "combined",predictors = final_mod_6_morn,fam = "binomial")
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+#### 9 item model
+
+Model did not converge.
+
+```{r eval=F}
+m = fit_final(outcome = "combined",predictors = final_mod_9_morn,fam = "binomial")
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+### Evening survey
+
+#### 6 item model
+
+```{r}
+m = fit_final(outcome = "combined",predictors = final_mod_6_eve,fam = "binomial")
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+#### 9 item model
+
+```{r}
+m = fit_final(outcome = "combined",predictors = final_mod_9_eve,fam = "binomial")
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+## SMG
+
+### Morning survey
+
+#### 6 item model
+
+```{r cache=FALSE}
+m = fit_final(outcome = "smg",predictors = final_mod_6_morn)
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+#### 9 item model
+
+```{r cache=FALSE}
+m = fit_final(outcome = "smg",predictors = final_mod_9_morn)
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+### Evening survey
+
+#### 6 item model
+
+```{r}
+m = fit_final(outcome = "smg",predictors = final_mod_6_eve)
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+#### 9 item model
+
+```{r}
+m = fit_final(outcome = "smg",predictors = final_mod_9_eve)
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+## TIR
+
+### Morning survey
+
+#### 6 item model
+
+```{r cache=FALSE}
+m = fit_final(outcome = "tir",predictors = final_mod_6_morn)
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+#### 9 item model
+
+```{r cache=FALSE}
+m = fit_final(outcome = "tir",predictors = final_mod_9_morn)
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+### Evening survey
+
+#### 6 item model
+
+```{r}
+m = fit_final(outcome = "tir",predictors = final_mod_6_eve)
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+#### 9 item model
+
+```{r}
+m = fit_final(outcome = "tir",predictors = final_mod_9_eve)
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+## GSQ
+
+### Morning survey
+
+#### 6 item model
+
+```{r cache=FALSE}
+m = fit_final(outcome = "gsq",predictors = final_mod_6_morn)
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+#### 9 item model
+
+```{r cache=FALSE}
+m = fit_final(outcome = "gsq",predictors = final_mod_9_morn)
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+### Evening survey
+
+#### 6 item model
+
+```{r}
+m = fit_final(outcome = "gsq",predictors = final_mod_6_eve)
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+#### 9 item model
+
+```{r}
+m = fit_final(outcome = "gsq",predictors = final_mod_9_eve)
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
