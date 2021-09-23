@@ -7,7 +7,7 @@ D[1, 1] <- 1 ### variance random intercept
 D[2, 2] <- 1 ### variance random slope
 D[1, 2] <- -0.1 ### covariance random intercept and slope
 D[2, 1] <- -0.1
-delta <- 0.32 ### standardized effect size
+delta <- 0.28 ### standardized effect size
 
 age1 <- c(30, 32.5) ### age stages of measurement cohort 1
 age2 <- c(32.5, 35) ### age stages of measurement cohort 2
