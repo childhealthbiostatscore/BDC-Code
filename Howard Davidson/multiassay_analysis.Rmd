@@ -15,7 +15,8 @@ library(knitr)
 library(igraph)
 library(networkD3)
 library(car)
-knitr::opts_chunk$set(echo = FALSE,cache = TRUE)
+library(performance)
+knitr::opts_chunk$set(echo = FALSE)
 home_dir = ifelse(.Platform$OS.type != "unix",
                   "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data",
                   "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data")
@@ -64,7 +65,7 @@ data_preprocces = function(df,missing_cutoff = 0.8,cv_cutoff = NULL,
   return(df)
 }
 # Cluster variables according to DIFAcTO pipeline
-corr_cluster = function(df,corr_cutoff = 0.7,parallel_ratio = 0.5,
+corr_cluster = function(df,parallel_ratio = 0.5,
                         outcome = "y",id_cols = c("id","ID","time"),
                         heatmap = T,heatmap_params = list(show_rownames = T,show_colnames = T),
                         network = T){
@@ -74,8 +75,37 @@ corr_cluster = function(df,corr_cutoff = 0.7,parallel_ratio = 0.5,
   corr_mat = cor(df[,pred],use = "pairwise.complete.obs")
   # Get pairs
   var_cor = corr_mat*lower.tri(corr_mat)
+  # Find best correlation cutoff
+  rs = seq(0,1,by = 0.1)
+  model_perf = lapply(rs, function(r){
+    # Correlation cutoff
+    check_cor = which(abs(var_cor) >= r, arr.ind=TRUE)
+    # Convert correlated pairs into graph clusters
+    graph_cor = graph.data.frame(check_cor, directed = FALSE)
+    # Get names
+    groups_cor = split(unique(as.vector(check_cor)), clusters(graph_cor)$membership)
+    groups = lapply(groups_cor,FUN=function(list_cor){rownames(var_cor)[list_cor]})
+    # Find highest correlation within each group
+    best_cor = lapply(groups, function(g){
+      assocs = lapply(g, function(v){
+        form = as.formula(paste0(outcome,"~",v))
+        mod = glm(form,df,family = "binomial")
+        coefs = summary(mod)$coefficients
+        return(abs(coefs[2,1]))
+      })
+      return(g[which.max(assocs)])
+    })
+    best_cor = as.character(best_cor)
+    if(length(best_cor)>0){
+      form = as.formula(paste0(outcome,"~",paste0(best_cor,collapse = "+")))
+      mod = glm(form,data = df,family = "binomial")
+      return(rmse(mod,normalized = T))
+    } else {return(NA)}
+  })
+  opt_r = rs[which.min(model_perf)]
+  # final groups
   # Correlation cutoff
-  check_cor = which(abs(var_cor) >= corr_cutoff, arr.ind=TRUE)
+  check_cor = which(abs(var_cor) >= opt_r, arr.ind=TRUE)
   # Convert correlated pairs into graph clusters
   graph_cor = graph.data.frame(check_cor, directed = FALSE)
   # Get names
@@ -98,6 +128,7 @@ corr_cluster = function(df,corr_cutoff = 0.7,parallel_ratio = 0.5,
     heat = do.call(pheatmap,heatmap_params)
   }
   if(network){
+    check_cor = which(abs(var_cor) >= opt_r, arr.ind=TRUE)
     # Interactive plot
     int_plot_df = check_cor
     int_plot_df[,1] = rownames(corr_mat)[int_plot_df[,1]]
@@ -135,16 +166,18 @@ corr_cluster = function(df,corr_cutoff = 0.7,parallel_ratio = 0.5,
                      width = 720)
   }
   if(heatmap & network){
-    return(list("best" = best_cor,"heatmap" = heat,"network" = p))
+    return(list("best" = best_cor,"r_cutoff" = opt_r,"heatmap" = heat,"network" = p))
   } else if (heatmap & !network){
-    return(list("best" = best_cor,"heatmap" = heat))
+    return(list("best" = best_cor,"r_cutoff" = opt_r,"heatmap" = heat))
   } else if (!heatmap & network){
-    return(list("best" = best_cor,"network" = p))
-  } else {return(best_cor)}
+    return(list("best" = best_cor,"r_cutoff" = opt_r,"network" = p))
+  } else {return("best" = best_cor,"r_cutoff" = opt_r,)}
 }
 ```
 
 # Methods
+
+## DIFAcTO
 
 1. Columns with >= 80% missing data were dropped. 
 3. Rows missing all of the retained variables from step 1 were dropped.
@@ -152,6 +185,10 @@ corr_cluster = function(df,corr_cutoff = 0.7,parallel_ratio = 0.5,
 4. Correlation between the remaining predictors was examined visually using a heatmap, and predictors were clustered based on correlation coefficient. 
 5. Within each cluster, the variable with the strongest association with the outcome was selected to continue on to the lasso.
 6. A lasso model was fit using the variables selected from previous steps. Using the lambda value that results in minimum error selects 0 predictors. So instead we used the lambda value that results in the largest model that is still within 1SD of the minimum error, and fits without numerical probabilities of 0 or 1 occurring.
+
+## Elasticnet
+
+1. 
 
 # Predictor Clustering
 
@@ -165,6 +202,8 @@ carotenoids_best$network
 kable(carotenoids_best$best,col.names = "Selected variables")
 ```
 
+The optimal $\rho$ cutoff was `r carotenoids_best$r_cutoff` based on normalized RMSE.
+
 ## Fatty acids
 
 ```{r}
@@ -174,6 +213,8 @@ fa_best$heatmap
 fa_best$network
 kable(fa_best$best,col.names = "Selected variables")
 ```
+
+The optimal $\rho$ cutoff was `r fa_best$r_cutoff` based on normalized RMSE.
 
 ## Metabolomics
 
@@ -185,13 +226,17 @@ metab_best$network
 kable(metab_best$best,col.names = "Selected variables")
 ```
 
+The optimal $\rho$ cutoff was `r metab_best$r_cutoff` based on normalized RMSE.
+
 ## Transcriptomics
 
-```{r cache=TRUE}
+```{r}
 transcript = data_preprocces(X$transcriptomics,cv_cutoff = 0.2)
-transcript_best = corr_cluster(transcript,heatmap=F,network=F)
+transcript_best = corr_cluster(transcript,heatmap=F,network=F) 
 kable(transcript_best,col.names = "Selected variables")
 ```
+
+The optimal $\rho$ cutoff was `r transcript_best$r_cutoff` based on normalized RMSE.
 
 ## Negative lipidomics
 
@@ -203,6 +248,8 @@ negative_best$network
 kable(negative_best$best,col.names = "Selected variables")
 ```
 
+The optimal $\rho$ cutoff was `r negative_best$r_cutoff` based on normalized RMSE.
+
 ## Positive lipidomics
 
 ```{r}
@@ -212,6 +259,8 @@ positive_best$heatmap
 positive_best$network
 kable(positive_best$best,col.names = "Selected variables")
 ```
+
+The optimal $\rho$ cutoff was `r positive_best$r_cutoff` based on normalized RMSE.
 
 # Lasso
 
@@ -263,3 +312,5 @@ form = as.formula(paste0("y~",paste0(pred,collapse = "+")))
 mod = glm(form,data = df,family = "binomial")
 vif(mod)
 ```
+
+# 
