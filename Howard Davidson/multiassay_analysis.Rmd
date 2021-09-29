@@ -6,7 +6,6 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-library(mlr3verse)
 library(tidyverse)
 library(pheatmap)
 library(skimr)
@@ -16,7 +15,8 @@ library(igraph)
 library(networkD3)
 library(car)
 library(performance)
-knitr::opts_chunk$set(echo = FALSE)
+library(caret)
+knitr::opts_chunk$set(echo = FALSE,cache = TRUE)
 home_dir = ifelse(.Platform$OS.type != "unix",
                   "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data",
                   "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data")
@@ -175,20 +175,17 @@ corr_cluster = function(df,parallel_ratio = 0.5,
 }
 ```
 
-# Methods
+# DIFAcTO
 
-## DIFAcTO
+## Methods
 
 1. Columns with >= 80% missing data were dropped. 
-3. Rows missing all of the retained variables from step 1 were dropped.
-4. Remaining variables were scaled prior to analysis.
-4. Correlation between the remaining predictors was examined visually using a heatmap, and predictors were clustered based on correlation coefficient. 
-5. Within each cluster, the variable with the strongest association with the outcome was selected to continue on to the lasso.
-6. A lasso model was fit using the variables selected from previous steps. Using the lambda value that results in minimum error selects 0 predictors. So instead we used the lambda value that results in the largest model that is still within 1SD of the minimum error, and fits without numerical probabilities of 0 or 1 occurring.
-
-## Elasticnet
-
-1. 
+2. Rows missing all of the retained variables from step 1 were dropped.
+3. Remaining variables were scaled prior to analysis.
+4. For correlation cutoffs from 0 to 1 (by 0.01), predictors were clustered based on correlation. Within each cluster, the variable with the strongest association with the outcome was selected to enter the model. 
+5. Normalized RMSE was used to compare model performance between correlation cutoffs. 
+6. Variables selected using the optimal correlation cutoff continued on to the lasso. 
+7. A lasso model was fit using the variables selected from previous steps. Using the lambda value that results in minimum error selects 0 predictors. So instead we used the lambda value that results in the largest model that is still within 1SD of the minimum error, and fits without numerical probabilities of 0 or 1 occurring.
 
 # Predictor Clustering
 
@@ -230,7 +227,7 @@ The optimal $\rho$ cutoff was `r metab_best$r_cutoff` based on normalized RMSE.
 
 ## Transcriptomics
 
-```{r}
+```{r eval=FALSE}
 transcript = data_preprocces(X$transcriptomics,cv_cutoff = 0.2)
 transcript_best = corr_cluster(transcript,heatmap=F,network=F) 
 kable(transcript_best,col.names = "Selected variables")
@@ -313,4 +310,53 @@ mod = glm(form,data = df,family = "binomial")
 vif(mod)
 ```
 
-# 
+# Elasticnet
+
+## Methods
+
+1. Columns with >= 80% missing data were dropped. 
+2. Rows missing all of the retained variables from step 1 were dropped.
+3. Remaining variables were scaled prior to analysis.
+4. Due to missing data problems, an elasticnet was run for each assay separately. 
+
+```{r}
+# Make single dataset
+elastic_df = X$ascorbic_acid
+elastic_df = full_join(elastic_df,X$carotenoids,by = c("ID" = "id","y", "time"))
+elastic_df = full_join(elastic_df,X$cholesterol,by = c("y", "ID", "time"))
+elastic_df = full_join(elastic_df,X$fatty_acids,by = c("ID" = "id","y", "time"))
+elastic_df = full_join(elastic_df,X$metabolomics,by = c("ID" = "id","y", "time"))
+elastic_df = full_join(elastic_df,X$growth,by = c("ID" = "id","y", "time"))
+elastic_df = full_join(elastic_df,X$negative_lipidomics,by = c("ID" = "id","y", "time"))
+elastic_df = full_join(elastic_df,X$positive_lipidomics,
+              by = c("ID" = "id","y", "time", "id_pc__p_32_0__or_pc__o_32_1__5_", "id_pc__p_34_2__or_pc__o_34_3__5_", 
+                     "id_pc__p_36_1__or_pc__o_36_2__6_", "id_pc__p_36_2__or_pc__o_36_3__5_", 
+                     "id_pc__p_36_3__or_pc__o_36_4__5_", "id_pc__p_40_1__or_pc__o_40_2__6_", 
+                     "id_pc__p_40_3__or_pc__o_40_4__6_", "id_pc__p_42_4__or_pc__o_42_5__6_", 
+                     "id_pc__p_44_4__or_pc__o_44_5__7_", "id_pe__p_34_1__or_pe__o_34_2__6_", 
+                     "id_pe__p_36_1__or_pe__o_36_2__6_", "id_pe__p_36_2__or_pe__o_36_3__6_", 
+                     "id_pe__p_36_4__or_pe__o_36_5__5_", "id_pe__p_38_4__or_pe__o_38_5__6_", 
+                     "id_pe__p_38_5__or_pe__o_38_6__5_", "id_pe__p_40_5__or_pe__o_40_6__6_"))
+elastic_df = full_join(elastic_df,X$tocoperol,by = c("ID" = "id","y", "time"))
+elastic_df = full_join(elastic_df,X$vitamin_d,by = c("y", "ID", "time"))
+elastic_df = full_join(elastic_df,X$transcriptomics,by = c("ID" = "id","y", "time"))
+# Data appear to be in almost two different sets - some variables are missing in rows 227 and above, some are only in those rows
+
+# Process
+# elastic_df = data_preprocces(elastic_df,id_cols = c("ID","time"))
+# Complete cases
+# X = elastic_df[,setdiff(colnames(elastic_df),c("y","ID","time"))]
+# elastic_df = elastic_df[complete.cases(elastic_df),]
+```
+
+```{r}
+set.seed(1017)
+# Model formula
+form = as.formula(paste0("y~",
+                         paste0(setdiff(colnames(elastic_df),c("y","ID","time")),
+                                collapse = "+")))
+# Use caret for elasticnet (better with missing data)
+cv = trainControl(method = "cv", number = 10)
+hit_elnet = train(form, data = elastic_df,method = "glmnet",trControl = cv)
+
+```
