@@ -20,7 +20,7 @@ library(lubridate)
 library(lme4)
 library(lmerTest)
 library(performance)
-knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
 home_dir = ifelse(.Platform$OS.type != "unix",
                   "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects",
                   "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/")
@@ -77,6 +77,12 @@ data$combined = rowMeans(data[,combined],na.rm = T) # Percentage of 1s
 data$combined[is.nan(data$combined)] = NA
 data$combined = cut(data$combined,c(-Inf,0.5,Inf),right = T)
 data$combined = as.numeric(data$combined)-1
+# % of HA with bolus (ignore BG drop)
+habs = paste0("hab",1:10)
+data$hab_percentage = rowMeans(data[,habs],na.rm = T)
+data$hab_percentage[is.nan(data$hab_percentage)] = NA
+data$hab_percentage = cut(data$hab_percentage,c(-Inf,0.5,Inf),right = T)
+data$hab_percentage = as.numeric(data$hab_percentage)-1
 # Fill outcome in by date
 data = data %>% group_by(record_id,date) %>%
   fill(all_of(outcomes),.direction = "downup") %>%
@@ -93,7 +99,8 @@ data = data %>% group_by(record_id) %>%
          next_day_dm_caretime = lead(dm_caretime),
          next_day_dm_thinktime = lead(dm_thinktime),
          next_day_gsq = lead(gsq),
-         next_day_combined = lead(combined))
+         next_day_combined = lead(combined),
+         next_day_hab_percentage = lead(hab_percentage))
 # Convert to dataframe since these functions can't handle tibbles
 data = data.frame(data)
 ```
@@ -120,6 +127,8 @@ summary(t1,labelTranslations = new_labels)
 10 Items: 1, 5, 7, 10, 12, 14, 20 21, 23, 25, 26 
 7 Items: 1, 7, 10, 21, 23, 25, 26
 
+Item 26 ("Do you think you could use some extra support for your diabetes management today?") is not part of the evening questionnaires, so the evening models were 9 and 6 items long.
+
 Mixed model $R^2$ was calculated using the method presented in Nakagawa and Schielzeth (2013). Marginal $R^2$ represents the variability explained by just the fixed effects (survey questions), and conditional $R^2$ can be interpreted as the variance explained by the entire model (including random intercepts for each participant).
 
 ```{r}
@@ -145,7 +154,8 @@ fit_final = function(outcome,predictors,df = data,fam = "gaussian"){
     mod = glmer(form,data = df,family = fam,na.action = "na.omit")
   }
   r2 = r2_nakagawa(mod)
-  res = list("fixed" = summary(mod)$coefficients,"marginal" = r2$R2_marginal,"conditional" = r2$R2_conditional)
+  res = list("fixed" = summary(mod)$coefficients,"marginal" = r2$R2_marginal,
+             "conditional" = r2$R2_conditional)
   res = lapply(res, function(x){round(x,3)})
   return(res)
 }
@@ -159,7 +169,7 @@ Because this is count data, we used a Poisson model for this outcome. Coefficien
 
 #### 7 item model
 
-```{r cache=FALSE,warning=FALSE}
+```{r}
 m = fit_final(outcome = "boluses",predictors = final_mod_7_morn,fam = "poisson")
 kable(m$fixed,caption = "Fixed Effects Coefficients")
 ```
@@ -168,7 +178,7 @@ Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$
 
 #### 10 item model
 
-```{r cache=FALSE,warning=FALSE}
+```{r}
 m = fit_final(outcome = "boluses",predictors = final_mod_10_morn,fam = "poisson")
 kable(m$fixed,caption = "Fixed Effects Coefficients")
 ```
@@ -195,69 +205,111 @@ kable(m$fixed,caption = "Fixed Effects Coefficients")
 
 Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
 
-## Combined alert
+## Combined outcome 
 
-Because this is a binary outcome, we used a logistic model. Coefficients are interpreted on the log odds scale.
+Because this is a binary outcome ($\leq$50% vs. $>$50%), we used a logistic model. Coefficients are interpreted on the log odds scale.
 
 ### Morning survey
 
-#### 6 item model
+#### 7 item model
 
-```{r cache=FALSE}
-m = fit_final(outcome = "combined",predictors = final_mod_6_morn,fam = "binomial")
+```{r}
+m = fit_final(outcome = "combined",predictors = final_mod_7_morn,fam = "binomial")
 kable(m$fixed,caption = "Fixed Effects Coefficients")
 ```
 
 Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+#### 10 item model
+
+Model did not converge.
+
+```{r eval=FALSE}
+m = fit_final(outcome = "combined",predictors = final_mod_10_morn,fam = "binomial")
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+### Evening survey
+
+#### 6 item model
+
+Model did not converge.
+
+```{r eval=FALSE}
+m = fit_final(outcome = "next_day_combined",predictors = final_mod_6_eve,fam = "binomial")
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
 
 #### 9 item model
 
 Model did not converge.
 
-```{r eval=F}
-m = fit_final(outcome = "combined",predictors = final_mod_9_morn,fam = "binomial")
+```{r eval=FALSE}
+m = fit_final(outcome = "next_day_combined",predictors = final_mod_9_eve,fam = "binomial")
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+## Percentage of high alerts followed by a bolus 
+
+Because this is a binary outcome ($\leq$50% vs. $>$50%), we used a logistic model. Coefficients are interpreted on the log odds scale.
+
+### Morning survey
+
+#### 7 item model
+
+```{r}
+m = fit_final(outcome = "hab_percentage",predictors = final_mod_7_morn,fam = "binomial")
 kable(m$fixed,caption = "Fixed Effects Coefficients")
 ```
 
 Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+#### 10 item model
+
+Model did not converge.
+
+```{r eval=FALSE}
+m = fit_final(outcome = "hab_percentage",predictors = final_mod_10_morn,fam = "binomial")
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
 
 ### Evening survey
 
 #### 6 item model
 
-```{r}
-m = fit_final(outcome = "combined",predictors = final_mod_6_eve,fam = "binomial")
+Model did not converge.
+
+```{r eval=FALSE}
+m = fit_final(outcome = "next_day_hab_percentage",predictors = final_mod_6_eve,fam = "binomial")
 kable(m$fixed,caption = "Fixed Effects Coefficients")
 ```
-
-Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
 
 #### 9 item model
 
-```{r}
-m = fit_final(outcome = "combined",predictors = final_mod_9_eve,fam = "binomial")
+Model did not converge.
+
+```{r eval=FALSE}
+m = fit_final(outcome = "next_day_hab_percentage",predictors = final_mod_9_eve,fam = "binomial")
 kable(m$fixed,caption = "Fixed Effects Coefficients")
 ```
-
-Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
 
 ## SMG
 
 ### Morning survey
 
-#### 6 item model
+#### 7 item model
 
-```{r cache=FALSE}
-m = fit_final(outcome = "smg",predictors = final_mod_6_morn)
+```{r}
+m = fit_final(outcome = "smg",predictors = final_mod_7_morn)
 kable(m$fixed,caption = "Fixed Effects Coefficients")
 ```
 
 Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
 
-#### 9 item model
+#### 10 item model
 
-```{r cache=FALSE}
-m = fit_final(outcome = "smg",predictors = final_mod_9_morn)
+```{r}
+m = fit_final(outcome = "smg",predictors = final_mod_10_morn)
 kable(m$fixed,caption = "Fixed Effects Coefficients")
 ```
 
@@ -268,7 +320,7 @@ Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$
 #### 6 item model
 
 ```{r}
-m = fit_final(outcome = "smg",predictors = final_mod_6_eve)
+m = fit_final(outcome = "next_day_smg",predictors = final_mod_6_eve)
 kable(m$fixed,caption = "Fixed Effects Coefficients")
 ```
 
@@ -277,7 +329,7 @@ Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$
 #### 9 item model
 
 ```{r}
-m = fit_final(outcome = "smg",predictors = final_mod_9_eve)
+m = fit_final(outcome = "next_day_smg",predictors = final_mod_9_eve)
 kable(m$fixed,caption = "Fixed Effects Coefficients")
 ```
 
@@ -287,19 +339,19 @@ Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$
 
 ### Morning survey
 
-#### 6 item model
+#### 7 item model
 
-```{r cache=FALSE}
-m = fit_final(outcome = "tir",predictors = final_mod_6_morn)
+```{r}
+m = fit_final(outcome = "tir",predictors = final_mod_7_morn)
 kable(m$fixed,caption = "Fixed Effects Coefficients")
 ```
 
 Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
 
-#### 9 item model
+#### 10 item model
 
-```{r cache=FALSE}
-m = fit_final(outcome = "tir",predictors = final_mod_9_morn)
+```{r}
+m = fit_final(outcome = "tir",predictors = final_mod_10_morn)
 kable(m$fixed,caption = "Fixed Effects Coefficients")
 ```
 
@@ -310,7 +362,7 @@ Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$
 #### 6 item model
 
 ```{r}
-m = fit_final(outcome = "tir",predictors = final_mod_6_eve)
+m = fit_final(outcome = "next_day_tir",predictors = final_mod_6_eve)
 kable(m$fixed,caption = "Fixed Effects Coefficients")
 ```
 
@@ -319,7 +371,7 @@ Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$
 #### 9 item model
 
 ```{r}
-m = fit_final(outcome = "tir",predictors = final_mod_9_eve)
+m = fit_final(outcome = "next_day_tir",predictors = final_mod_9_eve)
 kable(m$fixed,caption = "Fixed Effects Coefficients")
 ```
 
@@ -329,19 +381,19 @@ Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$
 
 ### Morning survey
 
-#### 6 item model
+#### 7 item model
 
-```{r cache=FALSE}
-m = fit_final(outcome = "gsq",predictors = final_mod_6_morn)
+```{r}
+m = fit_final(outcome = "gsq",predictors = final_mod_7_morn)
 kable(m$fixed,caption = "Fixed Effects Coefficients")
 ```
 
 Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
 
-#### 9 item model
+#### 10 item model
 
-```{r cache=FALSE}
-m = fit_final(outcome = "gsq",predictors = final_mod_9_morn)
+```{r}
+m = fit_final(outcome = "gsq",predictors = final_mod_10_morn)
 kable(m$fixed,caption = "Fixed Effects Coefficients")
 ```
 
@@ -352,7 +404,7 @@ Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$
 #### 6 item model
 
 ```{r}
-m = fit_final(outcome = "gsq",predictors = final_mod_6_eve)
+m = fit_final(outcome = "next_day_gsq",predictors = final_mod_6_eve)
 kable(m$fixed,caption = "Fixed Effects Coefficients")
 ```
 
@@ -361,7 +413,7 @@ Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$
 #### 9 item model
 
 ```{r}
-m = fit_final(outcome = "gsq",predictors = final_mod_9_eve)
+m = fit_final(outcome = "next_day_gsq",predictors = final_mod_9_eve)
 kable(m$fixed,caption = "Fixed Effects Coefficients")
 ```
 
