@@ -7,6 +7,8 @@ by_pt_by_year<-function(ID,data){
     
     dat.temp<-dat.temp[order(dat.temp$Appt_Date),]
     dat.temp$row_tot<-nrow(dat.temp) #count of repeat visits per patient
+    dat.temp$row_tot_thru3<-nrow(subset(dat.temp,dat.temp$yeargrouping!="Year4")) #count of repeat visits per patient
+    
     three_yn<-nrow(subset(dat.temp,dat.temp$yeargrouping=="Year3"))>0
     dat.temp$year_3<-0
     dat.temp$year_3[three_yn]<-1

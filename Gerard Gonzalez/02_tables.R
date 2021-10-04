@@ -75,10 +75,15 @@ label(dat.base$duration_of_diagnosis)<-"Duration of Diagnosis at Baseline"
 label(dat.base$a1c_last_in_year)<-"A1C at Baseline"
 label(dat.base$checks_last_in_year)<-"Checks per day at Baseline"
 label(dat.base$BMI)<-"BMI at Baseline"
+label(dat.base$row_tot_thru3)<-"Visits through year 3"
+
 dat.base$trt_grp<-as.factor(dat.base$trt_grp)
 tab.demo<-final_table(dat.base,c('Gender','age','group','duration_of_diagnosis',
-                              'a1c_last_in_year','checks_last_in_year'),
+                              'a1c_last_in_year','checks_last_in_year','row_tot_thru3'),
                    dat.base$trt_grp,margin=2,single=F,ron=2,col.names=T, summary.stat='mean')
+tab.demo
+tab.demo<-final_table(dat.base,c('row_tot_thru3'),
+                      dat.base$trt_grp,margin=2,single=F,ron=2,col.names=T, summary.stat='median')
 tab.demo
 #TABLE 1 (NEW WAY):
 mean_sd_table_1<-function(var,year){

@@ -4,7 +4,7 @@ library(lubridate)
 library(Hmisc)
 #READ IN DATA:
 setwd("S:/Shared Projects/Laura/BDC/Projects/Shideh Majidi/Clinic team clinic/Data/")
-dat<-read.csv("RetrospectiveReview_062220_highlighted_coded_RDV_SMupdated.csv",
+dat<-read.csv("RetrospectiveReview_updated09292021.csv",
               na.strings=c("NULL",""))
 #remove empty rows between patients
 dat<-subset(dat,!is.na(dat$MRN)) 
