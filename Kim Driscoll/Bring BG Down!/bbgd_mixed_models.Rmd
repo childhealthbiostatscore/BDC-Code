@@ -50,13 +50,6 @@ df = df %>% unite(Parent.Race.Ethnicity,Parent.Ethnicity,Parent.Race,na.rm = T,r
 df$Parent.Race.Ethnicity[df$Parent.Race.Ethnicity == ""] = NA
 df$Parent.Race.Ethnicity = factor(df$Parent.Race.Ethnicity)
 levels(df$Parent.Race.Ethnicity) = c("Ethnic Minority","Ethnic Minority","White")
-# Outcome cutoffs
-df$Parent.Social.Consequences.Subscale.of.HFS = 
-  cut(df$Parent.Social.Consequences.Subscale.of.HFS,right = F,
-      breaks = c(-Inf,9,Inf),labels = c("Not Elevated","Elevated"))
-df$Parent.GAD.7.Score = 
-  cut(df$Parent.GAD.7.Score,right = F,
-      breaks = c(-Inf,10,Inf),labels = c("Not Elevated","Elevated"))
 # Fix birthdays and age
 df$c_dob[df$participant_id == 420] = "2007-05-15"
 df$c_dob[df$participant_id == 429] = "2008-01-08"
@@ -79,83 +72,6 @@ All variables from Table 1 were included as covariates in model selection despit
 
 Household income and education were dichotomized into >= \$90K vs. < $90K and associate's degree or high school vs. bachelor's degree and above. Gender, income, and race were selected for all outcomes, and were thus included in the final model results (along with age, which is of clinical interest).
 
-# Model selection
-
-```{r}
-model_select = function(outcome,df = vis_1,fam = "gaussian",pred = predictors){
-  df = df[,c(outcome,pred)]
-  # CV
-  cv = trainControl(method = "LOOCV")
-  # Fit
-  form = as.formula(paste0(outcome,"~",paste0(pred,collapse = "+")))
-  hit_elnet = train(form, data = df,method = "glmnet",trControl = cv,
-                    na.action = "na.omit",family = fam)
-  # Best
-  best = hit_elnet$bestTune
-  # Final model 
-  lasso_df = df[complete.cases(df),]
-  mod = glmnet(y = data.matrix(lasso_df[,outcome]),x = data.matrix(lasso_df[,pred]),
-               alpha = as.numeric(best["alpha"]),lambda = as.numeric(best["lambda"]),
-               family = fam)
-  return(rownames(coef(mod))[which(round(coef(mod),3)!=0 & 
-                                     rownames(coef(mod)) != "(Intercept)")])
-}
-# Just baseline obs. for model selection
-vis_1 = df[df$studyvisit == 1,]
-# Predictors
-predictors = c("treatment_group","age","c_gender","Private.Insurance","Total.Household.Income",
-               "Parent.s.Marital.Status","Highest.Degree.Parent.Completed",
-               "Parent.Race.Ethnicity")
-```
-
-## Parent Maintain High BG of HFS
-
-```{r}
-maintain_coefs = model_select(outcome = "Parent.Maintain.High.BG.of.HFS")
-kable(maintain_coefs,col.names = "Selected Variables")
-```
-
-## Parent Worry/Helplessness Subscale of HFS
-
-```{r}
-worry_coefs = model_select(outcome = "Parent.Worry.Helplessness.Subscale.of.HFS")
-kable(worry_coefs,col.names = "Selected Variables")
-```
-
-## Parent Social Consequences Subscale of HFS
-
-This outcome was dichotomized as >= 9 vs. < 9. However, the models failed to converge due to lack of variability in the outcome.
-
-```{r eval=FALSE}
-social_coefs = model_select(outcome = "Parent.Social.Consequences.Subscale.of.HFS",fam = "binomial")
-```
-
-## Parent GAD-7 Score
-
-This outcome was dichotomized as >= 10 vs. < 10.
-
-```{r}
-gad_coefs = model_select(outcome = "Parent.GAD.7.Score",fam = "binomial")
-kable(gad_coefs,col.names = "Selected Variables")
-```
-
-## Upset plot
-
-Social consequences were not included in model selection due to model instability (very view people had elevated scores).
-
-```{r}
-# Format output
-selected = do.call(rbind,list(
-  predictors %in% maintain_coefs,
-  predictors %in% worry_coefs,
-  predictors %in% gad_coefs
-))
-colnames(selected) = predictors
-selected = data.frame(apply(selected,2,as.numeric))
-# Plot
-upset(selected,nsets = ncol(selected),order.by = "freq")
-```
-
 # Model results
 
 ```{r}
@@ -164,14 +80,22 @@ fit_mod = function(outcome,pred = predictors,dat = df,fam = "gaussian"){
                            paste0(pred,collapse = "+"),"+(1|participant_id)"))
   if(fam == "gaussian"){
     mod = lmer(form,data = dat)
-  } else {
+  } else if (fam == "nb"){
+    mod = 
+      glmer.nb(form,data = dat,
+               control=glmerControl(optimizer="bobyqa",
+                                    optCtrl=list(maxfun=1e6),
+                                    check.conv.grad = .makeCC("warning", tol = 2e-2, 
+                                                              relTol = NULL)))
+  }
+  else {
     mod = glmer(form,data = dat,family = fam)
   }
   return(mod)
 }
 # Selected predictors
 predictors = 
-  c("age","c_gender","Total.Household.Income","Parent.Race.Ethnicity")
+  c("age","c_gender","Total.Household.Income")
 # Fill down
 df = df %>% group_by(participant_id) %>% 
   fill(all_of(predictors))
@@ -181,7 +105,6 @@ df = df %>% group_by(participant_id) %>%
 
 ```{r}
 mod = fit_mod(outcome = "Parent.Maintain.High.BG.of.HFS")
-kable(Anova(mod,type = "III"),caption = "Type III Tests of Fixed Effects")
 kable(summary(mod)$coefficients,caption = "Mixed Model Coefficients")
 ```
 
@@ -189,31 +112,19 @@ kable(summary(mod)$coefficients,caption = "Mixed Model Coefficients")
 
 ```{r}
 mod = fit_mod(outcome = "Parent.Worry.Helplessness.Subscale.of.HFS")
-kable(Anova(mod,type = "III"),caption = "Type III Tests of Fixed Effects")
 kable(summary(mod)$coefficients,caption = "Mixed Model Coefficients")
 ```
 
 ## Parent Social Consequences Subscale of HFS
 
-Would only converge when including age and gender.
-
 ```{r}
-df$Parent.Social.Consequences.Subscale.of.HFS = 
-  as.numeric(df$Parent.Social.Consequences.Subscale.of.HFS) - 1
-mod = fit_mod(outcome = "Parent.Social.Consequences.Subscale.of.HFS",
-              fam = "binomial",pred = predictors[c(1,2)])
-kable(Anova(mod,type = "III"),caption = "Type III Tests of Fixed Effects")
+mod = fit_mod(outcome = "Parent.Social.Consequences.Subscale.of.HFS",fam = "nb")
 kable(summary(mod)$coefficients,caption = "Mixed Model Coefficients")
 ```
 
 ## Parent GAD-7 Score
 
-Would only converge when including age and gender.
-
 ```{r}
-df$Parent.GAD.7.Score = as.numeric(df$Parent.GAD.7.Score)-1
-mod = fit_mod(outcome = "Parent.GAD.7.Score",fam = "binomial",
-              pred = predictors[c(1,2)])
-kable(Anova(mod,type = "III"),caption = "Type III Tests of Fixed Effects")
+mod = fit_mod(outcome = "Parent.GAD.7.Score",fam = "nb")
 kable(summary(mod)$coefficients,caption = "Mixed Model Coefficients")
 ```
