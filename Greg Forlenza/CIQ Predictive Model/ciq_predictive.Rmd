@@ -11,17 +11,69 @@ output:
 ---
 
 ```{r setup, include=FALSE}
+library(Hmisc)
 library(arsenal)
 library(tidyverse)
+library(lubridate)
 library(knitr)
 library(DT)
 knitr::opts_chunk$set(echo = FALSE)
 home_dir = ifelse(.Platform$OS.type != "unix",
-                  "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects",
-                  "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/")
+                  "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Greg Forlenza/Control IQ Prediction",
+                  "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Greg Forlenza/Control IQ Prediction")
 knitr::opts_knit$set(root.dir = home_dir)
 ```
 
-```{r}
-
+```{r data}
+# Import
+source("C:/Users/timvigers/Documents/GitHub/BDC-Code/Greg Forlenza/CIQ Predictive Model/clean_data.R")
+# Add new variables
+data = data %>% group_by(record_id) %>% 
+  # Fill down demographics
+  fill(demographics_dob,demographics_sex.factor,demographics_diabetesdx,
+       demographics_race.factor,demographics_ethnicity.factor,
+       demographics_cgmhx.factor,demographics_pumphx.factor,
+       demographics_insurance.factor) %>% 
+  ungroup() %>%
+  # Calculate age and T1D duration
+  mutate(age_visit = round(as.numeric(ymd(date_visit)-ymd(demographics_dob),
+                                      units="days")/365.25),
+         t1d_dur = round(as.numeric(ymd(date_visit)-ymd(demographics_diabetesdx),
+                                    units="days")/365.25)) %>%
+  # Combine columns
+  unite(age,age_visit,demographics_age,na.rm = T) %>%
+  unite(t1d_dur,demographics_t1d_duration,t1d_dur,na.rm = T) %>%
+  unite(race,demographics_race.factor,demographics_ethnicity.factor) %>%
+  # Fix names
+  rename(sex = "demographics_sex.factor",insurance = "demographics_insurance.factor",
+         cgm_hx = "demographics_cgmhx.factor",pump_hx = "demographics_pumphx.factor") 
+# Clean up variables
+data$age = as.numeric(sapply(strsplit(data$age,"_"),"[",1))
+data$t1d_dur = as.numeric(sapply(strsplit(data$t1d_dur,"_"),"[",1))
+data$race = factor(data$race)
+levels(data$race) = c("Non-White","Non-White","Non-White","Non-White","Non-White",
+                      "Non-White","Non-White","Unknown","Non-White","Non-White",
+                      "Unknown","Unknown","Unknown","Non-White",
+                      "Non-Hispanic White","Non-White")
+# Survey scoring
+# INSPIRE
+data$inspire_child = 
+  apply(data[,grep("inspire_b\\d{,2}$",colnames(data))],1,function(r){
+    mean(r,na.rm = T)*25
+  })
+data$inspire_child[is.nan(data$inspire_child)] = NA
+data$inspire_adult = 
+  apply(data[,grep("inspire_b\\d{,2}_adult$",colnames(data))],1,function(r){
+    mean(r,na.rm = T)*25
+  })
+data$inspire_adult[is.nan(data$inspire_adult)] = NA
+data = data %>% unite(inspire,inspire_child,inspire_adult,na.rm = T)
+# Clean
+df = data %>% filter(record_id %in% 119:327,!is.na(gyl_timepoint.factor)) %>% 
+  select(record_id,gyl_timepoint.factor,hba1c,age,t1d_dur,
+         sex,race,insurance,cgm_hx,pump_hx,inspire)
 ```
+
+# Table 1: Participant Characteristics
+
+Race and ethnicity were combined into a single field (non-Hispanic White vs. non-White).
