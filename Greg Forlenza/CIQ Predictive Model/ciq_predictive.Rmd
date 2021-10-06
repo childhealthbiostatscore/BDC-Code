@@ -1,5 +1,5 @@
 ---
-title: ""
+title: "Control IQ Predictive Model"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
 output:
@@ -17,6 +17,9 @@ library(tidyverse)
 library(lubridate)
 library(knitr)
 library(DT)
+library(naniar)
+library(glmnet)
+library(broom)
 knitr::opts_chunk$set(echo = FALSE)
 home_dir = ifelse(.Platform$OS.type != "unix",
                   "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Greg Forlenza/Control IQ Prediction",
@@ -68,12 +71,128 @@ data$inspire_adult =
   })
 data$inspire_adult[is.nan(data$inspire_adult)] = NA
 data = data %>% unite(inspire,inspire_child,inspire_adult,na.rm = T)
-# Clean
-df = data %>% filter(record_id %in% 119:327,!is.na(gyl_timepoint.factor)) %>% 
-  select(record_id,gyl_timepoint.factor,hba1c,age,t1d_dur,
-         sex,race,insurance,cgm_hx,pump_hx,inspire)
+data$inspire = as.numeric(data$inspire)
+# PAID
+data$paid_child = 
+  apply(data[,grep("c_paid\\d{,2}$",colnames(data))],1,function(r){
+    r = 5 - r # Reverse score
+    mean(r,na.rm = T)*25
+  })
+data$paid_child[is.nan(data$paid_child)] = NA
+data$paid_ya = 
+  apply(data[,grep("ya_paid\\d{,2}$",colnames(data))],1,function(r){
+    sum(r)*1.25
+  })
+data = data %>% unite(paid,paid_child,paid_ya,na.rm = T)
+data$paid = as.numeric(data$paid)
+# HFS worry
+worry_low_bg = c(11,12,13,14,16,18,19,22,23)
+data$hfs_worry_low_bg = apply(data[,paste0("c_hfs_worry",worry_low_bg)],1,function(r){
+  sum(r)
+})
+worry_social = c(15,17,20,21,25)
+data$hfs_worry_social = apply(data[,paste0("c_hfs_worry",worry_social)],1,function(r){
+  sum(r)
+})
+# Month 1 variables
+m1 = data %>% filter(gyl_timepoint == 1) %>% 
+  select(record_id,sensor_wear,sensor_70_180,dailybolus,time_am)
+colnames(m1)[2:ncol(m1)] = paste0("m1_",colnames(m1)[2:ncol(m1)])
+# Outcome
+out = data %>% group_by(record_id) %>% 
+  filter(gyl_timepoint.factor =="12 Months" | 
+           gyl_timepoint.factor =="9 Months") %>%
+  filter(row_number() == n()) %>%
+  summarise(success = sensor_70_180)
+out$success = cut(out$success,c(-Inf,70,Inf),labels = c("<70",">=70"),
+                  right = F)
+# Final data
+df = data %>% left_join(.,m1,by = "record_id") %>% left_join(.,out,by = "record_id") %>%
+  filter(record_id %in% 119:327,!is.na(gyl_timepoint.factor),
+         gyl_timepoint == 0) %>%
+  select(record_id,hba1c,age,t1d_dur,sex,race,insurance,
+         cgm_hx,pump_hx,starts_with("m1_"),inspire,paid,
+         hfs_worry_low_bg,hfs_worry_social,success) %>%
+  filter(!is.na(success))
+# Clean up workspace
+rm(list = ls()[-which(ls() == "df")])
 ```
 
 # Table 1: Participant Characteristics
 
-Race and ethnicity were combined into a single field (non-Hispanic White vs. non-White).
+Race and ethnicity were combined into a single field (non-Hispanic White vs. non-White). Success was defined as TIR $\geq70%$ after 12 months (or 9 months if missing 12 month data).
+
+```{r results='asis'}
+t1_form = as.formula(paste0("success~",paste0(colnames(df)[2:ncol(df)],collapse = "+")))
+t1_form = update(t1_form,.~. -success)
+t1 = tableby(t1_form,df)
+summary(t1)
+```
+
+# Missing data
+
+A large proportion of the participants were missing data, so only 45 participants were included in the elasticnet (a variation of the lasso) model selection process.
+
+```{r}
+vis_miss(df)
+gg_miss_upset(df)
+```
+
+# Elasticnet variable selection
+
+```{r}
+set.seed(1017)
+lasso_df = df[complete.cases(df),]
+outcome = "success"
+predictors = colnames(lasso_df)[which(!colnames(lasso_df) %in% c("record_id","success"))]
+cv = cv.glmnet(x = data.matrix(lasso_df[,predictors]),
+               y = data.matrix(lasso_df[,outcome]),alpha = 0.5)
+```
+
+Lasso parameter $\lambda$ were selected based on 5-fold cross validation. There are two recommended ways to looks at lasso selection: picking the model with the lowest CV error, or the smallest model with CV error within 1 standard deviation of the minimum.
+
+Variables included in the selection process were: `r paste(predictors,collapse=", ")`.
+
+
+
+## Smallest model 
+
+The smallest possible model with reasonable CV error includes:
+
+```{r}
+selected = coef(cv,s = "lambda.1se")
+selected = rownames(selected)[which(selected != 0 & 
+                                      rownames(selected) != "(Intercept)")]
+kable(selected,col.names = "Selected Variable(s)")
+```
+
+### Coefficients
+
+```{r}
+form = as.formula(paste0("success~",paste0(selected,collapse = "+")))
+mod = glm(form,data = df,family = "binomial")
+kable(tidy(mod))
+```
+
+This model was fit using `r nobs(mod)` observations.
+
+## Best model 
+
+The model with the lowest CV error includes:
+
+```{r}
+selected = coef(cv,s = "lambda.min")
+selected = rownames(selected)[which(selected != 0 & 
+                                      rownames(selected) != "(Intercept)")]
+kable(selected,col.names = "Selected Variable(s)")
+```
+
+### Coefficients
+
+```{r}
+form = as.formula(paste0("success~",paste0(selected,collapse = "+")))
+mod = glm(form,data = df,family = "binomial")
+kable(tidy(mod))
+```
+
+This model was fit using `r nobs(mod)` observations.
