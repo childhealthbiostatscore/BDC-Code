@@ -19,6 +19,7 @@ library(caret)
 library(glmnet)
 library(Hmisc)
 library(UpSetR)
+library(GLMMadaptive)
 library(lme4)
 library(lmerTest)
 library(car)
@@ -55,6 +56,10 @@ df$c_dob[df$participant_id == 420] = "2007-05-15"
 df$c_dob[df$participant_id == 429] = "2008-01-08"
 df$age = as.numeric(difftime(lubridate::ymd(df$t1_date),lubridate::ymd(df$c_dob),
                              units = "days"))/365.25
+# Fill down
+df = df %>% group_by(participant_id) %>% fill(Total.Household.Income)
+# Write for checking SAS models
+write.csv(df,file = "./Data_Cleaned/cleaned_data_for_sas.csv",row.names = F)
 ```
 
 # Table 1: Participant Characteristics
@@ -78,15 +83,19 @@ Household income and education were dichotomized into >= \$90K vs. < $90K and as
 fit_mod = function(outcome,pred = predictors,dat = df,fam = "gaussian"){
   form = as.formula(paste0(outcome,"~","studyvisit*treatment_group+",
                            paste0(pred,collapse = "+"),"+(1|participant_id)"))
+  zi_form = as.formula(paste0(outcome,"~","studyvisit*treatment_group+",
+                           paste0(pred,collapse = "+")))
+  fixed = as.formula(paste0("~",paste0(pred,collapse = "+")))
   if(fam == "gaussian"){
     mod = lmer(form,data = dat)
-  } else if (fam == "nb"){
+  } else if (fam == "zi.poisson"){
+    # Complete cases
+    dat = dat[,c("participant_id","studyvisit","treatment_group",outcome,pred)]
+    dat = dat[complete.cases(dat),]
     mod = 
-      glmer.nb(form,data = dat,
-               control=glmerControl(optimizer="bobyqa",
-                                    optCtrl=list(maxfun=1e6),
-                                    check.conv.grad = .makeCC("warning", tol = 2e-2, 
-                                                              relTol = NULL)))
+      mixed_model(update(form,.~.-(1|participant_id)), 
+                  random = ~1|participant_id,zi_fixed = ~treatment_group,
+                  data = dat,family = zi.poisson())
   }
   else {
     mod = glmer(form,data = dat,family = fam)
