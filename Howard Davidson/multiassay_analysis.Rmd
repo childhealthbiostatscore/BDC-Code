@@ -16,13 +16,12 @@ library(networkD3)
 library(car)
 library(performance)
 library(caret)
-knitr::opts_chunk$set(echo = FALSE,cache = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 home_dir = ifelse(.Platform$OS.type != "unix",
                   "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data",
                   "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data")
 knitr::opts_knit$set(root.dir = home_dir)
 rm(home_dir)
-set.seed(1017)
 ```
 
 ```{r data}
@@ -64,9 +63,12 @@ data_preprocces = function(df,missing_cutoff = 0.8,cv_cutoff = NULL,
   }
   return(df)
 }
-# Cluster variables according to DIFAcTO pipeline
+# Cluster variables according to DIFAcTO pipeline.
+# If optimize_corr = T, this will override the manual corr_cutoff. Correlation
+# cutoff should be optimized for all assays, but does not need to be run every time.
 corr_cluster = function(df,parallel_ratio = 0.5,
                         outcome = "y",id_cols = c("id","ID","time"),
+                        optimize_corr = T, corr_cutoff = 0.7,
                         heatmap = T,heatmap_params = list(show_rownames = T,show_colnames = T),
                         network = T){
   # Get predictors
@@ -76,33 +78,35 @@ corr_cluster = function(df,parallel_ratio = 0.5,
   # Get pairs
   var_cor = corr_mat*lower.tri(corr_mat)
   # Find best correlation cutoff
-  rs = seq(0,1,by = 0.1)
-  model_perf = lapply(rs, function(r){
-    # Correlation cutoff
-    check_cor = which(abs(var_cor) >= r, arr.ind=TRUE)
-    # Convert correlated pairs into graph clusters
-    graph_cor = graph.data.frame(check_cor, directed = FALSE)
-    # Get names
-    groups_cor = split(unique(as.vector(check_cor)), clusters(graph_cor)$membership)
-    groups = lapply(groups_cor,FUN=function(list_cor){rownames(var_cor)[list_cor]})
-    # Find highest correlation within each group
-    best_cor = lapply(groups, function(g){
-      assocs = lapply(g, function(v){
-        form = as.formula(paste0(outcome,"~",v))
-        mod = glm(form,df,family = "binomial")
-        coefs = summary(mod)$coefficients
-        return(abs(coefs[2,1]))
+  if(optimize_corr){
+    rs = seq(0,1,by = 0.1)
+    model_perf = lapply(rs, function(r){
+      # Correlation cutoff
+      check_cor = which(abs(var_cor) >= r, arr.ind=TRUE)
+      # Convert correlated pairs into graph clusters
+      graph_cor = graph.data.frame(check_cor, directed = FALSE)
+      # Get names
+      groups_cor = split(unique(as.vector(check_cor)), clusters(graph_cor)$membership)
+      groups = lapply(groups_cor,FUN=function(list_cor){rownames(var_cor)[list_cor]})
+      # Find highest correlation within each group
+      best_cor = lapply(groups, function(g){
+        assocs = lapply(g, function(v){
+          form = as.formula(paste0(outcome,"~",v))
+          mod = glm(form,df,family = "binomial")
+          coefs = summary(mod)$coefficients
+          return(abs(coefs[2,1]))
+        })
+        return(g[which.max(assocs)])
       })
-      return(g[which.max(assocs)])
+      best_cor = as.character(best_cor)
+      if(length(best_cor)>0){
+        form = as.formula(paste0(outcome,"~",paste0(best_cor,collapse = "+")))
+        mod = glm(form,data = df,family = "binomial")
+        return(rmse(mod,normalized = T))
+      } else {return(NA)}
     })
-    best_cor = as.character(best_cor)
-    if(length(best_cor)>0){
-      form = as.formula(paste0(outcome,"~",paste0(best_cor,collapse = "+")))
-      mod = glm(form,data = df,family = "binomial")
-      return(rmse(mod,normalized = T))
-    } else {return(NA)}
-  })
-  opt_r = rs[which.min(model_perf)]
+    opt_r = rs[which.min(model_perf)]
+  } else {opt_r = corr_cutoff}
   # final groups
   # Correlation cutoff
   check_cor = which(abs(var_cor) >= opt_r, arr.ind=TRUE)
@@ -134,7 +138,8 @@ corr_cluster = function(df,parallel_ratio = 0.5,
     int_plot_df[,1] = rownames(corr_mat)[int_plot_df[,1]]
     int_plot_df[,2] = colnames(corr_mat)[as.numeric(int_plot_df[,2])]
     # Node DF
-    nodes <- data.frame(name = unique(c(int_plot_df[,1], int_plot_df[,2])), stringsAsFactors = FALSE)
+    nodes <- data.frame(name = unique(c(int_plot_df[,1], int_plot_df[,2])), 
+                        stringsAsFactors = FALSE)
     nodes$id <- 0:(nrow(nodes) - 1)
     # Edges DF
     edges <- int_plot_df %>% data.frame(.) %>%
@@ -193,7 +198,7 @@ corr_cluster = function(df,parallel_ratio = 0.5,
 
 ```{r}
 carotenoids = data_preprocces(X$carotenoids)
-carotenoids_best = corr_cluster(carotenoids)
+carotenoids_best = corr_cluster(carotenoids,corr)
 carotenoids_best$heatmap
 carotenoids_best$network
 kable(carotenoids_best$best,col.names = "Selected variables")
@@ -229,11 +234,10 @@ The optimal $\rho$ cutoff was `r metab_best$r_cutoff` based on normalized RMSE.
 
 ```{r}
 transcript = data_preprocces(X$transcriptomics,cv_cutoff = 0.2)
-transcript_best = corr_cluster(transcript,heatmap=F,network=F) 
+transcript_best = corr_cluster(transcript,heatmap=F,network=F,
+                               optimize_corr = F,corr_cutoff = 0.7)
 kable(transcript_best,col.names = "Selected variables")
 ```
-
-The optimal $\rho$ cutoff was `r transcript_best$r_cutoff` based on normalized RMSE.
 
 ## Negative lipidomics
 
@@ -266,9 +270,10 @@ In addition to the selected variables from the 'omics assays above, all variable
 ```{r}
 # All variables selected above
 lasso_vars = c("ascorbic_acid",carotenoids_best$best,"cholesterol",
-               fa_best$best,metab_best$best,transcript_best,
+               fa_best$best,metab_best$best,
                "height_cm","weight_kg","agemos",negative_best$best,positive_best$best,
                "alphatocopherol","gammatocopherol","vitamin_d")
+# lasso_vars = c(lasso_vars,transcript_best)
 lasso_form = as.formula(paste0("y~",paste0(lasso_vars,collapse = "+")))
 # Pull out selected variables
 smaller_dfs = lapply(X, function(d){
@@ -297,18 +302,8 @@ cv_fit = cv.glmnet(x = data.matrix(lasso_df[,lasso_vars]),
 # Fit
 mod = glmnet(x = data.matrix(lasso_df[,lasso_vars]), 
              y = factor(lasso_df[,"y"]), 
-             family = "binomial",lambda = cv_fit$lambda[20])
+             family = "binomial",lambda = cv_fit$lambda.min)
 kable(rownames(coef(mod))[which(coef(mod) != 0)],col.names = "Selected variables")
-```
-
-The lasso is most likely picking variables that are highly correlated. Variable inflation factors for the final model are:
-
-```{r}
-pred = rownames(coef(mod))[which(coef(mod) != 0)]
-pred = pred[pred != "(Intercept)"]
-form = as.formula(paste0("y~",paste0(pred,collapse = "+")))
-mod = glm(form,data = df,family = "binomial")
-vif(mod)
 ```
 
 # Elasticnet
@@ -331,6 +326,8 @@ elastic = function(df,folds = 10,
   # CV 
   set.seed(1017)
   cv = cv.glmnet(X,Y,nfolds = folds,alpha = 0.5,family = "binomial")
+  # Biggest model 
+  # l = cv$lambda[max(which(cv$cvm <= min(cv$cvm) + sd(cv$cvm)))]
   coefs = coef(cv,s = "lambda.min")
   selected = rownames(coefs)[which(coefs != 0 & rownames(coefs) != "(Intercept)")]
   return(selected)
@@ -340,35 +337,41 @@ elastic = function(df,folds = 10,
 ## Carotenoids
 
 ```{r}
-elastic(carotenoids)
+carot_elastic = elastic(carotenoids)
+kable(carot_elastic,col.names = "Selected variables")
 ```
 
 ## Fatty acids
 
 ```{r}
-elastic(fa)
+fa_elastic = elastic(fa)
+kable(fa_elastic,col.names = "Selected variables")
 ```
 
 ## Metabolomics
 
 ```{r}
-elastic(metab)
+metab_elastic = elastic(metab)
+kable(metab_elastic,col.names = "Selected variables")
 ```
 
 ## Transcriptomics
 
 ```{r}
-elastic(transcript)
+trans_elastic = elastic(transcript)
+kable(trans_elastic,col.names = "Selected variables")
 ```
 
 ## Negative lipidomics
 
 ```{r}
-elastic(negative)
+neg_elastic = elastic(negative)
+kable(neg_elastic,col.names = "Selected variables")
 ```
 
 ## Positive lipidomics
 
 ```{r}
-elastic(positive)
+pos_elastic = elastic(positive)
+kable(pos_elastic,col.names = "Selected variables")
 ```
