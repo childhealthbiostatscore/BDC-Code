@@ -22,13 +22,12 @@ library(UpSetR)
 library(GLMMadaptive)
 library(lme4)
 library(lmerTest)
-library(car)
+library(emmeans)
 knitr::opts_chunk$set(echo = FALSE)
 home_dir = ifelse(.Platform$OS.type != "unix",
                   "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Bring BG Down/",
                   "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Bring BG Down/")
 knitr::opts_knit$set(root.dir = home_dir)
-set.seed(1017)
 ```
 
 ```{r data}
@@ -57,7 +56,8 @@ df$c_dob[df$participant_id == 429] = "2008-01-08"
 df$age = as.numeric(difftime(lubridate::ymd(df$t1_date),lubridate::ymd(df$c_dob),
                              units = "days"))/365.25
 # Fill down
-df = df %>% group_by(participant_id) %>% fill(Total.Household.Income)
+df = df %>% filter(participant_id != 430) %>%
+  group_by(participant_id) %>% fill(Total.Household.Income)
 # Write for checking SAS models
 write.csv(df,file = "./Data_Cleaned/cleaned_data_for_sas.csv",row.names = F)
 ```
@@ -81,10 +81,10 @@ Household income and education were dichotomized into >= \$90K vs. < $90K and as
 
 ```{r}
 fit_mod = function(outcome,pred = predictors,dat = df,fam = "gaussian"){
-  form = as.formula(paste0(outcome,"~","studyvisit*treatment_group+",
+  form = as.formula(paste0(outcome,"~","factor(studyvisit)*treatment_group+",
                            paste0(pred,collapse = "+"),"+(1|participant_id)"))
   zi_form = as.formula(paste0(outcome,"~","studyvisit*treatment_group+",
-                           paste0(pred,collapse = "+")))
+                              paste0(pred,collapse = "+")))
   fixed = as.formula(paste0("~",paste0(pred,collapse = "+")))
   if(fam == "gaussian"){
     mod = lmer(form,data = dat)
@@ -105,6 +105,8 @@ fit_mod = function(outcome,pred = predictors,dat = df,fam = "gaussian"){
 # Selected predictors
 predictors = 
   c("age","c_gender","Total.Household.Income")
+form = as.formula(paste0("~","studyvisit*treatment_group+",
+                         paste0(predictors,collapse = "+")))
 # Fill down
 df = df %>% group_by(participant_id) %>% 
   fill(all_of(predictors))
@@ -113,27 +115,100 @@ df = df %>% group_by(participant_id) %>%
 ## Parent Maintain High BG of HFS
 
 ```{r}
-mod = fit_mod(outcome = "Parent.Maintain.High.BG.of.HFS")
+mod = lmer(update(form,Parent.Maintain.High.BG.of.HFS ~ .+(1|participant_id)),data = df)
 kable(summary(mod)$coefficients,caption = "Mixed Model Coefficients")
+```
+
+```{r}
+# Holly! Here below is how to get model means
+# Model visit as categorical for easier plotting
+plot_form = as.formula(paste0("~","factor(studyvisit)*treatment_group+",
+                              paste0(predictors,collapse = "+")))
+mod = lmer(update(plot_form,Parent.Maintain.High.BG.of.HFS ~ .+(1|participant_id)),data = df)
+means = data.frame(emmeans(mod,~studyvisit+factor(treatment_group)))
+# Plot
+ggplot(means,aes(x = studyvisit,y = emmean,color = factor(treatment_group))) +
+  geom_point() + geom_line() + 
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE),width = 0.2) + 
+  xlab("Visit") + ylab("Mean Score") +
+  theme_bw()
 ```
 
 ## Parent Worry/Helplessness Subscale of HFS
 
 ```{r}
-mod = fit_mod(outcome = "Parent.Worry.Helplessness.Subscale.of.HFS")
+mod = lmer(update(form,Parent.Worry.Helplessness.Subscale.of.HFS ~ .+(1|participant_id)),
+           data = df)
 kable(summary(mod)$coefficients,caption = "Mixed Model Coefficients")
+```
+
+```{r}
+# Holly! Here below is how to get model means
+# Model visit as categorical for easier plotting
+plot_form = as.formula(paste0("~","factor(studyvisit)*treatment_group+",
+                              paste0(predictors,collapse = "+")))
+mod = lmer(update(plot_form,Parent.Worry.Helplessness.Subscale.of.HFS ~ .+(1|participant_id)),
+           data = df)
+means = data.frame(emmeans(mod,~studyvisit+factor(treatment_group)))
+# Plot
+ggplot(means,aes(x = studyvisit,y = emmean,color = factor(treatment_group))) +
+  geom_point() + geom_line() + 
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE),width = 0.2) + 
+  xlab("Visit") + ylab("Mean Score") +
+  theme_bw()
 ```
 
 ## Parent Social Consequences Subscale of HFS
 
+This outcome was analyzed using a zero-inflated Poisson model with random intercept for participant. Coefficients are interpreted on the log count scale. 
+
 ```{r}
-mod = fit_mod(outcome = "Parent.Social.Consequences.Subscale.of.HFS",fam = "nb")
-kable(summary(mod)$coefficients,caption = "Mixed Model Coefficients")
+mod = mixed_model(update(form,Parent.Social.Consequences.Subscale.of.HFS~.), 
+              random = ~1|participant_id,zi_fixed = ~1,
+              data = df,family = zi.poisson())
+kable(summary(mod)$coef_table,caption = "Mixed Model Coefficients")
+```
+
+```{r}
+# Holly! Here below is how to get model means
+# Model visit as categorical for easier plotting
+plot_form = as.formula(paste0("Parent.Social.Consequences.Subscale.of.HFS~",
+                              "factor(studyvisit)*treatment_group+",
+                              paste0(predictors,collapse = "+")))
+mod = mixed_model(plot_form,random = ~1|participant_id,zi_fixed = ~1,
+              data = df,family = zi.poisson())
+means = data.frame(emmeans(mod,~studyvisit+factor(treatment_group)))
+# Plot
+ggplot(means,aes(x = studyvisit,y = emmean,color = factor(treatment_group))) +
+  geom_point() + geom_line() + 
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE),width = 0.2) + 
+  xlab("Visit") + ylab("Mean Score") +
+  theme_bw()
 ```
 
 ## Parent GAD-7 Score
 
+This outcome was analyzed using a Poisson model with random intercept for participant. Coefficients are interpreted on the log count scale. 
+
 ```{r}
-mod = fit_mod(outcome = "Parent.GAD.7.Score",fam = "nb")
+mod = glmer(update(form,Parent.GAD.7.Score~.+(1|participant_id)),data = df,
+            family = "poisson",
+            control=glmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)))
 kable(summary(mod)$coefficients,caption = "Mixed Model Coefficients")
+```
+
+```{r}
+# Holly! Here below is how to get model means
+# Model visit as categorical for easier plotting
+plot_form = as.formula(paste0("~","factor(studyvisit)*treatment_group+",
+                              paste0(predictors,collapse = "+")))
+mod = lmer(update(plot_form,Parent.GAD.7.Score ~ .+(1|participant_id)),
+           data = df)
+means = data.frame(emmeans(mod,~studyvisit+factor(treatment_group)))
+# Plot
+ggplot(means,aes(x = studyvisit,y = emmean,color = factor(treatment_group))) +
+  geom_point() + geom_line() + 
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE),width = 0.2) + 
+  xlab("Visit") + ylab("Mean Score") +
+  theme_bw()
 ```
