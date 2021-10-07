@@ -20,6 +20,7 @@ library(DT)
 library(naniar)
 library(glmnet)
 library(broom)
+library(pROC)
 knitr::opts_chunk$set(echo = FALSE)
 home_dir = ifelse(.Platform$OS.type != "unix",
                   "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Greg Forlenza/Control IQ Prediction",
@@ -96,7 +97,7 @@ data$hfs_worry_social = apply(data[,paste0("c_hfs_worry",worry_social)],1,functi
 })
 # Month 1 variables
 m1 = data %>% filter(gyl_timepoint == 1) %>% 
-  select(record_id,sensor_wear,sensor_70_180,dailybolus,time_am)
+  select(record_id,sensor_wear,sensor_70_180,dailybolus,dailymealbolus,time_am)
 colnames(m1)[2:ncol(m1)] = paste0("m1_",colnames(m1)[2:ncol(m1)])
 # Outcome
 out = data %>% group_by(record_id) %>% 
@@ -161,17 +162,18 @@ The smallest possible model with reasonable CV error includes:
 
 ```{r}
 selected = coef(cv,s = "lambda.1se")
-selected = rownames(selected)[which(selected != 0 & 
-                                      rownames(selected) != "(Intercept)")]
+selected = rownames(selected)[which(selected != 0 & rownames(selected) != "(Intercept)")]
 kable(selected,col.names = "Selected Variable(s)")
 ```
 
-### Coefficients
+### Plot and Coefficients
 
 ```{r}
 form = as.formula(paste0("success~",paste0(selected,collapse = "+")))
 mod = glm(form,data = df,family = "binomial")
-kable(tidy(mod),digits = 3)
+r = roc(mod$y,predict(mod),quiet = T)
+plot.roc(r,plot = T,legacy.axes = T,print.auc = T)
+kable(tidy(mod,exponentiate = T),digits = 3)
 ```
 
 This model was fit using `r nobs(mod)` observations.
@@ -182,17 +184,18 @@ The model with the lowest CV error includes:
 
 ```{r}
 selected = coef(cv,s = "lambda.min")
-selected = rownames(selected)[which(selected != 0 & 
-                                      rownames(selected) != "(Intercept)")]
+selected = rownames(selected)[which(selected != 0 & rownames(selected) != "(Intercept)")]
 kable(selected,col.names = "Selected Variable(s)")
 ```
 
-### Coefficients
+### ROC and Coefficients
 
 ```{r}
 form = as.formula(paste0("success~",paste0(selected,collapse = "+")))
 mod = glm(form,data = df,family = "binomial")
-kable(tidy(mod),digits = 3)
+r = roc(mod$y,predict(mod),quiet = T)
+plot.roc(r,plot = T,legacy.axes = T,print.auc = T)
+kable(tidy(mod,exponentiate = T),digits = 3)
 ```
 
 This model was fit using `r nobs(mod)` observations.
