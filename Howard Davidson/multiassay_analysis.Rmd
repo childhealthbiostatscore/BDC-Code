@@ -16,8 +16,9 @@ library(networkD3)
 library(car)
 library(performance)
 library(caret)
+library(parallel)
 library(doParallel)
-knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(echo = FALSE,cache = TRUE)
 home_dir = ifelse(.Platform$OS.type != "unix",
                   "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data",
                   "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data")
@@ -76,14 +77,18 @@ corr_cluster = function(df,parallel_ratio = 0.5,folds = 5,
   pred = setdiff(colnames(df),c(id_cols,outcome))
   # Outcome is binary
   df[,outcome] = factor(df[,outcome])
+  # Complete
+  df = df[complete.cases(df),]
   # Correlations between predictors
   corr_mat = cor(df[,pred],use = "pairwise.complete.obs")
   # Get pairs
   var_cor = corr_mat*lower.tri(corr_mat)
   # Find best correlation cutoff
   if(optimize_corr){
-    rs = seq(0,1,by = 0.1)
-    model_perf = lapply(rs, function(r){
+    rs = seq(0,1,by = 0.01)
+    # Parallel
+    cl <- makeCluster(detectCores()*parallel_ratio,type = "FORK")
+    model_perf = parLapply(cl,rs, function(r){
       # Correlation cutoff
       check_cor = which(abs(var_cor) >= r, arr.ind=TRUE)
       # Convert correlated pairs into graph clusters
@@ -109,20 +114,18 @@ corr_cluster = function(df,parallel_ratio = 0.5,folds = 5,
         cv = trainControl(method = "cv",number = folds)
         # Model
         form = as.formula(paste0(outcome,"~",paste0(best_cor,collapse = "+")))
-        # Parallel
-        cl <- makePSOCKcluster(detectCores()*parallel_ratio)
-        registerDoParallel(cl)
-        # CV RMSE
+        # CV
         mod = train(
           form, data = df,
           method = "glm",
           family = "binomial",
-          trControl = cv
+          trControl = cv,
+          tuneLength = 25
         )
-        stopCluster(cl)
         return(mod$results$Accuracy)
       } else {return(NA)}
     })
+    stopCluster(cl)
     opt_r = rs[which.max(model_perf)]
   } else {opt_r = corr_cutoff}
   # final groups
@@ -250,9 +253,8 @@ The optimal $\rho$ cutoff was `r metab_best$r_cutoff` based on normalized RMSE.
 ## Transcriptomics
 
 ```{r eval=FALSE}
-transcript = data_preprocces(X$transcriptomics,cv_cutoff = 0.2)
-transcript_best = corr_cluster(transcript,heatmap=F,network=F,
-                               optimize_corr = F,corr_cutoff = 0.7)
+transcript = data_preprocces(X$transcriptomics)
+transcript_best = corr_cluster(transcript,heatmap=F,network=F,optimize_corr = T)
 kable(transcript_best,col.names = "Selected variables")
 ```
 
@@ -285,12 +287,12 @@ The optimal $\rho$ cutoff was `r positive_best$r_cutoff` based on normalized RMS
 In addition to the selected variables from the 'omics assays above, all variables from assays with 3 or fewer measures (ascorbic acid, cholesterol, growth, etc.) were included in the lasso. 
 
 ```{r}
+folds = 5
 # All variables selected above
 lasso_vars = c("ascorbic_acid",carotenoids_best$best,"cholesterol",
                fa_best$best,metab_best$best,transcript_best$best,
                "height_cm","weight_kg","agemos",negative_best$best,positive_best$best,
                "alphatocopherol","gammatocopherol","vitamin_d")
-# lasso_vars = c(lasso_vars,transcript_best)
 lasso_form = as.formula(paste0("y~",paste0(lasso_vars,collapse = "+")))
 # Pull out selected variables
 smaller_dfs = lapply(X, function(d){
@@ -312,14 +314,30 @@ df = left_join(df,smaller_dfs[[10]],by = c("ID"="id","time","y"))
 df = left_join(df,smaller_dfs[[11]],by = c("y", "ID", "time"))
 # Remove missing
 lasso_df = df[complete.cases(df),]
-# CV
+lasso_df$y = factor(lasso_df$y)
+# CV with caret
 set.seed(1017)
-cv_fit = cv.glmnet(x = data.matrix(lasso_df[,lasso_vars]), 
-                   y = factor(lasso_df[,"y"]), family = "binomial")
+cv = trainControl(method = "cv",number = folds)
+# Model
+form = as.formula(paste0("y~",paste0(lasso_vars,collapse = "+")))
+# Parallel
+cl = makePSOCKcluster(folds)
+registerDoParallel(cl)
+mod = train(
+  form, data = lasso_df,
+  method = "glmnet",
+  family = "binomial",
+  trControl = cv,
+  tuneLength = 25
+)
+stopCluster(cl)
+# Best lambda keeping alpha at 1
+best = mod$results[mod$results$alpha == 1,]
+best = best[best$Accuracy == max(best$Accuracy),]
 # Fit
 mod = glmnet(x = data.matrix(lasso_df[,lasso_vars]), 
-             y = factor(lasso_df[,"y"]), 
-             family = "binomial",lambda = cv_fit$lambda.min)
+             y = factor(lasso_df[,"y"]),family = "binomial",
+             alpha = 1,lambda = best$lambda)
 kable(rownames(coef(mod))[which(coef(mod) != 0)],col.names = "Selected variables")
 ```
 
@@ -334,14 +352,35 @@ kable(rownames(coef(mod))[which(coef(mod) != 0)],col.names = "Selected variables
 
 ```{r elasticnet function}
 elastic = function(df,folds = 5,outcome = "y",id_cols = c("id","ID","time")){
-  # Remove missing
-  df = df[complete.cases(df),]
+  # Outcome 
+  df[,outcome] = factor(df[,outcome])
   # Predictors
   pred = setdiff(colnames(df),c(id_cols,outcome))
-  # CV
+  # Complete
+  df = df[complete.cases(df),]
+  # Formula
+  form = as.formula(paste0(outcome,"~",paste0(pred,collapse = "+")))
+  # Caret CV
   set.seed(1017)
-  cv = cv.glmnet(x = data.matrix(df[,pred]),y = data.matrix(df[,outcome]),nfolds = folds)
-  coefs = coef(mod,s0 = "lambda.min")
+  cv = trainControl(method = "cv",number = folds)
+  # Parallel
+  cl = makePSOCKcluster(folds)
+  registerDoParallel(cl)
+  mod = train(
+    form, data = df,
+    method = "glmnet",
+    family = "binomial",
+    trControl = cv,
+    tuneLength = 25
+  )
+  stopCluster(cl)
+  best = mod$bestTune
+  # Get variables
+  # Re-fit
+  df[,outcome]
+  m = glmnet(data.matrix(df[,pred]),data.matrix(df[,outcome]),
+             alpha = best$alpha,lambda = best$lambda)
+  coefs = coef(m)
   selected = rownames(coefs)[which(coefs != 0 & rownames(coefs) != "(Intercept)")]
   return(selected)
 }
@@ -370,7 +409,7 @@ kable(metab_elastic,col.names = "Selected variables")
 
 ## Transcriptomics
 
-```{r}
+```{r eval=FALSE}
 trans_elastic = elastic(transcript)
 kable(trans_elastic,col.names = "Selected variables")
 ```
@@ -387,4 +426,60 @@ kable(neg_elastic,col.names = "Selected variables")
 ```{r}
 pos_elastic = elastic(positive)
 kable(pos_elastic,col.names = "Selected variables")
+```
+
+## Lasso the lasso (more accurately elasticnet the elasticnet)
+
+```{r}
+# All variables selected above
+elastic_vars = c("ascorbic_acid",carot_elastic,"cholesterol",
+                 fa_elastic,metab_elastic,trans_elastic,
+                 "height_cm","weight_kg","agemos",neg_elastic,pos_elastic,
+                 "alphatocopherol","gammatocopherol","vitamin_d")
+elastic_form = as.formula(paste0("y~",paste0(elastic_vars,collapse = "+")))
+# Pull out selected variables
+smaller_dfs = lapply(X, function(d){
+  d = d[,which(colnames(d) %in% c("ID","id","time","y",elastic_vars))]
+})
+# Combine into single dataframe
+df = full_join(smaller_dfs[[1]],smaller_dfs[[2]],by = c("ID"="id","time","y"))
+df = full_join(df,smaller_dfs[[3]],by = c("ID","y","time"))
+df = full_join(df,smaller_dfs[[4]],by = c("ID"="id","time","y"))
+df = full_join(df,smaller_dfs[[5]],by = c("ID"="id","time","y"))
+df = full_join(df,smaller_dfs[[6]],by = c("ID"="id","time","y"))
+df = full_join(df,smaller_dfs[[7]],by = c("ID"="id","time","y"))
+df = full_join(df,smaller_dfs[[8]],by = c("ID"="id","time","y"))
+df = left_join(df,smaller_dfs[[9]],by = c("ID"="id","time","y"))
+df[,grep("\\.y",colnames(df))] = NULL
+colnames(df)[grep("\\.x",colnames(df))] = 
+  sub("\\.x","",colnames(df)[grep("\\.x",colnames(df))])
+df = left_join(df,smaller_dfs[[10]],by = c("ID"="id","time","y"))
+df = left_join(df,smaller_dfs[[11]],by = c("y", "ID", "time"))
+# Remove missing
+elastic_df = df[complete.cases(df),]
+elastic_df$y = factor(elastic_df$y)
+# CV with caret
+set.seed(1017)
+cv = trainControl(method = "cv",number = folds)
+# Model
+form = as.formula(paste0("y~",paste0(elastic_vars,collapse = "+")))
+# Parallel
+cl = makePSOCKcluster(folds)
+registerDoParallel(cl)
+mod = train(
+  form, data = elastic_df,
+  method = "glmnet",
+  family = "binomial",
+  trControl = cv,
+  tuneLength = 25
+)
+stopCluster(cl)
+# Best lambda keeping alpha at 1
+best = mod$results[mod$results$alpha == 1,]
+best = best[best$Accuracy == max(best$Accuracy),]
+# Fit
+mod = glmnet(x = data.matrix(elastic_df[,elastic_vars]), 
+             y = factor(elastic_df[,"y"]),family = "binomial",
+             alpha = 1,lambda = best$lambda)
+kable(rownames(coef(mod))[which(coef(mod) != 0)],col.names = "Selected variables")
 ```
