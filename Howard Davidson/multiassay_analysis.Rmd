@@ -67,7 +67,7 @@ data_preprocces = function(df,missing_cutoff = 0.8,cv_cutoff = NULL,
 # Cluster variables according to DIFAcTO pipeline.
 # If optimize_corr = T, this will override the manual corr_cutoff. Correlation
 # cutoff should be optimized for all assays, but does not need to be run every time.
-corr_cluster = function(df,parallel_ratio = 0.5,
+corr_cluster = function(df,parallel_ratio = 0.5,folds = 5,
                         outcome = "y",id_cols = c("id","ID","time"),
                         optimize_corr = T, corr_cutoff = NULL,
                         heatmap = T,heatmap_params = list(show_rownames = T,show_colnames = T),
@@ -92,6 +92,7 @@ corr_cluster = function(df,parallel_ratio = 0.5,
       groups_cor = split(unique(as.vector(check_cor)), clusters(graph_cor)$membership)
       groups = lapply(groups_cor,FUN=function(list_cor){rownames(var_cor)[list_cor]})
       # Find highest correlation within each group
+      # Use logistic model estimate instead of correlation
       best_cor = lapply(groups, function(g){
         assocs = lapply(g, function(v){
           form = as.formula(paste0(outcome,"~",v))
@@ -105,7 +106,7 @@ corr_cluster = function(df,parallel_ratio = 0.5,
       if(length(best_cor)>0){
         # CV with caret
         set.seed(1017)
-        cv = trainControl(method = "LOOCV")
+        cv = trainControl(method = "cv",number = folds)
         # Model
         form = as.formula(paste0(outcome,"~",paste0(best_cor,collapse = "+")))
         # Parallel
@@ -149,7 +150,6 @@ corr_cluster = function(df,parallel_ratio = 0.5,
     heat = do.call(pheatmap,heatmap_params)
   }
   if(network){
-    check_cor = which(abs(var_cor) >= opt_r, arr.ind=TRUE)
     # Interactive plot
     int_plot_df = check_cor
     int_plot_df[,1] = rownames(corr_mat)[int_plot_df[,1]]
@@ -287,7 +287,7 @@ In addition to the selected variables from the 'omics assays above, all variable
 ```{r}
 # All variables selected above
 lasso_vars = c("ascorbic_acid",carotenoids_best$best,"cholesterol",
-               fa_best$best,metab_best$best,
+               fa_best$best,metab_best$best,transcript_best$best,
                "height_cm","weight_kg","agemos",negative_best$best,positive_best$best,
                "alphatocopherol","gammatocopherol","vitamin_d")
 # lasso_vars = c(lasso_vars,transcript_best)
@@ -333,19 +333,15 @@ kable(rownames(coef(mod))[which(coef(mod) != 0)],col.names = "Selected variables
 4. Due to missing data problems, an elasticnet was run for each assay separately. 
 
 ```{r elasticnet function}
-elastic = function(df,folds = 10,
-                   outcome = "y",id_cols = c("id","ID","time")){
+elastic = function(df,folds = 5,outcome = "y",id_cols = c("id","ID","time")){
+  # Remove missing
   df = df[complete.cases(df),]
-  # Model matrices
-  pred = colnames(df)[which(!(colnames(df) %in% c(outcome,id_cols)))]
-  X = data.matrix(df[,pred])
-  Y = data.matrix(df[,outcome])
-  # CV 
+  # Predictors
+  pred = setdiff(colnames(df),c(id_cols,outcome))
+  # CV
   set.seed(1017)
-  cv = cv.glmnet(X,Y,nfolds = folds,alpha = 0.5,family = "binomial")
-  # Biggest model 
-  # l = cv$lambda[max(which(cv$cvm <= min(cv$cvm) + sd(cv$cvm)))]
-  coefs = coef(cv,s = "lambda.min")
+  cv = cv.glmnet(x = data.matrix(df[,pred]),y = data.matrix(df[,outcome]),nfolds = folds)
+  coefs = coef(mod,s0 = "lambda.min")
   selected = rownames(coefs)[which(coefs != 0 & rownames(coefs) != "(Intercept)")]
   return(selected)
 }
