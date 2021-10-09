@@ -7,7 +7,7 @@ D[1, 1] <- 1 ### variance random intercept
 D[2, 2] <- 1 ### variance random slope
 D[1, 2] <- -0.1 ### covariance random intercept and slope
 D[2, 1] <- -0.1
-delta <- 0.28 ### standardized effect size
+delta <- 0.33 ### standardized effect size
 
 age1 <- c(30, 32.5) ### age stages of measurement cohort 1
 age2 <- c(32.5, 35) ### age stages of measurement cohort 2
@@ -72,7 +72,12 @@ V11 <- Z11 %*% D %*% t(Z11) + var.e * I11 ### covariance matrix of responses coh
 I12 <- diag(length(age12)) 
 V12 <- Z12 %*% D %*% t(Z12) + var.e * I12 ### covariance matrix of responses cohort 12
 
+##################
+### alpha=0.05 ###
+##################
+
 ### calculate and plot power as a function of the total number of subjects
+
 plot.new()
 nr.subjects <- c(204)
 power <- rep(0, length(nr.subjects))
@@ -108,3 +113,47 @@ for(ii in 1:length(nr.measurements)) {
   power[ii] <- pnorm((delta  * sqrt(D[2, 2]))/sqrt(var.beta[2, 2])- qnorm(0.975))
 }
 plot(nr.measurements, power, type = "l", ylim=c(0,1))
+
+####################
+### alpha=0.0125 ###
+####################
+
+### calculate and plot power as a function of the total number of subjects
+
+plot.new()
+nr.subjects <- c(255)
+power <- rep(0, length(nr.subjects))
+for(ii in 1:length(nr.subjects)) {
+  XVX <- ((t(X1) %*% solve(V1) %*% X1 
+           + t(X2) %*%solve(V2) %*% X2
+           + t(X3) %*% solve(V3) %*% X3 
+           + t(X4) %*% solve(V4) %*% X4
+           + t(X5) %*% solve(V5) %*% X5
+           + t(X6) %*% solve(V6) %*% X6
+           + t(X7) %*% solve(V7) %*% X7
+           + t(X8) %*% solve(V8) %*% X8
+           + t(X9) %*% solve(V9) %*% X9
+           + t(X10) %*% solve(V10) %*% X10
+           + t(X11) %*% solve(V11) %*% X11
+           + t(X12) %*% solve(V12) %*% X12           ) 
+          * nr.subjects[ii])/nr.cohorts
+  var.beta <- solve(XVX)
+  power[ii] <- pnorm((delta * sqrt(D[2, 2]))/sqrt(var.beta[2, 2])- qnorm(0.99375))
+}
+plot(nr.subjects, power, type = "l", ylim=c(0,1))
+temp <- cbind(nr.subjects,power)
+print(temp)
+
+### calculate and plot power as a function of the total number of measurements
+nr.measurements <- c(50, 100, 150, 200, 250, 300, 350, 400, 450, 500)
+nr.subjects <- nr.measurements/(length(c(age1, age2, age3))/nr.cohorts)
+power <- rep(0, length(nr.measurements))
+for(ii in 1:length(nr.measurements)) {
+  XVX <- ((t(X1) %*% solve(V1) %*% X1 + t(X2) %*%solve(V2) %*% X2
+           + t(X3) %*% solve(V3) %*% X3 + t(X4) %*% solve(V4) %*% X4) * nr.subjects[ii])/nr.cohorts
+  var.beta <- solve(XVX)
+  power[ii] <- pnorm((delta  * sqrt(D[2, 2]))/sqrt(var.beta[2, 2])- qnorm(0.99375))
+}
+plot(nr.measurements, power, type = "l", ylim=c(0,1))
+
+
