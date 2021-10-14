@@ -19,6 +19,7 @@ library(knitr)
 library(DT)
 library(naniar)
 library(glmnet)
+library(glinternet)
 library(broom)
 library(pROC)
 knitr::opts_chunk$set(echo = FALSE)
@@ -58,7 +59,8 @@ data$race = factor(data$race)
 levels(data$race) = c("Non-White","Non-White","Non-White","Non-White","Non-White",
                       "Non-White","Non-White","Unknown","Non-White","Non-White",
                       "Non-White","Unknown","Unknown","Non-White",
-                      "Non-Hispanic White","Non-White")
+                      "Non-Hispanic White","Unknown")
+data$race = relevel(data$race,ref = "Non-Hispanic White")
 # Survey scoring
 # INSPIRE
 data$inspire_child = 
@@ -129,8 +131,10 @@ write.csv(df,file = "./Data_Cleaned/ciq_cleaned.csv",row.names = F)
 Race and ethnicity were combined into a single field (non-Hispanic White vs. non-White). Success was defined as TIR $\geq70%$ after 12 months (or 9 months if missing 12 month data).
 
 ```{r results='asis'}
-t1_form = as.formula(paste0("success~",paste0(colnames(df)[2:ncol(df)],collapse = "+")))
-t1_form = update(t1_form,.~. -success)
+t1_form = as.formula("success ~ hba1c + age + t1d_dur + sex + fe(race) + insurance + cgm_hx + 
+    pump_hx + m1_sensor_wear + m1_sensor_70_180 + m1_dailybolus + 
+    m1_dailymealbolus + m1_time_am + inspire + paid + hfs_worry_low_bg + 
+    hfs_worry_social + success")
 t1 = tableby(t1_form,df)
 summary(t1)
 ```
@@ -144,18 +148,37 @@ vis_miss(df)
 gg_miss_upset(df)
 ```
 
-# Elasticnet variable selection
+# Lasso variable selection
 
 ```{r}
 set.seed(1017)
 lasso_df = df[complete.cases(df),]
 outcome = "success"
 predictors = colnames(lasso_df)[which(!colnames(lasso_df) %in% c("record_id","success"))]
-cv = cv.glmnet(x = data.matrix(lasso_df[,predictors]),
-               y = data.matrix(lasso_df[,outcome]),alpha = 0.5)
+# Get number of levels in each factor
+nlev = sapply(lasso_df[,predictors],nlevels)
+nlev[nlev == 0] = 1
+# Convert to numeric
+lasso_df$success = as.numeric(lasso_df$success) - 1
+lasso_df[,predictors] = data.matrix(lasso_df[,predictors])
+lasso_df[,predictors[which(nlev>1)]] = lasso_df[,predictors[which(nlev>1)]] - 1
+# CV
+cv = glinternet.cv(X = data.matrix(lasso_df[,predictors]),
+                   Y = data.matrix(lasso_df[,outcome]),
+                   numLevels = nlev,family = "binomial")
+# Re-fit
+# Minimum
+min_mod = glinternet.cv(X = data.matrix(lasso_df[,predictors]),
+                   Y = data.matrix(lasso_df[,outcome]),
+                   numLevels = nlev,nFolds = 5,
+                   family = "binomial",lambda = cv$lambdaHat)
+# Within 1 SE
+se_mod = glinternet.cv(X = data.matrix(lasso_df[,predictors]),
+                   Y = data.matrix(lasso_df[,outcome]),
+                   numLevels = nlev,family = "binomial",lambda = cv$lambdaHat1Std)
 ```
 
-Elasticnet (a variation of the lasso) parameter $\lambda$ was selected based on 5-fold cross validation. There are two recommended ways to looks at lasso/elasticnet selection: picking the model with the lowest CV error, or the smallest model with CV error within 1 standard deviation of the minimum.
+The group-lasso parameter $\lambda$ was selected based on 5-fold cross validation. There are two recommended ways to look at lasso selection: picking the model with the lowest CV error, or the smallest model with CV error within 1 standard deviation of the minimum.
 
 Variables included in the selection process were: `r paste(predictors,collapse=", ")`.
 
@@ -164,37 +187,25 @@ Variables included in the selection process were: `r paste(predictors,collapse="
 The smallest possible model with reasonable CV error includes:
 
 ```{r}
-selected = coef(cv,s = "lambda.1se")
-selected = rownames(selected)[which(selected != 0 & rownames(selected) != "(Intercept)")]
-kable(selected,col.names = "Selected Variable(s)")
+c = coef(se_mod)
+main = c(c$mainEffects$cat,c$mainEffects$cont)
+kable(predictors[main],row.names = F,col.names = "Selected")
 ```
-
-### Plot and Coefficients
-
-```{r}
-form = as.formula(paste0("success~",paste0(selected,collapse = "+")))
-mod = glm(form,data = df,family = "binomial")
-r = roc(mod$y,predict(mod),quiet = T)
-plot.roc(r,plot = T,legacy.axes = T,print.auc = T)
-kable(tidy(mod,exponentiate = T),digits = 3)
-```
-
-This model was fit using `r nobs(mod)` observations.
 
 ## Best model 
 
 The model with the lowest CV error includes:
 
 ```{r}
-selected = coef(cv,s = "lambda.min")
-selected = rownames(selected)[which(selected != 0 & rownames(selected) != "(Intercept)")]
-kable(selected,col.names = "Selected Variable(s)")
+c = coef(min_mod)
+main = c(c$mainEffects$cat,c$mainEffects$cont)
+kable(predictors[main],row.names = F,col.names = "Selected")
 ```
 
 ### ROC and Coefficients
 
 ```{r}
-form = as.formula(paste0("success~",paste0(selected,collapse = "+")))
+form = as.formula(paste0("success~",paste0(predictors[main],collapse = "+")))
 mod = glm(form,data = df,family = "binomial")
 r = roc(mod$y,predict(mod),quiet = T)
 plot.roc(r,plot = T,legacy.axes = T,print.auc = T)
