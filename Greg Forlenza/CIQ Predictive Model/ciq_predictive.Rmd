@@ -196,12 +196,14 @@ df[,c("inspire","paid","hfs_worry_low_bg","hfs_worry_social","hfs_maintain")] =
 # Clean up workspace
 rm(list = ls()[-which(ls() == "df")])
 # Write cleaned data
-write.csv(df,file = "./Data_Cleaned/ciq_cleaned.csv",row.names = F)
+write.csv(df,file = "./Data_Cleaned/ciq_cleaned.csv",row.names = F,na = "")
 ```
 
 # Table 1: Participant Characteristics
 
-Race and ethnicity were combined into a single field (non-Hispanic White vs. non-White). Success was defined as TIR $\geq$ 70% after 12 months (or 9 months if missing 12 month data). CIQ variables (sensor wear, time in CL, etc.) are at month 1, and all other variables are from baseline. Partcipants under age 7 at baseline were excluded from all analyses.
+Race and ethnicity were combined into a single field (non-Hispanic White vs. non-White). Success was defined as TIR $\geq$ 70% after 12 months (or 9 months if missing 12 month data). CIQ variables (sensor wear, time in CL, etc.) are at month 1, and all other variables are from baseline. 
+
+For participants who were under age 7 at baseline, parent survey scores were used instead. Because some surveys have different ranges for subscale scores, all scores were Z-transformed prior to analysis.
 
 ```{r results='asis'}
 t1_form = as.formula("success ~ hba1c + age + t1d_dur + sex + fe(race) + 
@@ -221,15 +223,6 @@ summary(t1,labelTranslations =
                hfs_maintain = "HFS Maintain High BG"))
 ```
 
-# Missing data
-
-A large proportion of the participants were missing data, so only 45 participants were included in the elasticnet (a variation of the lasso) model selection process.
-
-```{r}
-vis_miss(df)
-gg_miss_upset(df)
-```
-
 # Elasticnet variable selection
 
 ```{r}
@@ -246,9 +239,15 @@ cv = cv.glmnet(x = data.matrix(lasso_df[,predictors]),
                nfolds = 5,family = "binomial",type.measure = "auc")
 ```
 
-The elasticnet parameter $\lambda$ was selected based on 5-fold cross validation. There are two recommended ways to look at lasso/elasticnet selection: picking the model with the absolute lowest CV error, or the smallest model with CV error within 1 standard deviation of the minimum.
+The elasticnet parameter $\lambda$ was selected based on 5-fold cross validation. There are two recommended ways to look at lasso/elasticnet selection: picking the model with the absolute highest AUC, or the smallest model with CV error within 1 standard deviation of the minimum.
 
 Variables included in the selection process were: `r paste(predictors,collapse=", ")`.
+
+## AUC by $\lambda$ plot
+
+```{r}
+plot(cv)
+```
 
 ## Smallest model 
 
@@ -272,15 +271,31 @@ kable(tidy(mod,exponentiate = T),digits = 4)
 
 This model was fit using `r nobs(mod)` observations.
 
-## Best model 
+## Smallest model plus daily meal boluses 
 
-The model with the lowest CV error includes:
+### ROC and Coefficients
+
+```{r}
+form = as.formula(paste0("success~",paste0(c(selected,"m1_dailymealbolus"),collapse = "+")))
+mod = glm(form,data = df,family = "binomial")
+r = roc(mod$y,predict(mod),quiet = T)
+plot.roc(r,legacy.axes = T,print.auc = T)
+kable(tidy(mod,exponentiate = T),digits = 4)
+```
+
+This model was fit using `r nobs(mod)` observations. Adding daily meal boluses does not improve AUC much, but it is statistically significant even after adjusting for TIR.
+
+## "Best" model by AUC
+
+The model with the highest AUC includes:
 
 ```{r}
 selected = coef(cv,s = "lambda.min")
 selected = rownames(selected)[which(selected != 0 & rownames(selected) != "(Intercept)")]
 kable(selected,col.names = "Selected Variable(s)")
 ```
+
+This a result of overfitting due to the inclusion of too many predictor variables. By including a large number of predictors, it is possible to perfectly predict the outcome in the subset of participants with complete data. This model should not be used because it did not converge (due to fitted probabilities exactly 0 or 1), and would likely not perform well in an external validation cohort anyway.
 
 ### ROC and Coefficients
 
