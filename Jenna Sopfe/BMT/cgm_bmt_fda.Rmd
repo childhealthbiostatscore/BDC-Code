@@ -17,7 +17,7 @@ library(plotly)
 library(lcmm)
 library(fda)
 library(knitr)
-knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(echo = FALSE,cache = TRUE)
 home_dir = 
   ifelse(.Platform$OS.type != "unix",
          "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/CGM Accuracy in BMT/",
@@ -74,28 +74,28 @@ ggplotly(tx_plot)
 
 ```{r}
 traj = function(df,n_class=NULL){
-  # Data for predictions
-  new_df = data.frame("time_from_tx" = seq(min(df$time_from_tx,na.rm = T),max(df$time_from_tx,na.rm = t)))
   # Base model (one class)
-  m1 = hlme(Historic_Glucose ~ time_from_tx,subject = 'SubjectID',
+  m = hlme(Historic_Glucose ~ poly(time_from_tx,2),subject = 'SubjectID',
             data=df,ng = 1,verbose = FALSE)
+  assign("m1",m,envir = globalenv())
   # Increase number of classes
   if(is.null(n_class)){n_class = length(unique(df$SubjectID))}
   for (c in 2:n_class) {
-    m = hlme(Historic_Glucose ~ time_from_tx,mixture = ~time_from_tx,
+    m = hlme(Historic_Glucose ~ poly(time_from_tx,2),mixture = ~poly(time_from_tx,2),
              subject = 'SubjectID',data=df, ng = c,B = m1,verbose = FALSE)
     assign(paste0("m",c),m,envir = globalenv())
-    assign(paste0("p",c),predictY(m,new_df,var.time = "time_from_tx"),envir = globalenv())
   }
   # Print model metrics
-  do.call(summaryplot,mget(paste0("m",1:n_class)))
+  do.call(summaryplot,mget(paste0("m",1:n_class),envir = globalenv()))
 }
-plot_traj = function(pred_obj,n_class=5){
-  plot_df = data.frame(pred_obj$times,pred_obj$pred)
-  plot_df = plot_df %>% pivot_longer(-time_from_tx)
+plot_traj = function(model_obj,df){
+  plot_df = predictY(model_obj,df,var.time = "time_from_tx")
+  plot_df = data.frame(cbind(df$SubjectID,df$Historic_Glucose,plot_df$times,plot_df$pred))
+  plot_df = plot_df %>% pivot_longer(starts_with("Ypred_"))
   plot_df$name = sub("Ypred_","",plot_df$name)
-  ggplot(plot_df,aes(x = time_from_tx,y = value,color = name)) + 
-    geom_line() + 
+  ggplot(plot_df,aes(x = time_from_tx,y = value)) + 
+    geom_line(aes(color = name)) + 
+    geom_point(aes(x = time_from_tx,y = df.Historic_Glucose),shape = ".") + 
     xlab("Time from Tx") + ylab("Sensor Glucose") +
     theme_bw() + theme(legend.title = element_blank())
 }
@@ -108,11 +108,12 @@ For BIC and ICL, lower is better. For entropy, closer to 1 is better.
 ### One day after Tx
 
 ```{r}
-traj(cgm[cgm$time_from_tx >=0 & cgm$time_from_tx <= 1440,])
+t = cgm[cgm$time_from_tx >=0 & cgm$time_from_tx <= 1440,]
+traj(t,n_class = 5)
 ```
 
 ```{r}
-plot_traj(p3)
+plot_traj(m4,t)
 ```
 
 ```{r efpc,eval=FALSE}
