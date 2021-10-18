@@ -13,6 +13,9 @@ output:
 ```{r setup, include=FALSE}
 library(tidyverse)
 library(lubridate)
+library(plotly)
+library(lcmm)
+library(fda)
 knitr::opts_chunk$set(echo = FALSE)
 home_dir = ifelse(.Platform$OS.type != "unix",
                   "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/CGM Accuracy in BMT/",
@@ -25,10 +28,115 @@ knitr::opts_knit$set(root.dir = home_dir)
 cgm = read.csv("./Data_Cleaned/Prospective HSCT CGM Data Updated 6.24.19 FULL DATA SET.csv",
                na.strings = "")
 cgm$Time = mdy_hm(cgm$Time)
-cgm$numeric_time = hour(cgm$Time) + minute(cgm$Time)/60
-# First CGM wear only
-first_cgm = 
-  cgm[cgm$SensorNum == 1,c("SubjectID","numeric_time","dx_cat","tx_type","Historic_Glucose")]
-# Wide format
-t = first_cgm %>% pivot_wider(names_from = numeric_time,values_from = Historic_Glucose)
+cgm$Tx_date = mdy(cgm$Tx_date)
+cgm$dx_cat = factor(cgm$dx_cat)
+cgm$tx_type = factor(cgm$tx_type)
+# Convert to time since transplant
+cgm$time_from_tx = as.numeric(difftime(cgm$Time,cgm$Tx_date,units = "mins"))
+```
+
+# Plots
+
+## Colored by ID
+
+```{r}
+all_plot = ggplot(cgm,aes(x = time_from_tx,y = Historic_Glucose,color = SubjectID)) + 
+  geom_line(alpha = 0.2) + 
+  xlab("Minutes from Transplant") + ylab("Sensor Glucose (mg/dL)") +
+  theme_bw() + 
+  theme(legend.position = "none")
+ggplotly(all_plot)
+```
+
+## Colored by Dx Category
+
+```{r}
+dx_plot = ggplot(cgm,aes(x = time_from_tx,y = Historic_Glucose,color = dx_cat)) + 
+  geom_line(alpha = 0.2) + 
+  xlab("Minutes from Transplant") + ylab("Sensor Glucose (mg/dL)") +
+  theme_bw()
+ggplotly(dx_plot)
+```
+
+## Colored by Tx Type
+
+```{r}
+tx_plot = ggplot(cgm,aes(x = time_from_tx,y = Historic_Glucose,color = tx_type)) + 
+  geom_line(alpha = 0.2) + 
+  xlab("Minutes from Transplant") + ylab("Sensor Glucose (mg/dL)") +
+  theme_bw()
+ggplotly(tx_plot)
+```
+
+# Latent class analysis
+
+```{r cache=TRUE}
+m1 <- hlme(Historic_Glucose ~ time_from_tx,subject = 'SensorNum',data=cgm,ng = 1)
+m2 <- gridsearch(hlme(Historic_Glucose ~ 1,subject = 'ID',data=cgm, ng = 1),
+                 rep=100,maxiter=30,minit = m1,parallel = 6)
+```
+
+# Functional Analysis
+
+## Principal Components
+
+```{r efpc}
+# Each column is a participant
+y_mat = cgm %>% select(SubjectID,time_from_tx,Historic_Glucose) %>% 
+  pivot_wider(names_from = SubjectID,names_prefix = "ID",
+              values_from = Historic_Glucose) %>% 
+  select(-time_from_tx) %>% data.matrix(.)
+# B splines
+basis = 
+  create.bspline.basis(rangeval = c(min(cgm$time_from_tx),max(cgm$time_from_tx)),
+                       nbasis = 5)
+# FD
+W.fd=smooth.basis(y=y_mat, fdParobj=basis)
+```
+
+```{r}
+N=50
+W.mat=matrix(0, ncol=N, nrow=10000)
+for(n in 1:N){W.mat[, n]=cumsum(rnorm(10000))/100}
+B25.basis=create.bspline.basis(rangeval=c(0,10000), nbasis=25)
+W.fd=smooth.basis(y=W.mat, fdParobj=B25.basis)
+W.pca = pca.fd(W.fd$fd, nharm=4)
+plot(W.pca$harmonics, lwd=3)
+```
+
+```{r}
+# Function to simulate data
+fake_curves <- function(n_curves = 100, n_points = 80, max_time = 100){
+  ID <- 1:n_curves
+  x <- vector(mode = "list", length = n_curves)
+  t <- vector(mode = "list", length = n_curves)
+  
+  for (i in 1:n_curves){
+    t[i] <- list(sort(runif(n_points,0,max_time)))
+    x[i] <- list(cumsum(rnorm(n_points)) / sqrt(n_points))
+  }
+  df <- tibble(ID,t,x)
+  names(df) <- c("ID", "Time", "Curve")
+  return(df)
+}
+set.seed(123)
+n_curves <- 40
+n_points <- 80
+max_time <- 100
+df <- fake_curves(n_curves = n_curves,n_points = n_points, max_time = max_time)
+df_1 <- df %>% select(!c(ID,Curve)) %>% unnest_longer(Time) 
+df_2 <- df %>% select(!c(ID,Time)) %>% unnest_longer(Curve)
+ID <- sort(rep(1:n_curves,n_points))
+df_l <- cbind(ID,df_1,df_2)
+p <- ggplot(df_l, aes(x = Time, y = Curve, group = ID, col = ID)) +
+      geom_line()
+knots    = c(seq(0,max_time,5)) #Location of knots
+n_knots   = length(knots) #Number of knots
+n_order   = 4 # order of basis functions: for cubic b-splines: order = 3 + 1
+n_basis   = length(knots) + n_order - 2;
+basis = create.bspline.basis(rangeval = c(0,max_time), n_basis)
+argvals <- matrix(df_l$Time, nrow = n_points, ncol = n_curves)
+y_mat <- matrix(df_l$Curve, nrow = n_points, ncol = n_curves)
+
+W.obj <- Data2fd(argvals = argvals, y = y_mat, basisobj = basis, lambda = 0.5)
 ```
