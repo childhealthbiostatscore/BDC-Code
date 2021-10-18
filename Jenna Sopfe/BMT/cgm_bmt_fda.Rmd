@@ -16,10 +16,12 @@ library(lubridate)
 library(plotly)
 library(lcmm)
 library(fda)
+library(knitr)
 knitr::opts_chunk$set(echo = FALSE)
-home_dir = ifelse(.Platform$OS.type != "unix",
-                  "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/CGM Accuracy in BMT/",
-                  "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/CGM Accuracy in BMT/")
+home_dir = 
+  ifelse(.Platform$OS.type != "unix",
+         "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/CGM Accuracy in BMT/",
+         "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/CGM Accuracy in BMT/")
 knitr::opts_knit$set(root.dir = home_dir)
 ```
 
@@ -40,7 +42,7 @@ cgm$time_from_tx = as.numeric(difftime(cgm$Time,cgm$Tx_date,units = "mins"))
 ## Colored by ID
 
 ```{r}
-all_plot = ggplot(cgm,aes(x = time_from_tx,y = Historic_Glucose,color = SubjectID)) + 
+all_plot = ggplot(cgm,aes(x = time_from_tx,y = Historic_Glucose,color = factor(SubjectID))) + 
   geom_line(alpha = 0.2) + 
   xlab("Minutes from Transplant") + ylab("Sensor Glucose (mg/dL)") +
   theme_bw() + 
@@ -70,17 +72,50 @@ ggplotly(tx_plot)
 
 # Latent class analysis
 
-```{r cache=TRUE}
-m1 <- hlme(Historic_Glucose ~ time_from_tx,subject = 'SensorNum',data=cgm,ng = 1)
-m2 <- gridsearch(hlme(Historic_Glucose ~ 1,subject = 'ID',data=cgm, ng = 1),
-                 rep=100,maxiter=30,minit = m1,parallel = 6)
+```{r}
+traj = function(df,n_class=NULL){
+  # Data for predictions
+  new_df = data.frame("time_from_tx" = seq(min(df$time_from_tx,na.rm = T),max(df$time_from_tx,na.rm = t)))
+  # Base model (one class)
+  m1 = hlme(Historic_Glucose ~ time_from_tx,subject = 'SubjectID',
+            data=df,ng = 1,verbose = FALSE)
+  # Increase number of classes
+  if(is.null(n_class)){n_class = length(unique(df$SubjectID))}
+  for (c in 2:n_class) {
+    m = hlme(Historic_Glucose ~ time_from_tx,mixture = ~time_from_tx,
+             subject = 'SubjectID',data=df, ng = c,B = m1,verbose = FALSE)
+    assign(paste0("m",c),m,envir = globalenv())
+    assign(paste0("p",c),predictY(m,new_df,var.time = "time_from_tx"),envir = globalenv())
+  }
+  # Print model metrics
+  do.call(summaryplot,mget(paste0("m",1:n_class)))
+}
+plot_traj = function(pred_obj,n_class=5){
+  plot_df = data.frame(pred_obj$times,pred_obj$pred)
+  plot_df = plot_df %>% pivot_longer(-time_from_tx)
+  plot_df$name = sub("Ypred_","",plot_df$name)
+  ggplot(plot_df,aes(x = time_from_tx,y = value,color = name)) + 
+    geom_line() + 
+    xlab("Time from Tx") + ylab("Sensor Glucose") +
+    theme_bw() + theme(legend.title = element_blank())
+}
 ```
 
-# Functional Analysis
+## Model metrics by number of classes
 
-## Principal Components
+For BIC and ICL, lower is better. For entropy, closer to 1 is better.
 
-```{r efpc}
+### One day after Tx
+
+```{r}
+traj(cgm[cgm$time_from_tx >=0 & cgm$time_from_tx <= 1440,])
+```
+
+```{r}
+plot_traj(p3)
+```
+
+```{r efpc,eval=FALSE}
 # Each column is a participant
 y_mat = cgm %>% select(SubjectID,time_from_tx,Historic_Glucose) %>% 
   pivot_wider(names_from = SubjectID,names_prefix = "ID",
@@ -92,51 +127,4 @@ basis =
                        nbasis = 5)
 # FD
 W.fd=smooth.basis(y=y_mat, fdParobj=basis)
-```
-
-```{r}
-N=50
-W.mat=matrix(0, ncol=N, nrow=10000)
-for(n in 1:N){W.mat[, n]=cumsum(rnorm(10000))/100}
-B25.basis=create.bspline.basis(rangeval=c(0,10000), nbasis=25)
-W.fd=smooth.basis(y=W.mat, fdParobj=B25.basis)
-W.pca = pca.fd(W.fd$fd, nharm=4)
-plot(W.pca$harmonics, lwd=3)
-```
-
-```{r}
-# Function to simulate data
-fake_curves <- function(n_curves = 100, n_points = 80, max_time = 100){
-  ID <- 1:n_curves
-  x <- vector(mode = "list", length = n_curves)
-  t <- vector(mode = "list", length = n_curves)
-  
-  for (i in 1:n_curves){
-    t[i] <- list(sort(runif(n_points,0,max_time)))
-    x[i] <- list(cumsum(rnorm(n_points)) / sqrt(n_points))
-  }
-  df <- tibble(ID,t,x)
-  names(df) <- c("ID", "Time", "Curve")
-  return(df)
-}
-set.seed(123)
-n_curves <- 40
-n_points <- 80
-max_time <- 100
-df <- fake_curves(n_curves = n_curves,n_points = n_points, max_time = max_time)
-df_1 <- df %>% select(!c(ID,Curve)) %>% unnest_longer(Time) 
-df_2 <- df %>% select(!c(ID,Time)) %>% unnest_longer(Curve)
-ID <- sort(rep(1:n_curves,n_points))
-df_l <- cbind(ID,df_1,df_2)
-p <- ggplot(df_l, aes(x = Time, y = Curve, group = ID, col = ID)) +
-      geom_line()
-knots    = c(seq(0,max_time,5)) #Location of knots
-n_knots   = length(knots) #Number of knots
-n_order   = 4 # order of basis functions: for cubic b-splines: order = 3 + 1
-n_basis   = length(knots) + n_order - 2;
-basis = create.bspline.basis(rangeval = c(0,max_time), n_basis)
-argvals <- matrix(df_l$Time, nrow = n_points, ncol = n_curves)
-y_mat <- matrix(df_l$Curve, nrow = n_points, ncol = n_curves)
-
-W.obj <- Data2fd(argvals = argvals, y = y_mat, basisobj = basis, lambda = 0.5)
 ```
