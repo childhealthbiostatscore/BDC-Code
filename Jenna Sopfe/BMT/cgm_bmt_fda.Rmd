@@ -22,13 +22,13 @@ knitr::opts_chunk$set(echo = FALSE)
 home_dir = 
   ifelse(.Platform$OS.type != "unix",
          "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/",
-         "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/")
+         "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/")
 knitr::opts_knit$set(root.dir = home_dir)
 ```
 
 ```{r data import}
 # REDCap import
-api <- read.table("./Jenna Sopfe/api_token.txt",header = T,sep = "\t")
+api <- read.table("./api_token.txt",header = T,sep = "\t")
 rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
                          token = as.character(api[1,1]))
 data_full <- exportRecords(rcon)
@@ -41,7 +41,7 @@ datecols = c("time_engraft","time_plt_engraft")
 data_full[,datecols] <- lapply(data_full[,datecols],lubridate::ymd)
 data_full$study_id = as.numeric(data_full$study_id)
 # Clean
-cgm = read.csv("./Jenna Sopfe/CGM Accuracy in BMT/Data_Cleaned/Prospective HSCT CGM Data Updated 6.24.19 FULL DATA SET.csv",na.strings = "")
+cgm = read.csv("./CGM Accuracy in BMT/Data_Cleaned/Prospective HSCT CGM Data Updated 6.24.19 FULL DATA SET.csv",na.strings = "")
 cgm$Time = mdy_hm(cgm$Time)
 cgm$Tx_date = mdy(cgm$Tx_date)
 cgm$dx_cat = factor(cgm$dx_cat)
@@ -52,6 +52,18 @@ dates = data_full %>% select(study_id,all_of(datecols)) %>%
   filter(row_number() == 1)
 cgm = left_join(cgm,dates,by = c("SubjectID" = "study_id"))
 cgm$time_engraft_minus_3 = cgm$time_engraft - 3
+# Time since engraftment
+cgm$time_from_engraft = as.numeric(difftime(cgm$Time,cgm$time_engraft_minus_3,units = "mins"))
+# Wide format for SAS
+cgm_wide = cgm %>% filter(time_from_engraft >= 0 & time_from_engraft <= 8640) %>%
+  group_by(SubjectID) %>% mutate(n = row_number()) %>% 
+  select(SubjectID,tx_type,dx_cat,Historic_Glucose,time_from_engraft,n) %>%
+  pivot_wider(names_from = n,
+              values_from = c("Historic_Glucose","time_from_engraft")) %>%
+  filter(!is.na(tx_type) & !is.na(dx_cat)) %>% ungroup()
+# Write CSV for checking with SAS
+write.csv(cgm_wide,file = "./CGM and BMT FDA/Data_Cleaned/cleaned_for_traj.csv",
+          row.names = F,na = "")
 ```
 
 # Latent class analysis
@@ -89,8 +101,7 @@ plot_traj = function(model_obj,df){
 ## Time near engraftment
 
 ```{r}
-# Convert to time since transplant
-cgm$time = as.numeric(difftime(cgm$Time,cgm$time_engraft_minus_3,units = "days"))
+
 ```
 
 ### Two classes
