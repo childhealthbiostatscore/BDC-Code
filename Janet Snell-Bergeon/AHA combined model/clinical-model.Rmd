@@ -21,6 +21,7 @@ library(survival)
 library(performance)
 library(UpSetR)
 library(knitr)
+library(corrplot)
 
 home_dir = ifelse(.Platform$OS.type == "unix",
                   "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant",
@@ -436,6 +437,8 @@ prog_noint_coefs <- rownames(prog_noint_coefs)[prog_noint_coefs[,1]!=0]
 refit_mod = glm(CACprogV3_num ~ age+duration+bmi+onhypermeds+onlipidmeds+avediabp+avesystbp+ldl+
                   hdlc+tri+CKDepi+ac+insdoseperkg+hba1c+l45vsf+l45sqf+homo+pai1+UA+smknum+sex_0m1f,complete_lipidmeds_egdr_components,family = binomial("logit"))
 summary(refit_mod)
+prog_noint_coefs_sig <- as.matrix(summary(refit_mod)$coef)
+prog_noint_coefs_sig <- rownames(prog_noint_coefs_sig)[prog_noint_coefs_sig[,4]<0.05]
 ```
 
 ## LASSO with interactions
@@ -457,6 +460,28 @@ refit_mod_int = glm(CACprogV3_num ~ onhypermeds+onstatinmeds
                                 + age+duration+whr+avesystbp+hdlc+insdoseperkg+hba1c+l45vsf+homo+UA+bmi+fib
                                 + bmi*insdoseperkg + hba1c*fib,complete_statin_egdr_components,family = binomial("logit"))
 summary(refit_mod_int)
+```
+
+## LASSO of clinical variables, without interactions
+
+```{r, echo=FALSE, comment=""}
+set.seed(3654)
+# LASSO
+x <- as.matrix(subset(complete_lipidmeds_egdr_components,select=-c(CACprogV3_num,StudyID,crp,homo,pai1,fib,UA,whr,apob,l45vsf,l45sqf,pfatcm_v1)))
+glmmod1 <- glmnet(x, y=as.factor(complete_lipidmeds_egdr_components$CACprogV3_num), alpha=0.5, family="binomial")
+# find best value of lambda
+cv.glmmod <- cv.glmnet(x, y=complete_lipidmeds_egdr_components$CACprogV3_num, alpha=1)
+best.lambda <- cv.glmmod$lambda.min
+# coefficients at best lambda
+round(coef(glmmod1,s=cv.glmmod$lambda.min),4)
+```
+
+## GLM using clinical variables selected by LASSO
+
+```{r, echo=FALSE, comment=""}
+refit_mod = glm(CACprogV3_num ~ age+duration+bmi+onhypermeds+onlipidmeds+avediabp+avesystbp+ldl+
+                  hdlc+tri+CKDepi+insdoseperkg+hba1c+smknum+sex_0m1f,complete_lipidmeds_egdr_components,family = binomial("logit"))
+summary(refit_mod)
 ```
 
 # LASSO for change in CAC per year using statins and A1c, WHR, onhypermeds
@@ -528,6 +553,9 @@ refit_mod = glm(cac_change_per_yr ~ age+duration+bmi+whr+onhypermeds+onlipidmeds
                   ac+insdoseperkg+hba1c+l45vsf+l45sqf+apob+crp+fib+homo+pai1+UA+pfatcm_v1+smknum+sex_0m1f,
                 complete_lipidmeds_egdr_components_ccc,family = "gaussian")
 summary(refit_mod)
+
+cac_noint_coefs_sig <- as.matrix(summary(refit_mod)$coef)
+cac_noint_coefs_sig <- rownames(cac_noint_coefs_sig)[cac_noint_coefs_sig[,4]<0.05]
 ```
 
 ## LASSO with interactions
@@ -547,6 +575,29 @@ cac_int_coefs <- as.matrix(coef(glmmod1,s=cv.glmmod$lambda.min),4)
 refit_mod = glm(cac_change_per_yr ~ onhypermeds+onlipidmeds+
                   age+duration+whr+hdlc+CKDepi+hba1c+l45vsf+l45sqf+UA+avesystbp+crp+avediabp+pfatcm_v1+homo+
                   age*avesystbp+duration*whr+duration*ldl+duration*l45sqf+duration*UA+whr*crp+avediabp*hdlc+hdlc*pfatcm_v1+hba1c*homo+onlipidmeds*homo,
+                complete_lipidmeds_egdr_components_ccc,family = "gaussian")
+summary(refit_mod)
+```
+
+## LASSO of clinical variables, without interactions
+
+```{r, echo=FALSE, comment=""}
+set.seed(3654)
+# LASSO
+x <- as.matrix(subset(complete_lipidmeds_egdr_components_ccc,select=-c(cac_change_per_yr,StudyID,crp,homo,pai1,fib,UA,whr,apob,l45vsf,l45sqf,pfatcm_v1)))
+glmmod1 <- glmnet(x, y=complete_lipidmeds_egdr_components_ccc$cac_change_per_yr, alpha=0.5, family="gaussian")
+# find best value of lambda
+cv.glmmod <- cv.glmnet(x, y=complete_lipidmeds_egdr_components_ccc$cac_change_per_yr, alpha=1)
+best.lambda <- cv.glmmod$lambda.min
+# coefficients at best lambda
+round(coef(glmmod1,s=cv.glmmod$lambda.min),4)
+```
+
+## GLM using clinical variables selected by LASSO
+
+```{r, echo=FALSE, comment=""}
+refit_mod = glm(cac_change_per_yr ~ age+duration+onhypermeds+onlipidmeds+avediabp+avesystbp+ldl+hdlc+CKDepi+
+                  ac+insdoseperkg+hba1c+smknum+sex_0m1f,
                 complete_lipidmeds_egdr_components_ccc,family = "gaussian")
 summary(refit_mod)
 ```
@@ -593,6 +644,28 @@ death_coefs <- rownames(death_coefs)[death_coefs[,1]!=0]
 
 ```{r, echo=FALSE, comment=""}
 c <- coxph(Surv(PersonYrsDeath,death) ~ age + onhypermeds + onlipidmeds + avesystbp + hdlc + tri + CKDepi + hba1c + l45vsf + apob + pai1 + UA + smknum, 
+           data=complete_lipidmeds_egdr_components_death)
+c
+death_coefs_sig <- as.matrix(summary(c)$coef)
+death_coefs_sig <- rownames(death_coefs_sig)[death_coefs_sig[,5]<0.05]
+```
+
+## LASSO of clinical variables, without interactions
+
+```{r, echo=FALSE, comment=""}
+set.seed(3654)
+Y <- complete_lipidmeds_egdr_components_death[,c("death","PersonYrsDeath")]
+X <- complete_lipidmeds_egdr_components_death %>% select(-c("StudyID","PersonYrsDeath","death","crp","homo","pai1","fib","UA","whr","apob","l45vsf","l45sqf","pfatcm_v1"))
+S <- Surv(time = Y$PersonYrsDeath, event = Y$death)
+cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
+# coefficients at best lambda
+round(coef(cv.fit,s=cv.fit$lambda.min),4)
+```
+
+## Cox model using clinical variables selected by LASSO
+
+```{r, echo=FALSE, comment=""}
+c <- coxph(Surv(PersonYrsDeath,death) ~ age + onhypermeds + onlipidmeds + ldl + tri + CKDepi + hba1c + smknum, 
            data=complete_lipidmeds_egdr_components_death)
 c
 ```
@@ -643,6 +716,28 @@ c <- coxph(Surv(PersonYrsCAD,CAD) ~ age + duration + whr + onhypermeds + onlipid
              insdoseperkg + hba1c + l45sqf +
              homo + pai1 + pfatcm_v1 + smknum + sex_0m1f, data=complete_lipidmeds_egdr_components_cad)
 c
+cad_coefs_sig <- as.matrix(summary(c)$coef)
+cad_coefs_sig <- rownames(cad_coefs_sig)[cad_coefs_sig[,5]<0.05]
+```
+
+## LASSO of clinical variables, without interactions
+
+```{r, echo=FALSE, comment=""}
+set.seed(3654)
+Y <- complete_lipidmeds_egdr_components_cad[,c("CAD","PersonYrsCAD")]
+X <- complete_lipidmeds_egdr_components_cad %>% select(-c("StudyID","PersonYrsCAD","CAD","crp","homo","pai1","fib","UA","whr","apob","l45vsf","l45sqf","pfatcm_v1"))
+S <- Surv(time = Y$PersonYrsCAD, event = Y$CAD)
+cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
+# coefficients at best lambda
+round(coef(cv.fit,s=cv.fit$lambda.min),4)
+```
+
+## Cox model using clinical variables selected by LASSO
+
+```{r, echo=FALSE, comment=""}
+c <- coxph(Surv(PersonYrsCAD,CAD) ~ age + duration + bmi + onhypermeds + onlipidmeds + avediabp + avesystbp + ldl + hdlc + tri + CKDepi + ac + 
+             insdoseperkg + hba1c + smknum , data=complete_lipidmeds_egdr_components_cad)
+c
 ```
 
 # Regularized Cox model for hard CAD without interactions, using statins and A1c, WHR, onhypermeds
@@ -686,6 +781,28 @@ hardcad_coefs <- rownames(hardcad_coefs)[hardcad_coefs[,1]!=0]
 
 ```{r, echo=FALSE, comment=""}
 c <- coxph(Surv(PersonYrsHardCAD,HardCAD) ~ onlipidmeds + homo + smknum, data=complete_lipidmeds_egdr_components_hardcad)
+c
+hardcad_coefs_sig <- as.matrix(summary(c)$coef)
+hardcad_coefs_sig <- rownames(hardcad_coefs_sig)[hardcad_coefs_sig[,5]<0.05]
+```
+
+## LASSO of clinical variables, without interactions
+
+```{r, echo=FALSE, comment=""}
+set.seed(3654)
+Y <- complete_lipidmeds_egdr_components_hardcad[,c("HardCAD","PersonYrsHardCAD")]
+X <- complete_lipidmeds_egdr_components_hardcad %>% select(-c("StudyID","PersonYrsHardCAD","HardCAD","crp","homo","pai1","fib","UA","whr","apob","l45vsf","l45sqf","pfatcm_v1"))
+S <- Surv(time = Y$PersonYrsHardCAD, event = Y$HardCAD)
+cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
+# coefficients at best lambda
+round(coef(cv.fit,s=cv.fit$lambda.min),4)
+```
+
+## Cox model using clinical variables selected by LASSO
+
+```{r, echo=FALSE, comment=""}
+c <- coxph(Surv(PersonYrsHardCAD,HardCAD) ~ duration + bmi + onhypermeds + onlipidmeds + ldl + hdlc + CKDepi + hba1c + 
+             smknum + sex_0m1f, data=complete_lipidmeds_egdr_components_hardcad)
 c
 ```
 
@@ -733,6 +850,28 @@ cvd_coefs <- rownames(cvd_coefs)[cvd_coefs[,1]!=0]
 c <- coxph(Surv(PersonYrsCVD,CVD) ~ age + duration + whr + onhypermeds + onlipidmeds + CKDepi + insdoseperkg + hba1c + 
              l45sqf + fib + homo + pai1 + pfatcm_v1 + smknum, data=complete_lipidmeds_egdr_components_cvd)
 summary(c)
+cvd_coefs_sig <- as.matrix(summary(c)$coef)
+cvd_coefs_sig <- rownames(cvd_coefs_sig)[cvd_coefs_sig[,5]<0.05]
+```
+
+## LASSO of clinical variables, without interactions
+
+```{r, echo=FALSE, comment=""}
+set.seed(3654)
+Y <- complete_lipidmeds_egdr_components_cvd[,c("CVD","PersonYrsCVD")]
+X <- complete_lipidmeds_egdr_components_cvd %>% select(-c("StudyID","PersonYrsCVD","CVD","crp","homo","pai1","fib","UA","whr","apob","l45vsf","l45sqf","pfatcm_v1"))
+S <- Surv(time = Y$PersonYrsCVD, event = Y$CVD)
+cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
+# coefficients at best lambda
+round(coef(cv.fit,s=cv.fit$lambda.min),4)
+```
+
+## Cox model using clinical variables selected by LASSO
+
+```{r, echo=FALSE, comment=""}
+c <- coxph(Surv(PersonYrsCVD,CVD) ~ age + duration + bmi + onhypermeds + onlipidmeds + avesystbp + hdlc + tri + CKDepi + insdoseperkg + hba1c + 
+             smknum, data=complete_lipidmeds_egdr_components_cvd)
+summary(c)
 ```
 
 # Regularized Cox model for hard CVD without interactions, using statins and A1c, WHR, onhypermeds
@@ -779,11 +918,36 @@ hardcvd_coefs <- rownames(hardcvd_coefs)[hardcvd_coefs[,1]!=0]
 c <- coxph(Surv(PersonYrsHardCVD,HardCVD) ~ duration + onlipidmeds + CKDepi + 
              apob + homo + smknum, data=complete_lipidmeds_egdr_components_hardcvd)
 c
+hardcvd_coefs_sig <- as.matrix(summary(c)$coef)
+hardcvd_coefs_sig <- rownames(hardcvd_coefs_sig)[hardcvd_coefs_sig[,5]<0.05]
+```
+
+## LASSO of clinical variables, without interactions
+
+```{r, echo=FALSE, comment=""}
+set.seed(3654)
+Y <- complete_lipidmeds_egdr_components_hardcvd[,c("HardCVD","PersonYrsHardCVD")]
+X <- complete_lipidmeds_egdr_components_hardcvd %>% select(-c("StudyID","PersonYrsHardCVD","HardCVD","crp","homo","pai1","fib","UA","whr","apob","l45vsf","l45sqf","pfatcm_v1"))
+S <- Surv(time = Y$PersonYrsHardCVD, event = Y$HardCVD)
+cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
+# coefficients at best lambda
+round(coef(cv.fit,s=cv.fit$lambda.min),4)
+```
+
+## Cox model using clinical variables selected by LASSO
+
+```{r, echo=FALSE, comment=""}
+c <- coxph(Surv(PersonYrsHardCVD,HardCVD) ~ duration + bmi + onhypermeds + onlipidmeds + ldl + CKDepi + 
+             hba1c + smknum, data=complete_lipidmeds_egdr_components_hardcvd)
+c
 ```
 
 # Upset plot
 
 The upset plot reflects only models using lipid lowering medications (not statins) and does not include models with interactions.
+
+Outcomes from L to R are:
+CAC progression, rate of change in CAC, death, CAD, hard CAD, CVD, hard CVD
 
 ```{r, echo=FALSE, comment=""}
 vars <- c(prog_noint_coefs,cac_noint_coefs,death_coefs,cad_coefs,hardcad_coefs,cvd_coefs,hardcvd_coefs)
@@ -810,4 +974,46 @@ dev.off()
 
 ```{r, echo=FALSE, warning=FALSE}
 knitr::include_graphics("C:/temp/plot.png")
+```
+
+# Upset plot of significant variables
+
+The upset plot reflects only models using lipid lowering medications (not statins) and does not include models with interactions.  Only variables that were significant when the models selected by LASSO were refit are included here.
+
+Outcomes from L to R are:
+CAC progression, rate of change in CAC, death, CAD, hard CAD, CVD, hard CVD
+
+```{r, echo=FALSE, comment=""}
+vars <- c(prog_noint_coefs_sig,cac_noint_coefs_sig,death_coefs_sig,cad_coefs_sig,hardcad_coefs_sig,cvd_coefs_sig,hardcvd_coefs_sig)
+vars <- unique(vars)
+vars <- vars[-1]
+
+# Format output
+selected_vars = do.call(rbind,list(
+  vars %in% prog_noint_coefs_sig,
+  vars %in% cac_noint_coefs_sig,
+  vars %in% death_coefs_sig,
+  vars %in% cad_coefs_sig,
+  vars %in% hardcad_coefs_sig,
+  vars %in% cvd_coefs_sig,
+  vars %in% hardcvd_coefs_sig
+))
+colnames(selected_vars) = vars
+selected_vars = data.frame(apply(selected_vars,2,as.numeric))
+# Plot
+png(filename = "C:/temp/plot_sig.png",width=1200,height=1200)
+upset(selected_vars,nsets = ncol(selected_vars),order.by = "freq",mb.ratio = c(0,1),text.scale=3)
+dev.off()
+```
+
+```{r, echo=FALSE, warning=FALSE}
+knitr::include_graphics("C:/temp/plot_sig.png")
+```
+
+# Correlation plot
+
+```{r, echo=FALSE, warning=FALSE}
+allvars <- X
+cormat <- cor(allvars)
+corrplot(cormat, method="circle")
 ```
