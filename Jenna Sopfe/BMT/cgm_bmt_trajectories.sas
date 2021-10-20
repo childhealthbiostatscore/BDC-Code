@@ -5,8 +5,8 @@ replace;
 run;
 
 proc traj data=cgm out=out outstat=os outplot=op;
-var Historic_Glucose_1-Historic_Glucose_75;
-indep time_from_engraft_1-time_from_engraft_75;
+var Historic_Glucose_1-Historic_Glucose_100;
+indep time_from_engraft_1-time_from_engraft_100;
 model cnorm; max 400;
 ngroups 2;
 id SubjectID;
