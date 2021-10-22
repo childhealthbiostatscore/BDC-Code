@@ -18,7 +18,7 @@ library(performance)
 library(caret)
 library(parallel)
 library(doParallel)
-knitr::opts_chunk$set(echo = FALSE,cache = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 home_dir = ifelse(.Platform$OS.type != "unix",
                   "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data",
                   "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data")
@@ -241,11 +241,9 @@ corr_cluster = function(df,parallel_ratio = 0.5,folds = 5,
 
 ## SNPs
 
-```{r cache=TRUE}
+```{r}
 snps = data_preprocces(snps,scale = F)
 snps_best = corr_cluster(snps)
-snps_best$heatmap
-snps_best$network
 kable(snps_best$best,col.names = "Selected variables")
 ```
 
@@ -256,8 +254,6 @@ The optimal $\rho$ cutoff was `r snps_best$r_cutoff` based on predictive accurac
 ```{r}
 carotenoids = data_preprocces(X$carotenoids)
 carotenoids_best = corr_cluster(carotenoids)
-carotenoids_best$heatmap
-carotenoids_best$network
 kable(carotenoids_best$best,col.names = "Selected variables")
 ```
 
@@ -268,8 +264,6 @@ The optimal $\rho$ cutoff was `r carotenoids_best$r_cutoff` based on predictive 
 ```{r}
 fa = data_preprocces(X$fatty_acids)
 fa_best = corr_cluster(fa)
-fa_best$heatmap
-fa_best$network
 kable(fa_best$best,col.names = "Selected variables")
 ```
 
@@ -279,10 +273,7 @@ The optimal $\rho$ cutoff was `r fa_best$r_cutoff` based on predictive accuracy.
 
 ```{r}
 metab = data_preprocces(X$metabolomics)
-metab_best = corr_cluster(metab,
-                          heatmap_params = list(show_rownames = F,show_colnames = F))
-metab_best$heatmap
-metab_best$network
+metab_best = corr_cluster(metab)
 kable(metab_best$best,col.names = "Selected variables")
 ```
 
@@ -292,10 +283,7 @@ The optimal $\rho$ cutoff was `r metab_best$r_cutoff` based on predictive accura
 
 ```{r}
 negative = data_preprocces(X$negative_lipidomics,cv_cutoff = 0.2)
-negative_best = corr_cluster(negative,
-                             heatmap_params = list(show_rownames = F,show_colnames = F))
-negative_best$heatmap
-negative_best$network
+negative_best = corr_cluster(negative)
 kable(negative_best$best,col.names = "Selected variables")
 ```
 
@@ -305,10 +293,7 @@ The optimal $\rho$ cutoff was `r negative_best$r_cutoff` based on predictive acc
 
 ```{r}
 positive = data_preprocces(X$positive_lipidomics)
-positive_best = corr_cluster(positive,
-                             heatmap_params = list(show_rownames = F,show_colnames = F))
-positive_best$heatmap
-positive_best$network
+positive_best = corr_cluster(positive)
 kable(positive_best$best,col.names = "Selected variables")
 ```
 
@@ -321,7 +306,7 @@ In addition to the selected variables from the 'omics assays above, all variable
 ```{r}
 folds = 5
 # All variables selected above
-lasso_vars = c("ascorbic_acid",carotenoids_best$best,"cholesterol",
+lasso_vars = c(snps_best$best,"ascorbic_acid",carotenoids_best$best,"cholesterol",
                fa_best$best,metab_best$best,
                "height_cm","weight_kg","agemos",negative_best$best,positive_best$best,
                "alphatocopherol","gammatocopherol","vitamin_d")
@@ -344,6 +329,8 @@ colnames(df)[grep("\\.x",colnames(df))] =
   sub("\\.x","",colnames(df)[grep("\\.x",colnames(df))])
 df = left_join(df,smaller_dfs[[10]],by = c("ID"="id","time","y"))
 df = left_join(df,smaller_dfs[[11]],by = c("y", "ID", "time"))
+df = left_join(df,snps[,which(colnames(snps) %in% c("ID","id","time","y",lasso_vars))],
+               by = c("ID"="id","time","y"))
 # Remove missing
 lasso_df = df[complete.cases(df),]
 lasso_df$y = factor(lasso_df$y)
@@ -363,15 +350,13 @@ mod = train(
   tuneLength = 25
 )
 stopCluster(cl)
-# Best lambda keeping alpha at 1
-best = mod$results[mod$results$alpha == 1,]
-best = best[best$Accuracy == max(best$Accuracy),]
-# Fit
-mod = glmnet(x = data.matrix(lasso_df[,lasso_vars]), 
-             y = factor(lasso_df[,"y"]),family = "binomial",
-             alpha = 1,lambda = best$lambda)
-kable(rownames(coef(mod))[which(coef(mod) != 0)],col.names = "Selected variables")
+# Best lambda 
+selected = coef(mod$finalModel,s = mod$bestTune$lambda)
+selected = rownames(selected)[which(selected != 0 & rownames(selected) != "(Intercept)")]
+kable(selected,col.names = "Selected variables")
 ```
+
+This model resulted in a CV accuracy of `r round(mod$results$Accuracy[as.numeric(rownames(mod$bestTune))],3)` (accuracy SD `r round(mod$results$AccuracySD[as.numeric(rownames(mod$bestTune))],3)`) and was fit on `r nobs(mod$finalModel)` observations. 
 
 # Elasticnet
 
@@ -406,16 +391,18 @@ elastic = function(df,folds = 5,outcome = "y",id_cols = c("id","ID","time")){
     tuneLength = 25
   )
   stopCluster(cl)
-  best = mod$bestTune
-  # Get variables
-  # Re-fit
-  df[,outcome]
-  m = glmnet(data.matrix(df[,pred]),data.matrix(df[,outcome]),
-             alpha = best$alpha,lambda = best$lambda)
-  coefs = coef(m)
-  selected = rownames(coefs)[which(coefs != 0 & rownames(coefs) != "(Intercept)")]
+  # Best lambda 
+  selected = coef(mod$finalModel,s = mod$bestTune$lambda)
+  selected = rownames(selected)[which(selected != 0 & rownames(selected) != "(Intercept)")]
   return(selected)
 }
+```
+
+## SNPs
+
+```{r}
+snps_elastic = elastic(snps)
+kable(snps_elastic,col.names = "Selected variables")
 ```
 
 ## Carotenoids
@@ -453,11 +440,11 @@ pos_elastic = elastic(positive)
 kable(pos_elastic,col.names = "Selected variables")
 ```
 
-## Lasso the lasso (more accurately elasticnet the elasticnet)
+## Elasticnet results
 
 ```{r}
 # All variables selected above
-elastic_vars = c("ascorbic_acid",carot_elastic,"cholesterol",
+elastic_vars = c(snps_elastic,"ascorbic_acid",carot_elastic,"cholesterol",
                  fa_elastic,metab_elastic,
                  "height_cm","weight_kg","agemos",neg_elastic,pos_elastic,
                  "alphatocopherol","gammatocopherol","vitamin_d")
@@ -480,31 +467,76 @@ colnames(df)[grep("\\.x",colnames(df))] =
   sub("\\.x","",colnames(df)[grep("\\.x",colnames(df))])
 df = left_join(df,smaller_dfs[[10]],by = c("ID"="id","time","y"))
 df = left_join(df,smaller_dfs[[11]],by = c("y", "ID", "time"))
-# Remove missing
-elastic_df = df[complete.cases(df),]
-elastic_df$y = factor(elastic_df$y)
+df = left_join(df,snps[,which(colnames(snps) %in% c("ID","id","time","y",elastic_vars))],
+               by = c("ID"="id","time","y"))
+df$y = factor(df$y)
 # CV with caret
 set.seed(1017)
 cv = trainControl(method = "cv",number = folds)
-# Model
-form = as.formula(paste0("y~",paste0(elastic_vars,collapse = "+")))
 # Parallel
 cl = makePSOCKcluster(folds)
 registerDoParallel(cl)
 mod = train(
-  form, data = elastic_df,
+  elastic_form, data = df,
+  method = "glm",
+  family = "binomial",
+  trControl = cv,
+  na.action = na.omit
+)
+stopCluster(cl)
+kable(summary(mod)$coefficients,digits = 3)
+```
+
+This model resulted in a CV accuracy of `r round(mod$results$Accuracy[as.numeric(rownames(mod$bestTune))],3)` (accuracy SD `r round(mod$results$AccuracySD[as.numeric(rownames(mod$bestTune))],3)`) and was fit on `r nobs(mod$finalModel)` observations. 
+
+# Elasticnet on everything
+
+1. Variables with >60% missing data were excluded to maximize the number of complete case observations.
+
+```{r include=FALSE}
+df = full_join(X$carotenoids,X$ascorbic_acid,by = c("id" = "ID","time","y"))
+df = full_join(df,X$cholesterol,by = c("id" = "ID","time","y"))
+df = full_join(df,X$fatty_acids,by = c("y", "id", "time"))
+df = full_join(df,X$metabolomics,by = c("y", "id", "time"))
+df = full_join(df,X$metabolomics)
+df = full_join(df,X$growth,by = c("y", "id", "time"))
+# df = full_join(df,X$negative_lipidomics,by = c("y", "id", "time"))
+df = full_join(df,X$positive_lipidomics)
+df = full_join(df,X$tocoperol,by = c("y", "id", "time"))
+df = full_join(df,X$vitamin_d,by = c("id" = "ID","time","y"))
+df = left_join(df,snps,by = c("y", "id", "time"))
+# # Remove more than 50% missing
+df = data_preprocces(df,missing_cutoff = 0.5,scale = F)
+df = df[complete.cases(df),]
+```
+
+```{r}
+# CV
+set.seed(1017)
+cv = trainControl(method = "cv",number = folds)
+# Outcome is binary
+df$y = factor(df$y)
+# Parallel
+cl = makePSOCKcluster(folds)
+registerDoParallel(cl)
+mod = train(x = df[,setdiff(colnames(df),c("id","time","y"))],y = df$y,
   method = "glmnet",
   family = "binomial",
   trControl = cv,
-  tuneLength = 25
+  tuneLength = 25,
+  preProcess = c("center", "scale")
 )
 stopCluster(cl)
-# Best lambda keeping alpha at 1
-best = mod$results[mod$results$alpha == 1,]
-best = best[best$Accuracy == max(best$Accuracy),]
-# Fit
-mod = glmnet(x = data.matrix(elastic_df[,elastic_vars]), 
-             y = factor(elastic_df[,"y"]),family = "binomial",
-             alpha = 1,lambda = best$lambda)
-kable(rownames(coef(mod))[which(coef(mod) != 0)],col.names = "Selected variables")
+# Best lambda 
+selected = coef(mod$finalModel,s = mod$bestTune$lambda)
+selected = rownames(selected)[which(selected != 0 & rownames(selected) != "(Intercept)")]
+kable(selected,col.names = "Selected variables")
+```
+
+This model resulted in a CV accuracy of `r round(mod$results$Accuracy[as.numeric(rownames(mod$bestTune))],3)` (accuracy SD `r round(mod$results$AccuracySD[as.numeric(rownames(mod$bestTune))],3)`) and was fit on `r nobs(mod$finalModel)` observations. 
+
+# BJWR's model CV with `caret`
+
+```{r}
+
 ```
