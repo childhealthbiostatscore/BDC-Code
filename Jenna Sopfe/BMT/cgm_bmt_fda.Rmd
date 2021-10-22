@@ -14,11 +14,14 @@ output:
 library(redcapAPI)
 library(lubridate)
 library(plotly)
-library(lcmm)
-library(fda)
+library(kmlShape)
+library(reshape2)
 library(knitr)
 library(tidyverse)
-knitr::opts_chunk$set(echo = FALSE)
+library(refund)
+library(refund.shiny)
+library(tidyfun)
+knitr::opts_chunk$set(echo = TRUE)
 home_dir = 
   ifelse(.Platform$OS.type != "unix",
          "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/",
@@ -40,6 +43,8 @@ data_full <- data_full %>% group_by(study_id) %>% fill(date_of_tx)
 datecols = c("time_engraft","time_plt_engraft")
 data_full[,datecols] <- lapply(data_full[,datecols],lubridate::ymd)
 data_full$study_id = as.numeric(data_full$study_id)
+# Calculate BMI
+data_full$bmi = data_full$weight/((data_full$height/100)^2)
 # Clean
 cgm = read.csv("./CGM Accuracy in BMT/Data_Cleaned/Prospective HSCT CGM Data Updated 6.24.19 FULL DATA SET.csv",na.strings = "")
 cgm$Time = mdy_hm(cgm$Time)
@@ -47,7 +52,7 @@ cgm$Tx_date = mdy(cgm$Tx_date)
 cgm$dx_cat = factor(cgm$dx_cat)
 cgm$tx_type = factor(cgm$tx_type)
 # Get other dates
-dates = data_full %>% select(study_id,all_of(datecols)) %>% 
+dates = data_full %>% select(study_id,bmi,all_of(datecols)) %>% 
   group_by(study_id) %>% fill(all_of(datecols),.direction = "updown") %>%
   filter(row_number() == 1)
 cgm = left_join(cgm,dates,by = c("SubjectID" = "study_id"))
@@ -55,9 +60,9 @@ cgm$time_engraft_minus_3 = cgm$time_engraft - 3
 # Time since engraftment
 cgm$time_from_engraft = as.numeric(difftime(cgm$Time,cgm$time_engraft_minus_3,units = "mins"))
 # Wide format for SAS
-cgm_wide = cgm %>% filter(time_from_engraft >= 0 & time_from_engraft <= 8640) %>%
+cgm_wide = cgm %>% filter(time_from_engraft >= 0) %>%
   group_by(SubjectID) %>% mutate(n = row_number()) %>% 
-  select(SubjectID,tx_type,dx_cat,Historic_Glucose,time_from_engraft,n) %>%
+  select(SubjectID,tx_type,dx_cat,bmi,Historic_Glucose,time_from_engraft,n) %>%
   pivot_wider(names_from = n,
               values_from = c("Historic_Glucose","time_from_engraft")) %>%
   filter(!is.na(tx_type) & !is.na(dx_cat)) %>% ungroup()
@@ -66,55 +71,28 @@ write.csv(cgm_wide,file = "./CGM and BMT FDA/Data_Cleaned/cleaned_for_traj.csv",
           row.names = F,na = "")
 ```
 
-# Latent class analysis
+# Trajectory analysis
 
 ```{r}
-traj = function(df,n_class=NULL){
-  # Base model (one class)
-  m = hlme(Historic_Glucose ~ poly(time,2),subject = 'SubjectID',
-            data=df,ng = 1,verbose = FALSE)
-  assign("m1",m,envir = globalenv())
-  # Increase number of classes
-  if(is.null(n_class)){n_class = length(unique(df$SubjectID))}
-  for (c in 2:n_class) {
-    m = hlme(Historic_Glucose ~ poly(time,2),mixture = ~poly(time,2),
-             subject = 'SubjectID',data=df, ng = c,
-             B = m1,verbose = FALSE)
-    assign(paste0("m",c),m,envir = globalenv())
-  }
-  # Print model metrics
-  do.call(summaryplot,mget(paste0("m",1:n_class),envir = globalenv()))
-}
-plot_traj = function(model_obj,df){
-  plot_df = predictY(model_obj,df,var.time = "time")
-  plot_df = data.frame(cbind(df$SubjectID,df$Historic_Glucose,plot_df$times,plot_df$pred))
-  plot_df = plot_df %>% pivot_longer(starts_with("Ypred_"))
-  plot_df$name = sub("Ypred_","",plot_df$name)
-  ggplot(plot_df,aes(x = time,y = value)) + 
-    geom_line(aes(color = name)) + 
-    geom_point(aes(x = time,y = df.Historic_Glucose),shape = ".") + 
-    xlab("Time from Tx") + ylab("Sensor Glucose") +
-    theme_bw() + theme(legend.title = element_blank())
-}
+# Time from engraftment
+dn = cgm %>% 
+  select(SubjectID,time_from_engraft,Historic_Glucose) %>%
+  filter(time_from_engraft >=0 & time_from_engraft <= 450)
+myClds <- cldsLong(dn)
+kmlShape(myClds,2)
 ```
 
-## Time near engraftment
+# Functional data analysis
 
-```{r}
+## Transplant type
 
-```
-
-### Two classes
-
-```{r}
-t = cgm %>% filter(!is.na(time),time >= 0 & time <= 6)
-```
-
-#### Model metrics by number of classes
-
-For BIC and ICL, lower is better. For entropy, closer to 1 is better.
-
-```{r}
-traj(t,n_class = 2)
-plot_traj(m2,t)
+```{r warning=FALSE}
+fda_df = cgm %>% group_by(SubjectID) %>% fill(tx_type) %>% ungroup() %>%
+  filter(time_from_engraft >= 0 & time_from_engraft <= 1440) %>% 
+  select(SubjectID,time_from_engraft,tx_type,Historic_Glucose) %>%
+  tf_nest(Historic_Glucose,.id = SubjectID,.arg = time_from_engraft)
+fda_df %>% ggplot(aes(y = Historic_Glucose,color = tx_type)) + 
+  geom_spaghetti(alpha = 0.2) +
+  theme_bw() + theme(legend.position = "none")
+fda_df %>% gglasagna(Historic_Glucose)
 ```
