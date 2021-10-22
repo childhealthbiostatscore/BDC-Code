@@ -26,9 +26,7 @@ knitr::opts_knit$set(root.dir = home_dir)
 rm(home_dir)
 ```
 
-```{r data,include=FALSE}
-# CV fold for whole document
-folds = 5
+```{r data}
 # Transcriptomics and metabolomics
 load("./Data_Clean/time_0.RData")
 # SNP data
@@ -54,21 +52,6 @@ snps = snps[!is.na(snps$y),]
 # SNPs from BJWR's paper
 snps = snps[,which(colnames(snps) %in% c("id","time","y",snps_from_bjwr))]
 snps[,4:ncol(snps)] = lapply(snps[,4:ncol(snps)],function(c){as.numeric(c)-1})
-# Demographics
-demographics = read.csv("./Data_Raw/TEDDY_MP193_Data/MP193_DEMOGRAPHICS_2017-04-25_17-44-49.csv")
-# Combine
-df = left_join(demographics,X$carotenoids,by = c("mask_id" = "id")) %>% 
-  rename(id = mask_id)
-df = left_join(df,X$ascorbic_acid,by = c("id" = "ID","time","y"))
-df = left_join(df,X$cholesterol,by = c("id" = "ID","time","y"))
-df = left_join(df,X$fatty_acids,by = c("id", "y", "time"))
-df = left_join(df,X$metabolomics,by = c("y", "id", "time"))
-df = left_join(df,X$growth,by = c("y", "id", "time"))
-df = left_join(df,X$negative_lipidomics,by = c("y", "id", "time"))
-df = left_join(df,X$positive_lipidomics)
-df = left_join(df,X$tocoperol,by = c("id", "y", "time"))
-df = left_join(df,X$vitamin_d,by = c("id" = "ID","time","y"))
-df = left_join(df,snps,by = c("id", "y", "time"))
 ```
 
 ```{r functions}
@@ -109,7 +92,7 @@ data_preprocces = function(df,missing_cutoff = 0.8,cv_cutoff = NULL,
 # Cluster variables according to DIFAcTO pipeline.
 # If optimize_corr = T, this will override the manual corr_cutoff. Correlation
 # cutoff should be optimized for all assays, but does not need to be run every time.
-corr_cluster = function(df,parallel_ratio = 0.5,folds,
+corr_cluster = function(df,parallel_ratio = 0.5,folds = 5,
                         outcome = "y",id_cols = c("id","ID","time"),
                         optimize_corr = T, rseq = seq(0,1,by = 0.01),
                         corr_cutoff = NULL,
@@ -321,15 +304,36 @@ The optimal $\rho$ cutoff was `r positive_best$r_cutoff` based on predictive acc
 In addition to the selected variables from the 'omics assays above, all variables from assays with 3 or fewer measures (ascorbic acid, cholesterol, growth, etc.) were included in the lasso. 
 
 ```{r}
+folds = 5
 # All variables selected above
 lasso_vars = c(snps_best$best,"ascorbic_acid",carotenoids_best$best,"cholesterol",
                fa_best$best,metab_best$best,
                "height_cm","weight_kg","agemos",negative_best$best,positive_best$best,
                "alphatocopherol","gammatocopherol","vitamin_d")
 lasso_form = as.formula(paste0("y~",paste0(lasso_vars,collapse = "+")))
+# Pull out selected variables
+smaller_dfs = lapply(X, function(d){
+  d = d[,which(colnames(d) %in% c("ID","id","time","y",lasso_vars))]
+})
+# Combine into single dataframe
+df = full_join(smaller_dfs[[1]],smaller_dfs[[2]],by = c("ID"="id","time","y"))
+df = full_join(df,smaller_dfs[[3]],by = c("ID","y","time"))
+df = full_join(df,smaller_dfs[[4]],by = c("ID"="id","time","y"))
+df = full_join(df,smaller_dfs[[5]],by = c("ID"="id","time","y"))
+df = full_join(df,smaller_dfs[[6]],by = c("ID"="id","time","y"))
+df = full_join(df,smaller_dfs[[7]],by = c("ID"="id","time","y"))
+df = full_join(df,smaller_dfs[[8]],by = c("ID"="id","time","y"))
+df = left_join(df,smaller_dfs[[9]],by = c("ID"="id","time","y"))
+df[,grep("\\.y",colnames(df))] = NULL
+colnames(df)[grep("\\.x",colnames(df))] = 
+  sub("\\.x","",colnames(df)[grep("\\.x",colnames(df))])
+df = left_join(df,smaller_dfs[[10]],by = c("ID"="id","time","y"))
+df = left_join(df,smaller_dfs[[11]],by = c("y", "ID", "time"))
+df = left_join(df,snps[,which(colnames(snps) %in% c("ID","id","time","y",lasso_vars))],
+               by = c("ID"="id","time","y"))
+df$y = as.factor(df$y)
 # Remove missing
-lasso_df = df[,lasso_vars]
-lasso_df = lasso_df[complete.cases(lasso_df),]
+lasso_df = df[complete.cases(df),]
 lasso_df$y = factor(lasso_df$y)
 # CV with caret
 set.seed(1017)
@@ -354,11 +358,21 @@ kable(selected,col.names = "Selected variables")
 ```
 
 ```{r}
-# CV accuracy on full data
-
+# CV on everything
+form = as.formula(paste0("y~",paste0(selected,collapse = "+")))
+cl = makePSOCKcluster(folds)
+registerDoParallel(cl)
+mod = train(
+  form, data = df,
+  method = "glm",
+  family = "binomial",
+  trControl = cv,
+  na.action = na.omit
+)
+stopCluster(cl)
 ```
 
-This model resulted in a CV accuracy of `r round(mod$results$Accuracy[as.numeric(rownames(mod$bestTune))],3)` (accuracy SD `r round(mod$results$AccuracySD[as.numeric(rownames(mod$bestTune))],3)`) and was fit on `r nobs(mod$finalModel)` observations. 
+This model resulted in a CV accuracy of `r round(mod$results$Accuracy,3)` (accuracy SD `r round(mod$results$AccuracySD,3)`).
 
 # Elasticnet
 
@@ -370,7 +384,7 @@ This model resulted in a CV accuracy of `r round(mod$results$Accuracy[as.numeric
 4. Due to missing data problems, an elasticnet was run for each assay separately. 
 
 ```{r elasticnet function}
-elastic = function(df,folds,outcome = "y",id_cols = c("id","ID","time")){
+elastic = function(df,folds = 5,outcome = "y",id_cols = c("id","ID","time")){
   # Outcome 
   df[,outcome] = factor(df[,outcome])
   # Predictors
@@ -455,6 +469,23 @@ elastic_form = as.formula(paste0("y~",paste0(elastic_vars,collapse = "+")))
 smaller_dfs = lapply(X, function(d){
   d = d[,which(colnames(d) %in% c("ID","id","time","y",elastic_vars))]
 })
+# Combine into single dataframe
+df = full_join(smaller_dfs[[1]],smaller_dfs[[2]],by = c("ID"="id","time","y"))
+df = full_join(df,smaller_dfs[[3]],by = c("ID","y","time"))
+df = full_join(df,smaller_dfs[[4]],by = c("ID"="id","time","y"))
+df = full_join(df,smaller_dfs[[5]],by = c("ID"="id","time","y"))
+df = full_join(df,smaller_dfs[[6]],by = c("ID"="id","time","y"))
+df = full_join(df,smaller_dfs[[7]],by = c("ID"="id","time","y"))
+df = full_join(df,smaller_dfs[[8]],by = c("ID"="id","time","y"))
+df = left_join(df,smaller_dfs[[9]],by = c("ID"="id","time","y"))
+df[,grep("\\.y",colnames(df))] = NULL
+colnames(df)[grep("\\.x",colnames(df))] = 
+  sub("\\.x","",colnames(df)[grep("\\.x",colnames(df))])
+df = left_join(df,smaller_dfs[[10]],by = c("ID"="id","time","y"))
+df = left_join(df,smaller_dfs[[11]],by = c("y", "ID", "time"))
+df = left_join(df,snps[,which(colnames(snps) %in% c("ID","id","time","y",elastic_vars))],
+               by = c("ID"="id","time","y"))
+df$y = factor(df$y)
 # CV with caret
 set.seed(1017)
 cv = trainControl(method = "cv",number = folds)
@@ -472,19 +503,25 @@ stopCluster(cl)
 kable(summary(mod)$coefficients,digits = 3)
 ```
 
-This model resulted in a CV accuracy of `r round(mod$results$Accuracy[as.numeric(rownames(mod$bestTune))],3)` (accuracy SD `r round(mod$results$AccuracySD[as.numeric(rownames(mod$bestTune))],3)`) and was fit on `r nobs(mod$finalModel)` observations. 
-
-```{r}
-# CV accuracy on full data
-
-```
+This model resulted in a CV accuracy of `r round(mod$results$Accuracy,3)` (accuracy SD `r round(mod$results$AccuracySD,3)`).
 
 # Elasticnet on everything
 
 1. Variables with >60% missing data were excluded to maximize the number of complete case observations.
 
 ```{r include=FALSE}
-# Remove more than 50% missing
+df = full_join(X$carotenoids,X$ascorbic_acid,by = c("id" = "ID","time","y"))
+df = full_join(df,X$cholesterol,by = c("id" = "ID","time","y"))
+df = full_join(df,X$fatty_acids,by = c("y", "id", "time"))
+df = full_join(df,X$metabolomics,by = c("y", "id", "time"))
+df = full_join(df,X$metabolomics)
+df = full_join(df,X$growth,by = c("y", "id", "time"))
+# df = full_join(df,X$negative_lipidomics,by = c("y", "id", "time"))
+df = full_join(df,X$positive_lipidomics)
+df = full_join(df,X$tocoperol,by = c("y", "id", "time"))
+df = full_join(df,X$vitamin_d,by = c("id" = "ID","time","y"))
+df = left_join(df,snps,by = c("y", "id", "time"))
+# # Remove more than 50% missing
 df = data_preprocces(df,missing_cutoff = 0.5,scale = F)
 df = df[complete.cases(df),]
 ```
@@ -512,15 +549,19 @@ selected = rownames(selected)[which(selected != 0 & rownames(selected) != "(Inte
 kable(selected,col.names = "Selected variables")
 ```
 
-This model resulted in a CV accuracy of `r round(mod$results$Accuracy[as.numeric(rownames(mod$bestTune))],3)` (accuracy SD `r round(mod$results$AccuracySD[as.numeric(rownames(mod$bestTune))],3)`) and was fit on `r nobs(mod$finalModel)` observations. 
-
 ```{r}
-# CV accuracy on full data
-
+# CV on everything
+form = as.formula(paste0("y~",paste0(selected,collapse = "+")))
+cl = makePSOCKcluster(folds)
+registerDoParallel(cl)
+mod = train(
+  form, data = df,
+  method = "glm",
+  family = "binomial",
+  trControl = cv,
+  na.action = na.omit
+)
+stopCluster(cl)
 ```
 
-# BJWR's model CV with `caret`
-
-```{r}
-
-```
+This model resulted in a CV accuracy of `r round(mod$results$Accuracy,3)` (accuracy SD `r round(mod$results$AccuracySD,3)`).
