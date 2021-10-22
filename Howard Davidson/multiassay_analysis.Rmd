@@ -8,8 +8,8 @@ output: html_document
 ```{r setup, include=FALSE}
 library(tidyverse)
 library(pheatmap)
-library(skimr)
 library(glmnet)
+library(snpStats)
 library(knitr)
 library(igraph)
 library(networkD3)
@@ -27,7 +27,31 @@ rm(home_dir)
 ```
 
 ```{r data}
+# Transcriptomics and metabolomics
 load("./Data_Clean/time_0.RData")
+# SNP data
+snps = read.plink("./Data_Raw/TEDDY_MP193_Data/SNP/pnnl.bed",
+                  "./Data_Raw/TEDDY_MP193_Data/SNP/pnnl.bim",
+                  "./Data_Raw/TEDDY_MP193_Data/SNP/pnnl.fam")
+snps_from_bjwr = read.csv("./Data_Clean/snps_from_bjwr.csv",header = F)
+snps_from_bjwr = unique(snps_from_bjwr$V1)
+# Get phenotypes
+pheno = lapply(X, function(d){
+  colnames(d) = tolower(colnames(d))
+  d[,c("id","y")]
+})
+pheno = do.call(rbind,pheno)
+pheno = unique(pheno)
+# Format and combine
+snp_ids = data.frame(snps$fam$member)
+colnames(snp_ids) = "id"
+snp_ids$time = 0
+snp_ids$y = pheno$y[match(snp_ids$id,pheno$id)]
+snps = data.frame(cbind(snp_ids,data.matrix(snps$genotypes)))
+snps = snps[!is.na(snps$y),]
+# SNPs from BJWR's paper
+snps = snps[,which(colnames(snps) %in% c("id","time","y",snps_from_bjwr))]
+snps[,4:ncol(snps)] = lapply(snps[,4:ncol(snps)],function(c){as.numeric(c)-1})
 ```
 
 ```{r functions}
@@ -68,16 +92,17 @@ data_preprocces = function(df,missing_cutoff = 0.8,cv_cutoff = NULL,
 # Cluster variables according to DIFAcTO pipeline.
 # If optimize_corr = T, this will override the manual corr_cutoff. Correlation
 # cutoff should be optimized for all assays, but does not need to be run every time.
-corr_cluster = function(df,parallel_ratio = 0.25,folds = 5,
+corr_cluster = function(df,parallel_ratio = 0.5,folds = 5,
                         outcome = "y",id_cols = c("id","ID","time"),
-                        optimize_corr = T, corr_cutoff = NULL,
+                        optimize_corr = T, rseq = seq(0,1,by = 0.01),
+                        corr_cutoff = NULL,
                         heatmap = T,heatmap_params = list(show_rownames = T,show_colnames = T),
                         network = T){
   # Get predictors
   pred = setdiff(colnames(df),c(id_cols,outcome))
   # Outcome is binary
   df[,outcome] = factor(df[,outcome])
-  # Complete
+  # Complete cases
   df = df[complete.cases(df),]
   # Correlations between predictors
   corr_mat = cor(df[,pred],use = "pairwise.complete.obs")
@@ -85,7 +110,7 @@ corr_cluster = function(df,parallel_ratio = 0.25,folds = 5,
   var_cor = corr_mat*lower.tri(corr_mat)
   # Find best correlation cutoff
   if(optimize_corr){
-    rs = seq(0,1,by = 0.01)
+    rs = rseq
     # Parallel
     cl <- makeCluster(detectCores()*parallel_ratio,type = "FORK")
     model_perf = parLapply(cl,rs, function(r){
@@ -208,11 +233,23 @@ corr_cluster = function(df,parallel_ratio = 0.25,folds = 5,
 2. Rows missing all of the retained variables from step 1 were dropped.
 3. Remaining variables were scaled prior to analysis.
 4. For correlation cutoffs from 0 to 1 (by 0.01), predictors were clustered based on correlation. Within each cluster, the variable with the strongest association with the outcome was selected to enter the model. 
-5. Normalized RMSE was used to compare model performance between correlation cutoffs. 
+5. Predictive accuracy was used to compare model performance between correlation cutoffs. 
 6. Variables selected using the optimal correlation cutoff continued on to the lasso. 
 7. A lasso model was fit using the variables selected from previous steps. Using the lambda value that results in minimum error selects 0 predictors. So instead we used the lambda value that results in the largest model that is still within 1SD of the minimum error, and fits without numerical probabilities of 0 or 1 occurring.
 
 # Predictor Clustering
+
+## SNPs
+
+```{r cache=TRUE}
+snps = data_preprocces(snps,scale = F)
+snps_best = corr_cluster(snps)
+snps_best$heatmap
+snps_best$network
+kable(snps_best$best,col.names = "Selected variables")
+```
+
+The optimal $\rho$ cutoff was `r snps_best$r_cutoff` based on predictive accuracy.
 
 ## Carotenoids
 
@@ -224,7 +261,7 @@ carotenoids_best$network
 kable(carotenoids_best$best,col.names = "Selected variables")
 ```
 
-The optimal $\rho$ cutoff was `r carotenoids_best$r_cutoff` based on normalized RMSE.
+The optimal $\rho$ cutoff was `r carotenoids_best$r_cutoff` based on predictive accuracy.
 
 ## Fatty acids
 
@@ -236,51 +273,46 @@ fa_best$network
 kable(fa_best$best,col.names = "Selected variables")
 ```
 
-The optimal $\rho$ cutoff was `r fa_best$r_cutoff` based on normalized RMSE.
+The optimal $\rho$ cutoff was `r fa_best$r_cutoff` based on predictive accuracy.
 
 ## Metabolomics
 
 ```{r}
 metab = data_preprocces(X$metabolomics)
-metab_best = corr_cluster(metab,heatmap_params = list(show_rownames = F,show_colnames = F))
+metab_best = corr_cluster(metab,
+                          heatmap_params = list(show_rownames = F,show_colnames = F))
 metab_best$heatmap
 metab_best$network
 kable(metab_best$best,col.names = "Selected variables")
 ```
 
-The optimal $\rho$ cutoff was `r metab_best$r_cutoff` based on normalized RMSE.
-
-## Transcriptomics
-
-```{r cache=TRUE}
-transcript = data_preprocces(X$transcriptomics)
-transcript_best = corr_cluster(transcript,heatmap=F,network=F,optimize_corr = T)
-kable(transcript_best,col.names = "Selected variables")
-```
+The optimal $\rho$ cutoff was `r metab_best$r_cutoff` based on predictive accuracy.
 
 ## Negative lipidomics
 
 ```{r}
 negative = data_preprocces(X$negative_lipidomics,cv_cutoff = 0.2)
-negative_best = corr_cluster(negative,heatmap_params = list(show_rownames = F,show_colnames = F))
+negative_best = corr_cluster(negative,
+                             heatmap_params = list(show_rownames = F,show_colnames = F))
 negative_best$heatmap
 negative_best$network
 kable(negative_best$best,col.names = "Selected variables")
 ```
 
-The optimal $\rho$ cutoff was `r negative_best$r_cutoff` based on normalized RMSE.
+The optimal $\rho$ cutoff was `r negative_best$r_cutoff` based on predictive accuracy.
 
 ## Positive lipidomics
 
 ```{r}
 positive = data_preprocces(X$positive_lipidomics)
-positive_best = corr_cluster(positive,heatmap_params = list(show_rownames = F,show_colnames = F))
+positive_best = corr_cluster(positive,
+                             heatmap_params = list(show_rownames = F,show_colnames = F))
 positive_best$heatmap
 positive_best$network
 kable(positive_best$best,col.names = "Selected variables")
 ```
 
-The optimal $\rho$ cutoff was `r positive_best$r_cutoff` based on normalized RMSE.
+The optimal $\rho$ cutoff was `r positive_best$r_cutoff` based on predictive accuracy.
 
 # Lasso
 
@@ -290,7 +322,7 @@ In addition to the selected variables from the 'omics assays above, all variable
 folds = 5
 # All variables selected above
 lasso_vars = c("ascorbic_acid",carotenoids_best$best,"cholesterol",
-               fa_best$best,metab_best$best,transcript_best$best,
+               fa_best$best,metab_best$best,
                "height_cm","weight_kg","agemos",negative_best$best,positive_best$best,
                "alphatocopherol","gammatocopherol","vitamin_d")
 lasso_form = as.formula(paste0("y~",paste0(lasso_vars,collapse = "+")))
@@ -407,13 +439,6 @@ metab_elastic = elastic(metab)
 kable(metab_elastic,col.names = "Selected variables")
 ```
 
-## Transcriptomics
-
-```{r}
-trans_elastic = elastic(transcript)
-kable(trans_elastic,col.names = "Selected variables")
-```
-
 ## Negative lipidomics
 
 ```{r}
@@ -433,7 +458,7 @@ kable(pos_elastic,col.names = "Selected variables")
 ```{r}
 # All variables selected above
 elastic_vars = c("ascorbic_acid",carot_elastic,"cholesterol",
-                 fa_elastic,metab_elastic,trans_elastic,
+                 fa_elastic,metab_elastic,
                  "height_cm","weight_kg","agemos",neg_elastic,pos_elastic,
                  "alphatocopherol","gammatocopherol","vitamin_d")
 elastic_form = as.formula(paste0("y~",paste0(elastic_vars,collapse = "+")))
