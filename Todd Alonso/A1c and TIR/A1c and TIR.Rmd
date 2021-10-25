@@ -15,49 +15,134 @@ output:
 knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
 
 library(knitr)
-library(readxl)
 library(tableone)
 library(dplyr)
 library(tidyr)
-library(nlme)
+library(stringr)
+library(car)
 
-data <- read.csv("B:\\Projects\\Todd Alonso\\A1c and TIR\\Raw data\\Peds_T1D_5groups_5_11_withDKAcol.csv",na.strings = c(" ","","NULL","#VALUE","#VALUE!","?"))
+alldata <- read.csv("B:\\Projects\\Todd Alonso\\A1c and TIR\\Raw data\\Peds_T1D_5groups_5_11_withDKAcol.csv",na.strings = c(" ","","NULL","#VALUE","#VALUE!","?"))
 
 ### LIMIT TO >= 70% SENSOR WEAR...SHOULD BE N=1952
-data$CGMUsePercent <- as.numeric(as.character(data$CGMHighPercent))
-data <- data[data$CGMUsePercent>=70,]
+alldata$CGMUsePercent <- ifelse(alldata$CGMUsePercent %in% c("attemptedboth","x"),NA,alldata$CGMUsePercent)
+alldata$CGMUsePercent <- as.numeric(as.character(alldata$CGMUsePercent))
+data <- alldata %>% filter(CGMUsePercent>=70)
+data <- data %>% filter(OnCGM==1)
 
+# fix DKA variable
+data$DKA.at.onset <- str_trim(data$DKA.at.onset)
+data$DKA.at.onset <- ifelse(data$DKA.at.onset=="UNKN",NA,data$DKA.at.onset)
+
+# factors
+data$Age_Groups <- as.factor(data$Age_Groups)
+data$Gender <- as.factor(data$Gender)
+data$English <- as.factor(data$English)
+data$Spanish <- as.factor(data$Spanish)
+data$OnCGM <- as.factor(data$OnCGM)
+data$OnInsulinPump <- as.factor(data$OnInsulinPump)
+data$Rural <- as.factor(data$Rural)
+data$OnLoop <- as.factor(data$OnLoop)
+
+# separate dfs by DKA at diagnosis
+dkayes <- data %>% filter(DKA.at.onset=="Y")
+dkano <- data %>% filter(DKA.at.onset=="N")
+
+# raw correlation
 corsave <- cor(data$A1C_Value,data$CGMInRange,use = "complete.obs")
-mod <- glm(data$CGMInRange~data$A1C_Value)
+corsave_dkayes <- cor(dkayes$A1C_Value,dkayes$CGMInRange,use = "complete.obs")
+corsave_dkano <- cor(dkano$A1C_Value,dkano$CGMInRange,use = "complete.obs")
 
+mod <- glm(data$CGMInRange~data$A1C_Value)
+mod_dkayes <- glm(dkayes$CGMInRange~dkayes$A1C_Value)
+mod_dkano <- glm(dkano$CGMInRange~dkano$A1C_Value)
+
+# checking the relationship in those with percent use <70
+lowuse <- alldata[alldata$CGMUsePercent<70,]
+corsavelow <- cor(lowuse$A1C_Value,lowuse$CGMInRange,use = "complete.obs")
+modlow <- glm(lowuse$CGMInRange~lowuse$A1C_Value)
+
+# table of descriptive statistics
+t1 <- CreateTableOne(data=data,vars=c("Age_LastVisitDate","Age_Groups","Gender","DiabetesDuration_LastVisitDate","Race_Ethnicity",
+                                 "English","Spanish","A1C_Value","OnCGM","CGMUsePercent","CGMMeanGlucose",
+                                 "CGMHighPercent","CGMLowPercent","CGMInRange","OnInsulinPump","OnLoop",
+                                 "Rural","InsuranceCategory","DKA.at.onset"))
+t1 <- print(t1)
 ```
 
 # Background
 
+The purpose of this analysis is to examine the association between HbA1c and CGM time in range, as well as the influence of age, duration since diagnosis, and DKA at diagnosis.
 
 # Methods
 
+Patient recorded as not on CGM or with CGM use >=70% were excluded.  Pearson's correlation coefficient and generalized linear models were used to examine the relationship beween HbA1c and CGM time in range.
+
 # Results
 
-## Scatterplot and unadjusted model
-
-The unadjusted correlation was `r corsave`.
+## Table of descriptive statistics
 
 ```{r echo=FALSE, comment=""}
-plot(data$CGMInRange,data$A1C_Value)
+kable(t1)
+```
+<br>
+
+## Scatterplot and unadjusted model 
+
+The unadjusted correlation was `r corsave`.  The results of the unadjusted model are shown below.  For each one unit increase in HbA1c, CGM TIR decreased by `r mod$coefficients[2]`.
+
+```{r echo=FALSE, comment=""}
+plot(data$A1C_Value,data$CGMInRange)
 
 summary(mod)
 ```
 <br>
 
-## Model with interaction with age group and duration
+## Model with interaction of HbA1c with age group, duration, and DKA at onset
+
+Results of a model with interactions between HbA1c with age group, diabetes duration, and DKA at onset are shown below.  The interaction between HbA1c and age group was not significant, while the interaction between HbA1c and DKA at onset was almost significant.  The interaction between HbA1c and diabetes duration was highly significant. 
 
 ```{r echo=FALSE, comment=""}
-modint <- glm(data=data,CGMInRange~A1C_Value * Age_Groups + A1C_Value * DiabetesDuration_LastVisitDate)
+modint <- glm(data=data,CGMInRange~A1C_Value * Age_Groups + A1C_Value * DiabetesDuration_LastVisitDate + A1C_Value*DKA.at.onset)
 
+Anova(modint,type="III")
 summary(modint)
-
 ```
 <br>
 
+## Model with interaction of HbA1c with duration and DKA at onset
 
+Because the interaction between HbA1c and age group was not significant, it was removed from the model.  The reduced model results are shown below.
+
+```{r echo=FALSE, comment=""}
+modint2 <- glm(data=data,CGMInRange~A1C_Value + Age_Groups + A1C_Value * DiabetesDuration_LastVisitDate + A1C_Value*DKA.at.onset)
+
+Anova(modint2,type="III")
+summary(modint2)
+
+```
+
+## Association by DKA at diagnosis
+
+The interaction of HbA1c and DKA at diagnosis was almost significant.  Patients were stratified by DKA at diagnosis and the unadjusted associations between HbA1c and CGM TIR are shown below. The slope of the relationship between HbA1c and CGM TIR was steeper in those with DKA at diagnosis.
+
+### DKA at diagnosis
+
+The unadjusted correlation in those with DKA at diagnosis was `r corsave_dkayes`.  
+
+```{r echo=FALSE, comment=""}
+plot(dkayes$A1C_Value,dkayes$CGMInRange)
+
+summary(mod_dkayes)
+```
+<br>
+
+### No DKA at diagnosis
+
+The unadjusted correlation in those without DKA at diagnosis was `r corsave_dkano`.
+
+```{r echo=FALSE, comment=""}
+plot(dkano$A1C_Value,dkano$CGMInRange)
+
+summary(mod_dkano)
+```
+<br>
