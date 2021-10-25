@@ -3,10 +3,10 @@ library(readxl)
 library(tools)
 library(lubridate)
 # Original files
-indir = "C:/Users/Tim Vigers/Desktop/T1 Device Data"
-outdir = "C:/Users/Tim Vigers/Desktop/T1 Device Data Cleaned"
+indir = "C:/Users/timvigers/Dropbox/Work/Tidepool Test/T1 Device Data"
+outdir = "C:/Users/timvigers/Dropbox/Work/Tidepool Test/T1 Device Data Cleaned"
 files = list.files(indir,full.names = T,recursive = T)
-dates = read_excel("C:/Users/Tim Vigers/Desktop/T1Visit Dates.xlsx")
+dates = read_excel("C:/Users/timvigers/Dropbox/Work/Tidepool Test/T1Visit Dates.xlsx")
 dates$id = sub("HRTM_","",dates$record_id)
 # Iterate through
 for (f in files) {
