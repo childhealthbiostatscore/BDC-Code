@@ -8,7 +8,7 @@
 #
 
 library(shiny)
-load("Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Greg Forlenza/Control IQ Prediction/final_mod.RData")
+load("final_mod.RData")
 # Define UI for application that draws a histogram
 ui <- fluidPage(
     # Put inputs in a grid at the bottom of the page.   
@@ -24,14 +24,14 @@ ui <- fluidPage(
                          value = NA,min = 0,max = NA),
             # HFS worry
             numericInput(inputId = "hfs_worry_low_bg",
-                         label = "HFS Worry Score",
+                         label = "HFS Low BG Worry Score",
                          value = NA,min = 0,max = 40),
             # Run button.
             actionButton(inputId = "run",
                          label = "Run")),
         # Output panel on righthand side. 
         mainPanel(
-            titlePanel("HCL Success Probability (%)"),
+            titlePanel("HCL Success Probability"),
             textOutput("final"),
             tags$head(tags$style("#final{color:black;
                          font-size: 200px;
@@ -51,7 +51,7 @@ server <- function(input, output, session) {
     })
     # Print low probability.
     output$final <- renderText({
-        prob()
+        paste0(prob(),"%")
     })
 }
 shinyApp(ui, server)
