@@ -2,18 +2,15 @@
 title: "Control IQ 12 Month Analysis"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output:
-  html_document:
-    number_sections: yes
-    toc: yes
-    toc_depth: 2
-    toc_float: yes
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
 library(arsenal)
 library(tidyverse)
 library(knitr)
+library(rgl)
+options(rgl.useNULL = TRUE)
 knitr::opts_chunk$set(echo = FALSE)
 home_dir = 
   ifelse(.Platform$OS.type != "unix",
@@ -33,7 +30,7 @@ date_cols = c("date","demographics_diabetesdx","demographics_dob")
 data[,date_cols] = lapply(data[,date_cols],lubridate::ymd)
 # Fill down by participant, baseline HbA1c group
 data = data %>% group_by(record_id) %>% 
-  fill(demographics_diabetesdx,demographics_dob)
+  fill(demographics_diabetesdx,demographics_dob,demographics_sex.factor)
 # Calculate variables
 data = data %>% filter(!is.na(gyl_timepoint.factor),record_id >= 119) %>%
   mutate(age = as.numeric(difftime(date,demographics_dob,units = "days"))/365.25,
@@ -51,19 +48,35 @@ data = score_for_cari(data)
 discontinuers = unique(data$record_id[data$time_am < 10])
 discontinuers = discontinuers[!is.na(discontinuers)]
 # Select relevant columns, exclude discontinuers and those < 7
-data = data %>% filter(!record_id %in% discontinuers,age >= 7) %>%
-  select(record_id,gyl_timepoint.factor,age,age_group,hba1c,hba1c_group,
+data = data %>% filter(!record_id %in% discontinuers) %>%
+  rename(sex = demographics_sex.factor) %>%
+  select(record_id,gyl_timepoint.factor,age,age_group,hba1c,hba1c_group,sex,
          time_am,sensor_wear,tdd,tdd_bolus,tdd_basal,dailymealbolus,sleep,exercise,
          sensor_mean,sensor_70_180,sensor_over_180,sensor_g250,sensor_under_70,sensor_u54,
          all_of(surveys))
-# Write for Cari to check
-write.csv(data,file = "./Data_Cleaned/ciq_analysis_dataset.csv",na = "",row.names = F)
+
 ```
 
-# Table 1: Participant Characteristics
+# Table 1: Participant Characteristics at Baseline
 
-A total of `r length(discontinuers)` participants were excluded due to HCL use <10% at 1 or more visits.
+A total of `r length(discontinuers)` participants were excluded due to HCL use <10% at 1 or more visits. 
 
-```{r table 1}
+```{r table 1,results='asis'}
+t1 = tableby(hba1c_group~age+hba1c+time_am+sensor_wear+tdd+tdd_bolus+tdd_basal+
+               dailymealbolus+sensor_mean+sex,
+             data = data[data$gyl_timepoint.factor == "Baseline",])
+summary(t1,pfootnote = T)
+```
 
+# 3D Regression: TIR, HbA1c, and Mean Sensor Glucose
+
+```{r}
+pca_data = na.omit(data[,c("sensor_mean","hba1c","sensor_70_180")])
+means = apply(pca_data, 2, mean)
+# PCA (1st component is the line through the cloud)
+pca <- princomp(pca_data)
+# 3D plot
+plot3d(pca_data)
+abclines3d(means, a = pca$loadings[, 1], col="blue", lwd=2)
+rglwidget()
 ```
