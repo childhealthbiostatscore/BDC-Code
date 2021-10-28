@@ -9,7 +9,7 @@ output: html_document
 library(arsenal)
 library(tidyverse)
 library(knitr)
-library(rgl)
+library(plotly)
 options(rgl.useNULL = TRUE)
 knitr::opts_chunk$set(echo = FALSE)
 home_dir = 
@@ -40,8 +40,8 @@ data = data %>% filter(!is.na(gyl_timepoint.factor),record_id >= 119) %>%
   group_by(record_id) %>%
   mutate(hba1c_group = cut(hba1c[row_number() == 1],c(-Inf,7,9,Inf),
                            labels = c("<7%","7-9%",">=9%"),right = F),
-         age_group = cut(age[row_number() == 1],c(-Inf,14,17,Inf),
-                         labels = c("<14","14-17",">=17"),right = F))
+         age_group = cut(age[row_number() == 1],c(-Inf,14,18,Inf),
+                         labels = c("<14","14-17",">=18"),right = F))
 data$age[data$age == 0 | data$age > 1000] = NA
 # Score surveys
 data = peds_scores(data)
@@ -72,9 +72,8 @@ data = data %>% filter(!record_id %in% discontinuers) %>%
 data$record_id = as.character(data$record_id)
 parent_data$record_id = as.character(parent_data$record_id)
 data = left_join(data,parent_data,by = c("record_id", "gyl_timepoint.factor"))
-# Clean workspace
-rm(list = ls()[-which(ls()=="data")])
-# 
+# Write cleaned CSV
+write.csv(data,file = "./Data_Cleaned/ciq_analysis_dataset.csv",row.names = F,na = "")
 ```
 
 # Table 1: Participant Characteristics at Baseline
@@ -92,11 +91,18 @@ summary(t1,pfootnote = T)
 
 ```{r}
 pca_data = na.omit(data[,c("sensor_mean","hba1c","sensor_70_180")])
-means = apply(pca_data, 2, mean)
 # PCA (1st component is the line through the cloud)
-pca <- princomp(pca_data)
-# 3D plot
-plot3d(pca_data)
-abclines3d(means, a = pca$loadings[, 1], col="blue", lwd=2)
-rglwidget()
+pca = prcomp(pca_data)
+new = as.matrix(pca$x) %*% pca$rotation[,1]
+
+new_x = pca$center[1] + new
+new_y = pca$center[2] + new
+new_z = pca$center[3] + new
+
+fig = 
+  plot_ly(x=pca_data$sensor_mean, y=pca_data$hba1c,z=pca_data$sensor_70_180, 
+        type="scatter3d",mode="markers",size = 2) %>%
+  add_trace(x = new_x,y = new_y,z = new_z,type = 'scatter3d', mode = 'lines') %>%
+  layout(scene = list(xaxis=list(title = "Sensor Mean"),
+                      yaxis=list(title = "HbA1c"),zaxis=list(title = "TIR")))
 ```
