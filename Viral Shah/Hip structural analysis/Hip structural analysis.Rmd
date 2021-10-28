@@ -34,16 +34,8 @@ knitr::opts_knit$set(root.dir = home_dir)
 
 ```{r}
 # options(scipen=999, digits = 4)
-data <- read.csv("./HipHSA with age at dx.csv")
+data <- read.csv("./QBMDLifespan_Table1_updated HSA.csv")
 data$T1DStatus <- as.factor(data$T1DStatus)
-
-# drop BMI since there are -1 values, and recalculate
-data$BMI <- NULL
-data$BMI <- data$Weight / ((data$Height/100)^2)
-
-# really want to use the variable called "age_wrong" - the "age" variable was calculated at an unknown timepoint
-data$Age <- NULL
-data$Age <- data$Age_wrong
 
 vars <- c("NN_BMD","NN_CSA","NN_CSMI","NN_WIDTH","NN_ED","NN_ACT","NN_PCD","NN_CMP","NN_SECT_MOD","NN_BR","IT_BMD","IT_CSA","IT_CSMI",
           "IT_WIDTH","IT_ED","IT_ACT","IT_PCD","IT_CMP","IT_SECT_MOD","IT_BR","FS_BMD","FS_CSA","FS_CSMI","FS_WIDTH","FS_ED","FS_ACT",
@@ -52,20 +44,23 @@ NN_vars <- c("NN_CSA","NN_CSMI","NN_WIDTH","NN_ED","NN_ACT","NN_PCD","NN_CMP","N
 IT_vars <- c("IT_CSA","IT_CSMI","IT_WIDTH","IT_ED","IT_ACT","IT_PCD","IT_CMP","IT_SECT_MOD","IT_BR")
 FS_vars <- c("FS_CSA","FS_CSMI","FS_WIDTH","FS_ED","FS_ACT","FS_PCD","FS_CMP","FS_SECT_MOD","FS_BR")
 
-# still need to do the following - for the manuscript
-# variables vs. age and test for interaction of sex and T1D
-
 # code menopause as Y/N -1 indicates N
-data$menopause <- ifelse(data$Menopause.Year != -1,1,0)
+data$menopause <- NA
+data$menopause <- ifelse(data$MENOPAUSE_YEAR != -1,1,0)
 data$menopause <- as.factor(data$menopause)
 
 # data frame with only females
-females <- data[data$Sex=="F",]
+females <- data[data$THSA_Analysis_SEX=="F",]
 
 # data frame with only T1D
 t1d <- data[data$T1DStatus=="Y",]
-t1d$Diagnosis_Age_lt20 <- ifelse(t1d$Diagnosis_Age<20,1,0)
-t1d$yrs_since_dx <- t1d$Age - t1d$Diagnosis_Age
+
+# diagnosed before age 20?
+t1d$age_dx <- t1d$AgeYr - t1d$T1D_Duration
+t1d$Diagnosis_Age_lt20 <- ifelse(t1d$age_dx<20,1,0)
+
+#t1d$yrs_since_dx <- t1d$Age - t1d$Diagnosis_Age
+# use duration instead
 ```
 
 # Background
@@ -98,7 +93,7 @@ The output from each model can be interpreted as follows: refer to the table lab
 ```{r echo=FALSE,comment=''}
 # group comparisons adjusted for age, sex, BMI
 for (v in vars) {
-  form = as.formula(paste0(v,"~T1DStatus+Age+as.factor(Sex)+BMI"))
+  form = as.formula(paste0(v,"~T1DStatus+AgeYr+as.factor(THSA_Analysis_SEX)+BMI"))
   mod <- lm(form,data = data)
   print(noquote(c("Adjusted model for: ", noquote(v))))
   print(summary(mod))
@@ -116,7 +111,7 @@ The output from each model can be interpreted as follows: refer to the table lab
 ```{r echo=FALSE,comment=''}
 # group comparisons adjusted for age, sex, BMI
 for (v in NN_vars) {
-  form = as.formula(paste0(v,"~T1DStatus+Age+as.factor(Sex)+BMI + NN_BMD"))
+  form = as.formula(paste0(v,"~T1DStatus+AgeYr+as.factor(THSA_Analysis_SEX)+BMI + NN_BMD"))
   mod <- lm(form,data = data)
   print(noquote(c("Adjusted model for: ", noquote(v))))
   print(summary(mod))
@@ -134,7 +129,7 @@ The output from each model can be interpreted as follows: refer to the table lab
 ```{r echo=FALSE,comment=''}
 # group comparisons adjusted for age, sex, BMI
 for (v in FS_vars) {
-  form = as.formula(paste0(v,"~T1DStatus+Age+as.factor(Sex)+BMI + FS_BMD"))
+  form = as.formula(paste0(v,"~T1DStatus+AgeYr+as.factor(THSA_Analysis_SEX)+BMI + FS_BMD"))
   mod <- lm(form,data = data)
   print(noquote(c("Adjusted model for: ", noquote(v))))
   print(summary(mod))
@@ -152,7 +147,7 @@ The output from each model can be interpreted as follows: refer to the table lab
 ```{r echo=FALSE,comment=''}
 # group comparisons adjusted for age, sex, BMI
 for (v in IT_vars) {
-  form = as.formula(paste0(v,"~T1DStatus+Age+as.factor(Sex)+BMI + IT_BMD"))
+  form = as.formula(paste0(v,"~T1DStatus+AgeYr+as.factor(THSA_Analysis_SEX)+BMI + IT_BMD"))
   mod <- lm(form,data = data)
   print(noquote(c("Adjusted model for: ", noquote(v))))
   print(summary(mod))
@@ -170,7 +165,7 @@ The output from each model can be interpreted as follows: refer to the table lab
 ```{r echo=FALSE,comment=''}
 # group comparisons adjusted for age, sex, BMI
 for (v in NN_vars) {
-  form = as.formula(paste0(v,"~T1DStatus+Age+BMI + NN_BMD + menopause + T1DStatus*menopause" ))
+  form = as.formula(paste0(v,"~T1DStatus+AgeYr+BMI + NN_BMD + menopause + T1DStatus*menopause" ))
   mod <- lm(form,data = females)
   print(noquote(c("Adjusted model for: ", noquote(v))))
   print(summary(mod))
@@ -190,7 +185,7 @@ The output from each model can be interpreted as follows: refer to the table lab
 ```{r echo=FALSE,comment=''}
 # group comparisons adjusted for age, sex, BMI
 for (v in FS_vars) {
-  form = as.formula(paste0(v,"~T1DStatus+Age+BMI + FS_BMD + menopause + T1DStatus*menopause" ))
+  form = as.formula(paste0(v,"~T1DStatus+AgeYr+BMI + FS_BMD + menopause + T1DStatus*menopause" ))
   mod <- lm(form,data = females)
   print(noquote(c("Adjusted model for: ", noquote(v))))
   print(summary(mod))
@@ -210,7 +205,7 @@ The output from each model can be interpreted as follows: refer to the table lab
 ```{r echo=FALSE,comment=''}
 # group comparisons adjusted for age, sex, BMI
 for (v in IT_vars) {
-  form = as.formula(paste0(v,"~T1DStatus+Age+BMI + IT_BMD + menopause + T1DStatus*menopause" ))
+  form = as.formula(paste0(v,"~T1DStatus+AgeYr+BMI + IT_BMD + menopause + T1DStatus*menopause" ))
   mod <- lm(form,data = females)
   print(noquote(c("Adjusted model for: ", noquote(v))))
   print(summary(mod))
@@ -230,13 +225,13 @@ The output from each model can be interpreted as follows: refer to the table lab
 ```{r echo=FALSE,comment=''}
 # group comparisons adjusted for age, sex, BMI
 for (v in NN_vars) {
-  form = as.formula(paste0(v,"~T1DStatus+Age+BMI + NN_BMD + menopause + Age*menopause" ))
+  form = as.formula(paste0(v,"~T1DStatus+AgeYr+BMI + NN_BMD + menopause + AgeYr*menopause" ))
   mod <- lm(form,data = females)
   print(noquote(c("Adjusted model for: ", noquote(v))))
   print(summary(mod))
   #means <- emmeans(mod,pairwise ~ T1DStatus|menopause)
   #print(means)
-  p <- emmip(mod, menopause ~ Age, cov.reduce=range)
+  p <- emmip(mod, menopause ~ AgeYr, cov.reduce=range)
   print(p)
    #a <- Anova(mod,type="III")
   #print(a)
@@ -250,13 +245,13 @@ The output from each model can be interpreted as follows: refer to the table lab
 ```{r echo=FALSE,comment=''}
 # group comparisons adjusted for age, sex, BMI
 for (v in FS_vars) {
-  form = as.formula(paste0(v,"~T1DStatus+Age+BMI + FS_BMD + menopause + Age*menopause" ))
+  form = as.formula(paste0(v,"~T1DStatus+AgeYr+BMI + FS_BMD + menopause + AgeYr*menopause" ))
   mod <- lm(form,data = females)
   print(noquote(c("Adjusted model for: ", noquote(v))))
   print(summary(mod))
   #means <- emmeans(mod,pairwise ~ T1DStatus|menopause)
   #print(means)
-  p <- emmip(mod, menopause ~ Age, cov.reduce=range)
+  p <- emmip(mod, menopause ~ AgeYr, cov.reduce=range)
   print(p)
    #a <- Anova(mod,type="III")
   #print(a)
@@ -270,13 +265,13 @@ The output from each model can be interpreted as follows: refer to the table lab
 ```{r echo=FALSE,comment=''}
 # group comparisons adjusted for age, sex, BMI
 for (v in IT_vars) {
-  form = as.formula(paste0(v,"~T1DStatus+Age+BMI + IT_BMD + menopause + Age*menopause" ))
+  form = as.formula(paste0(v,"~T1DStatus+AgeYr+BMI + IT_BMD + menopause + AgeYr*menopause" ))
   mod <- lm(form,data = females)
   print(noquote(c("Adjusted model for: ", noquote(v))))
   print(summary(mod))
   #means <- emmeans(mod,pairwise ~ T1DStatus|menopause)
   #print(means)
-  p <- emmip(mod, menopause ~ Age, cov.reduce=range)
+  p <- emmip(mod, menopause ~ AgeYr, cov.reduce=range)
   print(p)
    #a <- Anova(mod,type="III")
   #print(a)
@@ -290,13 +285,13 @@ The output from each model can be interpreted as follows: refer to the table lab
 ```{r echo=FALSE,comment=''}
 # group comparisons adjusted for age, sex, BMI
 for (v in NN_vars) {
-  form = as.formula(paste0(v,"~T1DStatus+Age+as.factor(Sex)+BMI + NN_BMD + as.factor(Sex)*T1DStatus" ))
+  form = as.formula(paste0(v,"~T1DStatus+AgeYr+as.factor(THSA_Analysis_SEX)+BMI + NN_BMD + as.factor(THSA_Analysis_SEX)*T1DStatus" ))
   mod <- lm(form,data = data)
   print(noquote(c("Adjusted model for: ", noquote(v))))
   print(summary(mod))
-  means <- emmeans(mod,pairwise ~ as.factor(Sex)|T1DStatus)
+  means <- emmeans(mod,pairwise ~ as.factor(THSA_Analysis_SEX)|T1DStatus)
   print(means)
-  p <- emmip(mod, T1DStatus ~ as.factor(Sex))
+  p <- emmip(mod, T1DStatus ~ as.factor(THSA_Analysis_SEX))
   print(p)
    #a <- Anova(mod,type="III")
   #print(a)
@@ -310,13 +305,13 @@ The output from each model can be interpreted as follows: refer to the table lab
 ```{r echo=FALSE,comment=''}
 # group comparisons adjusted for age, sex, BMI
 for (v in FS_vars) {
-  form = as.formula(paste0(v,"~T1DStatus+Age+as.factor(Sex)+BMI + FS_BMD + as.factor(Sex)*T1DStatus" ))
+  form = as.formula(paste0(v,"~T1DStatus+AgeYr+as.factor(THSA_Analysis_SEX)+BMI + FS_BMD + as.factor(THSA_Analysis_SEX)*T1DStatus" ))
   mod <- lm(form,data = data)
   print(noquote(c("Adjusted model for: ", noquote(v))))
   print(summary(mod))
-  means <- emmeans(mod,pairwise ~ as.factor(Sex)|T1DStatus)
+  means <- emmeans(mod,pairwise ~ as.factor(THSA_Analysis_SEX)|T1DStatus)
   print(means)
-  p <- emmip(mod, T1DStatus ~ as.factor(Sex))
+  p <- emmip(mod, T1DStatus ~ as.factor(THSA_Analysis_SEX))
   print(p)
    #a <- Anova(mod,type="III")
   #print(a)
@@ -330,13 +325,13 @@ The output from each model can be interpreted as follows: refer to the table lab
 ```{r echo=FALSE,comment=''}
 # group comparisons adjusted for age, sex, BMI
 for (v in IT_vars) {
-  form = as.formula(paste0(v,"~T1DStatus+Age+as.factor(Sex)+BMI + IT_BMD + as.factor(Sex)*T1DStatus" ))
+  form = as.formula(paste0(v,"~T1DStatus+AgeYr+as.factor(THSA_Analysis_SEX)+BMI + IT_BMD + as.factor(THSA_Analysis_SEX)*T1DStatus" ))
   mod <- lm(form,data = data)
   print(noquote(c("Adjusted model for: ", noquote(v))))
   print(summary(mod))
-  means <- emmeans(mod,pairwise ~ as.factor(Sex)|T1DStatus)
+  means <- emmeans(mod,pairwise ~ as.factor(THSA_Analysis_SEX)|T1DStatus)
   print(means)
-  p <- emmip(mod, T1DStatus ~ as.factor(Sex))
+  p <- emmip(mod, T1DStatus ~ as.factor(THSA_Analysis_SEX))
   print(p)
    #a <- Anova(mod,type="III")
   #print(a)
@@ -350,7 +345,7 @@ The output from each model can be interpreted as follows: refer to the table lab
 ```{r echo=FALSE,comment=''}
 # group comparisons adjusted for age, sex, BMI
 for (v in NN_vars) {
-  form = as.formula(paste0(v,"~Diagnosis_Age_lt20+as.factor(Sex)+BMI "))
+  form = as.formula(paste0(v,"~Diagnosis_Age_lt20+as.factor(THSA_Analysis_SEX)+BMI "))
   mod <- lm(form,data = t1d)
   print(noquote(c("Adjusted model for: ", noquote(v))))
   print(summary(mod))
@@ -368,7 +363,7 @@ The output from each model can be interpreted as follows: refer to the table lab
 ```{r echo=FALSE,comment=''}
 # group comparisons adjusted for age, sex, BMI
 for (v in NN_vars) {
-  form = as.formula(paste0(v,"~Diagnosis_Age_lt20+as.factor(Sex)+BMI + NN_BMD"))
+  form = as.formula(paste0(v,"~Diagnosis_Age_lt20+as.factor(THSA_Analysis_SEX)+BMI + NN_BMD"))
   mod <- lm(form,data = t1d)
   print(noquote(c("Adjusted model for: ", noquote(v))))
   print(summary(mod))
@@ -386,7 +381,7 @@ The output from each model can be interpreted as follows: refer to the table lab
 ```{r echo=FALSE,comment=''}
 # group comparisons adjusted for age, sex, BMI
 for (v in FS_vars) {
-  form = as.formula(paste0(v,"~Diagnosis_Age_lt20+as.factor(Sex)+BMI + FS_BMD"))
+  form = as.formula(paste0(v,"~Diagnosis_Age_lt20+as.factor(THSA_Analysis_SEX)+BMI + FS_BMD"))
   mod <- lm(form,data = t1d)
   print(noquote(c("Adjusted model for: ", noquote(v))))
   print(summary(mod))
@@ -404,7 +399,7 @@ The output from each model can be interpreted as follows: refer to the table lab
 ```{r echo=FALSE,comment=''}
 # group comparisons adjusted for age, sex, BMI
 for (v in IT_vars) {
-  form = as.formula(paste0(v,"~Diagnosis_Age_lt20+as.factor(Sex)+BMI + IT_BMD"))
+  form = as.formula(paste0(v,"~Diagnosis_Age_lt20+as.factor(THSA_Analysis_SEX)+BMI + IT_BMD"))
   mod <- lm(form,data = t1d)
   print(noquote(c("Adjusted model for: ", noquote(v))))
   print(summary(mod))
@@ -422,7 +417,7 @@ The output from each model can be interpreted as follows: refer to the table lab
 ```{r echo=FALSE,comment=''}
 # group comparisons adjusted for age, sex, BMI
 for (v in NN_vars) {
-  form = as.formula(paste0(v,"~yrs_since_dx+as.factor(Sex)+BMI + NN_BMD"))
+  form = as.formula(paste0(v,"~T1D_Duration+as.factor(THSA_Analysis_SEX)+BMI + NN_BMD"))
   mod <- lm(form,data = t1d)
   print(noquote(c("Adjusted model for: ", noquote(v))))
   print(summary(mod))
@@ -440,7 +435,7 @@ The output from each model can be interpreted as follows: refer to the table lab
 ```{r echo=FALSE,comment=''}
 # group comparisons adjusted for age, sex, BMI
 for (v in FS_vars) {
-  form = as.formula(paste0(v,"~yrs_since_dx+as.factor(Sex)+BMI + FS_BMD"))
+  form = as.formula(paste0(v,"~T1D_Duration+as.factor(THSA_Analysis_SEX)+BMI + FS_BMD"))
   mod <- lm(form,data = t1d)
   print(noquote(c("Adjusted model for: ", noquote(v))))
   print(summary(mod))
@@ -458,7 +453,7 @@ The output from each model can be interpreted as follows: refer to the table lab
 ```{r echo=FALSE,comment=''}
 # group comparisons adjusted for age, sex, BMI
 for (v in IT_vars) {
-  form = as.formula(paste0(v,"~yrs_since_dx+as.factor(Sex)+BMI + IT_BMD"))
+  form = as.formula(paste0(v,"~T1D_Duration+as.factor(THSA_Analysis_SEX)+BMI + IT_BMD"))
   mod <- lm(form,data = t1d)
   print(noquote(c("Adjusted model for: ", noquote(v))))
   print(summary(mod))
