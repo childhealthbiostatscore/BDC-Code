@@ -1,0 +1,93 @@
+---
+title: "Control IQ 12 Month Analysis"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(arsenal)
+library(tidyverse)
+library(knitr)
+home_dir = 
+  ifelse(.Platform$OS.type != "unix",
+         "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/Control IQ 12 Month MS",
+         "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/Control IQ 12 Month MS")
+knitr::opts_knit$set(root.dir = home_dir)
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r data,include=FALSE}
+# Import
+source("C:/Users/timvigers/Documents/GitHub/BDC-Code/Cari Berget/Control IQ 12 month analysis/import_peds_data.r")
+source("C:/Users/timvigers/Documents/GitHub/BDC-Code/Cari Berget/Control IQ 12 month analysis/import_parent_data.r")
+# Survey scoring function
+source("C:/Users/timvigers/Documents/GitHub/BDC-Code/Cari Berget/Scoring/scoring_function.R")
+# Format date columns
+data$date = coalesce(as.character(data$date),as.character(data$date_visit))
+date_cols = c("date","demographics_diabetesdx","demographics_dob")
+data[,date_cols] = lapply(data[,date_cols],lubridate::ymd)
+# Fill down by participant, baseline HbA1c group
+data = data %>% group_by(record_id) %>% 
+  fill(demographics_diabetesdx,demographics_dob,demographics_sex.factor)
+# Calculate variables
+data = data %>% filter(!is.na(gyl_timepoint.factor),record_id >= 119) %>%
+  mutate(age = as.numeric(difftime(date,demographics_dob,units = "days"))/365.25,
+         sensor_over_180 = sensor_181_250 + sensor_g250,
+         sensor_under_70 = sensor_54_69 + sensor_u54) %>%
+  group_by(record_id) %>%
+  mutate(hba1c_group = cut(hba1c[row_number() == 1],c(-Inf,7,9,Inf),
+                           labels = c("<7%","7-9%",">=9%"),right = F),
+         age_group = cut(age[row_number() == 1],c(-Inf,14,18,Inf),
+                         labels = c("<14","14-17",">=18"),right = F))
+data$age[data$age == 0 | data$age > 1000] = NA
+# Score surveys
+data = peds_scores(data)
+parent_data = parent_scores(parent_data)
+# Parent surveys to long
+parent_data = parent_data %>% select(record_id,p_paid_b:p_tech_b) %>%
+  pivot_longer(p_paid_b:p_tech_b,
+               names_to = c("survey","gyl_timepoint.factor"),
+               names_pattern = "p_(.*)_(.*)") %>%
+  pivot_wider(names_from = "survey",names_prefix = "p_")
+parent_data$gyl_timepoint.factor =
+  factor(parent_data$gyl_timepoint.factor,
+         levels = c("b","m1","t1","t2","t3","t4"),
+         labels = c("Baseline","Month 1/ Training F/U","3 Months",
+                    "6 Months","9 Months","12 Months"))
+# Dicontinuers
+discontinuers = unique(data$record_id[data$time_am < 10])
+discontinuers = discontinuers[!is.na(discontinuers)]
+# Select relevant columns, exclude discontinuers
+data = data %>% filter(!record_id %in% discontinuers) %>%
+  select(record_id,gyl_timepoint.factor,age_group,hba1c_group,hba1c,demographics_sex.factor,  
+         time_am,sensor_wear,tdd,tdd_bolus,tdd_basal,dailymealbolus,sleep,exercise,
+         sensor_mean,sensor_70_180,sensor_over_180,sensor_g250,sensor_under_70,sensor_u54,
+         all_of(peds_surveys))
+# Add parent scores
+data$record_id = as.character(data$record_id)
+parent_data$record_id = as.character(parent_data$record_id)
+data = left_join(data,parent_data,by = c("record_id", "gyl_timepoint.factor"))
+# Write cleaned CSV
+write.csv(data,file = "./Data_Cleaned/ciq_analysis_dataset.csv",row.names = F,na = "")
+# Clean workspace
+rm(list = ls()[-which(ls()=="data")])
+```
+
+# Table 1: Participant Characteristics at Baseline
+
+A total of `r length(discontinuers)` participants were excluded due to HCL use <10% at 1 or more visits. 
+
+```{r table 1,results='asis'}
+t1 = tableby(~age_group + hba1c_group + hba1c + demographics_sex.factor + 
+               sensor_wear + tdd + tdd_bolus + tdd_basal + dailymealbolus + 
+               sensor_mean + sensor_70_180 + sensor_over_180 + 
+               sensor_g250 + sensor_under_70 + sensor_u54 + c_paid + c_hfs_maintain + 
+               c_hfs_helpless + c_hfs_worry + c_inspire + ya_paid + ya_hfs_behave + 
+               ya_hfs_worry + adult_inspire + c_tech + p_paid + p_hfs_maintain + 
+               p_hfs_helpless + p_hfs_worry + p_inspire + p_tech,
+             data = data[data$gyl_timepoint.factor == "Baseline",])
+summary(t1,labelTranslations = 
+          list(age_group = "Age Group",hba1c_group = "HbA1c Group",
+               demographics_sex.factor = "Sex"))
+```
