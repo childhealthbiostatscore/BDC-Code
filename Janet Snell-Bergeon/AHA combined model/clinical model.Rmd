@@ -244,6 +244,7 @@ complete_lipidmeds_egdr_components <- drop_na(final)
 
 ### make dfs with event data
 event <- read.csv("./Combined predictive model/QVisits_LastVisit_8-10-21.csv")
+#event <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/QVisits_LastVisit_8-10-21.csv")
 
 # death
 death <- event[,c("StudyID","Deceased","PersonYrsDeath")]
@@ -285,6 +286,8 @@ complete_lipidmeds_egdr_components_hardcvd$CACprogV3_num <- NULL
 
 #### check missingness of CAC variables and calculate change in CAC per year
 cac <- read.csv("./Proteomics/Data_Cleaned/cac_groups.csv")
+#cac <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Proteomics/Data_Cleaned/cac_groups.csv")
+
 x <- cac[,c("StudyID","C1","C2","C3","C4")]
 x$last <- ifelse(!is.na(x$C4),4,
                  ifelse(!is.na(x$C3),3,
@@ -353,6 +356,8 @@ temp = complete_lipidmeds_egdr_components %>% select(-StudyID)
 
 ## GLM using variables selected by LASSO with interactions
 
+## this is wrong - should not have statins
+
 ```{r, echo=FALSE, comment=""}
 refit_mod_int = glm(CACprogV3_num ~ onhypermeds+onstatinmeds
                                 + onhypermeds*onstatinmeds + 
@@ -380,6 +385,32 @@ round(coef(glmmod1,s=cv.glmmod$lambda.min),4)
 ```{r, echo=FALSE, comment=""}
 refit_mod = glm(CACprogV3_num ~ age+duration+bmi+onhypermeds+onlipidmeds+avediabp+avesystbp+ldl+
                   hdlc+tri+CKDepi+insdoseperkg+hba1c+smknum+sex_0m1f,complete_lipidmeds_egdr_components,family = binomial("logit"))
+summary(refit_mod)
+```
+
+## LASSO of clinical variables with interactions
+
+```{r, echo=FALSE, comment=""}
+set.seed(3654)
+x <- as.matrix(subset(complete_lipidmeds_egdr_components,select=-c(CACprogV3_num,StudyID,crp,homo,pai1,fib,UA,whr,apob,l45vsf,l45sqf,pfatcm_v1)))
+a <- glinternet.cv(Y=complete_lipidmeds_egdr_components$CACprogV3_num,X=x,numLevels = numLevels_lipidmeds_egdr_components_simple)
+coefs <- coef(a)
+#prog_int_coefs <- as.matrix(coef(a),4)
+#prog_int_coefs <- rownames(prog_int_coefs)[prog_int_coefs[,1]!=0]
+```
+
+## GLM using clinical variables selected by LASSO with interactions
+
+```{r, echo=FALSE, comment=""}
+refit_mod = glm(CACprogV3_num ~ onhypermeds + onlipidmeds + smknum + sex_0m1f +
+                  age + duration + avesystbp + hdlc + tri + hba1c + bmi + ldl +
+                  insdoseperkg + avediabp + CKDepi +
+                  onhypermeds*onlipidmeds + onhypermeds*smknum + onlipidmeds*smknum +
+                  onlipidmeds*sex_0m1f + smknum*sex_0m1f +
+                  age*hba1c + duration*bmi + duration*ldl + bmi*insdoseperkg + avediabp*insdoseperkg +
+                  avediabp*hba1c + avediabp*hdlc + ldl*tri + hdlc*insdoseperkg +
+                  CKDepi*hba1c + onhypermeds*bmi + onhypermeds*ldl + sex_0m1f*hdlc,
+                complete_lipidmeds_egdr_components,family = binomial("logit"))
 summary(refit_mod)
 ```
 
@@ -456,6 +487,20 @@ refit_mod = glm(cac_change_per_yr ~ age+duration+onhypermeds+onlipidmeds+avediab
                 complete_lipidmeds_egdr_components_ccc,family = "gaussian")
 summary(refit_mod)
 ```
+
+## LASSO of clinical variables with interactions
+
+```{r, echo=FALSE, comment=""}
+set.seed(3654)
+x <- as.matrix(subset(complete_lipidmeds_egdr_components_ccc,select=-c(cac_change_per_yr,StudyID,crp,homo,pai1,fib,UA,whr,apob,l45vsf,l45sqf,pfatcm_v1)))
+a <- glinternet.cv(Y=complete_lipidmeds_egdr_components_ccc$cac_change_per_yr,X=x,numLevels = numLevels_lipidmeds_egdr_components_simple)
+coefs <- coef(a)
+#cac_int_coefs <- as.matrix(coef(glmmod1,s=cv.glmmod$lambda.min),4)
+#cac_int_coefs <- rownames(cac_int_coefs)[cac_int_coefs[,1]!=0]
+```
+
+
+## GLM using clinical variables selected by LASSO with interactions
 
 # Regularized Cox model for death without interactions, using lipid lowering meds and A1c, WHR, onhypermeds
 
@@ -711,9 +756,6 @@ extractAIC(c)
 
 The upset plot reflects only models using lipid lowering medications (not statins) and does not include models with interactions.
 
-Outcomes from L to R are:
-CAC progression, rate of change in CAC, death, CAD, hard CAD, CVD, hard CVD
-
 ```{r, echo=FALSE, comment=""}
 vars <- c(prog_noint_coefs,cac_noint_coefs,death_coefs,cad_coefs,hardcad_coefs,cvd_coefs,hardcvd_coefs)
 vars <- unique(vars)
@@ -745,8 +787,7 @@ knitr::include_graphics("C:/temp/plot.png")
 
 The upset plot reflects only models using lipid lowering medications (not statins) and does not include models with interactions.  Only variables that were significant when the models selected by LASSO were refit are included here.
 
-Outcomes from L to R are:
-CAC progression, rate of change in CAC, death, CAD, hard CAD, CVD, hard CVD
+CVD and hard CVD have the same significant variables so they are combined into one column by the UpsetR package.
 
 ```{r, echo=FALSE, comment=""}
 vars_sig <- c(prog_noint_coefs_sig,cac_noint_coefs_sig,death_coefs_sig,cad_coefs_sig,hardcad_coefs_sig,cvd_coefs_sig,hardcvd_coefs_sig)
