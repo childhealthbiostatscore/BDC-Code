@@ -115,8 +115,8 @@ out = data %>% group_by(record_id) %>%
   filter(gyl_timepoint.factor =="12 Months" | 
            gyl_timepoint.factor =="9 Months") %>%
   filter(row_number() == n()) %>%
-  summarise(success = sensor_70_180)
-out$success = cut(out$success,c(-Inf,70,Inf),labels = c("<70",">=70"),
+  summarise(tir = sensor_70_180)
+out$success = cut(out$tir,c(-Inf,70,Inf),labels = c("<70",">=70"),
                   right = F)
 # Final data
 df = data %>% left_join(.,m1,by = "record_id") %>% 
@@ -126,7 +126,7 @@ df = data %>% left_join(.,m1,by = "record_id") %>%
   select(record_id,hba1c,age,t1d_dur,sex,race,insurance,
          cgm_hx,pump_hx,starts_with("m1_"),inspire,paid,
          hfs_worry_low_bg,hfs_worry_social,hfs_maintain,
-         success) %>%
+         tir,success) %>%
   filter(!is.na(success),age > 7)
 # Drop empty levels
 df = droplevels(df)
@@ -168,7 +168,7 @@ gg_miss_upset(df)
 
 ```{r}
 outcome = "success"
-predictors = colnames(df)[which(!colnames(df) %in% c("record_id","success"))]
+predictors = colnames(df)[which(!colnames(df) %in% c("record_id","tir","success"))]
 predictors = predictors[-which(predictors == "m1_dailybolus")]
 lasso_df = df[,c(outcome,predictors)]
 lasso_df = lasso_df[complete.cases(lasso_df),]
@@ -202,6 +202,7 @@ kable(selected,col.names = "Selected Variable(s)")
 
 ```{r}
 form = as.formula(paste0("success~",paste0(selected,collapse = "+")))
+form = update(form,.~.+I(hfs_worry_low_bg^2))
 mod = glm(form,data = df,family = "binomial")
 r = roc(mod$y,predict(mod),quiet = T)
 plot.roc(r,legacy.axes = T,print.auc = T)
@@ -216,6 +217,7 @@ This model was fit using `r nobs(mod)` observations.
 
 ```{r}
 form = as.formula(paste0("success~hba1c+",paste0(selected,collapse = "+")))
+form = update(form,.~.+I(hfs_worry_low_bg^2))
 mod = glm(form,data = df,family = "binomial")
 r = roc(mod$y,predict(mod),quiet = T)
 plot.roc(r,legacy.axes = T,print.auc = T)
@@ -228,6 +230,7 @@ kable(tidy(mod,exponentiate = T),digits = 4)
 
 ```{r}
 form = as.formula("success~hba1c")
+form = update(form,.~.+I(hfs_worry_low_bg^2))
 mod = glm(form,data = df,family = "binomial")
 r = roc(mod$y,predict(mod),quiet = T)
 plot.roc(r,legacy.axes = T,print.auc = T)
@@ -248,6 +251,7 @@ kable(selected,col.names = "Selected Variable(s)")
 
 ```{r}
 form = as.formula(paste0("success~",paste0(selected,collapse = "+")))
+form = update(form,.~.+I(hfs_worry_low_bg^2))
 mod = glm(form,data = df,family = "binomial")
 r = roc(mod$y,predict(mod),quiet = T)
 plot.roc(r,legacy.axes = T,print.auc = T)
@@ -268,6 +272,7 @@ This model was fit using `r nobs(mod)` observations.
 
 ```{r}
 form = as.formula(paste0("success~hba1c+",paste0(selected,collapse = "+")))
+form = update(form,.~.+I(hfs_worry_low_bg^2))
 mod = glm(form,data = df,family = "binomial")
 r = roc(mod$y,predict(mod),quiet = T)
 plot.roc(r,legacy.axes = T,print.auc = T)
@@ -280,8 +285,19 @@ kable(tidy(mod,exponentiate = T),digits = 4)
 
 ```{r}
 form = as.formula(paste0("success~hba1c+",paste0(selected[-which(selected == "m1_sensor_70_180")],collapse = "+")))
+form = update(form,.~.+I(hfs_worry_low_bg^2))
 mod = glm(form,data = df,family = "binomial")
 r = roc(mod$y,predict(mod),quiet = T)
 plot.roc(r,legacy.axes = T,print.auc = T)
 kable(tidy(mod,exponentiate = T),digits = 4)
+```
+
+# TIR at 12 months vs. HFS worry low BG
+
+```{r warning=FALSE,message=FALSE}
+ggplot(df,aes(x = hfs_worry_low_bg,y = tir)) + 
+  geom_point() + 
+  theme_bw() + xlab("Baseline HFS Worry Low BG") + ylab("12 Month TIR") + 
+  geom_smooth(method = "lm",se = F) + 
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2),se = F,color = "red")
 ```
