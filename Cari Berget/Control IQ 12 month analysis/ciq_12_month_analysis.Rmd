@@ -15,6 +15,8 @@ output:
 ```{r setup, include=FALSE}
 library(arsenal)
 library(lmerTest)
+library(censReg)
+library(plm)
 library(performance)
 library(broom.mixed)
 library(emmeans)
@@ -22,7 +24,7 @@ library(tidyverse)
 library(knitr)
 home_dir = 
   ifelse(.Platform$OS.type != "unix",
-         "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/Control IQ 12 Month MS",
+         "B:/Projects/Cari Berget/Control IQ 12 Month MS",
          "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/Control IQ 12 Month MS")
 knitr::opts_knit$set(root.dir = home_dir)
 knitr::opts_chunk$set(echo = FALSE,results='asis',fig.width=12,fig.height=10)
@@ -107,22 +109,6 @@ summary(t1,labelTranslations =
                demographics_sex.factor = "Sex"))
 ```
 
-# HbA1c 
-
-## Plot
-
-```{r message=FALSE}
-hba1c_time_plot = ggplot(data[!is.na(data$hba1c) & !is.na(data$hba1c_group),],
-                         aes(x = numeric_time,y = hba1c,group = record_id)) + 
-  geom_point() + geom_line(aes(color = hba1c_group),alpha = 0.2) + 
-  geom_smooth(aes(group = hba1c_group,color = hba1c_group),size = 2) + 
-  theme_bw() + scale_x_continuous(breaks = c(0,1,3,6,9,12)) + 
-  xlab("Months") + ylab("HbA1c") + labs(color='HbA1c Group') 
-hba1c_time_plot
-```
-
-Bold lines indicate loess smoothed trajectories for each group, and gray shading indicates the standard error of these trajectories.
-
 # Methods
 
 ## Model selection
@@ -145,10 +131,13 @@ ri_rs_mod = lmer(sensor_mean ~ numeric_time*hba1c_group + (numeric_time|record_i
 
 ```{r model function}
 fit_mod = function(df = mod_data,outcome,group = NULL,y_axis = NULL,
-                   family = "gaussian",diagnostics = T){
+                   fam = "gaussian",diagnostics = T){
   f = as.formula(paste0(outcome,"~","numeric_time*",group,"+(1|record_id)"))
-  # Fit
-  mod = lmer(f,data = df)
+  if(fam == "gaussian"){
+    mod = lmer(f,data = df)
+  } else if (fam == "binomial"){
+    mod = glmer(f,data = df,family = fam)
+  }
   # Print diagnostics if necessary
   if(diagnostics){
     mod_check = check_model(mod)
@@ -173,12 +162,13 @@ fit_mod = function(df = mod_data,outcome,group = NULL,y_axis = NULL,
   }
   print(trends)
   # Print table - tidy up results a bit first
-  coeffs = tidy(mod,"fixed") %>% select(term:p.value)
+  expon = (fam != "gaussian")
+  coeffs = tidy(mod,"fixed",exponentiate = expon) %>% select(term:p.value)
   coeffs$term = sub("numeric_time","Months",coeffs$term)
   coeffs$term = sub("hba1c_group","HbA1c group ",coeffs$term)
   coeffs$term = sub("age_group","Age group ",coeffs$term)
   print(kable(coeffs,digits = 3,caption = "Model Results"))
-  if(!is.null(group)){
+  if(!is.null(group) & fam != "zi"){
     coeffs = car::Anova(mod,type = 3)
     rownames(coeffs) = sub("numeric_time","Months",rownames(coeffs))
     rownames(coeffs) = sub("hba1c_group","HbA1c group ",rownames(coeffs))
@@ -189,6 +179,26 @@ fit_mod = function(df = mod_data,outcome,group = NULL,y_axis = NULL,
 ```
 
 Type 3 tests of fixed effect indicate the overall effect for a categorical variable, and in the coefficient tables ":" indicates an interaction term. So, for example, a significant p value in the "Months:HbA1c group" row of the type 3 table indicates an overall significant interaction between time and HbA1c group. 
+
+## HbA1c
+
+### Full cohort
+
+```{r}
+fit_mod(outcome = "hba1c")
+```
+
+### By HbA1c group
+
+```{r}
+fit_mod(outcome = "hba1c",group = "hba1c_group")
+```
+
+### By age group
+
+```{r}
+fit_mod(outcome = "hba1c",group = "age_group")
+```
 
 ## Sensor mean
 
@@ -210,24 +220,362 @@ fit_mod(outcome = "sensor_mean",group = "hba1c_group")
 fit_mod(outcome = "sensor_mean",group = "age_group")
 ```
 
-## HbA1c
+## TIR 70 - 180 mg/dL
 
 ### Full cohort
 
 ```{r}
-fit_mod(outcome = "hba1c")
+fit_mod(outcome = "sensor_70_180")
 ```
 
 ### By HbA1c group
 
 ```{r}
-fit_mod(outcome = "hba1c",group = "hba1c_group")
+fit_mod(outcome = "sensor_70_180",group = "hba1c_group")
 ```
 
 ### By age group
 
 ```{r}
-fit_mod(outcome = "hba1c",group = "age_group")
+fit_mod(outcome = "sensor_70_180",group = "age_group")
 ```
+
+## TIR Over 180 mg/dL
+
+### Full cohort
+
+```{r}
+fit_mod(outcome = "sensor_over_180")
+```
+
+### By HbA1c group
+
+```{r}
+fit_mod(outcome = "sensor_over_180",group = "hba1c_group")
+```
+
+### By age group
+
+```{r}
+fit_mod(outcome = "sensor_over_180",group = "age_group")
+```
+
+## TIR Over 250 mg/dL
+
+This outcome was heavily right skewed. Because there are lots of 0 values, we cannot log transform it, so instead we used a Tobit model with random intercept for participant to account for the zero-inflation. The continuous part of the data was also skewed, so this was log-transformed. Model coefficients are reported on the log scale. Column "Pr…t." contains the model p values.
+
+```{r}
+# Log transform the continuous part
+mod_data$sensor_g250_trans = ifelse(mod_data$sensor_g250 == 0,0,
+                                    log(mod_data$sensor_g250))
+# Format for censReg
+cens = mod_data %>% arrange(record_id,numeric_time) %>%
+  select(record_id,numeric_time,hba1c_group,age_group,sensor_g250_trans)
+cens = pdata.frame(cens,index = c("record_id","numeric_time"),stringsAsFactors = F)
+cens$numeric_time = as.numeric(as.character(cens$numeric_time))
+```
+
+### Full cohort
+
+```{r}
+panelResult <- censReg(sensor_g250_trans ~ numeric_time, data = cens)
+s = summary(panelResult)$estimate
+s = data.frame(s[1:(nrow(s)-2),])
+kable(s,digits = 3)
+```
+
+### By HbA1c group
+
+```{r}
+panelResult <- censReg(sensor_g250_trans ~ numeric_time*hba1c_group, data = cens)
+s = summary(panelResult)$estimate
+s = data.frame(s[1:(nrow(s)-2),])
+kable(s,digits = 3)
+```
+
+### By age group
+
+```{r}
+panelResult <- censReg(sensor_g250_trans ~ numeric_time*age_group, data = cens)
+s = summary(panelResult)$estimate
+s = data.frame(s[1:(nrow(s)-2),])
+kable(s,digits = 3)
+```
+
+## TIR Under 70 mg/dL
+
+This outcome was heavily right skewed. Because there are lots of 0 values, we cannot log transform it, so instead we used a Tobit model with random intercept for participant to account for the zero-inflation. The continuous part of the data was also skewed, so this was log-transformed. Model coefficients are reported on the log scale. Column "Pr…t." contains the model p values.
+
+```{r}
+# Log transform the continuous part
+mod_data$sensor_under_70_trans = round(mod_data$sensor_under_70)
+mod_data$sensor_under_70_trans = ifelse(mod_data$sensor_under_70_trans == 0,0,
+                                    log(mod_data$sensor_under_70_trans))
+# Format for censReg
+cens = mod_data %>% arrange(record_id,numeric_time) %>%
+  select(record_id,numeric_time,hba1c_group,age_group,sensor_under_70_trans)
+cens = pdata.frame(cens,index = c("record_id","numeric_time"),stringsAsFactors = F)
+cens$numeric_time = as.numeric(as.character(cens$numeric_time))
+```
+
+### Full cohort
+
+```{r}
+panelResult <- censReg(sensor_under_70_trans ~ numeric_time, data = cens)
+s = summary(panelResult)$estimate
+s = data.frame(s[1:(nrow(s)-2),])
+kable(s,digits = 3)
+```
+
+### By HbA1c group
+
+```{r}
+panelResult <- censReg(sensor_under_70_trans ~ numeric_time*hba1c_group, data = cens)
+s = summary(panelResult)$estimate
+s = data.frame(s[1:(nrow(s)-2),])
+kable(s,digits = 3)
+```
+
+### By age group
+
+```{r}
+panelResult <- censReg(sensor_under_70_trans ~ numeric_time*age_group, data = cens)
+s = summary(panelResult)$estimate
+s = data.frame(s[1:(nrow(s)-2),])
+kable(s,digits = 3)
+```
+
+## TIR Under 54 mg/dL
+
+There was not enough variability in this outcome and the models would not converge (702 out of 1001 observations were 0 and 226 were 1). 
+
+## % Time in HCL
+
+Because this outcome was heavily left skewed with lots of values >= 90%, we dichotomized it. There were only 77 observations (out of 842) with time in AM < 70%, so 90% was used as a cutoff instead (287 < 90% vs. 555 >= 90%). Results are interpreted on the odds scale. 
+
+```{r}
+mod_data$time_am_90 = cut(mod_data$time_am,c(-Inf,90,Inf),right = F,
+                          labels = c("< 90%",">= 90%"))
+hist(mod_data$time_am)
+```
+
+### Full cohort
+
+```{r}
+fit_mod(outcome = "time_am_90",fam = "binomial",diagnostics = F)
+```
+
+### By HbA1c group
+
+```{r}
+fit_mod(outcome = "time_am_90",group = "hba1c_group",fam = "binomial",diagnostics = F)
+```
+
+### By age group
+
+```{r}
+fit_mod(outcome = "time_am_90",group = "age_group",fam = "binomial",diagnostics = F)
+```
+
+## % Sensor wear
+
+Like time in HCL, this outcome was heavily left skewed with lots of values >= 90%, so we dichotomized it with 90% used as a cutoff. Results are interpreted on the odds scale. 
+
+```{r}
+mod_data$sensor_wear_90 = cut(mod_data$sensor_wear,c(-Inf,90,Inf),right = F,
+                          labels = c("< 90%",">= 90%"))
+hist(mod_data$sensor_wear)
+```
+
+### Full cohort
+
+```{r}
+fit_mod(outcome = "sensor_wear_90",fam = "binomial",diagnostics = F)
+```
+
+### By HbA1c group
+
+```{r}
+fit_mod(outcome = "sensor_wear_90",group = "hba1c_group",fam = "binomial",diagnostics = F)
+```
+
+### By age group
+
+```{r}
+fit_mod(outcome = "sensor_wear_90",group = "age_group",fam = "binomial",diagnostics = F)
+```
+
+## TDD
+
+Participant 266 had a TDD of 789.70 at 9 Months, which was excluded for these models.
+
+```{r}
+mod_data$tdd[mod_data$tdd >= 700] = NA
+```
+
+### Full cohort
+
+```{r}
+fit_mod(outcome = "tdd")
+```
+
+### By HbA1c group
+
+```{r}
+fit_mod(outcome = "tdd",group = "hba1c_group")
+```
+
+### By age group
+
+```{r}
+fit_mod(outcome = "tdd",group = "age_group")
+```
+
+## % TDD as basal
+
+### Full cohort
+
+```{r}
+fit_mod(outcome = "tdd_basal")
+```
+
+### By HbA1c group
+
+```{r}
+fit_mod(outcome = "tdd_basal",group = "hba1c_group")
+```
+
+### By age group
+
+```{r}
+fit_mod(outcome = "tdd_basal",group = "age_group")
+```
+
+## % TDD as bolus
+
+### Full cohort
+
+```{r}
+fit_mod(outcome = "tdd_bolus")
+```
+
+### By HbA1c group
+
+```{r}
+fit_mod(outcome = "tdd_bolus",group = "hba1c_group")
+```
+
+### By age group
+
+```{r}
+fit_mod(outcome = "tdd_bolus",group = "age_group")
+```
+
+## Daily meal bolus
+
+### Full cohort
+
+```{r}
+fit_mod(outcome = "dailymealbolus")
+```
+
+### By HbA1c group
+
+```{r}
+fit_mod(outcome = "dailymealbolus",group = "hba1c_group")
+```
+
+### By age group
+
+```{r}
+fit_mod(outcome = "dailymealbolus",group = "age_group")
+```
+
+## Sleep activity
+
+We used a Tobit model with random intercept for participant to account for the zero-inflation in this outcome. The continuous part of the data was relatively normal, so this time it was *not* log-transformed. Column "Pr…t." contains the model p values.
+
+```{r}
+# Format for censReg
+cens = mod_data %>% arrange(record_id,numeric_time) %>%
+  select(record_id,numeric_time,hba1c_group,age_group,sleep)
+cens = pdata.frame(cens,index = c("record_id","numeric_time"),stringsAsFactors = F)
+cens$numeric_time = as.numeric(as.character(cens$numeric_time))
+```
+
+### Full cohort
+
+```{r}
+panelResult <- censReg(sleep ~ numeric_time, data = cens)
+s = summary(panelResult)$estimate
+s = data.frame(s[1:(nrow(s)-2),])
+kable(s,digits = 3)
+```
+
+### By HbA1c group
+
+```{r}
+panelResult <- censReg(sleep ~ numeric_time*hba1c_group, data = cens)
+s = summary(panelResult)$estimate
+s = data.frame(s[1:(nrow(s)-2),])
+kable(s,digits = 3)
+```
+
+### By age group
+
+```{r}
+panelResult <- censReg(sleep ~ numeric_time*age_group, data = cens)
+s = summary(panelResult)$estimate
+s = data.frame(s[1:(nrow(s)-2),])
+kable(s,digits = 3)
+```
+
+## Exercise
+
+This outcome was heavily right skewed. Because there are lots of 0 values, we cannot log transform it, so instead we used a Tobit model with random intercept for participant to account for the zero-inflation. The continuous part of the data was also skewed, so this was log-transformed. Model coefficients are reported on the log scale. Column "Pr…t." contains the model p values.
+
+```{r}
+# Log transform the continuous part
+mod_data$exercise_trans = ifelse(mod_data$exercise == 0,0,
+                                    log(mod_data$exercise))
+# Format for censReg
+cens = mod_data %>% arrange(record_id,numeric_time) %>%
+  select(record_id,numeric_time,hba1c_group,age_group,exercise_trans)
+cens = pdata.frame(cens,index = c("record_id","numeric_time"),stringsAsFactors = F)
+cens$numeric_time = as.numeric(as.character(cens$numeric_time))
+```
+
+### Full cohort
+
+```{r}
+panelResult <- censReg(exercise_trans ~ numeric_time, data = cens)
+s = summary(panelResult)$estimate
+s = data.frame(s[1:(nrow(s)-2),])
+kable(s,digits = 3)
+```
+
+### By HbA1c group
+
+```{r}
+panelResult <- censReg(exercise_trans ~ numeric_time*hba1c_group, data = cens)
+s = summary(panelResult)$estimate
+s = data.frame(s[1:(nrow(s)-2),])
+kable(s,digits = 3)
+```
+
+### By age group
+
+```{r}
+panelResult <- censReg(exercise_trans ~ numeric_time*age_group, data = cens)
+s = summary(panelResult)$estimate
+s = data.frame(s[1:(nrow(s)-2),])
+kable(s,digits = 3)
+```
+
+# Questions
+
+1. Many of the TIR models still don't look ideal, and the interpretation is a little tricky because of the various transformations and fancy models. Would it be better to dichotomize and use a logistic model?
+
+2. Is the 90% cutoff for time in HCL useful? I am concerned about the numbers when using 70%.
 
 # References
