@@ -127,9 +127,9 @@ Bold lines indicate loess smoothed trajectories for each group, and gray shading
 
 ## Model selection
 
-Time was treated as numeric because timepoints are not evenly spaced, and the interpretation of interactions between a large number of categories is difficult. The final model structure was selected using mean sensor glucose as the outcome, and the same model structure was used for all following models for consistency. Although better by AIC, some random slope models did not converge, so a random intercept for participant was used in all models.
+Time was treated as numeric because timepoints are not evenly spaced, and the interpretation of interactions between a large number of categories is difficult. The final model structure was selected using mean sensor glucose as the outcome, and the same model structure was used for all following models for consistency. Although better by AIC, some random slope models did not converge, so a random intercept for participant was used in all models to account for within-subject autocorrelation.
 
-All analyses were performed using R version `r paste0(R.version$major,".",R.version$minor)` [@rcoreteamLanguageEnvironmentStatistical2021]. Linear mixed models were fit using the `lme4` [@batesFittingLinearMixedEffects2014] package and all model assumptions were assessed visually using the `performance` package[@ludeckePerformancePackageAssessment2021]. 
+All analyses were performed using R version `r paste0(R.version$major,".",R.version$minor)` [@rcoreteamLanguageEnvironmentStatistical2021]. Linear mixed models were fit using the `lme4` [@batesFittingLinearMixedEffects2014] package and all model assumptions were assessed visually using the `performance` package [@ludeckePerformancePackageAssessment2021]. 
 
 ```{r model selection,include=FALSE}
 # Remove outlier values
@@ -144,8 +144,8 @@ ri_rs_mod = lmer(sensor_mean ~ numeric_time*hba1c_group + (numeric_time|record_i
 # Results
 
 ```{r model function}
-fit_mod = function(df = mod_data,outcome,group = NULL,
-                   family = "gaussian",diagnostics = F){
+fit_mod = function(df = mod_data,outcome,group = NULL,y_axis = NULL,
+                   family = "gaussian",diagnostics = T){
   f = as.formula(paste0(outcome,"~","numeric_time*",group,"+(1|record_id)"))
   # Fit
   mod = lmer(f,data = df)
@@ -160,12 +160,35 @@ fit_mod = function(df = mod_data,outcome,group = NULL,
     ggtitle("Estimated Change Over Time") + 
     xlab("Months From Baseline") + theme_bw() + 
     scale_x_continuous(breaks = c(0,1,3,6,9,12))
+  if(!is.null(y_axis)){
+    trends = trends + ylim(y_axis)
+  }
+  if(!is.null(group)){
+    if(group == "hba1c_group"){
+      trends = trends + labs(color='HbA1c Group') 
+    }
+    if(group == "age_group"){
+      trends = trends + labs(color='Age Group') 
+    }
+  }
   print(trends)
-  # Print table
+  # Print table - tidy up results a bit first
   coeffs = tidy(mod,"fixed") %>% select(term:p.value)
-  kable(coeffs)
+  coeffs$term = sub("numeric_time","Months",coeffs$term)
+  coeffs$term = sub("hba1c_group","HbA1c group ",coeffs$term)
+  coeffs$term = sub("age_group","Age group ",coeffs$term)
+  print(kable(coeffs,digits = 3,caption = "Model Results"))
+  if(!is.null(group)){
+    coeffs = car::Anova(mod,type = 3)
+    rownames(coeffs) = sub("numeric_time","Months",rownames(coeffs))
+    rownames(coeffs) = sub("hba1c_group","HbA1c group ",rownames(coeffs))
+    rownames(coeffs) = sub("age_group","Age group ",rownames(coeffs))
+    print(kable(coeffs,digits = 3,caption = "Type 3 Tests of Fixed Effect"))
+  }
 }
 ```
+
+Type 3 tests of fixed effect indicate the overall effect for a categorical variable, and in the coefficient tables ":" indicates an interaction term. So, for example, a significant p value in the "Months:HbA1c group" row of the type 3 table indicates an overall significant interaction between time and HbA1c group. 
 
 ## Sensor mean
 
@@ -185,6 +208,26 @@ fit_mod(outcome = "sensor_mean",group = "hba1c_group")
 
 ```{r}
 fit_mod(outcome = "sensor_mean",group = "age_group")
+```
+
+## HbA1c
+
+### Full cohort
+
+```{r}
+fit_mod(outcome = "hba1c")
+```
+
+### By HbA1c group
+
+```{r}
+fit_mod(outcome = "hba1c",group = "hba1c_group")
+```
+
+### By age group
+
+```{r}
+fit_mod(outcome = "hba1c",group = "age_group")
 ```
 
 # References
