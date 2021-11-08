@@ -28,12 +28,11 @@ source("C:/Users/timvigers/Documents/GitHub/BDC-Code/Cari Berget/Control IQ 12 m
 # Survey scoring function
 source("C:/Users/timvigers/Documents/GitHub/BDC-Code/Cari Berget/Scoring/scoring_function.R")
 # Format date columns
-data$date = coalesce(as.character(data$date),as.character(data$date_visit))
-date_cols = c("date","demographics_diabetesdx","demographics_dob")
+date_cols = c("date","date_visit","demographics_diabetesdx","demographics_dob")
 data[,date_cols] = lapply(data[,date_cols],lubridate::ymd)
 # Fill down by participant, baseline HbA1c group
 data = data %>% group_by(record_id) %>% 
-  fill(demographics_diabetesdx,demographics_dob,demographics_sex.factor)
+  fill(demographics_diabetesdx,demographics_dob,demographics_sex.factor,demographics_age)
 # Calculate variables
 data = data %>% filter(!is.na(gyl_timepoint.factor),record_id >= 119) %>%
   mutate(age = as.numeric(difftime(date,demographics_dob,units = "days"))/365.25,
@@ -42,9 +41,8 @@ data = data %>% filter(!is.na(gyl_timepoint.factor),record_id >= 119) %>%
   group_by(record_id) %>%
   mutate(hba1c_group = cut(hba1c[row_number() == 1],c(-Inf,7,9,Inf),
                            labels = c("<7%","7-9%",">=9%"),right = F),
-         age_group = cut(age[row_number() == 1],c(-Inf,14,18,Inf),
+         age_group = cut(demographics_age[row_number() == 1],c(-Inf,14,18,Inf),
                          labels = c("<14","14-17",">=18"),right = F))
-data$age[data$age == 0 | data$age > 1000] = NA
 # Score surveys
 data = peds_scores(data)
 parent_data = parent_scores(parent_data)
@@ -62,13 +60,18 @@ parent_data$gyl_timepoint.factor =
 # Dicontinuers
 discontinuers = unique(data$record_id[data$time_am < 10])
 discontinuers = discontinuers[!is.na(discontinuers)]
+# Numeric time
+data$numeric_time = data$gyl_timepoint.factor
+levels(data$numeric_time) = c(0,1,3,6,9,12)
+data$numeric_time = as.numeric(as.character(data$numeric_time))
 # Select relevant columns, exclude discontinuers
-data = data %>% filter(!record_id %in% discontinuers) %>%
-  rename(sex = demographics_sex.factor) %>%
-  select(record_id,gyl_timepoint.factor,date,demographics_dob,
-         age,age_group,hba1c,hba1c_group,sex,
-         time_am,sensor_wear,tdd,tdd_bolus,tdd_basal,dailymealbolus,sleep,exercise,
-         sensor_mean,sensor_70_180,sensor_over_180,sensor_g250,sensor_under_70,sensor_u54,
+data = data %>% 
+  filter(!record_id %in% discontinuers,
+         !grepl("arm_3",redcap_event_name)) %>%
+  select(record_id,gyl_timepoint.factor,numeric_time,age_group,hba1c_group,hba1c,
+         demographics_sex.factor,time_am,sensor_wear,tdd,tdd_bolus,tdd_basal,
+         dailymealbolus,sleep,exercise,sensor_mean,sensor_70_180,
+         sensor_over_180,sensor_g250,sensor_under_70,sensor_u54,
          all_of(peds_surveys))
 # Add parent scores
 data$record_id = as.character(data$record_id)
@@ -76,11 +79,32 @@ parent_data$record_id = as.character(parent_data$record_id)
 data = left_join(data,parent_data,by = c("record_id", "gyl_timepoint.factor"))
 # Write cleaned CSV
 write.csv(data,file = "./Data_Cleaned/ciq_analysis_dataset.csv",row.names = F,na = "")
+# Clean workspace
+rm(list = ls()[-which(ls() %in% c("data","discontinuers"))])
+```
+
+# Table 1: Participant Characteristics at Baseline
+
+A total of `r length(discontinuers)` participants were excluded due to HCL use <10% at 1 or more visits. 
+
+```{r table 1,results='asis'}
+t1 = tableby(~age_group + hba1c_group + hba1c + demographics_sex.factor + 
+               sensor_wear + tdd + tdd_bolus + tdd_basal + dailymealbolus + 
+               sensor_mean + sensor_70_180 + sensor_over_180 + 
+               sensor_g250 + sensor_under_70 + sensor_u54 + c_paid + c_hfs_maintain + 
+               c_hfs_helpless + c_hfs_worry + c_inspire + ya_paid + ya_hfs_behave + 
+               ya_hfs_worry + adult_inspire + c_tech + p_paid + p_hfs_maintain + 
+               p_hfs_helpless + p_hfs_worry + p_inspire + p_tech,
+             data = data[data$gyl_timepoint.factor == "Baseline",])
+summary(t1,labelTranslations = 
+          list(age_group = "Age Group",hba1c_group = "HbA1c Group",
+               demographics_sex.factor = "Sex"))
 ```
 
 # 3D Regression: TIR, HbA1c, and Mean Sensor Glucose
 
 ```{r fig.height=10,fig.width=10}
+possible_outliers = c("507","666","670")
 pca_data = na.omit(data[,c("sensor_mean","hba1c","sensor_70_180")])
 pca = prcomp(pca_data)
 plot3d(pca_data,col = "darkblue",size = 2,

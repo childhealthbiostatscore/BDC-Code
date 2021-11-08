@@ -2,11 +2,22 @@
 title: "Control IQ 12 Month Analysis"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: html_document
+bibliography: "C:/Users/timvigers/Dropbox/Miscellaneous/references.bib"
+csl: "C:/Users/timvigers/Dropbox/Miscellaneous/multidisciplinary-digital-publishing-institute.csl"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
 ---
 
 ```{r setup, include=FALSE}
 library(arsenal)
+library(lmerTest)
+library(performance)
+library(broom.mixed)
+library(emmeans)
 library(tidyverse)
 library(knitr)
 home_dir = 
@@ -14,7 +25,7 @@ home_dir =
          "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/Control IQ 12 Month MS",
          "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Cari Berget/Control IQ 12 Month MS")
 knitr::opts_knit$set(root.dir = home_dir)
-knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(echo = FALSE,results='asis',fig.width=12,fig.height=10)
 ```
 
 ```{r data,include=FALSE}
@@ -61,7 +72,8 @@ data$numeric_time = data$gyl_timepoint.factor
 levels(data$numeric_time) = c(0,1,3,6,9,12)
 data$numeric_time = as.numeric(as.character(data$numeric_time))
 # Select relevant columns, exclude discontinuers
-data = data %>% filter(!record_id %in% discontinuers) %>%
+data = data %>% 
+  filter(!record_id %in% discontinuers,!grepl("arm_3",redcap_event_name)) %>%
   select(record_id,gyl_timepoint.factor,numeric_time,age_group,hba1c_group,hba1c,
          demographics_sex.factor,time_am,sensor_wear,tdd,tdd_bolus,tdd_basal,
          dailymealbolus,sleep,exercise,sensor_mean,sensor_70_180,
@@ -81,8 +93,8 @@ rm(list = ls()[-which(ls() %in% c("data","discontinuers"))])
 
 A total of `r length(discontinuers)` participants were excluded due to HCL use <10% at 1 or more visits. 
 
-```{r table 1,results='asis'}
-t1 = tableby(~age_group + hba1c_group + hba1c + demographics_sex.factor + 
+```{r table 1}
+t1 = tableby(~age_group + hba1c + hba1c_group + demographics_sex.factor + 
                sensor_wear + tdd + tdd_bolus + tdd_basal + dailymealbolus + 
                sensor_mean + sensor_70_180 + sensor_over_180 + 
                sensor_g250 + sensor_under_70 + sensor_u54 + c_paid + c_hfs_maintain + 
@@ -95,13 +107,84 @@ summary(t1,labelTranslations =
                demographics_sex.factor = "Sex"))
 ```
 
-# HbA1c Over Time
+# HbA1c 
 
-```{r warning=FALSE,fig.width=8,fig.height=8}
+## Plot
+
+```{r message=FALSE}
 hba1c_time_plot = ggplot(data[!is.na(data$hba1c) & !is.na(data$hba1c_group),],
                          aes(x = numeric_time,y = hba1c,group = record_id)) + 
-  geom_point() + geom_line(aes(color = hba1c_group),alpha = 0.2) + theme_bw() + 
-  scale_x_continuous(breaks = c(0,1,3,6,9,12)) + 
+  geom_point() + geom_line(aes(color = hba1c_group),alpha = 0.2) + 
+  geom_smooth(aes(group = hba1c_group,color = hba1c_group),size = 2) + 
+  theme_bw() + scale_x_continuous(breaks = c(0,1,3,6,9,12)) + 
   xlab("Months") + ylab("HbA1c") + labs(color='HbA1c Group') 
 hba1c_time_plot
 ```
+
+Bold lines indicate loess smoothed trajectories for each group, and gray shading indicates the standard error of these trajectories.
+
+# Methods
+
+## Model selection
+
+Time was treated as numeric because timepoints are not evenly spaced, and the interpretation of interactions between a large number of categories is difficult. The final model structure was selected using mean sensor glucose as the outcome, and the same model structure was used for all following models for consistency. Although better by AIC, some random slope models did not converge, so a random intercept for participant was used in all models.
+
+All analyses were performed using R version `r paste0(R.version$major,".",R.version$minor)` [@rcoreteamLanguageEnvironmentStatistical2021]. Linear mixed models were fit using the `lme4` [@batesFittingLinearMixedEffects2014] package and all model assumptions were assessed visually using the `performance` package[@ludeckePerformancePackageAssessment2021]. 
+
+```{r model selection,include=FALSE}
+# Remove outlier values
+mod_data = data %>% filter(sensor_mean <= 400)
+# Use numeric time since the M1 visit is not equally spaced. Also, interpreting the 
+# interactions between categorical time and categorical HbA1c group is a nightmare.
+ri_mod = lmer(sensor_mean ~ numeric_time*hba1c_group + (1|record_id),data = mod_data)
+ri_rs_mod = lmer(sensor_mean ~ numeric_time*hba1c_group + (numeric_time|record_id),
+                 data = mod_data)
+```
+
+# Results
+
+```{r model function}
+fit_mod = function(df = mod_data,outcome,group = NULL,
+                   family = "gaussian",diagnostics = F){
+  f = as.formula(paste0(outcome,"~","numeric_time*",group,"+(1|record_id)"))
+  # Fit
+  mod = lmer(f,data = df)
+  # Print diagnostics if necessary
+  if(diagnostics){
+    mod_check = check_model(mod)
+    print(mod_check)
+  }
+  # Trend over time for groups
+  t = as.formula(paste0(group," ~ numeric_time"))
+  trends = emmip(mod,t,cov.reduce = range)+
+    ggtitle("Estimated Change Over Time") + 
+    xlab("Months From Baseline") + theme_bw() + 
+    scale_x_continuous(breaks = c(0,1,3,6,9,12))
+  print(trends)
+  # Print table
+  coeffs = tidy(mod,"fixed") %>% select(term:p.value)
+  kable(coeffs)
+}
+```
+
+## Sensor mean
+
+### Full cohort
+
+```{r}
+fit_mod(outcome = "sensor_mean")
+```
+
+### By HbA1c group
+
+```{r}
+fit_mod(outcome = "sensor_mean",group = "hba1c_group")
+```
+
+### By age group
+
+```{r}
+fit_mod(outcome = "sensor_mean",group = "age_group")
+```
+
+# References
