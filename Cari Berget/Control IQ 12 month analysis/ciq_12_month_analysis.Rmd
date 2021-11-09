@@ -36,16 +36,12 @@ source("C:/Users/timvigers/Documents/GitHub/BDC-Code/Cari Berget/Control IQ 12 m
 source("C:/Users/timvigers/Documents/GitHub/BDC-Code/Cari Berget/Control IQ 12 month analysis/import_parent_data.r")
 # Survey scoring function
 source("C:/Users/timvigers/Documents/GitHub/BDC-Code/Cari Berget/Scoring/scoring_function.R")
-# Format date columns
-date_cols = c("date","date_visit","demographics_diabetesdx","demographics_dob")
-data[,date_cols] = lapply(data[,date_cols],lubridate::ymd)
 # Fill down by participant, baseline HbA1c group
 data = data %>% group_by(record_id) %>% 
   fill(demographics_diabetesdx,demographics_dob,demographics_sex.factor,demographics_age)
 # Calculate variables
 data = data %>% filter(!is.na(gyl_timepoint.factor),record_id >= 119) %>%
-  mutate(age = as.numeric(difftime(date,demographics_dob,units = "days"))/365.25,
-         sensor_over_180 = sensor_181_250 + sensor_g250,
+  mutate(sensor_over_180 = sensor_181_250 + sensor_g250,
          sensor_under_70 = sensor_54_69 + sensor_u54) %>%
   group_by(record_id) %>%
   mutate(hba1c_group = cut(hba1c[row_number() == 1],c(-Inf,7,9,Inf),
@@ -131,7 +127,7 @@ ri_rs_mod = lmer(sensor_mean ~ numeric_time*hba1c_group + (numeric_time|record_i
 
 ```{r model function}
 fit_mod = function(df = mod_data,outcome,group = NULL,y_axis = NULL,
-                   fam = "gaussian",diagnostics = T){
+                   fam = "gaussian",diagnostics = F){
   f = as.formula(paste0(outcome,"~","numeric_time*",group,"+(1|record_id)"))
   if(fam == "gaussian"){
     mod = lmer(f,data = df)
@@ -310,7 +306,7 @@ This outcome was heavily right skewed. Because there are lots of 0 values, we ca
 # Log transform the continuous part
 mod_data$sensor_under_70_trans = round(mod_data$sensor_under_70)
 mod_data$sensor_under_70_trans = ifelse(mod_data$sensor_under_70_trans == 0,0,
-                                    log(mod_data$sensor_under_70_trans))
+                                        log(mod_data$sensor_under_70_trans))
 # Format for censReg
 cens = mod_data %>% arrange(record_id,numeric_time) %>%
   select(record_id,numeric_time,hba1c_group,age_group,sensor_under_70_trans)
@@ -383,7 +379,7 @@ Like time in HCL, this outcome was heavily left skewed with lots of values >= 90
 
 ```{r}
 mod_data$sensor_wear_90 = cut(mod_data$sensor_wear,c(-Inf,90,Inf),right = F,
-                          labels = c("< 90%",">= 90%"))
+                              labels = c("< 90%",">= 90%"))
 hist(mod_data$sensor_wear)
 ```
 
@@ -538,7 +534,7 @@ This outcome was heavily right skewed. Because there are lots of 0 values, we ca
 ```{r}
 # Log transform the continuous part
 mod_data$exercise_trans = ifelse(mod_data$exercise == 0,0,
-                                    log(mod_data$exercise))
+                                 log(mod_data$exercise))
 # Format for censReg
 cens = mod_data %>% arrange(record_id,numeric_time) %>%
   select(record_id,numeric_time,hba1c_group,age_group,exercise_trans)
@@ -755,6 +751,12 @@ fit_mod(outcome = "c_hfs_worry",group = "age_group")
 
 ## HFS Worry Parents
 
+There is not a huge amount of variability in this outcome, which is disrupting the models. The singular boundary warning indicates that the random intercept is difficult to estimate, likely because there is so little between subject variance. 
+
+```{r}
+hist(mod_data$p_hfs_worry)
+```
+
 ### Full cohort
 
 ```{r}
@@ -795,22 +797,24 @@ fit_mod(outcome = "c_tech",group = "age_group")
 
 ## Diabetes Technology Parents
 
-### Full cohort
-
-```{r}
-fit_mod(outcome = "p_tech")
-```
-
 ### By HbA1c group
 
 ```{r}
-fit_mod(outcome = "p_tech",group = "hba1c_group")
+mod = lm(p_tech ~ hba1c_group,data = mod_data)
+coeffs = tidy(mod) %>% select(term:p.value)
+coeffs$term = sub("hba1c_group","HbA1c group ",coeffs$term)
+coeffs$term = sub("age_group","Age group ",coeffs$term)
+kable(coeffs,digits = 3)
 ```
 
 ### By age group
 
 ```{r}
-fit_mod(outcome = "p_tech",group = "age_group")
+mod = lm(p_tech ~ age_group,data = mod_data)
+coeffs = tidy(mod) %>% select(term:p.value)
+coeffs$term = sub("hba1c_group","HbA1c group ",coeffs$term)
+coeffs$term = sub("age_group","Age group ",coeffs$term)
+kable(coeffs,digits = 3)
 ```
 
 # Questions
@@ -818,5 +822,7 @@ fit_mod(outcome = "p_tech",group = "age_group")
 1. Many of the TIR models still don't look ideal, and the interpretation is a little tricky because of the various transformations and fancy models. Would it be better to dichotomize and use a logistic model?
 
 2. Is the 90% cutoff for time in HCL useful? I am concerned about the numbers when using 70%.
+
+3. What are the cutoffs that indicate a psychosocial score is elevated? It might be worth using logistic models for these outcomes as well. 
 
 # References
