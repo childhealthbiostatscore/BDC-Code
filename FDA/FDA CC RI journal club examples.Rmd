@@ -1,0 +1,176 @@
+---
+title: "FDA Examples"
+output: slidy_presentation
+---
+
+```{r setup, include=FALSE}
+library(redcapAPI)
+library(tidyverse)
+library(lubridate)
+library(tidyfun)
+library(knitr)
+knitr::opts_chunk$set(echo = FALSE,cache = FALSE)
+home_dir = 
+  ifelse(.Platform$OS.type != "unix",
+         "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/",
+         "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/")
+knitr::opts_knit$set(root.dir = home_dir)
+```
+
+```{r data import}
+# REDCap import
+api <- read.table("./api_token.txt",header = T,sep = "\t")
+rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
+                         token = as.character(api[1,1]))
+data_full <- exportRecords(rcon)
+# Remove participant 10
+data_full <- data_full %>% filter(study_id != "10")
+# Fill down Tx date
+data_full <- data_full %>% group_by(study_id) %>% fill(date_of_tx)
+# Clean
+cgm = read.csv("./CGM Accuracy in BMT/Data_Cleaned/Prospective HSCT CGM Data Updated 6.24.19 FULL DATA SET.csv",na.strings = "")
+cgm$Time = mdy_hm(cgm$Time)
+cgm$Tx_date = mdy(cgm$Tx_date)
+cgm$dx_cat = factor(cgm$dx_cat)
+cgm$tx_type = factor(cgm$tx_type)
+# Get other dates
+datecols = c("time_engraft","time_plt_engraft")
+dates = data_full %>% select(study_id,bmi,tx_type,all_of(datecols)) %>% 
+  group_by(study_id) %>% fill(all_of(datecols),.direction = "updown") %>%
+  filter(row_number() == 1)
+cgm$tx_type = NULL
+dates$study_id = as.integer(dates$study_id)
+cgm = left_join(cgm,dates,by = c("SubjectID" = "study_id"))
+cgm$time_engraft_minus_3 = cgm$time_engraft - 3*24*3600
+# Time since engraftment
+cgm$Time = round_date(cgm$Time,unit = "15 minutes")
+cgm$time_from_engraft = as.numeric(difftime(cgm$Time,cgm$time_engraft_minus_3,
+                                 units = "mins",tz = "UTC"))
+# Format data for presentation
+cgm = cgm %>% select(SubjectID,tx_type,time_from_engraft,Historic_Glucose) %>%
+  group_by(SubjectID) %>% fill(tx_type) %>% ungroup() %>%
+  filter(time_from_engraft >= 0 & time_from_engraft < 10080) %>%
+  rename(id = SubjectID,transplant_type = tx_type,time = time_from_engraft,glucose = Historic_Glucose)
+```
+
+## Data structure
+
+- Most of this information comes from Jeff Goldsmith's website (https://jeffgoldsmith.com/tidyfun.html)
+- Functional data don't fit into the usual "tidy data" paradigm
+  - Normally we want a single value in each cell of a matrix
+  - FDA replaces a single-valued outcome $Y$ with a function
+    - We want a single cell to contain functional data
+    
+## `tidyfun`
+
+- The `tidyfun` package is a nice bridge between the tidyverse and FDA
+- Focused on data cleaning, exploration, and visualization
+  - Can do some light FDA with `tidyfun`, but not much at the moment
+  
+## Starting with traditional tidy data
+
+- Example data is a study of blood glucose after engraftment in kids who underwent bone marrow transplant.
+- We have a "long" dataset, where each row is a sensor glucose value from a CGM.
+  - Sensor reading every 15 minutes.
+- The goal of our analysis is to compare two different transplant types. 
+
+```{r}
+kable(head(cgm,10))
+```
+
+## `tidyfun` objects
+
+- The workhorse data structure in `tidyfun` is the `tf` vector.
+- `tidyfun` provides functions for converting `tidyverse` data to `tf`
+- `tf_nest` is the `tidyfun` version of ` tidyr::nest()`, and converts long data to a `tf`:
+
+```{r echo=TRUE}
+fda_df = cgm %>% tf_nest(glucose,.id = id,.arg = time)
+fda_df
+```
+
+## Easy spaghetti plots
+
+```{r echo=TRUE,warning=FALSE}
+fda_df %>% ggplot(aes(y = glucose,color = transplant_type)) + 
+  geom_spaghetti(alpha = 0.3) +
+  theme_bw()
+```
+
+## Easy spaghetti plots
+
+```{r echo=TRUE,warning=FALSE}
+fda_df %>% ggplot(aes(y = glucose,color = transplant_type)) + 
+  geom_spaghetti(alpha = 0.3) +
+  theme_bw() +
+  facet_grid(~transplant_type)
+```
+
+## Adding a little sauce
+
+```{r echo=TRUE,warning=FALSE}
+fda_df %>% gglasagna(glucose) + theme_bw() + 
+  facet_wrap(~transplant_type,scales = "free")
+```
+
+## Converting to basis representation
+
+```{r echo=TRUE,warning=FALSE,message=FALSE}
+fda_df %>% group_by(transplant_type) %>% 
+  summarize(mean_gluc = mean(glucose,na.rm = T)) %>% 
+  mutate(smooth_mean = tfb(mean_gluc,basis = "spline")) %>% 
+  ggplot(aes(y = smooth_mean,color = transplant_type)) + 
+  geom_spaghetti(size = 1.25, alpha = 1) + 
+  geom_meatballs(aes(y = mean_gluc), alpha = .1) + theme_bw()
+```
+
+## A little bit of FDA
+
+```{r cache=TRUE,echo=TRUE,warning=FALSE}
+# Functional PCA with refundr
+library(refundr)
+cgm_fpca = rfr_fpca(Y = "glucose", data = fda_df)
+# Plot model predictions
+fda_df %>% 
+  modelr::add_predictions(cgm_fpca, var = "glucose_fits") %>% 
+  ggplot(aes(y = glucose_fits)) + 
+  geom_spaghetti() + 
+  geom_spaghetti(aes(y = glucose), color = "blue", alpha = 0.1) + 
+  facet_grid(~transplant_type) + theme_bw()
+```
+
+## More data wrangling for `refund`
+
+- Unfortunately, the `refund` package does not yet work directly with `tf` objects.
+- `tidyfun` makes conversion back and forth easy though.
+- For FPCA, it needs data in a "wide" format.
+
+```{r echo=TRUE}
+wide = fda_df %>% tf_unnest(glucose) %>% 
+  pivot_wider(names_from = glucose_arg,values_from = glucose_value)
+fda_wide = wide[,1:2]
+fda_wide$glucose = wide %>% select(`0`:tail(names(.),1))
+dim(fda_wide)
+head(fda_wide$glucose,10)
+```
+
+```{r include=FALSE}
+fda_wide$glucose = data.matrix(fda_wide$glucose)
+```
+
+## `refund.shiny` FPCA
+
+```{r echo=TRUE,eval=FALSE}
+library(refund)
+library(refund.shiny)
+fit.fpca = fpca.sc(fda_wide$glucose)
+plot_shiny(fit.fpca)
+```
+
+## `refund.shiny` function-on-scalar
+
+```{r echo=TRUE,eval=FALSE}
+DTI = DTI[complete.cases(DTI),]
+fit.fosr = bayes_fosr(cca ~ pasat + sex, data = DTI)
+plot_shiny(fit.fosr)
+```
