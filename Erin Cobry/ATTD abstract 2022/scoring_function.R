@@ -24,5 +24,9 @@ psqi_scores = function(df){
       psqidaydys = cut(psqidaydys,c(-Inf,0,2,4,6),c(0,1,2,3),right = T)
       psqidaydys = as.numeric(as.character(psqidaydys))
     }
+    # Overall quality
+    psqislpqual = as.numeric(r["psqi_6t"])
+    # Need meds
+    psqimeds = as.numeric(r["psqi_7t"])
   }))
 }
