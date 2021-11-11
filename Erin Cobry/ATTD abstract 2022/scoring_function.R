@@ -10,11 +10,19 @@ psqi_scores = function(df){
       psqidurat = as.numeric(as.character(psqidurat))
     } else {psqidurat = NA}
     # Latency
-    psqilaten = as.character(r["psqi_2"])
-    if(psqilaten != ""){
-      psqilaten = as.numeric(as.duration(hm(psqilaten)))/60
-      psqilaten = cut(psqilaten,c(-Inf,15,30,60,Inf),c(0,1,2,3),right = T)
-      psqilaten = as.numeric(as.character(psqilaten))
-    } else {psqilaten = NA}
+    q2 = as.character(r["psqi_2"])
+    if(q2 != ""){
+      q2 = as.numeric(as.duration(hm(q2)))/60
+      q2 = cut(q2,c(-Inf,15,30,60,Inf),c(0,1,2,3),right = T)
+      q2 = as.numeric(as.character(q2))
+    } else {q2 = NA}
+    # Need Q5a but not sure where it is
+    
+    # Day dysfunction
+    psqidaydys = as.numeric(r["psqi_8"] + r["psqi_9"])
+    if(!is.na(psqidaydys)){
+      psqidaydys = cut(psqidaydys,c(-Inf,0,2,4,6),c(0,1,2,3),right = T)
+      psqidaydys = as.numeric(as.character(psqidaydys))
+    }
   }))
 }
