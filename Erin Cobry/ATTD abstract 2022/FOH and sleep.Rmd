@@ -52,10 +52,14 @@ demo_child$cgm_ge1mo <- as.factor(ifelse(demo_child$cgm_time>=30,1,0))
 demo_child$pump_time <- demo_child$consent_date - demo_child$pump_start
 demo_child$pump_time <- ifelse(is.na(demo_child$pump_time),0,demo_child$pump_time)
 demo_child$pump_ge1mo <- as.factor(ifelse(demo_child$pump_time>=30,1,0))
+# is child 5 or older?
+demo_child$age_ge5 <- ifelse(demo_child$cons_age>=5,1,0)
+# merge child age into parent data
+child_age <- demo_child %>% select(record_id, age_ge5)
+child_age$record_id <- child_age$record_id-100
+demo_adult <- merge(demo_adult,child_age,by="record_id",all.x=T,all.y = T)
 
-# NEED TO CHECK STRUCTURE OF ACTIGRAPHY DATA
-
-# actigraphy data
+# read in actigraphy data
 source("T:\\Erin Cobry\\Prospective HCL and sleep study\\Data raw\\AdvancedHybridClosed-ATTDAbstracts2022_R_2021-11-08_2000.r")
 data <- data[!(data$record_id %in% c(121,221,101,201,102,202,103,203,121,221,111,211,131,231,141,241)),]
 # fix total sleep variable
@@ -66,25 +70,24 @@ data$totalsleep_avg_num <- data$hours + (data$minutes/60)
 data$redcap_event_name.factor <- droplevels(data$redcap_event_name.factor)
 # keep needed actigraphy variables
 actigraphy <- data[,c("record_id","redcap_event_name","totalsleep_avg_num","sleepefficency_avg","waso_avg")]
+
+# reshape actigraphy data
 # create new actigraphy visit variable
-actigraphy$visit <- ifelse(actigraphy$redcap_event_name %in% c("baseline_day_1_arm_1","baseline_day_1_arm_2"),"B","WK1")
+actigraphy$visit <- ifelse(actigraphy$redcap_event_name %in% c("baseline_day_1_arm_1","baseline_day_1_arm_2"),"B",
+                           ifelse(actigraphy$redcap_event_name %in% c("hcl_month_3_day_1_arm_1","hcl_month_3_day_1_arm_2"),"M3","M6"))
 actigraphy_wide <- reshape(actigraphy, idvar = "record_id", timevar = "visit", direction = "wide")
-actigraphy_wide$d_tot <- as.numeric(actigraphy_wide$totalsleep_avg_num.WK1 - actigraphy_wide$totalsleep_avg_num.B)
-actigraphy_wide$d_eff <- as.numeric(actigraphy_wide$sleepefficency_avg.WK1 - actigraphy_wide$sleepefficency_avg.B)
-actigraphy_wide$d_waso <- as.numeric(actigraphy_wide$waso_avg.WK1 - actigraphy_wide$waso_avg.B)
+#actigraphy_wide$d_tot <- as.numeric(actigraphy_wide$totalsleep_avg_num.WK1 - actigraphy_wide$totalsleep_avg_num.B)
+#actigraphy_wide$d_eff <- as.numeric(actigraphy_wide$sleepefficency_avg.WK1 - actigraphy_wide$sleepefficency_avg.B)
+#actigraphy_wide$d_waso <- as.numeric(actigraphy_wide$waso_avg.WK1 - actigraphy_wide$waso_avg.B)
 #label(actigraphy_wide$d_tot) <- "Change in total sleep time"
 #label(actigraphy_wide$d_eff) <- "Change in sleep efficiency"
 #label(actigraphy_wide$d_waso) <- "Change in WASO"
 actigraphy_wide_child <- actigraphy_wide[actigraphy_wide$record_id>=200,]
 actigraphy_wide_adult <- actigraphy_wide[actigraphy_wide$record_id<200,]
 
-# create new variables indicating whether the child got <9, <8, <7 hours at baseline
-actigraphy_wide_child$b_9hours <- ifelse(is.na(actigraphy_wide_child$totalsleep_avg_num.B),NA,
-                                         ifelse(actigraphy_wide_child$totalsleep_avg_num.B<9,0,1))
-actigraphy_wide_child$b_8hours <- ifelse(is.na(actigraphy_wide_child$totalsleep_avg_num.B),NA,
-                                         ifelse(actigraphy_wide_child$totalsleep_avg_num.B<8,0,1))
-actigraphy_wide_child$b_7hours <- ifelse(is.na(actigraphy_wide_child$totalsleep_avg_num.B),NA,
-                                         ifelse(actigraphy_wide_child$totalsleep_avg_num.B<7,0,1))
+# score FOH
+
+
 # adult demo table
 adult_demo_vars <- c("age","parent_gender.factor","race.factor","parent_check_night")
 t1_adult <- CreateTableOne(data=demo_adult,vars=adult_demo_vars)
@@ -95,77 +98,16 @@ child_demo_vars <- c("cons_age","childgender.factor","t1d_duration","insulinmeth
 t1_child <- CreateTableOne(data=demo_child,vars=child_demo_vars)
 t1_child <- print(t1_child,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T,nonnorm=c("t1d_duration"),test = F)
 
-
-
-
-
 # adult actigraphy table
-actvars <- c("d_tot","d_eff","d_waso","totalsleep_avg_num.B","totalsleep_avg_num.WK1","sleepefficency_avg.B",
-             "sleepefficency_avg.WK1","waso_avg.B","waso_avg.WK1")
-mean <- apply(actigraphy_wide_adult[,actvars],2,mean,na.rm=T)
-sd <- apply(actigraphy_wide_adult[,actvars],2,sd,na.rm=T)
-mean <- round(mean,4)
-sd <- round(sd,4)
-a <- actigraphy_wide_adult[,c("d_tot","d_eff","d_waso","totalsleep_avg_num.B","totalsleep_avg_num.WK1","sleepefficency_avg.B",
-             "sleepefficency_avg.WK1","waso_avg.B","waso_avg.WK1")]
-p.value <- NULL
-for (i in 1:length(actvars)) {
-  p.value[i] <- t.test(a[,i],mu=0)$p.value
-}
-act_table_adult <- cbind(mean,sd,p.value)
-row.names(act_table_adult) <- c("Change in total sleep time (hrs)","Change in sleep efficiency (%)","Change in WASO (min)",
-                                "Baseline total sleep time (hrs)","Wk1 total sleep time (hrs)","Baseline sleep efficiency (%)",
-                                "Wk1 sleep efficiency (%)","Baseline WASO (min)","Wk1 WASO (min)")
+actvars <- c("totalsleep_avg_num.B","totalsleep_avg_num.M3","totalsleep_avg_num.M6",
+             "sleepefficency_avg.B","sleepefficency_avg.M3","sleepefficency_avg.M6",
+             "waso_avg.B","waso_avg.M3","waso_avg.M6")
+act_table_adult <- CreateTableOne(data=actigraphy_wide_adult,vars=actvars)
+act_table_adult <- print(act_table_adult,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T,test = F)
 
 # child actigraphy table
-actvars <- c("d_tot","d_eff","d_waso","totalsleep_avg_num.B","totalsleep_avg_num.WK1","sleepefficency_avg.B",
-             "sleepefficency_avg.WK1","waso_avg.B","waso_avg.WK1")
-mean <- apply(actigraphy_wide_child[,actvars],2,mean,na.rm=T)
-mean <- round(mean,4)
-sd <- apply(actigraphy_wide_child[,actvars],2,sd,na.rm=T)
-sd <- round(sd,4)
-a <- actigraphy_wide_child[,c("d_tot","d_eff","d_waso","totalsleep_avg_num.B","totalsleep_avg_num.WK1","sleepefficency_avg.B",
-             "sleepefficency_avg.WK1","waso_avg.B","waso_avg.WK1")]
-p.value <- NULL
-for (i in 1:length(actvars)) {
-  p.value[i] <- t.test(a[,i],mu=0)$p.value
-}
-act_table_child <- cbind(mean,sd,p.value)
-row.names(act_table_child) <- c("Change in total sleep time (hrs)","Change in sleep efficiency (%)","Change in WASO (min)",
-                                "Baseline total sleep time (hrs)","Wk1 total sleep time (hrs)","Baseline sleep efficiency (%)",
-                                "Wk1 sleep efficiency (%)","Baseline WASO (min)","Wk1 WASO (min)")
-
-# adult diary table
-diaryvars <- c("d_tot_awakenings","d_t1d_awakenings","tot_awakenings.B","tot_awakenings.WK1","tot_t1d_awakenings.B","tot_t1d_awakenings.WK1")
-mean <- apply(diary_wide_adult[,diaryvars],2,mean,na.rm=T)
-mean <- round(mean,4)
-sd <- apply(diary_wide_adult[,diaryvars],2,sd,na.rm=T)
-sd <- round(sd,4)
-a <- diary_wide_adult[,c("d_tot_awakenings","d_t1d_awakenings","tot_awakenings.B","tot_awakenings.WK1","tot_t1d_awakenings.B","tot_t1d_awakenings.WK1")]
-p.value <- NULL
-for (i in 1:length(diaryvars)) {
-  p.value[i] <- round(t.test(a[,i],mu=0)$p.value,4)
-}
-diary_table_adult <- cbind(mean,sd,p.value)
-row.names(diary_table_adult) <- c("Change in number of total awakenings","Change in number of diabetes-related awakenings",
-                                  "Baseline total awakenings","Wk1 total awakenings","Baseline diabetes-related awakenings",
-                                  "Wk1 diabetes-related awakenings")
-
-# child diary table
-diaryvars <- c("d_tot_awakenings","d_t1d_awakenings","tot_awakenings.B","tot_awakenings.WK1","tot_t1d_awakenings.B","tot_t1d_awakenings.WK1")
-mean <- apply(diary_wide_child[,diaryvars],2,mean,na.rm=T)
-mean <- round(mean,4)
-sd <- apply(diary_wide_child[,diaryvars],2,sd,na.rm=T)
-sd <- round(sd,4)
-a <- diary_wide_child[,c("d_tot_awakenings","d_t1d_awakenings","tot_awakenings.B","tot_awakenings.WK1","tot_t1d_awakenings.B","tot_t1d_awakenings.WK1")]
-p.value <- NULL
-for (i in 1:length(diaryvars)) {
-  p.value[i] <- round(t.test(a[,i],mu=0)$p.value,4)
-}
-diary_table_child <- cbind(mean,sd,p.value)
-row.names(diary_table_child) <- c("Change in number of total awakenings","Change in number of diabetes-related awakenings",
-                                  "Baseline total awakenings","Wk1 total awakenings","Baseline diabetes-related awakenings",
-                                  "Wk1 diabetes-related awakenings")
+act_table_child <- CreateTableOne(data=actigraphy_wide_child,vars=actvars)
+act_table_child <- print(act_table_child,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T,test = F)
 
 # now create tables for child variables by age group
 age_child <- demo_child[,c("record_id","cons_age")]
