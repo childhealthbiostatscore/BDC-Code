@@ -2,7 +2,13 @@
 title: "HCL and sleep: changes in sleep after starting Control IQ"
 author: "Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: word_document
+output:   
+  html_document:
+    number_sections: yes
+    theme: readable
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
 ---
 
 ```{r setup, include=FALSE}
@@ -12,6 +18,7 @@ library(tableone)
 library(dplyr)
 library(stringr)
 library(nlme)
+library(naniar)
 ```
 
 ```{r echo=FALSE,include=FALSE}
@@ -85,19 +92,90 @@ actigraphy_wide <- reshape(actigraphy, idvar = "record_id", timevar = "visit", d
 actigraphy_wide_child <- actigraphy_wide[actigraphy_wide$record_id>=200,]
 actigraphy_wide_adult <- actigraphy_wide[actigraphy_wide$record_id<200,]
 
-# score FOH
+# score FOH for adults - child version had missing question, so we may impute that later
+behavior_vars <- c("snacks","alone","safe_side","higher_alone","feels_low","reduce_insulin","away","fast_acting","exercise_low","outing","nighttime")
+worry_vars <- c("recognize","food","dizzy","asleep_low","embarrassing","low_alone","clumsy","behavior","no_one","accident","bad_evaluation",
+                "seizure","complications_low","faint","having_low")
+maintain_highBG_behavior_vars <- c("safe_side","higher_alone","away")
+lowBG_worry_vars <- c("recognize","food","dizzy","asleep_low","low_alone","no_one","seizure","complications_low","faint","having_low")
+negsocial_worry_vars <- c("embarrassing","clumsy","behavior","accident","bad_evaluation")
+foh_adult <- data[data$record_id<200,c("record_id","redcap_event_name",behavior_vars,worry_vars)]
+foh_adult$visit <- ifelse(foh_adult$redcap_event_name %in% c("baseline_day_1_arm_1","baseline_day_1_arm_2"),"B",
+                           ifelse(foh_adult$redcap_event_name %in% c("hcl_month_3_day_1_arm_1","hcl_month_3_day_1_arm_2"),"M3","M6"))
+# combine records from screening visit - not done at baseline
+source("T:\\Erin Cobry\\Prospective HCL and sleep study\\Data raw\\AdvancedHybridClosed-ParentFOHSurvey_R_2021-11-12_1624.r")
+foh_screen <- foh_screen %>% filter(redcap_event_name %in% c("enrollment_arm_1","enrollment_arm_2"))
+foh_screen <- foh_screen %>% filter(record_id<200)
+foh_screen <- foh_screen[,1:30]
+foh_screen$visit <- "B"
+foh_screen$redcap_repeat_instrument <- NULL
+foh_screen$redcap_repeat_instance <- NULL
+foh_adult <- foh_adult %>% filter(!visit=="B")
+foh_adult <- rbind(foh_adult,foh_screen)
+foh_adult <- foh_adult %>% arrange(record_id,visit)
 
+# checking if anyone is missing items within the FOH survey - no
+#a <- visdat::vis_dat(foh_adult)
+# values are coded in REDCap as 1-5 but need to be 0-4 so subtract 1
+foh_adult[,c(worry_vars,behavior_vars)]<- foh_adult[,c(worry_vars,behavior_vars)] - 1
+foh_adult$foh_adult_total <- rowSums(foh_adult[,c(behavior_vars,worry_vars)],na.rm = F)
+foh_adult$foh_adult_worry <- rowSums(foh_adult[,worry_vars],na.rm = F)
+foh_adult$foh_adult_behavior <- rowSums(foh_adult[,behavior_vars],na.rm = F)
+foh_adult$foh_adult_behavior_maintain <- rowSums(foh_adult[,maintain_highBG_behavior_vars],na.rm = F)
+foh_adult$foh_adult_worry_lowBG <- rowSums(foh_adult[,lowBG_worry_vars],na.rm = F)
+foh_adult$foh_adult_worry_negsocial <- rowSums(foh_adult[,negsocial_worry_vars],na.rm = F)
+# keep only the vars we need
+foh_adult <- foh_adult[,c("record_id","visit","foh_adult_total","foh_adult_worry","foh_adult_behavior","foh_adult_behavior_maintain",
+                          "foh_adult_worry_lowBG","foh_adult_worry_negsocial")]
+# reshape to wide
+foh_adult$redcap_event_name <- NULL
+foh_adult_wide <- reshape(foh_adult, idvar = "record_id", timevar = "visit", direction = "wide")
 
+```
+
+# Background
+
+# Methods
+
+# Results
+
+```{r, echo=FALSE, message=FALSE}
 # adult demo table
 adult_demo_vars <- c("age","parent_gender.factor","race.factor","parent_check_night")
 t1_adult <- CreateTableOne(data=demo_adult,vars=adult_demo_vars)
 t1_adult <- print(t1_adult,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T,nonnorm=c("age"),test = F)
 
+kable(t1_adult,caption="Table 1a. Demographics and clinical characteristics in parents.")
+```
+
+```{r, echo=FALSE, message=FALSE}
+# adult demo table by age group
+adult_demo_vars <- c("age","parent_gender.factor","race.factor","parent_check_night")
+t1_adult <- CreateTableOne(data=demo_adult,vars=adult_demo_vars,strata="age_ge5")
+t1_adult <- print(t1_adult,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T,nonnorm=c("age"),test = F)
+
+kable(t1_adult,caption="Table 1b. Demographics and clinical characteristics in parents, by child age.")
+```
+
+```{r, echo=FALSE, message=FALSE}
 # child demo table
 child_demo_vars <- c("cons_age","childgender.factor","t1d_duration","insulinmethod.factor","pump_ge1mo","cgm_ge1mo")
 t1_child <- CreateTableOne(data=demo_child,vars=child_demo_vars)
 t1_child <- print(t1_child,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T,nonnorm=c("t1d_duration"),test = F)
 
+kable(t1_child,caption="Table 2a. Demographics and clinical characteristics in children.")
+```
+
+```{r, echo=FALSE, message=FALSE}
+# child demo table
+child_demo_vars <- c("cons_age","childgender.factor","t1d_duration","insulinmethod.factor","pump_ge1mo","cgm_ge1mo")
+t1_child <- CreateTableOne(data=demo_child,vars=child_demo_vars,strata="age_ge5")
+t1_child <- print(t1_child,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T,nonnorm=c("t1d_duration"),test = F)
+
+kable(t1_child,caption="Table 2b. Demographics and clinical characteristics in children, by child age.")
+```
+
+```{r, echo=FALSE, message=FALSE}
 # adult actigraphy table
 actvars <- c("totalsleep_avg_num.B","totalsleep_avg_num.M3","totalsleep_avg_num.M6",
              "sleepefficency_avg.B","sleepefficency_avg.M3","sleepefficency_avg.M6",
@@ -105,83 +183,28 @@ actvars <- c("totalsleep_avg_num.B","totalsleep_avg_num.M3","totalsleep_avg_num.
 act_table_adult <- CreateTableOne(data=actigraphy_wide_adult,vars=actvars)
 act_table_adult <- print(act_table_adult,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T,test = F)
 
+kable(act_table_adult,caption="Table 3.  Adult actigraphy variables.")
+```
+
+```{r, echo=FALSE, message=FALSE}
 # child actigraphy table
 act_table_child <- CreateTableOne(data=actigraphy_wide_child,vars=actvars)
 act_table_child <- print(act_table_child,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T,test = F)
 
-# now create tables for child variables by age group
-age_child <- demo_child[,c("record_id","cons_age")]
-age_child$age_cat <- ifelse(age_child$cons_age>=2 & age_child$cons_age<=5,"Ages 2-5",
-                            ifelse(age_child$cons_age<=12,"Ages 6-12","Ages 13-17"))
-actigraphy_wide_child <- merge(actigraphy_wide_child,age_child,by="record_id",all.x = T,all.y = T)
-diary_wide_child$record_id <- diary_wide_child$Record.ID
-diary_wide_child <- merge(diary_wide_child,age_child,by="record_id",all.x = T,all.y = T)
-
-t_act_age <- CreateTableOne(data=actigraphy_wide_child,vars=actvars,strata = "age_cat")
-t_act_age <- print(t_act_age,printToggle = F,varLabels=F,missing=T,showAllLevels = T,test = F)
-
-t_diary_age <- CreateTableOne(data=diary_wide_child,vars=diaryvars,strata = "age_cat")
-t_diary_age <- print(t_diary_age,printToggle = F,varLabels=F,missing=T,showAllLevels = T,test = F)
-
-
+kable(act_table_child,caption="Table 4.  Child actigraphy variables.")
 ```
-
-# Background
-
-The purpose of this analysis is to test whether sleep measures, by actigraphy and self-report, change 1 week after starting Control IQ, in both adults and children.
-
-# Methods
-
-The actigraphy sleep variables were all average values (average total sleep time, average sleep efficiency, average WASO).  The total number of awakenings and number of diabetes-related awakenings were calculated during the week of sleep diary data for each visit.  Paired t-tests were used to compare sleep measures at baseline and at 1 week.
-
-Note that the length of awakening variables had a large amount of missing data; therefore, those measures are not included in this analysis.  Of the first awakenings reported, `r permiss_a1`% had the length missing.  Similarly, the percentage of missing length data for the 2nd, 3rd, and 4th awakenings were `r permiss_a2`%,`r permiss_a3`%, and `r permiss_a4`%.
-
-# Results
 
 ```{r, echo=FALSE, message=FALSE}
-kable(t1_adult,caption="Table 1. Demographics and clinical characteristics in parents.")
+# table of adult FOH
+foh_vars <- c("foh_adult_total.B","foh_adult_total.M3","foh_adult_total.M6",
+              "foh_adult_worry.B","foh_adult_worry.M3","foh_adult_worry.M6",
+              "foh_adult_behavior.B","foh_adult_behavior.M3","foh_adult_behavior.M6",
+              "foh_adult_behavior_maintain.B","foh_adult_behavior_maintain.M3","foh_adult_behavior_maintain.M6",
+              "foh_adult_worry_lowBG.B","foh_adult_worry_lowBG.M3","foh_adult_worry_lowBG.M6",
+              "foh_adult_worry_negsocial.B","foh_adult_worry_negsocial.M3","foh_adult_worry_negsocial.M6")
+foh_table <- CreateTableOne(data=foh_adult_wide,vars=foh_vars)
+foh_table <- print(foh_table,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T,test = F)
+
+kable(foh_table,caption="Table 5.  Hypoglycemia fear scores in parents.")
 ```
 
-<br>
-
-```{r, echo=FALSE, message=FALSE}
-kable(t1_child,caption="Table 2. Demographics and clinical characteristics in children.")
-```
-
-\newpage
-
-```{r, echo=FALSE, message=FALSE}
-kable(act_table_adult,caption="Table 3.  Change in sleep variables at 1 week after starting control IQ, in adults.")
-```
-
-<br>
-
-```{r, echo=FALSE, message=FALSE}
-kable(act_table_child,caption="Table 4.  Change in sleep variables at 1 week after starting control IQ, in children.")
-```
-
-<br>
-
-```{r, echo=FALSE, message=FALSE}
-kable(diary_table_adult,caption="Table 5.  Change in awakenings at 1 week after starting control IQ, in adults.")
-```
-
-<br>
-
-```{r, echo=FALSE, message=FALSE}
-kable(diary_table_child,caption="Table 6.  Change in awakenings at 1 week after starting control IQ, in children.")
-```
-
-\newpage
-
-<br>
-
-```{r, echo=FALSE, message=FALSE}
-kable(t_act_age,caption="Table 7.  Sleep variables in children, by age group")
-```
-
-<br>
-
-```{r, echo=FALSE, message=FALSE}
-kable(t_diary_age,caption="Table 8.  Awakening variables in children, by age group")
-```
