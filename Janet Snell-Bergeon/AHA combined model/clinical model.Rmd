@@ -294,7 +294,7 @@ numLevels_lipidmeds_egdr_components_simple <- c(1,1,1,2,2,1,1,1,1,1,1,1,1,1,2,2)
 ## LASSO without interactions
 
 ```{r, echo=FALSE, comment=""}
-set.seed(72)
+set.seed(3654)
 # LASSO
 x <- as.matrix(subset(complete_lipidmeds_egdr_components,select=-c(CACprogV3_num,StudyID)))
 glmmod1 <- glmnet(x, y=as.factor(complete_lipidmeds_egdr_components$CACprogV3_num), alpha=0.5, family="binomial")
@@ -321,43 +321,21 @@ prog_noint_coefs_sig <- rownames(prog_noint_coefs_sig)[prog_noint_coefs_sig[,4]<
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
-complete_lipidmeds_egdr_components <- complete_lipidmeds_egdr_components[complete.cases(complete_lipidmeds_egdr_components),]
-X <- complete_lipidmeds_egdr_components %>% select(-c(CACprogV3_num,StudyID))
-a <- glinternet.cv(Y=complete_lipidmeds_egdr_components$CACprogV3_num,X=X,numLevels = numLevels_lipidmeds_egdr_components,nFolds = 5,
-                   nLambda = 100,family = "gaussian")
-coefs <- coef(a,lambdaType = "lambdaHat")
-prog_int_coefs <- as.matrix(coef(a),4)
-#prog_int_coefs <- rownames(prog_int_coefs)[prog_int_coefs[,1]!=0]
-
-# testing easy_glinternet
 test <- complete_lipidmeds_egdr_components
 test$onlipidmeds <- as.factor(test$onlipidmeds)
 test$onhypermeds <- as.factor(test$onhypermeds)
 test$smknum <- as.factor(test$smknum)
 test$sex_0m1f <- as.factor(test$sex_0m1f)
-
-form_test <- easy_glinternet(df=test,outcome = "CACprogV3_num",id_vars = "StudyID",lambda_choice = "1sd")
-form_test
-
-set.seed(3654)
-form_test <- easy_glinternet(df=test,outcome = "CACprogV3_num",id_vars = "StudyID",lambda_choice = "1sd")
-form_test
-
-set.seed(123456)
-form_test <- easy_glinternet(df=test,outcome = "CACprogV3_num",id_vars = "StudyID",lambda_choice = "1sd")
-form_test
+form_test <- easy_glinternet(df=test,outcome = "CACprogV3_num",id_vars = "StudyID",lambda_choice = "min",fam = "binomial")
 ```
 
 ## GLM using variables selected by LASSO with interactions
 
-## this is wrong - should not have statins
-
 ```{r, echo=FALSE, comment=""}
-refit_mod_int = glm(CACprogV3_num ~ onhypermeds+onstatinmeds
-                                + onhypermeds*onstatinmeds + 
-                                + age+duration+whr+avesystbp+hdlc+insdoseperkg+hba1c+l45vsf+homo+UA+bmi+fib
-                                + bmi*insdoseperkg + hba1c*fib,complete_statin_egdr_components,family = binomial("logit"))
+refit_mod_int = glm(as.formula(form_test),data=test,family = binomial("logit"))
 summary(refit_mod_int)
+prog_int_coefs <- as.matrix(summary(refit_mod_int)$coef)
+prog_int_coefs <- row.names(prog_noint_coefs)
 ```
 
 ## LASSO of clinical variables, without interactions
@@ -386,25 +364,19 @@ summary(refit_mod)
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
-x <- as.matrix(subset(complete_lipidmeds_egdr_components,select=-c(CACprogV3_num,StudyID,crp,homo,pai1,fib,UA,whr,apob,l45vsf,l45sqf,pfatcm_v1)))
-a <- glinternet.cv(Y=complete_lipidmeds_egdr_components$CACprogV3_num,X=x,numLevels = numLevels_lipidmeds_egdr_components_simple)
-coefs <- coef(a)
-#prog_int_coefs <- as.matrix(coef(a),4)
-#prog_int_coefs <- rownames(prog_int_coefs)[prog_int_coefs[,1]!=0]
+test <- subset(complete_lipidmeds_egdr_components,select=-c(crp,homo,pai1,fib,UA,whr,apob,l45vsf,l45sqf,pfatcm_v1))
+test$onlipidmeds <- as.factor(test$onlipidmeds)
+test$onhypermeds <- as.factor(test$onhypermeds)
+test$smknum <- as.factor(test$smknum)
+test$sex_0m1f <- as.factor(test$sex_0m1f)
+test$CACprogV3_num <- as.factor(test$CACprogV3_num)
+form_test <- easy_glinternet(df=test,outcome = "CACprogV3_num",id_vars = "StudyID",lambda_choice = "min",fam ="binomial")
 ```
 
 ## GLM using clinical variables selected by LASSO with interactions
 
 ```{r, echo=FALSE, comment=""}
-refit_mod = glm(CACprogV3_num ~ onhypermeds + onlipidmeds + smknum + sex_0m1f +
-                  age + duration + avesystbp + hdlc + tri + hba1c + bmi + ldl +
-                  insdoseperkg + avediabp + CKDepi +
-                  onhypermeds*onlipidmeds + onhypermeds*smknum + onlipidmeds*smknum +
-                  onlipidmeds*sex_0m1f + smknum*sex_0m1f +
-                  age*hba1c + duration*bmi + duration*ldl + bmi*insdoseperkg + avediabp*insdoseperkg +
-                  avediabp*hba1c + avediabp*hdlc + ldl*tri + hdlc*insdoseperkg +
-                  CKDepi*hba1c + onhypermeds*bmi + onhypermeds*ldl + sex_0m1f*hdlc,
-                complete_lipidmeds_egdr_components,family = binomial("logit"))
+refit_mod = glm(as.formula(form_test),data=test,family = binomial("logit"))
 summary(refit_mod)
 ```
 
@@ -441,21 +413,21 @@ cac_noint_coefs_sig <- rownames(cac_noint_coefs_sig)[cac_noint_coefs_sig[,4]<0.0
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
-X <- complete_lipidmeds_egdr_components_ccc %>% select(-c(cac_change_per_yr,StudyID))
-a <- glinternet.cv(Y=complete_lipidmeds_egdr_components_ccc$cac_change_per_yr,X=X,numLevels = numLevels_statin_egdr_components)
-coefs <- coef(a)
-cac_int_coefs <- as.matrix(coef(glmmod1,s=cv.glmmod$lambda.min),4)
-#cac_int_coefs <- rownames(cac_int_coefs)[cac_int_coefs[,1]!=0]
+test <- complete_lipidmeds_egdr_components_ccc
+test$onlipidmeds <- as.factor(test$onlipidmeds)
+test$onhypermeds <- as.factor(test$onhypermeds)
+test$smknum <- as.factor(test$smknum)
+test$sex_0m1f <- as.factor(test$sex_0m1f)
+form_test <- easy_glinternet(df=test,outcome = "cac_change_per_yr",id_vars = "StudyID",lambda_choice = "min",fam="gaussian")
 ```
 
 ## GLM using variables selected by LASSO with interactions
 
 ```{r, echo=FALSE, comment=""}
-refit_mod = glm(cac_change_per_yr ~ onhypermeds+onlipidmeds+
-                  age+duration+whr+hdlc+CKDepi+hba1c+l45vsf+l45sqf+UA+avesystbp+crp+avediabp+pfatcm_v1+homo+
-                  age*avesystbp+duration*whr+duration*ldl+duration*l45sqf+duration*UA+whr*crp+avediabp*hdlc+hdlc*pfatcm_v1+hba1c*homo+onlipidmeds*homo,
-                complete_lipidmeds_egdr_components_ccc,family = "gaussian")
-summary(refit_mod)
+refit_mod_int = glm(as.formula(form_test),data=test,family = "gaussian")
+summary(refit_mod_int)
+cac_int_coefs <- as.matrix(summary(refit_mod_int)$coef)
+cac_int_coefs <- row.names(cac_int_coefs)
 ```
 
 ## LASSO of clinical variables, without interactions
@@ -485,15 +457,24 @@ summary(refit_mod)
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
-x <- as.matrix(subset(complete_lipidmeds_egdr_components_ccc,select=-c(cac_change_per_yr,StudyID,crp,homo,pai1,fib,UA,whr,apob,l45vsf,l45sqf,pfatcm_v1)))
-a <- glinternet.cv(Y=complete_lipidmeds_egdr_components_ccc$cac_change_per_yr,X=x,numLevels = numLevels_lipidmeds_egdr_components_simple)
-coefs <- coef(a)
-#cac_int_coefs <- as.matrix(coef(glmmod1,s=cv.glmmod$lambda.min),4)
-#cac_int_coefs <- rownames(cac_int_coefs)[cac_int_coefs[,1]!=0]
+test <- subset(complete_lipidmeds_egdr_components_ccc,select=-c(crp,homo,pai1,fib,UA,whr,apob,l45vsf,l45sqf,pfatcm_v1))
+test$onlipidmeds <- as.factor(test$onlipidmeds)
+test$onhypermeds <- as.factor(test$onhypermeds)
+test$smknum <- as.factor(test$smknum)
+test$sex_0m1f <- as.factor(test$sex_0m1f)
+form_test <- easy_glinternet(df=test,outcome = "cac_change_per_yr",id_vars = "StudyID",lambda_choice = "min",fam="gaussian")
+```
+
+## GLM using clinical variables selected by LASSO with interactions
+
+```{r, echo=FALSE, comment=""}
+refit_mod = glm(as.formula(form_test),data=test,family = "gaussian")
+summary(refit_mod)
 ```
 
 
-## GLM using clinical variables selected by LASSO with interactions
+
+
 
 # Regularized Cox model for death without interactions, using lipid lowering meds and A1c, WHR, onhypermeds
 
