@@ -10,7 +10,7 @@ cal = parsedatetime.Calendar()
 # CGM metric function
 def cgm_metrics(cleaned_cgm):
     # Store results
-    results = {"id":[],"total_sensor_readings":[],"percent_cgm_wear":[],
+    results = {"id":[],"total_sensor_readings":[],"percent_cgm_wear":[],"mean_sensor":[],"sensor_sd":[],
                "percent_time_under_54":[],"minutes_under_54":[],"num_values_under_54":[],
                "percent_time_55_69":[],"minutes_55_69":[],"num_values_55_69":[],
                "percent_time_70_180":[],"minutes_70_180":[],"num_values_70_180":[],
@@ -23,6 +23,9 @@ def cgm_metrics(cleaned_cgm):
     total_r = cleaned_cgm["glucose"].notna().sum()
     results["total_sensor_readings"].append(total_r)
     results["percent_cgm_wear"].append(round(total_r / cleaned_cgm.shape[0] * 100,2))
+    # Mean and SD
+    results["mean_sensor"].append(round(clean["glucose"].mean(skipna = True),2))
+    results["sensor_sd"].append(round(clean["glucose"].std(skipna = True),2))
     # Hypoglycemia
     # Under 54
     hypo_54 = [g for g in cleaned_cgm["glucose"] if g <= 54]
