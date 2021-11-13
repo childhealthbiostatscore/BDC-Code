@@ -19,6 +19,7 @@ library(dplyr)
 library(stringr)
 library(nlme)
 library(naniar)
+library(emmeans)
 ```
 
 ```{r echo=FALSE,include=FALSE}
@@ -82,6 +83,10 @@ actigraphy <- data[,c("record_id","redcap_event_name","totalsleep_avg_num","slee
 # create new actigraphy visit variable
 actigraphy$visit <- ifelse(actigraphy$redcap_event_name %in% c("baseline_day_1_arm_1","baseline_day_1_arm_2"),"B",
                            ifelse(actigraphy$redcap_event_name %in% c("hcl_month_3_day_1_arm_1","hcl_month_3_day_1_arm_2"),"M3","M6"))
+# long df for adults and children
+actigraphy_adult <- actigraphy %>% filter(record_id<200)
+actigraphy_child <- actigraphy %>% filter(record_id>=200)
+
 actigraphy_wide <- reshape(actigraphy, idvar = "record_id", timevar = "visit", direction = "wide")
 #actigraphy_wide$d_tot <- as.numeric(actigraphy_wide$totalsleep_avg_num.WK1 - actigraphy_wide$totalsleep_avg_num.B)
 #actigraphy_wide$d_eff <- as.numeric(actigraphy_wide$sleepefficency_avg.WK1 - actigraphy_wide$sleepefficency_avg.B)
@@ -130,6 +135,9 @@ foh_adult <- foh_adult[,c("record_id","visit","foh_adult_total","foh_adult_worry
 # reshape to wide
 foh_adult$redcap_event_name <- NULL
 foh_adult_wide <- reshape(foh_adult, idvar = "record_id", timevar = "visit", direction = "wide")
+
+# make one long df with adult data (FOH, actigraphy, PSQI)
+adult_long <- merge(foh_adult,actigraphy_adult,by=c("record_id","visit"),all.x=T,all.y=T)
 
 ```
 
@@ -222,3 +230,23 @@ foh_table <- print(foh_table,printToggle = F,varLabels=TRUE,missing=T,showAllLev
 kable(foh_table)
 ```
 
+## Associations between parent FOH scores and parent actigraphy
+
+The p-values in the table labeled "Type 3 tests of fixed effects" can be interpreted as follows:
+
+1) Row labeled "visit" - tests the change in the actigraphy outcome over time
+2) Row labeled with the FOH variable - tests the overall association between the actigraphy outcome and the FOH variable
+
+### Total FOH and WASO
+
+```{r, echo=FALSE, message=FALSE}
+# Total FOH and WASO
+par_fohtot_waso <- lme(waso_avg ~ visit + foh_adult_total,random=~1|record_id,data = adult_long,na.action = na.omit)
+par_fohtot_waso_anova <- anova.lme(par_fohtot_waso, type="marginal")
+par_fohtot_waso_means <- emmeans(par_fohtot_waso,"visit")
+par_fohtot_waso_pairs <-  pairs(par_fohtot_waso_means,adjust="tukey")
+
+kable(par_fohtot_waso_anova,caption="Type 3 tests of fixed effects.",format.args = list(scientific = FALSE))
+kable(par_fohtot_waso_means,caption="Time point means.",format.args = list(scientific = FALSE))
+kable(par_fohtot_waso_pairs,caption="Pair-wise comparisons between time points.",format.args = list(scientific = FALSE))
+```
