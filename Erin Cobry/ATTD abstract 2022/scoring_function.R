@@ -26,6 +26,10 @@ psqi_scores = function(df){
     } else {q2 = NA}
     q5a = as.numeric(r["minutes"])-1
     psqilaten = q5a + q2
+    if(!is.na(psqilaten)){
+      psqilaten = cut(psqilaten,c(-Inf,0,2,4,6),c(0,1,2,3),right = T)
+      psqilaten = as.numeric(as.character(psqilaten))
+    }
     # Day dysfunction
     psqidaydys = as.numeric(r["psqi_8"]) + as.numeric(r["psqi_9"])
     if(!is.na(psqidaydys)){
