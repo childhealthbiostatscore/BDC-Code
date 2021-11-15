@@ -14,7 +14,7 @@ psqi_scores = function(df){
       psqidurat = as.numeric(as.character(psqidurat))
     } else {psqidurat = NA}
     # Disturbance
-    q5b_j = r %>% select(wake_up:other)
+    q5b_j = r[c("wake_up","bathroom","breathe","cold","hot","bad_dreams","pain","other")]
     if(is.na(q5b_j["other"])){q5b_j["other"] = 1}
     psqidistb = sum(as.numeric(q5b_j)-1)
     psqidistb = cut(psqidistb,c(-Inf,0,9,18,Inf),c(0,1,2,3),right = T)
@@ -27,18 +27,31 @@ psqi_scores = function(df){
     q5a = as.numeric(r["minutes"])-1
     psqilaten = q5a + q2
     # Day dysfunction
-    psqidaydys = as.numeric(r["psqi_8"] + r["psqi_9"])
+    psqidaydys = as.numeric(r["psqi_8"]) + as.numeric(r["psqi_9"])
     if(!is.na(psqidaydys)){
       psqidaydys = cut(psqidaydys,c(-Inf,0,2,4,6),c(0,1,2,3),right = T)
       psqidaydys = as.numeric(as.character(psqidaydys))
     }
     # Sleep efficiency
-    
+    diffhour = as.numeric(r["psqi_3_1"])
+    psqihse = (as.numeric(r["psqi_4"]) / diffhour) * 100
+    if(!is.na(psqihse)){
+      psqihse = cut(psqihse,c(-Inf,65,75,85,Inf),c(3,2,1,0),right = F)
+      psqihse = as.numeric(as.character(psqihse))
+    }
     # Overall quality
     psqislpqual = as.numeric(r["psqi_6t"])
     # Need meds
     psqimeds = as.numeric(r["psqi_7t"])
+    # Total
+    psqi = sum(c(psqidurat,psqidistb,psqilaten,psqidaydys,psqihse,psqislpqual,psqimeds))
+    psqi_binary = cut(psqi,c(-Inf,5,Inf),c("Good","Poor"),right = T)
     # Output
-    return(c(psqidurat,q2,psqidaydys,psqislpqual,psqimeds))
+    return(c(psqidurat,psqidistb,psqilaten,psqidaydys,psqihse,
+             psqislpqual,psqimeds,psqi,psqi_binary))
   }))
+  colnames(scores) = c("psqidurat","psqidistb","psqilaten","psqidaydys",
+                       "psqihse","psqislpqual","psqimeds","psqi","psqi_binary")
+  # Put together
+  df = data.frame(cbind(df,scores))
 }
