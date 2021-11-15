@@ -24,8 +24,8 @@ def cgm_metrics(cleaned_cgm):
     results["total_sensor_readings"].append(total_r)
     results["percent_cgm_wear"].append(round(total_r / cleaned_cgm.shape[0] * 100,2))
     # Mean and SD
-    results["mean_sensor"].append(round(clean["glucose"].mean(skipna = True),2))
-    results["sensor_sd"].append(round(clean["glucose"].std(skipna = True),2))
+    results["mean_sensor"].append(round(cleaned_cgm["glucose"].mean(skipna = True),2))
+    results["sensor_sd"].append(round(cleaned_cgm["glucose"].std(skipna = True),2))
     # Hypoglycemia
     # Under 54
     hypo_54 = [g for g in cleaned_cgm["glucose"] if g <= 54]

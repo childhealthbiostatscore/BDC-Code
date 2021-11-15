@@ -1,5 +1,5 @@
 ---
-title: "Control IQ 12 Month Analysis"
+title: "CIQ 3D Agreement"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
 output: html_document
@@ -23,18 +23,19 @@ setupKnitr(autoprint = TRUE)
 
 ```{r data,include=FALSE}
 # Import
-source("C:/Users/timvigers/Documents/GitHub/BDC-Code/Cari Berget/Control IQ 12 month analysis/import_peds_data.r")
-source("C:/Users/timvigers/Documents/GitHub/BDC-Code/Cari Berget/Control IQ 12 month analysis/import_parent_data.r")
+source("C:/Users/timbv/Documents/GitHub/BDC-Code/Cari Berget/Control IQ 12 month analysis/import_peds_data.r")
+source("C:/Users/timbv/Documents/GitHub/BDC-Code/Cari Berget/Control IQ 12 month analysis/import_parent_data.r")
 # Survey scoring function
-source("C:/Users/timvigers/Documents/GitHub/BDC-Code/Cari Berget/Scoring/scoring_function.R")
+source("C:/Users/timbv/Documents/GitHub/BDC-Code/Cari Berget/Scoring/scoring_function.R")
 # Format date columns
 date_cols = c("date","date_visit","demographics_diabetesdx","demographics_dob")
-data[,date_cols] = lapply(data[,date_cols],lubridate::ymd)
+data[,date_cols] = lapply(data[,date_cols],lubridate::mdy)
 # Fill down by participant, baseline HbA1c group
 data = data %>% group_by(record_id) %>% 
   fill(demographics_diabetesdx,demographics_dob,demographics_sex.factor,demographics_age)
 # Calculate variables
-data = data %>% filter(!is.na(gyl_timepoint.factor),record_id >= 119) %>%
+data = data %>% filter(!is.na(gyl_timepoint.factor),record_id >= 119,
+                       !grepl("arm_3",redcap_event_name)) %>%
   mutate(age = as.numeric(difftime(date,demographics_dob,units = "days"))/365.25,
          sensor_over_180 = sensor_181_250 + sensor_g250,
          sensor_under_70 = sensor_54_69 + sensor_u54) %>%
@@ -68,7 +69,8 @@ data$numeric_time = as.numeric(as.character(data$numeric_time))
 data = data %>% 
   filter(!record_id %in% discontinuers,
          !grepl("arm_3",redcap_event_name)) %>%
-  select(record_id,gyl_timepoint.factor,numeric_time,age_group,hba1c_group,hba1c,
+  select(record_id,gyl_timepoint.factor,numeric_time,age_group,demographics_age,
+         hba1c_group,hba1c,
          demographics_sex.factor,time_am,sensor_wear,tdd,tdd_bolus,tdd_basal,
          dailymealbolus,sleep,exercise,sensor_mean,sensor_70_180,
          sensor_over_180,sensor_g250,sensor_under_70,sensor_u54,
@@ -88,13 +90,9 @@ rm(list = ls()[-which(ls() %in% c("data","discontinuers"))])
 A total of `r length(discontinuers)` participants were excluded due to HCL use <10% at 1 or more visits. 
 
 ```{r table 1,results='asis'}
-t1 = tableby(~age_group + hba1c_group + hba1c + demographics_sex.factor + 
+t1 = tableby(~age_group + demographics_age +  hba1c_group + hba1c + demographics_sex.factor + 
                sensor_wear + tdd + tdd_bolus + tdd_basal + dailymealbolus + 
-               sensor_mean + sensor_70_180 + sensor_over_180 + 
-               sensor_g250 + sensor_under_70 + sensor_u54 + c_paid + c_hfs_maintain + 
-               c_hfs_helpless + c_hfs_worry + c_inspire + ya_paid + ya_hfs_behave + 
-               ya_hfs_worry + adult_inspire + c_tech + p_paid + p_hfs_maintain + 
-               p_hfs_helpless + p_hfs_worry + p_inspire + p_tech,
+               sensor_mean + sensor_70_180,
              data = data[data$gyl_timepoint.factor == "Baseline",])
 summary(t1,labelTranslations = 
           list(age_group = "Age Group",hba1c_group = "HbA1c Group",
