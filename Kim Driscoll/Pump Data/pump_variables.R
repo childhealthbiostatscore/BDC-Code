@@ -1,13 +1,15 @@
 library(tidyverse)
 # Import data
-indir <- "C:/Users/Tim Vigers/Desktop/T1 Device Data Cleaned"
-outdir <- "C:/Users/Tim Vigers/Desktop"
+indir <- "~/Desktop/T1 Device Data Cleaned"
+outdir <- "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/DP3 high risk/Data_Cleaned"
 files <- list.files(indir,full.names = T)
 # Make a summary variables table.
 summary <- data.frame(matrix(nrow = length(files),ncol = 0))
 # Iterate through each file
 for (f in 1:length(files)) {
   print(files[f])
+  # Clear workspace
+  rm(list = ls()[-which(ls() %in% c("indir","outdir","files","summary","f"))])
   # Read in
   table = read.csv(files[f],header = T,stringsAsFactors = FALSE,na.strings = "")
   if (nrow(table) == 0){

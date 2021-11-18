@@ -3,20 +3,21 @@ library(readxl)
 library(tools)
 library(lubridate)
 # Original files
-indir = "C:/Users/timvigers/Dropbox/Work/Tidepool Test/T1 Device Data"
-outdir = "C:/Users/timvigers/Dropbox/Work/Tidepool Test/T1 Device Data Cleaned"
+indir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/DP3 high risk/Data_Raw/T1 Device Data"
+outdir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/DP3 high risk/Data_Cleaned/T1 Device Data Cleaned"
 files = list.files(indir,full.names = T,recursive = T)
-dates = read_excel("C:/Users/timvigers/Dropbox/Work/Tidepool Test/T1Visit Dates.xlsx")
+dates = read_excel("~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/DP3 high risk/Data_Raw/T1Visit Dates.xlsx")
 dates$id = sub("HRTM_","",dates$record_id)
 # Iterate through
 for (f in files) {
   if (!(file_ext(f) %in% c("csv","xls","xlsx"))){next}
   file_id = file_path_sans_ext(basename(f))
-  print(file_id)
+  print(basename(f))
   if (file_ext(f) == "csv"){
-    df = read.csv(f,stringsAsFactors = F,na.strings = "")
+    df = read.csv(f,stringsAsFactors = F,na.strings = "",header = F)
+    if (ncol(df) == 8){stop("8 columns")}
     if (ncol(df) > 25){
-      start = which(df[,3]=='Pump')
+      start = grep('----',df[,1])[1]
       colnames(df) = df[start+1,]
       df = df[-c(0:start+1),]
       # Remove micro boluses
@@ -24,7 +25,7 @@ for (f in files) {
       if (length(micro)>0){
         df = df[-c(micro),]
       }
-      df$datetime = lubridate::mdy_hms(paste(df$Date,df$Time))
+      df$datetime = lubridate::parse_date_time(paste(df$Date,df$Time),orders = c("mdyHMS","ymdHMS"))
       t = df %>% arrange(datetime)
     } else if (ncol(df) == 2){
       start = which(df[,1]=='Time')
@@ -112,4 +113,6 @@ for (f in files) {
   t = t[t$Date >= start & t$Date < completed,]
   # Write
   write.csv(t[,vars],file = paste0(outdir,"/",file_id,".csv"),row.names = F,na = "")
+  # Clean up
+  rm(df,t)
 }
