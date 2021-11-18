@@ -5,6 +5,7 @@
 require(tidyverse)
 require(lubridate)
 psqi_scores = function(df){
+  df = as.data.frame(df)
   # Score surveys
   scores = t(apply(df,1,function(r){
     # Duration
@@ -31,7 +32,7 @@ psqi_scores = function(df){
       psqilaten = as.numeric(as.character(psqilaten))
     }
     # Day dysfunction
-    psqidaydys = as.numeric(r["psqi_8"]) + as.numeric(r["psqi_9"])
+    psqidaydys = (as.numeric(r["psqi_8"])-1) + (as.numeric(r["psqi_9"])-1)
     if(!is.na(psqidaydys)){
       psqidaydys = cut(psqidaydys,c(-Inf,0,2,4,6),c(0,1,2,3),right = T)
       psqidaydys = as.numeric(as.character(psqidaydys))
@@ -44,18 +45,17 @@ psqi_scores = function(df){
       psqihse = as.numeric(as.character(psqihse))
     }
     # Overall quality
-    psqislpqual = as.numeric(r["psqi_6t"])
+    psqislpqual = as.numeric(r["psqi_6t"])-1
     # Need meds
-    psqimeds = as.numeric(r["psqi_7t"])
+    psqimeds = as.numeric(r["psqi_7t"])-1
     # Total
     psqi = sum(c(psqidurat,psqidistb,psqilaten,psqidaydys,psqihse,psqislpqual,psqimeds))
-    psqi_binary = cut(psqi,c(-Inf,5,Inf),c("Good","Poor"),right = T)
     # Output
     return(c(psqidurat,psqidistb,psqilaten,psqidaydys,psqihse,
-             psqislpqual,psqimeds,psqi,psqi_binary))
+             psqislpqual,psqimeds,psqi))
   }))
   colnames(scores) = c("psqidurat","psqidistb","psqilaten","psqidaydys",
-                       "psqihse","psqislpqual","psqimeds","psqi","psqi_binary")
+                       "psqihse","psqislpqual","psqimeds","psqi")
   # Put together
   df = data.frame(cbind(df,scores))
 }

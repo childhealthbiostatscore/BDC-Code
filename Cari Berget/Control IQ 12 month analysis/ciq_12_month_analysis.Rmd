@@ -32,10 +32,10 @@ knitr::opts_chunk$set(echo = FALSE,results='asis',fig.width=12,fig.height=10)
 
 ```{r data,include=FALSE}
 # Import
-source("C:/Users/timvigers/Documents/GitHub/BDC-Code/Cari Berget/Control IQ 12 month analysis/import_peds_data.r")
-source("C:/Users/timvigers/Documents/GitHub/BDC-Code/Cari Berget/Control IQ 12 month analysis/import_parent_data.r")
+source("~/GitHub/BDC-Code/Cari Berget/Control IQ 12 month analysis/import_peds_data.r")
+source("~/GitHub/BDC-Code/Cari Berget/Control IQ 12 month analysis/import_parent_data.r")
 # Survey scoring function
-source("C:/Users/timvigers/Documents/GitHub/BDC-Code/Cari Berget/Scoring/scoring_function.R")
+source("~/GitHub/BDC-Code/Cari Berget/Scoring/scoring_function.R")
 # Fill down by participant, baseline HbA1c group
 data = data %>% group_by(record_id) %>% 
   fill(demographics_diabetesdx,demographics_dob,demographics_sex.factor,demographics_age)
@@ -72,7 +72,7 @@ data$numeric_time = as.numeric(as.character(data$numeric_time))
 # Select relevant columns, exclude discontinuers
 data = data %>% 
   filter(!record_id %in% discontinuers,!grepl("arm_3",redcap_event_name)) %>%
-  select(record_id,gyl_timepoint.factor,numeric_time,age_group,hba1c_group,hba1c,
+  select(record_id,gyl_timepoint.factor,numeric_time,demographics_age,age_group,hba1c_group,hba1c,
          demographics_sex.factor,time_am,sensor_wear,tdd,tdd_bolus,tdd_basal,
          dailymealbolus,sleep,exercise,sensor_mean,sensor_70_180,
          sensor_over_180,sensor_g250,sensor_under_70,sensor_u54,
@@ -92,7 +92,7 @@ rm(list = ls()[-which(ls() %in% c("data","discontinuers"))])
 A total of `r length(discontinuers)` participants were excluded due to HCL use <10% at 1 or more visits. 
 
 ```{r table 1}
-t1 = tableby(~age_group + hba1c + hba1c_group + demographics_sex.factor + 
+t1 = tableby(~ demographics_age + age_group + hba1c + hba1c_group + demographics_sex.factor + 
                sensor_wear + tdd + tdd_bolus + tdd_basal + dailymealbolus + 
                sensor_mean + sensor_70_180 + sensor_over_180 + 
                sensor_g250 + sensor_under_70 + sensor_u54 + c_paid + c_hfs_maintain + 
@@ -127,49 +127,67 @@ ri_rs_mod = lmer(sensor_mean ~ numeric_time*hba1c_group + (numeric_time|record_i
 
 ```{r model function}
 fit_mod = function(df = mod_data,outcome,group = NULL,y_axis = NULL,
-                   fam = "gaussian",diagnostics = F){
-  f = as.formula(paste0(outcome,"~","numeric_time*",group,"+(1|record_id)"))
-  if(fam == "gaussian"){
-    mod = lmer(f,data = df)
-  } else if (fam == "binomial"){
-    mod = glmer(f,data = df,family = fam)
+                   diagnostics = T,baseline = T){
+  # Is there data at baseline?
+  if (baseline != T){
+    df = df[df$gyl_timepoint.factor != "Baseline",]
+    df$gyl_timepoint.factor = droplevels(df$gyl_timepoint.factor)
   }
+  # Equation formula
+  f = as.formula(paste0(outcome,"~","gyl_timepoint.factor*",group,"+(1|record_id)"))
+  # Fit
+  mod = lmer(f,data = df)
   # Print diagnostics if necessary
   if(diagnostics){
     mod_check = check_model(mod)
     print(mod_check)
   }
-  # Trend over time for groups
-  t = as.formula(paste0(group," ~ numeric_time"))
-  trends = emmip(mod,t,cov.reduce = range)+
-    ggtitle("Estimated Change Over Time") + 
-    xlab("Months From Baseline") + theme_bw() + 
-    scale_x_continuous(breaks = c(0,1,3,6,9,12))
-  if(!is.null(y_axis)){
-    trends = trends + ylim(y_axis)
-  }
-  if(!is.null(group)){
-    if(group == "hba1c_group"){
-      trends = trends + labs(color='HbA1c Group') 
+  # Print type 3 test
+  type3 = data.frame(car::Anova(mod))
+  rownames(type3) = sub("gyl_timepoint.factor","Timepoint",rownames(type3))
+  rownames(type3) = sub("hba1c_group","HbA1c Group",rownames(type3))
+  print(kable(type3,digits = 3,caption = "Type 3 Tests of Fixed Effects"))
+  # Contrasts
+  if (!is.null(group)){
+    # Group and timepoint means
+    f_means = as.formula(paste0("~","gyl_timepoint.factor*",group))
+    # Contrasts
+    if (!baseline){
+      m1_low = c(1,rep(0,14))
+      m3_low = c(0,1,rep(0,13))
+      m12_low = c(rep(0,4),1,rep(0,10))
+      m1_med = c(rep(0,5),1,rep(0,9))
+      m3_med = c(rep(0,6),1,rep(0,8))
+      m12_med = c(rep(0,9),1,rep(0,5))
+      m1_high = c(rep(0,10),1,rep(0,4))
+      m3_high = c(rep(0,11),1,rep(0,3))
+      m12_high = c(rep(0,14),1)
+      con = emmeans(mod,f_means,
+                  contr = list("M1 to M3 Low Group" = m3_low - m1_low,
+                               "M3 to M12 Low Group" = m12_low - m3_low,
+                               "M1 to M3 Med. Group" = m3_med - m1_med,
+                               "M3 to M12 Med. Group" = m12_med - m3_med,
+                               "M1 to M3 High Group" = m3_high - m1_high,
+                               "M3 to M12 High Group" = m12_high - m3_high))
+    } else {
+      base_low = c(1,rep(0,17))
+      m3_low = c(0,0,1,rep(0,15))
+      m12_low = c(rep(0,5),1,rep(0,12))
+      base_med = c(rep(0,6),1,rep(0,11))
+      m3_med = c(rep(0,8),1,rep(0,9))
+      m12_med = c(rep(0,11),1,rep(0,6))
+      base_high = c(rep(0,12),1,rep(0,5))
+      m3_high = c(rep(0,14),1,rep(0,3))
+      m12_high = c(rep(0,17),1)
+      con = emmeans(mod,f_means,
+                  contr = list("Baseline to M3 Low Group" = m3_low - base_low,
+                               "M3 to M12 Low Group" = m12_low - m3_low,
+                               "Baseline to M3 Med. Group" = m3_med - base_med,
+                               "M3 to M12 Med. Group" = m12_med - m3_med,
+                               "Baseline to M3 High Group" = m3_high - base_high,
+                               "M3 to M12 High Group" = m12_high - m3_high))
+      
     }
-    if(group == "age_group"){
-      trends = trends + labs(color='Age Group') 
-    }
-  }
-  print(trends)
-  # Print table - tidy up results a bit first
-  expon = (fam != "gaussian")
-  coeffs = tidy(mod,"fixed",exponentiate = expon) %>% select(term:p.value)
-  coeffs$term = sub("numeric_time","Months",coeffs$term)
-  coeffs$term = sub("hba1c_group","HbA1c group ",coeffs$term)
-  coeffs$term = sub("age_group","Age group ",coeffs$term)
-  print(kable(coeffs,digits = 3,caption = "Model Results"))
-  if(!is.null(group) & fam != "zi"){
-    coeffs = car::Anova(mod,type = 3)
-    rownames(coeffs) = sub("numeric_time","Months",rownames(coeffs))
-    rownames(coeffs) = sub("hba1c_group","HbA1c group ",rownames(coeffs))
-    rownames(coeffs) = sub("age_group","Age group ",rownames(coeffs))
-    print(kable(coeffs,digits = 3,caption = "Type 3 Tests of Fixed Effect"))
   }
 }
 ```
