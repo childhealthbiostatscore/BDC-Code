@@ -19,6 +19,7 @@ psqi_scores = function(df){
     if(is.na(q5b_j["other"])){q5b_j["other"] = 1}
     psqidistb = sum(as.numeric(q5b_j)-1)
     psqidistb = cut(psqidistb,c(-Inf,0,9,18,Inf),c(0,1,2,3),right = T)
+    psqidistb = as.numeric(as.character(psqidistb))
     # Latency
     q2 = as.numeric(r["psqi_2"])
     if(!is.na(q2)){
