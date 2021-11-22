@@ -3,10 +3,10 @@ library(readxl)
 library(tools)
 library(lubridate)
 # Original files
-indir = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/DP3 high risk/Data_Raw/T1 Device Data"
-outdir = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/DP3 high risk/Data_Cleaned/T1 Device Data Cleaned"
+indir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/DP3 high risk/Data_Raw/T1 Device Data"
+outdir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/DP3 high risk/Data_Cleaned/T1 Device Data Cleaned"
 files = list.files(indir,full.names = T,recursive = T)
-dates = read_excel("Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/DP3 high risk/Data_Raw/T1Visit Dates.xlsx")
+dates = read_excel("~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/DP3 high risk/Data_Raw/T1Visit Dates.xlsx")
 dates$id = sub("HRTM_","",dates$record_id)
 # Iterate through
 for (f in files) {
