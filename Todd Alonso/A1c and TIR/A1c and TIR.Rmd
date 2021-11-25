@@ -55,17 +55,26 @@ dkano <- data %>% filter(DKA.at.onset=="N")
 dkayes_a1clt14 <- dkayes %>% filter(A1C_Value<14)
 dkano_a1clt14 <- dkano %>% filter(A1C_Value<14)
 
-# stopped here with A1c <14
-
 # raw correlation
 corsave <- cor(data$A1C_Value,data$CGMInRange,use = "complete.obs")
 corsave_dkayes <- cor(dkayes$A1C_Value,dkayes$CGMInRange,use = "complete.obs")
 corsave_dkano <- cor(dkano$A1C_Value,dkano$CGMInRange,use = "complete.obs")
 
+# raw correlation A1c<14
+corsave_a1clt14 <- cor(data_a1clt14$A1C_Value,data_a1clt14$CGMInRange,use = "complete.obs")
+corsave_dkayes_a1clt14 <- cor(dkayes_a1clt14$A1C_Value,dkayes_a1clt14$CGMInRange,use = "complete.obs")
+corsave_dkano_a1clt14 <- cor(dkano_a1clt14$A1C_Value,dkano_a1clt14$CGMInRange,use = "complete.obs")
+
 # linear models - all patients, DKA at onset, no DKA at onset
 mod <- glm(data$CGMInRange~data$A1C_Value)
 mod_dkayes <- glm(dkayes$CGMInRange~dkayes$A1C_Value)
 mod_dkano <- glm(dkano$CGMInRange~dkano$A1C_Value)
+
+# linear models - all patients, DKA at onset, no DKA at onset
+# A1c <14
+mod_a1clt14 <- glm(data_a1clt14$CGMInRange~data_a1clt14$A1C_Value)
+mod_dkayes_a1clt14 <- glm(dkayes_a1clt14$CGMInRange~dkayes_a1clt14$A1C_Value)
+mod_dkano_a1clt14 <- glm(dkano_a1clt14$CGMInRange~dkano_a1clt14$A1C_Value)
 
 # checking the relationship in those with percent use <70
 lowuse <- alldata[alldata$CGMUsePercent<70,]
@@ -171,4 +180,88 @@ plot(dkano$A1C_Value,dkano$CGMInRange)
 summary(mod_dkano)
 ```
 
-## HbA1c values >14% excluded
+## HbA1c values >=14% excluded
+
+### Table of descriptive statistics
+
+```{r echo=FALSE, include=F}
+# table of descriptive statistics
+t1 <- CreateTableOne(data=data_a1clt14,vars=c("Age_LastVisitDate","Age_Groups","Gender","DiabetesDuration_LastVisitDate","Race_Ethnicity",
+                                 "English","Spanish","A1C_Value","OnCGM","CGMUsePercent","CGMMeanGlucose",
+                                 "CGMHighPercent","CGMLowPercent","CGMInRange","OnInsulinPump","OnLoop",
+                                 "Rural","InsuranceCategory","DKA.at.onset"))
+t1 <- print(t1)
+```
+
+```{r echo=FALSE, comment=""}
+kable(t1)
+```
+
+### Association of DKA at onset and HbA1c
+
+```{r echo=FALSE, include=F}
+t2 <- CreateTableOne(data=data_a1clt14,vars="A1C_Value",strata = "DKA.at.onset")
+t2 <- print(t2,nonnormal = "A1C_Value")
+```
+
+```{r echo=FALSE, comment=""}
+
+kable(t2)
+```
+
+### Scatterplot and unadjusted model 
+
+The unadjusted correlation was `r corsave_a1clt14`.  The results of the unadjusted model are shown below.  For each one unit increase in HbA1c, CGM TIR decreased by `r mod_a1clt14$coefficients[2]`.
+
+```{r echo=FALSE, comment=""}
+plot(data_a1clt14$A1C_Value,data_a1clt14$CGMInRange)
+
+summary(mod_a1clt14)
+```
+
+### Model with interaction of HbA1c with age group, duration, and DKA at onset
+
+Results of a model with interactions between HbA1c with age group, diabetes duration, and DKA at onset are shown below.  The interactions between HbA1c and age group and between HbA1c and DKA at onset were not significant.  The interaction between HbA1c and diabetes duration was highly significant. 
+
+```{r echo=FALSE, comment=""}
+modint <- glm(data=data_a1clt14,CGMInRange~A1C_Value * Age_Groups + A1C_Value * DiabetesDuration_LastVisitDate + A1C_Value*DKA.at.onset)
+
+Anova(modint,type="III")
+summary(modint)
+```
+
+### Model with interaction of HbA1c with duration and DKA at onset
+
+Because the interaction between HbA1c and age group was not significant, it was removed from the model.  The reduced model results are shown below.
+
+```{r echo=FALSE, comment=""}
+modint2 <- glm(data=data_a1clt14,CGMInRange~A1C_Value + Age_Groups + A1C_Value * DiabetesDuration_LastVisitDate + A1C_Value*DKA.at.onset)
+
+Anova(modint2,type="III")
+summary(modint2)
+
+```
+
+### Association by DKA at diagnosis
+
+Although the interaction of HbA1c and DKA at diagnosis was not significant after excluding A1c values >=14%, these results are included to be consistent with the analyses of the dataset with all A1c values.  Patients were stratified by DKA at diagnosis and the unadjusted associations between HbA1c and CGM TIR are shown below. The slope of the relationship between HbA1c and CGM TIR was steeper in those with DKA at diagnosis.
+
+#### DKA at diagnosis
+
+The unadjusted correlation in those with DKA at diagnosis was `r corsave_dkayes`.  
+
+```{r echo=FALSE, comment=""}
+plot(dkayes_a1clt14$A1C_Value,dkayes_a1clt14$CGMInRange)
+
+summary(mod_dkayes_a1clt14)
+```
+
+#### No DKA at diagnosis
+
+The unadjusted correlation in those without DKA at diagnosis was `r corsave_dkano`.
+
+```{r echo=FALSE, comment=""}
+plot(dkano_a1clt14$A1C_Value,dkano_a1clt14$CGMInRange)
+
+summary(mod_dkano_a1clt14)
+```
