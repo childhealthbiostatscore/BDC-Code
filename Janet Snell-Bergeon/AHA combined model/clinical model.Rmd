@@ -26,6 +26,7 @@ library(survminer)
 library(Hmisc)
 library(purrr)
 library(skimr)
+library(stringr)
 
 home_dir = ifelse(.Platform$OS.type == "unix",
                   "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant",
@@ -212,13 +213,14 @@ prog_noint_coefs <- rownames(prog_noint_coefs)[prog_noint_coefs[,1]!=0]
 
 temp <- prog_noint_coefs[-1]
 form <- paste0(temp,collapse = "+")
+form <- paste0("~",form)
 ```
 
 ## GLM using variables selected by LASSO
 
 ```{r, echo=FALSE, comment=""}
-refit_mod = glm(CACprogV3_num ~ age+duration+bmi+onhypermeds+onlipidmeds+avediabp+avesystbp+ldl+
-                  hdlc+tri+CKDepi+ac+insdoseperkg+hba1c+l45vsf+l45sqf+homo+pai1+UA+smknum+sex_0m1f,complete_lipidmeds_egdr_components,family = binomial("logit"))
+form <- paste0("CACprogV3_num",form)
+refit_mod = glm(as.formula(form),complete_lipidmeds_egdr_components,family = binomial("logit"))
 summary(refit_mod)
 prog_noint_coefs_sig <- as.matrix(summary(refit_mod)$coef)
 prog_noint_coefs_sig <- rownames(prog_noint_coefs_sig)[prog_noint_coefs_sig[,4]<0.05]
@@ -256,20 +258,25 @@ mod_names <- c(mod_names,"CAC progression, with interactions")
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
 # LASSO
-x <- as.matrix(subset(complete_lipidmeds_egdr_components,select=-c(CACprogV3_num,StudyID,crp,homo,pai1,fib,UA,whr,apob,l45vsf,l45sqf,pfatcm_v1)))
+x <- as.matrix(subset(complete_lipidmeds_egdr_components,select=-c(CACprogV3_num,StudyID,l.crp,l.homo,l.pai1,l.fib,l.UA,whr,apob,l.l45vsf,l.l45sqf,l.pfatcm_v1)))
 glmmod1 <- glmnet(x, y=as.factor(complete_lipidmeds_egdr_components$CACprogV3_num), alpha=0.5, family="binomial")
 # find best value of lambda
 cv.glmmod <- cv.glmnet(x, y=complete_lipidmeds_egdr_components$CACprogV3_num, alpha=1)
 best.lambda <- cv.glmmod$lambda.min
 # coefficients at best lambda
 round(coef(glmmod1,s=cv.glmmod$lambda.min),4)
+temp_coefs <- as.matrix(coef(glmmod1,s=cv.glmmod$lambda.min),4)
+temp_coefs <- rownames(temp_coefs)[temp_coefs[,1]!=0]
+temp <- temp_coefs[-1]
+form <- paste0(temp,collapse = "+")
+form <- paste0("~",form)
 ```
 
 ## GLM using clinical variables selected by LASSO
 
 ```{r, echo=FALSE, comment=""}
-refit_mod = glm(CACprogV3_num ~ age+duration+bmi+onhypermeds+onlipidmeds+avediabp+avesystbp+ldl+
-                  hdlc+tri+CKDepi+insdoseperkg+hba1c+smknum+sex_0m1f,complete_lipidmeds_egdr_components,family = binomial("logit"))
+form <- paste0("CACprogV3_num",form)
+refit_mod = glm(as.formula(form),complete_lipidmeds_egdr_components,family = binomial("logit"))
 summary(refit_mod)
 aic_values <- c(aic_values,refit_mod$aic)
 mod_names <- c(mod_names,"CAC progression, simple clinical variables, without interactions")
@@ -279,7 +286,7 @@ mod_names <- c(mod_names,"CAC progression, simple clinical variables, without in
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
-test <- subset(complete_lipidmeds_egdr_components,select=-c(crp,homo,pai1,fib,UA,whr,apob,l45vsf,l45sqf,pfatcm_v1))
+test <- subset(complete_lipidmeds_egdr_components,select=-c(l.crp,l.homo,l.pai1,l.fib,l.UA,whr,apob,l.l45vsf,l.l45sqf,l.pfatcm_v1))
 test$onlipidmeds <- as.factor(test$onlipidmeds)
 test$onhypermeds <- as.factor(test$onhypermeds)
 test$smknum <- as.factor(test$smknum)
@@ -313,14 +320,17 @@ best.lambda <- cv.glmmod$lambda.min
 round(coef(glmmod1,s=cv.glmmod$lambda.min),4)
 cac_noint_coefs <- as.matrix(coef(glmmod1,s=cv.glmmod$lambda.min),4)
 cac_noint_coefs <- rownames(cac_noint_coefs)[cac_noint_coefs[,1]!=0]
+
+temp <- cac_noint_coefs[-1]
+form <- paste0(temp,collapse = "+")
+form <- paste0("~",form)
 ```
 
 ## GLM using variables selected by LASSO
 
 ```{r, echo=FALSE, comment=""}
-refit_mod = glm(cac_change_per_yr ~ age+duration+bmi+whr+onhypermeds+onlipidmeds+avediabp+avesystbp+hdlc+tri+CKDepi+
-                  ac+insdoseperkg+hba1c+l45vsf+l45sqf+apob+crp+fib+homo+pai1+UA+pfatcm_v1+smknum+sex_0m1f,
-                complete_lipidmeds_egdr_components_ccc,family = "gaussian")
+form <- paste0("cac_change_per_yr",form)
+refit_mod = glm(as.formula(form),complete_lipidmeds_egdr_components_ccc,family = "gaussian")
 summary(refit_mod)
 aic_values <- c(aic_values,refit_mod$aic)
 mod_names <- c(mod_names,"CAC change per year, without interactions")
@@ -358,21 +368,25 @@ plot(refit_mod)
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
 # LASSO
-x <- as.matrix(subset(complete_lipidmeds_egdr_components_ccc,select=-c(cac_change_per_yr,StudyID,crp,homo,pai1,fib,UA,whr,apob,l45vsf,l45sqf,pfatcm_v1)))
+x <- as.matrix(subset(complete_lipidmeds_egdr_components_ccc,select=-c(cac_change_per_yr,StudyID,l.crp,l.homo,l.pai1,l.fib,l.UA,whr,apob,l.l45vsf,l.l45sqf,l.pfatcm_v1)))
 glmmod1 <- glmnet(x, y=complete_lipidmeds_egdr_components_ccc$cac_change_per_yr, alpha=0.5, family="gaussian")
 # find best value of lambda
 cv.glmmod <- cv.glmnet(x, y=complete_lipidmeds_egdr_components_ccc$cac_change_per_yr, alpha=1)
 best.lambda <- cv.glmmod$lambda.min
 # coefficients at best lambda
 round(coef(glmmod1,s=cv.glmmod$lambda.min),4)
+temp_coefs <- as.matrix(coef(glmmod1,s=cv.glmmod$lambda.min),4)
+temp_coefs <- rownames(temp_coefs)[temp_coefs[,1]!=0]
+temp <- temp_coefs[-1]
+form <- paste0(temp,collapse = "+")
+form <- paste0("~",form)
 ```
 
 ## GLM using clinical variables selected by LASSO
 
 ```{r, echo=FALSE, comment=""}
-refit_mod = glm(cac_change_per_yr ~ age+duration+onhypermeds+onlipidmeds+avediabp+avesystbp+ldl+hdlc+CKDepi+
-                  ac+insdoseperkg+hba1c+smknum+sex_0m1f,
-                complete_lipidmeds_egdr_components_ccc,family = "gaussian")
+form <- paste0("cac_change_per_yr",form)
+refit_mod = glm(as.formula(form),complete_lipidmeds_egdr_components_ccc,family = "gaussian")
 summary(refit_mod)
 aic_values <- c(aic_values,refit_mod$aic)
 mod_names <- c(mod_names,"CAC change per year, simple clinical variables, without interactions")
@@ -383,7 +397,7 @@ plot(refit_mod)
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
-test <- subset(complete_lipidmeds_egdr_components_ccc,select=-c(crp,homo,pai1,fib,UA,whr,apob,l45vsf,l45sqf,pfatcm_v1))
+test <- subset(complete_lipidmeds_egdr_components_ccc,select=-c(l.crp,l.homo,l.pai1,l.fib,l.UA,whr,apob,l.l45vsf,l.l45sqf,l.pfatcm_v1))
 test$onlipidmeds <- as.factor(test$onlipidmeds)
 test$onhypermeds <- as.factor(test$onhypermeds)
 test$smknum <- as.factor(test$smknum)
@@ -415,6 +429,14 @@ cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
 round(coef(cv.fit,s=cv.fit$lambda.min),4)
 death_coefs <- as.matrix(coef(cv.fit,s=cv.fit$lambda.min),4)
 death_coefs <- rownames(death_coefs)[death_coefs[,1]!=0]
+
+temp <- death_coefs
+form <- paste0(temp,collapse = "+")
+form <- paste0("~",form)
+form <- str_replace(form,"onhypermeds","as.factor(onhypermeds)")
+form <- str_replace(form,"onlipidmeds","as.factor(onlipidmeds)")
+form <- str_replace(form,"smknum","as.factor(smknum)")
+form <- str_replace(form,"sex_0m1f","as.factor(sex_0m1f)")
 ```
 
 ## Cox model using variables selected in regularized Cox model
@@ -422,9 +444,8 @@ death_coefs <- rownames(death_coefs)[death_coefs[,1]!=0]
 ### Model results
 
 ```{r, echo=FALSE, comment=""}
-c <- coxph(Surv(PersonYrsDeath,death) ~ age + as.factor(onhypermeds) + as.factor(onlipidmeds) + avesystbp + hdlc + tri + CKDepi + hba1c + 
-             l45vsf + apob + pai1 + UA + as.factor(smknum), 
-           data=complete_lipidmeds_egdr_components_death)
+form <- paste0("Surv(PersonYrsDeath,death)",form)
+c <- coxph(as.formula(form),data=complete_lipidmeds_egdr_components_death)
 c
 ```
 
@@ -445,11 +466,21 @@ mod_names <- c(mod_names,"Death, without interactions")
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
 Y <- complete_lipidmeds_egdr_components_death[,c("death","PersonYrsDeath")]
-X <- complete_lipidmeds_egdr_components_death %>% select(-c("StudyID","PersonYrsDeath","death","crp","homo","pai1","fib","UA","whr","apob","l45vsf","l45sqf","pfatcm_v1"))
+X <- complete_lipidmeds_egdr_components_death %>% select(-c("StudyID","PersonYrsDeath","death","l.crp","l.homo","l.pai1","l.fib","l.UA",
+                                                            "whr","apob","l.l45vsf","l.l45sqf","l.pfatcm_v1"))
 S <- Surv(time = Y$PersonYrsDeath, event = Y$death)
 cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
 # coefficients at best lambda
 round(coef(cv.fit,s=cv.fit$lambda.min),4)
+
+temp_coefs <- as.matrix(coef(cv.fit,s=cv.fit$lambda.min),4)
+temp_coefs <- rownames(temp_coefs)[temp_coefs[,1]!=0]
+form <- paste0(temp_coefs,collapse = "+")
+form <- paste0("~",form)
+form <- str_replace(form,"onhypermeds","as.factor(onhypermeds)")
+form <- str_replace(form,"onlipidmeds","as.factor(onlipidmeds)")
+form <- str_replace(form,"smknum","as.factor(smknum)")
+form <- str_replace(form,"sex_0m1f","as.factor(sex_0m1f)")
 ```
 
 ## Cox model using clinical variables selected by LASSO
@@ -457,8 +488,8 @@ round(coef(cv.fit,s=cv.fit$lambda.min),4)
 ### Model results
 
 ```{r, echo=FALSE, comment=""}
-c <- coxph(Surv(PersonYrsDeath,death) ~ age + as.factor(onhypermeds) + as.factor(onlipidmeds) + ldl + tri + CKDepi + hba1c + as.factor(smknum), 
-           data=complete_lipidmeds_egdr_components_death)
+form <- paste0("Surv(PersonYrsDeath,death)",form)
+c <- coxph(as.formula(form),data=complete_lipidmeds_egdr_components_death)
 c
 ```
 
@@ -486,6 +517,14 @@ cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
 round(coef(cv.fit,s=cv.fit$lambda.min),4)
 cad_coefs <- as.matrix(coef(cv.fit,s=cv.fit$lambda.min),4)
 cad_coefs <- rownames(cad_coefs)[cad_coefs[,1]!=0]
+
+temp <- cad_coefs
+form <- paste0(temp,collapse = "+")
+form <- paste0("~",form)
+form <- str_replace(form,"onhypermeds","as.factor(onhypermeds)")
+form <- str_replace(form,"onlipidmeds","as.factor(onlipidmeds)")
+form <- str_replace(form,"smknum","as.factor(smknum)")
+form <- str_replace(form,"sex_0m1f","as.factor(sex_0m1f)")
 ```
 
 ## Cox model using variables selected in regularized Cox model
@@ -493,12 +532,9 @@ cad_coefs <- rownames(cad_coefs)[cad_coefs[,1]!=0]
 ### Model results (test of proportional hazards would not converge)
 
 ```{r, echo=FALSE, comment=""}
-c <- coxph(Surv(PersonYrsCAD,CAD) ~ age + duration + whr + as.factor(onhypermeds) + as.factor(onlipidmeds) + avesystbp + hdlc + tri + CKDepi + 
-             insdoseperkg + hba1c + l45sqf +
-             homo + pai1 + pfatcm_v1 + as.factor(smknum) + as.factor(sex_0m1f), data=complete_lipidmeds_egdr_components_cad)
+form <- paste0("Surv(PersonYrsCAD,CAD)",form)
+c <- coxph(as.formula(form),data=complete_lipidmeds_egdr_components_cad)
 c
-#test.ph <- cox.zph(c)
-#test.ph
 
 cad_coefs_sig <- as.matrix(summary(c)$coef)
 cad_coefs_sig <- rownames(cad_coefs_sig)[cad_coefs_sig[,5]<0.05]
@@ -511,11 +547,20 @@ mod_names <- c(mod_names,"CAD, without interactions")
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
 Y <- complete_lipidmeds_egdr_components_cad[,c("CAD","PersonYrsCAD")]
-X <- complete_lipidmeds_egdr_components_cad %>% select(-c("StudyID","PersonYrsCAD","CAD","crp","homo","pai1","fib","UA","whr","apob","l45vsf","l45sqf","pfatcm_v1"))
+X <- complete_lipidmeds_egdr_components_cad %>% select(-c("StudyID","PersonYrsCAD","CAD","l.crp","l.homo","l.pai1","l.fib","l.UA",
+                                                            "whr","apob","l.l45vsf","l.l45sqf","l.pfatcm_v1"))
 S <- Surv(time = Y$PersonYrsCAD, event = Y$CAD)
 cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
 # coefficients at best lambda
 round(coef(cv.fit,s=cv.fit$lambda.min),4)
+temp_coefs <- as.matrix(coef(cv.fit,s=cv.fit$lambda.min),4)
+temp_coefs <- rownames(temp_coefs)[temp_coefs[,1]!=0]
+form <- paste0(temp_coefs,collapse = "+")
+form <- paste0("~",form)
+form <- str_replace(form,"onhypermeds","as.factor(onhypermeds)")
+form <- str_replace(form,"onlipidmeds","as.factor(onlipidmeds)")
+form <- str_replace(form,"smknum","as.factor(smknum)")
+form <- str_replace(form,"sex_0m1f","as.factor(sex_0m1f)")
 ```
 
 ## Cox model using clinical variables selected by LASSO
@@ -523,9 +568,8 @@ round(coef(cv.fit,s=cv.fit$lambda.min),4)
 ### Model results
 
 ```{r, echo=FALSE, comment=""}
-c <- coxph(Surv(PersonYrsCAD,CAD) ~ age + duration + bmi + as.factor(onhypermeds) + as.factor(onlipidmeds) + avediabp + avesystbp + ldl + 
-             hdlc + tri + CKDepi + ac + 
-             insdoseperkg + hba1c + as.factor(smknum) , data=complete_lipidmeds_egdr_components_cad)
+form <- paste0("Surv(PersonYrsCAD,CAD)",form)
+c <- coxph(as.formula(form),data=complete_lipidmeds_egdr_components_cad)
 c
 ```
 
@@ -553,6 +597,14 @@ cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
 round(coef(cv.fit,s=cv.fit$lambda.min),4)
 hardcad_coefs <- as.matrix(coef(cv.fit,s=cv.fit$lambda.min),4)
 hardcad_coefs <- rownames(hardcad_coefs)[hardcad_coefs[,1]!=0]
+
+temp <- hardcad_coefs
+form <- paste0(temp,collapse = "+")
+form <- paste0("~",form)
+form <- str_replace(form,"onhypermeds","as.factor(onhypermeds)")
+form <- str_replace(form,"onlipidmeds","as.factor(onlipidmeds)")
+form <- str_replace(form,"smknum","as.factor(smknum)")
+form <- str_replace(form,"sex_0m1f","as.factor(sex_0m1f)")
 ```
 
 ## Cox model using variables selected in regularized Cox model
@@ -560,7 +612,8 @@ hardcad_coefs <- rownames(hardcad_coefs)[hardcad_coefs[,1]!=0]
 ### Model results
 
 ```{r, echo=FALSE, comment=""}
-c <- coxph(Surv(PersonYrsHardCAD,HardCAD) ~ as.factor(onlipidmeds) + homo + as.factor(smknum), data=complete_lipidmeds_egdr_components_hardcad)
+form <- paste0("Surv(PersonYrsHardCAD,HardCAD)",form)
+c <- coxph(as.formula(form),data=complete_lipidmeds_egdr_components_hardcad)
 c
 ```
 
@@ -581,11 +634,20 @@ mod_names <- c(mod_names,"Hard CAD, without interactions")
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
 Y <- complete_lipidmeds_egdr_components_hardcad[,c("HardCAD","PersonYrsHardCAD")]
-X <- complete_lipidmeds_egdr_components_hardcad %>% select(-c("StudyID","PersonYrsHardCAD","HardCAD","crp","homo","pai1","fib","UA","whr","apob","l45vsf","l45sqf","pfatcm_v1"))
+X <- complete_lipidmeds_egdr_components_hardcad %>% select(-c("StudyID","PersonYrsHardCAD","HardCAD","l.crp","l.homo","l.pai1","l.fib","l.UA",
+                                                            "whr","apob","l.l45vsf","l.l45sqf","l.pfatcm_v1"))
 S <- Surv(time = Y$PersonYrsHardCAD, event = Y$HardCAD)
 cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
 # coefficients at best lambda
 round(coef(cv.fit,s=cv.fit$lambda.min),4)
+temp_coefs <- as.matrix(coef(cv.fit,s=cv.fit$lambda.min),4)
+temp_coefs <- rownames(temp_coefs)[temp_coefs[,1]!=0]
+form <- paste0(temp_coefs,collapse = "+")
+form <- paste0("~",form)
+form <- str_replace(form,"onhypermeds","as.factor(onhypermeds)")
+form <- str_replace(form,"onlipidmeds","as.factor(onlipidmeds)")
+form <- str_replace(form,"smknum","as.factor(smknum)")
+form <- str_replace(form,"sex_0m1f","as.factor(sex_0m1f)")
 ```
 
 ## Cox model using clinical variables selected by LASSO
@@ -593,8 +655,8 @@ round(coef(cv.fit,s=cv.fit$lambda.min),4)
 ### Model results
 
 ```{r, echo=FALSE, comment=""}
-c <- coxph(Surv(PersonYrsHardCAD,HardCAD) ~ duration + bmi + as.factor(onhypermeds) + as.factor(onlipidmeds) + ldl + hdlc + CKDepi + hba1c + 
-             as.factor(smknum) + as.factor(sex_0m1f), data=complete_lipidmeds_egdr_components_hardcad)
+form <- paste0("Surv(PersonYrsHardCAD,HardCAD)",form)
+c <- coxph(as.formula(form),data=complete_lipidmeds_egdr_components_hardcad)
 c
 ```
 
@@ -622,6 +684,14 @@ cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
 round(coef(cv.fit,s=cv.fit$lambda.min),4)
 cvd_coefs <- as.matrix(coef(cv.fit,s=cv.fit$lambda.min),4)
 cvd_coefs <- rownames(cvd_coefs)[cvd_coefs[,1]!=0]
+
+temp <- cvd_coefs
+form <- paste0(temp,collapse = "+")
+form <- paste0("~",form)
+form <- str_replace(form,"onhypermeds","as.factor(onhypermeds)")
+form <- str_replace(form,"onlipidmeds","as.factor(onlipidmeds)")
+form <- str_replace(form,"smknum","as.factor(smknum)")
+form <- str_replace(form,"sex_0m1f","as.factor(sex_0m1f)")
 ```
 
 ## Cox model using variables selected in regularized Cox model
@@ -629,8 +699,8 @@ cvd_coefs <- rownames(cvd_coefs)[cvd_coefs[,1]!=0]
 ### Model results
 
 ```{r, echo=FALSE, comment=""}
-c <- coxph(Surv(PersonYrsCVD,CVD) ~ age + duration + whr + as.factor(onhypermeds) + as.factor(onlipidmeds) + CKDepi + insdoseperkg + hba1c + 
-             l45sqf + fib + homo + pai1 + pfatcm_v1 + as.factor(smknum), data=complete_lipidmeds_egdr_components_cvd)
+form <- paste0("Surv(PersonYrsCVD,CVD)",form)
+c <- coxph(as.formula(form),data=complete_lipidmeds_egdr_components_cvd)
 summary(c)
 ```
 
@@ -651,11 +721,20 @@ mod_names <- c(mod_names,"CVD, without interactions")
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
 Y <- complete_lipidmeds_egdr_components_cvd[,c("CVD","PersonYrsCVD")]
-X <- complete_lipidmeds_egdr_components_cvd %>% select(-c("StudyID","PersonYrsCVD","CVD","crp","homo","pai1","fib","UA","whr","apob","l45vsf","l45sqf","pfatcm_v1"))
+X <- complete_lipidmeds_egdr_components_cvd %>% select(-c("StudyID","PersonYrsCVD","CVD","l.crp","l.homo","l.pai1","l.fib","l.UA",
+                                                            "whr","apob","l.l45vsf","l.l45sqf","l.pfatcm_v1"))
 S <- Surv(time = Y$PersonYrsCVD, event = Y$CVD)
 cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
 # coefficients at best lambda
 round(coef(cv.fit,s=cv.fit$lambda.min),4)
+temp_coefs <- as.matrix(coef(cv.fit,s=cv.fit$lambda.min),4)
+temp_coefs <- rownames(temp_coefs)[temp_coefs[,1]!=0]
+form <- paste0(temp_coefs,collapse = "+")
+form <- paste0("~",form)
+form <- str_replace(form,"onhypermeds","as.factor(onhypermeds)")
+form <- str_replace(form,"onlipidmeds","as.factor(onlipidmeds)")
+form <- str_replace(form,"smknum","as.factor(smknum)")
+form <- str_replace(form,"sex_0m1f","as.factor(sex_0m1f)")
 ```
 
 ## Cox model using clinical variables selected by LASSO
@@ -663,9 +742,8 @@ round(coef(cv.fit,s=cv.fit$lambda.min),4)
 ### Model results
 
 ```{r, echo=FALSE, comment=""}
-c <- coxph(Surv(PersonYrsCVD,CVD) ~ age + duration + bmi + as.factor(onhypermeds) + as.factor(onlipidmeds) + avesystbp + hdlc + tri + 
-             CKDepi + insdoseperkg + hba1c + 
-             as.factor(smknum), data=complete_lipidmeds_egdr_components_cvd)
+form <- paste0("Surv(PersonYrsCVD,CVD)",form)
+c <- coxph(as.formula(form),data=complete_lipidmeds_egdr_components_cvd)
 summary(c)
 ```
 
@@ -693,6 +771,14 @@ cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
 round(coef(cv.fit,s=cv.fit$lambda.min),4)
 hardcvd_coefs <- as.matrix(coef(cv.fit,s=cv.fit$lambda.min),4)
 hardcvd_coefs <- rownames(hardcvd_coefs)[hardcvd_coefs[,1]!=0]
+
+temp <- hardcvd_coefs
+form <- paste0(temp,collapse = "+")
+form <- paste0("~",form)
+form <- str_replace(form,"onhypermeds","as.factor(onhypermeds)")
+form <- str_replace(form,"onlipidmeds","as.factor(onlipidmeds)")
+form <- str_replace(form,"smknum","as.factor(smknum)")
+form <- str_replace(form,"sex_0m1f","as.factor(sex_0m1f)")
 ```
 
 ## Cox model using variables selected in regularized Cox model
@@ -700,8 +786,8 @@ hardcvd_coefs <- rownames(hardcvd_coefs)[hardcvd_coefs[,1]!=0]
 ### Model results
 
 ```{r, echo=FALSE, comment=""}
-c <- coxph(Surv(PersonYrsHardCVD,HardCVD) ~ duration + as.factor(onlipidmeds) + CKDepi + 
-             apob + homo + as.factor(smknum), data=complete_lipidmeds_egdr_components_hardcvd)
+form <- paste0("Surv(PersonYrsHardCVD,HardCVD)",form)
+c <- coxph(as.formula(form),data=complete_lipidmeds_egdr_components_hardcvd)
 c
 ```
 
@@ -723,11 +809,20 @@ mod_names <- c(mod_names,"Hard CVD, without interactions")
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
 Y <- complete_lipidmeds_egdr_components_hardcvd[,c("HardCVD","PersonYrsHardCVD")]
-X <- complete_lipidmeds_egdr_components_hardcvd %>% select(-c("StudyID","PersonYrsHardCVD","HardCVD","crp","homo","pai1","fib","UA","whr","apob","l45vsf","l45sqf","pfatcm_v1"))
+X <- complete_lipidmeds_egdr_components_hardcvd %>% select(-c("StudyID","PersonYrsHardCVD","HardCVD","l.crp","l.homo","l.pai1","l.fib","l.UA",
+                                                            "whr","apob","l.l45vsf","l.l45sqf","l.pfatcm_v1"))
 S <- Surv(time = Y$PersonYrsHardCVD, event = Y$HardCVD)
 cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance")
 # coefficients at best lambda
 round(coef(cv.fit,s=cv.fit$lambda.min),4)
+temp_coefs <- as.matrix(coef(cv.fit,s=cv.fit$lambda.min),4)
+temp_coefs <- rownames(temp_coefs)[temp_coefs[,1]!=0]
+form <- paste0(temp_coefs,collapse = "+")
+form <- paste0("~",form)
+form <- str_replace(form,"onhypermeds","as.factor(onhypermeds)")
+form <- str_replace(form,"onlipidmeds","as.factor(onlipidmeds)")
+form <- str_replace(form,"smknum","as.factor(smknum)")
+form <- str_replace(form,"sex_0m1f","as.factor(sex_0m1f)")
 ```
 
 ## Cox model using clinical variables selected by LASSO
@@ -735,8 +830,8 @@ round(coef(cv.fit,s=cv.fit$lambda.min),4)
 ### Model results
 
 ```{r, echo=FALSE, comment=""}
-c <- coxph(Surv(PersonYrsHardCVD,HardCVD) ~ duration + bmi + as.factor(onhypermeds) + as.factor(onlipidmeds) + ldl + CKDepi + 
-             hba1c + as.factor(smknum), data=complete_lipidmeds_egdr_components_hardcvd)
+form <- paste0("Surv(PersonYrsHardCVD,HardCVD)",form)
+c <- coxph(as.formula(form),data=complete_lipidmeds_egdr_components_hardcvd)
 c
 ```
 
