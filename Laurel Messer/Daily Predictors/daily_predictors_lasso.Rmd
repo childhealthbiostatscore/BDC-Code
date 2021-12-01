@@ -28,8 +28,13 @@ library(lme4)
 library(lmerTest)
 library(performance)
 knitr::opts_chunk$set(echo = F,cache = T)
-home_dir = ifelse(.Platform$OS.type != "unix","Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects",
-                  "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
+if(Sys.info()["sysname"] == "Windows"){
+  home_dir = "B:/Projects"
+} else if (Sys.info()["sysname"] == "Linux"){
+  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+} else if (Sys.info()["sysname"] == "Darwin"){
+  home_dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+}
 knitr::opts_knit$set(root.dir = home_dir)
 ```
 
@@ -99,7 +104,8 @@ data = data %>% group_by(record_id) %>%
          next_day_dm_caretime = lead(dm_caretime),
          next_day_dm_thinktime = lead(dm_thinktime),
          next_day_gsq = lead(gsq),
-         next_day_combined = lead(combined))
+         next_day_combined = lead(combined),
+         next_day_esq = lead(esq1))
 # Convert to dataframe since these functions can't handle tibbles
 data = data.frame(data)
 ```
@@ -206,472 +212,54 @@ best_lambdas = function(perf_metrics = lambda_perf,metric = "RMSE",
 }
 ```
 
-## Morning survey
+## Q1 (Morning)
 
-### Number of boluses
-
-```{r}
-fam = poisson(link = "log")
-# Get morning variables
-bolus_morning = data[,c(id_vars,morning_items,"boluses")]
-bolus_morning = bolus_morning[complete.cases(bolus_morning),]
-# CV for lambda values
-lambda_perf = lambda_cv(df = bolus_morning,outcome_name = "boluses",fam = fam)
-best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
-# Fit model
-form = as.formula(paste0("boluses~",paste0(morning_items,collapse = "+")))
-bolus_morning_mod = suppressWarnings(
-  glmmLasso(form, rnd = list(record_id=~1),family = fam,
-            data = bolus_morning,lambda=best)
-)
-# Get coefficients
-bolus_morning_coefs = names(bolus_morning_mod$coefficients)[
-  which(bolus_morning_mod$coefficients != 0 & 
-          names(bolus_morning_mod$coefficients) != "(Intercept)")]
-# Print
-l = labels(data[,bolus_morning_coefs])
-kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
-```
-
-### SMG
+### Other morning survey items
 
 ```{r}
 fam = gaussian()
 # Get morning variables
-smg_morning = data[,c(id_vars,morning_items,"smg")]
-smg_morning = smg_morning[complete.cases(smg_morning),]
+esq_morning = data[,c(id_vars,morning_items[-1],"esq1")]
+esq_morning = esq_morning[complete.cases(esq_morning),]
 # CV for lambda values
-lambda_perf = lambda_cv(df = smg_morning,outcome_name = "smg",fam = fam)
+lambda_perf = lambda_cv(df = esq_morning,outcome_name = "esq1",fam = fam)
 best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
 # Fit model
-form = as.formula(paste0("smg~",paste0(morning_items,collapse = "+")))
-smg_morning_mod = suppressWarnings(
+form = as.formula(paste0("esq1~",paste0(morning_items,collapse = "+")))
+esq_morning_mod = suppressWarnings(
   glmmLasso(form, rnd = list(record_id=~1),family = fam,
-            data = smg_morning,lambda=best)
+            data = esq_morning,lambda=best)
 )
 # Get coefficients
-smg_morning_coefs = names(smg_morning_mod$coefficients)[
-  which(smg_morning_mod$coefficients != 0 & 
-          names(smg_morning_mod$coefficients) != "(Intercept)")]
+esq_morning_coefs = names(esq_morning_mod$coefficients)[
+  which(esq_morning_mod$coefficients != 0 & 
+          names(esq_morning_mod$coefficients) != "(Intercept)")]
 # Print
-l = labels(data[,smg_morning_coefs])
+l = labels(data[,esq_morning_coefs])
 kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
 ```
 
-### TIR
-
-```{r}
-fam = gaussian()
-# Get morning variables
-tir_morning = data[,c(id_vars,morning_items,"tir")]
-tir_morning = tir_morning[complete.cases(tir_morning),]
-# CV for lambda values
-lambda_perf = lambda_cv(df = tir_morning,outcome_name = "tir",fam = fam)
-best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
-# Fit model
-form = as.formula(paste0("tir~",paste0(morning_items,collapse = "+")))
-tir_morning_mod = suppressWarnings(
-  glmmLasso(form, rnd = list(record_id=~1),family = fam,
-            data = tir_morning,lambda=best)
-)
-# Get coefficients
-tir_morning_coefs = names(tir_morning_mod$coefficients)[
-  which(tir_morning_mod$coefficients != 0 & 
-          names(tir_morning_mod$coefficients) != "(Intercept)")]
-# Print
-l = labels(data[,tir_morning_coefs])
-kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
-```
-
-### Number of high alerts
-
-```{r}
-fam = poisson(link = "log")
-# Get morning variables
-alerts_morning = data[,c(id_vars,morning_items,"n_highalerts")]
-alerts_morning = alerts_morning[complete.cases(alerts_morning),]
-# CV for lambda values
-lambda_perf = lambda_cv(df = alerts_morning,outcome_name = "n_highalerts",fam = fam)
-best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
-# Fit model
-form = as.formula(paste0("n_highalerts~",paste0(morning_items,collapse = "+")))
-alerts_morning_mod = suppressWarnings(
-  glmmLasso(form, rnd = list(record_id=~1),family = fam,
-            data = alerts_morning,lambda=best)
-)
-# Get coefficients
-alerts_morning_coefs = names(alerts_morning_mod$coefficients)[
-  which(alerts_morning_mod$coefficients != 0 & 
-          names(alerts_morning_mod$coefficients) != "(Intercept)")]
-# Print
-l = labels(data[,alerts_morning_coefs])
-kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
-```
-
-### Time spent caring for diabetes
-
-```{r}
-fam = poisson(link = "log")
-# Get morning variables
-caretime_morning = data[,c(id_vars,morning_items,"dm_caretime")]
-caretime_morning = caretime_morning[complete.cases(caretime_morning),]
-# Transform outcome - cube root
-caretime_morning$dm_caretime = (caretime_morning$dm_caretime)^(1/3)
-# CV for lambda values
-lambda_perf = lambda_cv(df = caretime_morning,outcome_name = "dm_caretime",fam = fam)
-best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
-# Fit model
-form = as.formula(paste0("dm_caretime~",paste0(morning_items,collapse = "+")))
-caretime_morning_mod = suppressWarnings(
-  glmmLasso(form, rnd = list(record_id=~1),family = fam,
-            data = caretime_morning,lambda=best)
-)
-# Get coefficients
-caretime_morning_coefs = names(caretime_morning_mod$coefficients)[
-  which(caretime_morning_mod$coefficients != 0 & 
-          names(caretime_morning_mod$coefficients) != "(Intercept)")]
-# Print
-l = labels(data[,caretime_morning_coefs])
-kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
-```
-
-### Time spent thinking about diabetes
-
-```{r}
-fam = poisson(link = "log")
-# Get morning variables
-thinktime_morning = data[,c(id_vars,morning_items,"dm_thinktime")]
-thinktime_morning = thinktime_morning[complete.cases(thinktime_morning),]
-# Transform outcome - cube root
-thinktime_morning$dm_thinktime = (thinktime_morning$dm_thinktime)^(1/3)
-# CV for lambda values
-lambda_perf = lambda_cv(df = thinktime_morning,outcome_name = "dm_thinktime",fam = fam)
-best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
-# Fit model
-form = as.formula(paste0("dm_thinktime~",paste0(morning_items,collapse = "+")))
-thinktime_morning_mod = suppressWarnings(
-  glmmLasso(form, rnd = list(record_id=~1),family = fam,
-            data = thinktime_morning,lambda=best)
-)
-# Get coefficients
-thinktime_morning_coefs = names(thinktime_morning_mod$coefficients)[
-  which(thinktime_morning_mod$coefficients != 0 & 
-          names(thinktime_morning_mod$coefficients) != "(Intercept)")]
-# Print
-l = labels(data[,thinktime_morning_coefs])
-kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
-```
-
-### Average of 3 GSQ scores
-
-```{r}
-fam = gaussian()
-# Get morning variables
-gsq_morning = data[,c(id_vars,morning_items,"gsq")]
-gsq_morning = gsq_morning[complete.cases(gsq_morning),]
-# CV for lambda values
-lambda_perf = lambda_cv(df = gsq_morning,outcome_name = "gsq",fam = fam)
-best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
-# Fit model
-form = as.formula(paste0("gsq~",paste0(morning_items,collapse = "+")))
-gsq_morning_mod = suppressWarnings(
-  glmmLasso(form, rnd = list(record_id=~1),family = fam,
-            data = gsq_morning,lambda=best)
-)
-# Get coefficients
-gsq_morning_coefs = names(gsq_morning_mod$coefficients)[
-  which(gsq_morning_mod$coefficients != 0 & 
-          names(gsq_morning_mod$coefficients) != "(Intercept)")]
-# Print
-l = labels(data[,gsq_morning_coefs])
-kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
-```
-
-### Combined alert outcome
-
-Each participant has data entries for up to 10 high BG alerts. For each alert, the "hab" column indicates whether the participant bolused in response, and the "bgdrop_ha" column indicates whether BG dropped below 200 after 2 hours. The combined alert outcome represents the percentage of alerts with a "1" in either column. Because the majority of participants responded to either all or none of their alerts, this variable was dichotomized into $\leq$50% vs. $>$50%.
-
-```{r}
-fam = binomial()
-# Get morning variables
-combined_morning = data[,c(id_vars,morning_items,"combined")]
-combined_morning = combined_morning[complete.cases(combined_morning),]
-# CV for lambda values
-lambda_perf = lambda_cv(df = combined_morning,outcome_name = "combined",fam = fam)
-best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
-# Fit model
-form = as.formula(paste0("combined~",paste0(morning_items,collapse = "+")))
-combined_morning_mod = suppressWarnings(
-  glmmLasso(form, rnd = list(record_id=~1),family = fam,
-            data = combined_morning,lambda=best)
-)
-# Get coefficients
-combined_morning_coefs = names(combined_morning_mod$coefficients)[
-  which(combined_morning_mod$coefficients != 0 & 
-          names(combined_morning_mod$coefficients) != "(Intercept)")]
-# Print
-l = labels(data[,combined_morning_coefs])
-kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
-```
-
-### Upset plot
-
-```{r warning=FALSE}
-# Format output
-selected_morning = do.call(rbind,list(
-  morning_items %in% bolus_morning_coefs,
-  morning_items %in% smg_morning_coefs,
-  morning_items %in% tir_morning_coefs,
-  morning_items %in% alerts_morning_coefs,
-  morning_items %in% caretime_morning_coefs,
-  morning_items %in% thinktime_morning_coefs,
-  morning_items %in% gsq_morning_coefs,
-  morning_items %in% combined_morning_coefs
-))
-colnames(selected_morning) = morning_items
-selected_morning = data.frame(apply(selected_morning,2,as.numeric))
-# Plot
-upset(selected_morning,nsets = ncol(selected_morning),order.by = "freq",mb.ratio = c(0,1))
-```
-
-## Evening survey
-
-### Number of boluses
-
-```{r}
-fam = poisson(link = "log")
-# Get evening variables
-bolus_evening = data[,c(id_vars,evening_items,"next_day_boluses")]
-bolus_evening = bolus_evening[complete.cases(bolus_evening),]
-# CV for lambda values
-lambda_perf = lambda_cv(df = bolus_evening,outcome_name = "next_day_boluses",fam = fam)
-best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
-# Fit model
-form = as.formula(paste0("next_day_boluses~",paste0(evening_items,collapse = "+")))
-bolus_evening_mod = suppressWarnings(
-  glmmLasso(form, rnd = list(record_id=~1),family = fam,
-            data = bolus_evening,lambda=best)
-)
-# Get coefficients
-bolus_evening_coefs = names(bolus_evening_mod$coefficients)[
-  which(bolus_evening_mod$coefficients != 0 & 
-          names(bolus_evening_mod$coefficients) != "(Intercept)")]
-# Print
-l = labels(data[,bolus_evening_coefs])
-kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
-```
-
-### SMG
+### Evening survey
 
 ```{r}
 fam = gaussian()
 # Get evening variables
-smg_evening = data[,c(id_vars,evening_items,"next_day_smg")]
-smg_evening = smg_evening[complete.cases(smg_evening),]
+esq_evening = data[,c(id_vars,evening_items,"next_day_esq")]
+esq_evening = esq_evening[complete.cases(esq_evening),]
 # CV for lambda values
-lambda_perf = lambda_cv(df = smg_evening,outcome_name = "next_day_smg",fam = fam)
+lambda_perf = lambda_cv(df = esq_evening,outcome_name = "next_day_esq",fam = fam)
 best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
 # Fit model
-form = as.formula(paste0("next_day_smg~",paste0(evening_items,collapse = "+")))
-smg_evening_mod = suppressWarnings(
+form = as.formula(paste0("next_day_esq~",paste0(evening_items,collapse = "+")))
+esq_evening_mod = suppressWarnings(
   glmmLasso(form, rnd = list(record_id=~1),family = fam,
-            data = smg_evening,lambda=best)
+            data = esq_evening,lambda=best)
 )
 # Get coefficients
-smg_evening_coefs = names(smg_evening_mod$coefficients)[
-  which(smg_evening_mod$coefficients != 0 & 
-          names(smg_evening_mod$coefficients) != "(Intercept)")]
+esq_evening_coefs = names(esq_evening_mod$coefficients)[
+  which(esq_evening_mod$coefficients != 0 & 
+          names(esq_evening_mod$coefficients) != "(Intercept)")]
 # Print
-l = labels(data[,smg_evening_coefs])
+l = labels(data[,esq_evening_coefs])
 kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
-```
-
-### TIR
-
-```{r}
-fam = gaussian()
-# Get evening variables
-tir_evening = data[,c(id_vars,evening_items,"next_day_tir")]
-tir_evening = tir_evening[complete.cases(tir_evening),]
-# CV for lambda values
-lambda_perf = lambda_cv(df = tir_evening,outcome_name = "next_day_tir",fam = fam)
-best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
-# Fit model
-form = as.formula(paste0("next_day_tir~",paste0(evening_items,collapse = "+")))
-tir_evening_mod = suppressWarnings(
-  glmmLasso(form, rnd = list(record_id=~1),family = fam,
-            data = tir_evening,lambda=best)
-)
-# Get coefficients
-tir_evening_coefs = names(tir_evening_mod$coefficients)[
-  which(tir_evening_mod$coefficients != 0 & 
-          names(tir_evening_mod$coefficients) != "(Intercept)")]
-# Print
-l = labels(data[,tir_evening_coefs])
-kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
-```
-
-### Number of high alerts
-
-```{r}
-fam = poisson(link = "log")
-# Get evening variables
-alerts_evening = data[,c(id_vars,evening_items,"next_day_n_highalerts")]
-alerts_evening = alerts_evening[complete.cases(alerts_evening),]
-# CV for lambda values
-lambda_perf = lambda_cv(df = alerts_evening,outcome_name = "next_day_n_highalerts",fam = fam)
-best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
-# Fit model
-form = as.formula(paste0("next_day_n_highalerts~",paste0(evening_items,collapse = "+")))
-alerts_evening_mod = suppressWarnings(
-  glmmLasso(form, rnd = list(record_id=~1),family = fam,
-            data = alerts_evening,lambda=best)
-)
-# Get coefficients
-alerts_evening_coefs = names(alerts_evening_mod$coefficients)[
-  which(alerts_evening_mod$coefficients != 0 & 
-          names(alerts_evening_mod$coefficients) != "(Intercept)")]
-# Print
-l = labels(data[,alerts_evening_coefs])
-kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
-```
-
-### Time spent caring for diabetes
-
-```{r}
-fam = poisson(link = "log")
-# Get evening variables
-caretime_evening = data[,c(id_vars,evening_items,"next_day_dm_caretime")]
-caretime_evening = caretime_evening[complete.cases(caretime_evening),]
-# Transform outcome - cube root
-caretime_evening$next_day_dm_caretime = (caretime_evening$next_day_dm_caretime)^(1/3)
-# CV for lambda values
-lambda_perf = lambda_cv(df = caretime_evening,outcome_name = "next_day_dm_caretime",fam = fam)
-best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
-# Fit model
-form = as.formula(paste0("next_day_dm_caretime~",paste0(evening_items,collapse = "+")))
-caretime_evening_mod = suppressWarnings(
-  glmmLasso(form, rnd = list(record_id=~1),family = fam,
-            data = caretime_evening,lambda=best)
-)
-# Get coefficients
-caretime_evening_coefs = names(caretime_evening_mod$coefficients)[
-  which(caretime_evening_mod$coefficients != 0 & 
-          names(caretime_evening_mod$coefficients) != "(Intercept)")]
-# Print
-l = labels(data[,caretime_evening_coefs])
-kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
-```
-
-### Time spent thinking about diabetes
-
-```{r}
-fam = poisson(link = "log")
-# Get evening variables
-thinktime_evening = data[,c(id_vars,evening_items,"next_day_dm_thinktime")]
-thinktime_evening = thinktime_evening[complete.cases(thinktime_evening),]
-# Transform outcome - cube root
-thinktime_evening$next_day_dm_thinktime = (thinktime_evening$next_day_dm_thinktime)^(1/3)
-# CV for lambda values
-lambda_perf = lambda_cv(df = thinktime_evening,outcome_name = "next_day_dm_thinktime",fam = fam)
-best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
-# Fit model
-form = as.formula(paste0("next_day_dm_thinktime~",paste0(evening_items,collapse = "+")))
-thinktime_evening_mod = suppressWarnings(
-  glmmLasso(form, rnd = list(record_id=~1),family = fam,
-            data = thinktime_evening,lambda=best)
-)
-# Get coefficients
-thinktime_evening_coefs = names(thinktime_evening_mod$coefficients)[
-  which(thinktime_evening_mod$coefficients != 0 & 
-          names(thinktime_evening_mod$coefficients) != "(Intercept)")]
-# Print
-l = labels(data[,thinktime_evening_coefs])
-kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
-```
-
-### Average of 3 GSQ scores
-
-```{r}
-fam = gaussian()
-# Get evening variables
-gsq_evening = data[,c(id_vars,evening_items,"next_day_gsq")]
-gsq_evening = gsq_evening[complete.cases(gsq_evening),]
-# CV for lambda values
-lambda_perf = lambda_cv(df = gsq_evening,outcome_name = "next_day_gsq",fam = fam)
-best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
-# Fit model
-form = as.formula(paste0("next_day_gsq~",paste0(evening_items,collapse = "+")))
-gsq_evening_mod = suppressWarnings(
-  glmmLasso(form, rnd = list(record_id=~1),family = fam,
-            data = gsq_evening,lambda=best)
-)
-# Get coefficients
-gsq_evening_coefs = names(gsq_evening_mod$coefficients)[
-  which(gsq_evening_mod$coefficients != 0 & 
-          names(gsq_evening_mod$coefficients) != "(Intercept)")]
-# Print
-l = labels(data[,gsq_evening_coefs])
-kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
-```
-
-### Combined alert outcome
-
-```{r}
-fam = binomial()
-# Get evening variables
-combined_evening = data[,c(id_vars,evening_items,"next_day_combined")]
-combined_evening = combined_evening[complete.cases(combined_evening),]
-# CV for lambda values
-lambda_perf = lambda_cv(df = combined_evening,outcome_name = "next_day_combined",fam = fam)
-best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
-# Fit model
-form = as.formula(paste0("next_day_combined~",paste0(evening_items,collapse = "+")))
-combined_evening_mod = suppressWarnings(
-  glmmLasso(form, rnd = list(record_id=~1),family = fam,
-            data = combined_evening,lambda=best)
-)
-# Get coefficients
-combined_evening_coefs = names(combined_evening_mod$coefficients)[
-  which(combined_evening_mod$coefficients != 0 & 
-          names(combined_evening_mod$coefficients) != "(Intercept)")]
-# Print
-l = labels(data[,combined_evening_coefs])
-kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
-```
-
-### Upset plot
-
-```{r warning=FALSE}
-# Format output
-selected_evening = do.call(rbind,list(
-  evening_items %in% bolus_evening_coefs,
-  evening_items %in% smg_evening_coefs,
-  evening_items %in% tir_evening_coefs,
-  evening_items %in% alerts_evening_coefs,
-  evening_items %in% caretime_evening_coefs,
-  evening_items %in% thinktime_evening_coefs,
-  evening_items %in% gsq_evening_coefs,
-  evening_items %in% combined_evening_coefs
-))
-colnames(selected_evening) = evening_items
-selected_evening = data.frame(apply(selected_evening,2,as.numeric))
-# Plot
-upset(selected_evening,nsets = ncol(selected_evening),order.by = "freq",mb.ratio = c(0,1))
-```
-
-# Survey item definitions
-
-## Morning items
-
-```{r}
-kable(cbind(morning_items,labels(data[,morning_items])),
-      col.names = c("Item","Question"),row.names = F)
-```
-
-## Evening items
-
-```{r}
-kable(cbind(evening_items,labels(data[,evening_items])),
-      col.names = c("Item","Question"),row.names = F)
 ```
