@@ -3,10 +3,10 @@ library(readxl)
 library(tools)
 library(lubridate)
 # Original files
-indir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/DP3 high risk/Data_Raw/T1 Device Data"
-outdir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/DP3 high risk/Data_Cleaned/T1 Device Data Cleaned"
+indir = "B:/Projects/Kim Driscoll/DP3 high risk/Data_Raw/T1 Device Data"
+outdir = "B:/Projects/Kim Driscoll/DP3 high risk/Data_Cleaned/T1 Device Data Cleaned"
 files = list.files(indir,full.names = T,recursive = T)
-dates = read_excel("~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/DP3 high risk/Data_Raw/T1Visit Dates.xlsx")
+dates = read_excel("B:/Projects/Kim Driscoll/DP3 high risk/Data_Raw/T1Visit Dates.xlsx")
 dates$id = sub("HRTM_","",dates$record_id)
 # Iterate through
 for (f in files) {
@@ -107,10 +107,13 @@ for (f in files) {
   # Remove dates with year 2009
   t = t[year(t$Date)!=2009,]
   # Get dates
-  id = strsplit(file_id,"_")[[1]][2]
-  completed = dates$V1_Completed[match(id,dates$id)]
-  start = min(t$Date,na.rm = T)+60*60*24
-  t = t[t$Date >= start & t$Date < completed,]
+  id = paste0("HRTM_",strsplit(file_id,"_")[[1]][2])
+  v1 = dates$V1_Completed[match(id,dates$record_id)]
+  start = v1-(60*60*24*90)
+  t = t[t$Date >= start & t$Date < v1,]
+  if (any(rowSums(is.na(t)) == ncol(t))){
+    t = t[-which(rowSums(is.na(t)) == ncol(t)),]
+  }
   # Write
   write.csv(t[,vars],file = paste0(outdir,"/",file_id,".csv"),row.names = F,na = "")
   # Clean up

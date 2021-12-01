@@ -1,5 +1,5 @@
 ---
-title: "CGM and BMT Functional Data Analysis (FDA)"
+title: "CGM and BMT"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
 output:
@@ -22,11 +22,15 @@ library(refund)
 library(refund.shiny)
 library(tidyfun)
 library(refundr)
-knitr::opts_chunk$set(echo = TRUE)
-home_dir = 
-  ifelse(.Platform$OS.type != "unix",
-         "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/",
-         "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/")
+library(arsenal)
+knitr::opts_chunk$set(echo = F)
+if(Sys.info()["sysname"] == "Windows"){
+  home_dir = "B:/Projects/Jenna Sopfe/"
+} else if (Sys.info()["sysname"] == "Linux"){
+  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/"
+} else if (Sys.info()["sysname"] == "Darwin"){
+  home_dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/"
+}
 knitr::opts_knit$set(root.dir = home_dir)
 ```
 
@@ -46,6 +50,10 @@ data_full[,datecols] <- lapply(data_full[,datecols],lubridate::ymd)
 data_full$study_id = as.numeric(data_full$study_id)
 # Calculate BMI
 data_full$bmi = data_full$weight/((data_full$height/100)^2)
+# Count infections, TPN
+data_full = data_full %>% group_by(study_id) %>% 
+  mutate(infections = sum(!is.na(infxn_type)))
+data_full$infections_yn = ifelse(data_full$infections>0,"Yes","No")
 # Clean
 cgm = read.csv("./CGM Accuracy in BMT/Data_Cleaned/Prospective HSCT CGM Data Updated 6.24.19 FULL DATA SET.csv",na.strings = "")
 cgm$Time = mdy_hm(cgm$Time)
@@ -70,17 +78,13 @@ cgm_wide = cgm %>% filter(time_from_engraft >= 0) %>%
 # Write CSV for checking with SAS
 write.csv(cgm_wide,file = "./CGM and BMT FDA/Data_Cleaned/cleaned_for_traj.csv",
           row.names = F,na = "")
-```
-
-# Q score
-
-```{r}
 # Convert to mmol/L
 cgm$mmol = cgm$Historic_Glucose / 18.0182
 # Split by ID and sensor number
-cgm_list = split.data.frame(cgm,list(cgm$SubjectID,cgm$SensorNum))
+cgm_list = split.data.frame(cgm,list(cgm$SubjectID))
 # Q score for each sensor - calculate hours per day from percent time
 q_scores = lapply(cgm_list, function(df){
+  df = df %>% arrange(Time)
   tg3.9 = mean(df$mmol < 3.9,na.rm = T) * 24
   tg8.9 = mean(df$mmol > 8.9,na.rm = T) * 24
   mbg = mean(cgm$mmol,na.rm = T)
@@ -92,47 +96,84 @@ q_scores = lapply(cgm_list, function(df){
   modd = mean(modd$t_diff,na.rm = T)
   q = 8 + (mbg - 7.8)/1.7 + (r - 7.5)/2.9 + (tg3.9-0.6)/1.2 + (tg8.9 - 6.2)/5.7 + 
     (modd - 1.8)/0.9
+  return(q)
 })
+q_scores = data.frame(do.call(rbind,q_scores))
+colnames(q_scores) = "q_score"
+q_scores$study_id = as.numeric(rownames(q_scores))
+# Merge into full data
+data_full = left_join(data_full,q_scores,by = "study_id")
+# Get each person's first row, fix race, etc.
+df = data_full %>% group_by(study_id) %>% filter(is.na(redcap_repeat_instance))
+levels(df$race___0) <- c(NA,"AI or AN")
+levels(df$race___1) <- c(NA,"Asian")
+levels(df$race___2) <- c(NA,"African American")
+levels(df$race___3) <- c(NA,"NH or PI")
+levels(df$race___4) <- c(NA,"White")
+levels(df$race___5) <- c(NA,"Hispanic")
+levels(df$race___6) <- c(NA,"Other")
+df <- df %>% ungroup() %>% 
+  unite("Race",race___0,race___1,race___2,race___3,race___4,race___5,race___6)
+df$Race <- gsub("NA","",df$Race)
+df$Race <- gsub("_","",df$Race)
+df$Race[which(df$race_multi == "yes")] <- "Multiple"
+df$Race[which(df$Race == "")] <- "Unknown"
+df$AgeTx <- 
+  as.numeric(difftime(df$date_of_tx,df$date_of_birth,
+                      units = "days")) / 365.25
 ```
 
-# Trajectory analysis
+# Table 1: Participant Characteristics
 
-```{r}
-# Time from engraftment
-dn = cgm %>% 
-  select(SubjectID,time_from_engraft,Historic_Glucose) %>%
-  filter(time_from_engraft >=0 & time_from_engraft <= 450)
-myClds <- cldsLong(dn)
-kmlShape(myClds,2)
+Participant 21 has a high Q score, but this appears to be correct and largely due to spending a lot of time below 3.9 mmol/L.
+
+```{r results='asis'}
+t1 = tableby(~q_score+AgeTx+gender+Race+tanner_stage+tx_type+
+               primary_dx_cat+spec_dx_cat+prep_regimen+sec_icu+factor(infections)+
+               post_tx_tpn,
+             data = df)
+summary(t1,labelTranslations = 
+          list(AgeTx = "Age at Tx",q_score = "Q Score",
+               `factor(infections)` = "Num. Infections"))
 ```
 
-# Functional data analysis
+# Q Score by Group
 
-## Transplant type
+Q score was compared between groups using a Wilcoxon rank sum test.
 
-```{r warning=FALSE}
-days = 1
-fda_df = cgm %>% group_by(SubjectID) %>% fill(tx_type) %>% ungroup() %>%
-  filter(time_from_engraft >= 0 & time_from_engraft <= (days*24*60)) %>% 
-  select(SubjectID,time_from_engraft,tx_type,Historic_Glucose) %>%
-  tf_nest(Historic_Glucose,.id = SubjectID,.arg = time_from_engraft)
-fda_df %>% ggplot(aes(y = Historic_Glucose,color = tx_type)) + 
-  geom_spaghetti(alpha = 0.3) +
-  theme_bw()
+```{r comparison function}
+compare = function(data,group){
+  # Test
+  f = as.formula(paste0("q_score ~ ",group))
+  w = wilcox.test(f,data = data)
+  p = w$p.value
+  p_form = format.pval(p,digits = 3,eps = 0.001)
+  # Plot
+  plot = ggplot(data,aes_string(x = group,y = "q_score",fill = group)) + 
+    geom_boxplot() + ylab("Q score") + theme_bw() + theme(legend.position = "none")
+  # Print results
+  cat("\n")
+  cat("\n")
+  cat(paste("##",group))
+  cat("\n")
+  cat("\n")
+  print(plot)
+  cat("\n")
+  cat("\n")
+  if(p > 0.05){
+    cat(paste0("Q score was not significantly different by ",group," (p = ",p_form,")."))
+  } else if (p <= 0.05){
+    cat(paste0("Q score was significantly different by ",group," (p = ",p_form,")."))
+  } else {
+    cat("Test failed.")
+  }
+}
 ```
 
-```{r warning=FALSE}
-fpca = rfr_fpca(Y = "Historic_Glucose", data = fda_df, pve = 0.95)
-fda_df %>% 
-  modelr::add_predictions(fpca, var = "gluc_fits") %>% 
-  ggplot(aes(y = gluc_fits)) + 
-  geom_spaghetti(alpha = .4) + 
-  geom_spaghetti(aes(y = Historic_Glucose), color = "blue", alpha = .3)
-```
-
-```{r}
-vars = paste0("Historic_Glucose_",1:(days*24*60))
-fda_wide = cgm_wide %>% select(all_of(vars)) %>% data.matrix(.)
-fit.fpca = fpca.sc(fda_wide)
-plot_shiny(fit.fpca)
+```{r results='asis'}
+vars = c("tx_type","primary_dx_cat","prep_regimen","sec_icu",
+         "infections_yn","post_tx_tpn")
+for (v in vars) {
+  compare(df,v)
+}
 ```
