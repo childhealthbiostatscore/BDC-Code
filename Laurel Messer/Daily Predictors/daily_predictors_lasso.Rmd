@@ -19,6 +19,7 @@ library(tidyverse)
 library(lubridate)
 library(redcapAPI)
 library(nlme)
+library(broom.mixed)
 library(glmmLasso)
 library(parallel)
 library(caret)
@@ -95,6 +96,8 @@ data = data %>% group_by(record_id,date) %>%
 # Remove outcomes not on a 24 hour scale
 data = data[-which(data$n_highalerts > 500),]
 data = data[-which(data$dm_thinktime > 12000),]
+# Remove 0 BG
+data$esq1[data$esq1 == 0] = NA
 # Evening outcomes - look at association with the next day's outcome
 data = data %>% group_by(record_id) %>% 
   mutate(next_day_boluses = lead(boluses),
@@ -225,7 +228,7 @@ esq_morning = esq_morning[complete.cases(esq_morning),]
 lambda_perf = lambda_cv(df = esq_morning,outcome_name = "esq1",fam = fam)
 best = best_lambdas(lambda_perf,"RMSE",num_coef_lower = 5,num_coef_higher = 10)
 # Fit model
-form = as.formula(paste0("esq1~",paste0(morning_items,collapse = "+")))
+form = as.formula(paste0("esq1~",paste0(morning_items[-1],collapse = "+")))
 esq_morning_mod = suppressWarnings(
   glmmLasso(form, rnd = list(record_id=~1),family = fam,
             data = esq_morning,lambda=best)
@@ -262,4 +265,70 @@ esq_evening_coefs = names(esq_evening_mod$coefficients)[
 # Print
 l = labels(data[,esq_evening_coefs])
 kable(cbind(names(l),as.character(l)),col.names = c("Variable","Description"))
+```
+
+# Correlation between the morning engagement survey glucose value and other predictors
+
+```{r eval = FALSE}
+# Pick model
+m1 = lme(esq1 ~ esq2,random = ~1|record_id,correlation = corAR1(),
+        data = data,na.action = na.exclude)
+m2 = lme(esq1 ~ esq2,random = ~1|record_id,
+        data = data,na.action = na.exclude)
+AIC(m1,m2)
+```
+
+## Other morning items 
+
+```{r results='asis'}
+for (v in morning_items[-1]) {
+  cat("\n")
+  cat(paste0("### ",v))
+  cat("\n")
+  # Fit simple model
+  f = as.formula(paste0("esq1~",v))
+  m = lme(f,random = ~1|record_id,data = data,na.action = na.exclude)
+  r = tidy(m,"fixed")
+  print(kable(r,digits = 3))
+}
+```
+
+## Previous evening items
+
+```{r results='asis'}
+for (v in evening_items) {
+  cat("\n")
+  cat(paste0("### ",v))
+  cat("\n")
+  # Fit simple model
+  f = as.formula(paste0("next_day_esq~",v))
+  m = lme(f,random = ~1|record_id,data = data,na.action = na.exclude)
+  r = tidy(m,"fixed")
+  print(kable(r,digits = 3))
+}
+```
+
+# Outcome varibility
+
+```{r results='asis',warning=FALSE,message=FALSE}
+outcomes = c("boluses","smg","tir","n_highalerts","dm_caretime","dm_thinktime",
+            "gsq")
+plot_data = data %>% group_by(record_id,date) %>% mutate(visit = row_number()) %>%
+  filter(visit == 1) %>% group_by(record_id) %>% mutate(visit = row_number()) %>%
+  filter(visit %in% c(3:5,7:9))
+for (o in outcomes){
+  cat("\n")
+  cat(paste0("## ",o))
+  cat("\n")
+  cat("\n")
+  # Plot
+  plot = ggplot(plot_data,aes_string(x = "visit",y = o,
+                                     group = "record_id",color = "record_id")) + 
+    geom_line(alpha = 0.5) + theme_bw() + theme(legend.position = "none")
+  print(plot)
+  sd_table = plot_data %>% group_by(visit) %>% summarize(SD = sd(!!sym(o),na.rm = T))
+  cat("\n")
+  print(kable(sd_table,digits = 2))
+  cat("\n")
+}
 ```
