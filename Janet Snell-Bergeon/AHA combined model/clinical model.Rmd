@@ -31,6 +31,8 @@ library(caret)
 library(parallel)
 library(pROC)
 library(PooledCohort)
+library(haven)
+
 knitr::opts_chunk$set(echo = FALSE,cache = TRUE)
 if(Sys.info()["sysname"] == "Windows"){
   home_dir = "B:/Projects"
@@ -47,24 +49,24 @@ source("C:/Users/pylell/Documents/GitHub/Helper-Functions/glinternet.R")
 #source("/home/laura/Documents/Github/Helper-Functions/glinternet.R")
 #source("/home/tim/GitHub/Helper-Functions/glinternet.R")
 #### DATA FRAME WITH LIPID MEDS AND EGDR COMPONENTS
-allvisits_long <- read.sas7bdat("./Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_long.sas7bdat")
-#allvisits_long <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_long.sas7bdat")
+#allvisits_long <- read.sas7bdat("./Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_long.sas7bdat")
+allvisits_long <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_long.sas7bdat")
 allvisits_long <- allvisits_long[allvisits_long$StudyID != 2389,]
 v1 <- allvisits_long[allvisits_long$Visit==1,]
 v1 <- v1[,c("StudyID","age","duration","bmi","whr","onhypermeds","onlipidmeds","avediabp","avesystbp","smkstatus","ldl","hdlc","tri",
             "CKDepi","ac","albuminuria","insdoseperkg","hba1c","l45vsf","l45sqf","egdr","apob","crp","fib","homo","pai1","sex")]
-cac <- read.csv("./Janet Snell-Bergeon/AHA collaborative grant/Proteomics/Data_Cleaned/cac_groups.csv")
-#cac <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Proteomics/Data_Cleaned/cac_groups.csv")
+#cac <- read.csv("./Janet Snell-Bergeon/AHA collaborative grant/Proteomics/Data_Cleaned/cac_groups.csv")
+cac <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Proteomics/Data_Cleaned/cac_groups.csv")
 cac$CACprogV3 <- ifelse(cac$C3 - cac$C1 >= 2.5,"Progression","No Progression")
 cac$CACprogV3[is.na(cac$CACprogV3)] <- "Unknown"
 cac <- cac[,c("StudyID","CACprogV3")]
 final <- merge(cac,v1,by="StudyID",all.x = T, all.y = T)
-ua <- read.sas7bdat("./Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model//uricacid_b.sas7bdat")
-#ua <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/uricacid_b.sas7bdat")
+#ua <- read.sas7bdat("./Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model//uricacid_b.sas7bdat")
+ua <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/uricacid_b.sas7bdat")
 ua <- ua[,c("StudyID","UA")]
 final <- merge(final,ua,by="StudyID",all.x = T, all.y = F)
-pat <- read.sas7bdat("./Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/PATwide.sas7bdat")
-#pat <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/PATwide.sas7bdat")
+#pat <- read.sas7bdat("./Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/PATwide.sas7bdat")
+pat <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/PATwide.sas7bdat")
 pat$StudyID <- pat$STUDYID
 pat <- pat[,c("StudyID","pfatcm_v1")]
 final <- merge(final,pat,by="StudyID",all.x = T, all.y = F)
@@ -92,8 +94,8 @@ final$sex <- NULL
 # drop egdr
 final$egdr <- NULL
 
-event <- read.csv("./Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/QVisits_LastVisit_20211205.csv")
-#event <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/QVisits_LastVisit_8-10-21.csv")
+#event <- read.csv("./Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/QVisits_LastVisit_20211205.csv")
+event <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/QVisits_LastVisit_8-10-21.csv")
 race <- event[,c("StudyID","race","cholV1","dia")]
 final <- merge(final,race,by="StudyID",all.x = T,all.y = F)
 
@@ -112,8 +114,17 @@ final$pcr_probs <- predict_10yr_ascvd_risk(
   smoke_current = final$smknum,
   smoke_current_levels = list(no="0",yes="1"),
   diabetes = final$dia,
-  diabetes_levels = list(no="1",yes="0")
+  diabetes_levels = list(no="1",yes="0"),
+  override_boundary_errors = TRUE
 )
+final$pcr_percent <- final$pcr_probs*100
+
+# read in Janet's risk scores and compare
+sas_check <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_cvdrisk.sas7bdat")
+sas_check$StudyID <- sas_check$study_id
+keep <- final[,c("StudyID","pcr_percent")]
+sas_check <- merge(sas_check,keep,by="StudyID")
+sas_check$diff <- sas_check$ASCVD_10yr - sas_check$pcr_percent
 
 # only complete cases
 complete_lipidmeds_egdr_components <- drop_na(final)
