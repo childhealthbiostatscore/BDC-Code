@@ -8,7 +8,7 @@ from statistics import mode
 wd = "/Users/timvigers/Documents/Work/Viral Shah/JDRF TIR/"
 cal = parsedatetime.Calendar()
 # Results dict for storing data
-results = {"id":[],"visit":[],"total_tir":[],"night_tir":[],"day_tir":[],"a1c":[]}
+results = {"id":[],"visit":[],"sensor_readings":[],"total_tir":[],"night_tir":[],"day_tir":[],"a1c":[]}
 # Calculate CGM values, etc. for each person
 folders = os.listdir(wd + "Data_Raw/3. Data Collection/Cleaned Final Data/Cases_T1D+DR")
 folders = [f for f in folders if "DS_Store" not in f]
@@ -20,8 +20,6 @@ for fol in folders:
     csvs = [f for f in files if ".csv" in f]
     summary = [f for f in files if "summary" in f.lower()][0]
     summary = pd.read_excel(wd + "Data_Raw/3. Data Collection/Cleaned Final Data/Cases_T1D+DR/" + fol + "/" + summary,engine = 'openpyxl')
-    # Combine all CSV files
-    all_data = []
     for c in csvs:
         # Get visit number
         vis = c.split("_")[0]
@@ -60,12 +58,8 @@ for fol in folders:
         cgm["timestamp"] = [datetime(*t[:6]) for t in cgm["timestamp"]]
         # Complete cases
         cgm.dropna(inplace = True)
-        # Find sampling interval
-        s = abs(mode(cgm["timestamp"].diff()).total_seconds())
-        # Re-index and expand to every 5 minutes
+        # Re-index
         cgm.set_index("timestamp",inplace = True)
-        cgm = cgm[~cgm.index.duplicated(keep='first')]
-        cgm = cgm.resample(str(s / 60) + "T").ffill()
         # Remove all but two weeks prior
         cgm = cgm.loc[start_date:end_date]
         # All TIR
@@ -75,7 +69,7 @@ for fol in folders:
         day = cgm.between_time("6:00","23:00",include_start=False,include_end=False)
         night = cgm.between_time("23:00","6:00")
         # Skip if no data
-        if day.shape[0] == 0 or night.shape[0] == 0 or cgm.shape[0] == 0:
+        if cgm.shape[0] == 0:
             continue
         # Day and night TIR
         day_r = day["glucose"].notna().sum()
@@ -91,6 +85,7 @@ for fol in folders:
         # ID etc.
         results["id"].append(subject_id)
         results["visit"].append(vis)
+        results["sensor_readings"].append(total_r)
 results = pd.DataFrame(results)
 results.sort_values(by = ["id","visit"],inplace = True)
 results.dropna(inplace = True)
