@@ -24,7 +24,7 @@ for fol in folders:
     all_data = []
     for c in csvs:
         vis = c.split("_")[0]
-        vis = [int(i) for i in vis if i.isdigit()][0]
+        vis = [int(i) for i in vis.split() if i.isdigit()][0]
         cgm = pd.read_csv(wd + "Data_Raw/3. Data Collection/Cleaned Final Data/Cases_T1D+DR/" + fol + "/" + c,low_memory = False)
         # Get timestamp and glucose columns, format
         if "Timestamp (YYYY-MM-DDThh:mm:ss)" in cgm.columns:
