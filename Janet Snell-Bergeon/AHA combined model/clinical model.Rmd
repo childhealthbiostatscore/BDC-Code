@@ -31,6 +31,8 @@ library(caret)
 library(parallel)
 library(pROC)
 library(PooledCohort)
+library(haven)
+
 knitr::opts_chunk$set(echo = FALSE,cache = TRUE)
 if(Sys.info()["sysname"] == "Windows"){
   home_dir = "B:/Projects"
@@ -43,8 +45,8 @@ knitr::opts_knit$set(root.dir = home_dir)
 ```
 
 ```{r}
-source("C:/Users/pylell/Documents/GitHub/Helper-Functions/glinternet.R")
-#source("/home/laura/Documents/Github/Helper-Functions/glinternet.R")
+#source("C:/Users/pylell/Documents/GitHub/Helper-Functions/glinternet.R")
+source("/home/laura/Documents/Github/Helper-Functions/glinternet.R")
 #source("/home/tim/GitHub/Helper-Functions/glinternet.R")
 #### DATA FRAME WITH LIPID MEDS AND EGDR COMPONENTS
 allvisits_long <- read.sas7bdat("./Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_long.sas7bdat")
@@ -71,19 +73,12 @@ final <- merge(final,pat,by="StudyID",all.x = T, all.y = F)
 final <- final[final$CACprogV3 != "Unknown",]
 final$CACprogV3_num <- ifelse(final$CACprogV3=="Progression",1,0)
 final$CACprogV3 <- NULL
-#final$alb_num <- as.factor(ifelse(final$albuminuria %in% c("mac","mic"),1,
-#                        ifelse(final$albuminuria=="non",0,NA)))
 final$alb_num <- ifelse(final$albuminuria %in% c("mac","mic"),1,
                                   ifelse(final$albuminuria=="non",0,NA))
 final$albuminuria <- NULL
-#final$smknum <- as.factor(ifelse(final$smkstatus=="Current",1,
-#                       ifelse(final$smkstatus %in% c("Former","Never"),0,NA)))
 final$smknum <- ifelse(final$smkstatus=="Current",1,
                                  ifelse(final$smkstatus %in% c("Former","Never"),0,NA))
 final$smkstatus <- NULL
-#final$onhypermeds <- as.factor(final$onhypermeds)
-#final$onlipidmeds <- as.factor(final$onlipidmeds)
-#final$onstatinmeds <- as.factor(final$onstatinmeds)
 # drop albuminuria status - we don't want it and AC together
 final$alb_num <- NULL
 # recode sex
@@ -112,66 +107,57 @@ final$pcr_probs <- predict_10yr_ascvd_risk(
   smoke_current = final$smknum,
   smoke_current_levels = list(no="0",yes="1"),
   diabetes = final$dia,
-  diabetes_levels = list(no="1",yes="0")
+  diabetes_levels = list(no="1",yes="0"),
+  override_boundary_errors = TRUE
 )
+final$pcr_percent <- final$pcr_probs*100
+
+# read in Janet's risk scores and compare
+sas_check <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_cvdrisk.sas7bdat")
+sas_check$StudyID <- sas_check$study_id
+keep <- final[,c("StudyID","pcr_percent")]
+sas_check <- merge(sas_check,keep,by="StudyID")
+sas_check$diff <- sas_check$ASCVD_10yr - sas_check$pcr_percent
 
 # only complete cases
 complete_lipidmeds_egdr_components <- drop_na(final)
 
 # log transform nonnormal vars
 complete_lipidmeds_egdr_components$l.duration <- log(complete_lipidmeds_egdr_components$duration)
-
 complete_lipidmeds_egdr_components$l.duration_2 <- log(complete_lipidmeds_egdr_components$duration^2)
 complete_lipidmeds_egdr_components$duration <- NULL
-
 complete_lipidmeds_egdr_components$l.bmi <- log(complete_lipidmeds_egdr_components$bmi)
 complete_lipidmeds_egdr_components$bmi <- NULL
-
 complete_lipidmeds_egdr_components$l.avediabp <- log(complete_lipidmeds_egdr_components$avediabp)
 complete_lipidmeds_egdr_components$avediabp <- NULL
-
 complete_lipidmeds_egdr_components$l.avesystbp <- log(complete_lipidmeds_egdr_components$avesystbp)
 complete_lipidmeds_egdr_components$avesystbp <- NULL
-
 complete_lipidmeds_egdr_components$l.hdlc <- log(complete_lipidmeds_egdr_components$hdlc)
 complete_lipidmeds_egdr_components$hdlc <- NULL
-
 complete_lipidmeds_egdr_components$l.tri <- log(complete_lipidmeds_egdr_components$tri)
 complete_lipidmeds_egdr_components$tri <- NULL
-
 complete_lipidmeds_egdr_components$l.CKDepi <- log(complete_lipidmeds_egdr_components$CKDepi)
 complete_lipidmeds_egdr_components$CKDepi <- NULL
-
 complete_lipidmeds_egdr_components$l.ac <- log(complete_lipidmeds_egdr_components$ac)
 complete_lipidmeds_egdr_components$ac <- NULL
-
 complete_lipidmeds_egdr_components$l.insdoseperkg <- log(complete_lipidmeds_egdr_components$insdoseperkg)
 complete_lipidmeds_egdr_components$insdoseperkg <- NULL
-
 complete_lipidmeds_egdr_components$l.hba1c <- log(complete_lipidmeds_egdr_components$hba1c)
 complete_lipidmeds_egdr_components$hba1c <- NULL
-
 complete_lipidmeds_egdr_components$l.l45vsf <- log(complete_lipidmeds_egdr_components$l45vsf)
 complete_lipidmeds_egdr_components$l45vsf <- NULL
-
 complete_lipidmeds_egdr_components$l.l45sqf <- log(complete_lipidmeds_egdr_components$l45sqf)
 complete_lipidmeds_egdr_components$l45sqf <- NULL
-
 complete_lipidmeds_egdr_components$l.crp <- log(complete_lipidmeds_egdr_components$crp)
 complete_lipidmeds_egdr_components$crp <- NULL
-
 complete_lipidmeds_egdr_components$l.fib <- log(complete_lipidmeds_egdr_components$fib)
 complete_lipidmeds_egdr_components$fib <- NULL
-
 complete_lipidmeds_egdr_components$l.homo <- log(complete_lipidmeds_egdr_components$homo)
 complete_lipidmeds_egdr_components$homo <- NULL
-
 complete_lipidmeds_egdr_components$l.pai1 <- log(complete_lipidmeds_egdr_components$pai1)
 complete_lipidmeds_egdr_components$pai1 <- NULL
-
 complete_lipidmeds_egdr_components$l.UA <- log(complete_lipidmeds_egdr_components$UA)
 complete_lipidmeds_egdr_components$UA <- NULL
-
 complete_lipidmeds_egdr_components$l.pfatcm_v1 <- log(complete_lipidmeds_egdr_components$pfatcm_v1)
 complete_lipidmeds_egdr_components$pfatcm_v1 <- NULL
 
@@ -201,8 +187,8 @@ complete_lipidmeds_egdr_components_hardcvd<- merge(complete_lipidmeds_egdr_compo
 complete_lipidmeds_egdr_components_hardcvd$CACprogV3_num <- NULL
 ####
 #### check missingness of CAC variables and calculate change in CAC per year
-cac <- read.csv("./Janet Snell-Bergeon/AHA collaborative grant/Proteomics/Data_Cleaned/cac_groups.csv")
-#cac <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Proteomics/Data_Cleaned/cac_groups.csv")
+#cac <- read.csv("./Janet Snell-Bergeon/AHA collaborative grant/Proteomics/Data_Cleaned/cac_groups.csv")
+cac <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Proteomics/Data_Cleaned/cac_groups.csv")
 x <- cac[,c("StudyID","C1","C2","C3","C4")]
 x$last <- ifelse(!is.na(x$C4),4,
                  ifelse(!is.na(x$C3),3,
@@ -270,7 +256,7 @@ test$smknum <- as.factor(test$smknum)
 test$sex_0m1f <- as.factor(test$sex_0m1f)
 test$CACprogV3_num <- as.factor(test$CACprogV3_num)
 form_test <- easy_glinternet(df=test,outcome = "CACprogV3_num",id_vars = "StudyID",
-                             fam = "binomial",cv_type = "loo",cores = 1)
+                             fam = "binomial",cv_type = "loo",cores = 24)
 form_test <- str_replace(form_test,"l.duration\\+l.duration_2","poly(l.duration,2)")
 ```
 
@@ -326,7 +312,7 @@ test$smknum <- as.factor(test$smknum)
 test$sex_0m1f <- as.factor(test$sex_0m1f)
 test$CACprogV3_num <- as.factor(test$CACprogV3_num)
 form_test <- easy_glinternet(df=test,outcome = "CACprogV3_num",id_vars = "StudyID",
-                             fam ="binomial",cv_type = "loo",cores = 1)
+                             fam ="binomial",cv_type = "loo",cores = 24)
 ```
 
 ## GLM using clinical variables selected by LASSO with interactions
@@ -336,6 +322,15 @@ refit_mod = glm(as.formula(form_test),data=test,family = binomial("logit"))
 summary(refit_mod)
 aic_values <- c(aic_values,refit_mod$aic)
 mod_names <- c(mod_names,"CAC progression, simple clinical variables, with interactions")
+```
+
+## GLM using ASCVD 10 year risk
+
+```{r, echo=FALSE, comment=""}
+refit_mod = glm(CACprogV3_num ~ pcr_percent,data=complete_lipidmeds_egdr_components,family = binomial("logit"))
+summary(refit_mod)
+aic_values <- c(aic_values,refit_mod$aic)
+mod_names <- c(mod_names,"CAC progression, ASCVD 10 year risk")
 ```
 
 # LASSO for change in CAC per year using lipid lowering meds and A1c, WHR, onhypermeds
@@ -384,7 +379,7 @@ test$onhypermeds <- as.factor(test$onhypermeds)
 test$smknum <- as.factor(test$smknum)
 test$sex_0m1f <- as.factor(test$sex_0m1f)
 form_test <- easy_glinternet(df=test,outcome = "cac_change_per_yr",id_vars = "StudyID",
-                             fam="gaussian",cv_type = "loo",cores = 1)
+                             fam="gaussian",cv_type = "loo",cores = 24)
 ```
 
 ## GLM using variables selected by LASSO with interactions
@@ -440,13 +435,23 @@ test$onhypermeds <- as.factor(test$onhypermeds)
 test$smknum <- as.factor(test$smknum)
 test$sex_0m1f <- as.factor(test$sex_0m1f)
 form_test <- easy_glinternet(df=test,outcome = "cac_change_per_yr",id_vars = "StudyID",
-                             fam="gaussian",cv_type = "loo",cores = 1)
+                             fam="gaussian",cv_type = "loo",cores = 24)
 ```
 
 ## GLM using clinical variables selected by LASSO with interactions
 
 ```{r, echo=FALSE, comment=""}
 refit_mod = glm(as.formula(form_test),data=test,family = "gaussian")
+summary(refit_mod)
+aic_values <- c(aic_values,refit_mod$aic)
+mod_names <- c(mod_names,"CAC change per year, simple clinical variables, with interactions")
+plot(refit_mod)
+```
+
+## GLM using ASCVD 10 year risk
+
+```{r, echo=FALSE, comment=""}
+refit_mod = glm(cac_change_per_yr ~ pcr_percent,data=complete_lipidmeds_egdr_components_ccc,family = "gaussian")
 summary(refit_mod)
 aic_values <- c(aic_values,refit_mod$aic)
 mod_names <- c(mod_names,"CAC change per year, simple clinical variables, with interactions")
@@ -530,6 +535,25 @@ form <- str_replace(form,"l.duration\\+l.duration_2","poly(l.duration,2)")
 ```{r, echo=FALSE, comment=""}
 form <- paste0("Surv(PersonYrsDeath,death)",form)
 c <- coxph(as.formula(form),data=complete_lipidmeds_egdr_components_death)
+c
+```
+
+### Test of proportional hazards
+
+```{r, echo=FALSE, comment=""}
+test.ph <- cox.zph(c)
+test.ph
+
+aic_values <- c(aic_values,extractAIC(c)[2])
+mod_names <- c(mod_names,"Death, simple clinical variables, without interactions")
+```
+
+## Cox model with ASCVD 10 year risk
+
+### Model results
+
+```{r, echo=FALSE, comment=""}
+c <- coxph(Surv(PersonYrsDeath,death) ~ pcr_percent, data=complete_lipidmeds_egdr_components_death)
 c
 ```
 
@@ -636,6 +660,25 @@ aic_values <- c(aic_values,extractAIC(c)[2])
 mod_names <- c(mod_names,"CAD, simple clinical variables, without interactions")
 ```
 
+## Cox model with ASCVD 10 year risk
+
+### Model results
+
+```{r, echo=FALSE, comment=""}
+c <- coxph(Surv(PersonYrsCAD,CAD) ~ pcr_percent,data=complete_lipidmeds_egdr_components_cad)
+c
+```
+
+### Test of proportional hazards
+
+```{r, echo=FALSE, comment=""}
+test.ph <- cox.zph(c)
+test.ph
+
+aic_values <- c(aic_values,extractAIC(c)[2])
+mod_names <- c(mod_names,"CAD, simple clinical variables, without interactions")
+```
+
 # Regularized Cox model for hard CAD without interactions, using lipid lowering meds and A1c, WHR, onhypermeds
 
 ## Regularized Cox model
@@ -712,6 +755,25 @@ form <- str_replace(form,"l.duration\\+l.duration_2","poly(l.duration,2)")
 ```{r, echo=FALSE, comment=""}
 form <- paste0("Surv(PersonYrsHardCAD,HardCAD)",form)
 c <- coxph(as.formula(form),data=complete_lipidmeds_egdr_components_hardcad)
+c
+```
+
+### Test of proportional hazards
+
+```{r, echo=FALSE, comment=""}
+test.ph <- cox.zph(c)
+test.ph
+
+aic_values <- c(aic_values,extractAIC(c)[2])
+mod_names <- c(mod_names,"Hard CAD, simple clinical variables, without interactions")
+```
+
+## Cox model with ASCVD 10 year risk
+
+### Model results
+
+```{r, echo=FALSE, comment=""}
+c <- coxph(Surv(PersonYrsHardCAD,HardCAD) ~ pcr_percent,data=complete_lipidmeds_egdr_components_hardcad)
 c
 ```
 
@@ -814,6 +876,25 @@ aic_values <- c(aic_values,extractAIC(c)[2])
 mod_names <- c(mod_names,"CVD, simple clinical variables, without interactions")
 ```
 
+## Cox model with ASCVD 10 year risk
+
+### Model results
+
+```{r, echo=FALSE, comment=""}
+c <- coxph(Surv(PersonYrsCVD,CVD) ~ pcr_percent,data=complete_lipidmeds_egdr_components_cvd)
+summary(c)
+```
+
+### Test of proportional hazards
+
+```{r, echo=FALSE, comment=""}
+test.ph <- cox.zph(c)
+test.ph
+
+aic_values <- c(aic_values,extractAIC(c)[2])
+mod_names <- c(mod_names,"CVD, simple clinical variables, without interactions")
+```
+
 # Regularized Cox model for hard CVD without interactions, using lipid lowering meds and A1c, WHR, onhypermeds
 
 ## Regularized Cox model
@@ -891,6 +972,26 @@ form <- str_replace(form,"l.duration\\+l.duration_2","poly(l.duration,2)")
 ```{r, echo=FALSE, comment=""}
 form <- paste0("Surv(PersonYrsHardCVD,HardCVD)",form)
 c <- coxph(as.formula(form),data=complete_lipidmeds_egdr_components_hardcvd)
+c
+```
+
+### Test of proportional hazards
+
+```{r, echo=FALSE, comment=""}
+test.ph <- cox.zph(c)
+test.ph
+
+aic_values <- c(aic_values,extractAIC(c)[2])
+mod_names <- c(mod_names,"Hard CVD, simple clinical variables, without interactions")
+```
+
+## Cox model with ASCVD 10 year risk
+
+### Model results
+
+```{r, echo=FALSE, comment=""}
+form <- paste0("",form)
+c <- coxph(Surv(PersonYrsHardCVD,HardCVD) ~ pcr_percent,data=complete_lipidmeds_egdr_components_hardcvd)
 c
 ```
 
