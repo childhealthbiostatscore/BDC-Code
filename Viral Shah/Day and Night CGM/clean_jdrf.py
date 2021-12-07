@@ -5,21 +5,21 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 from statistics import mode
-wd = "/Users/timvigers/Documents/Work/Viral Shah/JDRF TIR/"
+wd = "/Users/timvigers/Documents/Work/Viral Shah/Day and Night CGM/"
 cal = parsedatetime.Calendar()
 # Results dict for storing data
 results = {"id":[],"visit":[],"sensor_readings":[],"total_tir":[],"night_tir":[],"day_tir":[],"a1c":[]}
 # Calculate CGM values, etc. for each person
-folders = os.listdir(wd + "Data_Raw/3. Data Collection/Cleaned Final Data/Cases_T1D+DR")
+folders = os.listdir(wd + "Data_Raw/Cleaned Final Data/Cases_T1D+DR")
 folders = [f for f in folders if "DS_Store" not in f]
 for fol in folders:
     # Get ID
     subject_id = [int(i) for i in fol.split() if i.isdigit()][0]
     # Find summary and CSV files
-    files = os.listdir(wd + "Data_Raw/3. Data Collection/Cleaned Final Data/Cases_T1D+DR/" + fol)
+    files = os.listdir(wd + "Data_Raw/Cleaned Final Data/Cases_T1D+DR/" + fol)
     csvs = [f for f in files if ".csv" in f]
     summary = [f for f in files if "summary" in f.lower()][0]
-    summary = pd.read_excel(wd + "Data_Raw/3. Data Collection/Cleaned Final Data/Cases_T1D+DR/" + fol + "/" + summary,engine = 'openpyxl')
+    summary = pd.read_excel(wd + "Data_Raw/Cleaned Final Data/Cases_T1D+DR/" + fol + "/" + summary,engine = 'openpyxl')
     for c in csvs:
         # Get visit number
         vis = c.split("_")[0]
@@ -30,7 +30,7 @@ for fol in folders:
         end_date = end_date.dt.strftime('%Y-%m-%d').values[0]
         start_date = start_date.dt.strftime('%Y-%m-%d').values[0]
         # Import CGM file
-        cgm = pd.read_csv(wd + "Data_Raw/3. Data Collection/Cleaned Final Data/Cases_T1D+DR/" + fol + "/" + c,low_memory = False)
+        cgm = pd.read_csv(wd + "Data_Raw/Cleaned Final Data/Cases_T1D+DR/" + fol + "/" + c,low_memory = False)
         # Get timestamp and glucose columns, format
         if "Timestamp (YYYY-MM-DDThh:mm:ss)" in cgm.columns:
             cgm = cgm[["Timestamp (YYYY-MM-DDThh:mm:ss)","Glucose Value (mg/dL)"]]
@@ -89,4 +89,4 @@ for fol in folders:
 results = pd.DataFrame(results)
 results.sort_values(by = ["id","visit"],inplace = True)
 results.dropna(inplace = True)
-results.to_csv(wd + "Data_Clean/analysis_data.csv",index = False)
+results.to_csv(wd + "Data_Clean/analysis_data_jdrf.csv",index = False)
