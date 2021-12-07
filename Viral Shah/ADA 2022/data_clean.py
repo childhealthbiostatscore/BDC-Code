@@ -27,10 +27,10 @@ for fol in folders:
         vis = c.split("_")[0]
         vis = [int(i) for i in vis.split() if i.isdigit()][0]
         # Two weeks of data leading up to visit
-        end = summary.loc[summary.iloc[:,1] == vis]["Office Visit Date"]
-        start = end - pd.to_timedelta(14, unit='d')
-        end = end.dt.strftime('%Y-%m-%d').values[0]
-        start = start.dt.strftime('%Y-%m-%d').values[0]
+        end_date = summary.loc[summary.iloc[:,1] == vis]["Office Visit Date"]
+        start_date = end_date - pd.to_timedelta(14, unit='d')
+        end_date = end_date.dt.strftime('%Y-%m-%d').values[0]
+        start_date = start_date.dt.strftime('%Y-%m-%d').values[0]
         # Import CGM file
         cgm = pd.read_csv(wd + "Data_Raw/3. Data Collection/Cleaned Final Data/Cases_T1D+DR/" + fol + "/" + c,low_memory = False)
         # Get timestamp and glucose columns, format
@@ -67,13 +67,16 @@ for fol in folders:
         cgm = cgm[~cgm.index.duplicated(keep='first')]
         cgm = cgm.resample(str(s / 60) + "T").ffill()
         # Remove all but two weeks prior
-        cgm = cgm.loc[start:end]
+        cgm = cgm.loc[start_date:end_date]
         # All TIR
         total_r = cgm["glucose"].notna().sum()
         tir = [g for g in cgm["glucose"] if g >= 70 and g <= 180]
         # Split into day and night
         day = cgm.between_time("6:00","23:00",include_start=False,include_end=False)
         night = cgm.between_time("23:00","6:00")
+        # Skip if no data
+        if day.shape[0] == 0 or night.shape[0] == 0 or cgm.shape[0] == 0:
+            continue
         # Day and night TIR
         day_r = day["glucose"].notna().sum()
         day_tir = [g for g in day["glucose"] if g >= 70 and g <= 180]
@@ -90,4 +93,5 @@ for fol in folders:
         results["visit"].append(vis)
 results = pd.DataFrame(results)
 results.sort_values(by = ["id","visit"],inplace = True)
+results.dropna(inplace = True)
 results.to_csv(wd + "Data_Clean/analysis_data.csv",index = False)
