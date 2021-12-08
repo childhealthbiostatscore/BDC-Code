@@ -5,7 +5,7 @@ import numpy as np
 import datetime
 from dateutil.parser import parse
 # Import data
-wd = '/Users/timvigers/Dropbox/Work/Viral Shah/Day and Night CGM/'
+wd = '/Users/timvigers/Documents/Work/Viral Shah/Day and Night CGM/'
 # Most recent HbA1c information
 a1cs = pd.read_csv(wd+'Data_Clean/a1cs.csv',parse_dates=['MostRecentVisitDate'])
 # Iterate through CGM files, match with row in a1cs df, calculate metrics
@@ -23,7 +23,7 @@ for file in os.listdir(wd+'Data_Clean/cgms/'):
     # File extensioncontinueading in
     ext = pathlib.Path(wd+'Data_Raw/Patient 90 days/'+file).suffix
     if 'xls' in ext:
-        d = pd.read_excel(wd+'Data_Raw/Patient 90 days/'+file)
+        d = pd.read_excel(wd+'Data_Raw/Patient 90 days/'+file,engine = 'openpyxl')
     elif 'csv' in ext:
         d = pd.read_csv(wd+'Data_Raw/Patient 90 days/'+file)
     # Identify type of CGM file
@@ -56,8 +56,10 @@ for file in os.listdir(wd+'Data_Clean/cgms/'):
         day = c.between_time("6:00","23:00",include_start=False,include_end=False)
         night = c.between_time("23:00","6:00")
         # TIR
-        df[str(delta)+' Day TIR'].append(len([g for g in day['tir_glucose'] if g >=70 and g < 180])/day.shape[0]*100)
-        df[str(delta)+' Night TIR'].append(len([g for g in night['tir_glucose'] if g >=70 and g < 180])/night.shape[0]*100)
+        day_r = day["glucose"].notna().sum()
+        df[str(delta)+' Day TIR'].append(len([g for g in day['tir_glucose'] if g >=70 and g < 180])/day_r*100)
+        night_r = night["glucose"].notna().sum()
+        df[str(delta)+' Night TIR'].append(len([g for g in night['tir_glucose'] if g >=70 and g < 180])/night_r*100)
         # Mean
         day = day[(day['glucose'] != 'Low') & (day['glucose'] != 'High')]
         night = night[(night['glucose'] != 'Low') & (night['glucose'] != 'High')]
@@ -71,4 +73,4 @@ for file in os.listdir(wd+'Data_Clean/cgms/'):
     df['HbA1c'].append(r['MostRecentA1C'].iloc[0])
 # Results as a dataframe
 df=pd.DataFrame(data=df)
-df.to_csv(wd+'Data_Clean/analysis_dataset.csv',index=False)
+df.to_csv(wd+'Data_Clean/analysis_data.csv',index=False)
