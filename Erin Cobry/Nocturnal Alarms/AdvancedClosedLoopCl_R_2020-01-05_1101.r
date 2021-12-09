@@ -1,5 +1,5 @@
 #Read Data
-data=read.csv('./Data_Cleaned/AdvancedClosedLoopCl_DATA_2020-01-05_1101.csv')
+data=read.csv('./Erin Cobry/Nocturnal Alarms/Data_Cleaned/AdvancedClosedLoopCl_DATA_2020-01-05_1101.csv')
 #Setting Labels
 label(data$record_id)="Record ID"
 label(data$redcap_event_name)="Event Name"
