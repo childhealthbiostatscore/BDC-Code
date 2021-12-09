@@ -2,11 +2,12 @@ import os
 import math
 from itertools import combinations
 from datetime import datetime
+from datetime import timedelta
 from dateutil.parser import parse
 import xlrd
 import pandas as pd
 import numpy as np
-wd = "/Volumes/Documents/Work/Erin Cobry/Nocturnal Alarms/"
+wd = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/Nocturnal Alarms/"
 # Subject information and dates
 subject_dates = pd.read_csv(wd+"Data_Cleaned/subject_dates.csv")
 names = [name.lower() for name in subject_dates['name']]
@@ -28,7 +29,6 @@ dict={'id': [], 'timepoint': [], 'start_date': [], 'end_date': [], 'num_nights':
 for file in os.listdir(wd+"Data_Cleaned/CSVs/"):
     if file == ".DS_Store":
         continue
-    print(file)
     # Get subject name and dates
     df = pd.read_csv(wd+"Data_Cleaned/CSVs/"+file,low_memory=False)
     t = file.split(" ")[1]
@@ -57,7 +57,8 @@ for file in os.listdir(wd+"Data_Cleaned/CSVs/"):
         df['Datetime'] = [datetime(*xlrd.xldate_as_tuple(d, 0)) if not math.isnan(d) else '' for d in df['Datetime']]
     df = df.set_index('Datetime')
     df = df.loc[start:end]
-    nights = df['Date'].nunique() - 1
+    nights = pd.to_datetime(end) - pd.to_datetime(start) - timedelta(days=1)
+    nights = nights.days
     # Pull all alarms between 10p-6a
     df['Time'] = pd.to_datetime(df['Time'],format="%H:%M:%S",errors="coerce")
     df = df.set_index('Time')
