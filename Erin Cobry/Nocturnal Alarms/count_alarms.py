@@ -6,7 +6,7 @@ from dateutil.parser import parse
 import xlrd
 import pandas as pd
 import numpy as np
-wd = "/Volumes/Documents/Work/Erin Cobry/Nocturnal Alarms/"
+wd = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/Nocturnal Alarms/"
 # Subject information and dates
 subject_dates = pd.read_csv(wd+"Data_Cleaned/subject_dates.csv")
 names = [name.lower() for name in subject_dates['name']]
@@ -28,10 +28,10 @@ dict={'id': [], 'timepoint': [], 'start_date': [], 'end_date': [], 'num_nights':
 for file in os.listdir(wd+"Data_Cleaned/CSVs/"):
     if file == ".DS_Store":
         continue
-    print(file)
     # Get subject name and dates
     df = pd.read_csv(wd+"Data_Cleaned/CSVs/"+file,low_memory=False)
     t = file.split(" ")[1]
+    t = t.replace(".csv","")
     t_cols = [col for col in subject_dates.columns if t.lower() in col]
     if len(t_cols) < 1:
         t_cols = ['week2_start','week2_end']
