@@ -27,22 +27,57 @@ if(Sys.info()["sysname"] == "Windows"){
 knitr::opts_knit$set(root.dir = home_dir)
 ```
 
-```{r api import,include=FALSE,cache=TRUE}
+```{r api import,include=FALSE}
 token = read.table("./Erin Cobry/ADA 2022/HCL and Sleep/api_token.txt")[1,1]
 rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",token = token)
-data <- exportRecords(rcon,dates = F)
+data = exportRecords(rcon,dates = F)
+ids = data$record_id
 ```
 
-```{r data cleaning,include=FALSE}
-# Clean full data prior to split
-# Date columns (could not automatically format with API import)
-date_cols = c("date","parent_bday","childbirthdate")
-data[,date_cols] = lapply(data[,date_cols],lubridate::ymd)
-# Fill by participant
-data = data %>% fill(all_of(date_cols[-1]),.direction = "downup")
-# Calculate age
-data$childage = as.numeric(difftime(data$date,data$childbirthdate,units = "days"))/365.25
-# Split into parents and children
-parents = data %>% filter(record_id >= 200)
-peds = data %>% filter(record_id < 200)
+# Table 1a: Parent Characteristics
+
+```{r results='asis'}
+# Basic demographics
+parent_demographics = exportRecords(rcon,forms = "parent_demographics")
+parent_demographics$record_id = ids
+parent_demographics$age = 
+  as.numeric(difftime(parent_demographics$parent_demographics_timestamp,
+                      parent_demographics$parent_bday,units = "days"))/365.25
+parent_demographics = parent_demographics %>% 
+  select(record_id,age,parent_gender,race,parent_check_night,child_check_glucose,
+         insulinmethod,previous_cgm_use,currenthcltech)
+parent_demographics = 
+  parent_demographics[rowSums(is.na(parent_demographics)) < (ncol(parent_demographics)-1),]
+# Table
+f = as.formula(paste("~",paste0(colnames(parent_demographics)[-1],collapse = "+")))
+t1a = tableby(f,data = parent_demographics)
+summary(t1a,digits = 2,labelTranslations = list(age = "Age (years)",
+                                                currenthcltech = "currenthcltech"))
+```
+
+# Table 1b: Child Characteristics
+
+```{r results='asis'}
+# Basic demographics
+child_demographics = exportRecords(rcon,forms = "child_demographics_chart_review")
+child_demographics$record_id = ids
+child_demographics$t1d_duration = 
+  as.numeric(difftime(child_demographics$consent_date,
+                      child_demographics$t1d_diagnosis,units = "days"))/365.25
+child_demographics = child_demographics %>% 
+  select(record_id,cons_age,childgender,t1d_duration)
+child_demographics = 
+  child_demographics[rowSums(is.na(child_demographics)) < (ncol(child_demographics)-1),]
+# Table
+f = as.formula(paste("~",paste0(colnames(child_demographics)[-1],collapse = "+")))
+t1a = tableby(f,data = child_demographics)
+summary(t1a,digits = 3,labelTranslations = list(t1d_duration = "T1D Duration (years)"))
+```
+
+```{r}
+# Sleep and actiwatch
+child_activity = exportRecords(rcon,forms = "wrist_actigraphy")
+child_activity$record_id = ids
+child_activity = child_activity %>% 
+  select(record_id,avg_bedtime)
 ```
