@@ -1,0 +1,48 @@
+---
+title: "HCL and Sleep (ADA 2022)"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(redcapAPI)
+library(arsenal)
+library(tidyverse)
+library(performance)
+library(knitr)
+knitr::opts_chunk$set(echo = FALSE)
+if(Sys.info()["sysname"] == "Windows"){
+  home_dir = "B:/Projects"
+} else if (Sys.info()["sysname"] == "Linux"){
+  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+} else if (Sys.info()["sysname"] == "Darwin"){
+  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+}
+knitr::opts_knit$set(root.dir = home_dir)
+```
+
+```{r api import,include=FALSE,cache=TRUE}
+token = read.table("./Erin Cobry/ADA 2022/HCL and Sleep/api_token.txt")[1,1]
+rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",token = token)
+data <- exportRecords(rcon,dates = F)
+```
+
+```{r data cleaning,include=FALSE}
+# Clean full data prior to split
+# Date columns (could not automatically format with API import)
+date_cols = c("date","parent_bday","childbirthdate")
+data[,date_cols] = lapply(data[,date_cols],lubridate::ymd)
+# Fill by participant
+data = data %>% fill(all_of(date_cols[-1]),.direction = "downup")
+# Calculate age
+data$childage = as.numeric(difftime(data$date,data$childbirthdate,units = "days"))/365.25
+# Split into parents and children
+parents = data %>% filter(record_id >= 200)
+peds = data %>% filter(record_id < 200)
+```
