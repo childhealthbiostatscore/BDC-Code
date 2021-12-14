@@ -14,6 +14,9 @@ output:
 library(redcapAPI)
 library(arsenal)
 library(tidyverse)
+library(lmerTest)
+library(broom.mixed)
+library(emmeans)
 library(performance)
 library(knitr)
 knitr::opts_chunk$set(echo = FALSE)
@@ -78,13 +81,49 @@ t1a = tableby(f,data = child_demographics)
 summary(t1a,digits = 3,labelTranslations = list(t1d_duration = "T1D Duration (years)"))
 ```
 
-# Actigraphy
-
-```{r actigraphy function}
-
+```{r model functions}
+fit_mod = function(outcome,df,plot = T,diagnostics = T){
+  # Format timepoint
+  df$timepoint = as.factor(df$timepoint)
+  levels(df$timepoint) = gsub("baseline_.*","Baseline",levels(df$timepoint))
+  levels(df$timepoint) = gsub("hcl_month_3_.*","Month 3",levels(df$timepoint))
+  levels(df$timepoint) = gsub("hcl_month_6_.*","Month 6",levels(df$timepoint))
+  # Fit random intercept model
+  f = as.formula(paste0(outcome,"~timepoint+(1|record_id)"))
+  mod = lmer(f,data = df)
+  # Plot
+  if(plot){
+    p = 
+      ggplot(data = df,aes_string(x = "timepoint",y = outcome,
+                                  color = "record_id",group = "record_id")) + 
+      geom_point() + geom_line() + xlab("Timepoint") +
+      theme_bw() + theme(legend.position = "none")
+    print(p)
+  }
+  # Type 3
+  type3 = data.frame(car::Anova(mod,type = 3))
+  colnames(type3)[3] = "p.value"
+  print(kable(type3,digits = 3,caption = "Test of Overall Effect"))
+  # Model results
+  res = tidy(mod,"fixed")
+  res$term = sub("timepoint","",res$term)
+  res$effect = NULL
+  print(kable(res,digits = 3,caption = "Comparison to Baseline"))
+  # Means
+  means = data.frame(emmeans(mod,~timepoint))
+  print(kable(means,digits = 3,caption = "Model Means"))
+  # Check model
+  if(diagnostics){
+    print(check_model(mod))
+  }
+}
 ```
 
-## Chidren
+# Methods
+
+Each outcome was modeled using a linear mixed effects model with random intercept for participant to account for within-subject correlation. Random slope models would not converge for several outcomes, including average sleep time.
+
+# Actigraphy
 
 ```{r}
 # Get total sleep time, sleep efficiency, and WASO
@@ -93,6 +132,21 @@ child_activity$record_id = ids
 child_activity$timepoint = times
 child_activity = child_activity %>% 
   select(record_id,timepoint,totalsleep_avg,sleepefficency_avg,waso_avg) %>% 
-  filter(!record_id %in% exclude,grepl("baseline|month_3|month_6",timepoint),record_id >= 200)
-# Models
+  filter(!record_id %in% exclude,grepl("baseline|month_3|month_6",timepoint),
+         record_id >= 200,rowSums(is.na(.)) < ncol(.)-2) %>%
+  mutate(totalsleep_avg = as.numeric(lubridate::hms(totalsleep_avg))/60) %>%
+  filter(totalsleep_avg < 21*60)
+# Same for parents
+```
+
+## Average sleep time
+
+Average sleep time was converted to minutes for all analyses.
+
+### Children
+
+Participant 225 had an average of 21 hours of sleep at month 6, so this value was excluded.
+
+```{r results='asis'}
+fit_mod(outcome = "totalsleep_avg",df = child_activity)
 ```
