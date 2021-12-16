@@ -187,17 +187,58 @@ for (v in preds) {
 
 # Characterizing variability
 
-```{r results='asis'}
+```{r results='asis',message=FALSE}
+preds = preds[-4]
 for (v in preds) {
   # Title
   cat("\n")
   cat(paste0("### ",v))
   cat("\n")
+  # Calculate change over time 
+  df = data %>% filter(!grepl("E_",redcap_event_name.factor)) %>%
+    select(record_id,redcap_event_name.factor,all_of(v)) %>%
+    mutate(delta = (!!sym(v)) - lag((!!sym(v)))) %>%
+    group_by(record_id) %>% mutate(vis_num = row_number())
+  # Plot
+  p = ggplot(data,aes_string(x = "record_id",y = v)) + 
+    geom_boxplot() + theme_bw() + 
+    theme(axis.text.x=element_blank(),axis.title.x = element_blank(),
+          axis.ticks.x=element_blank())
+  cat("\n")
+  print(p)
+  cat("\n")
   # Fit simple model
-  f = as.formula(paste0("dm_thinktime~",v,"+(1|record_id)"))
-  m = lmer(f,data = data)
+  m = lmer(delta ~ 1+ (1|record_id),data = df)
   r = tidy(m,"fixed")
   r$effect = NULL
-  print(kable(r,digits = 3))
+  cat("\n")
+  cat(paste0("The mean daily change was ",round(r$estimate[1],2),
+             " +/- ",round(r$std.error[1],2)))
+  cat("\n")
 }
 ```
+
+# Boluses
+
+## TIR
+
+```{r results='asis'}
+m = glmer(boluses ~ scale(tir) + (1|record_id),data = data,family = "poisson")
+r = tidy(m,"fixed",exponentiate = T)
+r$effect = NULL
+kable(r,digits = 3)
+```
+
+Boluses were modeled using a Poisson distribution because they are count data. TIR had to be centered and scaled for the model to work, so the interpretation of the "scale(tir)" coefficient is: "for a one SD change in TIR above the mean, the rate is expected to change by rate * `r round(r$estimate[2],3)`."
+
+## SMG 
+
+```{r results='asis'}
+m = glmer(boluses ~ scale(smg) + (1|record_id),data = data,family = "poisson")
+r = tidy(m,"fixed",exponentiate = T)
+r$effect = NULL
+kable(r,digits = 3)
+```
+
+Boluses were modeled using a Poisson distribution because they are count data. TIR had to be centered and scaled for the model to work, so the interpretation of the "scale(smg)" coefficient is: "for a one SD change in SMG above the mean, the rate is expected to change by rate * `r round(r$estimate[2],3)`."
+
