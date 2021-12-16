@@ -19,7 +19,8 @@ library(broom.mixed)
 library(emmeans)
 library(performance)
 library(knitr)
-knitr::opts_chunk$set(echo = FALSE)
+library(DT)
+knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
 if(Sys.info()["sysname"] == "Windows"){
   home_dir = "B:/Projects"
 } else if (Sys.info()["sysname"] == "Linux"){
@@ -82,7 +83,7 @@ summary(t1a,digits = 3,labelTranslations = list(t1d_duration = "T1D Duration (ye
 ```
 
 ```{r model functions}
-fit_mod = function(outcome,df,plot = T,diagnostics = T){
+fit_mod = function(outcome,df,plot = T,diagnostics = F){
   # Format timepoint
   df$timepoint = as.factor(df$timepoint)
   levels(df$timepoint) = gsub("baseline_.*","Baseline",levels(df$timepoint))
@@ -138,14 +139,35 @@ child_activity = activity %>%
   select(record_id,timepoint,totalsleep_avg,sleepefficency_avg,waso_avg) %>% 
   filter(!record_id %in% exclude,grepl("baseline|month_3|month_6",timepoint),
          record_id >= 200,rowSums(is.na(.)) < ncol(.)-2) %>%
-  mutate(totalsleep_avg = as.numeric(lubridate::hms(totalsleep_avg))/60) %>%
+  mutate(avg_sleep = as.character(totalsleep_avg),
+         totalsleep_avg = as.numeric(lubridate::hms(totalsleep_avg))/60) %>%
   filter(totalsleep_avg < 21*60)
+child_activity = left_join(child_activity,child_demographics,by = "record_id")
+child_activity$sufficient = apply(child_activity,1,function(r){
+  age = as.numeric(r["cons_age"])
+  time = as.numeric(r["totalsleep_avg"])/60
+  if(age <= 2){
+    if(time >= 11 & time <= 14){suff = "Yes"} else {suff = "No"}
+  } else if (age <= 5){
+    if(time >= 10 & time <= 13){suff = "Yes"} else {suff = "No"}
+  } else if (age <= 12){
+    if(time >= 9 & time <= 12){suff = "Yes"} else {suff = "No"}
+  } else if (age <= 17){
+    if(time >= 8 & time <= 10){suff = "Yes"} else {suff = "No"}
+  } else if (age > 17) {
+    if(time >= 7){suff = "Yes"} else {suff = "No"}
+  }
+})
+child_activity$sufficient = as.factor(child_activity$sufficient)
 # Same for parents
 parent_activity = activity %>% 
   select(record_id,timepoint,totalsleep_avg,sleepefficency_avg,waso_avg) %>% 
   filter(!record_id %in% exclude,grepl("baseline|month_3|month_6",timepoint),
          record_id < 200,rowSums(is.na(.)) < ncol(.)-2) %>%
-  mutate(totalsleep_avg = as.numeric(lubridate::hms(totalsleep_avg))/60)
+  mutate(avg_sleep = as.character(totalsleep_avg),
+         totalsleep_avg = as.numeric(lubridate::hms(totalsleep_avg))/60,
+         sufficient = ifelse(totalsleep_avg >= 7*60,"Yes","No"))
+parent_activity$sufficient = as.factor(parent_activity$sufficient)
 ```
 
 ## Average sleep time
@@ -194,18 +216,46 @@ fit_mod(outcome = "waso_avg",df = child_activity)
 fit_mod(outcome = "waso_avg",df = parent_activity)
 ```
 
+## Sufficient sleep
+
+### Children
+
+```{r results='asis'}
+child_activity %>% select(record_id,timepoint,cons_age,avg_sleep,sufficient) %>% 
+  datatable(.)
+```
+
+```{r}
+child_activity %>% group_by(timepoint) %>% count(sufficient) %>% kable(.)
+```
+
+### Parents
+
+```{r results='asis'}
+parent_activity %>%select(record_id,timepoint,avg_sleep,sufficient) %>% 
+  datatable(.)
+```
+
+```{r}
+parent_activity %>% group_by(timepoint) %>% count(sufficient) %>% kable(.)
+```
+
 # Surveys
 
 ## PSQI 
 
-```{r eval=FALSE}
-psqi = exportRecords(rcon,forms = "psqi")
+```{r}
+psqi = exportRecords(rcon,forms = "psqi",dates = F)
 psqi$record_id = ids
 psqi$timepoint = times
-psqi = psqi %>% select(record_id,timepoint,psqi_1:psqi_10e) %>% 
+psqi = psqi %>% select(record_id,timepoint,psqi_total) %>% 
   filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
-         record_id < 200,rowSums(is.na(.)) < ncol(.)-2)
+         rowSums(is.na(.)) < ncol(.)-2)
 psqi$timepoint = sub("enrollment_","baseline_",psqi$timepoint)
+```
+
+```{r results='asis'}
+fit_mod(outcome = "psqi_total",df = psqi)
 ```
 
 ## PROMIS: Sleep Disturbance
