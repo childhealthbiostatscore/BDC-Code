@@ -41,17 +41,35 @@ levels(subject$Gender) = c("F","M")
 subject$BMI = subject$Weight..kg. / ((subject$Height..cm./100)^2)
 subject$BMIz = y2z(subject$BMI,x=subject$Age, sex=subject$Gender, ref=nl4.bmi)
 # CGM and OGTT data at baseline
-cgm = read.csv("./Brigitte Frohnert/TESS/Data_Raw/CGM data.csv",stringsAsFactors = F)
+cgm = read.csv("./Brigitte Frohnert/TESS/Data_Raw/CGM data.csv",
+               stringsAsFactors = F,na.strings = c("","NULL","-999.99"))
 cgm = cgm[cgm$Visit == "Baseline",]
-ogtt = read.csv("./Brigitte Frohnert/TESS/Data_Raw/OGTT data.csv",stringsAsFactors = F)
+ogtt = read.csv("./Brigitte Frohnert/TESS/Data_Raw/OGTT data.csv",
+                stringsAsFactors = F,na.strings = c("","NULL","-999.99"))
 ogtt = ogtt[ogtt$Visit == "Baseline",]
+ogtt_times = c("minus10","0","10","30","60","90","120")
+ogtt_vars = c(paste0("ogtt_",ogtt_times[-1],"_cpep_result"),
+              "ogtt_minus10_bg",paste0("ogtt_",ogtt_times[-1],"_glucose_result"))
+ogtt = ogtt %>% select(ogtt_tess_id,all_of(ogtt_vars))
+# Average CGM by ID
+cgm = cgm %>% group_by(cgm_tess_id) %>% summarise(across(cgm_num_days:cgm_cov_calc,mean,na.rm = T))
+cgm_vars = colnames(cgm)[-1]
 # Merge
 df = left_join(subject,cgm,by = c("TESS.ID" = "cgm_tess_id"))
+df = left_join(df,ogtt,by = c("TESS.ID" = "ogtt_tess_id"))
 ```
 
 # Participant Characteristics by FDR Status
 
 ```{r results='asis'}
-t1 = tableby(FDR ~ Age + BMIz,data = subject)
-summary(t1)
+f = as.formula(paste0("FDR ~ Age + BMIz + A1C + ",
+                      paste0(c(cgm_vars,ogtt_vars),collapse = "+")))
+t1 = tableby(f,data = df)
+summary(t1,labelTranslations = list(cgm_num_days = "CGM Days",
+                                    cgm_peaks_gt_200 = "CGM Peaks > 200",
+                                    cgm_hyper = "CGM Time in Hyperglycemia",
+                                    cgm_hypo = "CGM Time in Hypoglycemia",
+                                    cgm_target = "CGM Time in Target Range",
+                                    cgm_mean = "CGM Mean",cgm_std_dev = "CGM SD",
+                                    cgm_cv = "CGM CV"))
 ```
