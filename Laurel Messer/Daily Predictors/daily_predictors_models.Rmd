@@ -127,41 +127,51 @@ summary(t1,labelTranslations = new_labels)
 
 ```{r results='asis'}
 for (v in 2:length(morning_items)) {
+  df = data
   # Title
   cat("\n")
   cat(paste0("### ",morning_items[v]))
   cat("\n")
   # Get factor if necessary
   var = morning_items[v]
-  if(v>2){var = paste0(var,".factor")}
+  if(v>2){
+    var = paste0(var,".factor")
+    # Drop levels
+    df[,var] = droplevels(df[,var])
+  }
   # Fit simple model
   f = as.formula(paste0("esq1~",var,"+(1|record_id)"))
-  m = lmer(f,data = data)
+  m = lmer(f,data = df)
   r = tidy(m,"fixed")
   r$effect = NULL
+  if(v>2){
+    r$term = levels(df[,var])
+    r$term[1] = paste(r$term[1],"(Reference group)")
+  }
   print(kable(r,digits = 3)) 
-  # Marginal and conditional R2
-  r2 = r2_nakagawa(m)
-  cat("\n")
-  cat(paste0("Marginal R^2 was ",round(r2$R2_marginal,2),
-             " and conditional R^2 was ",round(r2$R2_conditional,2)))
-  cat("\n")
 }
 ```
 
 # How many minutes do you think you spent caring for your diabetes today?
 
 ```{r results='asis'}
-preds = c("tir","smg","boluses","combined","gsq")
+outs = c("tir","smg","boluses","combined","gsq")
 data$combined = factor(data$combined,levels = c(0,1),labels = c("No","Yes"))
-for (v in preds) {
+for (v in outs) {
   # Title
   cat("\n")
   cat(paste0("### ",v))
   cat("\n")
   # Fit simple model
-  f = as.formula(paste0("dm_caretime~",v,"+(1|record_id)"))
-  m = lmer(f,data = data)
+  f = as.formula(paste0(v,"~dm_caretime","+(1|record_id)"))
+  if(v == "combined"){
+    m = glmer(f,data = data,family = "binomial")
+    cat("\n")
+    cat("The 'combined' outcome is a binary variable, so the results are interpreted on the odds ratio scale.")
+    cat("\n")
+  } else {
+    m = lmer(f,data = data)
+  }
   r = tidy(m,"fixed")
   r$effect = NULL
   print(kable(r,digits = 3))
@@ -171,14 +181,20 @@ for (v in preds) {
 # How many minutes do you think you spent thinking about your diabetes today?
 
 ```{r results='asis'}
-for (v in preds) {
+for (v in outs) {
   # Title
   cat("\n")
   cat(paste0("### ",v))
   cat("\n")
-  # Fit simple model
-  f = as.formula(paste0("dm_thinktime~",v,"+(1|record_id)"))
-  m = lmer(f,data = data)
+  f = as.formula(paste0(v,"~dm_thinktime","+(1|record_id)"))
+  if(v == "combined"){
+    m = glmer(f,data = data,family = "binomial")
+    cat("\n")
+    cat("The 'combined' outcome is a binary variable, so the results are interpreted on the odds ratio scale.")
+    cat("\n")
+  } else {
+    m = lmer(f,data = data)
+  }
   r = tidy(m,"fixed")
   r$effect = NULL
   print(kable(r,digits = 3))
@@ -188,7 +204,7 @@ for (v in preds) {
 # Characterizing variability
 
 ```{r results='asis',message=FALSE}
-preds = preds[-4]
+preds = outs[-4]
 for (v in preds) {
   # Title
   cat("\n")
@@ -197,7 +213,7 @@ for (v in preds) {
   # Calculate change over time 
   df = data %>% filter(!grepl("E_",redcap_event_name.factor)) %>%
     select(record_id,redcap_event_name.factor,all_of(v)) %>%
-    mutate(delta = (!!sym(v)) - lag((!!sym(v)))) %>%
+    mutate(delta = abs((!!sym(v)) - lag((!!sym(v))))) %>%
     group_by(record_id) %>% mutate(vis_num = row_number())
   # Plot
   p = ggplot(data,aes_string(x = "record_id",y = v)) + 
@@ -212,8 +228,9 @@ for (v in preds) {
   r = tidy(m,"fixed")
   r$effect = NULL
   cat("\n")
-  cat(paste0("The mean daily change was ",round(r$estimate[1],2),
-             " +/- ",round(r$std.error[1],2)))
+  cat(paste0("The mean absolute value of daily change was ",round(r$estimate[1],2),
+             " +/- ",round(r$std.error[1],2),". (p = ",
+             format.pval(r$p.value,eps = 0.001),")"))
   cat("\n")
 }
 ```
@@ -222,23 +239,29 @@ for (v in preds) {
 
 ## TIR
 
-```{r results='asis'}
-m = glmer(boluses ~ scale(tir) + (1|record_id),data = data,family = "poisson")
-r = tidy(m,"fixed",exponentiate = T)
+```{r results='asis',message=FALSE}
+m = lmer(tir ~ boluses + (1|record_id),data = data)
+r = tidy(m,"fixed")
 r$effect = NULL
+p = ggplot(m@frame,aes(x=boluses,y=tir,color=record_id)) + 
+  geom_point() +
+  geom_smooth(method = "lm",se = F,aes(x=boluses,y=tir),inherit.aes = F) + 
+  theme_bw() + theme(legend.position = "none")
+print(p)
 kable(r,digits = 3)
 ```
-
-Boluses were modeled using a Poisson distribution because they are count data. TIR had to be centered and scaled for the model to work, so the interpretation of the "scale(tir)" coefficient is: "for a one SD change in TIR above the mean, the rate is expected to change by rate * `r round(r$estimate[2],3)`."
 
 ## SMG 
 
-```{r results='asis'}
-m = glmer(boluses ~ scale(smg) + (1|record_id),data = data,family = "poisson")
-r = tidy(m,"fixed",exponentiate = T)
+```{r results='asis',message=FALSE}
+m = lmer(smg ~ boluses + (1|record_id),data = data)
+r = tidy(m,"fixed")
 r$effect = NULL
+p = ggplot(m@frame,aes(x=boluses,y=smg,color=record_id)) + 
+  geom_point() +
+  geom_smooth(method = "lm",se = F,aes(x=boluses,y=smg),inherit.aes = F) + 
+  theme_bw() + theme(legend.position = "none")
+print(p)
 kable(r,digits = 3)
 ```
-
-Boluses were modeled using a Poisson distribution because they are count data. TIR had to be centered and scaled for the model to work, so the interpretation of the "scale(smg)" coefficient is: "for a one SD change in SMG above the mean, the rate is expected to change by rate * `r round(r$estimate[2],3)`."
 
