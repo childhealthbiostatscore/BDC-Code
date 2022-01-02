@@ -1,5 +1,5 @@
 ---
-title: "Health Related Quality of Life During COVID"
+title: "Health Related Quality of Life During COVID (ADA 2022)"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
 output:
@@ -11,6 +11,7 @@ output:
 ---
 
 ```{r setup, include=FALSE}
+library(redcapAPI)
 library(skimr)
 library(knitr)
 library(tidyverse)
@@ -19,6 +20,8 @@ library(arsenal)
 library(emmeans)
 library(lme4)
 library(lmerTest)
+library(DT)
+library(broom.mixed)
 knitr::opts_chunk$set(echo = FALSE)
 if(Sys.info()["sysname"] == "Windows"){
   home_dir = "B:/Projects"
@@ -371,4 +374,137 @@ tvc("pedsql_total_score_child","impact_mean",parent_pedsql_cefis_child[parent_pe
 
 ```{r results='asis'}
 tvc("pedsql_total_score_child","distress",parent_pedsql_cefis_child[parent_pedsql_cefis_child$exposure_sum>0,])
+```
+
+```{r api import,include=FALSE}
+token = read.table("./Erin Cobry/ADA 2022/HCL and Sleep/api_token.txt")[1,1]
+rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",token = token)
+data = exportRecords(rcon,dates = F)
+ids = data$record_id
+times = data$redcap_event_name
+exclude = c(101,201,102,202,103,203,110,210,119,219,121,221,131,231,141,241)
+```
+
+```{r model functions}
+fit_mod = function(outcome,df,plot = T,diagnostics = F){
+  # Format timepoint
+  df$timepoint = as.factor(df$timepoint)
+  levels(df$timepoint) = gsub("baseline_.*","Baseline",levels(df$timepoint))
+  levels(df$timepoint) = gsub("hcl_month_3_.*","Month 3",levels(df$timepoint))
+  levels(df$timepoint) = gsub("hcl_month_6_.*","Month 6",levels(df$timepoint))
+  # Fit random intercept model
+  f = as.formula(paste0(outcome,"~timepoint+(1|record_id)"))
+  mod = lmer(f,data = df)
+  # Plot
+  if(plot){
+    p = 
+      ggplot(data = df,aes_string(x = "timepoint",y = outcome,
+                                  color = "record_id",group = "record_id")) + 
+      geom_point() + geom_line() + xlab("Timepoint") +
+      theme_bw() + theme(legend.position = "none")
+    print(p)
+  }
+  # Type 3
+  type3 = data.frame(car::Anova(mod,type = 3))
+  colnames(type3)[3] = "p.value"
+  print(kable(type3,digits = 3,caption = "Test of Overall Effect"))
+  # Model results
+  res = tidy(mod,"fixed")
+  res$term = sub("timepoint","",res$term)
+  res$effect = NULL
+  print(kable(res,digits = 3,caption = "Comparison to Baseline"))
+  # Means
+  means = data.frame(emmeans(mod,~timepoint))
+  print(kable(means,digits = 3,caption = "Model Means"))
+  # Number of obs
+  cat("\n")
+  cat(paste("This model was fit using",nobs(mod),"observations."))
+  cat("\n")
+  # Check model
+  if(diagnostics){
+    print(check_model(mod))
+  }
+}
+```
+
+# PROMIS
+
+## PROMIS: Sleep Disturbance
+
+### Children
+
+```{r}
+# Import select, filter, etc.
+promis_peds = exportRecords(rcon,forms = "promis_pediatric_817")
+promis_peds$record_id = ids
+promis_peds$timepoint = times
+promis_peds = promis_peds %>% select(record_id,timepoint,falling_asleep:bad_mood_sleepy) %>%
+  filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
+         record_id >= 200,rowSums(is.na(.)) < ncol(.)-2) %>%
+  mutate(across(falling_asleep:bad_mood_sleepy,.fns = as.numeric),
+         through_night = 6 - through_night) %>% 
+  mutate(disturbance = rowSums(select(.,falling_asleep:tossed_and_turned)),
+         impairment = rowSums(select(.,daytime:bad_mood_sleepy)))
+promis_peds$timepoint = sub("enrollment_","baseline_",promis_peds$timepoint)
+# Convert to T scores
+peds_disturbance = read.csv("./Erin Cobry/ADA 2022/HCL and Sleep/Data_Clean/peds_sleep_disturbance.csv")
+colnames(peds_disturbance)[1] <- "Raw.Summed.Score"
+peds_impairment = read.csv("./Erin Cobry/ADA 2022/HCL and Sleep/Data_Clean/peds_sleep_impairment.csv")
+colnames(peds_impairment)[1] <- "Raw.Summed.Score"
+promis_peds$disturbance = 
+  peds_disturbance$T.Score[match(promis_peds$disturbance,
+                                 peds_disturbance$Raw.Summed.Score)]
+promis_peds$impairment = 
+    peds_impairment$T.Score[match(promis_peds$impairment,
+                                peds_impairment$Raw.Summed.Score)]
+```
+
+```{r results='asis'}
+fit_mod(outcome = "disturbance",df = promis_peds)
+```
+
+### Parents
+
+```{r}
+# Import select, filter, etc.
+promis_parent = exportRecords(rcon,forms = "promis_parent_proxy_817")
+promis_parent$record_id = ids
+promis_parent$timepoint = times
+promis_parent = promis_parent %>% select(record_id,timepoint,asleep:bad_mood) %>%
+  filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
+         record_id < 200,rowSums(is.na(.)) < ncol(.)-2) %>%
+  mutate(across(asleep:bad_mood,.fns = as.numeric),
+         night = 6 - night) %>% 
+  mutate(disturbance = rowSums(select(.,asleep:tossed)),
+         impairment = rowSums(select(.,sleepy:bad_mood)))
+promis_parent$timepoint = sub("enrollment_","baseline_",promis_parent$timepoint)
+# Convert to T scores
+parent_disturbance = read.csv("./Erin Cobry/ADA 2022/HCL and Sleep/Data_Clean/parent_proxy_sleep_disturbance.csv")
+colnames(parent_disturbance)[1] <- "Raw.Summed.Score"
+parent_impairment = read.csv("./Erin Cobry/ADA 2022/HCL and Sleep/Data_Clean/parent_proxy_sleep_impairment.csv")
+colnames(parent_impairment)[1] <- "Raw.Summed.Score"
+promis_parent$disturbance = 
+  parent_disturbance$T.Score[match(promis_parent$disturbance,
+                                   parent_disturbance$Raw.Summed.Score)]
+promis_parent$impairment = 
+  parent_impairment$T.Score[match(promis_parent$impairment,
+                                  parent_impairment$Raw.Summed.Score)]
+```
+
+```{r results='asis'}
+fit_mod(outcome = "disturbance",df = promis_parent)
+```
+
+## PROMIS: Impairment
+
+### Children
+
+```{r results='asis'}
+fit_mod(outcome = "impairment",df = promis_peds)
+```
+
+### Parents
+
+```{r results='asis'}
+fit_mod(outcome = "impairment",df = promis_parent)
 ```
