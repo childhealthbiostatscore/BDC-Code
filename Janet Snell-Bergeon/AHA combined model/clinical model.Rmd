@@ -45,7 +45,7 @@ knitr::opts_knit$set(root.dir = home_dir)
 ```
 
 ```{r, warning=FALSE}
-#source("C:/Users/pylell/Documents/GitHub/shared-resources/Helper-Functions/lasso/glinternet.R")
+#source("C:/Users/pylell/Documents/GitHub/shared-resources/lasso/glinternet.R")
 source("/home/laura/Documents/Github/shared-resources/lasso/glinternet.R")
 #source("/home/tim/GitHub/Helper-Functions/glinternet.R")
 #### DATA FRAME WITH LIPID MEDS AND EGDR COMPONENTS
@@ -111,6 +111,7 @@ final$pcr_probs <- predict_10yr_ascvd_risk(
   override_boundary_errors = TRUE
 )
 final$pcr_percent <- final$pcr_probs*100
+final$pcr_probs <- NULL
 
 # read in Janet's risk scores and compare
 #sas_check <- read.sas7bdat("./Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_cvdrisk.sas7bdat")
@@ -123,8 +124,10 @@ final$pcr_percent <- final$pcr_probs*100
 complete_lipidmeds_egdr_components <- drop_na(final)
 
 # log transform nonnormal vars
-complete_lipidmeds_egdr_components$l.duration <- log(complete_lipidmeds_egdr_components$duration)
-complete_lipidmeds_egdr_components$l.duration_2 <- log(complete_lipidmeds_egdr_components$duration^2)
+#complete_lipidmeds_egdr_components$l.duration <- log(complete_lipidmeds_egdr_components$duration)
+#complete_lipidmeds_egdr_components$l.duration_2 <- log(complete_lipidmeds_egdr_components$duration^2)
+# dichotomize duration above and below median
+complete_lipidmeds_egdr_components$duration_cat <- ifelse(complete_lipidmeds_egdr_components$duration<23,0,1)
 complete_lipidmeds_egdr_components$duration <- NULL
 complete_lipidmeds_egdr_components$l.bmi <- log(complete_lipidmeds_egdr_components$bmi)
 complete_lipidmeds_egdr_components$bmi <- NULL
@@ -210,7 +213,7 @@ numLevels_lipidmeds_egdr_components_simple <- c(1,1,1,2,2,1,1,1,1,1,1,1,1,1,2,2)
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
 # LASSO
-x <- as.matrix(subset(complete_lipidmeds_egdr_components,select=-c(CACprogV3_num,StudyID)))
+x <- as.matrix(subset(complete_lipidmeds_egdr_components,select=-c(CACprogV3_num,StudyID,pcr_percent)))
 glmmod1 <- glmnet(x, y=as.factor(complete_lipidmeds_egdr_components$CACprogV3_num), alpha=1, family="binomial",nfolds=nrow(complete_lipidmeds_egdr_components))
 # find best value of lambda
 cv.glmmod <- cv.glmnet(x, y=complete_lipidmeds_egdr_components$CACprogV3_num, alpha=1,nfolds=nrow(complete_lipidmeds_egdr_components))
@@ -243,7 +246,7 @@ mod_names <- "CAC progression, no interactions"
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
-test <- complete_lipidmeds_egdr_components
+test <- complete_lipidmeds_egdr_components %>% select(-pcr_percent)
 test$onlipidmeds <- as.factor(test$onlipidmeds)
 test$onhypermeds <- as.factor(test$onhypermeds)
 test$smknum <- as.factor(test$smknum)
@@ -271,7 +274,7 @@ mod_names <- c(mod_names,"CAC progression, with interactions")
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
 # LASSO
-x <- as.matrix(subset(complete_lipidmeds_egdr_components,select=-c(CACprogV3_num,StudyID,l.crp,l.homo,l.pai1,l.fib,l.UA,whr,apob,l.l45vsf,l.l45sqf,l.pfatcm_v1)))
+x <- as.matrix(subset(complete_lipidmeds_egdr_components,select=-c(CACprogV3_num,StudyID,l.crp,l.homo,l.pai1,l.fib,l.UA,whr,apob,l.l45vsf,l.l45sqf,l.pfatcm_v1,pcr_percent)))
 glmmod1 <- glmnet(x, y=as.factor(complete_lipidmeds_egdr_components$CACprogV3_num), alpha=1, family="binomial",nfolds=nrow(complete_lipidmeds_egdr_components))
 # find best value of lambda
 cv.glmmod <- cv.glmnet(x, y=complete_lipidmeds_egdr_components$CACprogV3_num, alpha=1,nfolds=nrow(complete_lipidmeds_egdr_components))
@@ -300,7 +303,7 @@ mod_names <- c(mod_names,"CAC progression, simple clinical variables, without in
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
-test <- subset(complete_lipidmeds_egdr_components,select=-c(l.crp,l.homo,l.pai1,l.fib,l.UA,whr,apob,l.l45vsf,l.l45sqf,l.pfatcm_v1))
+test <- subset(complete_lipidmeds_egdr_components,select=-c(l.crp,l.homo,l.pai1,l.fib,l.UA,whr,apob,l.l45vsf,l.l45sqf,l.pfatcm_v1,pcr_percent))
 test$onlipidmeds <- as.factor(test$onlipidmeds)
 test$onhypermeds <- as.factor(test$onhypermeds)
 test$smknum <- as.factor(test$smknum)
@@ -336,7 +339,7 @@ mod_names <- c(mod_names,"CAC progression, ASCVD 10 year risk")
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
 # LASSO
-x <- as.matrix(subset(complete_lipidmeds_egdr_components_ccc,select=-c(cac_change_per_yr,StudyID)))
+x <- as.matrix(subset(complete_lipidmeds_egdr_components_ccc,select=-c(cac_change_per_yr,StudyID,pcr_percent)))
 glmmod1 <- glmnet(x, y=complete_lipidmeds_egdr_components_ccc$cac_change_per_yr, alpha=1, family="gaussian",nfolds=nrow(complete_lipidmeds_egdr_components_ccc))
 # find best value of lambda
 cv.glmmod <- cv.glmnet(x, y=complete_lipidmeds_egdr_components_ccc$cac_change_per_yr, alpha=1,nfolds=nrow(complete_lipidmeds_egdr_components_ccc))
@@ -369,7 +372,7 @@ cac_noint_coefs_sig <- rownames(cac_noint_coefs_sig)[cac_noint_coefs_sig[,4]<0.0
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
-test <- complete_lipidmeds_egdr_components_ccc
+test <- complete_lipidmeds_egdr_components_ccc %>% select(-pcr_percent)
 test$onlipidmeds <- as.factor(test$onlipidmeds)
 test$onhypermeds <- as.factor(test$onhypermeds)
 test$smknum <- as.factor(test$smknum)
@@ -396,7 +399,7 @@ plot(refit_mod)
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
 # LASSO
-x <- as.matrix(subset(complete_lipidmeds_egdr_components_ccc,select=-c(cac_change_per_yr,StudyID,l.crp,l.homo,l.pai1,l.fib,l.UA,whr,apob,l.l45vsf,l.l45sqf,l.pfatcm_v1)))
+x <- as.matrix(subset(complete_lipidmeds_egdr_components_ccc,select=-c(cac_change_per_yr,StudyID,l.crp,l.homo,l.pai1,l.fib,l.UA,whr,apob,l.l45vsf,l.l45sqf,l.pfatcm_v1,pcr_percent)))
 glmmod1 <- glmnet(x, y=complete_lipidmeds_egdr_components_ccc$cac_change_per_yr, alpha=1, family="gaussian",nfolds=nrow(complete_lipidmeds_egdr_components_ccc))
 # find best value of lambda
 cv.glmmod <- cv.glmnet(x, y=complete_lipidmeds_egdr_components_ccc$cac_change_per_yr, alpha=1,nfolds=nrow(complete_lipidmeds_egdr_components_ccc))
@@ -426,7 +429,7 @@ plot(refit_mod)
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
-test <- subset(complete_lipidmeds_egdr_components_ccc,select=-c(l.crp,l.homo,l.pai1,l.fib,l.UA,whr,apob,l.l45vsf,l.l45sqf,l.pfatcm_v1))
+test <- subset(complete_lipidmeds_egdr_components_ccc,select=-c(l.crp,l.homo,l.pai1,l.fib,l.UA,whr,apob,l.l45vsf,l.l45sqf,l.pfatcm_v1,pcr_percent))
 test$onlipidmeds <- as.factor(test$onlipidmeds)
 test$onhypermeds <- as.factor(test$onhypermeds)
 test$smknum <- as.factor(test$smknum)
@@ -463,7 +466,7 @@ plot(refit_mod)
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
 Y <- complete_lipidmeds_egdr_components_death[,c("death","PersonYrsDeath")]
-X <- complete_lipidmeds_egdr_components_death %>% select(-c("StudyID","PersonYrsDeath","death"))
+X <- complete_lipidmeds_egdr_components_death %>% select(-c("StudyID","PersonYrsDeath","death","pcr_percent"))
 S <- Surv(time = Y$PersonYrsDeath, event = Y$death)
 cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance",nfolds=nrow(complete_lipidmeds_egdr_components_death))
 # coefficients at best lambda
@@ -509,7 +512,7 @@ mod_names <- c(mod_names,"Death, without interactions")
 set.seed(3654)
 Y <- complete_lipidmeds_egdr_components_death[,c("death","PersonYrsDeath")]
 X <- complete_lipidmeds_egdr_components_death %>% select(-c("StudyID","PersonYrsDeath","death","l.crp","l.homo","l.pai1","l.fib","l.UA",
-                                                            "whr","apob","l.l45vsf","l.l45sqf","l.pfatcm_v1"))
+                                                            "whr","apob","l.l45vsf","l.l45sqf","l.pfatcm_v1","pcr_percent"))
 S <- Surv(time = Y$PersonYrsDeath, event = Y$death)
 cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance",nfolds=nrow(complete_lipidmeds_egdr_components_death))
 # coefficients at best lambda
@@ -572,7 +575,7 @@ mod_names <- c(mod_names,"Death, ASCVD 10 year risk")
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
 Y <- complete_lipidmeds_egdr_components_cad[,c("CAD","PersonYrsCAD")]
-X <- complete_lipidmeds_egdr_components_cad %>% select(-c("StudyID","PersonYrsCAD","CAD"))
+X <- complete_lipidmeds_egdr_components_cad %>% select(-c("StudyID","PersonYrsCAD","CAD","pcr_percent"))
 S <- Surv(time = Y$PersonYrsCAD, event = Y$CAD)
 cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance",nfolds=nrow(complete_lipidmeds_egdr_components_cad))
 # coefficients at best lambda
@@ -601,7 +604,6 @@ c
 
 cad_coefs_sig <- as.matrix(summary(c)$coef)
 cad_coefs_sig <- rownames(cad_coefs_sig)[cad_coefs_sig[,5]<0.05]
-
 ```
 
 ### Test of proportional hazards
@@ -620,7 +622,7 @@ mod_names <- c(mod_names,"CAD, without interactions")
 set.seed(3654)
 Y <- complete_lipidmeds_egdr_components_cad[,c("CAD","PersonYrsCAD")]
 X <- complete_lipidmeds_egdr_components_cad %>% select(-c("StudyID","PersonYrsCAD","CAD","l.crp","l.homo","l.pai1","l.fib","l.UA",
-                                                            "whr","apob","l.l45vsf","l.l45sqf","l.pfatcm_v1"))
+                                                            "whr","apob","l.l45vsf","l.l45sqf","l.pfatcm_v1","pcr_percent"))
 S <- Surv(time = Y$PersonYrsCAD, event = Y$CAD)
 cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance",nfolds=nrow(complete_lipidmeds_egdr_components_cad))
 # coefficients at best lambda
@@ -682,7 +684,7 @@ mod_names <- c(mod_names,"CAD, ASCVD 10 year risk")
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
 Y <- complete_lipidmeds_egdr_components_hardcad[,c("HardCAD","PersonYrsHardCAD")]
-X <- complete_lipidmeds_egdr_components_hardcad %>% select(-c("StudyID","PersonYrsHardCAD","HardCAD"))
+X <- complete_lipidmeds_egdr_components_hardcad %>% select(-c("StudyID","PersonYrsHardCAD","HardCAD","pcr_percent"))
 S <- Surv(time = Y$PersonYrsHardCAD, event = Y$HardCAD)
 cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance",nfolds=nrow(complete_lipidmeds_egdr_components_hardcad))
 # coefficients at best lambda
@@ -728,7 +730,7 @@ mod_names <- c(mod_names,"Hard CAD, without interactions")
 set.seed(3654)
 Y <- complete_lipidmeds_egdr_components_hardcad[,c("HardCAD","PersonYrsHardCAD")]
 X <- complete_lipidmeds_egdr_components_hardcad %>% select(-c("StudyID","PersonYrsHardCAD","HardCAD","l.crp","l.homo","l.pai1","l.fib","l.UA",
-                                                            "whr","apob","l.l45vsf","l.l45sqf","l.pfatcm_v1"))
+                                                            "whr","apob","l.l45vsf","l.l45sqf","l.pfatcm_v1","pcr_percent"))
 S <- Surv(time = Y$PersonYrsHardCAD, event = Y$HardCAD)
 cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance",nfolds=nrow(complete_lipidmeds_egdr_components_hardcad))
 # coefficients at best lambda
@@ -790,7 +792,7 @@ mod_names <- c(mod_names,"Hard CAD, ASCVD 10 year risk")
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
 Y <- complete_lipidmeds_egdr_components_cvd[,c("CVD","PersonYrsCVD")]
-X <- complete_lipidmeds_egdr_components_cvd %>% select(-c("StudyID","PersonYrsCVD","CVD"))
+X <- complete_lipidmeds_egdr_components_cvd %>% select(-c("StudyID","PersonYrsCVD","CVD","pcr_percent"))
 S <- Surv(time = Y$PersonYrsCVD, event = Y$CVD)
 cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance",nfolds=nrow(complete_lipidmeds_egdr_components_cvd))
 # coefficients at best lambda
@@ -836,7 +838,7 @@ mod_names <- c(mod_names,"CVD, without interactions")
 set.seed(3654)
 Y <- complete_lipidmeds_egdr_components_cvd[,c("CVD","PersonYrsCVD")]
 X <- complete_lipidmeds_egdr_components_cvd %>% select(-c("StudyID","PersonYrsCVD","CVD","l.crp","l.homo","l.pai1","l.fib","l.UA",
-                                                            "whr","apob","l.l45vsf","l.l45sqf","l.pfatcm_v1"))
+                                                            "whr","apob","l.l45vsf","l.l45sqf","l.pfatcm_v1","pcr_percent"))
 S <- Surv(time = Y$PersonYrsCVD, event = Y$CVD)
 cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance",nfolds=nrow(complete_lipidmeds_egdr_components_cvd))
 # coefficients at best lambda
@@ -898,7 +900,7 @@ mod_names <- c(mod_names,"CVD, ASCVD 10 year risk")
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
 Y <- complete_lipidmeds_egdr_components_hardcvd[,c("HardCVD","PersonYrsHardCVD")]
-X <- complete_lipidmeds_egdr_components_hardcvd %>% select(-c("StudyID","PersonYrsHardCVD","HardCVD"))
+X <- complete_lipidmeds_egdr_components_hardcvd %>% select(-c("StudyID","PersonYrsHardCVD","HardCVD","pcr_percent"))
 S <- Surv(time = Y$PersonYrsHardCVD, event = Y$HardCVD)
 cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance",nfolds=nrow(complete_lipidmeds_egdr_components_hardcvd))
 # coefficients at best lambda
@@ -945,7 +947,7 @@ mod_names <- c(mod_names,"Hard CVD, without interactions")
 set.seed(3654)
 Y <- complete_lipidmeds_egdr_components_hardcvd[,c("HardCVD","PersonYrsHardCVD")]
 X <- complete_lipidmeds_egdr_components_hardcvd %>% select(-c("StudyID","PersonYrsHardCVD","HardCVD","l.crp","l.homo","l.pai1","l.fib","l.UA",
-                                                            "whr","apob","l.l45vsf","l.l45sqf","l.pfatcm_v1"))
+                                                            "whr","apob","l.l45vsf","l.l45sqf","l.pfatcm_v1","pcr_percent"))
 S <- Surv(time = Y$PersonYrsHardCVD, event = Y$HardCVD)
 cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance",nfolds=nrow(complete_lipidmeds_egdr_components_hardcvd))
 # coefficients at best lambda
