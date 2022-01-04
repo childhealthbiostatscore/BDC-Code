@@ -17,6 +17,9 @@ results = {
     "total_tir": [],
     "night_tir": [],
     "day_tir": [],
+    "mbg": [],
+    "day_mbg": [],
+    "night_mbg": [],
     "a1c": [],
 }
 # Calculate CGM values, etc. for each person
@@ -81,9 +84,10 @@ for fol in folders:
         cgm.set_index("timestamp", inplace=True)
         # Remove all but two weeks prior
         cgm = cgm.loc[start_date:end_date]
-        # All TIR
+        # All 
         total_r = cgm["glucose"].notna().sum()
         tir = [g for g in cgm["glucose"] if g >= 70 and g <= 180]
+        mbg = cgm["glucose"].mean()
         # Split into day and night
         day = cgm.between_time("6:00", "23:00", include_start=False, include_end=False)
         night = cgm.between_time("23:00", "6:00")
@@ -93,12 +97,17 @@ for fol in folders:
         # Day and night TIR
         day_r = day["glucose"].notna().sum()
         day_tir = [g for g in day["glucose"] if g >= 70 and g <= 180]
+        day_mbg = day["glucose"].mean()
         night_r = night["glucose"].notna().sum()
         night_tir = [g for g in night["glucose"] if g >= 70 and g <= 180]
+        night_mbg = night["glucose"].mean()
         # Write results
         results["total_tir"].append(round(len(tir) / total_r * 100, 2))
         results["day_tir"].append(round(len(day_tir) / day_r * 100, 2))
         results["night_tir"].append(round(len(night_tir) / night_r * 100, 2))
+        results["mbg"].append(mbg)
+        results["day_mbg"].append(day_mbg)
+        results["night_mbg"].append(night_mbg)
         a1c = float(summary.loc[summary.iloc[:, 1] == vis]["A1c"])
         results["a1c"].append(a1c)
         # ID etc.
