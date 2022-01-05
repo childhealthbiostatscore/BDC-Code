@@ -60,208 +60,48 @@ df$Age = as.numeric(difftime(df$cgm_start_date,df$Date.of.Birth,units = "days"))
 
 # Change in  CGM
 
-```{r results='asis'}
-# - CGM (% time above 140, average sensor glucose, sensor SD, number of days worn)
-# - HbA1c
-# - BMI z-score
-# - Age at visits (give Date of birth AND Date of visits)
-df = df %>% group_by(cgm_tess_id) %>%
-  summarise(age_baseline = Age[Visit == "Baseline"],
-            age_3_months = Age[Visit == "Baseline"],
-            BMIz = BMIz[Visit == "Baseline"],
-            HbA1c = A1C[Visit == "Baseline"],
-            cgm_hyper_diff = cgm_hyper[Visit != "Baseline"] - cgm_hyper[Visit == "Baseline"],
-            cgm_average_diff = cgm_average[Visit != "Baseline"] - cgm_average[Visit == "Baseline"],
-            cgm_std_dev_diff = cgm_std_dev[Visit != "Baseline"] - cgm_std_dev[Visit == "Baseline"],
-            cgm_num_days_diff = cgm_num_days[Visit != "Baseline"] - 
-              cgm_num_days[Visit == "Baseline"],
-            .groups = "drop")
+Changes in CGM metrics from baseline to 3 months were examined using paired Wilcoxon signed rank exact tests. Variables with only baseline values are included in the below table, but have a p value of "NaN."
+
+
+```{r results='asis',warning=FALSE}
 # Table
-vars = colnames(df)[-1]
-f = as.formula(paste0("~",paste0("wt(",vars,",'median','q1q3')",collapse = "+")))
-f = as.formula(paste0("~",paste0(vars,collapse = "+")))
-t = tableby(f,data = df)
-summary(t,pfootnote = T)
+vars = c("Age","A1C","BMIz","cgm_num_days","cgm_average","cgm_std_dev","cgm_hyper")
+f = as.formula(paste0("Visit~",paste0("signed.rank(",vars,")",collapse = "+")))
+p <- paired(f, data = df, id = cgm_tess_id,signed.rank.exact = T)
+summary(p,pfootnote = T)
 ```
 
+# Change in questionnaires
 
+Changes in questionnaires from baseline to 3 months were examined using paired Wilcoxon signed rank exact tests.
 
-```{r}
-# Add family questionnaires
+```{r results='asis',warning=FALSE}
 family = read.csv("./Brigitte Frohnert/TESS/Data_Raw/PedsQL Family Impact Questionnaire.csv",
                      na.strings = c("","NULL","-999.99"))
 family = family %>%
   select(pf1_tess_id,Visit,pf1_tired_day:pf1_fam_tension) %>%
-  rowwise(pf1_tess_id) %>%
+  rowwise(pf1_tess_id,Visit) %>%
   mutate(total = sum(c_across(pf1_tired_day:pf1_fam_tension))) %>%
   group_by(pf1_tess_id,Visit) %>%
   summarise(family_total = mean(total,na.rm = T),.groups = "drop")
-df = full_join(df,family,by = c("cgm_tess_id" = "pf1_tess_id","Visit"))
-# Add parent report
+
 parent = read.csv("./Brigitte Frohnert/TESS/Data_Raw/PedsQL Parent Questionnaire.csv",
                      na.strings = c("","NULL","-999.99"))
 parent = parent %>%
   select(pp1_tess_id,Visit,pp1_walk_diff_toddler:pp1_absent_doctor) %>%
-  rowwise(pp1_tess_id) %>%
+  rowwise(pp1_tess_id,Visit) %>%
   mutate(total = sum(c_across(pp1_walk_diff_toddler:pp1_absent_doctor),na.rm = T)) %>%
   group_by(pp1_tess_id,Visit) %>%
   summarise(parent_total = mean(total,na.rm = T),.groups = "drop")
-df = full_join(df,parent,by = c("cgm_tess_id" = "pp1_tess_id","Visit"))
-# Sort
-df = df %>% arrange(cgm_tess_id,Visit)
-# Calculate change
-
+# Join
+df = full_join(family,parent,by = c("pf1_tess_id" = "pp1_tess_id","Visit"))
+# Table
+vars = c("family_total","parent_total")
+f = as.formula(paste0("Visit~",paste0("signed.rank(",vars,")",collapse = "+")))
+p <- paired(f, data = df, id = pf1_tess_id,signed.rank.exact = T)
+summary(p,pfootnote = T,labelTranslations = 
+          list(family_total = "PedsQL Family Impact Module Total Score",
+               parent_total = "PedsQL Parent Report Total Score"))
 ```
 
 
-
-```{r}
-
-
-ogtt = read.csv("./Brigitte Frohnert/TESS/Data_Raw/OGTT data.csv",
-                stringsAsFactors = F,na.strings = c("","NULL","-999.99"))
-ogtt = ogtt[ogtt$Visit == "Baseline",]
-ogtt_times = c("minus10","0","10","30","60","90","120")
-ogtt_vars = c(paste0("ogtt_",ogtt_times[-1],"_cpep_result"),
-              "ogtt_minus10_bg",paste0("ogtt_",ogtt_times[-1],"_glucose_result"))
-ogtt = ogtt %>% select(ogtt_tess_id,all_of(ogtt_vars))
-# Average CGM by ID
-cgm = cgm %>% group_by(cgm_tess_id) %>%
-  slice(which.max(as.Date(cgm_date, '%m/%d/%Y'))) %>%
-  select(cgm_tess_id,cgm_num_days:cgm_cov_calc)
-cgm_vars = colnames(cgm)[-1]
-# Merge
-df = left_join(subject,cgm,by = c("TESS.ID" = "cgm_tess_id"))
-df = left_join(df,ogtt,by = c("TESS.ID" = "ogtt_tess_id"))
-```
-
-```{r results='asis'}
-metab_vars = paste0(paste0("kwt(",cgm_vars,",'Nmiss','median','q1q3')",collapse = "+"),"+",
-                  paste0("kwt(",ogtt_vars,",'Nmiss','median','q1q3')",collapse = "+"))
-f = as.formula(paste0("FDR ~ ",metab_vars))
-t = tableby(f,data = df)
-summary(t,pfootnote = T)
-```
-
-# Questionnaires at Baseline by FDR Status
-
-## Attitude
-
-```{r}
-# Attitude
-attitude = read.csv("./Brigitte Frohnert/TESS/Data_Raw/Attitude Survey.csv",
-                    na.strings = c("","NULL","-999.99")) %>%
-  filter(Visit == "Baseline")
-attitude$total = rowSums(attitude[,tail(colnames(attitude),3)])
-attitude = attitude %>%
-  select(att1_tess_id,att1_form_who,Importance.of.Control.score:total) %>%
-  group_by(att1_tess_id) %>% 
-  summarise(importance = mean(Importance.of.Control.score,na.rm = T),
-            autonomy = mean(Autonomy.score,na.rm = T),
-            psychosocial = mean(Psychosocial.score,na.rm = T),
-            total = mean(total,na.rm = T))
-df = left_join(subject,attitude,by = c("TESS.ID" = "att1_tess_id"))
-```
-
-```{r results='asis'}
-t = tableby(FDR ~ kwt(importance,'Nmiss','median','q1q3') + kwt(autonomy,'Nmiss','median','q1q3') + 
-              kwt(psychosocial,'Nmiss','median','q1q3') + kwt(total,'Nmiss','median','q1q3'),
-            data = df)
-summary(t,pfootnote = T)
-```
-
-## Knowledge
-
-```{r}
-knowledge = read.csv("./Brigitte Frohnert/TESS/Data_Raw/Diabetes Survey scored.csv",
-                     na.strings = c("","NULL","-999.99")) %>% 
-  filter(Visit == "Baseline")
-knowledge = knowledge %>%
-  select(dia1_tess_id,dia1_form_who,TOTAL.score) %>%
-  group_by(dia1_tess_id) %>%
-  summarise(total = mean(TOTAL.score,na.rm = T))
-df = left_join(subject,knowledge,by = c("TESS.ID" = "dia1_tess_id"))
-```
-
-```{r results='asis'}
-t = tableby(FDR ~ kwt(total,'Nmiss','median','q1q3'),data = df)
-summary(t,pfootnote = T)
-```
-
-## Uncertainty
-
-```{r}
-uncertain = read.csv("./Brigitte Frohnert/TESS/Data_Raw/Uncertainty Survey.csv",
-                     na.strings = c("","NULL","-999.99")) %>% 
-  filter(Visit == "Baseline")
-uncertain = uncertain %>%
-  select(unc1_tess_id,unc1_prospective_anxiety,unc1_inhibitory_anxiety,unc1_total_score) %>%
-  group_by(unc1_tess_id) %>%
-  summarise(prospective = mean(unc1_prospective_anxiety,na.rm = T),
-            inhibitory = mean(unc1_inhibitory_anxiety,na.rm = T),
-            total = mean(unc1_total_score,na.rm = T))
-df = left_join(subject,uncertain,by = c("TESS.ID" = "unc1_tess_id"))
-```
-
-```{r results='asis'}
-t = tableby(FDR ~ kwt(prospective,'Nmiss','median','q1q3') + kwt(inhibitory,'Nmiss','median','q1q3') + 
-              kwt(total,'Nmiss','median','q1q3'),data = df)
-summary(t,pfootnote = T)
-```
-
-## Family Impact
-
-```{r}
-family = read.csv("./Brigitte Frohnert/TESS/Data_Raw/PedsQL Family Impact Questionnaire.csv",
-                     na.strings = c("","NULL","-999.99")) %>% 
-  filter(Visit == "Baseline")
-family = family %>%
-  select(pf1_tess_id,pf1_tired_day:pf1_fam_tension) %>%
-  rowwise(pf1_tess_id) %>%
-  mutate(total = sum(c_across(pf1_tired_day:pf1_fam_tension))) %>%
-  group_by(pf1_tess_id) %>%
-  summarise(total = mean(total,na.rm = T))
-df = left_join(subject,family,by = c("TESS.ID" = "pf1_tess_id"))
-```
-
-```{r results='asis'}
-t = tableby(FDR ~ kwt(total,'Nmiss','median','q1q3'),data = df)
-summary(t,pfootnote = T)
-```
-
-## Peds QL Parent Questionnaire
-
-```{r}
-parent = read.csv("./Brigitte Frohnert/TESS/Data_Raw/PedsQL Parent Questionnaire.csv",
-                     na.strings = c("","NULL","-999.99")) %>% 
-  filter(Visit == "Baseline")
-parent = parent %>%
-  select(pp1_tess_id,pp1_walk_diff_toddler:pp1_absent_doctor) %>%
-  rowwise(pp1_tess_id) %>%
-  mutate(total = sum(c_across(pp1_walk_diff_toddler:pp1_absent_doctor),na.rm = T)) %>%
-  group_by(pp1_tess_id) %>%
-  summarise(total = mean(total,na.rm = T))
-df = left_join(subject,parent,by = c("TESS.ID" = "pp1_tess_id"))
-```
-
-```{r results='asis'}
-t = tableby(FDR ~ kwt(total,'Nmiss','median','q1q3'),data = df)
-summary(t,pfootnote = T)
-```
-
-## PHQ-8
-
-```{r}
-phq8 = read.csv("./Brigitte Frohnert/TESS/Data_Raw/PHQ8 Questionnaire.csv",
-                     na.strings = c("","NULL","-999.99")) %>% 
-  filter(Visit == "Baseline")
-phq8 = phq8 %>%
-  group_by(phq1_tess_id) %>%
-  summarise(total = mean(phq1_total,na.rm = T))
-df = left_join(subject,phq8,by = c("TESS.ID" = "phq1_tess_id"))
-```
-
-```{r results='asis'}
-t = tableby(FDR ~ kwt(total,'Nmiss','median','q1q3'),data = df)
-summary(t,pfootnote = T)
-```
