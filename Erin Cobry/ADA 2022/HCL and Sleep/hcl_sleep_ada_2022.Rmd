@@ -20,6 +20,7 @@ library(emmeans)
 library(performance)
 library(knitr)
 library(DT)
+library(GLMMadaptive)
 knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
 if(Sys.info()["sysname"] == "Windows"){
   home_dir = "B:/Projects"
@@ -334,3 +335,127 @@ fit_mod(outcome = "impairment",df = promis_peds)
 fit_mod(outcome = "impairment",df = promis_parent)
 ```
 
+# Awakenings
+
+Due to the large number of participants with 0 awakenings (diabetes-related or otherwise), awakening outcomes were modeled using a zero-inflated Poisson mixed model. The Poisson model was found to perform better than a negative binomial.
+
+The interpretation of the coefficients from a zero-inflated Poisson model are: the expected number of awakenings (for those with more than 0 awakenings) changes by $x$ amount compared to baseline. However, unlike the mixed models above, these coefficients are multiplicative, so given a coefficient of 0.694 for month 3 and an average of 0.173 awakenings at baseline, the expected number of awakenings at month 3 is: $0.173*0.694$.
+
+```{r}
+# Data cleaning
+data$timepoint = times
+child_awakenings = data %>% 
+  select(record_id,timepoint,diabetes_awakenings,all_awakenings) %>% 
+  filter(!record_id %in% exclude,grepl("baseline|month_3|month_6",timepoint),
+         record_id >= 200,rowSums(is.na(.)) < ncol(.)-2)
+child_awakenings$timepoint = as.factor(child_awakenings$timepoint)
+levels(child_awakenings$timepoint) = 
+  gsub("baseline_.*","Baseline",levels(child_awakenings$timepoint))
+levels(child_awakenings$timepoint) = 
+  gsub("hcl_month_3_.*","Month 3",levels(child_awakenings$timepoint))
+levels(child_awakenings$timepoint) = 
+  gsub("hcl_month_6_.*","Month 6",levels(child_awakenings$timepoint))
+# Parents
+parent_awakenings = data %>% 
+  select(record_id,timepoint,diabetes_awakenings,all_awakenings) %>% 
+  filter(!record_id %in% exclude,grepl("baseline|month_3|month_6",timepoint),
+         record_id < 200,rowSums(is.na(.)) < ncol(.)-2)
+parent_awakenings$timepoint = as.factor(parent_awakenings$timepoint)
+levels(parent_awakenings$timepoint) = 
+  gsub("baseline_.*","Baseline",levels(parent_awakenings$timepoint))
+levels(parent_awakenings$timepoint) = 
+  gsub("hcl_month_3_.*","Month 3",levels(parent_awakenings$timepoint))
+levels(parent_awakenings$timepoint) = 
+  gsub("hcl_month_6_.*","Month 6",levels(parent_awakenings$timepoint))
+```
+
+## Diabetes-Related Awakenings
+
+### Children
+
+```{r}
+# Plot
+p = ggplot(data = child_awakenings,aes(x = timepoint,y = diabetes_awakenings,
+                                color = record_id,group = record_id)) + 
+  geom_point() + geom_line() + xlab("Timepoint") +
+  theme_bw() + theme(legend.position = "none")
+print(p)
+# Model
+mod <- mixed_model(diabetes_awakenings ~ timepoint, random = ~ 1 | record_id, 
+                   data = child_awakenings,
+                   family = zi.poisson(), 
+                   zi_fixed = ~1,zi_random = ~ 1 | record_id)
+res = tidy(mod,"fixed")
+res$term = sub("timepoint","",res$term)
+res = res[,c("term","estimate","p.value")]
+res$estimate = exp(res$estimate)
+print(kable(res,digits = 3,caption = "Comparison to Baseline"))
+```
+
+### Parents
+
+```{r}
+# Plot
+p = ggplot(data = parent_awakenings,aes(x = timepoint,y = diabetes_awakenings,
+                                color = record_id,group = record_id)) + 
+  geom_point() + geom_line() + xlab("Timepoint") +
+  theme_bw() + theme(legend.position = "none")
+print(p)
+# Model
+mod <- mixed_model(diabetes_awakenings ~ timepoint, random = ~ 1 | record_id, 
+                   data = parent_awakenings,control = list(iter_EM = 0),
+                   family = zi.poisson(), 
+                   zi_fixed = ~1,zi_random = ~ 1 | record_id)
+res = tidy(mod,"fixed")
+res$term = sub("timepoint","",res$term)
+res = res[,c("term","estimate","p.value")]
+res$estimate = exp(res$estimate)
+print(kable(res,digits = 3,caption = "Comparison to Baseline"))
+```
+
+## All Awakenings
+
+### Children
+
+```{r}
+# Plot
+p = ggplot(data = child_awakenings,aes(x = timepoint,y = all_awakenings,
+                                color = record_id,group = record_id)) + 
+  geom_point() + geom_line() + xlab("Timepoint") +
+  theme_bw() + theme(legend.position = "none")
+print(p)
+# Model
+mod <- mixed_model(all_awakenings ~ timepoint, random = ~ 1 | record_id, 
+                   data = child_awakenings,control = list(iter_EM = 0),
+                   family = zi.poisson(), 
+                   zi_fixed = ~1,zi_random = ~ 1 | record_id)
+# Anova
+
+# Results
+res = tidy(mod,"fixed")
+res$term = sub("timepoint","",res$term)
+res = res[,c("term","estimate","p.value")]
+res$estimate = exp(res$estimate)
+print(kable(res,digits = 3,caption = "Comparison to Baseline"))
+```
+
+### Parents
+
+```{r}
+# Plot
+p = ggplot(data = parent_awakenings,aes(x = timepoint,y = all_awakenings,
+                                color = record_id,group = record_id)) + 
+  geom_point() + geom_line() + xlab("Timepoint") +
+  theme_bw() + theme(legend.position = "none")
+print(p)
+# Model
+mod <- mixed_model(all_awakenings ~ timepoint, random = ~ 1 | record_id, 
+                   data = parent_awakenings,control = list(iter_EM = 0),
+                   family = zi.poisson(), 
+                   zi_fixed = ~1,zi_random = ~ 1 | record_id)
+res = tidy(mod,"fixed")
+res$term = sub("timepoint","",res$term)
+res = res[,c("term","estimate","p.value")]
+res$estimate = exp(res$estimate)
+print(kable(res,digits = 3,caption = "Comparison to Baseline"))
+```
