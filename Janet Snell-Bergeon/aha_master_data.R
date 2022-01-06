@@ -1,6 +1,7 @@
 library(tidyverse)
 library(readxl)
-setwd("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant")
+library(snpStats)
+setwd("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant")
 # Sample info (cleaned for metabolomics)
 sample_info = read.csv("./Metabolomics/Data_Cleaned/targeted.csv",na.strings = "")
 # Delete empty columns
@@ -54,6 +55,18 @@ colnames(glycated)[3:ncol(glycated)] = paste0("gly_",colnames(glycated)[3:ncol(g
 glycated_proteins = colnames(glycated)[3:ncol(glycated)]
 glycated$Master.Protein.Accessions = NULL
 sample_info = left_join(sample_info,glycated,by = "StudyID")
+# Add genomic data
+snps = c("rs10949670","rs4796649","rs6554207","rs4450463","rs9503009")
+snp_data = read.plink("/Users/timvigers/Dropbox/Work/Janet Snell-Bergeon/AHA/Genomics/Data_Raw/Imputed SNPS - Updated 7-20-15/CACTI_FINAL_HG19_1KGpos",
+                      select.snps = snps)
+# Match IDs
+ids = read.delim("/Users/timvigers/Dropbox/Work/Janet Snell-Bergeon/AHA/Genomics/Data_Raw/Imputed SNPS - Updated 7-20-15/CACTI_SampleIDKey.txt")
+t = data.frame(as(snp_data$genotypes,"character"))
+t$StudyID = ids$StudySampleID[match(rownames(t),ids$UVASampleID)]
+t$StudyID = as.numeric(sub("\\d\\d-","",t$StudyID))
+t[,1:length(snps)] = lapply(t[,1:length(snps)],function(c){factor(c,levels = c("A/A", "A/B", "B/B"))})
+# Merge
+sample_info = left_join(sample_info,t,by = "StudyID")
 # Save
 df = sample_info
 save(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins,lipids,df,

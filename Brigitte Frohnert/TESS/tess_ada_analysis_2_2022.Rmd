@@ -1,0 +1,107 @@
+---
+title: "TESS ADA 2022: Control vs. Intervention 0 to 3 Months"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(arsenal)
+library(tidyverse)
+library(performance)
+library(knitr)
+library(lubridate)
+library(AGD)
+knitr::opts_chunk$set(echo = FALSE)
+if(Sys.info()["sysname"] == "Windows"){
+  home_dir = "B:/Projects"
+} else if (Sys.info()["sysname"] == "Linux"){
+  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+} else if (Sys.info()["sysname"] == "Darwin"){
+  home_dir = "/Users/timvigers/Dropbox/Work"
+}
+knitr::opts_knit$set(root.dir = home_dir)
+```
+
+```{r data cleaning}
+# Import demographics
+subject = read.csv("./Brigitte Frohnert/TESS/Data_Raw/Tess Subject Information.csv",
+                   stringsAsFactors = F)
+# Age 
+subject$Age = as.numeric(difftime(mdy(subject$Baseline.visit.date), 
+                                  mdy_hm(subject$Date.of.Birth)))/365.25
+# BMI z score
+subject$Gender = as.factor(subject$Gender)
+levels(subject$Gender) = c("F","M")
+subject$BMI = subject$Weight..kg. / ((subject$Height..cm./100)^2)
+subject$BMIz = y2z(subject$BMI,x=subject$Age, sex=subject$Gender, ref=nl4.bmi)
+# Organize
+subject = subject %>% select(TESS.ID,Treatment,Date.of.Birth,Gender,FDR,A1C,BMIz)
+# Format dates
+subject$Date.of.Birth = mdy_hm(subject$Date.of.Birth)
+```
+
+```{r}
+# Add CGM data
+cgm = read.csv("./Brigitte Frohnert/TESS/Data_Raw/CGM data.csv",
+               stringsAsFactors = F,na.strings = c("","NULL","-999.99"))
+cgm$cgm_start_date = mdy(cgm$cgm_start_date)
+cgm = cgm %>% group_by(cgm_tess_id,Visit) %>%
+  slice(which.max(as.Date(cgm_date, '%m/%d/%Y'))) %>%
+  select(cgm_tess_id,Visit,cgm_start_date,cgm_num_days:cgm_cov_calc)
+df = left_join(cgm,subject,by = c("cgm_tess_id" = "TESS.ID"))
+df$Age = as.numeric(difftime(df$cgm_start_date,df$Date.of.Birth,units = "days"))/365.25
+```
+
+# Change in  CGM
+
+Changes in CGM metrics from baseline to 3 months were examined using paired Wilcoxon signed rank exact tests. Variables with only baseline values are included in the below table, but have a p value of "NaN."
+
+
+```{r results='asis',warning=FALSE}
+# Table
+vars = c("Age","A1C","BMIz","cgm_num_days","cgm_average","cgm_std_dev","cgm_hyper")
+f = as.formula(paste0("Visit~",paste0("signed.rank(",vars,")",collapse = "+")))
+p <- paired(f, data = df, id = cgm_tess_id,signed.rank.exact = T)
+summary(p,pfootnote = T)
+```
+
+# Change in questionnaires
+
+Changes in questionnaires from baseline to 3 months were examined using paired Wilcoxon signed rank exact tests.
+
+```{r results='asis',warning=FALSE}
+family = read.csv("./Brigitte Frohnert/TESS/Data_Raw/PedsQL Family Impact Questionnaire.csv",
+                     na.strings = c("","NULL","-999.99"))
+family = family %>%
+  select(pf1_tess_id,Visit,pf1_tired_day:pf1_fam_tension) %>%
+  rowwise(pf1_tess_id,Visit) %>%
+  mutate(total = sum(c_across(pf1_tired_day:pf1_fam_tension))) %>%
+  group_by(pf1_tess_id,Visit) %>%
+  summarise(family_total = mean(total,na.rm = T),.groups = "drop")
+
+parent = read.csv("./Brigitte Frohnert/TESS/Data_Raw/PedsQL Parent Questionnaire.csv",
+                     na.strings = c("","NULL","-999.99"))
+parent = parent %>%
+  select(pp1_tess_id,Visit,pp1_walk_diff_toddler:pp1_absent_doctor) %>%
+  rowwise(pp1_tess_id,Visit) %>%
+  mutate(total = sum(c_across(pp1_walk_diff_toddler:pp1_absent_doctor),na.rm = T)) %>%
+  group_by(pp1_tess_id,Visit) %>%
+  summarise(parent_total = mean(total,na.rm = T),.groups = "drop")
+# Join
+df = full_join(family,parent,by = c("pf1_tess_id" = "pp1_tess_id","Visit"))
+# Table
+vars = c("family_total","parent_total")
+f = as.formula(paste0("Visit~",paste0("signed.rank(",vars,")",collapse = "+")))
+p <- paired(f, data = df, id = pf1_tess_id,signed.rank.exact = T)
+summary(p,pfootnote = T,labelTranslations = 
+          list(family_total = "PedsQL Family Impact Module Total Score",
+               parent_total = "PedsQL Parent Report Total Score"))
+```
+
+

@@ -1,0 +1,205 @@
+---
+title: "TESS ADA 2022: FDR vs GP at Baseline"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(arsenal)
+library(tidyverse)
+library(performance)
+library(knitr)
+library(lubridate)
+library(AGD)
+knitr::opts_chunk$set(echo = FALSE)
+if(Sys.info()["sysname"] == "Windows"){
+  home_dir = "B:/Projects"
+} else if (Sys.info()["sysname"] == "Linux"){
+  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+} else if (Sys.info()["sysname"] == "Darwin"){
+  home_dir = "/Users/timvigers/Dropbox/Work"
+}
+knitr::opts_knit$set(root.dir = home_dir)
+```
+
+```{r data cleaning}
+# Import demographics
+subject = read.csv("./Brigitte Frohnert/TESS/Data_Raw/Tess Subject Information.csv",
+                   stringsAsFactors = F)
+# Age 
+subject$Age = as.numeric(difftime(mdy(subject$Baseline.visit.date), 
+                                  mdy_hm(subject$Date.of.Birth)))/365.25
+# BMI z score
+subject$Gender = as.factor(subject$Gender)
+levels(subject$Gender) = c("F","M")
+subject$BMI = subject$Weight..kg. / ((subject$Height..cm./100)^2)
+subject$BMIz = y2z(subject$BMI,x=subject$Age, sex=subject$Gender, ref=nl4.bmi)
+```
+
+# Participant Characteristics at Baseline by FDR Status
+
+```{r results='asis'}
+t = tableby(FDR ~ Age + BMIz + A1C,data = subject)
+summary(t,pfootnote = T)
+```
+
+# CGM and OGTT at Baseline by FDR Status
+
+```{r}
+# CGM and OGTT data at baseline
+cgm = read.csv("./Brigitte Frohnert/TESS/Data_Raw/CGM data.csv",
+               stringsAsFactors = F,na.strings = c("","NULL","-999.99"))
+cgm = cgm[cgm$Visit == "Baseline",]
+ogtt = read.csv("./Brigitte Frohnert/TESS/Data_Raw/OGTT data.csv",
+                stringsAsFactors = F,na.strings = c("","NULL","-999.99"))
+ogtt = ogtt[ogtt$Visit == "Baseline",]
+ogtt_times = c("minus10","0","10","30","60","90","120")
+ogtt_vars = c(paste0("ogtt_",ogtt_times[-1],"_cpep_result"),
+              "ogtt_minus10_bg",paste0("ogtt_",ogtt_times[-1],"_glucose_result"))
+ogtt = ogtt %>% select(ogtt_tess_id,all_of(ogtt_vars))
+# Most recent CGM wesr
+cgm = cgm %>% group_by(cgm_tess_id) %>%
+  slice(which.max(as.Date(cgm_date, '%m/%d/%Y'))) %>%
+  select(cgm_tess_id,cgm_num_days:cgm_cov_calc)
+cgm_vars = colnames(cgm)[-1]
+# Merge
+df = left_join(subject,cgm,by = c("TESS.ID" = "cgm_tess_id"))
+df = left_join(df,ogtt,by = c("TESS.ID" = "ogtt_tess_id"))
+```
+
+```{r results='asis'}
+metab_vars = paste0(paste0("kwt(",cgm_vars,",'Nmiss','median','q1q3')",collapse = "+"),"+",
+                  paste0("kwt(",ogtt_vars,",'Nmiss','median','q1q3')",collapse = "+"))
+f = as.formula(paste0("FDR ~ ",metab_vars))
+t = tableby(f,data = df)
+summary(t,pfootnote = T)
+```
+
+# Questionnaires at Baseline by FDR Status
+
+## Attitude
+
+```{r}
+# Attitude
+attitude = read.csv("./Brigitte Frohnert/TESS/Data_Raw/Attitude Survey.csv",
+                    na.strings = c("","NULL","-999.99")) %>%
+  filter(Visit == "Baseline")
+attitude$total = rowSums(attitude[,tail(colnames(attitude),3)])
+attitude = attitude %>%
+  select(att1_tess_id,att1_form_who,Importance.of.Control.score:total) %>%
+  group_by(att1_tess_id) %>% 
+  summarise(importance = mean(Importance.of.Control.score,na.rm = T),
+            autonomy = mean(Autonomy.score,na.rm = T),
+            psychosocial = mean(Psychosocial.score,na.rm = T),
+            total = mean(total,na.rm = T))
+df = left_join(subject,attitude,by = c("TESS.ID" = "att1_tess_id"))
+```
+
+```{r results='asis'}
+t = tableby(FDR ~ kwt(importance,'Nmiss','median','q1q3') + kwt(autonomy,'Nmiss','median','q1q3') + 
+              kwt(psychosocial,'Nmiss','median','q1q3') + kwt(total,'Nmiss','median','q1q3'),
+            data = df)
+summary(t,pfootnote = T)
+```
+
+## Knowledge
+
+```{r}
+knowledge = read.csv("./Brigitte Frohnert/TESS/Data_Raw/Diabetes Survey scored.csv",
+                     na.strings = c("","NULL","-999.99")) %>% 
+  filter(Visit == "Baseline")
+knowledge = knowledge %>%
+  select(dia1_tess_id,dia1_form_who,TOTAL.score) %>%
+  group_by(dia1_tess_id) %>%
+  summarise(total = mean(TOTAL.score,na.rm = T))
+df = left_join(subject,knowledge,by = c("TESS.ID" = "dia1_tess_id"))
+```
+
+```{r results='asis'}
+t = tableby(FDR ~ kwt(total,'Nmiss','median','q1q3'),data = df)
+summary(t,pfootnote = T)
+```
+
+## Uncertainty
+
+```{r}
+uncertain = read.csv("./Brigitte Frohnert/TESS/Data_Raw/Uncertainty Survey.csv",
+                     na.strings = c("","NULL","-999.99")) %>% 
+  filter(Visit == "Baseline")
+uncertain = uncertain %>%
+  select(unc1_tess_id,unc1_prospective_anxiety,unc1_inhibitory_anxiety,unc1_total_score) %>%
+  group_by(unc1_tess_id) %>%
+  summarise(prospective = mean(unc1_prospective_anxiety,na.rm = T),
+            inhibitory = mean(unc1_inhibitory_anxiety,na.rm = T),
+            total = mean(unc1_total_score,na.rm = T))
+df = left_join(subject,uncertain,by = c("TESS.ID" = "unc1_tess_id"))
+```
+
+```{r results='asis'}
+t = tableby(FDR ~ kwt(prospective,'Nmiss','median','q1q3') + kwt(inhibitory,'Nmiss','median','q1q3') + 
+              kwt(total,'Nmiss','median','q1q3'),data = df)
+summary(t,pfootnote = T)
+```
+
+## Family Impact
+
+```{r}
+family = read.csv("./Brigitte Frohnert/TESS/Data_Raw/PedsQL Family Impact Questionnaire.csv",
+                     na.strings = c("","NULL","-999.99")) %>% 
+  filter(Visit == "Baseline")
+family = family %>%
+  select(pf1_tess_id,pf1_tired_day:pf1_fam_tension) %>%
+  rowwise(pf1_tess_id) %>%
+  mutate(total = sum(c_across(pf1_tired_day:pf1_fam_tension))) %>%
+  group_by(pf1_tess_id) %>%
+  summarise(total = mean(total,na.rm = T))
+df = left_join(subject,family,by = c("TESS.ID" = "pf1_tess_id"))
+```
+
+```{r results='asis'}
+t = tableby(FDR ~ kwt(total,'Nmiss','median','q1q3'),data = df)
+summary(t,pfootnote = T)
+```
+
+## Peds QL Parent Questionnaire
+
+```{r}
+parent = read.csv("./Brigitte Frohnert/TESS/Data_Raw/PedsQL Parent Questionnaire.csv",
+                     na.strings = c("","NULL","-999.99")) %>% 
+  filter(Visit == "Baseline")
+parent = parent %>%
+  select(pp1_tess_id,pp1_walk_diff_toddler:pp1_absent_doctor) %>%
+  rowwise(pp1_tess_id) %>%
+  mutate(total = sum(c_across(pp1_walk_diff_toddler:pp1_absent_doctor),na.rm = T)) %>%
+  group_by(pp1_tess_id) %>%
+  summarise(total = mean(total,na.rm = T))
+df = left_join(subject,parent,by = c("TESS.ID" = "pp1_tess_id"))
+```
+
+```{r results='asis'}
+t = tableby(FDR ~ kwt(total,'Nmiss','median','q1q3'),data = df)
+summary(t,pfootnote = T)
+```
+
+## PHQ-8
+
+```{r}
+phq8 = read.csv("./Brigitte Frohnert/TESS/Data_Raw/PHQ8 Questionnaire.csv",
+                     na.strings = c("","NULL","-999.99")) %>% 
+  filter(Visit == "Baseline")
+phq8 = phq8 %>%
+  group_by(phq1_tess_id) %>%
+  summarise(total = mean(phq1_total,na.rm = T))
+df = left_join(subject,phq8,by = c("TESS.ID" = "phq1_tess_id"))
+```
+
+```{r results='asis'}
+t = tableby(FDR ~ kwt(total,'Nmiss','median','q1q3'),data = df)
+summary(t,pfootnote = T)
+```
