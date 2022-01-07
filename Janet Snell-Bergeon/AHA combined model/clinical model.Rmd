@@ -45,8 +45,8 @@ knitr::opts_knit$set(root.dir = home_dir)
 ```
 
 ```{r, warning=FALSE}
-#source("C:/Users/pylell/Documents/GitHub/shared-resources/lasso/glinternet.R")
-source("/home/laura/Documents/Github/shared-resources/lasso/glinternet.R")
+source("C:/Users/pylell/Documents/GitHub/shared-resources/lasso/glinternet.R")
+#source("/home/laura/Documents/Github/shared-resources/lasso/glinternet.R")
 #source("/home/tim/GitHub/Helper-Functions/glinternet.R")
 #### DATA FRAME WITH LIPID MEDS AND EGDR COMPONENTS
 allvisits_long <- read.sas7bdat("./Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_long.sas7bdat")
@@ -206,29 +206,30 @@ complete_lipidmeds_egdr_components_ccc$CACprogV3_num <- NULL
 numLevels_lipidmeds_egdr_components <- c(1,1,1,1,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2)
 numLevels_lipidmeds_egdr_components_simple <- c(1,1,1,2,2,1,1,1,1,1,1,1,1,1,2,2)
 
-
+# read in omics data
 load(file="./Janet Snell-Bergeon/AHA collaborative grant/aha_master_data.Rdata")
-snp_data <- df[,c(snps,"StudyID")]
-
-plsda_data <- df[,c("StudyID","gly_P02671.7","gly_P02671.5","gly_P02671.4","gly_P02671.3","AAA01201000179.0807263.4","gly_P02679",
+# need to exclude anyone who has duplicate SNP data
+omics_data <- df[,c("StudyID",snps,"gly_P02671.7","gly_P02671.5","gly_P02671.4","gly_P02671.3","AAA01201000179.0807263.4","gly_P02679",
                     "HMDB00510161.0696402.9","AAA01201000179.0809235.7","gly_P02675.4","gly_P02675","gly_P02647","P02655","gly_P02647.1",
-                    "HMDB00510161.0694436","gly_P02652","gly_P01009","gly_P01834.11","P01817","AcCa 10:3","HMDB0028822260.1378628.6")]
+                    "HMDB00510161.0694436","gly_P02652","gly_P01009","gly_P01834.11","P01817","AcCa 10:3","HMDB0028822260.1378628.6",
+                    "AAA01201000179.0807263.4","gly_P02671.3","gly_P02671.7")]
+omics_data_ids <- omics_data$StudyID
+d <- duplicated(omics_data_ids)
+dups <- omics_data_ids[d]
+omics_data <- omics_data[!omics_data$StudyID %in% dups,]
 
-limma_data <- df[,c("StudyID","AAA01201000179.0807263.4","gly_P02671.3","gly_P02671.7")]
+# merge omics data with the CAD dataset
+ada_data <- merge(complete_lipidmeds_egdr_components_cad,omics_data,by="StudyID",all.x = T,all.y = F)
 
-omics_data <- merge(snp_data,plsda_data,by="StudyID",all.x = T,all.y = T)
+# find subset of people with variables in model 4.4 AND all omics variables
+# the clinical variables are age, onhypermeds, onlipidmeds, ldl, smknum, race, cholV1, duration_cat, l.bmi, l.avediabp, l.hdlc,
+# l.CKDepi, l.ac, l.insdoseperkg, l.hba1c
+ada_data <- ada_data[,c("StudyID",snps,"gly_P02671.7","gly_P02671.5","gly_P02671.4","gly_P02671.3","AAA01201000179.0807263.4","gly_P02679",
+                    "HMDB00510161.0696402.9","AAA01201000179.0809235.7","gly_P02675.4","gly_P02675","gly_P02647","P02655","gly_P02647.1",
+                    "HMDB00510161.0694436","gly_P02652","gly_P01009","gly_P01834.11","P01817","AcCa 10:3","HMDB0028822260.1378628.6",
+                    "AAA01201000179.0807263.4","gly_P02671.3","gly_P02671.7","age", "onhypermeds", "onlipidmeds", "ldl", "smknum", "race", 
+                    "cholV1", "duration_cat", "l.bmi", "l.avediabp", "l.hdlc","l.CKDepi", "l.ac", "l.insdoseperkg", "l.hba1c")]
 
-id_check <- as.data.frame(snp_data[,c("StudyID")])
-id_check$in_snp <- 1
-colnames(id_check) <- c("StudyID","in_snp")
-plsda_id <- as.data.frame(plsda_data[,c("StudyID")])
-plsda_id$in_plsda <- 1
-colnames(plsda_id) <- c("StudyID","in_plsda")
-id_check <- merge(id_check,plsda_id,by="StudyID",all.x = T,all.y = T)
-limma_id <- as.data.frame(limma_data[,c("StudyID")])
-limma_id$in_limma <- 1
-colnames(limma_id) <- c("StudyID","in_limma")
-id_check <- merge(id_check,limma_id,by="StudyID",all.x = T, all.y = T)
 ```
 
 # LASSO for CAC progression, using lipid lowering meds and A1c, WHR, onhypermeds
