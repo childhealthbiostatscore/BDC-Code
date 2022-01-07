@@ -1,0 +1,72 @@
+---
+title: "ASK SARS-COV-2 ab (ADA 2022)"
+author: "Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    theme: readable
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(tableone)
+library(knitr)
+library(car)
+
+knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
+
+data <- read.csv("B:\\Projects\\Marian Rewers\\ASK\\Data raw\\ASK_Dataset_Abstract_CovidScreening_2022-01-06.csv",na.strings = c("NA",""," "))
+data$DM_pos <- ifelse(data$MAB=="Yes" | data$SBB=="Yes","YES","NO")
+data$DM_pos_01 <- ifelse(data$DM_pos=="YES",1,
+                                ifelse(!is.na(data$DM_pos),0,NA))
+data$ECL_COVID_Out_01 <- ifelse(data$ECL_COVID_Out=="Positive",1,
+                                ifelse(!is.na(data$ECL_COVID_Out),0,NA))
+
+# categorize age
+data$age_cat <- ifelse(is.na(data$AgeAtScreen),NA,
+                       ifelse(data$AgeAtScreen<5, "0 - 4.9 yrs",
+                              ifelse(data$AgeAtScreen<12,"5 - 11.9 yrs", "12+ yrs")))
+
+t1 <- CreateTableOne(vars=c("DM_pos","MAB","SBB","SAB"),strata = "ECL_COVID_Out", data=data)
+t1 <- print(t1,exact=c("DM_pos","MAB","SBB","SAB"))
+
+mod1 <- glm(data=data, DM_pos_01 ~ ECL_COVID_Out_01, family="binomial")
+or1 <- exp(cbind(OR = coef(mod1), confint(mod1)))
+
+mod2 <- glm(data=data, DM_pos_01 ~ ECL_COVID_Out_01 + age_cat + Sex + T1D_Fam + NHW, family="binomial")
+or2 <- exp(cbind(OR = coef(mod2), confint(mod2)))
+
+```
+
+# Table 1.  
+
+The p-value tests whether there is a significant association between each of the DM Ab variables and SARS-Cov-2 positivity.  None of the associations were statistically significant.
+
+```{r echo=FALSE}
+kable(t1)
+```
+
+# Unadjusted logistic regression model
+
+The p-value (labeled "Pr(>Chisq)") tests whether there is a significant association between DM Ab positivity and SARS-Cov-2 positivity.  The association was not statistically significant.  The odds ratio was `r round(or1[2,1],2)`, which means that people who tested positive for COVID-19 antibodies had `r round(or1[2,1],2)` times the odds of having positive DM antibodies, although this was not significant.
+
+
+```{r echo=FALSE,comment=""}
+Anova(mod1,type = "III")
+or1
+```
+
+# Adjusted logistic regression model
+
+The p-value (labeled "Pr(>Chisq)") for each term in the model tests whether there is a significant association between each variable and DM antibody positivity.  
+
+The odds ratio for SARS-Cov-2 positivity was `r round(or2[2,1],2)`, which means that people with SARS-Cov-2 positivity had `r round(or2[2,1],2)` times the odds of having positive DM antibodies antibodies, although this was not significant.
+
+```{r echo=FALSE,comment=""}
+Anova(mod2,type = "III")
+or2
+```
+
