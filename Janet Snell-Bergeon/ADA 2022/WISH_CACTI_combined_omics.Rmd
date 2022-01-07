@@ -1,0 +1,232 @@
+---
+title: "WISH and CACTI Combined Lipidomics and Metabolomics"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(caret)
+library(mixOmics)
+library(limma)
+library(arsenal)
+library(tidyverse)
+library(knitr)
+knitr::opts_chunk$set(echo = FALSE)
+if(Sys.info()["sysname"] == "Windows"){
+  home_dir = "B:/Projects"
+} else if (Sys.info()["sysname"] == "Linux"){
+  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+} else if (Sys.info()["sysname"] == "Darwin"){
+  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+}
+knitr::opts_knit$set(root.dir = home_dir)
+```
+
+```{r}
+# Data import 
+subject = read.csv("./CACTI/Metabolon insulin resistance pilot/Data_raw/QClampHormones_All Dataset.csv")
+subject = subject %>% select(StudyID,dia,S3_GIR)
+metabolomics = read.csv("./CACTI/Metabolon insulin resistance pilot/Data_raw/UNCO-01-19ML CDT scaled imputed features.csv")
+metabolites = read.csv("./CACTI/Metabolon insulin resistance pilot/Data_raw/UNCO-01-19ML CDT scaled imputed metabolites.csv")
+lipidomics = read.csv("./CACTI/Metabolon insulin resistance pilot/Lipidomics/Data_raw/Lipidomics_Cleaning_Final_combined.csv")
+lipidomics$Sample.Number = NULL
+# Transpose metabolites
+metabolomics = data.frame(t(metabolomics))
+colnames(metabolomics) = metabolomics[1,]
+metabolomics$StudyID = rownames(metabolomics)
+metabolomics = metabolomics %>% filter(row_number() > 1) %>%
+  select(StudyID,everything())
+metabolomics$StudyID = as.numeric(gsub("X|_WISH|_CACTI","",metabolomics$StudyID))
+# Merge
+df = inner_join(subject,lipidomics,by = "StudyID")
+df = inner_join(df,metabolomics,by = "StudyID")
+# Diabetes 
+df$dia = factor(df$dia,levels = c(0,1),labels = c("Yes","No"))
+df$dia = relevel(df$dia, ref = "No")
+# GIR tertiles
+df = df %>% group_by(dia) %>% mutate(GIR_tert = ntile(S3_GIR, 3)) %>% ungroup()
+df$GIR_tert = factor(df$GIR_tert,levels = 1:3,labels = c("Low","Medium","High"))
+df = df %>% select(StudyID,dia,S3_GIR,GIR_tert,everything())
+# Delete zero variance columns
+zero_vars = mixOmics::nearZeroVar(df)$Position
+df = df[,-zero_vars]
+```
+
+# PLSDA
+
+```{r}
+X = df[,5:ncol(df)]
+X = data.matrix(X)
+```
+
+## T1D vs. non-T1D
+
+```{r message=FALSE}
+Y = df$dia 
+# How many components?
+plsda = mixOmics::plsda(X,Y,ncomp=10)
+plsda.perf = mixOmics::perf(plsda,validation = "loo") # 1 component the best
+# How many features?
+list.keepX = c(5:10,  seq(20, 100, 10))
+tune = tune.splsda(X, Y, ncomp = 2,test.keepX = list.keepX,validation = "loo")
+select.keepX <- tune$choice.keepX
+# Plot
+splsda.final <- splsda(X, Y, ncomp = 2, keepX = select.keepX) # Need 2 components for plotting
+plotIndiv(splsda.final, ind.names = FALSE, legend=TRUE,
+          ellipse = TRUE, title="sPLS-DA")
+# Top variables
+comp1 = selectVar(splsda.final,comp = 1)$name
+comp2 = selectVar(splsda.final,comp = 2)$name
+length(comp2) = length(comp1)
+res = data.frame(comp1,comp2)
+# Print
+res_table = data.frame(lapply(res, function(c){
+  t = unlist(lapply(c, function(x){
+    if(is.na(suppressWarnings(as.numeric(x)))){
+      return(x)
+    } else {
+      m = metabolites$BIOCHEMICAL[match(as.numeric(x),metabolites$COMP.ID)]
+    }
+  }))
+}))
+kable(res_table,col.names = c("Component 1 Top Features","Component 2 Top Features"))
+```
+
+```{r}
+# Moderated t test
+to_test = res[!is.na(res)]
+design = model.matrix(~dia,df)
+fit <- lmFit(t(X[,to_test]),design)
+fit <- eBayes(fit)
+results <- topTable(fit,coef = 2,number = length(to_test))
+results$name = unlist(sapply(rownames(results), function(x){
+  if(is.na(suppressWarnings(as.numeric(x)))){
+      return(x)
+    } else {
+      m = metabolites$BIOCHEMICAL[match(as.numeric(x),metabolites$COMP.ID)]
+    }
+}))
+results = results %>% select(name,logFC,AveExpr,P.Value,adj.P.Val)
+kable(results,row.names = F)
+```
+
+## T1D Low GIR vs. High GIR
+
+```{r message=FALSE}
+t1d = df %>% filter(dia == "Yes",GIR_tert != "Medium")
+t1d$GIR_tert = droplevels(t1d$GIR_tert)
+Y = t1d$GIR_tert
+X = t1d[,5:ncol(df)]
+X = data.matrix(X)
+zero_vars = mixOmics::nearZeroVar(X)$Position
+X = X[,-zero_vars]
+# How many components?
+plsda = mixOmics::plsda(X,Y,ncomp=5)
+plsda.perf = mixOmics::perf(plsda,validation = "loo") # 1 component the best
+# How many features?
+list.keepX = c(5:10,  seq(20, 100, 10))
+tune = tune.splsda(X, Y, ncomp = 2,test.keepX = list.keepX,validation = "loo")
+select.keepX <- tune$choice.keepX
+# Plot
+splsda.final <- splsda(X, Y, ncomp = 2, keepX = select.keepX) # Need 2 components for plotting
+plotIndiv(splsda.final, ind.names = FALSE, legend=TRUE,
+          ellipse = TRUE, title="sPLS-DA")
+# Top variables
+comp1 = selectVar(splsda.final,comp = 1)$name
+comp2 = selectVar(splsda.final,comp = 2)$name
+length(comp2) = length(comp1)
+res = data.frame(comp1,comp2)
+# Print
+res_table = data.frame(lapply(res, function(c){
+  t = unlist(lapply(c, function(x){
+    if(is.na(suppressWarnings(as.numeric(x)))){
+      return(x)
+    } else {
+      m = metabolites$BIOCHEMICAL[match(as.numeric(x),metabolites$COMP.ID)]
+    }
+  }))
+}))
+kable(res_table,col.names = c("Component 1 Top Features","Component 2 Top Features"))
+```
+
+```{r}
+# Moderated t test
+to_test = res[!is.na(res)]
+design = model.matrix(~GIR_tert,t1d)
+fit <- lmFit(t(X[,to_test]),design)
+fit <- eBayes(fit)
+results <- topTable(fit,coef = 2,number = length(to_test))
+results$name = unlist(sapply(rownames(results), function(x){
+  if(is.na(suppressWarnings(as.numeric(x)))){
+      return(x)
+    } else {
+      m = metabolites$BIOCHEMICAL[match(as.numeric(x),metabolites$COMP.ID)]
+    }
+}))
+results = results %>% select(name,logFC,AveExpr,P.Value,adj.P.Val)
+kable(results,row.names = F)
+```
+
+## No T1D Low GIR vs. High GIR
+
+```{r message=FALSE}
+no_t1d = df %>% filter(dia == "No",GIR_tert != "Medium")
+no_t1d$GIR_tert = droplevels(no_t1d$GIR_tert)
+Y = no_t1d$GIR_tert
+X = no_t1d[,5:ncol(df)]
+X = data.matrix(X)
+zero_vars = mixOmics::nearZeroVar(X)$Position
+X = X[,-zero_vars]
+# How many components?
+plsda = mixOmics::plsda(X,Y,ncomp=5)
+plsda.perf = mixOmics::perf(plsda,validation = "loo") # 1 component the best
+# How many features?
+list.keepX = c(5:10,  seq(20, 100, 10))
+tune = tune.splsda(X, Y, ncomp = 2,test.keepX = list.keepX,validation = "loo")
+select.keepX <- tune$choice.keepX
+# Plot
+splsda.final <- splsda(X, Y, ncomp = 2, keepX = select.keepX) # Need 2 components for plotting
+plotIndiv(splsda.final, ind.names = FALSE, legend=TRUE,
+          ellipse = TRUE, title="sPLS-DA")
+# Top variables
+comp1 = selectVar(splsda.final,comp = 1)$name
+comp2 = selectVar(splsda.final,comp = 2)$name
+length(comp2) = length(comp1)
+res = data.frame(comp1,comp2)
+# Print
+res_table = data.frame(lapply(res, function(c){
+  t = unlist(lapply(c, function(x){
+    if(is.na(suppressWarnings(as.numeric(x)))){
+      return(x)
+    } else {
+      m = metabolites$BIOCHEMICAL[match(as.numeric(x),metabolites$COMP.ID)]
+    }
+  }))
+}))
+kable(res_table,col.names = c("Component 1 Top Features","Component 2 Top Features"))
+```
+
+```{r}
+# Moderated t test
+to_test = res[!is.na(res)]
+design = model.matrix(~GIR_tert,no_t1d)
+fit <- lmFit(t(X[,to_test]),design)
+fit <- eBayes(fit)
+results <- topTable(fit,coef = 2,number = length(to_test))
+results$name = unlist(sapply(rownames(results), function(x){
+  if(is.na(suppressWarnings(as.numeric(x)))){
+      return(x)
+    } else {
+      m = metabolites$BIOCHEMICAL[match(as.numeric(x),metabolites$COMP.ID)]
+    }
+}))
+results = results %>% select(name,logFC,AveExpr,P.Value,adj.P.Val)
+kable(results,row.names = F)
+```
+
