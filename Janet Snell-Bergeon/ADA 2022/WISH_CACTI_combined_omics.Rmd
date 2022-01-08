@@ -50,24 +50,19 @@ df = inner_join(df,metabolomics,by = "StudyID")
 df$dia = factor(df$dia,levels = c(0,1),labels = c("Yes","No"))
 df$dia = relevel(df$dia, ref = "No")
 # GIR tertiles
-df = df %>% group_by(dia) %>% mutate(GIR_tert = ntile(S3_GIR, 3)) %>% ungroup()
-df$GIR_tert = factor(df$GIR_tert,levels = 1:3,labels = c("Low","Medium","High"))
-df = df %>% select(StudyID,dia,S3_GIR,GIR_tert,everything())
+df = df %>% group_by(dia) %>% mutate(IR_tert = ntile(S3_GIR, 3)) %>% ungroup()
+df$IR_tert = factor(df$IR_tert,levels = 1:3,labels = c("High","Medium","Low"))
+df = df %>% select(StudyID,dia,S3_GIR,IR_tert,everything())
 # Delete zero variance columns
 zero_vars = mixOmics::nearZeroVar(df)$Position
 df = df[,-zero_vars]
 ```
 
-# PLSDA
-
-```{r}
-X = df[,5:ncol(df)]
-X = data.matrix(X)
-```
-
-## T1D vs. non-T1D
+# T1D vs. non-T1D
 
 ```{r message=FALSE}
+X = df[,5:ncol(df)]
+X = data.matrix(X)
 Y = df$dia 
 # How many components?
 plsda = mixOmics::plsda(X,Y,ncomp=10)
@@ -116,12 +111,13 @@ results = results %>% select(name,logFC,adj.P.Val)
 kable(results,row.names = F,digits = 3)
 ```
 
-## T1D Low GIR vs. High GIR
+# T1D Low GIR vs. High GIR
 
 ```{r message=FALSE}
-t1d = df %>% filter(dia == "Yes",GIR_tert != "Medium")
-t1d$GIR_tert = droplevels(t1d$GIR_tert)
-Y = t1d$GIR_tert
+t1d = df %>% filter(dia == "Yes",IR_tert != "Medium")
+t1d$IR_tert = droplevels(t1d$IR_tert)
+t1d$IR_tert = relevel(t1d$IR_tert,ref = "Low")
+Y = t1d$IR_tert
 X = t1d[,5:ncol(df)]
 X = data.matrix(X)
 zero_vars = mixOmics::nearZeroVar(X)$Position
@@ -158,7 +154,7 @@ kable(res_table,col.names = c("Component 1 Top Features","Component 2 Top Featur
 ```{r}
 # Moderated t test
 to_test = res[!is.na(res)]
-design = model.matrix(~GIR_tert,t1d)
+design = model.matrix(~IR_tert,t1d)
 fit <- lmFit(t(X[,to_test]),design)
 fit <- eBayes(fit)
 results <- topTable(fit,coef = 2,number = length(to_test))
@@ -173,12 +169,13 @@ results = results %>% select(name,logFC,adj.P.Val)
 kable(results,row.names = F,digits = 3)
 ```
 
-## No T1D Low GIR vs. High GIR
+# No T1D Low GIR vs. High GIR
 
 ```{r message=FALSE}
-no_t1d = df %>% filter(dia == "No",GIR_tert != "Medium")
-no_t1d$GIR_tert = droplevels(no_t1d$GIR_tert)
-Y = no_t1d$GIR_tert
+no_t1d = df %>% filter(dia == "No",IR_tert != "Medium")
+no_t1d$IR_tert = droplevels(no_t1d$IR_tert)
+no_t1d$IR_tert = relevel(no_t1d$IR_tert,ref = "Low")
+Y = no_t1d$IR_tert
 X = no_t1d[,5:ncol(df)]
 X = data.matrix(X)
 zero_vars = mixOmics::nearZeroVar(X)$Position
@@ -215,7 +212,7 @@ kable(res_table,col.names = c("Component 1 Top Features","Component 2 Top Featur
 ```{r}
 # Moderated t test
 to_test = res[!is.na(res)]
-design = model.matrix(~GIR_tert,no_t1d)
+design = model.matrix(~IR_tert,no_t1d)
 fit <- lmFit(t(X[,to_test]),design)
 fit <- eBayes(fit)
 results <- topTable(fit,coef = 2,number = length(to_test))
