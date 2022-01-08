@@ -38,7 +38,7 @@ exclude = c("StudyID",snps,colnames(df)[nearZeroVar(df)])
 exclude = unique(exclude)
 t = df %>% select(-all_of(exclude))
 # Impute
-imputed_aha = mice(t,m = 10,printFlag = F,seed = 1017)
+imputed_aha = mice(t,m = 10,method = "cart",printFlag = F,seed = 1017)
 # Reassemble
 imputed_aha = cbind(imputed_aha,df[,c(exclude,outcomes)])
 # Filter to SNPs only
