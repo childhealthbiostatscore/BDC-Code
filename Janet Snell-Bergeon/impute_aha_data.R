@@ -31,8 +31,8 @@ df[,to_transform] = NULL
 # Remove duplicates
 df = df[!df$StudyID %in% df$StudyID[duplicated(df$StudyID)],]
 # Rename columns - mice has trouble with spaces
-columns_from_laura = gsub(" |:","",columns_from_laura)
-colnames(df) = gsub(" |:","",colnames(df))
+columns_from_laura = gsub(" |[[:punct:]]","_",columns_from_laura)
+colnames(df) = gsub(" |[[:punct:]]","_",colnames(df))
 # Remove variables no variance for imputation model
 exclude = c("StudyID",snps,colnames(df)[nearZeroVar(df)])
 exclude = unique(exclude)
