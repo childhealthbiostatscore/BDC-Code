@@ -206,10 +206,9 @@ complete_lipidmeds_egdr_components_ccc$CACprogV3_num <- NULL
 numLevels_lipidmeds_egdr_components <- c(1,1,1,1,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2)
 numLevels_lipidmeds_egdr_components_simple <- c(1,1,1,2,2,1,1,1,1,1,1,1,1,1,2,2)
 
-# read in omics data
+# read in omics data - for now, we won't worry about SNPs
 load(file="./Janet Snell-Bergeon/AHA collaborative grant/aha_master_data.Rdata")
-# need to exclude anyone who has duplicate SNP data
-omics_data <- df[,c("StudyID",snps,"gly_P02671.7","gly_P02671.5","gly_P02671.4","gly_P02671.3","AAA01201000179.0807263.4","gly_P02679",
+omics_data <- df[,c("StudyID","gly_P02671.7","gly_P02671.5","gly_P02671.4","gly_P02671.3","AAA01201000179.0807263.4","gly_P02679",
                     "HMDB00510161.0696402.9","AAA01201000179.0809235.7","gly_P02675.4","gly_P02675","gly_P02647","P02655","gly_P02647.1",
                     "HMDB00510161.0694436","gly_P02652","gly_P01009","gly_P01834.11","P01817","AcCa 10:3","HMDB0028822260.1378628.6",
                     "AAA01201000179.0807263.4","gly_P02671.3","gly_P02671.7")]
@@ -218,24 +217,19 @@ d <- duplicated(omics_data_ids)
 dups <- omics_data_ids[d]
 omics_data <- omics_data[!omics_data$StudyID %in% dups,]
 
-omics_data_has_snps <- omics_data[!is.na(omics_data$rs10949670) & !is.na(omics_data$rs4450463) & !is.na(omics_data$rs4796649)
-                                  & !is.na(omics_data$rs6554207) & !is.na(omics_data$rs9503009),]
-
 # merge omics data with the CAD dataset
 ada_data <- merge(complete_lipidmeds_egdr_components_cad,omics_data,by="StudyID",all.x = T,all.y = F)
-ada_data_has_snps <- ada_data[!is.na(ada_data$rs10949670) & !is.na(ada_data$rs4450463) & !is.na(ada_data$rs4796649)
-                                  & !is.na(ada_data$rs6554207) & !is.na(ada_data$rs9503009),]
 
 # find subset of people with variables in model 4.4 AND all omics variables
 # the clinical variables are age, onhypermeds, onlipidmeds, ldl, smknum, race, cholV1, duration_cat, l.bmi, l.avediabp, l.hdlc,
 # l.CKDepi, l.ac, l.insdoseperkg, l.hba1c
-ada_data <- ada_data[,c("StudyID",snps,"gly_P02671.7","gly_P02671.5","gly_P02671.4","gly_P02671.3","AAA01201000179.0807263.4","gly_P02679",
+ada_data <- ada_data[,c("StudyID","CAD","PersonYrsCAD","gly_P02671.7","gly_P02671.5","gly_P02671.4","gly_P02671.3","AAA01201000179.0807263.4","gly_P02679",
                     "HMDB00510161.0696402.9","AAA01201000179.0809235.7","gly_P02675.4","gly_P02675","gly_P02647","P02655","gly_P02647.1",
                     "HMDB00510161.0694436","gly_P02652","gly_P01009","gly_P01834.11","P01817","AcCa 10:3","HMDB0028822260.1378628.6",
                     "AAA01201000179.0807263.4","gly_P02671.3","gly_P02671.7","age", "onhypermeds", "onlipidmeds", "ldl", "smknum", "race", 
-                    "cholV1", "duration_cat", "l.bmi", "l.avediabp", "l.hdlc","l.CKDepi", "l.ac", "l.insdoseperkg", "l.hba1c")]
-c <- complete.cases(ada_data)
+                    "cholV1", "duration_cat", "l.bmi", "l.avediabp","l.avesystbp" ,"l.hdlc","l.CKDepi", "l.ac", "l.insdoseperkg", "l.hba1c")]
 ada_data_complete <- ada_data[c,]
+
 
 ```
 
@@ -669,6 +663,7 @@ form <- str_replace(form,"onlipidmeds","as.factor(onlipidmeds)")
 form <- str_replace(form,"smknum","as.factor(smknum)")
 form <- str_replace(form,"sex_0m1f","as.factor(sex_0m1f)")
 form <- str_replace(form,"l.duration\\+l.duration_2","poly(l.duration,2)")
+form_cad_clinical <- form
 ```
 
 ## Cox model using clinical variables selected by LASSO
@@ -1115,4 +1110,14 @@ aic_table <- cbind(mod_names,round(aic_values,2))
 colnames(aic_table) <- c("Model","AIC")
 
 kable(aic_table)
+```
+
+# Fit model 4.4 to AHA data using participants with complete data for clinical variables and omics data (not SNPs)
+
+## Clinical model results
+
+```{r, echo=FALSE, comment=""}
+form_cad_clinical <- paste0("Surv(PersonYrsCAD,CAD)",form_cad_clinical)
+c <- coxph(as.formula(form_cad_clinical),data=ada_data_complete)
+c
 ```
