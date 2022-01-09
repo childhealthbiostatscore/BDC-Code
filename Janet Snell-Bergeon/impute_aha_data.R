@@ -1,8 +1,8 @@
 library(tidyverse)
 library(caret)
 library(mice)
-setwd("~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
-#setwd("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
+#setwd("~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
+setwd("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
 load("./Janet Snell-Bergeon/AHA collaborative grant/aha_master_data.Rdata")
 # Make new variables
 df$smknum = as.numeric(!(df$SmkStatusV1 == "Former" | df$SmkStatusV1 == "Never"))
@@ -36,12 +36,13 @@ colnames(df) = gsub(" |[[:punct:]]","_",colnames(df))
 # Remove variables no variance for imputation model
 exclude = c("StudyID",snps,colnames(df)[nearZeroVar(df)])
 exclude = unique(exclude)
-t = df %>% select(-all_of(exclude))
+t = df %>% select(all_of(columns_from_laura)) %>%
+  select(-any_of(exclude))
 # Impute
-imputed_aha = mice(t,m = 10,method = "cart",printFlag = F,seed = 1017)
+imputed_aha = mice(t,m = 5,method = "cart",printFlag = F,seed = 1017)
 # Reassemble
 imputed_aha = cbind(imputed_aha,df[,c(exclude,outcomes)])
 # Filter to SNPs only
 imputed_aha = filter(imputed_aha,!is.na(rs10949670))
 # Write
-save(imputed_aha,file = "./Janet Snell-Bergeon/AHA collaborative grant/aha_imputed_data.Rdata")
+save(imputed_aha,file = "./Janet Snell-Bergeon/AHA collaborative grant/aha_imputed_small_dataset.Rdata")

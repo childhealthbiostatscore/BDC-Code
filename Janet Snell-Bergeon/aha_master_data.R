@@ -60,10 +60,9 @@ snps = c("rs10949670","rs4796649","rs6554207","rs4450463","rs9503009")
 snp_data = read.plink("./Genomics/Data_Raw/Imputed SNPS - Updated 7-20-15/CACTI_FINAL_HG19_1KGpos",
                       select.snps = snps)
 # Match IDs
-ids = read.delim("./Genomics/Data_Raw/Imputed SNPS - Updated 7-20-15/CACTI_SampleIDKey.txt")
+ids = read.delim("./Genomics/Data_Raw/CACTI_SampleID_KEY.txt")
 t = data.frame(as(snp_data$genotypes,"character"))
-t$StudyID = ids$StudySampleID[match(rownames(t),ids$UVASampleID)]
-t$StudyID = as.numeric(sub("\\d\\d-","",t$StudyID))
+t$StudyID = ids$StudyID[match(rownames(t),ids$UVA_ID)]
 t = t[-which(duplicated(t)),]
 t[,1:length(snps)] = lapply(t[,1:length(snps)],function(c){factor(c,levels = c("A/A", "A/B", "B/B"))})
 # Merge
