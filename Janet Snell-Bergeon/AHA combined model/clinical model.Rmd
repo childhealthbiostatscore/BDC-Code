@@ -45,8 +45,8 @@ knitr::opts_knit$set(root.dir = home_dir)
 ```
 
 ```{r, warning=FALSE}
-source("C:/Users/pylell/Documents/GitHub/shared-resources/lasso/glinternet.R")
-#source("/home/laura/Documents/Github/shared-resources/lasso/glinternet.R")
+#source("C:/Users/pylell/Documents/GitHub/shared-resources/lasso/glinternet.R")
+source("/home/laura/Documents/Github/shared-resources/lasso/glinternet.R")
 #source("/home/tim/GitHub/Helper-Functions/glinternet.R")
 #### DATA FRAME WITH LIPID MEDS AND EGDR COMPONENTS
 allvisits_long <- read.sas7bdat("./Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_long.sas7bdat")
@@ -61,7 +61,7 @@ cac$CACprogV3 <- ifelse(cac$C3 - cac$C1 >= 2.5,"Progression","No Progression")
 cac$CACprogV3[is.na(cac$CACprogV3)] <- "Unknown"
 cac <- cac[,c("StudyID","CACprogV3")]
 final <- merge(cac,v1,by="StudyID",all.x = T, all.y = T)
-ua <- read.sas7bdat("./Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model//uricacid_b.sas7bdat")
+ua <- read.sas7bdat("./Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/uricacid_b.sas7bdat")
 #ua <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/uricacid_b.sas7bdat")
 ua <- ua[,c("StudyID","UA")]
 final <- merge(final,ua,by="StudyID",all.x = T, all.y = F)
@@ -91,13 +91,15 @@ event <- read.csv("./Janet Snell-Bergeon/AHA collaborative grant/Combined predic
 #event <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/QVisits_LastVisit_8-10-21.csv")
 race <- event[,c("StudyID","race","cholV1","dia")]
 final <- merge(final,race,by="StudyID",all.x = T,all.y = F)
+final$nhw <- ifelse(final$race==1,1,0)
+final$race <- NULL
 
 # calculate 10 yr ASCVD risk
 final$pcr_probs <- predict_10yr_ascvd_risk(
   sex=final$sex_0m1f,
   sex_levels = list(female="1",male="0"),
-  race=final$race,
-  race_levels = list(black="6",white=c("1","2","3","4","5","7","9")),
+  race=final$nhw,
+  race_levels = list(black="0",white="1"),
   age_years = final$age,
   chol_total_mgdl = final$cholV1,
   chol_hdl_mgdl = final$hdlc,
@@ -226,7 +228,7 @@ ada_data <- merge(complete_lipidmeds_egdr_components_cad,omics_data,by="StudyID"
 ada_data <- ada_data[,c("StudyID","CAD","PersonYrsCAD","gly_P02671.7","gly_P02671.5","gly_P02671.4","gly_P02671.3","AAA01201000179.0807263.4","gly_P02679",
                     "HMDB00510161.0696402.9","AAA01201000179.0809235.7","gly_P02675.4","gly_P02675","gly_P02647","P02655","gly_P02647.1",
                     "HMDB00510161.0694436","gly_P02652","gly_P01009","gly_P01834.11","P01817","AcCa 10:3","HMDB0028822260.1378628.6",
-                    "AAA01201000179.0807263.4","gly_P02671.3","gly_P02671.7","age", "onhypermeds", "onlipidmeds", "ldl", "smknum", "race", 
+                    "AAA01201000179.0807263.4","gly_P02671.3","gly_P02671.7","age", "onhypermeds", "onlipidmeds", "ldl", "smknum", "nhw", 
                     "cholV1", "duration_cat", "l.bmi", "l.avediabp","l.avesystbp" ,"l.hdlc","l.CKDepi", "l.ac", "l.insdoseperkg", "l.hba1c")]
 c <- complete.cases(ada_data)
 ada_data_complete <- ada_data[c,]
@@ -238,7 +240,7 @@ ada_data_cacp <- ada_data_cacp[,c("StudyID","CACprogV3_num","gly_P02671.7","gly_
                     "HMDB00510161.0696402.9","AAA01201000179.0809235.7","gly_P02675.4","gly_P02675","gly_P02647","P02655","gly_P02647.1",
                     "HMDB00510161.0694436","gly_P02652","gly_P01009","gly_P01834.11","P01817","AcCa 10:3","HMDB0028822260.1378628.6",
                     "AAA01201000179.0807263.4","gly_P02671.3","gly_P02671.7",
-                    "age", "onhypermeds", "onlipidmeds", "ldl", "smknum", "race","sex_0m1f",
+                    "age", "onhypermeds", "onlipidmeds", "ldl", "smknum", "nhw","sex_0m1f",
                     "cholV1", "duration_cat", "l.bmi", "l.avediabp","l.avesystbp" ,"l.hdlc","l.tri","l.CKDepi", "l.ac", "l.insdoseperkg", "l.hba1c")]
 c2 <- complete.cases(ada_data_cacp)
 ada_data_cacp_complete <- ada_data_cacp[c2,]
@@ -246,7 +248,7 @@ ada_data_cacp_complete <- ada_data_cacp[c2,]
 
 # LASSO for CAC progression, using lipid lowering meds and A1c, WHR, onhypermeds
 
-## LASSO without interactions
+## CAC progression - LASSO without interactions
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
@@ -266,10 +268,16 @@ form <- paste0(temp,collapse = "+")
 form <- paste0("~",form)
 ```
 
-## GLM using variables selected by LASSO
+## CAC progression - GLM using variables selected by LASSO
 
 ```{r, echo=FALSE, comment=""}
 form <- paste0("CACprogV3_num",form)
+form <- str_replace(form,"onhypermeds","as.factor(onhypermeds)")
+form <- str_replace(form,"onlipidmeds","as.factor(onlipidmeds)")
+form <- str_replace(form,"smknum","as.factor(smknum)")
+form <- str_replace(form,"sex_0m1f","as.factor(sex_0m1f)")
+form <- str_replace(form,"nhw","as.factor(nhw)")
+form <- str_replace(form,"CACprogV3_num","as.factor(CACprogV3_num)")
 form <- str_replace(form,"l.duration\\+l.duration_2","poly(l.duration,2)")
 refit_mod = glm(as.formula(form),complete_lipidmeds_egdr_components,family = binomial("logit"))
 summary(refit_mod)
@@ -280,7 +288,7 @@ aic_values <- c(aic_values,refit_mod$aic)
 mod_names <- "CAC progression, no interactions"
 ```
 
-## LASSO with interactions
+## CAC progression - LASSO with interactions
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
@@ -289,14 +297,14 @@ test$onlipidmeds <- as.factor(test$onlipidmeds)
 test$onhypermeds <- as.factor(test$onhypermeds)
 test$smknum <- as.factor(test$smknum)
 test$sex_0m1f <- as.factor(test$sex_0m1f)
-test$race <- as.factor(test$race)
 test$CACprogV3_num <- as.factor(test$CACprogV3_num)
+test$nhw <- as.factor(test$nhw)
 form_test <- easy_glinternet(df=test,outcome = "CACprogV3_num",id_vars = "StudyID",
                              fam = "binomial",cv_type = "loo",cores = 24)
 form_test <- str_replace(form_test,"l.duration\\+l.duration_2","poly(l.duration,2)")
 ```
 
-## GLM using variables selected by LASSO with interactions
+## CAC progression - GLM using variables selected by LASSO with interactions
 
 ```{r, echo=FALSE, comment=""}
 refit_mod_int = glm(as.formula(form_test),data=test,family = binomial("logit"))
@@ -307,7 +315,7 @@ mod_names <- c(mod_names,"CAC progression, with interactions")
 #prog_int_coefs <- row.names(prog_noint_coefs)
 ```
 
-## LASSO of clinical variables, without interactions
+## CAC progression - LASSO of clinical variables, without interactions
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
@@ -326,19 +334,27 @@ form <- paste0(temp,collapse = "+")
 form <- paste0("~",form)
 ```
 
-## GLM using clinical variables selected by LASSO
+## CAC progression - GLM using clinical variables selected by LASSO
 
 ```{r, echo=FALSE, comment=""}
 form <- paste0("CACprogV3_num",form)
+form <- str_replace(form,"onhypermeds","as.factor(onhypermeds)")
+form <- str_replace(form,"onlipidmeds","as.factor(onlipidmeds)")
+form <- str_replace(form,"smknum","as.factor(smknum)")
+form <- str_replace(form,"sex_0m1f","as.factor(sex_0m1f)")
+form <- str_replace(form,"nhw","as.factor(nhw)")
+form <- str_replace(form,"CACprogV3_num","as.factor(CACprogV3_num)")
 form <- str_replace(form,"l.duration\\+l.duration_2","poly(l.duration,2)")
 form_cacp <- form
 refit_mod = glm(as.formula(form),complete_lipidmeds_egdr_components,family = binomial("logit"))
 summary(refit_mod)
 aic_values <- c(aic_values,refit_mod$aic)
 mod_names <- c(mod_names,"CAC progression, simple clinical variables, without interactions")
+
+or_refit_mod <- round(exp(cbind(OR = coef(refit_mod), confint(refit_mod))),2)
 ```
 
-## LASSO of clinical variables with interactions
+## CAC progression - LASSO of clinical variables with interactions
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
@@ -348,12 +364,12 @@ test$onhypermeds <- as.factor(test$onhypermeds)
 test$smknum <- as.factor(test$smknum)
 test$sex_0m1f <- as.factor(test$sex_0m1f)
 test$CACprogV3_num <- as.factor(test$CACprogV3_num)
-test$race <- as.factor(test$race)
+test$nhw <- as.factor(test$nhw)
 form_test <- easy_glinternet(df=test,outcome = "CACprogV3_num",id_vars = "StudyID",
                              fam ="binomial",cv_type = "loo",cores = 24)
 ```
 
-## GLM using clinical variables selected by LASSO with interactions
+## CAC progression - GLM using clinical variables selected by LASSO with interactions
 
 ```{r, echo=FALSE, comment=""}
 refit_mod = glm(as.formula(form_test),data=test,family = binomial("logit"))
@@ -362,10 +378,10 @@ aic_values <- c(aic_values,refit_mod$aic)
 mod_names <- c(mod_names,"CAC progression, simple clinical variables, with interactions")
 ```
 
-## GLM using ASCVD 10 year risk
+## CAC progression - GLM using ASCVD 10 year risk
 
 ```{r, echo=FALSE, comment=""}
-refit_mod = glm(CACprogV3_num ~ pcr_percent,data=complete_lipidmeds_egdr_components,family = binomial("logit"))
+refit_mod = glm(as.factor(CACprogV3_num) ~ pcr_percent,data=complete_lipidmeds_egdr_components,family = binomial("logit"))
 summary(refit_mod)
 aic_values <- c(aic_values,refit_mod$aic)
 mod_names <- c(mod_names,"CAC progression, ASCVD 10 year risk")
@@ -373,7 +389,7 @@ mod_names <- c(mod_names,"CAC progression, ASCVD 10 year risk")
 
 # LASSO for change in CAC per year using lipid lowering meds and A1c, WHR, onhypermeds
 
-## LASSO without interactions
+## Change in CAC per year - LASSO without interactions
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
@@ -393,10 +409,15 @@ form <- paste0(temp,collapse = "+")
 form <- paste0("~",form)
 ```
 
-## GLM using variables selected by LASSO
+## Change in CAC per year - GLM using variables selected by LASSO
 
 ```{r, echo=FALSE, comment=""}
 form <- paste0("cac_change_per_yr",form)
+form <- str_replace(form,"onhypermeds","as.factor(onhypermeds)")
+form <- str_replace(form,"onlipidmeds","as.factor(onlipidmeds)")
+form <- str_replace(form,"smknum","as.factor(smknum)")
+form <- str_replace(form,"sex_0m1f","as.factor(sex_0m1f)")
+form <- str_replace(form,"nhw","as.factor(nhw)")
 form <- str_replace(form,"l.duration\\+l.duration_2","poly(l.duration,2)")
 refit_mod = glm(as.formula(form),complete_lipidmeds_egdr_components_ccc,family = "gaussian")
 summary(refit_mod)
@@ -407,7 +428,7 @@ cac_noint_coefs_sig <- as.matrix(summary(refit_mod)$coef)
 cac_noint_coefs_sig <- rownames(cac_noint_coefs_sig)[cac_noint_coefs_sig[,4]<0.05]
 ```
 
-## LASSO with interactions
+## Change in CAC per year - LASSO with interactions
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
@@ -416,12 +437,12 @@ test$onlipidmeds <- as.factor(test$onlipidmeds)
 test$onhypermeds <- as.factor(test$onhypermeds)
 test$smknum <- as.factor(test$smknum)
 test$sex_0m1f <- as.factor(test$sex_0m1f)
-test$race <- as.factor(test$race)
+test$nhw <- as.factor(test$nhw)
 form_test <- easy_glinternet(df=test,outcome = "cac_change_per_yr",id_vars = "StudyID",
                              fam="gaussian",cv_type = "loo",cores = 24)
 ```
 
-## GLM using variables selected by LASSO with interactions
+## Change in CAC per year - GLM using variables selected by LASSO with interactions
 
 ```{r, echo=FALSE, comment=""}
 refit_mod_int = glm(as.formula(form_test),data=test,family = "gaussian")
@@ -433,7 +454,7 @@ plot(refit_mod)
 #cac_int_coefs <- row.names(cac_int_coefs)
 ```
 
-## LASSO of clinical variables, without interactions
+## Change in CAC per year - LASSO of clinical variables, without interactions
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
@@ -452,10 +473,15 @@ form <- paste0(temp,collapse = "+")
 form <- paste0("~",form)
 ```
 
-## GLM using clinical variables selected by LASSO
+## Change in CAC per year - GLM using clinical variables selected by LASSO
 
 ```{r, echo=FALSE, comment=""}
 form <- paste0("cac_change_per_yr",form)
+form <- str_replace(form,"onhypermeds","as.factor(onhypermeds)")
+form <- str_replace(form,"onlipidmeds","as.factor(onlipidmeds)")
+form <- str_replace(form,"smknum","as.factor(smknum)")
+form <- str_replace(form,"sex_0m1f","as.factor(sex_0m1f)")
+form <- str_replace(form,"nhw","as.factor(nhw)")
 form <- str_replace(form,"l.duration\\+l.duration_2","poly(l.duration,2)")
 refit_mod = glm(as.formula(form),complete_lipidmeds_egdr_components_ccc,family = "gaussian")
 summary(refit_mod)
@@ -464,7 +490,7 @@ mod_names <- c(mod_names,"CAC change per year, simple clinical variables, withou
 plot(refit_mod)
 ```
 
-## LASSO of clinical variables with interactions
+## Change in CAC per year - LASSO of clinical variables with interactions
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
@@ -473,12 +499,12 @@ test$onlipidmeds <- as.factor(test$onlipidmeds)
 test$onhypermeds <- as.factor(test$onhypermeds)
 test$smknum <- as.factor(test$smknum)
 test$sex_0m1f <- as.factor(test$sex_0m1f)
-test$race <- as.factor(test$race)
+test$nhw <- as.factor(test$nhw)
 form_test <- easy_glinternet(df=test,outcome = "cac_change_per_yr",id_vars = "StudyID",
                              fam="gaussian",cv_type = "loo",cores = 24)
 ```
 
-## GLM using clinical variables selected by LASSO with interactions
+## Change in CAC per year - GLM using clinical variables selected by LASSO with interactions
 
 ```{r, echo=FALSE, comment=""}
 refit_mod = glm(as.formula(form_test),data=test,family = "gaussian")
@@ -488,7 +514,7 @@ mod_names <- c(mod_names,"CAC change per year, simple clinical variables, with i
 plot(refit_mod)
 ```
 
-## GLM using ASCVD 10 year risk
+## Change in CAC per year - GLM using ASCVD 10 year risk
 
 ```{r, echo=FALSE, comment=""}
 refit_mod = glm(cac_change_per_yr ~ pcr_percent,data=complete_lipidmeds_egdr_components_ccc,family = "gaussian")
@@ -500,7 +526,7 @@ plot(refit_mod)
 
 # Regularized Cox model for death without interactions, using lipid lowering meds and A1c, WHR, onhypermeds
 
-## Regularized Cox model
+## Death - Regularized Cox model
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
@@ -520,10 +546,11 @@ form <- str_replace(form,"onhypermeds","as.factor(onhypermeds)")
 form <- str_replace(form,"onlipidmeds","as.factor(onlipidmeds)")
 form <- str_replace(form,"smknum","as.factor(smknum)")
 form <- str_replace(form,"sex_0m1f","as.factor(sex_0m1f)")
+form <- str_replace(form,"nhw","as.factor(nhw)")
 form <- str_replace(form,"l.duration\\+l.duration_2","poly(l.duration,2)")
 ```
 
-## Cox model using variables selected in regularized Cox model
+## Death - Cox model using variables selected in regularized Cox model
 
 ### Model results
 
@@ -545,7 +572,7 @@ aic_values <- c(aic_values,extractAIC(c)[2])
 mod_names <- c(mod_names,"Death, without interactions")
 ```
 
-## LASSO of clinical variables, without interactions
+## Death - LASSO of clinical variables, without interactions
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
@@ -565,10 +592,11 @@ form <- str_replace(form,"onhypermeds","as.factor(onhypermeds)")
 form <- str_replace(form,"onlipidmeds","as.factor(onlipidmeds)")
 form <- str_replace(form,"smknum","as.factor(smknum)")
 form <- str_replace(form,"sex_0m1f","as.factor(sex_0m1f)")
+form <- str_replace(form,"nhw","as.factor(nhw)")
 form <- str_replace(form,"l.duration\\+l.duration_2","poly(l.duration,2)")
 ```
 
-## Cox model using clinical variables selected by LASSO
+## Death - Cox model using clinical variables selected by LASSO
 
 ### Model results
 
@@ -588,7 +616,7 @@ aic_values <- c(aic_values,extractAIC(c)[2])
 mod_names <- c(mod_names,"Death, simple clinical variables, without interactions")
 ```
 
-## Cox model with ASCVD 10 year risk
+## Death - Cox model with ASCVD 10 year risk
 
 ### Model results
 
@@ -609,7 +637,7 @@ mod_names <- c(mod_names,"Death, ASCVD 10 year risk")
 
 # Regularized Cox model for CAD without interactions, using lipid lowering meds and A1c, WHR, onhypermeds
 
-## Regularized Cox model
+## CAD - Regularized Cox model
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
@@ -632,7 +660,7 @@ form <- str_replace(form,"sex_0m1f","as.factor(sex_0m1f)")
 form <- str_replace(form,"l.duration\\+l.duration_2","poly(l.duration,2)")
 ```
 
-## Cox model using variables selected in regularized Cox model
+## CAD - Cox model using variables selected in regularized Cox model
 
 ### Model results
 
@@ -655,7 +683,7 @@ aic_values <- c(aic_values,extractAIC(c)[2])
 mod_names <- c(mod_names,"CAD, without interactions")
 ```
 
-## LASSO of clinical variables, without interactions
+## CAD - LASSO of clinical variables, without interactions
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
@@ -678,7 +706,7 @@ form <- str_replace(form,"l.duration\\+l.duration_2","poly(l.duration,2)")
 form_cad_clinical <- form
 ```
 
-## Cox model using clinical variables selected by LASSO
+## CAD - Cox model using clinical variables selected by LASSO
 
 ### Model results
 
@@ -698,7 +726,7 @@ aic_values <- c(aic_values,extractAIC(c)[2])
 mod_names <- c(mod_names,"CAD, simple clinical variables, without interactions")
 ```
 
-## Cox model with ASCVD 10 year risk
+## CAD - Cox model with ASCVD 10 year risk
 
 ### Model results
 
@@ -719,7 +747,7 @@ mod_names <- c(mod_names,"CAD, ASCVD 10 year risk")
 
 # Regularized Cox model for hard CAD without interactions, using lipid lowering meds and A1c, WHR, onhypermeds
 
-## Regularized Cox model
+## Hard CAD - Regularized Cox model
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
@@ -739,10 +767,11 @@ form <- str_replace(form,"onhypermeds","as.factor(onhypermeds)")
 form <- str_replace(form,"onlipidmeds","as.factor(onlipidmeds)")
 form <- str_replace(form,"smknum","as.factor(smknum)")
 form <- str_replace(form,"sex_0m1f","as.factor(sex_0m1f)")
+form <- str_replace(form,"nhw","as.factor(nhw)")
 form <- str_replace(form,"l.duration\\+l.duration_2","poly(l.duration,2)")
 ```
 
-## Cox model using variables selected in regularized Cox model
+## Hard CAD - Cox model using variables selected in regularized Cox model
 
 ### Model results
 
@@ -764,7 +793,7 @@ aic_values <- c(aic_values,extractAIC(c)[2])
 mod_names <- c(mod_names,"Hard CAD, without interactions")
 ```
 
-## LASSO of clinical variables, without interactions
+## Hard CAD - LASSO of clinical variables, without interactions
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
@@ -786,7 +815,7 @@ form <- str_replace(form,"sex_0m1f","as.factor(sex_0m1f)")
 form <- str_replace(form,"l.duration\\+l.duration_2","poly(l.duration,2)")
 ```
 
-## Cox model using clinical variables selected by LASSO
+## Hard CAD - Cox model using clinical variables selected by LASSO
 
 ### Model results
 
@@ -806,7 +835,7 @@ aic_values <- c(aic_values,extractAIC(c)[2])
 mod_names <- c(mod_names,"Hard CAD, simple clinical variables, without interactions")
 ```
 
-## Cox model with ASCVD 10 year risk
+## Hard CAD - Cox model with ASCVD 10 year risk
 
 ### Model results
 
@@ -827,7 +856,7 @@ mod_names <- c(mod_names,"Hard CAD, ASCVD 10 year risk")
 
 # Regularized Cox model for CVD without interactions, using lipid lowering meds and A1c, WHR, onhypermeds
 
-## Regularized Cox model
+## CVD - Regularized Cox model
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
@@ -850,7 +879,7 @@ form <- str_replace(form,"sex_0m1f","as.factor(sex_0m1f)")
 form <- str_replace(form,"l.duration\\+l.duration_2","poly(l.duration,2)")
 ```
 
-## Cox model using variables selected in regularized Cox model
+## CVD - Cox model using variables selected in regularized Cox model
 
 ### Model results
 
@@ -872,7 +901,7 @@ aic_values <- c(aic_values,extractAIC(c)[2])
 mod_names <- c(mod_names,"CVD, without interactions")
 ```
 
-## LASSO of clinical variables, without interactions
+## CVD - LASSO of clinical variables, without interactions
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
@@ -891,10 +920,11 @@ form <- str_replace(form,"onhypermeds","as.factor(onhypermeds)")
 form <- str_replace(form,"onlipidmeds","as.factor(onlipidmeds)")
 form <- str_replace(form,"smknum","as.factor(smknum)")
 form <- str_replace(form,"sex_0m1f","as.factor(sex_0m1f)")
+form <- str_replace(form,"nhw","as.factor(nhw)")
 form <- str_replace(form,"l.duration\\+l.duration_2","poly(l.duration,2)")
 ```
 
-## Cox model using clinical variables selected by LASSO
+## CVD - Cox model using clinical variables selected by LASSO
 
 ### Model results
 
@@ -914,7 +944,7 @@ aic_values <- c(aic_values,extractAIC(c)[2])
 mod_names <- c(mod_names,"CVD, simple clinical variables, without interactions")
 ```
 
-## Cox model with ASCVD 10 year risk
+## CVD - Cox model with ASCVD 10 year risk
 
 ### Model results
 
@@ -935,7 +965,7 @@ mod_names <- c(mod_names,"CVD, ASCVD 10 year risk")
 
 # Regularized Cox model for hard CVD without interactions, using lipid lowering meds and A1c, WHR, onhypermeds
 
-## Regularized Cox model
+## Hard CVD - Regularized Cox model
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
@@ -955,10 +985,11 @@ form <- str_replace(form,"onhypermeds","as.factor(onhypermeds)")
 form <- str_replace(form,"onlipidmeds","as.factor(onlipidmeds)")
 form <- str_replace(form,"smknum","as.factor(smknum)")
 form <- str_replace(form,"sex_0m1f","as.factor(sex_0m1f)")
+form <- str_replace(form,"nhw","as.factor(nhw)")
 form <- str_replace(form,"l.duration\\+l.duration_2","poly(l.duration,2)")
 ```
 
-## Cox model using variables selected in regularized Cox model
+## Hard CVD - Cox model using variables selected in regularized Cox model
 
 ### Model results
 
@@ -981,7 +1012,7 @@ aic_values <- c(aic_values,extractAIC(c)[2])
 mod_names <- c(mod_names,"Hard CVD, without interactions")
 ```
 
-## LASSO of clinical variables, without interactions
+## Hard CVD - LASSO of clinical variables, without interactions
 
 ```{r, echo=FALSE, comment=""}
 set.seed(3654)
@@ -1000,10 +1031,11 @@ form <- str_replace(form,"onhypermeds","as.factor(onhypermeds)")
 form <- str_replace(form,"onlipidmeds","as.factor(onlipidmeds)")
 form <- str_replace(form,"smknum","as.factor(smknum)")
 form <- str_replace(form,"sex_0m1f","as.factor(sex_0m1f)")
+form <- str_replace(form,"nhw","as.factor(nhw)")
 form <- str_replace(form,"l.duration\\+l.duration_2","poly(l.duration,2)")
 ```
 
-## Cox model using clinical variables selected by LASSO
+## Hard CVD - Cox model using clinical variables selected by LASSO
 
 ### Model results
 
@@ -1023,7 +1055,7 @@ aic_values <- c(aic_values,extractAIC(c)[2])
 mod_names <- c(mod_names,"Hard CVD, simple clinical variables, without interactions")
 ```
 
-## Cox model with ASCVD 10 year risk
+## Hard CVD - Cox model with ASCVD 10 year risk
 
 ### Model results
 
@@ -1124,16 +1156,6 @@ colnames(aic_table) <- c("Model","AIC")
 kable(aic_table)
 ```
 
-# Fit model 4.4 (CAD events) to AHA data using participants with complete data for clinical variables and omics data (not SNPs)
-
-## Clinical model results
-
-```{r, echo=FALSE, comment=""}
-form_cad_clinical <- paste0("Surv(PersonYrsCAD,CAD)",form_cad_clinical)
-c <- coxph(as.formula(form_cad_clinical),data=ada_data_complete)
-c
-```
-
 # Fit model 1.6 (CAC progression) to AHA data using participants with complete data for clinical variables and omics data (not SNPs)
 
 ## Clinical model results
@@ -1141,28 +1163,12 @@ c
 ```{r, echo=FALSE, comment=""}
 refit_mod = glm(as.formula(form_cacp),ada_data_cacp_complete,family = binomial("logit"))
 summary(refit_mod)
+or_refit_mod <- round(exp(cbind(OR = coef(refit_mod), confint(refit_mod))),2)
+or_refit_mod
 refit_mod$aic
 
 pred1 <- predict(refit_mod,ada_data_cacp_complete, type="response")
 auc(ada_data_cacp_complete$CACprogV3_num,pred1)
-```
-
-## Add omics markers (not SNPs)
-
-```{r, echo=FALSE, comment=""}
-# model won't converge - need to pare it down
-
-#form_cacp_omics <- paste0(form_cacp,"+ gly_P02671.7 + gly_P02671.5 + gly_P02671.4 + gly_P02671.3 + AAA01201000179.0807263.4 + gly_P02679 + HMDB00510161.0696402.9 + AAA01201000179.0809235.7 +
-#                          gly_P02675.4 + gly_P02675 + gly_P02647 + P02655 + gly_P02647.1 + HMDB00510161.0694436 + gly_P02652 + gly_P01009 + gly_P01834.11 + P01817 +
-#                          HMDB00510161.0694436 + gly_P02652 + gly_P01009 + gly_P01834.11 + P01817 + `AcCa 10:3` + HMDB0028822260.1378628.6 + AAA01201000179.0807263.4 + gly_P02671.3 + 
-#                          gly_P02671.7")
-
-#refit_mod_omics = glm(as.formula(form_cacp_omics),ada_data_cacp_complete,family = binomial("logit"))
-#summary(refit_mod_omics)
-#refit_mod_omics$aic
-
-#pred1 <- predict(refit_mod_omics,ada_data_cacp_complete, type="response")
-#auc(ada_data_cacp_complete$CACprogV3_num,pred1)
 ```
 
 ## Add omics markers (not SNPs) - only markers significant by moderated t-test
@@ -1185,6 +1191,8 @@ form_cacp_omics <- paste0(form_cacp,"+ AAA01201000179.0807263.4 + gly_P02671.7 +
 
 refit_mod_omics = glm(as.formula(form_cacp_omics),ada_data_cacp_complete,family = binomial("logit"))
 summary(refit_mod_omics)
+or_refit_mod_omics <- round(exp(cbind(OR = coef(refit_mod_omics), confint(refit_mod_omics))),2)
+or_refit_mod_omics
 refit_mod_omics$aic
 
 pred1 <- predict(refit_mod_omics,ada_data_cacp_complete, type="response")
