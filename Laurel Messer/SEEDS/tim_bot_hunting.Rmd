@@ -15,6 +15,7 @@ library(arsenal)
 library(tidyverse)
 library(lubridate)
 library(DT)
+library(stringdist)
 library(knitr)
 knitr::opts_chunk$set(echo = FALSE)
 if(Sys.info()["sysname"] == "Windows"){
@@ -32,9 +33,9 @@ rm(home_dir)
 df = read.csv("./Laurel Messer/SEEDS/Data_Cleaned/Complete_data_1-12-2022.csv",na.strings = "")
 ```
 
-# Summary
+# Time to complete
 
-```{r results='asis'}
+```{r results='asis',warning=FALSE}
 # Time at end of consent to time at end of survey
 df$time = difftime(mdy_hm(df$Survey.Timestamp.1),
                    mdy_hm(df$Survey.Timestamp),units = "mins")
@@ -43,16 +44,68 @@ t1 = tableby(~notest(time,"Nmiss","median","q1q3"),df)
 summary(t1)
 ```
 
-## Time < Q1
+## Time < 5 minutes
 
 ```{r}
-
+df %>% filter(time < 5) %>%
+  select(First.name,Last.name,Email.address,Organization.,Practice.name.,
+         Practice.setting.,time) %>% arrange(time) %>% datatable(.)
+df$TIM_verification_Real...1..quest...2..fake...3[df$time < 5] = 3
 ```
 
 # Matching names to email
 
+Names and emails (converted to lower case with numbers and punctuation removed) were converted to q-grams and the Euclidean distance between the two was calculated. For full names, 2-grams were used, and for initials single letters were used. 
+
+A name distance > 4 was chosen somewhat arbitrarily as exclusion criterion, but it appeared to capture obviously fake emails without accidentally excluding those with initials in their email address. 
+
 ```{r}
+# Emails, names, and initials 
 emails = tolower(sub("@.*","",df$Email.address))
+emails = gsub("[^a-zA-Z]", "", emails)
 names = tolower(paste0(df$First.name,df$Last.name))
+names = gsub("[^a-zA-Z]", "", names)
 initials = tolower(paste0(substr(df$First.name,1,1),substr(df$Last.name,1,1)))
+names_emails = cbind(names,initials,emails)
+# Split into 2-grams and calculate distance
+max_length = max(c(sapply(names,nchar),sapply(emails,nchar)),na.rm = T)
+df$dist_name_2gram = apply(names_emails,1,function(r){
+  q = data.frame(qgrams(r["names"],r["emails"],q = 2))
+  # Normalize to length
+  q[,(ncol(q)+1):max_length] = 0
+  as.numeric(dist(q))
+})
+df$dist_initials_2gram = apply(names_emails,1,function(r){
+  q = data.frame(qgrams(r["initials"],r["emails"],q = 1))
+  # Normalize to length
+  q[,(ncol(q)+1):max_length] = 0
+  as.numeric(dist(q))
+})
+# Print
+df %>% select(First.name,Last.name,Email.address,dist_name_2gram) %>% 
+  filter(dist_name_2gram > 4) %>%
+  arrange(desc(dist_name_2gram)) %>% datatable(.)
+# Mark as fake
+df$TIM_verification_Real...1..quest...2..fake...3[df$dist_name_2gram > 4] = 3
+```
+
+# Identical responses
+
+There were no identical responses across all questions except for incomplete records. 
+
+## Free text
+
+```{r}
+df %>% count(X1..Do.you.have.any.other.comments.insights.about.the.Tools.listed.above.that.would.help.us.create.meaningful.Tools..Please.be.as.descriptive.as.possible.) %>% arrange(desc(n)) %>% filter(n > 1) %>% kable(.)
+
+df %>% count(X2..In.addition.to.the.Tools.described.above..what.other.support.or.resources.would.help.you.utilize.diabetes.devices.more.in.your.clinical.practice..Please.be.as.descriptive.as.possible.) %>% arrange(desc(n)) %>% filter(n > 1) %>% kable(.)
+
+df %>% count(X3..Imagine.if.you.your.practice.could.obtain.personalized.support.for.diabetes.devices.from.a.specialty.diabetes.center..Please.describe.in.as.much.detail.as.possible.what.that.would.ideally.entail.Example..Would.you.prefer.one.time.set.up.assistance..periodic.check.ins..or.more.intensive.communication..What.would.be.the.most.important.topics.for.support..workflow..how.to.adjust.insulin.doses..device.training..patient.education..etc....) %>% arrange(desc(n)) %>% filter(n > 1) %>% kable(.)
+
+df %>% count(X4..Time.management.is.an.enormous.issue.for.clinical.care.appointments..In.what.ways.could.you.envision.an.Online.Diabetes.Device.Pathway.helping.with.time.management.during.or.after.clinical.care.visits.) %>% arrange(desc(n)) %>% filter(n > 1) %>% kable(.)
+```
+
+```{r}
+# Write
+write.csv(df,file = "./Laurel Messer/SEEDS/Data_Cleaned/bots_flagged_TV.csv",row.names = F,na = "")
 ```
