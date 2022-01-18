@@ -16,6 +16,7 @@ library(tidyverse)
 library(lubridate)
 library(DT)
 library(stringdist)
+library(SimplyAgree)
 library(knitr)
 knitr::opts_chunk$set(echo = FALSE)
 if(Sys.info()["sysname"] == "Windows"){
@@ -105,7 +106,36 @@ df %>% count(X3..Imagine.if.you.your.practice.could.obtain.personalized.support.
 df %>% count(X4..Time.management.is.an.enormous.issue.for.clinical.care.appointments..In.what.ways.could.you.envision.an.Online.Diabetes.Device.Pathway.helping.with.time.management.during.or.after.clinical.care.visits.) %>% arrange(desc(n)) %>% filter(n > 1) %>% kable(.)
 ```
 
-```{r eval=FALSE}
+# Laurel, Greg, and Tim (with Casey's help) combined
+
+```{r}
+# Combine Tim and Casey
+tim = read.csv("./Laurel Messer/SEEDS/Data_Cleaned/bots_flagged_TV2022-01-14.csv",
+               na.strings = "") %>% arrange(Record.ID)
+casey = read.csv("./Laurel Messer/SEEDS/Data_Cleaned/bots_flagged_CS2022-01-14.csv",
+                 na.strings = c("","NA")) %>% arrange(Record.ID)
+# Merge
+laurel = read.csv("./Laurel Messer/SEEDS/Data_Cleaned/Complete_data_1-12-2022_Laurel.csv")
+greg = read.csv("./Laurel Messer/SEEDS/Data_Cleaned/Complete_data_1-12-2022_Greg.csv")
+final = full_join(laurel %>% select(Record.ID,LAUREL_Real...1..quest...2..fake...3),
+                  greg %>% select(Record.ID,GREG_verification_Real...1..quest...2..fake...3),
+                  by = "Record.ID") %>%
+  full_join(.,tim %>% select(Record.ID,TIM_verification_Real...1..quest...2..fake...3),
+            by = "Record.ID")
+colnames(final) = c("ID","Laurel","Greg","Tim")
+# Compare
+tim_greg = agree_test(final$Tim,final$Greg)
+greg_laurel = agree_test(final$Greg,final$Laurel)
+tim_laurel = agree_test(final$Tim,final$Laurel)
+# Add up
+final$Sum = rowSums(final[,2:ncol(final)])
+final$Final = cut(final$Sum,c(-Inf,3,8,Inf),labels = c("Real","Questionable","Fake"))
+# Add email back
+final$Email = laurel$Email.address[match(final$ID,laurel$Record.ID)]
+final = final %>% select(ID,Email,everything())
 # Write
-write.csv(df,file = "./Laurel Messer/SEEDS/Data_Cleaned/bots_flagged_TV.csv",row.names = F,na = "")
+write.csv(final,file = "./Laurel Messer/SEEDS/Data_Cleaned/SEEDS data flagged 2022-01-18.csv",
+          row.names = F,na = "")
 ```
+
+Laurel and Greg agreed approximately `r round(as.numeric(greg_laurel$ccc.xy[1])*100,1)`% of the time (`r paste0(round(as.numeric(greg_laurel$ccc.xy[2])*100,1),"% - ",round(as.numeric(greg_laurel$ccc.xy[3])*100,1),"%")`), Laurel and Tim agreed approximately `r round(as.numeric(tim_laurel$ccc.xy[1])*100,1)`% of the time (`r paste0(round(as.numeric(tim_laurel$ccc.xy[2])*100,1),"% - ",round(as.numeric(tim_laurel$ccc.xy[3])*100,1),"%")`), and Tim and Greg agreed approximately `r round(as.numeric(tim_greg$ccc.xy[1])*100,1)`% of the time (`r paste0(round(as.numeric(tim_greg$ccc.xy[2])*100,1),"% - ",round(as.numeric(tim_greg$ccc.xy[3])*100,1),"%")`).
