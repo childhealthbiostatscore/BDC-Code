@@ -55,7 +55,7 @@ def cgm_metrics(cleaned_cgm):
     # Return results
     return results
 # Get file paths
-files = listdir(wd + "./Data raw/CGM")
+files = listdir(wd + "/Data raw/CGM")
 # Iterate through, clean, and calculate variables
 all_results = []
 night_results = []
