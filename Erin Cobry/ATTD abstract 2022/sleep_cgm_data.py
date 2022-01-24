@@ -5,7 +5,7 @@ from datetime import datetime
 from statistics import mode
 from collections import defaultdict,Counter
 # Working directory and date parser
-wd = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/Prospective HCL and sleep study"
+wd = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/Prospective HCL and sleep study"
 cal = parsedatetime.Calendar()
 # CGM metric function
 def cgm_metrics(cleaned_cgm):
