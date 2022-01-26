@@ -5,7 +5,7 @@ from datetime import datetime
 from statistics import mode
 from collections import defaultdict,Counter
 # Working directory and date parser
-wd = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/Prospective HCL and sleep study"
+wd = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/Prospective HCL and sleep study"
 cal = parsedatetime.Calendar()
 # CGM metric function
 def cgm_metrics(cleaned_cgm):
@@ -55,7 +55,7 @@ def cgm_metrics(cleaned_cgm):
     # Return results
     return results
 # Get file paths
-files = listdir(wd + "./Data raw/CGM")
+files = listdir(wd + "/Data raw/CGM")
 # Iterate through, clean, and calculate variables
 all_results = []
 night_results = []
