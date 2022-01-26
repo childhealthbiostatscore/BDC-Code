@@ -2,7 +2,10 @@
 ###Summary Stats###
 source("S:/Shared Material/Shared Code/R/temp_table1.R")
 
+label(dat.one$total_visits)<-"Total Visits in Study"
+label(dat.one$research_period_visits)<-"Research Period Visits"
 dat.one$Race.Ethnicity<-factor(dat.one$Race.Ethnicity)
+label(dat.one$Race.Ethnicity)<-"Ethnicity"
 dat.one$dp3<-as.factor(dat.one$dp3)
 
 table1<-final_table(dat.one,c("Gender","Age_eachvisit","Race.Ethnicity","InsuranceType_VisitDate",

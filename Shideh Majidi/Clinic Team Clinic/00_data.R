@@ -178,12 +178,12 @@ summary_stats<-function(ID,data){
     dat.temp<-dat.temp[order(dat.temp$VisitDate),]
     ##TIME PERIODS:
     dat.temp$research_period_visits<-nrow(subset(dat.temp,dat.temp$time_period=="During RTC"))
-    dat.temp$research_period_time<-difftime(max(dat.temp$VisitDate[dat.temp$time_period=="During RTC"]),
-                                            min(dat.temp$VisitDate[dat.temp$time_period=="During RTC"]))
+    dat.temp$research_period_time<-as.numeric(difftime(max(dat.temp$VisitDate[dat.temp$time_period=="During RTC"]),
+                                            min(dat.temp$VisitDate[dat.temp$time_period=="During RTC"])))
 
     dat.temp$post_period_visits<-nrow(subset(dat.temp,dat.temp$time_period!="During RTC"))
-    dat.temp$post_period_time<-difftime(max(dat.temp$VisitDate[dat.temp$time_period!="During RTC"]),
-                                        min(dat.temp$VisitDate[dat.temp$time_period!="During RTC"]))
+    dat.temp$post_period_time<-as.numeric(difftime(max(dat.temp$VisitDate[dat.temp$time_period!="During RTC"]),
+                                        min(dat.temp$VisitDate[dat.temp$time_period!="During RTC"])))
     if (dat.temp$group[1]=="CTC"){
       dat.temp$time_period[dat.temp$row_num>=dat.temp$row_num_first_CTC & dat.temp$row_num<=dat.temp$row_num_last_CTC]<-"CTC"
     }
@@ -266,8 +266,10 @@ label(dat$Age_eachvisit)<-'Age at baseline'
 label(dat$A1C_Value)<-"A1c - baseline"
 label(dat$avg_a1c_pre)<-"A1c - average in pre-period"
 label(dat$avg_a1c_post)<-"A1c - average in post-period"
-dat$avg_a1c_change<-dat$avg_a1c_pre-dat$avg_a1c_post #if +, then pre is higher than post. if - then pre is less than post
-label(dat$avg_a1c_change)<-"A1c -  change (pre minus post)"
+# LP changed definition of change in A1c to be post-pre, so + if A1c increases
+dat$avg_a1c_change<-dat$avg_a1c_post-dat$avg_a1c_pre
+#dat$avg_a1c_change<-dat$avg_a1c_pre-dat$avg_a1c_post #if +, then pre is higher than post. if - then pre is less than post
+label(dat$avg_a1c_change)<-"A1c -  change (post minus pre)"
 
 label(dat$Meter_BGHigh)<-"Meter BG High - baseline"
 label(dat$Meter_BGLow)<-"Meter BG Low - baseline"
