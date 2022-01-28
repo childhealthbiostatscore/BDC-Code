@@ -26,11 +26,22 @@ pdf_cgm_data = function(indir,skip = NULL){
     readings = as.numeric(df$text[which(df$x == 107 & df$y == 206)])
     # Insulin and diet
     basal = as.numeric(df$text[which(df$x == 374 & df$y == 116)])
+    bolus = as.numeric(df$text[which(df$x == 469 & df$y == 116)])
+    overrides = df$text[which(df$x == 466 & df$y == 161)]
+    bolus_day = as.numeric(df$text[which(df$x == 466 & df$y == 171)])
+    carbs_day = as.numeric(df$text[which(df$x == 467 & df$y == 227)])
+    entries_day = as.numeric(df$text[which(df$x == 467 & df$y == 238)])
     # Add to summary df
     pdf_summary[f,"first_name"] = strsplit(name," ")[[1]][1]
     pdf_summary[f,"last_name"] = strsplit(name," ")[[1]][2]
     pdf_summary[f,"average_bg"] = avg_bg
     pdf_summary[f,"readings_per_day"] = readings
+    pdf_summary[f,"basal_units"] = basal
+    pdf_summary[f,"bolus_units"] = bolus
+    pdf_summary[f,"overrides"] = overrides
+    pdf_summary[f,"bolus_per_day"] = bolus_day
+    pdf_summary[f,"carbs_per_day"] = carbs_day
+    pdf_summary[f,"carb_entries_per_day"] = entries_day
   }
   return(pdf_summary)
 }
