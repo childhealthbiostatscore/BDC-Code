@@ -6,6 +6,14 @@ setwd("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Proj
 sample_info = read.csv("./Metabolomics/Data_Cleaned/targeted.csv",na.strings = "")
 # Delete empty columns
 sample_info[,which(colSums(is.na(sample_info))==nrow(sample_info))] = NULL
+# Add SAS dataset info
+sas = read.sas7bdat("./Combined predictive model/PATwide.sas7bdat")
+sas$STUDYID = as.integer(sas$STUDYID)
+sample_info = left_join(sample_info,sas,by = c("StudyID" = "STUDYID"))
+sas = read.sas7bdat("./Combined predictive model/uricacid_b.sas7bdat")
+sas$comment = NULL
+sas$StudyID = as.integer(sas$StudyID)
+sample_info = left_join(sample_info,sas,by = "StudyID")
 # Targeted metabolites
 targeted_metabs = 
   colnames(sample_info)[which(colnames(sample_info)=="Betaine"):ncol(sample_info)]
