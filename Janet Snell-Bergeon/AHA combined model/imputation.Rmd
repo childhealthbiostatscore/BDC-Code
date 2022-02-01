@@ -14,6 +14,8 @@ output:
 library(arsenal)
 library(tidyverse)
 library(performance)
+library(caret)
+library(mice)
 library(knitr)
 knitr::opts_chunk$set(echo = FALSE)
 if(Sys.info()["sysname"] == "Windows"){
@@ -27,5 +29,53 @@ knitr::opts_knit$set(root.dir = home_dir)
 ```
 
 ```{r}
+# Import
 load("./Janet Snell-Bergeon/AHA collaborative grant/aha_master_data.Rdata")
+# Make new variables
+df$smknum = as.numeric(!(df$SmkStatusV1 == "Former" | df$SmkStatusV1 == "Never"))
+df$SmkPackYrsV1[df$SmkStatusV1 == "Former" | df$SmkStatusV1 == "Never"] = 0
+df$smknum = df$smknum * df$SmkPackYrsV1
+df$duration_cat = cut(df$durationV1,breaks = c(-Inf,23,Inf),right = F)
+# Columns from Laura's model
+columns_from_laura = c(snps,"gly_P02671.7","gly_P02671.5",
+                       "gly_P02671.4","gly_P02671.3","AAA01201000179.0807263.4",
+                       "gly_P02679","HMDB00510161.0696402.9",
+                       "AAA01201000179.0809235.7","gly_P02675.4","gly_P02675",
+                       "gly_P02647","P02655","gly_P02647.1",
+                       "HMDB00510161.0694436","gly_P02652","gly_P01009",
+                       "gly_P01834.11","P01817","AcCa 10:3",
+                       "HMDB0028822260.1378628.6","AAA01201000179.0807263.4",
+                       "gly_P02671.3","gly_P02671.7","age", "onhypermedsV1",
+                       "onlipidmedsV1", "ldlV1", "smknum","SmkStatusV1","race","cholV1", 
+                       "duration_cat")
+outcomes = c("CACanyV1")
+# Factor variables
+cat_vars = c("race","onhypermedsV1","onlipidmedsV1","SmkStatusV1")
+df[,cat_vars] = lapply(df[,cat_vars], as.factor)
+# Log transform some
+to_transform = c("bmiV1","avediabpV1","hdlcV1","CKDepiV1","acV1",
+                 "insdoseperkgV1","hba1cV1")
+log_transformed = paste0("l.",sub("V1","",to_transform))
+df[,log_transformed] = log(df[,to_transform])
+df[,to_transform] = NULL
+# Remove duplicates
+df = df[!df$StudyID %in% df$StudyID[duplicated(df$StudyID)],]
+# Rename columns - mice has trouble with spaces and punctuation
+columns_from_laura = gsub(" |[[:punct:]]","_",columns_from_laura)
+colnames(df) = gsub(" |[[:punct:]]","_",colnames(df))
+# Remove variables no variance for imputation model
+near_zero = colnames(df)[nearZeroVar(df)]
+near_zero = near_zero[-which(near_zero == "race")]
+exclude = c("StudyID",snps)
+exclude = unique(exclude)
+t = df %>% select(all_of(c(columns_from_laura,"CACanyV1"))) %>%
+  select(-any_of(exclude))
 ```
+
+# Missing data
+
+```{r}
+p = md.pattern(t, plot = T,rotate.names = T)
+```
+
+The numbers on the left side of the above plot
