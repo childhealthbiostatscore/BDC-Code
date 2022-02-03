@@ -113,7 +113,7 @@ scores = data %>%
 scores$num_id = as.numeric(substr(scores$record_id,1,4))
 scores$Timepoint = factor(scores$Timepoint,levels = c("baseline","3_month",
                                                       "6_month","9_month","12_month"),
-                          labels = c("Baseline","3 Month","6 Month","9_month","12 Month"))
+                          labels = c("Baseline","3 Month","6 Month","9 month","12 Month"))
 scores$num_time = recode(scores$Timepoint,"Baseline" = 0,"3 Month" = 3,
                          "6 Month" = 6,"9 Month"=9,"12 Month" = 12)
 
@@ -149,6 +149,8 @@ model_and_plot = function(outcome_name,ylab,group_var,df,pois = F){
   print(p)
   print(kable(anova(mod),digits = 3,caption = "Type III ANOVA"))
   print(kable(summary(mod)$coefficients,digits = 3,caption = "Fixed Effects"))
+  print(kable(emmeans(mod,"Timepoint"),caption="Time point means"))
+  print(kable(pairs(emmeans(mod,"Timepoint")),caption="Comparison of time points"))
 }
 ```
 
@@ -333,8 +335,7 @@ model_and_plot("pedsql_total_score","Total score","record_id",parent_pedsql[pare
 How to interpret these models: in the table labeled "Fixed Effects," the estimate for the CEFIS measure is the change in the Peds-QL measure for a one unit change in the CEFIS measure.
 
 ```{r}
-# Looks like children did not complete CEFIS
-#child_pedsql_cefis <- merge(child_pedsql,scores,by=c("record_id","Timepoint"),all.x = T, all.y = F)
+child_pedsql_cefis <- merge(child_pedsql,scores,by=c("record_id","Timepoint"),all.x = T, all.y = F)
 parent_pedsql_cefis <- merge(parent_pedsql,scores,by=c("record_id","Timepoint"),all.x = T, all.y = F)
 parent_pedsql_cefis$num_time <- parent_pedsql_cefis$num_time.x
 parent_pedsql_cefis$num_id <- parent_pedsql_cefis$num_id.x
@@ -431,6 +432,15 @@ fit_mod = function(outcome,df,plot = T,diagnostics = F){
 ### Children
 
 ```{r}
+# rename data to alldata
+alldata <- data %>% 
+  mutate(Timepoint = sub("_arm_.*","",redcap_event_name))
+alldata$Timepoint = factor(alldata$Timepoint,levels = c("baseline","3_month",
+                                                                    "6_month","9_month","12_month"),
+                                 labels = c("Baseline","3 Month","6 Month","9 Month","12 Month"))
+alldata$num_time = recode(alldata$Timepoint,"Baseline" = 0,"3 Month" = 3,
+                                "6 Month" = 6,"9 Month" = 9,"12 Month" = 12)
+
 source("C:/Users/pylell/Documents/GitHub/BDC-Code/Erin Cobry/COVID Quality of Life/score_promis.r")
 
 exclude = c("1012","2012","1018","2018","1028","2028","1037","2037",
@@ -451,15 +461,9 @@ promis_parent_proxy = promis_parent_proxy[-exclude,]
 model_and_plot("disturbance","Disturbance","record_id",promis_peds)
 ```
 
-```{r results='asis'}
-fit_mod("disturbance",promis_peds)
-```
-
-
-
 ### Parent Proxy
 
-```{r}
+```{r results='asis'}
 model_and_plot("disturbance","Disturbance","record_id",promis_parent_proxy)
 ```
 
@@ -475,4 +479,93 @@ model_and_plot("impairment","Impairment","record_id",promis_peds)
 
 ```{r results='asis'}
 model_and_plot("impairment","Impairment","record_id",promis_parent_proxy)
+```
+
+# HbA1c
+
+```{r results='asis'}
+model_and_plot("hba1c","HbA1c","record_id",alldata[as.numeric(substr(alldata$record_id,1,4))>=2000,])
+```
+
+# Average glucose
+
+```{r results='asis'}
+model_and_plot("avg_glucose","Average glucose","record_id",alldata[as.numeric(substr(alldata$record_id,1,4))>=2000,])
+```
+
+# Canceled visits
+
+```{r results='asis'}
+model_and_plot("canceled_visits","Canceled visits","record_id",alldata[as.numeric(substr(alldata$record_id,1,4))>=2000,])
+```
+
+# Association between parent CEFIS scores and diabetes outcomes
+
+How to interpret these models: in the table labeled "Fixed Effects," the estimate for the CEFIS measure is the change in the diabetes outcome for a one unit change in the CEFIS measure.
+
+```{r}
+alldata_cefis <- merge(alldata,scores,by=c("record_id","Timepoint"),all.x = T, all.y = F)
+parent_cefis <- alldata_cefis %>% filter(as.numeric(substr(alldata$record_id,1,4))<2000)
+parent_cefis$num_time <- parent_cefis$num_time.x
+parent_cefis$num_id <-  as.numeric(substr(parent_cefis$record_id,1,4))
+
+# Link child diabetes data and parent CEFIS
+childdiabetes <- alldata[as.numeric(substr(alldata$record_id,1,4))>=2000,c("record_id","Timepoint","hba1c","avg_glucose","canceled_visits")]
+childdiabetes$num_id <- as.numeric(substr(childdiabetes$record_id,1,4)) - 1000
+parent_cefis_child_diabetes <- merge(parent_cefis,childdiabetes,by=c("num_id","Timepoint"),all.x = T,all.y = F)
+parent_cefis_child_diabetes$record_id <-  parent_cefis_child_diabetes$record_id.x
+```
+
+## Exposure and HbA1c
+
+```{r results='asis'}
+tvc("hba1c","exposure_sum",parent_cefis_child_diabetes[parent_cefis_child_diabetes$exposure_sum>0,])
+```
+
+## Impact and HbA1c
+
+```{r results='asis'}
+tvc("hba1c","impact_mean",parent_cefis_child_diabetes[parent_cefis_child_diabetes$exposure_sum>0,])
+```
+
+## Distress and HbA1c
+
+```{r results='asis'}
+tvc("hba1c","distress",parent_cefis_child_diabetes[parent_cefis_child_diabetes$exposure_sum>0,])
+```
+
+## Exposure and average glucose
+
+```{r results='asis'}
+tvc("average_glucose","exposure_sum",parent_cefis_child_diabetes[parent_cefis_child_diabetes$exposure_sum>0,])
+```
+
+## Impact and average glucose
+
+```{r results='asis'}
+tvc("average_glucose","impact_mean",parent_cefis_child_diabetes[parent_cefis_child_diabetes$exposure_sum>0,])
+```
+
+## Distress and average glucose
+
+```{r results='asis'}
+tvc("average_glucose","distress",parent_cefis_child_diabetes[parent_cefis_child_diabetes$exposure_sum>0,])
+```
+
+## Exposure and canceled visits
+
+```{r results='asis'}
+tvc("canceled_visits","exposure_sum",parent_cefis_child_diabetes[parent_cefis_child_diabetes$exposure_sum>0,])
+```
+
+## Impact and canceled visits
+
+```{r results='asis'}
+tvc("canceled_visits","impact_mean",parent_cefis_child_diabetes[parent_cefis_child_diabetes$exposure_sum>0,])
+```
+
+## Distress and canceled visits
+
+```{r results='asis'}
+tvc("canceled_visits","distress",parent_cefis_child_diabetes[parent_cefis_child_diabetes$exposure_sum>0,])
 ```
