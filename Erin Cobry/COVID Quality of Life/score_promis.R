@@ -18,10 +18,10 @@ promis_peds$child_slept <- promis_peds$child_slept+2*(3-promis_peds$child_slept)
 promis_peds <- promis_peds %>% select(record_id,num_time,Timepoint,child_falling:child_problems_day) %>%
   mutate(disturbance = rowSums(select(.,child_falling:child_trouble_sleep)),
          impairment = rowSums(select(.,child_sleepy:child_problems_day)))
-# need to update this part once Erin sends the corrected t-tables
 # Convert to T scores
 peds_disturbance_short = read.csv("./Erin Cobry/ADA 2022/COVID/Data clean/peds_sleep_disturbance_short.csv")
 peds_impairment_short = read.csv("./Erin Cobry/ADA 2022/COVID/Data clean/peds_sleep_impairment_short.csv")
+colnames(peds_impairment_short) <- c("Raw.Summed.Score","T.Score","SE","Theta.Score")
 promis_peds$disturbance = 
   peds_disturbance_short$T.Score[match(promis_peds$disturbance,
                                        peds_disturbance_short$Raw.Summed.Score)]
@@ -47,7 +47,6 @@ promis_parent_proxy$slept_night <- promis_parent_proxy$slept_night+2*(3-promis_p
 promis_parent_proxy <- promis_parent_proxy %>% select(record_id,num_time,Timepoint,diff_sleep:probl_day) %>%
   mutate(disturbance = rowSums(select(.,diff_sleep:troub_sleep)),
          impairment = rowSums(select(.,sleepy_day:probl_day)))
-# need to update this part once Erin sends the corrected t-tables
 # Convert to T scores
 parent_disturbance_short = read.csv("./Erin Cobry/ADA 2022/COVID/Data clean/parent_proxy_sleep_disturbance_short.csv")
 parent_impairment_short = read.csv("./Erin Cobry/ADA 2022/COVID/Data clean/parent_proxy_sleep_impairment_short.csv")
