@@ -1,9 +1,17 @@
+if(Sys.info()["sysname"] == "Windows"){
+  home_dir = "B:/Projects"
+} else if (Sys.info()["sysname"] == "Linux"){
+  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+} else if (Sys.info()["sysname"] == "Darwin"){
+  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+}
+
 ############
 # AGES 5-7 #
 ############
 
 # read in data from children ages 5-7
-data57 <- read.csv("B:\\Projects\\Erin Cobry\\COVID Quality of Life\\Data_Raw\\HealthRelatedQuality-PedsQLAges57_DATA_2021-07-15_1431.csv",na.strings = c("",NA))
+data57 <- read.csv("B:/Projects/Erin Cobry/ADA 2022/COVID/Data raw/HealthRelatedQuality-PedsQLAges57_DATA_2022-02-01_1822.csv",na.strings = c("",NA))
 # first we need to fix scoring
 data57$"pedsql_child_self_report_ages_57_complete" <- NULL
 temp <- rep(NA,ncol(data57)*nrow(data57))
@@ -107,7 +115,7 @@ comm <- NULL
 #############
 
 # read in data from children ages 8-17
-data817 <- read.csv("B:\\Projects\\Erin Cobry\\COVID Quality of Life\\Data_Raw\\HealthRelatedQuality-PedsQLAges817_DATA_2021-07-15_1433.csv",na.strings = c("",NA))
+data817 <- read.csv("B:/Projects/Erin Cobry/ADA 2022/COVID/Data raw/HealthRelatedQuality-PedsQLAges817_DATA_2022-02-01_1823.csv",na.strings = c("",NA))
 # first we need to fix scoring
 data817$"pedsql_child_self_report_ages_817_complete" <- NULL
 temp <- rep(NA,ncol(data817)*nrow(data817))
@@ -217,7 +225,7 @@ comm <- NULL
 ############
 
 # read in parent data for ages 5-17
-dataparent <- read.csv("B:\\Projects\\Erin Cobry\\COVID Quality of Life\\Data_Raw\\HealthRelatedQuality-PedsQLParentProxyAge_DATA_2021-07-15_1451.csv",na.strings = c("",NA))
+dataparent <- read.csv("B:/Projects/Erin Cobry/ADA 2022/COVID/Data raw/HealthRelatedQuality-PedsQLParentProxyAge_DATA_2022-02-01_1823.csv",na.strings = c("",NA))
 # first we need to fix scoring
 dataparent$pedsql_parent_proxy_all_ages_complete <- NULL
 temp <- rep(NA,ncol(dataparent)*nrow(dataparent))
