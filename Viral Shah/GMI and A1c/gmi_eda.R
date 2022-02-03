@@ -12,6 +12,4 @@ summary(seg)
 df$pred = predict(seg)
 ggplot(df,aes(x = gluMean,y = a1cLab)) + 
   geom_point() + geom_line(aes(y = pred),color = "red") +
-  xlab("MBG") + ylab("HbA1c") + 
-  theme_bw()
-  
+  xlab("MBG") + ylab("HbA1c") + theme_bw()
