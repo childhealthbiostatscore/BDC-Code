@@ -1,0 +1,64 @@
+---
+title: "Simulating Metabolomic Data"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(arsenal)
+library(tidyverse)
+library(performance)
+library(randcorr)
+library(MASS)
+library(igraph)
+library(networkD3)
+library(knitr)
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r warning=FALSE}
+set.seed(1017)
+# Random correlation matrix
+N = 50
+r = randcorr(N)
+# Set some correlations to 0 (p_con controls likelihood of connected nodes)
+p_con = 0.02
+net = matrix(sample(0:1, N^2, replace=TRUE, prob=c(1-p_con,p_con)), nc=N)
+r = net*r
+# Make symmetric
+l = lower.tri(r)*r
+u = t(l)
+r = l + u
+diag(r) = 1
+```
+
+```{r}
+# To igraph object
+g = graph_from_adjacency_matrix(r,weighted = T,diag = F)
+# Edge and node lists for plotting
+e = igraph_to_networkD3(g)
+# Plot
+forceNetwork(Links = e$links, Nodes = e$nodes, Source = "source",
+             Target = "target", Value = "value", NodeID = "name",
+             Group = "name",zoom = T,charge = -10)
+```
+
+```{r}
+set.seed(1017)
+# Number of samples
+n = 1000
+# Correlation matrix to covariance
+# No 0s in SD!
+sds = round(rnorm(N,mean = 10,sd = 1))
+# diag(S)%*%R%*%diag(S) is covariance where S is SD vector
+cov = diag(sds) %*% r %*% diag(sds)
+# Means
+mus = round(rnorm(N,mean = 100,sd = 10))
+sim <- mvrnorm(n,mus,cov) 
+```
