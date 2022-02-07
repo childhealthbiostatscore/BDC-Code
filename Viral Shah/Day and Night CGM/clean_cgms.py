@@ -6,7 +6,7 @@ import datetime
 from dateutil.parser import parse
 
 # Import data
-wd = "/Users/timvigers/Documents/Work/Viral Shah/Day and Night CGM/"
+wd = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Day and Night CGM/"
 # Most recent HbA1c information
 a1cs = pd.read_csv(wd + "Data_Clean/a1cs.csv", parse_dates=["MostRecentVisitDate"])
 # Iterate through CGM files, match with row in a1cs df, calculate metrics
