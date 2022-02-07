@@ -89,7 +89,7 @@ for fol in folders:
         tir = [g for g in cgm["glucose"] if g >= 70 and g <= 140]
         mbg = cgm["glucose"].mean()
         # Split into day and night
-        day = cgm.between_time("6:00", "23:00", include_start=False, include_end=False)
+        day = cgm.between_time("6:00", "23:00", inclusive = "neither")
         night = cgm.between_time("23:00", "6:00")
         # Skip if no data
         if cgm.shape[0] == 0:
