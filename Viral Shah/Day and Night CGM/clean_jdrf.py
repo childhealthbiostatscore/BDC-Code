@@ -6,7 +6,7 @@ import numpy as np
 from datetime import datetime
 from statistics import mode
 
-wd = "/Users/timvigers/Dropbox/Work/Viral Shah/Day and Night CGM/"
+wd = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Day and Night CGM/"
 cal = parsedatetime.Calendar()
 # Results dict for storing data
 results = {
@@ -86,7 +86,7 @@ for fol in folders:
         cgm = cgm.loc[start_date:end_date]
         # All 
         total_r = cgm["glucose"].notna().sum()
-        tir = [g for g in cgm["glucose"] if g >= 70 and g <= 180]
+        tir = [g for g in cgm["glucose"] if g >= 70 and g <= 140]
         mbg = cgm["glucose"].mean()
         # Split into day and night
         day = cgm.between_time("6:00", "23:00", include_start=False, include_end=False)
@@ -96,10 +96,10 @@ for fol in folders:
             continue
         # Day and night TIR
         day_r = day["glucose"].notna().sum()
-        day_tir = [g for g in day["glucose"] if g >= 70 and g <= 180]
+        day_tir = [g for g in day["glucose"] if g >= 70 and g <= 140]
         day_mbg = day["glucose"].mean()
         night_r = night["glucose"].notna().sum()
-        night_tir = [g for g in night["glucose"] if g >= 70 and g <= 180]
+        night_tir = [g for g in night["glucose"] if g >= 70 and g <= 140]
         night_mbg = night["glucose"].mean()
         # Write results
         results["total_tir"].append(round(len(tir) / total_r * 100, 2))
