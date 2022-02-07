@@ -38,7 +38,6 @@ df = {
 # os.listdir(wd+'Data_Clean/cgms/')
 # ['Nessinger.12.9.2019_90days.xlsx']
 for file in os.listdir(wd + "Data_Clean/cgms/"):
-    print(file)
     # File extensioncontinueading in
     ext = pathlib.Path(wd + "Data_Raw/Patient 90 days/" + file).suffix
     if "xls" in ext:
@@ -74,7 +73,7 @@ for file in os.listdir(wd + "Data_Clean/cgms/"):
         start = end - datetime.timedelta(days=delta)
         c = cgm[(cgm["time"] >= start) & (cgm["time"] < end)]
         # Calculate CGM metrics
-        day = c.between_time("6:00", "23:00", include_start=False, include_end=False)
+        day = c.between_time("6:00", "23:00", inclusive = "neither")
         night = c.between_time("23:00", "6:00")
         # TIR
         day_r = day["glucose"].notna().sum()
