@@ -1,0 +1,75 @@
+---
+title: "SEEDS Provider Survey Analysis"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,fig.width = 10,fig.height = 10)
+library(redcapAPI)
+library(Hmisc)
+library(arsenal)
+library(tidyverse)
+library(performance)
+library(usmap)
+library(knitr)
+```
+
+```{r include=FALSE}
+api = read.table("/Users/timvigers/Dropbox/Mac/Documents/GitHub/BDC-Code/Laurel Messer/SEEDS/api_token.txt")
+rcon <- redcapConnection(url="https://redcap.ucdenver.edu/api/", token=api[1,1])
+data = exportRecords(rcon)
+```
+
+```{r}
+# Filter
+data = data %>% filter(real_record == "Real")# Remove bots
+# Combine levels 
+levels(data$specialty) = c("Primary Care","Primary Care","Primary Care","Primary Care",
+                                  "Pediatric Endocrinology","Adult Endocrinology","Other")
+levels(data$providertype) = c("Prescriber","Prescriber","Non-Prescriber",
+                              "Prescriber","Non-Prescriber","Other")
+# Drop levels for categorical variables
+cat_vars = c("gender","race","providertype","practicesetting",
+             "medicare","medicaid","privateins","uninsured")
+data[,cat_vars] = lapply(data[,cat_vars],droplevels)
+# Continuous variables for table 1
+con_vars = c("age","practiceyears","cgmpatientratio","pumppatientratio",
+             "penpatientratio","hclpatientratio","educationtime")
+```
+
+# Table 1: Participant Characteristics
+
+```{r results='asis'}
+f = as.formula(paste0("specialty~",paste0(con_vars,collapse = "+"),"+",
+                      paste0(cat_vars,collapse = "+")))
+t1 = tableby(f,data = data)
+summary(t1,pfootnote = T,labelTranslations = 
+          list(age = "Age", practiceyears = "Practice Years",gender = "Gender",
+               race = "Race",providertype = "Provider Type",
+               practicesetting = "Practice Setting",
+               medicare = "Medicare",medicaid = "Medicaid",
+               privateins = "Private Insurance",
+               uninsured = "No Insurance",educationtime = "Education Time",
+               cgmpatientratio = "% on CGM",
+               penpatientratio = "% on Smart Pen",hclpatientratio = "% on HCL",
+               pumppatientratio = "% on Pump"))
+```
+
+# Respondents by State
+
+```{r}
+states = us_map(regions = "states")
+state_count = data %>% count(practicestate) %>% 
+  rename(state = "practicestate") 
+plot_usmap(data = state_count, values = "n") + 
+  scale_fill_continuous(name = "n")
+kable(state_count %>% arrange(desc(n)))
+```
+
