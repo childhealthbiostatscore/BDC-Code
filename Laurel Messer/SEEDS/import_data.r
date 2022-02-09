@@ -1,5 +1,5 @@
 #Read Data
-data=read.csv('UnderstandingProvide_DATA_2022-02-09_0919.csv')
+data=read.csv('./Laurel Messer/SEEDS/Data_Raw/UnderstandingProvide_DATA_2022-02-09_0919.csv',na.strings = "")
 #Setting Labels
 label(data$record_id)="Record ID"
 label(data$redcap_survey_identifier)="Survey Identifier"
