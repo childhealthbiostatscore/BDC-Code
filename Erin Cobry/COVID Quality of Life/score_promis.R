@@ -29,6 +29,9 @@ promis_peds$impairment =
  peds_impairment_short$T.Score[match(promis_peds$impairment,
                                      peds_impairment_short$Raw.Summed.Score)]
 
+##################
+# PARENT PROXY   #
+##################
 
 source("./Erin Cobry/ADA 2022/COVID/Data raw/HealthRelatedQuality-PROMISParentProxy_R_2022-02-01_1916.r")
 promis_parent_proxy <- data
@@ -56,3 +59,36 @@ promis_parent_proxy$disturbance =
 promis_parent_proxy$impairment = 
  parent_impairment_short$T.Score[match(promis_parent_proxy$impairment,
                                        parent_impairment_short$Raw.Summed.Score)]
+
+########################
+# PARENT SELF REPORT   #
+########################
+
+source("./Erin Cobry/ADA 2022/COVID/Data raw/HealthRelatedQuality-PROMISParentSelfRepo_R_2022-02-01_1917.r")
+promis_parent <- data
+promis_parent$times = promis_parent$redcap_event_name
+promis_parent = promis_parent %>% filter(as.numeric(substr(record_id,1,4))<2000) %>%
+  mutate(Timepoint = sub("_arm_.*","",redcap_event_name))
+promis_parent$num_id = as.numeric(substr(promis_parent$record_id,1,4))
+promis_parent$Timepoint = factor(promis_parent$Timepoint,levels = c("baseline","3_month",
+                                                                                "6_month","9_month","12_month"),
+                                       labels = c("Baseline","3 Month","6 Month","9 Month","12 Month"))
+promis_parent$num_time = recode(promis_parent$Timepoint,"Baseline" = 0,"3 Month" = 3,
+                                      "6 Month" = 6,"9 Month" = 9,"12 Month" = 12)
+
+# reverse score questions 1 and 2 of sleep disturbance
+promis_parent$sleep_quality <- promis_parent$sleep_quality+2*(3-promis_parent$sleep_quality)
+promis_parent$refreshing <- promis_parent$refreshing+2*(3-promis_parent$refreshing)
+promis_parent <- promis_parent %>% select(record_id,num_time,Timepoint,sleep_quality:sleepy) %>%
+  mutate(disturbance = rowSums(select(.,sleep_quality:difficulty)),
+         impairment = rowSums(select(.,hard_time:sleepy)))
+
+# Convert to T scores
+parent_self_disturbance_short = read.csv("./Erin Cobry/ADA 2022/COVID/Data clean/parent_self_disturbance_short.csv")
+parent_self_impairment_short = read.csv("./Erin Cobry/ADA 2022/COVID/Data clean/parent_self_impairment_short.csv")
+promis_parent$disturbance = 
+  parent_self_disturbance_short$T.Score[match(promis_parent$disturbance,
+                                              parent_self_disturbance_short$Raw.Summed.Score)]
+promis_parent$impairment = 
+  parent_self_impairment_short$T.Score[match(promis_parent$impairment,
+                                             parent_self_impairment_short$Raw.Summed.Score)]
