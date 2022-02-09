@@ -11,13 +11,14 @@ output:
 ---
 
 ```{r setup, include=FALSE}
+library(redcapAPI)
 library(Hmisc)
 library(arsenal)
 library(tidyverse)
 library(performance)
 library(usmap)
 library(knitr)
-knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(echo = FALSE,fig.width = 10,fig.height = 10)
 if(Sys.info()["sysname"] == "Windows"){
   home_dir = "B:/Projects"
 } else if (Sys.info()["sysname"] == "Linux"){
@@ -30,17 +31,37 @@ rm(home_dir)
 ```
 
 ```{r}
-source("/Users/timvigers/Dropbox/Mac/Documents/GitHub/BDC-Code/Laurel Messer/SEEDS/import_data.r")
-# Remove bots
-data = data %>% filter(real_record.factor == "Real")
-# Combine levels of care type
-data$
+api = read.table("./Laurel Messer/SEEDS/Data_Raw/api_token.txt")
+rcon <- redcapConnection(url="redcap.ucdenver.edu/api/", token=api[1,1])
+data = exportRecords(rcon)
+# Filter
+data = data %>% filter(real_record.factor == "Real")# Remove bots
+# Combine levels 
+levels(data$specialty.factor) = c("Primary Care","Primary Care","Primary Care","Primary Care",
+                                  "Pediatric Endocrinology","Adult Endocrinology","Other")
+levels
+#levels(data$providertype.factor) = c("Prescriber","Prescriber")
+# Drop levels for categorical variables
+cat_vars = c("gender.factor","race.factor","providertype.factor","practicesetting.factor",
+             "medicare.factor","medicaid.factor","privateins.factor","uninsured.factor")
+data[,cat_vars] = lapply(data[,cat_vars],droplevels)
+# Continuous variables for table 1
+con_vars = c("age","practiceyears")
 ```
 
 # Table 1: Participant Characteristics
 
-```{r}
-
+```{r results='asis'}
+f = as.formula(paste0("specialty.factor~",paste0(con_vars,collapse = "+"),"+",
+                      paste0(cat_vars,collapse = "+")))
+t1 = tableby(f,data = data)
+summary(t1,pfootnote = T,labelTranslations = 
+          list(age = "Age", practiceyears = "Practice Years",gender.factor = "Gender",
+               race.factor = "Race",providertype.factor = "Provider Type",
+               practicesetting.factor = "Practice Setting",
+               medicare.factor = "Medicare",medicaid.factor = "Medicaid",
+               privateins.factor = "Private Insurance",
+               uninsured.factor = "No Insurance"))
 ```
 
 # Respondents by State
@@ -51,6 +72,6 @@ state_count = data %>% count(practicestate.factor) %>%
   rename(state = "practicestate.factor") 
 plot_usmap(data = state_count, values = "n") + 
   scale_fill_continuous(name = "n")
-kable(state_count)
+kable(state_count %>% arrange(desc(n)))
 ```
 
