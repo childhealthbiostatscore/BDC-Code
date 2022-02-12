@@ -1,0 +1,291 @@
+---
+title: "AHA clinical model"
+author: "Laura Pyle and Tim Vigers"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    theme: readable
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(sas7bdat)
+library(glmnet)
+library(tidyr)
+library(glinternet)
+library(dplyr)
+library(survival)
+library(performance)
+library(UpSetR)
+library(knitr)
+library(corrplot)
+library(survminer)
+library(Hmisc)
+library(purrr)
+library(skimr)
+library(stringr)
+library(caret)
+library(parallel)
+library(pROC)
+library(PooledCohort)
+library(haven)
+library(randomForestSRC)
+
+knitr::opts_chunk$set(echo = FALSE)
+if(Sys.info()["sysname"] == "Windows"){
+  home_dir = "B:/Projects"
+} else if (Sys.info()["sysname"] == "Linux"){
+  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+} else if (Sys.info()["sysname"] == "Darwin"){
+  home_dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+}
+knitr::opts_knit$set(root.dir = home_dir)
+```
+
+```{r, warning=FALSE}
+source("C:/Users/pylell/Documents/GitHub/shared-resources/lasso/glinternet.R")
+#source("/home/laura/Documents/Github/shared-resources/lasso/glinternet.R")
+#source("/home/tim/GitHub/Helper-Functions/glinternet.R")
+#### DATA FRAME WITH LIPID MEDS AND EGDR COMPONENTS
+allvisits_long <- read.sas7bdat("./Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_long.sas7bdat")
+#allvisits_long <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_long.sas7bdat")
+allvisits_long <- allvisits_long[allvisits_long$StudyID != 2389,]
+v1 <- allvisits_long[allvisits_long$Visit==1,]
+v1 <- v1[,c("StudyID","age","duration","bmi","whr","onhypermeds","onlipidmeds","avediabp","avesystbp","smkstatus","ldl","hdlc","tri",
+            "CKDepi","ac","albuminuria","insdoseperkg","hba1c","l45vsf","l45sqf","egdr","apob","crp","fib","homo","pai1","sex")]
+cac <- read.csv("./Janet Snell-Bergeon/AHA collaborative grant/Proteomics/Data_Cleaned/cac_groups.csv")
+#cac <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Proteomics/Data_Cleaned/cac_groups.csv")
+cac$CACprogV3 <- ifelse(cac$C3 - cac$C1 >= 2.5,"Progression","No Progression")
+cac$CACprogV3[is.na(cac$CACprogV3)] <- "Unknown"
+cac <- cac[,c("StudyID","CACprogV3")]
+final <- merge(cac,v1,by="StudyID",all.x = T, all.y = T)
+ua <- read.sas7bdat("./Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/uricacid_b.sas7bdat")
+#ua <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/uricacid_b.sas7bdat")
+ua <- ua[,c("StudyID","UA")]
+final <- merge(final,ua,by="StudyID",all.x = T, all.y = F)
+pat <- read.sas7bdat("./Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/PATwide.sas7bdat")
+#pat <- read.sas7bdat("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/PATwide.sas7bdat")
+pat$StudyID <- pat$STUDYID
+pat <- pat[,c("StudyID","pfatcm_v1")]
+final <- merge(final,pat,by="StudyID",all.x = T, all.y = F)
+final <- final[final$CACprogV3 != "Unknown",]
+final$CACprogV3_num <- ifelse(final$CACprogV3=="Progression",1,0)
+final$CACprogV3 <- NULL
+final$alb_num <- ifelse(final$albuminuria %in% c("mac","mic"),1,
+                                  ifelse(final$albuminuria=="non",0,NA))
+final$albuminuria <- NULL
+final$smknum <- ifelse(final$smkstatus=="Current",1,
+                                 ifelse(final$smkstatus %in% c("Former","Never"),0,NA))
+final$smkstatus <- NULL
+# drop albuminuria status - we don't want it and AC together
+final$alb_num <- NULL
+# recode sex
+final$sex_0m1f <- ifelse(final$sex==1,0,1) 
+final$sex <- NULL
+# drop egdr
+final$egdr <- NULL
+
+event <- read.csv("./Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/QVisits_LastVisit_20211205.csv")
+#event <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/QVisits_LastVisit_8-10-21.csv")
+race <- event[,c("StudyID","race","cholV1","dia")]
+final <- merge(final,race,by="StudyID",all.x = T,all.y = F)
+final$nhw <- ifelse(final$race==1,1,0)
+final$race <- NULL
+
+# calculate 10 yr ASCVD risk
+final$pcr_probs <- predict_10yr_ascvd_risk(
+  sex=final$sex_0m1f,
+  sex_levels = list(female="1",male="0"),
+  race=final$nhw,
+  race_levels = list(black="0",white="1"),
+  age_years = final$age,
+  chol_total_mgdl = final$cholV1,
+  chol_hdl_mgdl = final$hdlc,
+  bp_sys_mmhg = final$avesystbp,
+  bp_meds = final$onhypermeds,
+  bp_meds_levels = list(no="0",yes="1"),
+  smoke_current = final$smknum,
+  smoke_current_levels = list(no="0",yes="1"),
+  diabetes = final$dia,
+  diabetes_levels = list(no="1",yes="0"),
+  override_boundary_errors = TRUE
+)
+final$pcr_percent <- final$pcr_probs*100
+final$pcr_probs <- NULL
+
+# read in Janet's risk scores and compare
+#sas_check <- read.sas7bdat("./Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/allvisits_cvdrisk.sas7bdat")
+#sas_check$StudyID <- sas_check$study_id
+#keep <- final[,c("StudyID","pcr_percent")]
+#sas_check <- merge(sas_check,keep,by="StudyID")
+#sas_check$diff <- sas_check$ASCVD_10yr - sas_check$pcr_percent
+
+# only complete cases
+complete_lipidmeds_egdr_components <- drop_na(final)
+
+# log transform nonnormal vars
+#complete_lipidmeds_egdr_components$l.duration <- log(complete_lipidmeds_egdr_components$duration)
+#complete_lipidmeds_egdr_components$l.duration_2 <- log(complete_lipidmeds_egdr_components$duration^2)
+# dichotomize duration above and below median
+complete_lipidmeds_egdr_components$duration_cat <- ifelse(complete_lipidmeds_egdr_components$duration<23,0,1)
+complete_lipidmeds_egdr_components$duration <- NULL
+complete_lipidmeds_egdr_components$l.bmi <- log(complete_lipidmeds_egdr_components$bmi)
+complete_lipidmeds_egdr_components$bmi <- NULL
+complete_lipidmeds_egdr_components$l.avediabp <- log(complete_lipidmeds_egdr_components$avediabp)
+complete_lipidmeds_egdr_components$avediabp <- NULL
+complete_lipidmeds_egdr_components$l.avesystbp <- log(complete_lipidmeds_egdr_components$avesystbp)
+complete_lipidmeds_egdr_components$avesystbp <- NULL
+complete_lipidmeds_egdr_components$l.hdlc <- log(complete_lipidmeds_egdr_components$hdlc)
+complete_lipidmeds_egdr_components$hdlc <- NULL
+complete_lipidmeds_egdr_components$l.tri <- log(complete_lipidmeds_egdr_components$tri)
+complete_lipidmeds_egdr_components$tri <- NULL
+complete_lipidmeds_egdr_components$l.CKDepi <- log(complete_lipidmeds_egdr_components$CKDepi)
+complete_lipidmeds_egdr_components$CKDepi <- NULL
+complete_lipidmeds_egdr_components$l.ac <- log(complete_lipidmeds_egdr_components$ac)
+complete_lipidmeds_egdr_components$ac <- NULL
+complete_lipidmeds_egdr_components$l.insdoseperkg <- log(complete_lipidmeds_egdr_components$insdoseperkg)
+complete_lipidmeds_egdr_components$insdoseperkg <- NULL
+complete_lipidmeds_egdr_components$l.hba1c <- log(complete_lipidmeds_egdr_components$hba1c)
+complete_lipidmeds_egdr_components$hba1c <- NULL
+complete_lipidmeds_egdr_components$l.l45vsf <- log(complete_lipidmeds_egdr_components$l45vsf)
+complete_lipidmeds_egdr_components$l45vsf <- NULL
+complete_lipidmeds_egdr_components$l.l45sqf <- log(complete_lipidmeds_egdr_components$l45sqf)
+complete_lipidmeds_egdr_components$l45sqf <- NULL
+complete_lipidmeds_egdr_components$l.crp <- log(complete_lipidmeds_egdr_components$crp)
+complete_lipidmeds_egdr_components$crp <- NULL
+complete_lipidmeds_egdr_components$l.fib <- log(complete_lipidmeds_egdr_components$fib)
+complete_lipidmeds_egdr_components$fib <- NULL
+complete_lipidmeds_egdr_components$l.homo <- log(complete_lipidmeds_egdr_components$homo)
+complete_lipidmeds_egdr_components$homo <- NULL
+complete_lipidmeds_egdr_components$l.pai1 <- log(complete_lipidmeds_egdr_components$pai1)
+complete_lipidmeds_egdr_components$pai1 <- NULL
+complete_lipidmeds_egdr_components$l.UA <- log(complete_lipidmeds_egdr_components$UA)
+complete_lipidmeds_egdr_components$UA <- NULL
+complete_lipidmeds_egdr_components$l.pfatcm_v1 <- log(complete_lipidmeds_egdr_components$pfatcm_v1)
+complete_lipidmeds_egdr_components$pfatcm_v1 <- NULL
+
+######
+### make dfs with event data
+# death
+death <- event[,c("StudyID","Deceased","PersonYrsDeath")]
+death$death <- ifelse(event$Deceased=="Deceased",1,0)
+death$Deceased <- NULL
+complete_lipidmeds_egdr_components_death <- merge(complete_lipidmeds_egdr_components,death,by="StudyID",all.x = T,all.y = F)
+complete_lipidmeds_egdr_components_death$CACprogV3_num <- NULL
+# CAD
+cad <- event[,c("StudyID","CAD","PersonYrsCAD")]
+complete_lipidmeds_egdr_components_cad<- merge(complete_lipidmeds_egdr_components,cad,by="StudyID",all.x = T,all.y = F)
+complete_lipidmeds_egdr_components_cad$CACprogV3_num <- NULL
+# HardCAD
+hardcad <- event[,c("StudyID","HardCAD","PersonYrsHardCAD")]
+complete_lipidmeds_egdr_components_hardcad<- merge(complete_lipidmeds_egdr_components,hardcad,by="StudyID",all.x = T,all.y = F)
+complete_lipidmeds_egdr_components_hardcad$CACprogV3_num <- NULL
+# CVD
+cvd <- event[,c("StudyID","CVD","PersonYrsCVD")]
+complete_lipidmeds_egdr_components_cvd<- merge(complete_lipidmeds_egdr_components,cvd,by="StudyID",all.x = T,all.y = F)
+complete_lipidmeds_egdr_components_cvd$CACprogV3_num <- NULL
+# HardCVD
+hardcvd <- event[,c("StudyID","HardCVD","PersonYrsHardCVD")]
+complete_lipidmeds_egdr_components_hardcvd<- merge(complete_lipidmeds_egdr_components,hardcvd,by="StudyID",all.x = T,all.y = F)
+complete_lipidmeds_egdr_components_hardcvd$CACprogV3_num <- NULL
+####
+#### check missingness of CAC variables and calculate change in CAC per year
+cac <- read.csv("./Janet Snell-Bergeon/AHA collaborative grant/Proteomics/Data_Cleaned/cac_groups.csv")
+#cac <- read.csv("T:/Janet Snell-Bergeon/AHA collaborative grant/Proteomics/Data_Cleaned/cac_groups.csv")
+x <- cac[,c("StudyID","C1","C2","C3","C4")]
+x$last <- ifelse(!is.na(x$C4),4,
+                 ifelse(!is.na(x$C3),3,
+                        ifelse(!is.na(x$C2),2,1)))
+x$cac_change_per_yr <- ifelse(x$last==4,(x$C4-x$C1)/12,
+                              ifelse(x$last==3,(x$C3-x$C1)/6,(x$C2-x$C1)/3))
+x <- x[,c("StudyID","cac_change_per_yr")]
+complete_lipidmeds_egdr_components_ccc <- merge(complete_lipidmeds_egdr_components,x,by="StudyID",all.x = T,all.y = F)
+complete_lipidmeds_egdr_components_ccc$CACprogV3_num <- NULL
+####
+# set number of levels for glinternet
+numLevels_lipidmeds_egdr_components <- c(1,1,1,1,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2)
+numLevels_lipidmeds_egdr_components_simple <- c(1,1,1,2,2,1,1,1,1,1,1,1,1,1,2,2)
+
+# read in omics data - for now, we won't worry about SNPs
+load(file="./Janet Snell-Bergeon/AHA collaborative grant/aha_master_data.Rdata")
+omics_data <- df[,c("StudyID","gly_P02671.7","gly_P02671.5","gly_P02671.4","gly_P02671.3","AAA01201000179.0807263.4","gly_P02679",
+                    "HMDB00510161.0696402.9","AAA01201000179.0809235.7","gly_P02675.4","gly_P02675","gly_P02647","P02655","gly_P02647.1",
+                    "HMDB00510161.0694436","gly_P02652","gly_P01009","gly_P01834.11","P01817","AcCa 10:3","HMDB0028822260.1378628.6",
+                    "AAA01201000179.0807263.4","gly_P02671.3","gly_P02671.7")]
+omics_data_ids <- omics_data$StudyID
+d <- duplicated(omics_data_ids)
+dups <- omics_data_ids[d]
+omics_data <- omics_data[!omics_data$StudyID %in% dups,]
+
+# merge omics data with the CAD dataset
+ada_data <- merge(complete_lipidmeds_egdr_components_cad,omics_data,by="StudyID",all.x = T,all.y = F)
+
+# find subset of people with variables in model 4.4 AND all omics variables
+# the clinical variables are age, onhypermeds, onlipidmeds, ldl, smknum, race, cholV1, duration_cat, l.bmi, l.avediabp, l.hdlc,
+# l.CKDepi, l.ac, l.insdoseperkg, l.hba1c
+ada_data <- ada_data[,c("StudyID","CAD","PersonYrsCAD","gly_P02671.7","gly_P02671.5","gly_P02671.4","gly_P02671.3","AAA01201000179.0807263.4","gly_P02679",
+                    "HMDB00510161.0696402.9","AAA01201000179.0809235.7","gly_P02675.4","gly_P02675","gly_P02647","P02655","gly_P02647.1",
+                    "HMDB00510161.0694436","gly_P02652","gly_P01009","gly_P01834.11","P01817","AcCa 10:3","HMDB0028822260.1378628.6",
+                    "AAA01201000179.0807263.4","gly_P02671.3","gly_P02671.7","age", "onhypermeds", "onlipidmeds", "ldl", "smknum", "nhw", 
+                    "cholV1", "duration_cat", "l.bmi", "l.avediabp","l.avesystbp" ,"l.hdlc","l.CKDepi", "l.ac", "l.insdoseperkg", "l.hba1c")]
+c <- complete.cases(ada_data)
+ada_data_complete <- ada_data[c,]
+
+# merge omics data with the CAD dataset
+ada_data_cacp <- merge(complete_lipidmeds_egdr_components,omics_data,by="StudyID",all.x = T,all.y = F)
+# find subset of people with variables in model 4.4 AND all omics variables
+ada_data_cacp <- ada_data_cacp[,c("StudyID","CACprogV3_num","gly_P02671.7","gly_P02671.5","gly_P02671.4","gly_P02671.3","AAA01201000179.0807263.4","gly_P02679",
+                    "HMDB00510161.0696402.9","AAA01201000179.0809235.7","gly_P02675.4","gly_P02675","gly_P02647","P02655","gly_P02647.1",
+                    "HMDB00510161.0694436","gly_P02652","gly_P01009","gly_P01834.11","P01817","AcCa 10:3","HMDB0028822260.1378628.6",
+                    "AAA01201000179.0807263.4","gly_P02671.3","gly_P02671.7",
+                    "age", "onhypermeds", "onlipidmeds", "ldl", "smknum", "nhw","sex_0m1f",
+                    "cholV1", "duration_cat", "l.bmi", "l.avediabp","l.avesystbp" ,"l.hdlc","l.tri","l.CKDepi", "l.ac", "l.insdoseperkg", "l.hba1c")]
+c2 <- complete.cases(ada_data_cacp)
+ada_data_cacp_complete <- ada_data_cacp[c2,]
+# standardize glycated proteins
+ada_data_cacp_complete$gly_P02671.7_sd <- ada_data_cacp_complete$gly_P02671.7/279370.6
+ada_data_cacp_complete$gly_P02671.3_sd <- ada_data_cacp_complete$gly_P02671.3/1129780
+ada_data_cacp_complete$gly_P02671.5_sd <- ada_data_cacp_complete$gly_P02671.5/285493.8
+ada_data_cacp_complete$gly_P02671.4_sd <- ada_data_cacp_complete$gly_P02671.4/1518225
+
+# write final datasets for checking
+write.csv(ada_data_cacp, "./Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/ada_data_cacp.csv")
+```
+
+## CVD - Regularized Cox model
+
+```{r, echo=FALSE, comment=""}
+set.seed(3654)
+
+dta <- complete_lipidmeds_egdr_components_cvd %>% select(-c("StudyID","pcr_percent"))
+S <- Surv(time = dta$PersonYrsCVD, event = dta$CVD)
+
+obj <- rfsrc(Surv(PersonYrsCVD, CVD)   ~.,complete_lipidmeds_egdr_components_cvd, ntree = 1000, nodesize = 5, nsplit = 50, importance = T)
+
+jk.obj <- subsample(obj)
+pdf("c:/temp/VIMPsur.pdf", width = 15, height = 20)
+par(oma = c(0.5, 10, 0.5, 0.5))
+par(cex.axis = 2.0, cex.lab = 2.0, cex.main = 2.0, mar = c(6.0,17,1,1), mgp = c(4, 1, 0))
+plot(jk.obj, xlab = "Variable Importance (x 100)", cex = 1.2)
+dev.off()
+
+X <- complete_lipidmeds_egdr_components_cvd %>% select(-c("StudyID","PersonYrsCVD","CVD","pcr_percent"))
+
+cv.fit <- cv.glmnet(as.matrix(X), S, family="cox", type.measure = "deviance",nfolds=nrow(complete_lipidmeds_egdr_components_cvd))
+# coefficients at best lambda
+round(coef(cv.fit,s=cv.fit$lambda.min),4)
+cvd_coefs <- as.matrix(coef(cv.fit,s=cv.fit$lambda.min),4)
+cvd_coefs <- rownames(cvd_coefs)[cvd_coefs[,1]!=0]
+
+temp <- cvd_coefs
+form <- paste0(temp,collapse = "+")
+form <- paste0("~",form)
+form <- str_replace(form,"onhypermeds","as.factor(onhypermeds)")
+form <- str_replace(form,"onlipidmeds","as.factor(onlipidmeds)")
+form <- str_replace(form,"smknum","as.factor(smknum)")
+form <- str_replace(form,"sex_0m1f","as.factor(sex_0m1f)")
+form <- str_replace(form,"l.duration\\+l.duration_2","poly(l.duration,2)")
+```
