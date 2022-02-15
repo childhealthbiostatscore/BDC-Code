@@ -3,26 +3,13 @@ library(readxl)
 library(snpStats)
 setwd("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant")
 # Sample info (cleaned for metabolomics)
-sample_info = read.csv("./Metabolomics/Data_Cleaned/targeted.csv",na.strings = "")
-# Delete empty columns
-sample_info[,which(colSums(is.na(sample_info))==nrow(sample_info))] = NULL
-# Add SAS dataset info
-sas = read.sas7bdat("./Combined predictive model/PATwide.sas7bdat")
-sas$STUDYID = as.integer(sas$STUDYID)
-sample_info = left_join(sample_info,sas,by = c("StudyID" = "STUDYID"))
-sas = read.sas7bdat("./Combined predictive model/uricacid_b.sas7bdat")
-sas$comment = NULL
-sas$StudyID = as.integer(sas$StudyID)
-sample_info = left_join(sample_info,sas,by = "StudyID")
+sample_info = read_excel("QVisits_LastVisit.xlsx")
+sample_info$StudyID = as.numeric(sample_info$StudyID)
 # Targeted metabolites
-targeted_metabs = 
-  colnames(sample_info)[which(colnames(sample_info)=="Betaine"):ncol(sample_info)]
-# Add three CAC groups and progression
-three_group = read.delim("./Metabolomics/Data_Raw/CAC Trajectories 3 groups.txt",
-                         na.strings = "")
-sample_info = left_join(sample_info,three_group[,c("StudyID","GROUP")],by = "StudyID")
-sample_info$CACp = cut(sample_info$c3 - sample_info$c1,c(-Inf,2.5,Inf),
-                       labels = c("No","Yes"),right = F)
+targeted_metabs = read.csv("./Metabolomics/Data_Cleaned/targeted.csv",na.strings = "")
+targeted_metabs = targeted_metabs %>% select(StudyID,Betaine:linoleic.acid)
+sample_info = full_join(sample_info,targeted_metabs,by = "StudyID")
+targeted_metabs = colnames(targeted_metabs)[2:ncol(targeted_metabs)]
 # Add untargeted metabolites
 untargeted = read.csv("./Metabolomics/Data_Cleaned/complete_untargeted.csv",na.strings = "")
 untargeted_metabs = 
@@ -33,7 +20,7 @@ untargeted$StudyID =
   untarget_samples$SampleID[match(untargeted$GlobalSampleID,
                                   untarget_samples$Injection)]
 untargeted = untargeted[,c("StudyID",untargeted_metabs)]
-sample_info = left_join(sample_info,untargeted,by = "StudyID",na.strings = "")
+sample_info = full_join(sample_info,untargeted,by = "StudyID")
 # Add lipidomics
 lipid_df = read.csv("./Lipidomics/Data_Cleaned/aha_lipidomics_new_annotation.csv",
                     stringsAsFactors = F,na.strings = "")
@@ -45,7 +32,7 @@ lipid_df$StudyID = gsub("\\.","_p",rownames(lipid_df))
 order = read_excel("./Lipidomics/Data_Raw/20210509 Sample Information of AHA-239 study.xlsx")
 lipid_df$StudyID = 
   order$`Original SampleID`[match(lipid_df$StudyID,order$`sample order`)]
-sample_info = left_join(sample_info,lipid_df,by = "StudyID")
+sample_info = full_join(sample_info,lipid_df,by = "StudyID")
 # Add global proteomics
 proteins = read.csv("./Proteomics/Data_Cleaned/global_proteome.csv",na.strings = "")
 global_proteins = proteins$Accession
@@ -56,25 +43,24 @@ colnames(normalized_df) = sub("..Sample","",colnames(normalized_df))
 rownames(normalized_df) = global_proteins
 normalized_df = as.data.frame(t(normalized_df))
 normalized_df$StudyID = manifest$Sample.ID..from.hospital.[match(rownames(normalized_df),manifest$File.ID)]
-sample_info = left_join(sample_info,normalized_df,by = "StudyID")
+sample_info = full_join(sample_info,normalized_df,by = "StudyID")
 # Add glycated proteomics
 glycated = read.csv("./Proteomics/Data_Cleaned/peptide_abundance.csv")
 colnames(glycated)[3:ncol(glycated)] = paste0("gly_",colnames(glycated)[3:ncol(glycated)])
 glycated_proteins = colnames(glycated)[3:ncol(glycated)]
 glycated$Master.Protein.Accessions = NULL
-sample_info = left_join(sample_info,glycated,by = "StudyID")
+sample_info = full_join(sample_info,glycated,by = "StudyID")
 # Add genomic data
 snps = c("rs10949670","rs4796649","rs6554207","rs4450463","rs9503009")
-snp_data = read.plink("./Genomics/Data_Raw/Imputed SNPS - Updated 7-20-15/CACTI_FINAL_HG19_1KGpos",
-                      select.snps = snps)
+snp_data = read.plink("./Genomics/Data_Raw/Imputed SNPS - Updated 7-20-15/CACTI_FINAL_HG19_1KGpos")
 # Match IDs
 ids = read.delim("./Genomics/Data_Raw/CACTI_SampleID_KEY.txt")
 t = data.frame(as(snp_data$genotypes,"character"))
 t$StudyID = ids$StudyID[match(rownames(t),ids$UVA_ID)]
-t = t[-which(duplicated(t)),]
+t = t[-which(duplicated(t$StudyID)),]
 t[,1:length(snps)] = lapply(t[,1:length(snps)],function(c){factor(c,levels = c("A/A", "A/B", "B/B"))})
 # Merge
-sample_info = left_join(sample_info,t,by = "StudyID")
+sample_info = full_join(sample_info,t,by = "StudyID")
 # Save
 df = sample_info
 save(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins,lipids,snps,df,
