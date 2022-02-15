@@ -1,7 +1,7 @@
 library(tidyverse)
 library(readxl)
 library(snpStats)
-setwd("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant")
+setwd("~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant")
 # Sample info (cleaned for metabolomics)
 sample_info = read_excel("QVisits_LastVisit.xlsx")
 sample_info$StudyID = as.numeric(sample_info$StudyID)
