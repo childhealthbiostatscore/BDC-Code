@@ -1,17 +1,18 @@
 library(lubridate)
 library(cgmanalysis)
-setwd("/Users/timvigers/Dropbox/Work/Sarit Polsky/Triple C/Tim/")
+library(readxl)
+setwd("/Volumes/BDC/SHARED/POLSKY/Triple C/Tim")
 dateparseorder <- c("mdy","mdy HM","mdy HMS","mdY HM","mdY HMS","dmy HM","dmy HMS",
                     "dmY HM","dmY HMS","Ymd HM","Ymd HMS","ymd HM","ymd HMS",
                     "Ydm HM","Ydm HMS","ydm HM","ydm HMS")
 # Output location
 outdir = paste0(getwd(),"/","Cleaned/")
 # Import dates - remove spaces and characters from names
-dates = read.csv("./Trimester Dates -Janet.csv",na.strings = "")
-dates$Last.name = tolower(gsub(" ","",dates$Last.name))
-dates$Last.name = tolower(gsub("[[:punct:]]","",dates$Last.name))
-dates$First.name = tolower(gsub(" ","",dates$First.name))
-dates$First.name = tolower(gsub("[[:punct:]]","",dates$First.name))
+dates = read_excel("./Trimesters_Corrected_Final.xlsx")
+dates$`Last name` = tolower(gsub(" ","",dates$`Last name`))
+dates$`Last name` = tolower(gsub("[[:punct:]]","",dates$`Last name`))
+dates$`First name` = tolower(gsub(" ","",dates$`First name`))
+dates$`First name` = tolower(gsub("[[:punct:]]","",dates$`First name`))
 # List all the directories
 dirs = list.dirs("RAW DATA- CGM downloads")
 # Loop through directories
@@ -22,11 +23,11 @@ for (d in dirs[2:length(dirs)]) {
   last_name = gsub("[[:punct:]]","",strsplit(name,",")[[1]][1])
   first_name = gsub("[[:punct:]]","",strsplit(name,",")[[1]][2])
   # Get dates
-  r = which(dates$Last.name == last_name & dates$First.name ==  first_name)
-  t0 = parse_date_time(dates$t.0[r],dateparseorder,tz = "UTC")
-  wk14 = parse_date_time(dates$X14.wks[r],dateparseorder,tz = "UTC")
-  wk28 = parse_date_time(dates$X28.wks[r],dateparseorder,tz = "UTC")
-  dd = parse_date_time(dates$Delivery.Date[r],dateparseorder,tz = "UTC")
+  r = which(dates$`Last name` == last_name & dates$`First name` ==  first_name)
+  t0 = dates$`t=0`[r]
+  wk14 = dates$`14 wks`[r]
+  wk28 = dates$`28 wks`[r]
+  dd = dates$Delivery[r]
   # List files
   files = list.files(d,full.names = T)
   # Loop through files, combine into 1
