@@ -1,6 +1,7 @@
 library(lubridate)
 library(cgmanalysis)
 library(readxl)
+library(dplyr)
 setwd("/Volumes/BDC/SHARED/POLSKY/Triple C/Tim")
 dateparseorder <- c("mdy","mdy HM","mdy HMS","mdY HM","mdY HMS","dmy HM","dmy HMS",
                     "dmY HM","dmY HMS","Ymd HM","Ymd HMS","ymd HM","ymd HMS",
@@ -22,16 +23,18 @@ for (d in dirs[2:length(dirs)]) {
   name = gsub(" ","",name)
   last_name = gsub("[[:punct:]]","",strsplit(name,",")[[1]][1])
   first_name = gsub("[[:punct:]]","",strsplit(name,",")[[1]][2])
-  # Get dates
+  # Get dates and MRN
   r = which(dates$`Last name` == last_name & dates$`First name` ==  first_name)
   t0 = dates$`t=0`[r]
   wk14 = dates$`14 wks`[r]
   wk28 = dates$`28 wks`[r]
   dd = dates$Delivery[r]
+  id = dates$MRN[r]
   # List files
   files = list.files(d,full.names = T)
   # Loop through files, combine into 1
   l = lapply(files, function(f) {
+    print(f)
     df = read.csv(f,na.strings = "",header = F)
     # Check file type by number of columns
     if (ncol(df) == 14) {
@@ -50,7 +53,7 @@ for (d in dirs[2:length(dirs)]) {
       colnames(df)[1] = "sensorglucose"
     } else if (ncol(df) == 19) {
       colnames(df) = df[3,]
-      df = df[4:nrow(df),]
+      df = df[4: nrow(df),]
       df = df[,grep("timestamp|historic glucose",tolower(colnames(df)))]
       colnames(df) = c("timestamp","sensorglucose")
       df$timestamp = parse_date_time(df$timestamp,dateparseorder,tz = "UTC")
@@ -64,7 +67,6 @@ for (d in dirs[2:length(dirs)]) {
   df = df[!is.na(df$timestamp),]
   # ID
   df$subjectid = NA
-  id = paste0(last_name,", ",first_name)
   df = df[,c("subjectid","timestamp","sensorglucose")]
   # Sort by date
   df = df[order(df$timestamp),]
@@ -72,24 +74,30 @@ for (d in dirs[2:length(dirs)]) {
   t0_wk14 = df[df$timestamp >= t0 & df$timestamp < wk14,]
   if (nrow(t0_wk14)>0 & sum(is.na(t0_wk14$sensorglucose))<nrow(t0_wk14)){
     t0_wk14$subjectid[1] = id
-    write.csv(t0_wk14,file = paste0(outdir,last_name,"_",first_name,"_t0_wk14.csv"),
+    write.csv(t0_wk14,file = paste0(outdir,id,"_t0_wk14.csv"),
               row.names = F,na = "")
   }
-  
+
   wk14_wk28 = df[df$timestamp >= wk14 & df$timestamp < wk28,]
   if (nrow(wk14_wk28)>0 & sum(is.na(wk14_wk28$sensorglucose))<nrow(wk14_wk28)) {
     wk14_wk28$subjectid[1] = id
-    write.csv(wk14_wk28,file = paste0(outdir,last_name,"_",first_name,"_wk14_wk28.csv"),
+    write.csv(wk14_wk28,file = paste0(outdir,id,"_wk14_wk28.csv"),
               row.names = F,na = "")
   }
-  
+
   wk28_dd = df[df$timestamp >= wk28 & df$timestamp < dd,]
   if(nrow(wk28_dd)>0 & sum(is.na(wk28_dd$sensorglucose))<nrow(wk28_dd)) {
     wk28_dd$subjectid[1] = id
-    write.csv(wk28_dd,file = paste0(outdir,last_name,"_",first_name,"_wk28_dd.csv"),
+    write.csv(wk28_dd,file = paste0(outdir,id,"_wk28_dd.csv"),
               row.names = F,na = "")
   }
 }
 # Variables
-cgmvariables("./Cleaned","./Reports",id_filename = T,
-             outputname = paste("polsky_triple_c_cgm",Sys.Date()))
+out = paste0("polsky_triple_c_cgm_",Sys.Date())
+cgmvariables("./Cleaned","./Reports",id_filename = T,outputname = out)
+# Split id column for Janet
+cgm = read.csv(paste0("./Reports/",out,".csv"))
+cgm$timepoint = sub("\\d*_","",cgm$subject_id)
+cgm$subject_id = sub("_.*","",cgm$subject_id)
+cgm = cgm %>% select(subject_id,timepoint,everything())
+write.csv(cgm,paste0("./Reports/",out,".csv"),row.names = F)

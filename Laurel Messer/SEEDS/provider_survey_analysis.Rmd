@@ -2,12 +2,7 @@
 title: "SEEDS Provider Survey Analysis"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output:
-  html_document:
-    number_sections: yes
-    toc: yes
-    toc_depth: 2
-    toc_float: yes
+output: word_document
 ---
 
 ```{r setup, include=FALSE}
@@ -20,10 +15,20 @@ library(performance)
 library(usmap)
 library(reshape2)
 library(knitr)
+knitr::opts_chunk$set(echo = FALSE)
+if(Sys.info()["sysname"] == "Windows"){
+  home_dir = "B:/Projects/Laurel Messer/SEEDS"
+} else if (Sys.info()["sysname"] == "Linux"){
+  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Laurel Messer/SEEDS"
+} else if (Sys.info()["sysname"] == "Darwin"){
+  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Laurel Messer/SEEDS"
+}
+knitr::opts_knit$set(root.dir = home_dir)
+rm(home_dir)
 ```
 
 ```{r include=FALSE}
-api = read.table("/Users/timvigers/Dropbox/Mac/Documents/GitHub/BDC-Code/Laurel Messer/SEEDS/api_token.txt")
+api = read.table("./Data_Raw/api_token.txt")
 rcon <- redcapConnection(url="https://redcap.ucdenver.edu/api/", token=api[1,1])
 data = exportRecords(rcon)
 ```
@@ -69,6 +74,24 @@ summary(t1,pfootnote = T,labelTranslations =
                pumppatientratio = "% on Pump"))
 ```
 
+## Table 1 for VAS Completers
+
+```{r results='asis'}
+keep = data %>% select(deviceselectiontool:consulttool)
+keep = which(rowSums(is.na(keep))==0)
+t1 = tableby(f,data = data[keep,])
+summary(t1,pfootnote = T,labelTranslations = 
+          list(age = "Age", practiceyears = "Practice Years",gender = "Gender",
+               race = "Race",providertype = "Provider Type",
+               practicesetting = "Practice Setting",
+               medicare = "Medicare",medicaid = "Medicaid",
+               privateins = "Private Insurance",
+               uninsured = "No Insurance",educationtime = "Education Time",
+               cgmpatientratio = "% on CGM",
+               penpatientratio = "% on Smart Pen",hclpatientratio = "% on HCL",
+               pumppatientratio = "% on Pump"))
+```
+
 # Respondents by State
 
 ```{r}
@@ -84,6 +107,7 @@ kable(state_count %>% arrange(desc(n)))
 
 ```{r}
 plot_df = data %>% select(record_id,specialty,deviceselectiontool:consulttool)
+tools = colnames(plot_df)[3:ncol(plot_df)]
 plot_df = melt(plot_df,id.vars = c("record_id","specialty"))
 ggplot(plot_df,aes(x = variable,y = value,fill = specialty)) + 
   geom_boxplot(alpha = 0.5,width=0.5) +
@@ -101,9 +125,33 @@ ggplot(plot_df,aes(x = variable,y = value,fill = variable)) +
 ```
 
 ```{r}
+old <- levels(plot_df$variable)
+new <- c("Device Selection Tool","Insurance Coverage Tool","Automated Decision Support",
+    "Online Data Platform","Device Training Contacts","Patient Education Modules",
+    "Device Troubleshooting","Consultation With Expert")
+order = plot_df %>% filter(specialty == "Primary Care") %>% group_by(variable) %>% 
+  summarise(m = median(value,na.rm = T)) %>% arrange(desc(m))
+order$name = new[match(order$variable,old)]
+
+plot_df$variable = factor(plot_df$variable,levels = order$variable,labels = order$name)
+
 ggplot(plot_df,aes(x = variable,y = value,fill = specialty)) + 
   geom_boxplot(alpha = 0.5) +
   theme_bw() + xlab("Variable") + ylab("VAS Score") + 
-  theme(axis.text.x = element_blank(),axis.ticks.x = element_blank()) + 
-  facet_wrap(~variable,scales = "free")
+  theme(axis.text.x = element_blank(),axis.ticks.x = element_blank(),
+        axis.title.x = element_blank()) + 
+  facet_wrap(~variable,scales = "free",strip.position = "bottom") +
+  theme(legend.position = c(0.85,0.15),legend.key.size = unit(2, 'cm'),
+        strip.text = element_text(size=20)) + 
+  labs(fill = "Specialty")
+```
+
+## Tools Tables
+
+```{r results='asis'}
+labels(data[,tools]) = NULL
+f = as.formula(paste0("specialty~",paste0(tools,collapse = "+")))
+t = tableby(f,data = data,
+            control = list(numeric.stats=c("N", "median", "q1q3")))
+summary(t)
 ```
