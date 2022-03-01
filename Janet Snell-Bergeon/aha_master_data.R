@@ -51,14 +51,14 @@ glycated_proteins = colnames(glycated)[3:ncol(glycated)]
 glycated$Master.Protein.Accessions = NULL
 sample_info = full_join(sample_info,glycated,by = "StudyID")
 # Add genomic data
-snps = c("rs10949670","rs4796649","rs6554207","rs4450463","rs9503009")
 snp_data = read.plink("./Genomics/Data_Raw/Imputed SNPS - Updated 7-20-15/CACTI_FINAL_HG19_1KGpos")
+snps = snp_data$map$snp.name
 # Match IDs
 ids = read.delim("./Genomics/Data_Raw/CACTI_SampleID_KEY.txt")
 t = data.frame(as(snp_data$genotypes,"character"))
 t$StudyID = ids$StudyID[match(rownames(t),ids$UVA_ID)]
 t = t[-which(duplicated(t$StudyID)),]
-t[,1:length(snps)] = lapply(t[,1:length(snps)],function(c){factor(c,levels = c("A/A", "A/B", "B/B"))})
+# t[,1:length(snps)] = lapply(t[,1:length(snps)],function(c){factor(c,levels = c("A/A", "A/B", "B/B"))})
 # Merge
 sample_info = full_join(sample_info,t,by = "StudyID")
 # Save
