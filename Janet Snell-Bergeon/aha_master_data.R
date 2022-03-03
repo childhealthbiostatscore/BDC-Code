@@ -35,16 +35,24 @@ sample_info$cac_change_per_yr = apply(sample_info,1,function(r){
 })
 # Clinical variable list
 clinical_predictors = c('acV1','age','apobV1','avediabpV1','avesystbpV1','bmiV1',
-                       'cholV1','CKDepiV1','crpV1','dia','durationV1','fibV1',
+                       'cholV1','CKDepiV1','crpV1','dia','durcatV1','fibV1',
                        'hba1cV1','hdlcV1','homoV1','insdoseperkgV1','l45sqfV1',
                        'l45vsfV1','ldlV1','NHW','onhypermedsV1','onlipidmedsV1',
                        'pai1V1','PAT_V1','sex','smknum','triV1','UA_V1','whrV1')
 aha_outcomes = c('CACprogV3','cac_change_per_yr','Deceased','CAD','HardCAD',
                  'CVD','HardCVD')
 # Factor variables
-cat_vars = c('dia','NHW','onhypermedsV1','onlipidmedsV1','sex','CAD','HardCAD',
-             'CVD','HardCVD')
+med_vars = colnames(sample_info)[grep("on.*med",colnames(sample_info))]
+cat_vars = c('sex','race','State','dia','NHW',med_vars,
+             'pumporinjV1','albuminuriaV1','type2bydefV1','CACanyV1',
+             'maritalV1','SmkStatusV1','diabetic','spanorg','hyperbydeffV1',
+             'agecatV1','durcatV1','CAD','HardCAD','CVD','HardCVD')
 sample_info[,cat_vars] = lapply(sample_info[,cat_vars],as.factor)
+# Log transform all numeric clinical variables except age and cholesterol
+num_vars = unique(c(num_vars,colnames(sample_info)[lapply(sample_info,class)=="numeric"]))
+log_transform = num_vars[num_vars %in% clinical_predictors]
+log_transform = log_transform[!log_transform %in% c('age','cholV1')]
+sample_info[,log_transform] = lapply(sample_info[,log_transform],log)
 # Targeted metabolites
 targeted_metabs = read.csv("./Metabolomics/Data_Cleaned/targeted.csv",na.strings = "")
 targeted_metabs = targeted_metabs %>% select(StudyID,Betaine:linoleic.acid)
