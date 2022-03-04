@@ -53,6 +53,11 @@ num_vars = unique(c(num_vars,colnames(sample_info)[lapply(sample_info,class)=="n
 log_transform = num_vars[num_vars %in% clinical_predictors]
 log_transform = log_transform[!log_transform %in% c('age','cholV1')]
 sample_info[,log_transform] = lapply(sample_info[,log_transform],log)
+# Remove 0s from event time data
+sample_info$PersonYrsCAD[sample_info$PersonYrsCAD == 0] = NA
+sample_info$PersonYrsHardCAD[sample_info$PersonYrsHardCAD == 0] = NA
+sample_info$PersonYrsCVD[sample_info$PersonYrsCVD == 0] = NA
+sample_info$PersonYrsHardCVD[sample_info$PersonYrsHardCVD == 0] = NA
 # Targeted metabolites
 targeted_metabs = read.csv("./Metabolomics/Data_Cleaned/targeted.csv",na.strings = "")
 targeted_metabs = targeted_metabs %>% select(StudyID,Betaine:linoleic.acid)
