@@ -61,7 +61,7 @@ sample_info$PersonYrsHardCVD[sample_info$PersonYrsHardCVD == 0] = NA
 # Targeted metabolites
 targeted_metabs = read.csv("./Metabolomics/Data_Cleaned/targeted.csv",na.strings = "")
 targeted_metabs = targeted_metabs %>% select(StudyID,Betaine:linoleic.acid)
-sample_info = full_join(sample_info,targeted_metabs,by = "StudyID")
+sample_info = left_join(sample_info,targeted_metabs,by = "StudyID")
 targeted_metabs = colnames(targeted_metabs)[2:ncol(targeted_metabs)]
 # Add untargeted metabolites
 untargeted = read.csv("./Metabolomics/Data_Cleaned/complete_untargeted.csv",na.strings = "")
@@ -73,7 +73,7 @@ untargeted$StudyID =
   untarget_samples$SampleID[match(untargeted$GlobalSampleID,
                                   untarget_samples$Injection)]
 untargeted = untargeted[,c("StudyID",untargeted_metabs)]
-sample_info = full_join(sample_info,untargeted,by = "StudyID")
+sample_info = left_join(sample_info,untargeted,by = "StudyID")
 # Add lipidomics
 lipid_df = read.csv("./Lipidomics/Data_Cleaned/aha_lipidomics_new_annotation.csv",
                     stringsAsFactors = F,na.strings = "")
@@ -85,7 +85,7 @@ lipid_df$StudyID = gsub("\\.","_p",rownames(lipid_df))
 order = read_excel("./Lipidomics/Data_Raw/20210509 Sample Information of AHA-239 study.xlsx")
 lipid_df$StudyID = 
   order$`Original SampleID`[match(lipid_df$StudyID,order$`sample order`)]
-sample_info = full_join(sample_info,lipid_df,by = "StudyID")
+sample_info = left_join(sample_info,lipid_df,by = "StudyID")
 # Add global proteomics
 proteins = read.csv("./Proteomics/Data_Cleaned/global_proteome.csv",na.strings = "")
 global_proteins = proteins$Accession
@@ -96,14 +96,13 @@ colnames(normalized_df) = sub("..Sample","",colnames(normalized_df))
 rownames(normalized_df) = global_proteins
 normalized_df = as.data.frame(t(normalized_df))
 normalized_df$StudyID = as.numeric(manifest$Sample.ID..from.hospital.[match(rownames(normalized_df),manifest$File.ID)])
-normalized_df = normalized_df[!is.na(normalized_df$StudyID),]
-sample_info = full_join(sample_info,normalized_df,by = "StudyID")
+sample_info = left_join(sample_info,normalized_df,by = "StudyID")
 # Add glycated proteomics
 glycated = read.csv("./Proteomics/Data_Cleaned/peptide_abundance.csv")
 colnames(glycated)[3:ncol(glycated)] = paste0("gly_",colnames(glycated)[3:ncol(glycated)])
 glycated_proteins = colnames(glycated)[3:ncol(glycated)]
 glycated$Master.Protein.Accessions = NULL
-sample_info = full_join(sample_info,glycated,by = "StudyID")
+sample_info = left_join(sample_info,glycated,by = "StudyID")
 # Add genomic data
 snp_data = read.plink("./Genomics/Data_Raw/Imputed SNPS - Updated 7-20-15/CACTI_FINAL_HG19_1KGpos")
 snps = snp_data$map$snp.name
@@ -117,7 +116,7 @@ snps = colnames(t)[colnames(t) %in% snps]
 t = t[,c("StudyID",snps)]
 t[,snps] = lapply(t[,snps],function(c){factor(c,levels = c("A/A", "A/B", "B/B"))})
 # Merge
-sample_info = full_join(sample_info,t,by = "StudyID")
+sample_info = left_join(sample_info,t,by = "StudyID")
 # Save
 df = as.data.frame(sample_info)
 save(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins,lipids,
