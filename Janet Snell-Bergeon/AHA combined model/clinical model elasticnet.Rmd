@@ -14,8 +14,9 @@ output:
 library(broom)
 library(survival)
 library(performance)
+library(mice)
 library(knitr)
-knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(echo = FALSE,cache = TRUE)
 if(Sys.info()["sysname"] == "Windows"){
   home_dir = "B:/Projects"
 } else if (Sys.info()["sysname"] == "Linux"){
@@ -28,8 +29,14 @@ rm(home_dir)
 ```
 
 ```{r}
+# Function and mastet data
 source("~/GitHub/shared-resources/Machine Learning/Tim - ElasticNet CV/easy_elasticnet.R")
 load("./Janet Snell-Bergeon/AHA collaborative grant/aha_master_data_no_snps.Rdata")
+# omics selected by moderated t-test and PLSDA
+omics = c("AAA01201000179.0807263.4","gly_P02671.7","gly_P02671.3",
+          "gly_P02671.5","gly_P02671.4")
+# Log transform 
+df[,omics] = log(df[,omics])
 ```
 
 # LASSO for CAC progression, using lipid lowering meds and A1c, WHR, onhypermeds
@@ -39,27 +46,46 @@ load("./Janet Snell-Bergeon/AHA collaborative grant/aha_master_data_no_snps.Rdat
 ```{r include=FALSE}
 # Sometimes using too many alpha/lambda values results in duplicate values for the 
 # error metric. This doesn't seem to be a problem but throws a lot of warnings
-selected = easy_elasticnet(data = df,outcome = "CACprogV3",
+y = "CACprogV3"
+selected = easy_elasticnet(data = df,outcome = y,
                            predictors = clinical_predictors,
-                           model_type = "binomial",cores = 36)
+                           model_type = "binomial",cores = 4)
 ```
 
+## Imputation
+
 ```{r}
-kable(selected,col.names = "Selected Variables")
+# Impute predictors (selected clinical model plus omics subset from PLSDA and moderated t tests)
+imp = mice(df[,c(selected[[1]],omics)], seed = 1017, m = 10,
+           print = FALSE,method = "rf")
+# Diagnostics
+densityplot(imp)
+# Outcome
+imp = cbind(imp,df[,y])
 ```
+
+Five imputed dataset were created using random forest imputation. Two models were fit to the imputed data: one with only the selected clinical variables, and the other with selected clinical variables and the omics variables selected by moderated t test and PLS-DA. Models were compared using the multivariate Wald test (see [this page](https://stefvanbuuren.name/fimd/sec-multiparameter.html#sec:likelihoodratio) for additional details).
 
 ## CAC progression - GLM using variables selected by LASSO
 
-```{r}
-f = as.formula(paste0("CACprogV3~",paste0(selected[[1]],collapse = "+")))
-mod = glm(f,data = df,family = "binomial")
-kable(tidy(mod),digits = 3)
+```{r warning=FALSE}
+f = as.formula(paste0("y~",paste0(selected[[1]],collapse = "+")))
+clinical_fit = glm.mids(formula = f,family = "binomial",data = imp)
+kable(summary(pool(clinical_fit)),digits = 3)
 ```
 
-Model was fit on `r nobs(mod)` observations.
+## CAC progression - GLM with omics variables added
 
 ```{r}
-check_model(mod)
+f = update(f,paste0("~ . +",paste0(omics,collapse = "+")))       
+fit = glm.mids(formula = f,family = "binomial",data = imp)
+kable(summary(pool(fit)),digits = 3)
+```
+
+## Model comparison
+
+```{r}
+D1(fit, clinical_fit)
 ```
 
 # LASSO for change in CAC per year using lipid lowering meds and A1c, WHR, onhypermeds
@@ -69,13 +95,10 @@ check_model(mod)
 ```{r include=FALSE}
 # Sometimes using too many alpha/lambda values results in duplicate values for the 
 # error metric. This doesn't seem to be a problem but throws a lot of warnings
-selected = easy_elasticnet(data = df,outcome = "cac_change_per_yr",
+y = "cac_change_per_yr"
+selected = easy_elasticnet(data = df,outcome = y,
                            predictors = clinical_predictors,
-                           model_type = "gaussian",cores = 36)
-```
-
-```{r}
-kable(selected,col.names = "Selected Variables")
+                           model_type = "gaussian",cores = 4)
 ```
 
 ## Change in CAC per year - LM using variables selected by LASSO
@@ -99,14 +122,12 @@ check_model(mod)
 ```{r include=FALSE}
 # Sometimes using too many alpha/lambda values results in duplicate values for the 
 # error metric. This doesn't seem to be a problem but throws a lot of warnings
-selected = easy_elasticnet(data = df,outcome = "Deceased",
+y = "Deceased"
+t = "PersonYrsDeath"
+selected = easy_elasticnet(data = df,outcome = y,
                            predictors = clinical_predictors,
-                           model_type = "cox",time = "PersonYrsDeath",
-                           cores = 36)
-```
-
-```{r}
-kable(selected,col.names = "Selected Variables")
+                           model_type = "cox",time = t,
+                           cores = 4)
 ```
 
 ## Death - Cox model using variables selected by LASSO
@@ -131,14 +152,12 @@ kable(cox.zph(mod)$table,caption = "Test of PH Assumption")
 ```{r include=FALSE}
 # Sometimes using too many alpha/lambda values results in duplicate values for the 
 # error metric. This doesn't seem to be a problem but throws a lot of warnings
-selected = easy_elasticnet(data = df,outcome = "CAD",
+y = "CAD"
+t = "PersonYrsCAD"
+selected = easy_elasticnet(data = df,outcome = y,
                            predictors = clinical_predictors,
-                           model_type = "cox",time = "PersonYrsCAD",
-                           cores = 36)
-```
-
-```{r}
-kable(selected,col.names = "Selected Variables")
+                           model_type = "cox",time = t,
+                           cores = 4)
 ```
 
 ## CAD - Cox model using variables selected by LASSO
@@ -163,14 +182,12 @@ kable(cox.zph(mod)$table,caption = "Test of PH Assumption")
 ```{r include=FALSE}
 # Sometimes using too many alpha/lambda values results in duplicate values for the 
 # error metric. This doesn't seem to be a problem but throws a lot of warnings
-selected = easy_elasticnet(data = df,outcome = "HardCAD",
+y = "HardCAD"
+t = "PersonYrsHardCAD"
+selected = easy_elasticnet(data = df,outcome = y,
                            predictors = clinical_predictors,
-                           model_type = "cox",time = "PersonYrsHardCAD",
-                           cores = 36)
-```
-
-```{r}
-kable(selected,col.names = "Selected Variables")
+                           model_type = "cox",time = t,
+                           cores = 4)
 ```
 
 ## Hard CAD - Cox model using variables selected by LASSO
@@ -195,14 +212,12 @@ kable(cox.zph(mod)$table,caption = "Test of PH Assumption")
 ```{r include=FALSE}
 # Sometimes using too many alpha/lambda values results in duplicate values for the 
 # error metric. This doesn't seem to be a problem but throws a lot of warnings
-selected = easy_elasticnet(data = df,outcome = "CVD",
+y = "CVD"
+t = "PersonYrsCVD"
+selected = easy_elasticnet(data = df,outcome = y,
                            predictors = clinical_predictors,
-                           model_type = "cox",time = "PersonYrsCVD",
-                           cores = 36)
-```
-
-```{r}
-kable(selected,col.names = "Selected Variables")
+                           model_type = "cox",time = t,
+                           cores = 4)
 ```
 
 ## CVD - Cox model using variables selected by LASSO
@@ -227,14 +242,12 @@ kable(cox.zph(mod)$table,caption = "Test of PH Assumption")
 ```{r include=FALSE}
 # Sometimes using too many alpha/lambda values results in duplicate values for the 
 # error metric. This doesn't seem to be a problem but throws a lot of warnings
-selected = easy_elasticnet(data = df,outcome = "HardCVD",
+y = "HardCVD"
+t = "PersonYrsHardCVD"
+selected = easy_elasticnet(data = df,outcome = y,
                            predictors = clinical_predictors,
-                           model_type = "cox",time = "PersonYrsHardCVD",
-                           cores = 36)
-```
-
-```{r}
-kable(selected,col.names = "Selected Variables")
+                           model_type = "cox",time = t,
+                           cores = 4)
 ```
 
 ## Hard CVD - Cox model using variables selected by LASSO
