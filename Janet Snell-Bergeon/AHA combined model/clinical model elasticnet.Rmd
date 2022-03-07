@@ -14,8 +14,8 @@ output:
 library(broom)
 library(survival)
 library(performance)
-library(mice)
 library(knitr)
+library(mice)
 knitr::opts_chunk$set(echo = FALSE,cache = TRUE)
 if(Sys.info()["sysname"] == "Windows"){
   home_dir = "B:/Projects"
@@ -39,228 +39,283 @@ omics = c("AAA01201000179.0807263.4","gly_P02671.7","gly_P02671.3",
 df[,omics] = log(df[,omics])
 ```
 
-# LASSO for CAC progression, using lipid lowering meds and A1c, WHR, onhypermeds
+# LASSO  on clinical variables only
 
-## CAC progression - LASSO without interactions
+## CAC progression
 
 ```{r include=FALSE}
 # Sometimes using too many alpha/lambda values results in duplicate values for the 
 # error metric. This doesn't seem to be a problem but throws a lot of warnings
-y = "CACprogV3"
-selected = easy_elasticnet(data = df,outcome = y,
+cac_prog_select = easy_elasticnet(data = df,outcome = "CACprogV3",
                            predictors = clinical_predictors,
                            model_type = "binomial",cores = 4)
 ```
 
-## Imputation
+### Model results
 
 ```{r}
-# Impute predictors (selected clinical model plus omics subset from PLSDA and moderated t tests)
-imp = mice(df[,c(selected[[1]],omics)], seed = 1017, m = 10,
-           print = FALSE,method = "rf")
-# Diagnostics
-densityplot(imp)
-# Outcome
-imp = cbind(imp,df[,y])
-```
-
-Five imputed dataset were created using random forest imputation. Two models were fit to the imputed data: one with only the selected clinical variables, and the other with selected clinical variables and the omics variables selected by moderated t test and PLS-DA. Models were compared using the multivariate Wald test (see [this page](https://stefvanbuuren.name/fimd/sec-multiparameter.html#sec:likelihoodratio) for additional details).
-
-## CAC progression - GLM using variables selected by LASSO
-
-```{r warning=FALSE}
-f = as.formula(paste0("y~",paste0(selected[[1]],collapse = "+")))
-clinical_fit = glm.mids(formula = f,family = "binomial",data = imp)
-kable(summary(pool(clinical_fit)),digits = 3)
-```
-
-## CAC progression - GLM with omics variables added
-
-```{r}
-f = update(f,paste0("~ . +",paste0(omics,collapse = "+")))       
-fit = glm.mids(formula = f,family = "binomial",data = imp)
-kable(summary(pool(fit)),digits = 3)
-```
-
-## Model comparison
-
-```{r}
-D1(fit, clinical_fit)
-```
-
-# LASSO for change in CAC per year using lipid lowering meds and A1c, WHR, onhypermeds
-
-## Change in CAC per year - LASSO without interactions
-
-```{r include=FALSE}
-# Sometimes using too many alpha/lambda values results in duplicate values for the 
-# error metric. This doesn't seem to be a problem but throws a lot of warnings
-y = "cac_change_per_yr"
-selected = easy_elasticnet(data = df,outcome = y,
-                           predictors = clinical_predictors,
-                           model_type = "gaussian",cores = 4)
-```
-
-## Change in CAC per year - LM using variables selected by LASSO
-
-```{r}
-f = as.formula(paste0("cac_change_per_yr~",paste0(selected[[1]],collapse = "+")))
-mod = lm(f,data = df)
+f_cac_prog = as.formula(paste0("CACprogV3~",paste0(cac_prog_select[[1]],collapse = "+")))
+mod = glm(formula = f_cac_prog,data = df,family = "binomial")
 kable(tidy(mod),digits = 3)
 ```
 
-Model was fit on `r nobs(mod)` observations.
+### Model diagnostics
 
 ```{r}
 check_model(mod)
 ```
 
-# Regularized Cox model for death without interactions, using lipid lowering meds and A1c, WHR, onhypermeds
+Model was fit on `r nobs(mod)` observations.
 
-## Death - Regularized Cox model
+## Change in CAC per year
 
 ```{r include=FALSE}
 # Sometimes using too many alpha/lambda values results in duplicate values for the 
 # error metric. This doesn't seem to be a problem but throws a lot of warnings
-y = "Deceased"
-t = "PersonYrsDeath"
-selected = easy_elasticnet(data = df,outcome = y,
+cac_change_select = easy_elasticnet(data = df,outcome = "cac_change_per_yr",
                            predictors = clinical_predictors,
-                           model_type = "cox",time = t,
-                           cores = 4)
+                           model_type = "gaussian",cores = 4)
 ```
 
-## Death - Cox model using variables selected by LASSO
+### Model results
 
 ```{r}
-f = as.formula(paste0("Surv(time = df$PersonYrsDeath,event = df$Deceased)~",
-                      paste0(selected[[1]],collapse = "+")))
-mod = coxph(f,data = df,id = StudyID)
+f_cac_change = as.formula(paste0("cac_change_per_yr~",
+                                 paste0(cac_change_select[[1]],collapse = "+")))
+mod = lm(formula = f_cac_change,data = df)
 kable(tidy(mod),digits = 3)
+```
+
+### Model diagnostics
+
+```{r}
+check_model(mod)
 ```
 
 Model was fit on `r nobs(mod)` observations.
 
-```{r}
-kable(cox.zph(mod)$table,caption = "Test of PH Assumption")
-```
-
-# Regularized Cox model for CAD without interactions, using lipid lowering meds and A1c, WHR, onhypermeds
-
-## CAD - Regularized Cox model
+## Death
 
 ```{r include=FALSE}
 # Sometimes using too many alpha/lambda values results in duplicate values for the 
 # error metric. This doesn't seem to be a problem but throws a lot of warnings
-y = "CAD"
-t = "PersonYrsCAD"
-selected = easy_elasticnet(data = df,outcome = y,
+death_select = easy_elasticnet(data = df,outcome = "Deceased",
                            predictors = clinical_predictors,
-                           model_type = "cox",time = t,
+                           model_type = "cox",time = "PersonYrsDeath",
                            cores = 4)
 ```
 
-## CAD - Cox model using variables selected by LASSO
+### Model results
 
 ```{r}
-f = as.formula(paste0("Surv(time = df$PersonYrsCAD,event = df$CAD)~",
-                      paste0(selected[[1]],collapse = "+")))
-mod = coxph(f,data = df,id = StudyID)
+f_death = as.formula(paste0("Surv(time = df$PersonYrsDeath,event = df$Deceased)~",
+                      paste0(death_select[[1]],collapse = "+")))
+mod = coxph(formula = f_death,data = df,id = StudyID)
 kable(tidy(mod),digits = 3)
+```
+
+### PH assumption test
+
+```{r}
+kable(cox.zph(mod)$table,digits = 3)
 ```
 
 Model was fit on `r nobs(mod)` observations.
 
-```{r}
-kable(cox.zph(mod)$table,caption = "Test of PH Assumption")
-```
-
-# Regularized Cox model for Hard CAD without interactions, using lipid lowering meds and A1c, WHR, onhypermeds
-
-## Hard CAD - Regularized Cox model
+## CAD
 
 ```{r include=FALSE}
 # Sometimes using too many alpha/lambda values results in duplicate values for the 
 # error metric. This doesn't seem to be a problem but throws a lot of warnings
-y = "HardCAD"
-t = "PersonYrsHardCAD"
-selected = easy_elasticnet(data = df,outcome = y,
+cad_select = easy_elasticnet(data = df,outcome = "CAD",
                            predictors = clinical_predictors,
-                           model_type = "cox",time = t,
+                           model_type = "cox",time = "PersonYrsCAD",
                            cores = 4)
 ```
 
-## Hard CAD - Cox model using variables selected by LASSO
+### Model results
 
 ```{r}
-f = as.formula(paste0("Surv(time = df$PersonYrsHardCAD,event = df$HardCAD)~",
-                      paste0(selected[[1]],collapse = "+")))
-mod = coxph(f,data = df,id = StudyID)
+f_cad = as.formula(paste0("Surv(time = df$PersonYrsCAD,event = df$CAD)~",
+                      paste0(cad_select[[1]],collapse = "+")))
+mod = coxph(formula = f_cad,data = df,id = StudyID)
 kable(tidy(mod),digits = 3)
+```
+
+### PH assumption test
+
+```{r}
+kable(cox.zph(mod)$table,digits = 3)
 ```
 
 Model was fit on `r nobs(mod)` observations.
 
-```{r}
-kable(cox.zph(mod)$table,caption = "Test of PH Assumption")
-```
-
-# Regularized Cox model for CVD without interactions, using lipid lowering meds and A1c, WHR, onhypermeds
-
-## CVD - Regularized Cox model
+## Hard CAD
 
 ```{r include=FALSE}
 # Sometimes using too many alpha/lambda values results in duplicate values for the 
 # error metric. This doesn't seem to be a problem but throws a lot of warnings
-y = "CVD"
-t = "PersonYrsCVD"
-selected = easy_elasticnet(data = df,outcome = y,
+hard_cad_select = easy_elasticnet(data = df,outcome = "HardCAD",
                            predictors = clinical_predictors,
-                           model_type = "cox",time = t,
+                           model_type = "cox",time = "PersonYrsHardCAD",
                            cores = 4)
 ```
 
-## CVD - Cox model using variables selected by LASSO
+### Model results
 
 ```{r}
-f = as.formula(paste0("Surv(time = df$PersonYrsCVD,event = df$CVD)~",
-                      paste0(selected[[1]],collapse = "+")))
-mod = coxph(f,data = df,id = StudyID)
+f_hard_cad = as.formula(paste0("Surv(time = df$PersonYrsHardCAD,event = df$HardCAD)~",
+                      paste0(hard_cad_select[[1]],collapse = "+")))
+mod = coxph(formula = f_hard_cad,data = df,id = StudyID)
 kable(tidy(mod),digits = 3)
+```
+
+### PH assumption test
+
+```{r}
+kable(cox.zph(mod)$table,digits = 3)
 ```
 
 Model was fit on `r nobs(mod)` observations.
 
-```{r}
-kable(cox.zph(mod)$table,caption = "Test of PH Assumption")
-```
-
-# Regularized Cox model for Hard CVD without interactions, using lipid lowering meds and A1c, WHR, onhypermeds
-
-## Hard CVD - Regularized Cox model
+## CVD
 
 ```{r include=FALSE}
 # Sometimes using too many alpha/lambda values results in duplicate values for the 
 # error metric. This doesn't seem to be a problem but throws a lot of warnings
-y = "HardCVD"
-t = "PersonYrsHardCVD"
-selected = easy_elasticnet(data = df,outcome = y,
+cvd_select = easy_elasticnet(data = df,outcome = "CVD",
                            predictors = clinical_predictors,
-                           model_type = "cox",time = t,
+                           model_type = "cox",time = "PersonYrsCVD",
                            cores = 4)
 ```
 
-## Hard CVD - Cox model using variables selected by LASSO
+### Model results
 
 ```{r}
-f = as.formula(paste0("Surv(time = df$PersonYrsHardCVD,event = df$HardCVD)~",
-                      paste0(selected[[1]],collapse = "+")))
-mod = coxph(f,data = df,id = StudyID)
+f_cvd = as.formula(paste0("Surv(time = df$PersonYrsCVD,event = df$CVD)~",
+                      paste0(cvd_select[[1]],collapse = "+")))
+mod = coxph(formula = f_cvd,data = df,id = StudyID)
 kable(tidy(mod),digits = 3)
+```
+
+### PH assumption test
+
+```{r}
+kable(cox.zph(mod)$table,digits = 3)
 ```
 
 Model was fit on `r nobs(mod)` observations.
 
+## Hard CVD
+
+```{r include=FALSE}
+# Sometimes using too many alpha/lambda values results in duplicate values for the 
+# error metric. This doesn't seem to be a problem but throws a lot of warnings
+hard_cvd_select = easy_elasticnet(data = df,outcome = "HardCVD",
+                           predictors = clinical_predictors,
+                           model_type = "cox",time = "PersonYrsHardCVD",
+                           cores = 4)
+```
+
+### Model results
+
 ```{r}
-kable(cox.zph(mod)$table,caption = "Test of PH Assumption")
+f_hard_cvd = as.formula(paste0("Surv(time = df$PersonYrsHardCVD,event = df$HardCVD)~",
+                      paste0(hard_cvd_select[[1]],collapse = "+")))
+mod = coxph(formula = f_hard_cvd,data = df,id = StudyID)
+kable(tidy(mod),digits = 3)
+```
+
+### PH assumption test
+
+```{r}
+kable(cox.zph(mod)$table,digits = 3)
+```
+
+Model was fit on `r nobs(mod)` observations.
+
+# Imputation
+
+```{r eval=FALSE}
+# Impute predictors (selected clinical model plus omics subset from PLSDA and moderated t tests)
+selected = unique(c(cac_prog_select[[1]],cac_change_select[[1]],death_select[[1]],
+                  cad_select[[1]],hard_cad_select[[1]],
+                  cvd_select[[1]],hard_cvd_select[[1]]))
+imp = mice(df[,c(selected,omics)], seed = 1017, m =3,
+           print = FALSE,method = "rf")
+```
+
+Five imputed datasets were created using random forest imputation based on all selected cinical variables and omics variables selected by moderated t test and PLS-DA. Two models were fit to the imputed data: one with only the selected clinical variables, and the other with selected clinical and omics variables. Models were compared using the multivariate Wald test (see [this page](https://stefvanbuuren.name/fimd/sec-multiparameter.html#sec:likelihoodratio) for additional details) and pooled results of the omics models are reported below.
+
+## Diagnostics
+
+```{r}
+# Plot
+densityplot(imp)
+# Add outcomes
+imp = cbind(imp,df[,c("StudyID",aha_outcomes)])
+```
+
+## CAC progression
+
+```{r eval=FALSE}
+clinical_fit = imp %>% complete("all") %>%
+  lapply(glm, formula = f_cac_prog,family = "binomial")
+fit = imp %>% complete("all") %>%
+  lapply(glm,formula = update(f_cac_prog,paste0("~ . +",paste0(omics,collapse = "+"))),
+               family = "binomial")
+kable(summary(pool(fit)),digits = 3)
+```
+
+### Model comparison
+
+```{r eval=FALSE}
+D1(fit, clinical_fit)
+```
+
+## Change in CAC per year
+
+```{r eval=FALSE}
+clinical_fit = imp %>% complete("all") %>%
+  lapply(lm, formula = f_cac_change)
+fit = imp %>% complete("all") %>%
+  lapply(lm,formula = update(f_cac_change,paste0("~ . +",paste0(omics,collapse = "+"))))
+kable(summary(pool(fit)),digits = 3)
+```
+
+### Model comparison
+
+```{r eval=FALSE}
+D1(fit, clinical_fit)
+```
+
+## Death
+
+```{r eval=FALSE}
+t = with(imp,{
+  # set form_obj's environment to the current one
+  environment(f_death) = environment()
+  coxph(formula = f_death,id = StudyID)
+})
+
+
+c = with(data = imp, expr = coxph(formula = as.formula(f_death),id = StudyID))
+
+clinical_fit = imp %>% complete("all") %>%
+  lapply(coxph, formula = formula(f_death),id = StudyID)
+fit = imp %>% complete("all") %>%
+  lapply(coxph,formula = update(f_death,paste0("~ . +",paste0(omics,collapse = "+"))),
+         id = StudyID)
+
+
+clinical_fit = with(imp,coxph(formula = f_death,id = StudyID))
+fit = glm.mids(formula = update(f_cac_change,paste0("~ . +",paste0(omics,collapse = "+"))),
+               data = imp)
+kable(summary(pool(clinical_fit)),digits = 3)
+```
+
+## Model comparison
+
+```{r eval=FALSE}
+D1(fit, clinical_fit)
 ```
