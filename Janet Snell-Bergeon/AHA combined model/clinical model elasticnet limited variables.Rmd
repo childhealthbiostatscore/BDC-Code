@@ -1,0 +1,558 @@
+---
+title: "AHA clinical model - all variables"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(broom)
+library(survival)
+library(performance)
+library(knitr)
+library(mice)
+knitr::opts_chunk$set(echo = FALSE,cache = TRUE,fig.height = 10,fig.width = 10)
+if(Sys.info()["sysname"] == "Windows"){
+  home_dir = "B:/Projects"
+} else if (Sys.info()["sysname"] == "Linux"){
+  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+} else if (Sys.info()["sysname"] == "Darwin"){
+  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+}
+knitr::opts_knit$set(root.dir = home_dir)
+rm(home_dir)
+```
+
+```{r}
+# Function and master data
+source("~/GitHub/shared-resources/Machine Learning/Tim - ElasticNet CV/easy_elasticnet.R")
+load("./Janet Snell-Bergeon/AHA collaborative grant/aha_master_data_no_snps.Rdata")
+# omics selected by moderated t-test and PLSDA
+omics = unique(c("gly_P02671.7","gly_P02671.5","gly_P02671.4","gly_P02671.3",
+                 "AAA01201000179.0807263.4","gly_P02679","HMDB00510161.0696402.9",
+                 "AAA01201000179.0809235.7","gly_P02675.4","gly_P02675","gly_P02647",
+                 "P02655","gly_P02647.1","HMDB00510161.0694436","gly_P02652",
+                 "gly_P01009","gly_P01834.11","P01817","AcCa 10:3",
+                 "HMDB0028822260.1378628.6","AAA01201000179.0807263.4",
+                 "gly_P02671.3","gly_P02671.7"))
+# Remove clinical predictors
+clinical_predictors = 
+  clinical_predictors[which(!clinical_predictors %in% 
+                              c( "crpV1","homoV1","pai1V1","fibV1","UA_V1",
+                                 "whrV1","apobV1","l45vsfV1","l45sqfV1","PAT_V1"))]
+# Log transform 
+df[,omics] = log(df[,omics])
+# Fix names
+colnames(df)[which(colnames(df) %in% omics)] = make.names(omics,unique = T,allow_ = F)
+omics = make.names(omics,unique = T,allow_ = F)
+```
+
+# LASSO  on clinical variables only
+
+## CAC progression
+
+```{r include=FALSE}
+# Sometimes using too many alpha/lambda values results in duplicate values for the 
+# error metric. This doesn't seem to be a problem but throws a lot of warnings
+cac_prog_select = easy_elasticnet(data = df,outcome = "CACprogV3",
+                                  predictors = clinical_predictors,
+                                  model_type = "binomial",cores = 4)
+```
+
+### Model results
+
+```{r}
+f_cac_prog = as.formula(paste0("CACprogV3~",paste0(cac_prog_select[[1]],collapse = "+")))
+mod = glm(formula = f_cac_prog,data = df,family = "binomial")
+kable(tidy(mod),digits = 3)
+```
+
+### Model diagnostics
+
+```{r}
+check_model(mod)
+```
+
+Model was fit on `r nobs(mod)` observations.
+
+## Change in CAC per year
+
+```{r include=FALSE}
+# Sometimes using too many alpha/lambda values results in duplicate values for the 
+# error metric. This doesn't seem to be a problem but throws a lot of warnings
+cac_change_select = easy_elasticnet(data = df,outcome = "cac_change_per_yr",
+                                    predictors = clinical_predictors,
+                                    model_type = "gaussian",cores = 4)
+```
+
+### Model results
+
+```{r}
+f_cac_change = as.formula(paste0("cac_change_per_yr~",
+                                 paste0(cac_change_select[[1]],collapse = "+")))
+mod = lm(formula = f_cac_change,data = df)
+kable(tidy(mod),digits = 3)
+```
+
+### Model diagnostics
+
+```{r}
+check_model(mod)
+```
+
+Model was fit on `r nobs(mod)` observations.
+
+## Death
+
+```{r include=FALSE}
+# Sometimes using too many alpha/lambda values results in duplicate values for the 
+# error metric. This doesn't seem to be a problem but throws a lot of warnings
+death_select = easy_elasticnet(data = df,outcome = "Deceased",
+                               predictors = clinical_predictors,
+                               model_type = "cox",time = "PersonYrsDeath",
+                               cores = 4)
+```
+
+### Model results
+
+```{r}
+f_death = as.formula(paste0("Surv(time = df$PersonYrsDeath,event = df$Deceased)~",
+                            paste0(death_select[[1]],collapse = "+")))
+mod = coxph(formula = f_death,data = df,id = StudyID)
+kable(tidy(mod),digits = 3)
+```
+
+### PH assumption test
+
+```{r}
+kable(cox.zph(mod)$table,digits = 3)
+```
+
+Model was fit on `r nobs(mod)` observations.
+
+## CAD
+
+```{r include=FALSE}
+# Sometimes using too many alpha/lambda values results in duplicate values for the 
+# error metric. This doesn't seem to be a problem but throws a lot of warnings
+cad_select = easy_elasticnet(data = df,outcome = "CAD",
+                             predictors = clinical_predictors,
+                             model_type = "cox",time = "PersonYrsCAD",
+                             cores = 4)
+```
+
+### Model results
+
+```{r}
+f_cad = as.formula(paste0("Surv(time = df$PersonYrsCAD,event = df$CAD)~",
+                          paste0(cad_select[[1]],collapse = "+")))
+mod = coxph(formula = f_cad,data = df,id = StudyID)
+kable(tidy(mod),digits = 3)
+```
+
+### PH assumption test
+
+```{r}
+kable(cox.zph(mod)$table,digits = 3)
+```
+
+Model was fit on `r nobs(mod)` observations.
+
+## Hard CAD
+
+```{r include=FALSE}
+# Sometimes using too many alpha/lambda values results in duplicate values for the 
+# error metric. This doesn't seem to be a problem but throws a lot of warnings
+hard_cad_select = easy_elasticnet(data = df,outcome = "HardCAD",
+                                  predictors = clinical_predictors,
+                                  model_type = "cox",time = "PersonYrsHardCAD",
+                                  cores = 4)
+```
+
+### Model results
+
+```{r}
+f_hard_cad = as.formula(paste0("Surv(time = df$PersonYrsHardCAD,event = df$HardCAD)~",
+                               paste0(hard_cad_select[[1]],collapse = "+")))
+mod = coxph(formula = f_hard_cad,data = df,id = StudyID)
+kable(tidy(mod),digits = 3)
+```
+
+### PH assumption test
+
+```{r}
+kable(cox.zph(mod)$table,digits = 3)
+```
+
+Model was fit on `r nobs(mod)` observations.
+
+## CVD
+
+```{r include=FALSE}
+# Sometimes using too many alpha/lambda values results in duplicate values for the 
+# error metric. This doesn't seem to be a problem but throws a lot of warnings
+cvd_select = easy_elasticnet(data = df,outcome = "CVD",
+                             predictors = clinical_predictors,
+                             model_type = "cox",time = "PersonYrsCVD",
+                             cores = 4)
+```
+
+### Model results
+
+```{r}
+f_cvd = as.formula(paste0("Surv(time = df$PersonYrsCVD,event = df$CVD)~",
+                          paste0(cvd_select[[1]],collapse = "+")))
+mod = coxph(formula = f_cvd,data = df,id = StudyID)
+kable(tidy(mod),digits = 3)
+```
+
+### PH assumption test
+
+```{r}
+kable(cox.zph(mod)$table,digits = 3)
+```
+
+Model was fit on `r nobs(mod)` observations.
+
+## Hard CVD
+
+```{r include=FALSE}
+# Sometimes using too many alpha/lambda values results in duplicate values for the 
+# error metric. This doesn't seem to be a problem but throws a lot of warnings
+hard_cvd_select = easy_elasticnet(data = df,outcome = "HardCVD",
+                                  predictors = clinical_predictors,
+                                  model_type = "cox",time = "PersonYrsHardCVD",
+                                  cores = 4)
+```
+
+### Model results
+
+```{r}
+f_hard_cvd = as.formula(paste0("Surv(time = df$PersonYrsHardCVD,event = df$HardCVD)~",
+                               paste0(hard_cvd_select[[1]],collapse = "+")))
+mod = coxph(formula = f_hard_cvd,data = df,id = StudyID)
+kable(tidy(mod),digits = 3)
+```
+
+### PH assumption test
+
+```{r}
+kable(cox.zph(mod)$table,digits = 3)
+```
+
+Model was fit on `r nobs(mod)` observations.
+
+# Imputation
+
+```{r}
+# Impute predictors (selected clinical model plus omics subset from PLSDA and moderated t tests)
+imp = mice(df[,c(clinical_predictors,omics)], seed = 1017, m = 5,
+           print = FALSE,method = "rf")
+```
+
+Five imputed datasets were created using random forest imputation based on all clinical variables and omics variables selected by moderated t test and PLS-DA. Two models were fit to the imputed data: one with only the selected clinical variables, and the other with selected clinical and omics variables. Models were compared using the multivariate Wald test (see [this page](https://stefvanbuuren.name/fimd/sec-multiparameter.html#sec:likelihoodratio) for additional details) and pooled results of the omics models are reported below.
+
+## Diagnostics
+
+```{r}
+# Plot
+densityplot(imp)
+# Add outcomes
+imp = cbind(imp,df[,c("StudyID",aha_outcomes)])
+```
+
+## CAC progression
+
+```{r}
+clinical_fit = with(imp,{
+  environment(f_cac_prog) = environment()
+  glm(formula = f_cac_prog,family = "binomial")
+})
+fit = with(imp,{
+  environment(f_cac_prog) = environment()
+  glm(formula = update(f_cac_prog,paste0("~ . +",paste0(omics,collapse = "+"))),
+      family = "binomial")
+})
+kable(summary(pool(fit)),digits = 3)
+```
+
+### Model comparison
+
+```{r}
+kable(D1(fit, clinical_fit)$result)
+```
+
+## Change in CAC per year
+
+```{r}
+clinical_fit = with(imp,{
+  environment(f_cac_change) = environment()
+  lm(formula = f_cac_change)
+})
+fit = with(imp,{
+  environment(f_cac_change) = environment()
+  lm(formula = update(f_cac_change,paste0("~ . +",paste0(omics,collapse = "+"))))
+})
+kable(summary(pool(fit)),digits = 3)
+```
+
+### Model comparison
+
+```{r}
+kable(D1(fit, clinical_fit)$result)
+```
+
+## Death
+
+```{r}
+clinical_fit = with(imp,{
+  environment(f_death) = environment()
+  coxph(formula = f_death,id = StudyID)
+})
+fit = with(imp,{
+  environment(f_death) = environment()
+  coxph(formula = update(f_death,paste0("~ . +",paste0(omics,collapse = "+"))),id = StudyID)
+})
+kable(summary(pool(fit)),digits = 3)
+```
+
+### Model comparison
+
+```{r}
+kable(D1(fit, clinical_fit)$result)
+```
+
+## CAD
+
+```{r}
+clinical_fit = with(imp,{
+  environment(f_cad) = environment()
+  coxph(formula = f_cad,id = StudyID)
+})
+fit = with(imp,{
+  environment(f_cad) = environment()
+  coxph(formula = update(f_cad,paste0("~ . +",paste0(omics,collapse = "+"))),id = StudyID)
+})
+kable(summary(pool(fit)),digits = 3)
+```
+
+### Model comparison
+
+```{r}
+kable(D1(fit, clinical_fit)$result)
+```
+
+## Hard CAD
+
+```{r}
+clinical_fit = with(imp,{
+  environment(f_hard_cad) = environment()
+  coxph(formula = f_hard_cad,id = StudyID)
+})
+fit = with(imp,{
+  environment(f_hard_cad) = environment()
+  coxph(formula = update(f_hard_cad,paste0("~ . +",paste0(omics,collapse = "+"))),id = StudyID)
+})
+kable(summary(pool(fit)),digits = 3)
+```
+
+### Model comparison
+
+```{r}
+kable(D1(fit, clinical_fit)$result)
+```
+
+## CVD
+
+```{r}
+clinical_fit = with(imp,{
+  environment(f_cvd) = environment()
+  coxph(formula = f_cvd,id = StudyID)
+})
+fit = with(imp,{
+  environment(f_cvd) = environment()
+  coxph(formula = update(f_cvd,paste0("~ . +",paste0(omics,collapse = "+"))),id = StudyID)
+})
+kable(summary(pool(fit)),digits = 3)
+```
+
+### Model comparison
+
+```{r}
+kable(D1(fit, clinical_fit)$result)
+```
+
+## Hard CVD
+
+```{r}
+clinical_fit = with(imp,{
+  environment(f_hard_cvd) = environment()
+  coxph(formula = f_hard_cvd,id = StudyID)
+})
+fit = with(imp,{
+  environment(f_hard_cvd) = environment()
+  coxph(formula = update(f_hard_cvd,paste0("~ . +",paste0(omics,collapse = "+"))),id = StudyID)
+})
+kable(summary(pool(fit)),digits = 3)
+```
+
+### Model comparison
+
+```{r}
+kable(D1(fit, clinical_fit)$result)
+```
+
+## 5 omics markers from the ADA abstract
+
+```{r}
+omics = c("AAA01201000179.0807263.4","gly.P02671.7","gly.P02671.3",
+          "gly.P02671.5","gly.P02671.4")
+```
+
+## CAC progression
+
+```{r}
+clinical_fit = with(imp,{
+  environment(f_cac_prog) = environment()
+  glm(formula = f_cac_prog,family = "binomial")
+})
+fit = with(imp,{
+  environment(f_cac_prog) = environment()
+  glm(formula = update(f_cac_prog,paste0("~ . +",paste0(omics,collapse = "+"))),
+               family = "binomial")
+})
+kable(summary(pool(fit)),digits = 3)
+```
+
+### Model comparison
+
+```{r}
+kable(D1(fit, clinical_fit)$result)
+```
+
+## Change in CAC per year
+
+```{r}
+clinical_fit = with(imp,{
+  environment(f_cac_change) = environment()
+  lm(formula = f_cac_change)
+})
+fit = with(imp,{
+  environment(f_cac_change) = environment()
+  lm(formula = update(f_cac_change,paste0("~ . +",paste0(omics,collapse = "+"))))
+})
+kable(summary(pool(fit)),digits = 3)
+```
+
+### Model comparison
+
+```{r}
+kable(D1(fit, clinical_fit)$result)
+```
+
+## Death
+
+```{r}
+clinical_fit = with(imp,{
+  environment(f_death) = environment()
+  coxph(formula = f_death,id = StudyID)
+})
+fit = with(imp,{
+  environment(f_death) = environment()
+  coxph(formula = update(f_death,paste0("~ . +",paste0(omics,collapse = "+"))),id = StudyID)
+})
+kable(summary(pool(fit)),digits = 3)
+```
+
+### Model comparison
+
+```{r}
+kable(D1(fit, clinical_fit)$result)
+```
+
+## CAD
+
+```{r}
+clinical_fit = with(imp,{
+  environment(f_cad) = environment()
+  coxph(formula = f_cad,id = StudyID)
+})
+fit = with(imp,{
+  environment(f_cad) = environment()
+  coxph(formula = update(f_cad,paste0("~ . +",paste0(omics,collapse = "+"))),id = StudyID)
+})
+kable(summary(pool(fit)),digits = 3)
+```
+
+### Model comparison
+
+```{r}
+kable(D1(fit, clinical_fit)$result)
+```
+
+## Hard CAD
+
+```{r}
+clinical_fit = with(imp,{
+  environment(f_hard_cad) = environment()
+  coxph(formula = f_hard_cad,id = StudyID)
+})
+fit = with(imp,{
+  environment(f_hard_cad) = environment()
+  coxph(formula = update(f_hard_cad,paste0("~ . +",paste0(omics,collapse = "+"))),id = StudyID)
+})
+kable(summary(pool(fit)),digits = 3)
+```
+
+### Model comparison
+
+```{r}
+kable(D1(fit, clinical_fit)$result)
+```
+
+## CVD
+
+```{r}
+clinical_fit = with(imp,{
+  environment(f_cvd) = environment()
+  coxph(formula = f_cvd,id = StudyID)
+})
+fit = with(imp,{
+  environment(f_cvd) = environment()
+  coxph(formula = update(f_cvd,paste0("~ . +",paste0(omics,collapse = "+"))),id = StudyID)
+})
+kable(summary(pool(fit)),digits = 3)
+```
+
+### Model comparison
+
+```{r}
+kable(D1(fit, clinical_fit)$result)
+```
+
+## Hard CVD
+
+```{r}
+clinical_fit = with(imp,{
+  environment(f_hard_cvd) = environment()
+  coxph(formula = f_hard_cvd,id = StudyID)
+})
+fit = with(imp,{
+  environment(f_hard_cvd) = environment()
+  coxph(formula = update(f_hard_cvd,paste0("~ . +",paste0(omics,collapse = "+"))),id = StudyID)
+})
+kable(summary(pool(fit)),digits = 3)
+```
+
+### Model comparison
+
+```{r}
+kable(D1(fit, clinical_fit)$result)
+```
+
