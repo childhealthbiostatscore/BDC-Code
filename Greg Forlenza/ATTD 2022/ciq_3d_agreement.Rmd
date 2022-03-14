@@ -13,7 +13,9 @@ library(plotly)
 library(patchwork)
 library(knitr)
 library(rgl)
-library(caret)
+library(pROC)
+library(lme4)
+library(broom.mixed)
 if(Sys.info()["sysname"] == "Windows"){
   home_dir = "B:/Projects/Cari Berget/Control IQ 12 Month MS"
 } else if (Sys.info()["sysname"] == "Linux"){
@@ -146,27 +148,21 @@ p3 = ggscatter(pca_data, y = "sensor_70_180", x = "sensor_mean", add = "reg.line
 
 # ROC Analysis
 
-5-fold CV 
-
 ```{r}
 # Need to fit a mixed model since people have multiple measures
 roc_df = data %>% select(record_id,sensor_mean,sensor_70_180,hba1c)
 # HbA1c cutoff
-roc_df$hba1c_group = cut(roc_df$hba1c,c(-Inf,7,Inf),labels = c("<7%",">=7%"),right = F)
-# LOO CV
-cv = groupKFold(roc_df$record_id,k = 5)
-aucs = sapply(cv, function(f){
-  # Split data
-  train = roc_df[f,]
-  test = roc_df[-f,]
-  # Mixed model
-  mod = glmer(hba1c_group ~ sensor_70_180 + (1|record_id),data = train,family = "binomial")
-  # Predict on test
-  probs = predict(mod, test, type = "response", allow.new.levels = TRUE)
-  # ROC
-  r = roc(response = test$hba1c_group, predictor = probs,quiet = T)
-  # Return AUC
-  r$auc[[1]]
-})
+roc_df$hba1c_group = cut(roc_df$hba1c,c(-Inf,7,Inf),labels = c("<=7%",">7%"))
+roc_df$hba1c_group = relevel(roc_df$hba1c_group,ref = ">7%")
+# Mixed model
+mod = geeglm(hba1c_group ~ sensor_70_180,id = record_id,data = roc_df,family = binomial)
+kable(tidy(mod,"fixed",exponentiate = T),digits = 3)
+# Predict on test
+probs = predict(mod, type = "response")
+# ROC
+r = roc(response = mod@frame$hba1c_group, predictor = probs,ci=T)
+# Plot
+plot(r,print.thres = T)
 ```
 
+We fit a mixed logistic model with random intercept for each participant. The results above are interpreted on the odds ratio scale, so for each 1 unit increase in TIR the odds of achieving an HbA1c of <=7% increase by `r round((exp(summary(mod)$coefficients[2,1])-1)*100,2)`% on average.
