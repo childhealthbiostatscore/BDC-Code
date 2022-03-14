@@ -150,19 +150,16 @@ p3 = ggscatter(pca_data, y = "sensor_70_180", x = "sensor_mean", add = "reg.line
 
 ```{r}
 # Need to fit a mixed model since people have multiple measures
-roc_df = data %>% select(record_id,sensor_mean,sensor_70_180,hba1c)
+roc_df = data %>% select(record_id,sensor_70_180,hba1c) 
+roc_df = roc_df[complete.cases(roc_df),]
+roc_df = roc_df %>% group_by(record_id) %>% filter(row_number()==1)
 # HbA1c cutoff
 roc_df$hba1c_group = cut(roc_df$hba1c,c(-Inf,7,Inf),labels = c("<=7%",">7%"))
 roc_df$hba1c_group = relevel(roc_df$hba1c_group,ref = ">7%")
-# Mixed model
-mod = geeglm(hba1c_group ~ sensor_70_180,id = record_id,data = roc_df,family = binomial)
-kable(tidy(mod,"fixed",exponentiate = T),digits = 3)
-# Predict on test
-probs = predict(mod, type = "response")
 # ROC
-r = roc(response = mod@frame$hba1c_group, predictor = probs,ci=T)
+r = roc(response = roc_df$hba1c_group, predictor = roc_df$sensor_70_180,ci = T,quiet = T)
 # Plot
 plot(r,print.thres = T)
 ```
 
-We fit a mixed logistic model with random intercept for each participant. The results above are interpreted on the odds ratio scale, so for each 1 unit increase in TIR the odds of achieving an HbA1c of <=7% increase by `r round((exp(summary(mod)$coefficients[2,1])-1)*100,2)`% on average.
+We performed an ROC analysis to determine a TIR cutoff that maximizes sensitivity and specificity when predicting HbA1c $\leq$ 7%. Based on the Youden index, a cutoff of 64.5% TIR maximizes sensitivity (0.83) and specificity (0.87) and results in an area under the curve of 0.92 (95% CI: 0.88-0.96).
