@@ -13,6 +13,7 @@ library(plotly)
 library(patchwork)
 library(knitr)
 library(rgl)
+library(caret)
 if(Sys.info()["sysname"] == "Windows"){
   home_dir = "B:/Projects/Cari Berget/Control IQ 12 Month MS"
 } else if (Sys.info()["sysname"] == "Linux"){
@@ -143,16 +144,29 @@ p3 = ggscatter(pca_data, y = "sensor_70_180", x = "sensor_mean", add = "reg.line
 (plot_spacer() + p1) / (p2 + p3)
 ```
 
+# ROC Analysis
+
+5-fold CV 
+
 ```{r}
-mod = lm(hba1c ~ sensor_70_180,data = pca_data)
-t = summary(mod)$coefficients
-
-
-seg_df1 = data.frame(x1 = min(pca_data$sensor_70_180), x2 = (7-t[1,1])/t[2,1], y1 = 7, y2 = 7)
-seg_df2 = data.frame(x1 = (7-t[1,1])/t[2,1], x2 = (7-t[1,1])/t[2,1], y1 = 5, y2 = 7)
-p2 +
-  geom_segment(aes(x = x1, y = y1, xend = x2, yend = y2), colour = "red",
-               data = seg_df1) + 
-  geom_segment(aes(x = x1, y = y1, xend = x2, yend = y2), colour = "red",
-               data = seg_df2)
+# Need to fit a mixed model since people have multiple measures
+roc_df = data %>% select(record_id,sensor_mean,sensor_70_180,hba1c)
+# HbA1c cutoff
+roc_df$hba1c_group = cut(roc_df$hba1c,c(-Inf,7,Inf),labels = c("<7%",">=7%"),right = F)
+# LOO CV
+cv = groupKFold(roc_df$record_id,k = 5)
+aucs = sapply(cv, function(f){
+  # Split data
+  train = roc_df[f,]
+  test = roc_df[-f,]
+  # Mixed model
+  mod = glmer(hba1c_group ~ sensor_70_180 + (1|record_id),data = train,family = "binomial")
+  # Predict on test
+  probs = predict(mod, test, type = "response", allow.new.levels = TRUE)
+  # ROC
+  r = roc(response = test$hba1c_group, predictor = probs,quiet = T)
+  # Return AUC
+  r$auc[[1]]
+})
 ```
+
