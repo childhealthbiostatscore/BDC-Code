@@ -14,6 +14,7 @@ results = {
     "visit": [],
     "age": [],
     "sensor_readings": [],
+    "sensor_interval": [],
     "total_tir": [],
     "night_tir": [],
     "day_tir": [],
@@ -23,34 +24,39 @@ results = {
     "a1c": [],
 }
 # Calculate CGM values, etc. for each person
-folders = os.listdir(wd + "Data_Raw/Cases_T1D+DR")
+folders = os.listdir(wd + "Data_Raw/Control_T1D+No DR")
 folders = [f for f in folders if "DS_Store" not in f]
 for fol in folders:
+    print(fol)
     # Get ID
     subject_id = [int(i) for i in fol.split() if i.isdigit()][0]
     # Find summary and CSV files
-    files = os.listdir(wd + "Data_Raw/Cases_T1D+DR/" + fol)
+    files = os.listdir(wd + "Data_Raw/Control_T1D+No DR/" + fol)
     csvs = [f for f in files if ".csv" in f]
     summary = [f for f in files if "summary" in f.lower()][0]
     summary = pd.read_excel(
-        wd + "Data_Raw/Cases_T1D+DR/" + fol + "/" + summary,
+        wd + "Data_Raw/Control_T1D+No DR/" + fol + "/" + summary,
         engine="openpyxl",
     )
     dob = summary.iloc[0, 0]
     for c in csvs:
+        print(fol+'/'+c)
         # Get visit number
         vis = c.split("_")[0]
         vis = [int(i) for i in vis.split() if i.isdigit()][0]
         # Two weeks of data leading up to visit
         end_date = summary.loc[summary.iloc[:, 1] == vis]["Office Visit Date"]
         start_date = end_date - pd.to_timedelta(14, unit="d")
-        age = start_date - dob
-        age = float(age.dt.days / 365.25)
+        if (not pd.isnull(dob)):
+            age = start_date - dob
+            age = float(age.dt.days / 365.25)
+        else:
+            age = np.nan
         end_date = end_date.dt.strftime("%Y-%m-%d").values[0]
         start_date = start_date.dt.strftime("%Y-%m-%d").values[0]
         # Import CGM file
         cgm = pd.read_csv(
-            wd + "Data_Raw/Cases_T1D+DR/" + fol + "/" + c,
+            wd + "Data_Raw/Control_T1D+No DR/" + fol + "/" + c,
             low_memory=False,
         )
         # Get timestamp and glucose columns, format
@@ -78,6 +84,9 @@ for fol in folders:
         cgm["timestamp"] = [t.replace("T", " ") for t in cgm["timestamp"]]
         cgm["timestamp"] = [cal.parse(t)[0] for t in cgm["timestamp"]]
         cgm["timestamp"] = [datetime(*t[:6]) for t in cgm["timestamp"]]
+        # Get sensor interval
+        sens_int = cgm['timestamp'].diff().mode()
+        sens_int = sens_int.dt.total_seconds().abs()/60
         # Complete cases
         cgm.dropna(inplace=True)
         # Re-index
@@ -89,7 +98,7 @@ for fol in folders:
         tir = [g for g in cgm["glucose"] if g >= 70 and g <= 140]
         mbg = cgm["glucose"].mean()
         # Split into day and night
-        day = cgm.between_time("6:00", "23:00", inclusive = "neither")
+        day = cgm.between_time("6:00", "23:00",include_start=False,include_end=False)
         night = cgm.between_time("23:00", "6:00")
         # Skip if no data
         if cgm.shape[0] == 0:
@@ -115,7 +124,8 @@ for fol in folders:
         results["visit"].append(vis)
         results["age"].append(age)
         results["sensor_readings"].append(total_r)
+        results["sensor_interval"].append(sens_int)
 results = pd.DataFrame(results)
 results.sort_values(by=["id", "visit"], inplace=True)
 results.dropna(inplace=True)
-results.to_csv(wd + "Data_Cleaned/analysis_data_jdrf.csv",index=False)
+results.to_csv(wd + "Data_Cleaned/cgm_controls.csv",index=False)
