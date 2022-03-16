@@ -5,8 +5,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 from statistics import mode
-
-wd = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Day and Night CGM/"
+wd = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/JDRF/"
 cal = parsedatetime.Calendar()
 # Results dict for storing data
 results = {
@@ -23,17 +22,19 @@ results = {
     "a1c": [],
 }
 # Calculate CGM values, etc. for each person
-folders = os.listdir(wd + "Data_Raw/Cleaned Final Data/Cases_T1D+DR")
+folders = os.listdir(wd + "Data_Raw/Control_T1D+No DR")
+folders.sort()
 folders = [f for f in folders if "DS_Store" not in f]
 for fol in folders:
     # Get ID
     subject_id = [int(i) for i in fol.split() if i.isdigit()][0]
     # Find summary and CSV files
-    files = os.listdir(wd + "Data_Raw/Cleaned Final Data/Cases_T1D+DR/" + fol)
+    files = os.listdir(wd + "Data_Raw/Control_T1D+No DR/" + fol)
     csvs = [f for f in files if ".csv" in f]
+    csvs.sort()
     summary = [f for f in files if "summary" in f.lower()][0]
     summary = pd.read_excel(
-        wd + "Data_Raw/Cleaned Final Data/Cases_T1D+DR/" + fol + "/" + summary,
+        wd + "Data_Raw/Control_T1D+No DR/" + fol + "/" + summary,
         engine="openpyxl",
     )
     dob = summary.iloc[0, 0]
@@ -44,27 +45,31 @@ for fol in folders:
         # Two weeks of data leading up to visit
         end_date = summary.loc[summary.iloc[:, 1] == vis]["Office Visit Date"]
         start_date = end_date - pd.to_timedelta(14, unit="d")
-        age = start_date - dob
-        age = float(age.dt.days / 365.25)
+        if (not pd.isnull(dob)):
+            age = start_date - dob
+            age = float(age.dt.days / 365.25)
+        else:
+            age = np.nan
         end_date = end_date.dt.strftime("%Y-%m-%d").values[0]
         start_date = start_date.dt.strftime("%Y-%m-%d").values[0]
         # Import CGM file
         cgm = pd.read_csv(
-            wd + "Data_Raw/Cleaned Final Data/Cases_T1D+DR/" + fol + "/" + c,
+            wd + "Data_Raw/Control_T1D+No DR/" + fol + "/" + c,
             low_memory=False,
         )
         # Get timestamp and glucose columns, format
         if "Timestamp (YYYY-MM-DDThh:mm:ss)" in cgm.columns:
-            cgm = cgm[["Timestamp (YYYY-MM-DDThh:mm:ss)", "Glucose Value (mg/dL)"]]
+            cgm = cgm[["Timestamp (YYYY-MM-DDThh:mm:ss)",
+                       "Glucose Value (mg/dL)"]]
         elif cgm.shape[1] == 19:
             start = cgm.loc[cgm.iloc[:, 2] == "Device Timestamp"].index[0]
             cgm.columns = cgm.iloc[start, :]
-            cgm = cgm.iloc[start + 1 :, :]
+            cgm = cgm.iloc[start + 1:, :]
             cgm = cgm[["Device Timestamp", "Historic Glucose mg/dL"]]
         elif cgm.shape[1] > 40:
-            start = cgm.loc[cgm["Unnamed: 2"] == "Sensor"].index[0]
+            start = cgm.loc[cgm.iloc[:, 2] == "Sensor"].index[0]
             cgm.columns = cgm.iloc[start + 1, :]
-            cgm = cgm.iloc[start + 2 :, :]
+            cgm = cgm.iloc[start + 2:, :]
             cgm.reset_index(inplace=True)
             cgm["timestamp"] = cgm["Date"] + " " + cgm["Time"]
             cgm = cgm[["timestamp", "Sensor Glucose (mg/dL)"]]
@@ -80,16 +85,18 @@ for fol in folders:
         cgm["timestamp"] = [datetime(*t[:6]) for t in cgm["timestamp"]]
         # Complete cases
         cgm.dropna(inplace=True)
-        # Re-index
+        # Re-index and sort
         cgm.set_index("timestamp", inplace=True)
+        cgm.sort_index(inplace=True)
         # Remove all but two weeks prior
         cgm = cgm.loc[start_date:end_date]
-        # All 
+        # All
         total_r = cgm["glucose"].notna().sum()
         tir = [g for g in cgm["glucose"] if g >= 70 and g <= 140]
         mbg = cgm["glucose"].mean()
         # Split into day and night
-        day = cgm.between_time("6:00", "23:00", inclusive = "neither")
+        day = cgm.between_time(
+            "6:00", "23:00", include_start=False, include_end=False)
         night = cgm.between_time("23:00", "6:00")
         # Skip if no data
         if cgm.shape[0] == 0:
@@ -118,4 +125,4 @@ for fol in folders:
 results = pd.DataFrame(results)
 results.sort_values(by=["id", "visit"], inplace=True)
 results.dropna(inplace=True)
-results.to_csv(wd + "Data_Clean/analysis_data_jdrf.csv", index=False)
+results.to_csv("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Day and Night CGM/Data_Clean/analysis_data_jdrf_controls.csv", index=False)

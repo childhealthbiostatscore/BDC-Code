@@ -5,7 +5,6 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 from statistics import mode
-
 wd = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/JDRF/"
 cal = parsedatetime.Calendar()
 # Results dict for storing data
