@@ -22,19 +22,19 @@ results = {
     "a1c": [],
 }
 # Calculate CGM values, etc. for each person
-folders = os.listdir(wd + "Data_Raw/Control_T1D+No DR")
+folders = os.listdir(wd + "Data_Raw/Cases_T1D+DR")
 folders.sort()
 folders = [f for f in folders if "DS_Store" not in f]
 for fol in folders:
     # Get ID
     subject_id = [int(i) for i in fol.split() if i.isdigit()][0]
     # Find summary and CSV files
-    files = os.listdir(wd + "Data_Raw/Control_T1D+No DR/" + fol)
+    files = os.listdir(wd + "Data_Raw/Cases_T1D+DR/" + fol)
     csvs = [f for f in files if ".csv" in f]
     csvs.sort()
     summary = [f for f in files if "summary" in f.lower()][0]
     summary = pd.read_excel(
-        wd + "Data_Raw/Control_T1D+No DR/" + fol + "/" + summary,
+        wd + "Data_Raw/Cases_T1D+DR/" + fol + "/" + summary,
         engine="openpyxl",
     )
     dob = summary.iloc[0, 0]
@@ -54,7 +54,7 @@ for fol in folders:
         start_date = start_date.dt.strftime("%Y-%m-%d").values[0]
         # Import CGM file
         cgm = pd.read_csv(
-            wd + "Data_Raw/Control_T1D+No DR/" + fol + "/" + c,
+            wd + "Data_Raw/Cases_T1D+DR/" + fol + "/" + c,
             low_memory=False,
         )
         # Get timestamp and glucose columns, format
@@ -125,4 +125,6 @@ for fol in folders:
 results = pd.DataFrame(results)
 results.sort_values(by=["id", "visit"], inplace=True)
 results.dropna(inplace=True)
-results.to_csv("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Day and Night CGM/Data_Clean/analysis_data_jdrf_controls.csv", index=False)
+results.to_csv("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/\
+    Laura/BDC/Projects/Viral Shah/Day and Night CGM/Data_Clean/\
+        analysis_data_jdrf_cases.csv",index=False)
