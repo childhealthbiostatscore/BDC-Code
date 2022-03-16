@@ -12,27 +12,31 @@ cal = parsedatetime.Calendar()
 results = {
     "id": [],
     "visit": [],
+    "visit_date": [],
     "age": [],
     "sensor_readings": [],
     "sensor_interval": [],
-    "total_tir": [],
-    "night_tir": [],
-    "day_tir": [],
-    "mbg": [],
-    "day_mbg": [],
-    "night_mbg": [],
+    "time_below_54": [],
+    "time_below_70": [],
+    "tir_70_180": [],
+    "time_above_180": [],
+    "time_above_250": [],
+    "mean_sensor": [],
+    "sd_sensor": [],
+    "cv_sensor": [],
     "a1c": [],
 }
 # Calculate CGM values, etc. for each person
 folders = os.listdir(wd + "Data_Raw/Control_T1D+No DR")
+folders.sort()
 folders = [f for f in folders if "DS_Store" not in f]
 for fol in folders:
-    print(fol)
     # Get ID
     subject_id = [int(i) for i in fol.split() if i.isdigit()][0]
     # Find summary and CSV files
     files = os.listdir(wd + "Data_Raw/Control_T1D+No DR/" + fol)
     csvs = [f for f in files if ".csv" in f]
+    csvs.sort()
     summary = [f for f in files if "summary" in f.lower()][0]
     summary = pd.read_excel(
         wd + "Data_Raw/Control_T1D+No DR/" + fol + "/" + summary,
@@ -68,7 +72,7 @@ for fol in folders:
             cgm = cgm.iloc[start + 1 :, :]
             cgm = cgm[["Device Timestamp", "Historic Glucose mg/dL"]]
         elif cgm.shape[1] > 40:
-            start = cgm.loc[cgm["Unnamed: 2"] == "Sensor"].index[0]
+            start = cgm.loc[cgm.iloc[:,2] == "Sensor"].index[0]
             cgm.columns = cgm.iloc[start + 1, :]
             cgm = cgm.iloc[start + 2 :, :]
             cgm.reset_index(inplace=True)
@@ -89,36 +93,37 @@ for fol in folders:
         sens_int = sens_int.dt.total_seconds().abs()/60
         # Complete cases
         cgm.dropna(inplace=True)
-        # Re-index
+        # Re-index and sort
         cgm.set_index("timestamp", inplace=True)
+        cgm.sort_index(inplace=True)
         # Remove all but two weeks prior
         cgm = cgm.loc[start_date:end_date]
         # All 
         total_r = cgm["glucose"].notna().sum()
-        tir = [g for g in cgm["glucose"] if g >= 70 and g <= 140]
-        mbg = cgm["glucose"].mean()
-        # Split into day and night
-        day = cgm.between_time("6:00", "23:00",include_start=False,include_end=False)
-        night = cgm.between_time("23:00", "6:00")
+        time_below_54 = [g for g in cgm["glucose"] if g < 54]
+        time_below_70 = [g for g in cgm["glucose"] if g < 70]
+        tir_70_180 = [g for g in cgm["glucose"] if g >= 70 and g <= 180]
+        time_above_180 = [g for g in cgm["glucose"] if g > 180]
+        time_above_250 = [g for g in cgm["glucose"] if g > 250]
+        mean_sensor = cgm["glucose"].mean()
+        sd_sensor = cgm["glucose"].std()
+        cv_sensor = sd_sensor / mean_sensor
         # Skip if no data
         if cgm.shape[0] == 0:
             continue
-        # Day and night TIR
-        day_r = day["glucose"].notna().sum()
-        day_tir = [g for g in day["glucose"] if g >= 70 and g <= 140]
-        day_mbg = day["glucose"].mean()
-        night_r = night["glucose"].notna().sum()
-        night_tir = [g for g in night["glucose"] if g >= 70 and g <= 140]
-        night_mbg = night["glucose"].mean()
         # Write results
-        results["total_tir"].append(round(len(tir) / total_r * 100, 2))
-        results["day_tir"].append(round(len(day_tir) / day_r * 100, 2))
-        results["night_tir"].append(round(len(night_tir) / night_r * 100, 2))
-        results["mbg"].append(mbg)
-        results["day_mbg"].append(day_mbg)
-        results["night_mbg"].append(night_mbg)
-        a1c = float(summary.loc[summary.iloc[:, 1] == vis]["A1c"])
+        results["time_below_54"].append(round(len(time_below_54) / total_r * 100, 2))
+        results["time_below_70"].append(round(len(time_below_70) / total_r * 100, 2))
+        results["tir_70_180"].append(round(len(tir_70_180) / total_r * 100, 2))
+        results["time_above_180"].append(round(len(time_above_180) / total_r * 100, 2))
+        results["time_above_250"].append(round(len(time_above_250) / total_r * 100, 2))
+        results["mean_sensor"].append(mean_sensor)
+        results["sd_sensor"].append(sd_sensor)
+        results["cv_sensor"].append(cv_sensor)
+        a1c = float(summary.loc[summary.iloc[:,1] == vis]["A1c"])
         results["a1c"].append(a1c)
+        visit_date = summary.loc[summary.iloc[:,1] == vis]["Office Visit Date"]
+        results["visit_date"].append(visit_date)
         # ID etc.
         results["id"].append(subject_id)
         results["visit"].append(vis)
