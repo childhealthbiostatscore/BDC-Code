@@ -109,9 +109,9 @@ for fol in folders:
         night_tir = [g for g in night["glucose"] if g >= 70 and g <= 140]
         night_mbg = night["glucose"].mean()
         # Write results
-        results["total_tir"].append(round(len(tir) / total_r * 100, 2))
-        results["day_tir"].append(round(len(day_tir) / day_r * 100, 2))
-        results["night_tir"].append(round(len(night_tir) / night_r * 100, 2))
+        results["total_tir"].append(len(tir) / total_r * 100)
+        results["day_tir"].append(len(day_tir) / day_r * 100)
+        results["night_tir"].append(len(night_tir) / night_r * 100)
         results["mbg"].append(mbg)
         results["day_mbg"].append(day_mbg)
         results["night_mbg"].append(night_mbg)
