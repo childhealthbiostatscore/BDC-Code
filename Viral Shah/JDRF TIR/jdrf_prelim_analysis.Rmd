@@ -12,7 +12,7 @@ library(tidyverse) # data manipulation
 library(lubridate)
 library(ggplot2)
 library(readr)
-
+library(table1)
 
 knitr::opts_chunk$set(echo = FALSE)
 if(Sys.info()["sysname"] == "Windows"){
@@ -26,15 +26,90 @@ knitr::opts_knit$set(root.dir = home_dir)
 
 # import cgm and lab data to be merged    
 cgm_cases <- read_csv("S:/Laura/BDC/Projects/Viral Shah/JDRF/Data_Cleaned/cgm_cases.csv")
+cgm_cases$group = 1
+cgm_controls <- read_csv("S:/Laura/BDC/Projects/Viral Shah/JDRF/Data_Cleaned/cgm_controls.csv")
+cgm_controls$group = 2
 jdrf_data_clean <- read_delim("S:/Laura/BDC/Projects/Viral Shah/JDRF/Data_Cleaned/jdrf_data_clean.csv", 
     delim = ";", escape_double = FALSE, col_types = cols(...1 = col_skip()), 
     trim_ws = TRUE)
 ```
 
+# DATA QUESTIONS
+## QUESTIONS ON THINGS OUR DATA HAS:
+### CGM:
+cgm mean glucose: is this sensor mean?
 
+### OTHER
+Cardiovascular disease at inclusion - double check i used the right stuff
+Autoimmune disease (thyroid, adrenal, celiac) at inclusion
 
-```{r data merge}
+## VARS THAT THE SETS DONT HAVE/ I CANT FIND/NEEDS TO DERIVED?: 
+### CGM:
+CGM use % - self derived?
 
+### OTHER:
+Types of CGM- Dexcom, Medtronic, Libre, eversense,
+Smoking- exclude if not reliable (Let Bing query) – if smoking in last 5 years- smoking Yes/ if no smoking data in last 5 years- NO
+Microalbuminuria – Continuous
+DKA/Severe hypoglycemia – patient reported, hospitalization data from EPIC
+SBP/DBP – continuous data
+Insulin Delivery method – MDI/CSII
 
+```{r data merge, include=FALSE}
+jdrf_data_clean$`Study ID`
+cgm_total = full_join(cgm_cases, cgm_controls)
+cgm_total$`Study ID` = cgm_total$id
+rm(cgm_cases, cgm_controls)
+
+# this could very well have duplicate data information because we dont have dates to remove the dupes from
+combined_jdrf = full_join(cgm_total, jdrf_data_clean)
+
+# for use once we have a date to go off of
+# analysis = full_join(analysis %>% group_by(ResultDate) %>% mutate(dummy = row_number()),
+#                      hemo %>% group_by(ResultDate) %>% mutate(dummy = row_number())) %>% select(-dummy)
 ```
 
+
+```{r var summarizing, include=FALSE} 
+# here we are averaging subjects across visits, and then comparing these averages between groups
+cgm_table_df = cgm_total %>% select(-c(visit, visit_date, sensor_readings, sensor_interval_mins, id) ) %>% group_by(`Study ID`, group) %>% summarise(mean_cgm = mean(mean_sensor),
+                                                                                                                                             mean_a1c = mean(a1c),
+                                                                                                                                             mean_tir_70_180 = mean(tir_70_180),
+                                                                                                                                             mean_tbr_70 = mean(time_below_70),
+                                                                                                                                             mean_tbr_54 = mean(time_below_54),
+                                                                                                                                             mean_tar_180 = mean(time_above_180),
+                                                                                                                                             mean_tar_250 = mean(time_above_250),
+                                                                                                                                             mean_cv = mean(cv_sensor),
+                                                                                                                                             mean_sd = mean(sd_sensor))
+# all of the variables we are interested in here is collected at basaeline i believe
+# so i will filter out the mrn lab data and only include those with a study id
+lab_table_df = jdrf_data_clean %>% 
+  select(`Study ID`,group, Age_DateOfEyeExam, Sex, Race_Ethnicity, Htcm, Wtkg, BMI, InsuranceCategory_DateOfEyeExam, DiabetesDuration_DateOfEyeExam, HistoryOfCardiovascularDisease_YesNo,
+         Hyperthyroidism_YesNo, GravesDisease_YesNo, AddisonsDisease_YesNo, CeliacDisease_YesNo) %>% 
+  group_by(`Study ID`, group) %>%
+  filter(!is.na(`Study ID`)) %>% distinct()
+
+# ccombine the two for table 1
+table1_df = full_join(lab_table_df, cgm_table_df)
+table1_df = table1_df %>% ungroup %>% select(-`Study ID`)
+```
+
+
+```{r table1, echo=FALSE}
+# T1D_lab_table1 =  table1( ~ `duration_of_t1d (years)` + home_regimen + hba1c + ph + bicarbonate + glargine_dose_per_kg 
+#                        | diabetes_diagnosis, data = EG_patient_char, topclass="Rtable1-zebra",
+#                         render.continuous=c( "Median [IQR]"="Median [Q1, Q3]"), overall=F, extra.col=list(`P-value`=pvalue))
+
+
+jdrf_table1 = table1( ~ .| group,
+                      data = table1_df,
+                      topclass ="Rtable1-zebra",
+                      render.continuous=c( "Mean (SD)"="Mean (SD)"))
+jdrf_table1
+```
+
+```{r dataset output, include=FALSE}
+
+write.csv2(combined_jdrf, file = "S:/Laura/BDC/Projects/Viral Shah/JDRF/Data_Cleaned/jdrf_reallylong_long.csv")
+# output the long duped out jdrf data for tim, sorry dude its ugly
+```
