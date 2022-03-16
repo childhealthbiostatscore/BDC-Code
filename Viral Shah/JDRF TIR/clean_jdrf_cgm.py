@@ -5,7 +5,6 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 from statistics import mode
-from tqdm import tqdm
 
 wd = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/JDRF/"
 cal = parsedatetime.Calendar()
@@ -31,7 +30,7 @@ results = {
 folders = os.listdir(wd + "Data_Raw/Control_T1D+No DR")
 folders.sort()
 folders = [f for f in folders if "DS_Store" not in f]
-for fol in tqdm(folders):
+for fol in folders:
     # Get ID
     subject_id = [int(i) for i in fol.split() if i.isdigit()][0]
     # Find summary and CSV files
@@ -44,7 +43,7 @@ for fol in tqdm(folders):
         engine="openpyxl",
     )
     dob = summary.iloc[0, 0]
-    for c in tqdm(csvs,leave=False):
+    for c in csvs:
         # Get visit number
         vis = c.split("_")[0]
         vis = [int(i) for i in vis.split() if i.isdigit()][0]
@@ -65,16 +64,17 @@ for fol in tqdm(folders):
         )
         # Get timestamp and glucose columns, format
         if "Timestamp (YYYY-MM-DDThh:mm:ss)" in cgm.columns:
-            cgm = cgm[["Timestamp (YYYY-MM-DDThh:mm:ss)", "Glucose Value (mg/dL)"]]
+            cgm = cgm[["Timestamp (YYYY-MM-DDThh:mm:ss)",
+                       "Glucose Value (mg/dL)"]]
         elif cgm.shape[1] == 19:
             start = cgm.loc[cgm.iloc[:, 2] == "Device Timestamp"].index[0]
             cgm.columns = cgm.iloc[start, :]
-            cgm = cgm.iloc[start + 1 :, :]
+            cgm = cgm.iloc[start + 1:, :]
             cgm = cgm[["Device Timestamp", "Historic Glucose mg/dL"]]
         elif cgm.shape[1] > 40:
-            start = cgm.loc[cgm.iloc[:,2] == "Sensor"].index[0]
+            start = cgm.loc[cgm.iloc[:, 2] == "Sensor"].index[0]
             cgm.columns = cgm.iloc[start + 1, :]
-            cgm = cgm.iloc[start + 2 :, :]
+            cgm = cgm.iloc[start + 2:, :]
             cgm.reset_index(inplace=True)
             cgm["timestamp"] = cgm["Date"] + " " + cgm["Time"]
             cgm = cgm[["timestamp", "Sensor Glucose (mg/dL)"]]
@@ -98,7 +98,7 @@ for fol in tqdm(folders):
         cgm.sort_index(inplace=True)
         # Remove all but two weeks prior
         cgm = cgm.loc[start_date:end_date]
-        # All 
+        # All
         total_r = cgm["glucose"].notna().sum()
         time_below_54 = [g for g in cgm["glucose"] if g < 54]
         time_below_70 = [g for g in cgm["glucose"] if g < 70]
@@ -120,10 +120,12 @@ for fol in tqdm(folders):
         results["mean_sensor"].append(mean_sensor)
         results["sd_sensor"].append(sd_sensor)
         results["cv_sensor"].append(cv_sensor)
-        a1c = float(summary.loc[summary.iloc[:,1] == vis]["A1c"])
+        a1c = float(summary.loc[summary.iloc[:, 1] == vis]["A1c"])
         results["a1c"].append(a1c)
-        visit_date = summary.loc[summary.iloc[:,1] == vis]["Office Visit Date"]
-        results["visit_date"].append(np.datetime_as_string(visit_date,unit='D')[0])
+        visit_date = summary.loc[summary.iloc[:, 1]
+                                 == vis]["Office Visit Date"]
+        results["visit_date"].append(
+            np.datetime_as_string(visit_date, unit='D')[0])
         # ID etc.
         results["id"].append(subject_id)
         results["visit"].append(vis)
@@ -133,4 +135,4 @@ for fol in tqdm(folders):
 results = pd.DataFrame(results)
 results.sort_values(by=["id", "visit"], inplace=True)
 results.dropna(inplace=True)
-results.to_csv(wd + "Data_Cleaned/cgm_controls.csv",index=False)
+results.to_csv(wd + "Data_Cleaned/cgm_controls.csv", index=False)
