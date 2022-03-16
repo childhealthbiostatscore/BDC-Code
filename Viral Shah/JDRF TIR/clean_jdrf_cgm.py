@@ -15,7 +15,7 @@ results = {
     "visit_date": [],
     "age": [],
     "sensor_readings": [],
-    "sensor_interval": [],
+    "sensor_interval_mins": [],
     "time_below_54": [],
     "time_below_70": [],
     "tir_70_180": [],
@@ -44,7 +44,6 @@ for fol in folders:
     )
     dob = summary.iloc[0, 0]
     for c in csvs:
-        print(fol+'/'+c)
         # Get visit number
         vis = c.split("_")[0]
         vis = [int(i) for i in vis.split() if i.isdigit()][0]
@@ -112,24 +111,24 @@ for fol in folders:
         if cgm.shape[0] == 0:
             continue
         # Write results
-        results["time_below_54"].append(round(len(time_below_54) / total_r * 100, 2))
-        results["time_below_70"].append(round(len(time_below_70) / total_r * 100, 2))
-        results["tir_70_180"].append(round(len(tir_70_180) / total_r * 100, 2))
-        results["time_above_180"].append(round(len(time_above_180) / total_r * 100, 2))
-        results["time_above_250"].append(round(len(time_above_250) / total_r * 100, 2))
+        results["time_below_54"].append(len(time_below_54) / total_r * 100)
+        results["time_below_70"].append(len(time_below_70) / total_r * 100)
+        results["tir_70_180"].append(len(tir_70_180) / total_r * 100)
+        results["time_above_180"].append(len(time_above_180) / total_r * 100)
+        results["time_above_250"].append(len(time_above_250) / total_r * 100)
         results["mean_sensor"].append(mean_sensor)
         results["sd_sensor"].append(sd_sensor)
         results["cv_sensor"].append(cv_sensor)
         a1c = float(summary.loc[summary.iloc[:,1] == vis]["A1c"])
         results["a1c"].append(a1c)
         visit_date = summary.loc[summary.iloc[:,1] == vis]["Office Visit Date"]
-        results["visit_date"].append(visit_date)
+        results["visit_date"].append(np.datetime_as_string(visit_date,unit='D')[0])
         # ID etc.
         results["id"].append(subject_id)
         results["visit"].append(vis)
         results["age"].append(age)
         results["sensor_readings"].append(total_r)
-        results["sensor_interval"].append(sens_int)
+        results["sensor_interval_mins"].append(sens_int[0])
 results = pd.DataFrame(results)
 results.sort_values(by=["id", "visit"], inplace=True)
 results.dropna(inplace=True)
