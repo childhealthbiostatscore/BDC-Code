@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 from statistics import mode
+from tqdm import tqdm
 
 wd = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/JDRF/"
 cal = parsedatetime.Calendar()
@@ -30,7 +31,7 @@ results = {
 folders = os.listdir(wd + "Data_Raw/Control_T1D+No DR")
 folders.sort()
 folders = [f for f in folders if "DS_Store" not in f]
-for fol in folders:
+for fol in tqdm(folders):
     # Get ID
     subject_id = [int(i) for i in fol.split() if i.isdigit()][0]
     # Find summary and CSV files
@@ -43,7 +44,7 @@ for fol in folders:
         engine="openpyxl",
     )
     dob = summary.iloc[0, 0]
-    for c in csvs:
+    for c in tqdm(csvs,leave=False):
         # Get visit number
         vis = c.split("_")[0]
         vis = [int(i) for i in vis.split() if i.isdigit()][0]
