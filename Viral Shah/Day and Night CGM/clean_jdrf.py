@@ -22,21 +22,18 @@ results = {
     "a1c": [],
 }
 # Calculate CGM values, etc. for each person
-folders = os.listdir(wd + "Data_Raw/Cases_T1D+DR")
+folders = os.listdir(wd + "Data_Raw/Control_T1D+No DR")
 folders.sort()
 folders = [f for f in folders if "DS_Store" not in f]
 for fol in folders:
     # Get ID
     subject_id = [int(i) for i in fol.split() if i.isdigit()][0]
     # Find summary and CSV files
-    files = os.listdir(wd + "Data_Raw/Cases_T1D+DR/" + fol)
+    files = os.listdir(wd + "Data_Raw/Control_T1D+No DR/" + fol)
     csvs = [f for f in files if ".csv" in f]
     csvs.sort()
     summary = [f for f in files if "summary" in f.lower()][0]
-    summary = pd.read_excel(
-        wd + "Data_Raw/Cases_T1D+DR/" + fol + "/" + summary,
-        engine="openpyxl",
-    )
+    summary = pd.read_excel(wd + "Data_Raw/Control_T1D+No DR/" + fol + "/" + summary)
     dob = summary.iloc[0, 0]
     for c in csvs:
         # Get visit number
@@ -54,7 +51,7 @@ for fol in folders:
         start_date = start_date.dt.strftime("%Y-%m-%d").values[0]
         # Import CGM file
         cgm = pd.read_csv(
-            wd + "Data_Raw/Cases_T1D+DR/" + fol + "/" + c,
+            wd + "Data_Raw/Control_T1D+No DR/" + fol + "/" + c,
             low_memory=False,
         )
         # Get timestamp and glucose columns, format
@@ -109,9 +106,9 @@ for fol in folders:
         night_tir = [g for g in night["glucose"] if g >= 70 and g <= 140]
         night_mbg = night["glucose"].mean()
         # Write results
-        results["total_tir"].append(len(tir) / total_r * 100)
-        results["day_tir"].append(len(day_tir) / day_r * 100)
-        results["night_tir"].append(len(night_tir) / night_r * 100)
+        results["total_tir"].append((max(len(tir),0) / total_r) * 100)
+        results["day_tir"].append((max(len(day_tir),0) / day_r) * 100)
+        results["night_tir"].append((max(len(night_tir),0) / night_r) * 100)
         results["mbg"].append(mbg)
         results["day_mbg"].append(day_mbg)
         results["night_mbg"].append(night_mbg)
@@ -125,6 +122,4 @@ for fol in folders:
 results = pd.DataFrame(results)
 results.sort_values(by=["id", "visit"], inplace=True)
 results.dropna(inplace=True)
-results.to_csv("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/\
-    Laura/BDC/Projects/Viral Shah/Day and Night CGM/Data_Clean/\
-        analysis_data_jdrf_cases.csv",index=False)
+results.to_csv("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Day and Night CGM/Data_Clean/analysis_data_jdrf_controls.csv",index=False)
