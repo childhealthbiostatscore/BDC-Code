@@ -5,7 +5,8 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 from statistics import mode
-wd = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/JDRF/"
+wd = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/"\
+    "Projects/Viral Shah/JDRF/"
 cal = parsedatetime.Calendar()
 # Results dict for storing data
 results = {
@@ -13,9 +14,15 @@ results = {
     "visit": [],
     "age": [],
     "sensor_readings": [],
-    "total_tir": [],
-    "night_tir": [],
-    "day_tir": [],
+    "total_tir_70_140": [],
+    "total_tir_70_180": [],
+    "total_tir_over_180": [],
+    "day_tir_70_140": [],
+    "day_tir_70_180": [],
+    "day_tir_over_180": [],
+    "night_tir_70_140": [],
+    "night_tir_70_180": [],
+    "night_tir_over_180": [],
     "mbg": [],
     "day_mbg": [],
     "night_mbg": [],
@@ -33,7 +40,8 @@ for fol in folders:
     csvs = [f for f in files if ".csv" in f]
     csvs.sort()
     summary = [f for f in files if "summary" in f.lower()][0]
-    summary = pd.read_excel(wd + "Data_Raw/Control_T1D+No DR/" + fol + "/" + summary)
+    summary = pd.read_excel(
+        wd + "Data_Raw/Control_T1D+No DR/" + fol + "/" + summary)
     dob = summary.iloc[0, 0]
     for c in csvs:
         # Get visit number
@@ -89,7 +97,9 @@ for fol in folders:
         cgm = cgm.loc[start_date:end_date]
         # All
         total_r = cgm["glucose"].notna().sum()
-        tir = [g for g in cgm["glucose"] if g >= 70 and g <= 140]
+        total_tir_70_140 = [g for g in cgm["glucose"] if g >= 70 and g <= 140]
+        total_tir_70_180 = [g for g in cgm["glucose"] if g >= 70 and g <= 180]
+        total_tir_over_180 = [g for g in cgm["glucose"] if g > 180]
         mbg = cgm["glucose"].mean()
         # Split into day and night
         day = cgm.between_time(
@@ -98,17 +108,39 @@ for fol in folders:
         # Skip if no data
         if cgm.shape[0] == 0:
             continue
+        # mean glucose, TIR 70-180, TTIR 70-140, TAR >180 by day vs night
         # Day and night TIR
         day_r = day["glucose"].notna().sum()
-        day_tir = [g for g in day["glucose"] if g >= 70 and g <= 140]
+        day_tir_70_140 = [g for g in day["glucose"] if g >= 70 and g <= 140]
+        day_tir_70_180 = [g for g in day["glucose"] if g >= 70 and g <= 180]
+        day_tir_over_180 = [g for g in day["glucose"] if g > 180]
         day_mbg = day["glucose"].mean()
         night_r = night["glucose"].notna().sum()
-        night_tir = [g for g in night["glucose"] if g >= 70 and g <= 140]
+        night_tir_70_140 = [
+            g for g in night["glucose"] if g >= 70 and g <= 140]
+        night_tir_70_180 = [
+            g for g in night["glucose"] if g >= 70 and g <= 180]
+        night_tir_over_180 = [g for g in night["glucose"] if g > 180]
         night_mbg = night["glucose"].mean()
         # Write results
-        results["total_tir"].append((max(len(tir),0) / total_r) * 100)
-        results["day_tir"].append((max(len(day_tir),0) / day_r) * 100)
-        results["night_tir"].append((max(len(night_tir),0) / night_r) * 100)
+        results["total_tir_70_140"].append(
+            (max(len(total_tir_70_140), 0) / total_r) * 100)
+        results["total_tir_70_180"].append(
+            (max(len(total_tir_70_180), 0) / total_r) * 100)
+        results["total_tir_over_180"].append(
+            (max(len(total_tir_over_180), 0) / total_r) * 100)
+        results["day_tir_70_140"].append(
+            (max(len(day_tir_70_140), 0) / day_r) * 100)
+        results["day_tir_70_180"].append(
+            (max(len(day_tir_70_180), 0) / day_r) * 100)
+        results["day_tir_over_180"].append(
+            (max(len(day_tir_over_180), 0) / day_r) * 100)
+        results["night_tir_70_140"].append(
+            (max(len(night_tir_70_140), 0) / night_r) * 100)
+        results["night_tir_70_180"].append(
+            (max(len(night_tir_70_180), 0) / night_r) * 100)
+        results["night_tir_over_180"].append(
+            (max(len(night_tir_over_180), 0) / night_r) * 100)
         results["mbg"].append(mbg)
         results["day_mbg"].append(day_mbg)
         results["night_mbg"].append(night_mbg)
@@ -122,4 +154,6 @@ for fol in folders:
 results = pd.DataFrame(results)
 results.sort_values(by=["id", "visit"], inplace=True)
 results.dropna(inplace=True)
-results.to_csv("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Day and Night CGM/Data_Clean/analysis_data_jdrf_controls.csv",index=False)
+results.to_csv("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura"\
+    "/BDC/Projects/Viral Shah/Day and Night CGM/Data_Clean/"\
+        "analysis_data_jdrf_controls.csv", index=False)
