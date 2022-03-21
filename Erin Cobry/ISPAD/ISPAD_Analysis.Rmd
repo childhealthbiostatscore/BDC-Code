@@ -1,0 +1,162 @@
+---
+title: "ISPAD Analysis"
+author: "Casey Sakamoto"
+date: '2022-03-21'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(readr)
+library(tidyverse)
+library(Hmisc)
+
+knitr::opts_chunk$set(echo = FALSE)
+if(Sys.info()["sysname"] == "Windows"){
+  home_dir = "S:/Laura/BDC/Projects/Erin Cobry/ISPAD 2022"
+} else if (Sys.info()["sysname"] == "Linux"){
+  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/ISPAD 2022"
+} else if (Sys.info()["sysname"] == "Darwin"){
+  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/ISPAD 2022"
+}
+knitr::opts_knit$set(root.dir = home_dir)
+
+ setwd("S:/Laura/BDC/Projects/Erin Cobry/Prospective HCL and sleep study")
+
+```
+
+
+```{r api import,include=FALSE}
+token = read.table("S:/Laura/BDC/Projects/Erin Cobry/ADA 2022/HCL and Sleep/api_token.txt")[1,1]
+rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",token = token)
+data = exportRecords(rcon,dates = F)
+ids = data$record_id
+times = data$redcap_event_name
+exclude = c(101,201,102,202,103,203,110,210,119,219,121,221,131,231,141,241)
+
+# exclude 8 dyads
+data = data  %>% filter(!(record_id %in% exclude)) 
+```
+
+```{r exploration, include=FALSE}
+test = data %>%  filter(!is.na(psqi_timestamp)) %>% select(record_id, redcap_event_name,psqi_total, psqi_group)
+test2 = data %>% filter(record_id %in% c("127", "138")) %>% select(record_id, redcap_event_name,
+                                                                   psqi_timestamp:psqi_complete, psqi_group) %>% filter(!is.na(psqi_timestamp))
+# figure out whats up here
+# psqi_values <- read_csv("S:/Laura/BDC/Projects/Erin Cobry/Prospective HCL and sleep study/Data clean/psqi-values-2021-11-19_scored.csv") %>% filter(!(record_id %in% exclude))
+# test2 = psqi_values %>% filter(!is.na(psqi_1))
+# # check all data is scored
+# test = data %>% select(record_id, redcap_event_name, psqi_timestamp:psqi_complete, psqi_group) %>% filter(!is.na(psqi_timestamp))
+# test2 = psqi_scores(data)
+# 
+# test2 = test2 %>% select(record_id) %>% filter(!is.na(psqi_timestamp))
+
+```
+
+```{r data clean, include = FALSE}
+# put parents into psqi score >5
+# score parent outcomes; 1 = > 5, 0 = <=5, na else
+bl_psqi_groups = data %>% mutate(psqi_group = case_when(psqi_total > 5 ~ 1,
+                                              psqi_total <= 5 ~ 0)) %>%
+  filter(redcap_event_name == "enrollment_arm_1") %>%
+  select(record_id, psqi_total, psqi_group)
+# note 127 missing baseline psqi, but has a subsequent value of 4
+
+# add a child id for merging later
+bl_psqi_groups$child_id = sub("1", "2", bl_psqi_groups$record_id)
+bl_psqi_groups = bl_psqi_groups %>% select(child_id, psqi_group) 
+bl_psqi_groups = rename(bl_psqi_groups, c( "record_id" = "child_id"))
+
+  
+
+# Basic demographics
+child_demographics = exportRecords(rcon,forms = "child_demographics_chart_review")
+child_demographics$record_id = ids
+# Get Hba1c
+hba1c = exportRecords(rcon,forms = "glycemic_data")
+hba1c$record_id = ids
+hba1c = hba1c %>% filter(record_id >= 200,gyl_timepoint == "Baseline") %>%
+  select(record_id,hba1c)
+# Format
+child_demographics$t1d_duration = 
+  as.numeric(difftime(child_demographics$consent_date,
+                      child_demographics$t1d_diagnosis,units = "days"))/365.25
+child_demographics = child_demographics %>% 
+  select(record_id,cons_age,childgender,t1d_duration) %>%
+  filter(!record_id %in% exclude)
+child_demographics = 
+  child_demographics[rowSums(is.na(child_demographics)) < (ncol(child_demographics)-1),]
+# Add Hba1c
+child_demographics = left_join(child_demographics,hba1c,by = "record_id")
+```
+Analysis:
+
+1.	Stratify parents as good and poor sleepers by PSQI score (>5)
+  a.	Baseline (before intervention)
+
+2.	Compare actigraphy, survey scores, and child glycemic data at each time point between the two groups (poor sleeper and good sleeper).
+  a.	Child glycemic measures
+    i.	TIR, TAB, TBR
+    ii.	A1c, GMI
+    iii.	Hba1c
+  b.	Actigraphy measures (Total Sleep, Sleep Efficacy, WASO)
+    i.	Parent
+    ii.	Child
+  c.	HFS (Total, sub analysis as previously done, eg maintain high)
+    i.	Parent self-report
+    ii.	Child self-report (include N)
+  d.	PROMIS Sleep Measures (Disturbance and Sleep-related impairment)
+    i.	Parent proxy
+    ii.	Child self-report (include N)
+
+3.	Compare change in Actigraphy, survey, and glycemic data in each group over time
+  a.	Poor sleepers from baseline to 3 month and baseline to 6 month
+  b.	Good sleepers from baseline to 3 month and baseline to 6 month
+
+4.	Calculate the number of parents in the poor and good sleeper groups who meet criteria for poor and good sleep over time. 
+  a.	Looking for the number of parents who change category at each time point
+
+
+
+Look at changes over time for glycemic and patient reported outcomes. Do parents defined as poor sleepers (by PSQI score) have children that experience greater change in TIR, parent and child FOH, than good sleepers? How many poor sleepers transitioned to good sleepers after 3 months and 6 months of HCL use? 
+
+```{r model functions}
+fit_mod = function(outcome,df,plot = T,diagnostics = F){
+  # Format timepoint
+  df$timepoint = as.factor(df$timepoint)
+  levels(df$timepoint) = gsub("baseline_.*","Baseline",levels(df$timepoint))
+  levels(df$timepoint) = gsub("hcl_month_3_.*","Month 3",levels(df$timepoint))
+  levels(df$timepoint) = gsub("hcl_month_6_.*","Month 6",levels(df$timepoint))
+  # Fit random intercept model
+  f = as.formula(paste0(outcome,"~timepoint+(1|record_id)"))
+  mod = lmer(f,data = df)
+  # Plot
+  if(plot){
+    p = 
+      ggplot(data = df,aes_string(x = "timepoint",y = outcome,
+                                  color = "record_id",group = "record_id")) + 
+      geom_point() + geom_line() + xlab("Timepoint") +
+      theme_bw() + theme(legend.position = "none")
+    print(p)
+  }
+  # Type 3
+  type3 = data.frame(car::Anova(mod,type = 3))
+  colnames(type3)[3] = "p.value"
+  print(kable(type3,digits = 3,caption = "Test of Overall Effect"))
+  # Model results
+  res = tidy(mod,"fixed")
+  res$term = sub("timepoint","",res$term)
+  res$effect = NULL
+  print(kable(res,digits = 3,caption = "Comparison to Baseline"))
+  # Means
+  means = data.frame(emmeans(mod,~timepoint))
+  print(kable(means,digits = 3,caption = "Model Means"))
+  # Number of obs
+  cat("\n")
+  cat(paste("This model was fit using",nobs(mod),"observations."))
+  cat("\n")
+  # Check model
+  if(diagnostics){
+    print(check_model(mod))
+  }
+}
+```
