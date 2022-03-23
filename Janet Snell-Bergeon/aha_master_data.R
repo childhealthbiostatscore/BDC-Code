@@ -49,7 +49,7 @@ aha_outcomes = c('CACprogV3','cac_prog_last_vis','cac_change_per_yr','Deceased',
                  'CAD','HardCAD','CVD','HardCVD')
 # Factor variables
 med_vars = colnames(sample_info)[grep("on.*med",colnames(sample_info))]
-cat_vars = c('sex','race','State','dia','NHW',med_vars,
+cat_vars = c('sex','race','State','dia','NHW',med_vars,'cac_prog_last_vis',
              'pumporinjV1','albuminuriaV1','type2bydefV1','CACanyV1',
              'maritalV1','SmkStatusV1','diabetic','spanorg','hyperbydeffV1',
              'agecatV1','durcatV1','CAD','HardCAD','CVD','HardCVD')
