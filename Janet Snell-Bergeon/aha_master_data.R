@@ -21,6 +21,12 @@ sample_info$CACprogV3 <- cut(sample_info$C3 - sample_info$C1,
                              breaks = c(-Inf,2.5,Inf),
                              labels = c("No Progression","Progression"),
                              right = F)
+sample_info$cac_prog_last_vis = apply(sample_info,1,function(r){
+  last = max(which(!is.na(r[c("C1","C2","C3","C4")])))
+  cs = as.numeric(r[c("C1","C2","C3","C4")])
+  d = cs[last] - cs[1]
+  if(d >= 2.5){return("Progression")} else {return("No Progression")}
+})
 sample_info$cac_change_per_yr = apply(sample_info,1,function(r){
   last = max(which(!is.na(r[c("C1","C2","C3","C4")])))
   cs = as.numeric(r[c("C1","C2","C3","C4")])
@@ -39,11 +45,11 @@ clinical_predictors = c('acV1','age','apobV1','avediabpV1','avesystbpV1','bmiV1'
                        'hba1cV1','hdlcV1','homoV1','insdoseperkgV1','l45sqfV1',
                        'l45vsfV1','ldlV1','NHW','onhypermedsV1','onlipidmedsV1',
                        'pai1V1','PAT_V1','sex','smknum','triV1','UA_V1','whrV1')
-aha_outcomes = c('CACprogV3','cac_change_per_yr','Deceased','CAD','HardCAD',
-                 'CVD','HardCVD')
+aha_outcomes = c('CACprogV3','cac_prog_last_vis','cac_change_per_yr','Deceased',
+                 'CAD','HardCAD','CVD','HardCVD')
 # Factor variables
 med_vars = colnames(sample_info)[grep("on.*med",colnames(sample_info))]
-cat_vars = c('sex','race','State','dia','NHW',med_vars,
+cat_vars = c('sex','race','State','dia','NHW',med_vars,'cac_prog_last_vis',
              'pumporinjV1','albuminuriaV1','type2bydefV1','CACanyV1',
              'maritalV1','SmkStatusV1','diabetic','spanorg','hyperbydeffV1',
              'agecatV1','durcatV1','CAD','HardCAD','CVD','HardCVD')
