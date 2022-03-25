@@ -2,31 +2,41 @@
 title: "Libre File AGP"
 author: "Tim Vigers"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output:
-  html_document:
-    number_sections: yes
-    toc: yes
-    toc_depth: 2
-    toc_float: yes
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
-library(arsenal)
 library(tidyverse)
-library(performance)
-library(knitr)
-knitr::opts_chunk$set(echo = FALSE)
-if(Sys.info()["sysname"] == "Windows"){
-  home_dir = "B:/Projects"
-} else if (Sys.info()["sysname"] == "Linux"){
-  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
-} else if (Sys.info()["sysname"] == "Darwin"){
-  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
-}
-knitr::opts_knit$set(root.dir = home_dir)
-rm(home_dir)
+library(plotly)
+knitr::opts_chunk$set(echo = FALSE,fig.height = 10,fig.width = 10)
 ```
 
 ```{r}
+# Combine files
+files = list.files("/Users/timvigers/Documents/libre_cleaned",full.names = T)
+df = lapply(files, function(f){
+  # Format
+  file = read.csv(f)
+  file$sensorglucose = suppressWarnings(as.numeric(file$sensorglucose))
+  file$timestamp = lubridate::ymd_hms(file$timestamp)
+  file$Time = hms::as_hms(file$timestamp)
+  file$Time = hms::round_hms(file$Time,300)
+  # Mean by time
+  means = file %>% group_by(Time) %>% summarise(`Sensor Glucose` = mean(sensorglucose,na.rm=T))
+  means = means[complete.cases(means),]
+  means$ID = file$subjectid[1]
+  return(means)
+})
+df = do.call(rbind,df)
+df$ID = as.factor(df$ID)
+```
 
+```{r}
+p = df %>%  highlight_key(~ID) %>%
+  ggplot(.,aes(x = Time,y = `Sensor Glucose`,group = ID,color = ID)) + 
+  geom_line(alpha=0.5) +
+  ylab("Mean Sensor Glucose") + xlab("Time of Day") + 
+  theme_bw() + theme(legend.position = "none")
+ggplotly(p,tooltip = c("x", "y", "colour")) %>% 
+  highlight(on = "plotly_click", off = "plotly_doubleclick")
 ```
