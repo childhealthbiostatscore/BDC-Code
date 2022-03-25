@@ -13,6 +13,8 @@ for (f in 1:length(files)) {
   table$sensorglucose[table$sensorglucose == "Low"] = 40
   table$sensorglucose = as.numeric(table$sensorglucose)
   # TIR
+  summary["% really low <54",f] = round((sum(table$sensorglucose < 54,na.rm = T)/
+                                    sum(!is.na(table$sensorglucose)))*100,2)
   summary["% low <70",f] = round((sum(table$sensorglucose < 70,na.rm = T)/
     sum(!is.na(table$sensorglucose)))*100,2)
   summary["% in range 70-180",f] = (sum(table$sensorglucose >= 70 & table$sensorglucose <= 180,na.rm = T)/
