@@ -1,48 +1,56 @@
-library(tidyverse)
 library(readxl)
 # Study dates
 dates <- read_excel("/Users/timvigers/Documents/DP3 V1 Dates.xlsx")
 dates$V1_Completed <- lubridate::ymd(dates$V1_Completed)
 # Original files
-files <- list.files("/Users/timvigers/Documents/CSV Files T1- incomplete",full.names = T)
+files <- list.files("/Users/timvigers/Documents/Libre V1 Files (use this one)",full.names = T)
 # Clean
 for (f in files) {
-  id <- sub("_V1.csv","",basename(f))
-  table <- read.csv(f,stringsAsFactors = F,na="",check.names = F)
-  end <- which(table[,3] == "Sensor")
-  if (length(end )> 0) {
-    table <- table[-c((end-1):nrow(table)),]
-  }
-  start <- which(table[,1] == "Index")
-  if (length(start) > 0) {
-    colnames(table) <- table[start[1],]
-    table <- table[-c(1:(start[1]+2)),]
-  }
-  # Date time column
-  table$datetime <- paste(table$Date,table$Time)
-  table$datetime <- lubridate::parse_date_time(table$datetime,
-                                               orders = c("mdyHMS","ymdHMS"))
+  ext = tools::file_ext(f)
+  id <- sub("_V1.*","",basename(f))
   # Get dates
-  if (grepl("T1",id) == T) {
-    end <- dates$T1_Date[which(dates$ID == id_no_timepoint)] 
-    start <- end - 90
-  } else if (grepl("T2",id) == T) {
-    start <- dates$T1_Date[which(dates$ID == id_no_timepoint)]
-    end <- dates$T2_Date[which(dates$ID == id_no_timepoint)] 
-  } else if (grepl("T3",id) == T) {
-    start <- dates$T2_Date[which(dates$ID == id_no_timepoint)]
-    end <- dates$T3_Date[which(dates$ID == id_no_timepoint)] 
-  } else if (grepl("T4",id) == T) {
-    start <- dates$T3_Date[which(dates$ID == id_no_timepoint)]
-    end <- dates$T4_Date[which(dates$ID == id_no_timepoint)] 
-  } else if (grepl("T5",id) == T) {
-    start <- dates$T4_Date[which(dates$ID == id_no_timepoint)]
-    end <- dates$T5_Date[which(dates$ID == id_no_timepoint)] 
+  end_date = dates$V1_Completed[which(dates$record_id == paste0("HRTM_",id))] 
+  start_date = end_date - 90
+  if(ext == "txt"){
+    table = read.delim(f,header = F)
+    # Format table
+    start = which(tolower(table[,1])=="id")
+    colnames(table) = table[start,]
+    table = table[start+1:nrow(table),]
+    # Date time column
+    table$timestamp <- lubridate::parse_date_time(table$Time,orders = c("mdyHM","ymdHM"))
+    # Datetime and glucose
+    table = table[,c("timestamp","Historic Glucose (mg/dL)")]
+    colnames(table)[2] = "sensorglucose"
+  } else if (ext == "csv"){
+    table = read.csv(f)
+    if(ncol(table)>3){
+      # Date time column
+      table$timestamp <- table[,grep("Timestamp",colnames(table))]
+      table$timestamp <- 
+        lubridate::parse_date_time(sub("T"," ",table$timestamp),orders = c("ymdHMS","mdyHM"))
+      table = table[,c("timestamp","Glucose.Value..mg.dL.")]
+      colnames(table)[2] = "sensorglucose"
+    } else {
+      # Format table
+      start = which(tolower(table[,1])=="time")
+      colnames(table) = table[start,]
+      table = table[start+1:nrow(table),]
+      # Date time column
+      table$timestamp <- lubridate::parse_date_time(table$Time,orders = c("mdyHM","ymdHM"))
+      # Datetime and glucose
+      table = table[,c("timestamp","mg/dl")]
+      colnames(table)[2] = "sensorglucose"
+    }
   }
   # Exclude incorrect times
-  table <- table %>% filter(datetime >= start & datetime < end) %>%
-    arrange(datetime)
+  table = table[table$timestamp >= start_date & table$timestamp < end_date,]
+  table = table[order(table$timestamp),]
+  # ID column
+  table$subjectid = NA
+  table$subjectid[1] = id
+  table = table[,c("subjectid","timestamp","sensorglucose")]
   # Write file
-  filename <- paste0("/Users/timvigers/pump_cleaned/",id,"_cleaned.csv")
+  filename <- paste0("/Users/timvigers/Documents/libre_cleaned/",id,"_V1_cleaned.csv")
   write.csv(table,file = filename,row.names = F,na="")
 }
