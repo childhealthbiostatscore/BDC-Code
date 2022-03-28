@@ -1,0 +1,138 @@
+---
+title: "Day vs. Night CGM"
+author: "Tim Vigers"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(arsenal)
+library(tidyverse)
+library(reshape2)
+library(ggpubr)
+library(pheatmap)
+library(knitr)
+knitr::opts_chunk$set(echo = FALSE,fig.height = 12,fig.width = 12)
+if(Sys.info()["sysname"] == "Windows"){
+  home_dir = "B:/Projects"
+} else if (Sys.info()["sysname"] == "Linux"){
+  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+} else if (Sys.info()["sysname"] == "Darwin"){
+  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+}
+knitr::opts_knit$set(root.dir = home_dir)
+rm(home_dir)
+```
+
+```{r}
+# Import
+df = read.csv("./Viral Shah/Day and Night CGM/Data_Clean/combined_analysis_data.csv")
+# Order
+df$a1c_group = factor(df$a1c_group,levels = c("<7%","[7.0%, 8.0%)","[8.0%, 9.0%)",
+                                              "[9.0%, 10.0%)",">10%"))
+```
+
+# Data Characteristics
+- TIR was calculated using 2 weeks of CGM data prior to an office visit.
+- For participants with multiple A1C measures, the CGM wear with the largest number of sensor readings was used. This was done to prevent auto-correlation between measures within a subject.
+- CGM with < 70% wear were excluded.
+
+# Participant Characteristics
+
+```{r results='asis'}
+columns = make.names(c('a1c','Age','Gender', 'BMI', 'DiabetesDuration_MostRecentVisitDate','Hemoglobin_Value','MCV_Value', 'eGFR_Value', 'Autoimmune Disease?', 'Retinopathy?'))
+
+f = as.formula(paste0("a1c_group~",paste0(columns,collapse = "+")))
+
+t1 = tableby(f,data = df)
+summary(t1)
+```
+
+# Summary Table and Variable Distributions
+
+```{r results='asis'}
+columns = make.names(c('age','a1c','mbg','total_tir_70_140','total_tir_70_180','total_tir_over_180',
+                       'day_mbg','day_tir_70_140','day_tir_70_180',
+                       'day_tir_over_180','night_mbg',"night_tir_70_140",
+                       "night_tir_70_180","night_tir_over_180"))
+
+f = as.formula(paste0("a1c_group~",paste0(columns,collapse = "+")))
+
+t2 = tableby(f,data = df)
+summary(t2)
+```
+
+# Day vs. Night By A1C Group
+
+## TIR 70 - 140 mg/dL
+
+```{r}
+plot_df = melt(df,id.vars = c("id","a1c_group"),
+               measure.vars = c("day_tir_70_140","night_tir_70_140"),
+               value.name = "TIR")
+plot_df$variable = sub("day_tir_.*","Day",plot_df$variable)
+plot_df$variable = sub("night_tir_.*","Night",plot_df$variable)
+ggplot(plot_df,aes(x = a1c_group,y = TIR,fill = variable)) + 
+  geom_boxplot() + 
+  stat_compare_means(aes(group = variable),
+                     method = "t.test",paired = T,label = "p.format") + 
+  xlab("A1C Group") + ylab("TTIR") +
+  theme_bw() + theme(legend.title = element_blank())
+```
+
+## TIR 70 - 180 mg/dL
+
+```{r}
+plot_df = melt(df,id.vars = c("id","a1c_group"),
+               measure.vars = c("day_tir_70_180","night_tir_70_180"),
+               value.name = "TIR")
+plot_df$variable = sub("day_tir_.*","Day",plot_df$variable)
+plot_df$variable = sub("night_tir_.*","Night",plot_df$variable)
+ggplot(plot_df,aes(x = a1c_group,y = TIR,fill = variable)) + 
+  geom_boxplot() + 
+  stat_compare_means(aes(group = variable),
+                     method = "t.test",paired = T,label = "p.format") + 
+  xlab("A1C Group") + ylab("TIR") +
+  theme_bw() + theme(legend.title = element_blank())
+```
+
+## Mean Sensor Glucose
+
+```{r}
+plot_df = melt(df,id.vars = c("id","a1c_group"),
+               measure.vars = c("day_mbg","night_mbg"),
+               value.name = "MG")
+plot_df$variable = sub("day_.*","Day",plot_df$variable)
+plot_df$variable = sub("night_.*","Night",plot_df$variable)
+ggplot(plot_df,aes(x = a1c_group,y = MG,fill = variable)) + 
+  geom_boxplot() + 
+  stat_compare_means(aes(group = variable),
+                     method = "t.test",paired = T,label = "p.format") + 
+  xlab("A1C Group") + ylab("MG") +
+  theme_bw() + theme(legend.title = element_blank())
+```
+
+# Correlation Heatmap
+
+```{r}
+corr_vars = c('a1c','mbg','total_tir_70_140','total_tir_70_180','total_tir_over_180',
+              'day_mbg','day_tir_70_140','day_tir_70_180','day_tir_over_180',
+              'night_mbg',"night_tir_70_140","night_tir_70_180","night_tir_over_180")
+corr_df = df[,corr_vars] 
+colnames(corr_df) = sub("a1c","A1C",colnames(corr_df))
+colnames(corr_df) = sub("_mbg|mbg","MG",colnames(corr_df))
+colnames(corr_df) = sub("_tir_70_140","TTIR",colnames(corr_df))
+colnames(corr_df) = sub("_tir_70_180","TIR",colnames(corr_df))
+colnames(corr_df) = sub("_tir_over_180","TAR",colnames(corr_df))
+colnames(corr_df) = sub("day","D",colnames(corr_df))
+colnames(corr_df) = sub("night","N",colnames(corr_df))
+colnames(corr_df) = sub("total","",colnames(corr_df))
+
+corr_mat = cor(corr_df)
+pheatmap(corr_mat)
+```
