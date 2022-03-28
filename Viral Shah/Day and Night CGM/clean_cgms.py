@@ -18,6 +18,10 @@ df = {
     "Age": [],
     "Insulin": [],
     "HbA1c": [],
+    "14 Overall Mean": [],
+    "14 Overall TIR 70 - 140": [],
+    "14 Overall TIR 70 - 180": [],
+    "14 Overall TIR Over 180": [],
     "14 Day Mean": [],
     "14 Day TIR 70 - 140": [],
     "14 Day TIR 70 - 180": [],
@@ -26,6 +30,10 @@ df = {
     "14 Night TIR 70 - 140": [],
     "14 Night TIR 70 - 180": [],
     "14 Night TIR Over 180": [],
+    "30 Overall Mean": [],
+    "30 Overall TIR 70 - 140": [],
+    "30 Overall TIR 70 - 180": [],
+    "30 Overall TIR Over 180": [],
     "30 Day Mean": [],
     "30 Day TIR 70 - 140": [],
     "30 Day TIR 70 - 180": [],
@@ -34,6 +42,10 @@ df = {
     "30 Night TIR 70 - 140": [],
     "30 Night TIR 70 - 180": [],
     "30 Night TIR Over 180": [],
+    "60 Overall Mean": [],
+    "60 Overall TIR 70 - 140": [],
+    "60 Overall TIR 70 - 180": [],
+    "60 Overall TIR Over 180": [],
     "60 Day Mean": [],
     "60 Day TIR 70 - 140": [],
     "60 Day TIR 70 - 180": [],
@@ -42,6 +54,10 @@ df = {
     "60 Night TIR 70 - 140": [],
     "60 Night TIR 70 - 180": [],
     "60 Night TIR Over 180": [],
+    "90 Overall Mean": [],
+    "90 Overall TIR 70 - 140": [],
+    "90 Overall TIR 70 - 180": [],
+    "90 Overall TIR Over 180": [],
     "90 Day Mean": [],
     "90 Day TIR 70 - 140": [],
     "90 Day TIR 70 - 180": [],
@@ -87,12 +103,29 @@ for file in files:
     cgm["tir_glucose"] = pd.to_numeric(
         cgm["glucose"].replace("Low", 40).replace("High", 400)
     )
+    cgm["mean_glucose"] = pd.to_numeric(
+        cgm["glucose"].replace("Low", np.nan).replace("High", np.nan)
+    )
     cgm.set_index("time", inplace=True, drop=False)
     for delta in [14, 30, 60, 90]:
         # Get CGM data within time delta from HbA1c
         start = end - datetime.timedelta(days=delta)
         c = cgm[(cgm["time"] >= start) & (cgm["time"] < end)]
         # Calculate CGM metrics
+        df[str(delta) + " Overall Mean"].append(np.nanmean(cgm["mean_glucose"]))
+        all_r = cgm["glucose"].notna().sum()
+        df[str(delta) + " Overall TIR 70 - 140"].append(
+            len([g for g in cgm["tir_glucose"] if g >=
+                70 and g <= 140]) / all_r * 100
+        )
+        df[str(delta) + " Overall TIR 70 - 180"].append(
+            len([g for g in cgm["tir_glucose"] if g >=
+                70 and g <= 180]) / all_r * 100
+        )
+        df[str(delta) + " Overall TIR Over 180"].append(
+            len([g for g in cgm["tir_glucose"] if g > 180]) / all_r * 100
+        )
+        # By day and night
         day = c.between_time(
             "6:00", "23:00", include_start=False, include_end=False)
         night = c.between_time("23:00", "6:00")
