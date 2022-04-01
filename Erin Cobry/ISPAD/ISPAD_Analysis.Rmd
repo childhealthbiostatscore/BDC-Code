@@ -44,9 +44,14 @@ data = data  %>% filter(!(record_id %in% exclude))
 child_demographics = exportRecords(rcon,forms = "child_demographics_chart_review")
 child_demographics$record_id = ids
 # Get glycemic measures
-hba1c = exportRecords(rcon,forms = "glycemic_data")
-hba1c$record_id = ids
-hba1c = hba1c %>% filter(record_id >= 200,gyl_timepoint == "Baseline") %>% select(record_id, hba1c, gmi)
+glyc = exportRecords(rcon,forms = "glycemic_data")
+glyc$record_id = ids
+glyc= glyc %>% filter(record_id >= 200,gyl_timepoint %in% c( "Baseline", "3 Months", "6 Months")) %>% 
+  mutate(timepoint = case_when(gyl_timepoint == "Baseline" ~ "baseline_day_1_arm_2",
+                               gyl_timepoint == "3 Months" ~ "hcl_month_3_day_1_arm_2",
+                               gyl_timepoint == "6 Months" ~ "hcl_month_6_day_1_arm_2"
+                               )) %>%
+  select(record_id, timepoint, hba1c, gmi,sensor_g251, sensor_181_250, sensor_70_180, sensor_55_69, sensor_u54)
 # Format
 child_demographics$t1d_duration = 
   as.numeric(difftime(child_demographics$consent_date,
@@ -57,7 +62,7 @@ child_demographics = child_demographics %>%
 child_demographics = 
   child_demographics[rowSums(is.na(child_demographics)) < (ncol(child_demographics)-1),]
 # Add Hba1c
-child_demographics = left_join(child_demographics,hba1c,by = "record_id")
+child_demographics = left_join(child_demographics,glyc,by = "record_id")
 ###############################################
 
 ############### Actigraphy #####################
@@ -72,24 +77,23 @@ child_activity = activity %>%
   mutate(avg_sleep = as.character(totalsleep_avg),
          totalsleep_avg = as.numeric(lubridate::hms(totalsleep_avg))/60) %>%
   filter(totalsleep_avg < 21*60)
-child_activity = left_join(child_activity,child_demographics,by = "record_id")
-child_activity$sufficient = apply(child_activity,1,function(r){
-  age = as.numeric(r["cons_age"])
-  time = as.numeric(r["totalsleep_avg"])/60
-  if(age <= 2){
-    if(time >= 11 & time <= 14){suff = "Yes"} else {suff = "No"}
-  } else if (age <= 5){
-    if(time >= 10 & time <= 13){suff = "Yes"} else {suff = "No"}
-  } else if (age <= 12){
-    if(time >= 9 & time <= 12){suff = "Yes"} else {suff = "No"}
-  } else if (age <= 17){
-    if(time >= 8 & time <= 10){suff = "Yes"} else {suff = "No"}
-  } else if (age > 17) {
-    if(time >= 7){suff = "Yes"} else {suff = "No"}
-  }
-})
-child_activity$sufficient = as.factor(child_activity$sufficient)
-
+child_activity = left_join(child_activity,child_demographics) %>% distinct()
+# child_activity$sufficient = apply(child_activity,1,function(r){
+#   age = as.numeric(r["cons_age"])
+#   time = as.numeric(r["totalsleep_avg"])/60
+#   if(age <= 2){
+#     if(time >= 11 & time <= 14){suff = "Yes"} else {suff = "No"}
+#   } else if (age <= 5){
+#     if(time >= 10 & time <= 13){suff = "Yes"} else {suff = "No"}
+#   } else if (age <= 12){
+#     if(time >= 9 & time <= 12){suff = "Yes"} else {suff = "No"}
+#   } else if (age <= 17){
+#     if(time >= 8 & time <= 10){suff = "Yes"} else {suff = "No"}
+#   } else if (age > 17) {
+#     if(time >= 7){suff = "Yes"} else {suff = "No"}
+#   }
+# })
+# child_activity$sufficient = as.factor(child_activity$sufficient)
 
 # Same for parents
 parent_activity = activity %>% 
@@ -146,7 +150,6 @@ promis_parent$impairment =
   parent_impairment$T.Score[match(promis_parent$impairment,
                                   parent_impairment$ï..Raw.Summed.Score)]
 ```
-TIR, TAB, TBR WHERE TO FIND THIS
 
 ```{r group derive, include = FALSE}
 # put parents into psqi score >5
@@ -187,44 +190,12 @@ substring(promis_parent$timepoint,nchar(promis_parent$timepoint),nchar(promis_pa
 promis_parent$timepoint = str_replace(promis_parent$timepoint, "baseline_arm_2", "baseline_day_1_arm_2")
 promis = full_join(promis_peds, promis_parent)
 
-analysis = full_join(child_activity, parent_activity)
-analysis = full_join(analysis, promis)
-analysis = full_join(bl_psqi_groups, analysis)
+analysis = full_join(child_activity, parent_activity) %>% distinct()
+analysis = full_join(analysis, promis) %>% distinct()
+analysis = full_join(bl_psqi_groups, analysis) %>% distinct()
 
-
-test = exportRecords(rcon,forms = "glycemic_data")
-
+# test = exportRecords(rcon,forms = "glycemic_data")
 ```
-Analysis:
-
-1.	Stratify parents as good and poor sleepers by PSQI score (>5)
-  a.	Baseline (before intervention)
-
-2.	Compare actigraphy, survey scores, and child glycemic data at each time point between the two groups (poor sleeper and good sleeper).
-  a.	Child glycemic measures
-    i.	TIR, TAB, TBR WHERE TO FIND THIS
-    ii.	A1c, GMI
-    iii.	Hba1c
-  b.	Actigraphy measures (Total Sleep, Sleep Efficacy, WASO)
-    i.	Parent
-    ii.	Child
-  c.	HFS (Total, sub analysis as previously done, eg maintain high)
-    i.	Parent self-report
-    ii.	Child self-report (include N)
-  d.	PROMIS Sleep Measures (Disturbance and Sleep-related impairment)
-    i.	Parent proxy
-    ii.	Child self-report (include N)
-
-3.	Compare change in Actigraphy, survey, and glycemic data in each group over time
-  a.	Poor sleepers from baseline to 3 month and baseline to 6 month
-  b.	Good sleepers from baseline to 3 month and baseline to 6 month
-
-4.	Calculate the number of parents in the poor and good sleeper groups who meet criteria for poor and good sleep over time. 
-  a.	Looking for the number of parents who change category at each time point
-
-
-
-Look at changes over time for glycemic and patient reported outcomes. Do parents defined as poor sleepers (by PSQI score) have children that experience greater change in TIR, parent and child FOH, than good sleepers? How many poor sleepers transitioned to good sleepers after 3 months and 6 months of HCL use? 
 
 ```{r model functions, include=FALSE}
 fit_mod = function(outcome,df,plot = T,diagnostics = F){
@@ -247,7 +218,7 @@ fit_mod = function(outcome,df,plot = T,diagnostics = F){
       ggplot(data = df,aes_string(x = "timepoint",y = outcome,
                                   color = "psqi_group",group = "record_id")) + 
       geom_point() + geom_line() + xlab("Timepoint") +
-      theme_bw() + theme(legend.position = "none")
+      theme_bw() 
     print(p)
   }
   
@@ -274,6 +245,86 @@ fit_mod = function(outcome,df,plot = T,diagnostics = F){
 ```
 
 
-```{r results}
-fit_mod("totalsleep_avg", analysis)
+
+# Results
+## Stratify Parents into Poor/Good Sleepers Before Intervention
+```{r results 1}
+kable(analysis %>% group_by(psqi_group) %>% summarise(n = n_distinct(record_id)))
 ```
+Parent Good Sleeper n = 15 (0.385)
+Parent Poor Sleeper n = 23 (0.590)
+Note: Subj 127 is missing baseline psqi score, but has very large value for question 4. Confirm this value is correct? Seems like it should be divided by 30
+
+## Compare Groups at each timepoint for glycemic, actigraphy, survey data
+### Child Glycemic Measures 
+TBR(<54): No difference in groups at each time point (p = 0.65, 0.78, 0.99)
+TBR(55-69): No difference in groups at each time point (p = 0.89, 0.93, 0.86)
+TIR(70-180): No difference in groups at each time point (p = 0.97, 0.60, 0.92)
+TAR(180-250): No difference in groups at each time point (p = 0.91, 0.68, 0.18)
+TAR(>251): No difference in groups at each time point (p = 0.78, 0.72, 0.90)
+Hba1c: No difference in groups at each time point (p = 0.99, 0.45, 0.77)
+GMI: No difference in groups at each time point (p = 0.87, 0.66, 0.99)
+
+```{r results glycemic}
+# TIR, TAB, TBR, a1c, gmi
+fit_mod("sensor_u54", analysis)
+fit_mod("sensor_55_69",analysis)
+fit_mod("sensor_70_180", analysis)
+fit_mod("sensor_181_250", analysis)
+fit_mod("sensor_g251", analysis)
+fit_mod("hba1c", analysis)
+fit_mod("gmi", analysis)
+```
+
+### Actigraphy Measures
+#### Parent
+Total Sleep: No difference in groups at each time point (p = 0.99, 0.74, 0.81)
+Sleep Efficacy: No difference in groups at each time point (p = 0.62, 0.92, 0.98)
+WASO: No difference in groups at each time point (p = 0.60, 0.82, 0.91)
+#### Child
+Total Sleep: No difference in groups at each time point (p = 0.87, 0.99, 0.99)
+Sleep Efficacy: No difference in groups at each time point (p = 0.68, 0.99, 0.74)
+WASO: No difference in groups at each time point (p = 0.97, 0.95, 0.79)
+```{r results Actigraphy}
+# Total sleep avg (minutes), wasp, efficiency
+# parent
+fit_mod("totalsleep_avg_p", analysis)
+fit_mod("sleepefficiency_avg_p",analysis)
+fit_mod("waso_avg_p", analysis)
+# children
+fit_mod("totalsleep_avg", analysis)
+fit_mod("sleepefficency_avg",analysis)
+fit_mod("waso_avg", analysis)
+```
+  c.	HFS (Total, sub analysis as previously done, eg maintain high)
+    i.	Parent self-report
+### HFS
+#### Parent
+#### Child
+```{r hfs}
+
+```
+### PROMIS
+#### Parent Proxy
+Disturbance: No difference in groups at each time point (p = 0.86, 0.99, 0.99)
+Sleep Related Impairment: No difference in groups at each time point (p = 0.45, 0.57, 0.77)
+#### Child
+Disturbance: No difference in groups at each time point (p = 0.25, 0.94, 0.84)
+Sleep Related Impairment: No difference in groups at each time point (p = 0.73, 0.98, 0.90)
+```{r results PROMIS}
+# disturbance, impairment
+# parent
+fit_mod("disturbance_p", analysis)
+fit_mod("impairment_p",analysis)
+# children
+fit_mod("disturbance", analysis)
+fit_mod("impairment",analysis)
+```
+
+3.	Compare change in Actigraphy, survey, and glycemic data in each group over time
+  a.	Poor sleepers from baseline to 3 month and baseline to 6 month
+  b.	Good sleepers from baseline to 3 month and baseline to 6 month
+
+4.	Calculate the number of parents in the poor and good sleeper groups who meet criteria for poor and good sleep over time. 
+  a.	Looking for the number of parents who change category at each time point
+Look at changes over time for glycemic and patient reported outcomes. Do parents defined as poor sleepers (by PSQI score) have children that experience greater change in TIR, parent and child FOH, than good sleepers? How many poor sleepers transitioned to good sleepers after 3 months and 6 months of HCL use? 
