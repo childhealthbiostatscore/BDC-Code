@@ -16,9 +16,10 @@ library(broom)
 library(survival)
 library(performance)
 library(knitr)
-library(mice)
+library(pROC)
+library(survivalROC)
 library(naniar)
-knitr::opts_chunk$set(echo = FALSE,fig.height = 10,fig.width = 10)
+knitr::opts_chunk$set(echo = FALSE,fig.height = 10,fig.width = 10,cache = TRUE)
 if(Sys.info()["sysname"] == "Windows"){
   home_dir = "B:/Projects"
 } else if (Sys.info()["sysname"] == "Linux"){
@@ -70,33 +71,34 @@ cac_prog_select = easy_elasticnet(data = df,outcome = "CACprogV3",
 
 ```{r}
 f_cac_prog = as.formula(paste0("CACprogV3~",paste0(cac_prog_select,collapse = "+")))
-mod = glm(formula = f_cac_prog,data = df,family = "binomial")
-kable(tidy(mod),digits = 3)
+clin_mod = glm(formula = f_cac_prog,data = df,family = "binomial")
+kable(tidy(clin_mod),digits = 3)
 ```
-
-#### Model diagnostics
-
-```{r}
-check_model(mod)
-```
-
-Model was fit on `r nrow(model.matrix(mod))` observations.
 
 ### Omics model results (no imputation)
 
 ```{r}
-mod = glm(formula = update(f_cac_prog,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
+omics_mod = glm(formula = update(f_cac_prog,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
           data = df,family = "binomial")
-kable(tidy(mod),digits = 3)
+kable(tidy(omics_mod),digits = 3)
 ```
 
-#### Model diagnostics
+### Model comparison
+
+Green indicates the omics model and blue is the clinical model.
 
 ```{r}
-check_model(mod)
+# Predicted values
+clin_pred = predict(clin_mod,type="response")
+omics_pred = predict(omics_mod,type="response")
+# Plot
+plot(roc(clin_mod$model$CACprogV3, clin_pred), 
+                 levels = c("No Progression","Progression"),direction = "<",
+                 print.auc = TRUE, col = "blue",quiet = T)
+plot(roc(omics_mod$model$CACprogV3, omics_pred), 
+                 levels = c("No Progression","Progression"),direction = "<",
+                 print.auc = TRUE, col = "green",add = T,quiet = T,print.auc.y = .4)
 ```
-
-Model was fit on `r nrow(model.matrix(mod))` observations.
 
 ## CAC progression at last visit
 
@@ -113,33 +115,35 @@ cac_prog_any_select = easy_elasticnet(data = df,outcome = "cac_prog_last_vis",
 ```{r}
 f_cac_prog_any = as.formula(paste0("cac_prog_last_vis~",paste0(cac_prog_any_select,
                                                                collapse = "+")))
-mod = glm(formula = f_cac_prog_any,data = df,family = "binomial")
-kable(tidy(mod),digits = 3)
+clin_mod = glm(formula = f_cac_prog_any,data = df,family = "binomial")
+kable(tidy(clin_mod),digits = 3)
 ```
-
-#### Model diagnostics
-
-```{r}
-check_model(mod)
-```
-
-Model was fit on `r nrow(model.matrix(mod))` observations.
 
 ### Omics model results (no imputation)
 
 ```{r}
-mod = glm(formula = update(f_cac_prog_any,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
+omics_mod = glm(formula = 
+                  update(f_cac_prog_any,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
           data = df,family = "binomial")
-kable(tidy(mod),digits = 3)
+kable(tidy(omics_mod),digits = 3)
 ```
 
-#### Model diagnostics
+### Model comparison
+
+Green indicates the omics model and blue is the clinical model.
 
 ```{r}
-check_model(mod)
+# Predicted values
+clin_pred = predict(clin_mod,type="response")
+omics_pred = predict(omics_mod,type="response")
+# Plot
+plot(roc(clin_mod$model$cac_prog_last_vis, clin_pred), 
+                 levels = c("No Progression","Progression"),direction = "<",
+                 print.auc = TRUE, col = "blue",quiet = T)
+plot(roc(omics_mod$model$cac_prog_last_vis, omics_pred), 
+                 levels = c("No Progression","Progression"),direction = "<",
+                 print.auc = TRUE, col = "green",add = T,quiet = T,print.auc.y = .4)
 ```
-
-Model was fit on `r nrow(model.matrix(mod))` observations.
 
 ## Change in CAC per year
 
@@ -156,33 +160,26 @@ cac_change_select = easy_elasticnet(data = df,outcome = "cac_change_per_yr",
 ```{r}
 f_cac_change = as.formula(paste0("cac_change_per_yr~",
                                  paste0(cac_change_select,collapse = "+")))
-mod = lm(formula = f_cac_change,data = df)
+clin_mod = lm(formula = f_cac_change,data = df)
 kable(tidy(mod),digits = 3)
 ```
-
-#### Model diagnostics
-
-```{r}
-check_model(mod)
-```
-
-Model was fit on `r nrow(model.matrix(mod))` observations.
 
 ### Omics model results (no imputation)
 
 ```{r}
-mod = lm(formula = update(f_cac_change,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
+omics_mod = lm(formula = update(f_cac_change,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
          data = df)
 kable(tidy(mod),digits = 3)
 ```
 
-#### Model diagnostics
+### Model comparison
 
 ```{r}
-check_model(mod)
+mc = as.data.frame(compare_performance(clin_mod,omics_mod,
+                                       metrics = c("R2","R2_adj"),verbose = F))
+mc$Name = c("Clinical Model","Omics Model")
+kable(mc,digits = 3)
 ```
-
-Model was fit on `r nrow(model.matrix(mod))` observations.
 
 ## Death
 
@@ -199,33 +196,23 @@ death_select = easy_elasticnet(data = df,outcome = "Deceased",
 ```{r}
 f_death = as.formula(paste0("Surv(time = df$PersonYrsDeath,event = df$Deceased)~",
                       paste0(death_select,collapse = "+")))
-mod = coxph(formula = f_death,data = df,id = StudyID)
-kable(tidy(mod),digits = 3)
+clin_mod = coxph(formula = f_death,data = df,id = StudyID)
+kable(tidy(clin_mod),digits = 3)
 ```
-
-#### PH assumption test
-
-```{r}
-kable(cox.zph(mod)$table,digits = 3)
-```
-
-Model was fit on `r nrow(model.matrix(mod))` observations.
 
 ### Omics model results (no imputation)
 
-```{r}
-mod = coxph(formula = update(f_death,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
-            data = df,id = StudyID)
-kable(tidy(mod),digits = 3)
-```
-
-#### PH assumption test
+The coefficient for `durcat` refuses to converge.
 
 ```{r}
-kable(cox.zph(mod)$table,digits = 3)
+omics_mod = coxph(formula = update(f_death,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
+            data = df,id = StudyID,control = coxph.control(iter.max = 1000))
+kable(tidy(omics_mod),digits = 3)
 ```
 
-Model was fit on `r nrow(model.matrix(mod))` observations.
+### Model comparison
+
+Concordance in the clinical model was `r round(as.numeric(summary(clin_mod)$concordance[1]),3)` compared to `r round(as.numeric(summary(omics_mod)$concordance[1]),3)`. 
 
 ## CAD
 
@@ -242,33 +229,21 @@ cad_select = easy_elasticnet(data = df,outcome = "CAD",
 ```{r}
 f_cad = as.formula(paste0("Surv(time = df$PersonYrsCAD,event = df$CAD)~",
                       paste0(cad_select,collapse = "+")))
-mod = coxph(formula = f_cad,data = df,id = StudyID)
-kable(tidy(mod),digits = 3)
+clin_mod = coxph(formula = f_cad,data = df,id = StudyID)
+kable(tidy(clin_mod),digits = 3)
 ```
-
-#### PH assumption test
-
-```{r}
-kable(cox.zph(mod)$table,digits = 3)
-```
-
-Model was fit on `r nrow(model.matrix(mod))` observations.
 
 ### Omics model results (no imputation)
 
 ```{r}
-mod = coxph(formula = update(f_cad,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
+omics_mod = coxph(formula = update(f_cad,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
             data = df,id = StudyID)
-kable(tidy(mod),digits = 3)
+kable(tidy(omics_mod),digits = 3)
 ```
 
-#### PH assumption test
+### Model comparison
 
-```{r}
-kable(cox.zph(mod)$table,digits = 3)
-```
-
-Model was fit on `r nrow(model.matrix(mod))` observations.
+Concordance in the clinical model was `r round(as.numeric(summary(clin_mod)$concordance[1]),3)` compared to `r round(as.numeric(summary(omics_mod)$concordance[1]),3)`. 
 
 ## Hard CAD
 
@@ -285,35 +260,21 @@ hard_cad_select = easy_elasticnet(data = df,outcome = "HardCAD",
 ```{r}
 f_hard_cad = as.formula(paste0("Surv(time = df$PersonYrsHardCAD,event = df$HardCAD)~",
                       paste0(hard_cad_select,collapse = "+")))
-mod = coxph(formula = f_hard_cad,data = df,id = StudyID)
-kable(tidy(mod),digits = 3)
+clin_mod = coxph(formula = f_hard_cad,data = df,id = StudyID)
+kable(tidy(clin_mod),digits = 3)
 ```
-
-#### PH assumption test
-
-```{r}
-kable(cox.zph(mod)$table,digits = 3)
-```
-
-Model was fit on `r nrow(model.matrix(mod))` observations.
 
 ### Omics model results (no imputation)
 
 ```{r}
-mod = coxph(formula = update(f_hard_cad,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
+omics_mod = coxph(formula = update(f_hard_cad,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
             data = df,id = StudyID)
-kable(tidy(mod),digits = 3)
+kable(tidy(omics_mod),digits = 3)
 ```
 
-#### PH assumption test
+### Model comparison
 
-Could not test due to odd SEs in above model.
-
-```{r eval=FALSE}
-kable(cox.zph(mod)$table,digits = 3)
-```
-
-Model was fit on `r nrow(model.matrix(mod))` observations.
+Concordance in the clinical model was `r round(as.numeric(summary(clin_mod)$concordance[1]),3)` compared to `r round(as.numeric(summary(omics_mod)$concordance[1]),3)`. 
 
 ## CVD
 
@@ -330,33 +291,21 @@ cvd_select = easy_elasticnet(data = df,outcome = "CVD",
 ```{r}
 f_cvd = as.formula(paste0("Surv(time = df$PersonYrsCVD,event = df$CVD)~",
                       paste0(cvd_select,collapse = "+")))
-mod = coxph(formula = f_cvd,data = df,id = StudyID)
-kable(tidy(mod),digits = 3)
+clin_mod = coxph(formula = f_cvd,data = df,id = StudyID)
+kable(tidy(clin_mod),digits = 3)
 ```
-
-#### PH assumption test
-
-```{r}
-kable(cox.zph(mod)$table,digits = 3)
-```
-
-Model was fit on `r nrow(model.matrix(mod))` observations.
 
 ### Omics model results (no imputation)
 
 ```{r}
-mod = coxph(formula = update(f_cvd,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
+omics_mod = coxph(formula = update(f_cvd,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
             data = df,id = StudyID)
-kable(tidy(mod),digits = 3)
+kable(tidy(omics_mod),digits = 3)
 ```
 
-#### PH assumption test
+### Model comparison
 
-```{r}
-kable(cox.zph(mod)$table,digits = 3)
-```
-
-Model was fit on `r nrow(model.matrix(mod))` observations.
+Concordance in the clinical model was `r round(as.numeric(summary(clin_mod)$concordance[1]),3)` compared to `r round(as.numeric(summary(omics_mod)$concordance[1]),3)`. 
 
 ## Hard CVD
 
@@ -373,32 +322,18 @@ hard_cvd_select = easy_elasticnet(data = df,outcome = "HardCVD",
 ```{r}
 f_hard_cvd = as.formula(paste0("Surv(time = df$PersonYrsHardCVD,event = df$HardCVD)~",
                       paste0(hard_cvd_select,collapse = "+")))
-mod = coxph(formula = f_hard_cvd,data = df,id = StudyID)
-kable(tidy(mod),digits = 3)
+clin_mod = coxph(formula = f_hard_cvd,data = df,id = StudyID)
+kable(tidy(clin_mod),digits = 3)
 ```
-
-#### PH assumption test
-
-```{r}
-kable(cox.zph(mod)$table,digits = 3)
-```
-
-Model was fit on `r nrow(model.matrix(mod))` observations.
 
 ### Omics model results (no imputation)
 
 ```{r}
-mod = coxph(formula = update(f_hard_cvd,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
+omics_mod = coxph(formula = update(f_hard_cvd,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
             data = df,id = StudyID)
-kable(tidy(mod),digits = 3)
+kable(tidy(omics_mod),digits = 3)
 ```
 
-#### PH assumption test
+### Model comparison
 
-Could not test due to odd SEs in above model.
-
-```{r eval=FALSE}
-kable(cox.zph(mod)$table,digits = 3)
-```
-
-Model was fit on `r nrow(model.matrix(mod))` observations.
+Concordance in the clinical model was `r round(as.numeric(summary(clin_mod)$concordance[1]),3)` compared to `r round(as.numeric(summary(omics_mod)$concordance[1]),3)`. 
