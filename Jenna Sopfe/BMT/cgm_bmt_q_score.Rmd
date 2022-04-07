@@ -2,12 +2,7 @@
 title: "CGM and BMT"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output:
-  html_document:
-    number_sections: yes
-    toc: yes
-    toc_depth: 2
-    toc_float: yes
+output: word_document
 ---
 
 ```{r setup, include=FALSE}
@@ -77,9 +72,32 @@ write.csv(cgm_wide,file = "./CGM and BMT FDA/Data_Cleaned/cleaned_for_traj.csv",
 cgm$mmol = cgm$Historic_Glucose / 18.0182
 # Split by ID and sensor number
 cgm_list = split.data.frame(cgm,list(cgm$SubjectID))
+cgm_list = lapply(cgm_list, function(df){
+  df = df %>% arrange(Time)
+  df
+})
+tg3.9 = lapply(cgm_list, function(df){
+  mean(df$mmol < 3.9,na.rm = T) * 24
+}) 
+tg8.9 = lapply(cgm_list, function(df){
+  mean(df$mmol > 8.9,na.rm = T) * 24
+})
+mbg = lapply(cgm_list, function(df){
+  mean(df$mmol,na.rm = T)
+})
+r = lapply(cgm_list, function(df){
+  abs(diff(range(df$mmol,na.rm = T)))
+})
+modd = lapply(cgm_list, function(df){
+  df$round_time = lubridate::round_date(df$Time,unit = "5 minutes")
+  df$round_time = sapply(strsplit(as.character(df$round_time)," "),"[[",2)
+  modd = df %>% group_by(round_time) %>% 
+    mutate(t_diff = abs(mmol - lag(mmol)))
+  modd = mean(modd$t_diff,na.rm = T)
+  modd
+})
 # Q score for each sensor - calculate hours per day from percent time
 q_scores = lapply(cgm_list, function(df){
-  df = df %>% arrange(Time)
   tg3.9 = mean(df$mmol < 3.9,na.rm = T) * 24
   tg8.9 = mean(df$mmol > 8.9,na.rm = T) * 24
   mbg = mean(cgm$mmol,na.rm = T)
@@ -129,6 +147,19 @@ t1 = tableby(~notest(q_score,"N", "median", "q1q3")+AgeTx+gender+Race+tanner_sta
              data = df)
 summary(t1,labelTranslations = list(AgeTx = "Age at Tx",q_score = "Q Score",
                                     `factor(infections)` = "Num. Infections"))
+```
+
+# Q score component quantiles
+
+```{r results='asis'}
+li = list(tg3.9,tg8.9,mbg,r,modd)
+names(li) = c("tg<3.9","tg>8.9","MBG","range","MODD")
+l = lapply(li, function(x){
+  d = unlist(x)
+  quantile(d)
+})
+l = as.data.frame(l)
+kable(l,digits = 2)
 ```
 
 # Q Score by Group
