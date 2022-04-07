@@ -149,7 +149,50 @@ promis_parent$disturbance =
 promis_parent$impairment = 
   parent_impairment$T.Score[match(promis_parent$impairment,
                                   parent_impairment$ï..Raw.Summed.Score)]
+
+## HFS Scoring
+# parents
+hfs_p = data %>% select(record_id,redcap_event_name,timepoint, hypoglycemia_fear_survey_parent_timestamp:hypoglycemia_fear_survey_parent_complete) %>% 
+  filter(grepl("enrollment|month_3|month_6",redcap_event_name), record_id < 200,rowSums(is.na(.)) < ncol(.)-2)  %>% 
+  mutate(across(c(snacks:having_low), as.integer)) %>% mutate(across(c(snacks:having_low),function(x){x-1})) %>%
+  select(-c(hfs_12_months_severe_lows___0:hypoglycemia_fear_survey_parent_complete))
+ 
+hfs_p = hfs_p %>% rowwise() %>% 
+  mutate(behave_s = sum(c_across(snacks:nighttime)),
+         worry_s = sum(c_across(recognize:having_low)),
+         maintain_high_s_p = sum(c_across(c(safe_side, higher_alone, away))),
+         worry_lowbg_s_p = sum(c_across(c(recognize, food, dizzy, asleep_low, low_alone, no_one, seizure, complications_low, faint, having_low))),
+         worry_negsc_s_p = sum(c_across(c(embarrassing, clumsy, behavior, accident, bad_evaluation))),
+         total_s = sum(c_across(behave_s:worry_s))) %>% ungroup()
+
+hfs_p$total_z_p = (hfs_p$total_s - mean(hfs_p$total_s, na.rm = T))/sd(hfs_p$total_s, na.rm = T)
+
+hfs_p = hfs_p %>% select(record_id, redcap_event_name, maintain_high_s_p, worry_lowbg_s_p, worry_negsc_s_p, total_z_p)
+# change event and id
+substring(hfs_p$redcap_event_name,nchar(hfs_p$redcap_event_name),nchar(hfs_p$redcap_event_name)) ="2"
+hfs_p$record_id = sub("1", "2", hfs_p$record_id)
+
+# children
+hfs_peds = data %>% select(record_id,redcap_event_name,
+                           hypoglycemia_fear_survey_childteen_timestamp:hypoglycemia_fear_survey_childteen_complete) %>% 
+  filter(grepl("enrollment|month_3|month_6",redcap_event_name), record_id > 199,rowSums(is.na(.)) < ncol(.)-2) %>%
+  mutate(across(c(bedtime_snacks:having_low_sugar), as.integer)) %>% mutate(across(c(bedtime_snacks:having_low_sugar),function(x){x-1})) 
+hfs_peds = hfs_peds %>% rowwise() %>%
+  mutate(behave_s = sum(c_across(bedtime_snacks:check_often)),
+         worry_s = sum(c_across(recognizing_low:having_low_sugar)),
+         maintain_high_s = sum(c_across(c(high_safe, alone_higher, higher_away))),
+         worry_lowbg_s= sum(c_across(c(recognizing_low, food_low, passing_out, low_asleep, low_while_alone, no_help, mistake, long_term, woozy))),
+         worry_negsc_s = sum(c_across(c(embarrassing_myself, looking_clumsy, trouble_at_school, seizure_low))),
+         total_s = sum(c_across(behave_s:worry_s))) %>% ungroup()
+
+hfs_peds$total_z = (hfs_peds$total_s - mean(hfs_peds$total_s, na.rm = T))/sd(hfs_peds$total_s, na.rm = T)
+
+hfs_peds = hfs_peds %>% select(record_id, redcap_event_name, maintain_high_s, worry_lowbg_s, worry_negsc_s, total_z)
+
+hfs_all = full_join(hfs_peds, hfs_p)
 ```
+
+
 
 ```{r group derive, include = FALSE}
 # put parents into psqi score >5
@@ -190,10 +233,15 @@ substring(promis_parent$timepoint,nchar(promis_parent$timepoint),nchar(promis_pa
 promis_parent$timepoint = str_replace(promis_parent$timepoint, "baseline_arm_2", "baseline_day_1_arm_2")
 promis = full_join(promis_peds, promis_parent)
 
+# rename hfs event to timepoint
+hfs_all = rename(hfs_all, c( "timepoint" = "redcap_event_name"))
+hfs_all$timepoint = str_replace(hfs_all$timepoint, "enrollment_arm_2", "baseline_day_1_arm_2")
+
+
 analysis = full_join(child_activity, parent_activity) %>% distinct()
 analysis = full_join(analysis, promis) %>% distinct()
 analysis = full_join(bl_psqi_groups, analysis) %>% distinct()
-
+analysis = full_join(analysis, hfs_all)
 # test = exportRecords(rcon,forms = "glycemic_data")
 ```
 
@@ -242,6 +290,40 @@ fit_mod = function(outcome,df,plot = T,diagnostics = F){
     print(check_model(mod))
   }
 }
+
+
+# fit change mod
+fit_change_mod = function(outcome,df){
+  
+  # Format timepoint
+  df$timepoint = as.factor(df$timepoint)
+  levels(df$timepoint) = gsub("baseline_.*","Baseline",levels(df$timepoint))
+  levels(df$timepoint) = gsub("hcl_month_3_.*","Month 3",levels(df$timepoint))
+  levels(df$timepoint) = gsub("hcl_month_6_.*","Month 6",levels(df$timepoint))
+ 
+  # Fit random intercept model
+  f = as.formula(paste0(outcome,"~timepoint*psqi_group"))
+  mod = lme(f,
+            random = ~1|record_id,
+            data = df,
+            na.action = na.omit)
+
+  # Anova
+  mod_anova = anova.lme(mod, type="marginal")
+  print(kable(mod_anova,digits = 3,caption = "Test of Overall Effect"))
+
+ 
+   # Means
+  mod_means = emmeans(mod,specs=pairwise ~ factor(timepoint):psqi_group, adjust="tukey")
+  mod_contrasts = pairs(mod_means[[2]], simple = "contrast")
+  print(mod_contrasts[c(12,26),])
+   # Number of obs
+  cat("\n")
+  cat(paste("This model was fit using",nobs(mod),"observations."))
+  cat("\n")
+ 
+  }
+
 ```
 
 
@@ -296,14 +378,32 @@ fit_mod("totalsleep_avg", analysis)
 fit_mod("sleepefficency_avg",analysis)
 fit_mod("waso_avg", analysis)
 ```
-  c.	HFS (Total, sub analysis as previously done, eg maintain high)
-    i.	Parent self-report
+
 ### HFS
 #### Parent
+Total Z Score: No difference in groups at each time point (p = 0.99, 0.71, 0.98)
+Maintain High BG: No difference in groups at each time point (p = 0.56, 0.99, 0.99)
+Worry Low BG: No difference in groups at each time point (p = 0.65, 0.94, 0.99)
+Worry Negative Social Consequences:  No difference in groups at each time point (p = 0.94, 0.16, 0.99)
 #### Child
-```{r hfs}
+Total Z Score: No difference in groups at each time point (p = 0.99, 0.99, 0.74)
+Maintain High BG: No difference in groups at each time point (p = 0.62, 0.25, 0.30)
+Worry Low BG: No difference in groups at each time point (p = 0.85, 0.94, 0.93)
+Worry Negative Social Consequences:  No difference in groups at each time point (p = 0.86, 0.99, 0.98)
+```{r results hfs}
+# parent
+fit_mod("total_z_p", analysis)
+fit_mod("maintain_high_s_p", analysis)
+fit_mod("worry_lowbg_s_p", analysis)
+fit_mod("worry_negsc_s_p", analysis)
 
+# child
+fit_mod("total_z", analysis)
+fit_mod("maintain_high_s", analysis)
+fit_mod("worry_lowbg_s", analysis)
+fit_mod("worry_negsc_s", analysis)
 ```
+
 ### PROMIS
 #### Parent Proxy
 Disturbance: No difference in groups at each time point (p = 0.86, 0.99, 0.99)
@@ -321,10 +421,89 @@ fit_mod("disturbance", analysis)
 fit_mod("impairment",analysis)
 ```
 
-3.	Compare change in Actigraphy, survey, and glycemic data in each group over time
-  a.	Poor sleepers from baseline to 3 month and baseline to 6 month
-  b.	Good sleepers from baseline to 3 month and baseline to 6 month
 
+## Compare Groups at each timepoint for changes in  glycemic, actigraphy, survey data at BL-3mo and BL-6mo
+### Child Glycemic Measures 
+TBR(<54): No difference in groups at each time difference (p = 0.32, 0.58 )
+TBR(55-69): No difference in groups at each time difference (p = 0.99, 0.46)
+TIR(70-180): No difference in groups at each time difference (p = 0.70, 0.99 )
+TAR(180-250): No difference in groups at BL-3mo difference (p = 0.24 ) There is a significant difference in groups at the BL-6mo difference (p = 0.04)
+TAR(>251): No difference in groups at each time difference (p = 0.99, 0.30 )
+Hba1c: No difference in groups at each time difference (p = 0.19, 0.40 )
+GMI: No difference in groups at each time difference (p = 0.92, 0.86)
+```{r diffdiff glyc}
+# TIR, TAB, TBR, a1c, gmi
+fit_change_mod("sensor_u54", analysis)
+fit_change_mod("sensor_55_69",analysis)
+fit_change_mod("sensor_70_180", analysis)
+fit_change_mod("sensor_181_250", analysis)
+fit_change_mod("sensor_g251", analysis)
+fit_change_mod("hba1c", analysis)
+fit_change_mod("gmi", analysis)
+```
+
+### Actigraphy Measures
+#### Parent
+Total Sleep: No difference in groups at each time difference (p = 0.53, 0.65)
+Sleep Efficacy: No difference in groups at each time difference (p = 0.70, 0.50)
+WASO: No difference in groups at each time difference (p = 0.85, 0.68)
+#### Child
+Total Sleep: No difference in groups at each time difference (p = 0.52, 0.62)
+Sleep Efficacy: No difference in groups at each time difference (p = 0.61, 0.06)
+WASO: No difference in groups at each time difference (p = 0.57, 0.34)
+```{r diffdiff Actigraphy}
+# Total sleep avg (minutes), wasp, efficiency
+# parent
+fit_change_mod("totalsleep_avg_p", analysis)
+fit_change_mod("sleepefficiency_avg_p",analysis)
+fit_change_mod("waso_avg_p", analysis)
+# children
+fit_change_mod("totalsleep_avg", analysis)
+fit_change_mod("sleepefficency_avg",analysis)
+fit_change_mod("waso_avg", analysis)
+```
+
+### HFS
+#### Parent
+Total Z Score: No difference in groups at each time difference (p = 0.52, 0.91)
+Maintain High BG: No difference in groups at each time difference (p = 0.41, 0.19)
+Worry Low BG: No difference in groups at each time difference (p = 0.27, 0.72)
+Worry Negative Social Consequences:  No difference in groups at each time difference (p = 0.06, 0.74)
+#### Child
+Total Z Score: No difference in groups at each time difference (p = 0.99, 0.76)
+Maintain High BG: No difference in groups at each time difference (p = 0.85, 0.90)
+Worry Low BG: No difference in groups at each time difference (p = 0.97, 0.39)
+Worry Negative Social Consequences:  No difference in groups at each time difference (p = 0.71, 0.92)
+```{r diffdiff hfs}
+# parent
+fit_change_mod("total_z_p", analysis)
+fit_change_mod("maintain_high_s_p", analysis)
+fit_change_mod("worry_lowbg_s_p", analysis)
+fit_change_mod("worry_negsc_s_p", analysis)
+
+# child
+fit_change_mod("total_z", analysis)
+fit_change_mod("maintain_high_s", analysis)
+fit_change_mod("worry_lowbg_s", analysis)
+fit_change_mod("worry_negsc_s", analysis)
+```
+
+### PROMIS
+#### Parent Proxy
+Disturbance: No difference in groups at each time difference(p = 0.73, 0.65)
+Sleep Related Impairment: No difference in groups at each time difference(p = 0.98, 0.89)
+#### Child
+Disturbance: No difference in groups at each time difference (p = 0.24, 0.40)
+Sleep Related Impairment: No difference in groups at each time difference (p = 0.79, 0.93)
+```{r diffdiff PROMIS}
+# disturbance, impairment
+# parent
+fit_change_mod("disturbance_p", analysis)
+fit_change_mod("impairment_p",analysis)
+# children
+fit_change_mod("disturbance", analysis)
+fit_change_mod("impairment",analysis)
+```
 4.	Calculate the number of parents in the poor and good sleeper groups who meet criteria for poor and good sleep over time. 
   a.	Looking for the number of parents who change category at each time point
 Look at changes over time for glycemic and patient reported outcomes. Do parents defined as poor sleepers (by PSQI score) have children that experience greater change in TIR, parent and child FOH, than good sleepers? How many poor sleepers transitioned to good sleepers after 3 months and 6 months of HCL use? 
