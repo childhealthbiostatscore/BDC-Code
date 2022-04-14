@@ -1,18 +1,21 @@
 # Working directory
-setwd("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kaan Akturk/CGM Sampling")
+setwd("~/Documents")
+dir.create("./Data_Cleaned/cgm",showWarnings = F)
 # Set days 
 days <- c(7,14,30,60,90)
 # Set output directory
 outdir <- "./Data_Cleaned/cgm"
 # Iterate through CGM data, format, and name
 files <- list.files("./Data_Raw/Patient 90 days",full.names = T)
-for (f in files) {
-  ext <- tools::file_ext(f)
+ids = vector()
+length(ids) = length(files)
+for (f in 1:length(files)) {
+  ext <- tools::file_ext(files[f])
   if(grepl("xls",ext)){
-    dat <- readxl::read_excel(f,col_types = "text")
+    dat <- readxl::read_excel(files[f],col_types = "text")
     dat <- as.data.frame(dat)
   } else if (ext == "csv"){
-    dat <- read.csv(f,na.strings = "")
+    dat <- read.csv(files[f],na.strings = "")
   }
   name <- sub(" *\\ ","",tolower(paste0(dat[1,5],dat[2,5])))
   name <- gsub("[[:digit:]]","",name)
@@ -20,7 +23,8 @@ for (f in files) {
   date <- 
     lubridate::mdy(subjects$MostRecentVisitDate[
       match(name,subjects$name)])
-  if(is.na(date)){stop(paste("No date:",f))}
+  if(is.na(date)){stop(paste("No date:",files[f]))}
+  ids[f] = name
   # Format data
   calibration <- which(dat[,3]=="Calibration")
   if (length(calibration)>0){dat <- dat[-calibration,]}
@@ -61,7 +65,9 @@ l = lapply(days, function(d){
     # GRI
     gri = (3.0 * vlow) + (2.4 * low) + (1.6 * vhigh) + (0.8 * high)
   }))
-  return(gris)
+  df = data.frame(sub("day\\d.*","",basename(files)),gris)
+  colnames(df) = c("id",paste0("day",d,"_gri"))
+  return(df)
 })
-names(l) = paste0("day",days)
-write.csv(as.data.frame(l),"./Data_Cleaned/gri.csv",row.names = F)
+df = l %>% reduce(full_join,by = "id") %>% arrange(id)
+write.csv(df,"./Data_Cleaned/gri.csv",row.names = F,na = "")
