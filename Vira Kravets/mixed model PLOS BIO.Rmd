@@ -22,21 +22,32 @@ library(car)
 library(readxl)
 library(dplyr)
 library(emmeans)
+library(data.table)
 
 fig1f <- read.csv("B:/Projects/Vira Kravets/PLOS BIO resubmission/Fig 1F By Cell_IslNorm.csv")
 colnames(fig1f) <- c("ID",colnames(fig1f[,2:8]))
 fig1f$mouse <- substring(fig1f$ID,1,5)
 fig1f$islet <- sub(".*_", "", fig1f$ID)
-# make a long dataset
-fig1f_long <- reshape(fig1f, direction="long", idvar = "ID", varying = c("X1st.resp","w.or","w.end","last.resp",
-                                                                         "hub.like..p1.","hub.like..p2."))
+# need to assign a cell ID within islets
+fig1f$unique_islet <- NA
+for (i in 1:nrow(fig1f)) {
+  fig1f[i,]$unique_islet <- paste0(fig1f[i,]$mouse,fig1f[i,]$islet)
+}
+fig1f <- fig1f %>% group_by(unique_islet) %>% mutate(cell = sequence(n()))
 
+# make a long dataset
+fig1f_long <- reshape(fig1f, direction="long", idvar = c("mouse","islet","cell"), 
+                      varying = c("X1st.resp","w.or","w.end","last.resp","hub.like..p1.","hub.like..p2."),
+                      v.names = "value",timevar = "Characteristic",
+                      times=c("X1st.resp","w.or","w.end","last.resp","hub.like..p1.","hub.like..p2."))
+fig1f_long <- fig1f_long %>% arrange(mouse,islet,cell)
+fig1f_long$l_value <- log(fig1f_long$value)
 
 ###########
 # FIG 1f  #
 ###########
 
-mod_1f <- lme(last.resp ~ X1st.resp,random=~1|islet,data = fig1f,na.action=na.omit)
+mod_1f <- lme(l_value ~ Characteristic,random=~1|unique_islet,data = fig1f_long,na.action=na.omit)
 resid_1f <- residuals(mod_1f)
 # QQplot
 a_1f <- qqnorm(mod_1f,abline = c(0,1))
