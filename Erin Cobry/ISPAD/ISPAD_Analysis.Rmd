@@ -1,8 +1,10 @@
 ---
 title: "ISPAD Analysis"
 author: "Casey Sakamoto"
-date: '2022-03-21'
-output: html_document
+date: '2022-04-22'
+output:
+  html_document:
+    toc: true
 ---
 
 ```{r setup, include=FALSE}
@@ -13,6 +15,8 @@ library(redcapAPI)
 library(knitr) # kable
 library(nlme) # mixed models
 library(emmeans) # contrast statement
+library(longCatEDA)
+library(table1)
 
 knitr::opts_chunk$set(echo = FALSE)
 if(Sys.info()["sysname"] == "Windows"){
@@ -239,7 +243,24 @@ analysis = full_join(child_activity, parent_activity) %>% distinct()
 analysis = full_join(analysis, promis) %>% distinct()
 analysis = full_join(bl_psqi_groups, analysis) %>% distinct()
 analysis = full_join(analysis, hfs_all)
-# test = exportRecords(rcon,forms = "glycemic_data")
+
+analysis = analysis %>% group_by(record_id) %>% fill(psqi_group)
+
+# change in group over time analysis
+psqi_scores = data %>% select(record_id, psqi_total, redcap_event_name) %>%
+  mutate(timepoint = case_when(redcap_event_name == "enrollment_arm_1" ~ "baseline_day_1_arm_2",
+                               redcap_event_name == "hcl_month_3_day_1_arm_1" ~ "hcl_month_3_day_1_arm_2",
+                               redcap_event_name == "hcl_month_6_day_1_arm_1" ~ "hcl_month_6_day_1_arm_2"),
+         psqi_group_d = case_when(psqi_total > 5 ~ 1,
+                                              psqi_total <= 5 ~ 0)) %>% 
+  filter(timepoint %in% c("baseline_day_1_arm_2","hcl_month_3_day_1_arm_2","hcl_month_6_day_1_arm_2" ))
+
+psqi_scores$psqi_group_d = factor(psqi_scores$psqi_group_d, levels = c(0,1), labels = c("Parent Good Sleeper", "Parent Poor Sleeper") )
+
+psqi_scores$record_id = sub("1", "2", psqi_scores$record_id)
+psqi_scores = psqi_scores %>% select(record_id, timepoint, psqi_group_d, psqi_total)
+
+analysis = full_join(analysis, psqi_scores)
 ```
 
 ```{r model functions, include=FALSE}
@@ -322,10 +343,7 @@ fit_change_mod = function(outcome,df){
   }
 
 ```
-# Outstanding Data Questions/Remarks
-* Subj 127 is missing baseline psqi score, and also has very large value for question 4.
-* Subj 138 is missing Month 3 psqi score
-* Subj 127, 130 missing Month 6 psqi score
+
 
 # Methods
 Parents were stratified into good/poor sleepers by their baseline psqi score (using a cutoff of >5).
@@ -337,19 +355,65 @@ Actigraphy, Survey, and Glycemic outcomes were compared at each time point betwe
 ```{r results 1}
 kable(analysis %>% group_by(psqi_group) %>% summarise(n = n_distinct(record_id)))
 ```
-Parent Good Sleeper n = 15 (0.385)
+Parent Good Sleeper n = 16 (0.410)
 Parent Poor Sleeper n = 23 (0.590)
 
+## Demographics Table
+```{r Demog T data wrang, include=FALSE}
+# want youth: age(mean sd), gender(fem n%), race(non-hisp white n%), t1d duration(years, med(iqr)), hba1c(mean sd), previous cgm use(yes n %), previous pump use (yes n %)
+child_demog = child_demographics %>% filter(timepoint == "baseline_day_1_arm_2") %>% select(record_id, t1d_duration, hba1c, childgender)
+
+demog_df = data  %>% filter(redcap_event_name == "enrollment_arm_1") %>%
+  mutate(parent_age = trunc(as.numeric(difftime(econsent_timestamp, parent_bday, units = "days"))/365.25),
+         previous_pump_use = case_when(!is.na(pump_start)~ "Yes",
+                                       TRUE ~ "No")) %>%
+  select(record_id, econs_age, race, previous_cgm_use, previous_pump_use,  parent_gender, parent_age)
+demog_df$record_id = sub("1", "2", demog_df$record_id)
+
+demog_table_df = full_join(demog_df, child_demog)
+# for some reason subj 218 doesnt have hba1c, gender, t1d
+demog_table_df[demog_table_df$record_id=="218", "hba1c"] = 6.5
+demog_table_df[demog_table_df$record_id=="218", "t1d_duration"] = 2.971
+demog_table_df[demog_table_df$record_id=="218", "childgender"] = "Female"
+# parent: age(mean sd), gender(fem n %)
+demog_table_df = full_join(bl_psqi_groups,demog_table_df)
+
+
+# render function
+rndr <- function(x, name, ...) {
+    if (!is.numeric(x)) return(render.categorical.default(x))
+    what <- switch(name,
+        parent_age = "Median [Q1, Q3]",
+        t1d_duration  = "Median [Q1, Q3]",
+        hba1c = "Mean (SD)",
+        econs_age = "Mean (SD)")
+    parse.abbrev.render.code(c("", what))(x)
+}
+
+label(demog_table_df$t1d_duration) = "T1D Duration (Years)"
+label(demog_table_df$previous_pump_use) = "Previous Pump Use"
+label(demog_table_df$previous_cgm_use) = "Previous CGM Use"
+label(demog_table_df$parent_gender) = "Parent Gender"
+label(demog_table_df$parent_age) = "Parent Age"
+label(demog_table_df$race) = "Child Race/Ethn"
+
+
+demog_table = table1( ~ econs_age + childgender + race + t1d_duration + hba1c + previous_cgm_use + previous_pump_use + parent_age + parent_gender | psqi_group, data = demog_table_df , render = rndr, overall = F)
+```
+
+```{r demog table}
+demog_table
+```
 
 ## Compare Groups at each timepoint for glycemic, actigraphy, survey data
 ### Child Glycemic Measures 
-* TBR(<54): No difference in groups at each time point (p = 0.65, 0.78, 0.99)
-* TBR(55-69): No difference in groups at each time point (p = 0.89, 0.93, 0.86)
-* TIR(70-180): No difference in groups at each time point (p = 0.97, 0.60, 0.92)
-* TAR(180-250): No difference in groups at each time point (p = 0.91, 0.68, 0.18)
-* TAR(>251): No difference in groups at each time point (p = 0.78, 0.72, 0.90)
-* Hba1c: No difference in groups at each time point (p = 0.99, 0.45, 0.77)
-* GMI: No difference in groups at each time point (p = 0.87, 0.66, 0.99)
+* TBR(<54): No difference in groups at each time point (p = 0.64, 0.78, 0.99)
+* TBR(55-69): No difference in groups at each time point (p = 0.86, 0.91, 0.95)
+* TIR(70-180): No difference in groups at each time point (p = 0.99, 0.70, 0.99)
+* TAR(180-250): No difference in groups at each time point (p = 0.91, 0.68, 0.17)
+* TAR(>251): No difference in groups at each time point (p = 0.88, 0.84, 0.67)
+* Hba1c: No difference in groups at each time point (p = 0.84, 0.59, 0.84)
+* GMI: No difference in groups at each time point (p = 0.94, 0.77, 0.99)
 
 ```{r results glycemic}
 # TIR, TAB, TBR, a1c, gmi
@@ -364,13 +428,13 @@ fit_mod("gmi", analysis)
 
 ### Actigraphy Measures
 #### Parent
-* Total Sleep: No difference in groups at each time point (p = 0.99, 0.74, 0.81)
-* Sleep Efficacy: No difference in groups at each time point (p = 0.62, 0.92, 0.98)
-* WASO: No difference in groups at each time point (p = 0.60, 0.82, 0.91)
+* Total Sleep: No difference in groups at each time point (p = 0.99, 0.72, 0.69)
+* Sleep Efficacy: No difference in groups at each time point (p = 0.76, 0.96, 0.99)
+* WASO: No difference in groups at each time point (p = 0.51, 0.77, 0.87)
 #### Child
-* Total Sleep: No difference in groups at each time point (p = 0.87, 0.99, 0.99)
-* Sleep Efficacy: No difference in groups at each time point (p = 0.68, 0.99, 0.74)
-* WASO: No difference in groups at each time point (p = 0.97, 0.95, 0.79)
+* Total Sleep: No difference in groups at each time point (p = 0.86, 0.99, 0.99)
+* Sleep Efficacy: No difference in groups at each time point (p = 0.78, 0.99, 0.72)
+* WASO: No difference in groups at each time point (p = 0.91, 0.99, 0.95)
 ```{r results Actigraphy}
 # Total sleep avg (minutes), wasp, efficiency
 # parent
@@ -385,15 +449,15 @@ fit_mod("waso_avg", analysis)
 
 ### HFS
 #### Parent
-* Total Z Score: No difference in groups at each time point (p = 0.99, 0.71, 0.98)
-* Maintain High BG: No difference in groups at each time point (p = 0.56, 0.99, 0.99)
-* Worry Low BG: No difference in groups at each time point (p = 0.65, 0.94, 0.99)
-* Worry Negative Social Consequences:  No difference in groups at each time point (p = 0.94, 0.16, 0.99)
+* Total Z Score: No difference in groups at each time point (p = 0.99, 0.72, 0.96)
+* Maintain High BG: No difference in groups at each time point (p = 0.62, 0.98, 0.99)
+* Worry Low BG: No difference in groups at each time point (p = 0.86, 0.99, 0.99)
+* Worry Negative Social Consequences:  No difference in groups at each time point (p = 0.99, 0.16, 0.97)
 #### Child
-* Total Z Score: No difference in groups at each time point (p = 0.99, 0.99, 0.74)
-* Maintain High BG: No difference in groups at each time point (p = 0.62, 0.25, 0.30)
-* Worry Low BG: No difference in groups at each time point (p = 0.85, 0.94, 0.93)
-* Worry Negative Social Consequences:  No difference in groups at each time point (p = 0.86, 0.99, 0.98)
+* Total Z Score: No difference in groups at each time point (p = 0.97, 0.99, 0.69)
+* Maintain High BG: No difference in groups at each time point (p = 0.39, 0.21, 0.26)
+* Worry Low BG: No difference in groups at each time point (p = 0.92, 0.95, 0.90)
+* Worry Negative Social Consequences:  No difference in groups at each time point (p = 0.95, 0.99, 0.99)
 ```{r results hfs}
 # parent
 fit_mod("total_z_p", analysis)
@@ -410,11 +474,11 @@ fit_mod("worry_negsc_s", analysis)
 
 ### PROMIS
 #### Parent Proxy
-* Disturbance: No difference in groups at each time point (p = 0.86, 0.99, 0.99)
-* Sleep Related Impairment: No difference in groups at each time point (p = 0.45, 0.57, 0.77)
+* Disturbance: No difference in groups at each time point (p = 0.94, 0.99, 0.99)
+* Sleep Related Impairment: No difference in groups at each time point (p = 0.75, 0.87, 0.92)
 #### Child
-* Disturbance: No difference in groups at each time point (p = 0.25, 0.94, 0.84)
-* Sleep Related Impairment: No difference in groups at each time point (p = 0.73, 0.98, 0.90)
+* Disturbance: No difference in groups at each time point (p = 0.41, 0.99, 0.95)
+* Sleep Related Impairment: No difference in groups at each time point (p = 0.95, 0.99, 0.99)
 ```{r results PROMIS}
 # disturbance, impairment
 # parent
@@ -428,13 +492,13 @@ fit_mod("impairment",analysis)
 
 ## Compare Groups at each timepoint for changes in  glycemic, actigraphy, survey data at BL-3mo and BL-6mo
 ### Child Glycemic Measures 
-* TBR(<54): No difference in groups at each time difference (p = 0.32, 0.58 )
-* TBR(55-69): No difference in groups at each time difference (p = 0.99, 0.46)
-* TIR(70-180): No difference in groups at each time difference (p = 0.70, 0.99 )
+* TBR(<54): No difference in groups at each time difference (p = 0.32, 0.61 )
+* TBR(55-69): No difference in groups at each time difference (p = 0.99, 0.56)
+* TIR(70-180): No difference in groups at each time difference (p = 0.71, 0.99 )
 * TAR(180-250): No difference in groups at BL-3mo difference (p = 0.24 ) There is a significant difference in groups at the BL-6mo difference (p = 0.04)
-* TAR(>251): No difference in groups at each time difference (p = 0.99, 0.30 )
-* Hba1c: No difference in groups at each time difference (p = 0.19, 0.40 )
-* GMI: No difference in groups at each time difference (p = 0.92, 0.86)
+* TAR(>251): No difference in groups at each time difference (p = 0.99, 0.21 )
+* Hba1c: No difference in groups at each time difference (p = 0.12, 0.23 )
+* GMI: No difference in groups at each time difference (p = 0.93, 0.76)
 ```{r diffdiff glyc}
 # TIR, TAB, TBR, a1c, gmi
 fit_change_mod("sensor_u54", analysis)
@@ -448,13 +512,13 @@ fit_change_mod("gmi", analysis)
 
 ### Actigraphy Measures
 #### Parent
-* Total Sleep: No difference in groups at each time difference (p = 0.53, 0.65)
-* Sleep Efficacy: No difference in groups at each time difference (p = 0.70, 0.50)
-* WASO: No difference in groups at each time difference (p = 0.85, 0.68)
+* Total Sleep: No difference in groups at each time difference (p = 0.42, 0.38)
+* Sleep Efficacy: No difference in groups at each time difference (p = 0.78, 0.62)
+* WASO: No difference in groups at each time difference (p = 0.83, 0.64)
 #### Child
-* Total Sleep: No difference in groups at each time difference (p = 0.52, 0.62)
-* Sleep Efficacy: No difference in groups at each time difference (p = 0.61, 0.06)
-* WASO: No difference in groups at each time difference (p = 0.57, 0.34)
+* Total Sleep: No difference in groups at each time difference (p = 0.50, 0.55)
+* Sleep Efficacy: No difference in groups at each time difference (p = 0.69, 0.08)
+* WASO: No difference in groups at each time difference (p = 0.58, 0.42)
 ```{r diffdiff Actigraphy}
 # Total sleep avg (minutes), wasp, efficiency
 # parent
@@ -469,15 +533,15 @@ fit_change_mod("waso_avg", analysis)
 
 ### HFS
 #### Parent
-* Total Z Score: No difference in groups at each time difference (p = 0.52, 0.91)
-* Maintain High BG: No difference in groups at each time difference (p = 0.41, 0.19)
-* Worry Low BG: No difference in groups at each time difference (p = 0.27, 0.72)
-* Worry Negative Social Consequences:  No difference in groups at each time difference (p = 0.06, 0.74)
+* Total Z Score: No difference in groups at each time difference (p = 0.75, 0.99)
+* Maintain High BG: No difference in groups at each time difference (p = 0.62, 0.25)
+* Worry Low BG: No difference in groups at each time difference (p = 0.59, 0.90)
+* Worry Negative Social Consequences:  No difference in groups at each time difference (p = 0.19, 0.94)
 #### Child
-* Total Z Score: No difference in groups at each time difference (p = 0.99, 0.76)
-* Maintain High BG: No difference in groups at each time difference (p = 0.85, 0.90)
-* Worry Low BG: No difference in groups at each time difference (p = 0.97, 0.39)
-* Worry Negative Social Consequences:  No difference in groups at each time difference (p = 0.71, 0.92)
+* Total Z Score: No difference in groups at each time difference (p = 0.99, 0.85)
+* Maintain High BG: No difference in groups at each time difference (p = 0.95, 0.97)
+* Worry Low BG: No difference in groups at each time difference (p = 0.99, 0.44)
+* Worry Negative Social Consequences:  No difference in groups at each time difference (p = 0.76, 0.96)
 ```{r diffdiff hfs}
 # parent
 fit_change_mod("total_z_p", analysis)
@@ -494,11 +558,11 @@ fit_change_mod("worry_negsc_s", analysis)
 
 ### PROMIS
 #### Parent Proxy
-* Disturbance: No difference in groups at each time difference(p = 0.73, 0.65)
-* Sleep Related Impairment: No difference in groups at each time difference(p = 0.98, 0.89)
+* Disturbance: No difference in groups at each time difference(p = 0.69, 0.68)
+* Sleep Related Impairment: No difference in groups at each time difference(p = 0.97, 0.95)
 #### Child
-* Disturbance: No difference in groups at each time difference (p = 0.24, 0.40)
-* Sleep Related Impairment: No difference in groups at each time difference (p = 0.79, 0.93)
+* Disturbance: No difference in groups at each time difference (p = 0.23, 0.44)
+* Sleep Related Impairment: No difference in groups at each time difference (p = 0.84, 0.98)
 ```{r diffdiff PROMIS}
 # disturbance, impairment
 # parent
@@ -509,9 +573,9 @@ fit_change_mod("disturbance", analysis)
 fit_change_mod("impairment",analysis)
 ```
 
-## Calculate the number of parents in the poor and good sleeper groups who meet criteria for poor and good sleep over time. 
 
-```{r aim 4}
+# Change of Groups
+```{r aim 4 data, include=FALSE}
 bl_psqi_groups_long = data %>% mutate(psqi_group = case_when(psqi_total > 5 ~ 1,
                                               psqi_total <= 5 ~ 0)) %>%
   select(record_id, psqi_total, psqi_group, redcap_event_name) %>% filter(grepl("enrollment|month_3|month_6",redcap_event_name), record_id < 200)
@@ -523,13 +587,32 @@ bl_psqi_groups_long = data %>% mutate(psqi_group = case_when(psqi_total > 5 ~ 1,
   levels(bl_psqi_groups_long$redcap_event_name) = gsub("hcl_month_6_.*","Month 6",levels(bl_psqi_groups_long$redcap_event_name))
 
 bl_psqi_groups_long$psqi_group = factor(bl_psqi_groups_long$psqi_group, levels = c(0,1), labels = c("Parent Good Sleeper", "Parent Poor Sleeper") )
-# note 127 missing baseline psqi, but has a subsequent value of 4
 
-kable(bl_psqi_groups_long %>% group_by(redcap_event_name) %>%count(psqi_group))
-# # add a child id for merging later
-# bl_psqi_groups$child_id = sub("1", "2", bl_psqi_groups$record_id)
-# bl_psqi_groups = bl_psqi_groups %>% select(child_id, psqi_group) 
-# bl_psqi_groups = rename(bl_psqi_groups, c( "record_id" = "child_id"))
+
 ```
- * 8 Parents transitioned from poor to good sleepers within 3 months, however 3 transitioned back to poor sleepers at month 6.
- * 2 Parents transitioned from poor to good sleepers within 6 months.
+
+## Calculate the number of parents in the poor and good sleeper groups who meet criteria for poor and good sleep over time. 
+```{r aim 4 analysis}
+# not alot can be gleaned from a spghetti plot of the group changes
+# group_change = ggplot(data = analysis, aes_string( x="timepoint", y = "psqi_total", color = "psqi_group", group = "record_id")) +
+#   geom_point() + geom_line() + xlab("Timepoint") + geom_abline( slope = 0, intercept = 5) + 
+#       theme_bw()
+# group_change
+kable(bl_psqi_groups_long %>% group_by(redcap_event_name) %>%count(psqi_group))
+
+wide_groups = analysis %>% select(record_id, timepoint, psqi_group_d) %>% mutate(psqi_group_d = as.numeric(psqi_group_d)) %>% spread(timepoint, psqi_group_d) 
+
+wide_groups = as.matrix.data.frame(wide_groups[,2:4])
+group_lc = longCat(wide_groups,
+                   Labels = c("Parent Good Sleeper", "Parent Poor Sleeper"),
+                   times = c(1,100,200,300),
+                   tLabels = c("Baseline", "Month 3", "Month 6"))
+longCatPlot(group_lc, colScheme = "gray", xlab = "", lwd = 2)
+```
+
+ 16 Parents changed from their baseline sleeper group.
+ 
+ * 8 Parents transitioned from poor to good sleepers within 3 months, however 2 transitioned back to poor sleepers at month 6.
+ * 2 Parents were poor sleepers at baseline and 3 months, but transitioned to good sleepers at month 6.
+ * 3 Parents transitioned from good to poor sleepers within 3 months, however 1 transitioned back to the good sleeper group at month 6.
+ * 3 Parents were good sleepers at baseline and 3 months, but transitioned to poor sleepers at month 6
