@@ -23,6 +23,7 @@ library(readxl)
 library(dplyr)
 library(emmeans)
 library(data.table)
+library(knitr)
 
 fig1f <- read.csv("B:/Projects/Vira Kravets/PLOS BIO resubmission/Fig 1F By Cell_IslNorm.csv")
 colnames(fig1f) <- c("ID",colnames(fig1f[,2:8]))
@@ -37,38 +38,50 @@ fig1f <- fig1f %>% group_by(unique_islet) %>% mutate(cell = sequence(n()))
 
 # make a long dataset
 fig1f_long <- reshape(fig1f, direction="long", idvar = c("mouse","islet","cell"), 
-                      varying = c("X1st.resp","w.or","w.end","last.resp","hub.like..p1.","hub.like..p2."),
+                      varying = c("Islet","X1st.resp","w.or","w.end","last.resp","hub.like..p1.","hub.like..p2."),
                       v.names = "value",timevar = "Characteristic",
-                      times=c("X1st.resp","w.or","w.end","last.resp","hub.like..p1.","hub.like..p2."))
+                      times=c("Islet","X1st.resp","w.or","w.end","last.resp","hub.like..p1.","hub.like..p2."))
 fig1f_long <- fig1f_long %>% arrange(mouse,islet,cell)
 fig1f_long$l_value <- log(fig1f_long$value)
+fig1f_long$Characteristic <- as.factor(fig1f_long$Characteristic)
 
 ###########
 # FIG 1f  #
 ###########
 
-mod_1f <- lme(l_value ~ Characteristic,random=~1|unique_islet,data = fig1f_long,na.action=na.omit)
+mod_1f <- lme(value ~ Characteristic,random=~1|unique_islet,data = fig1f_long,na.action=na.omit)
 resid_1f <- residuals(mod_1f)
+shapiro.test(resid(mod_1f))
 # QQplot
 a_1f <- qqnorm(mod_1f,abline = c(0,1))
-x_1f <- a_1f$panel.args[[1]]$x
-y_1f <- a_1f$panel.args[[1]]$y
-points_1f <- cbind(x_1f,y_1f)
-
-
+# ANOVA table
+mod_1f_anova <- anova.lme(mod_1f, type="marginal")
+# use emmeans 
+mod_1f_means <- emmeans(mod_1f,"Characteristic")
+mod_1f_pairs <-  pairs(mod_1f_means)
 ```
 
 # Figure 2c 
 
 ```{r echo=FALSE, comment=""}
 summary(mod_1f)
+a_1f
 ```
 
-Interpretation of model above: for a 1% increase in initial, repeated changes by `r summary(mod_1f)$tTable[2,1]`%.
+## ANOVA table
 
 ```{r echo=FALSE, comment=""}
-a_1f
-shapiro.test(resid(mod_1f))
-r2(mod_1f)
+kable(mod_1f_anova)
 ```
 
+## Group means
+
+```{r echo=FALSE, comment=""}
+kable(mod_1f_means)
+```
+
+## Pairwise comparison of means with Tukey's HSD adjustment for multiple testing
+
+```{r echo=FALSE, comment=""}
+kable(mod_1f_pairs)
+```
