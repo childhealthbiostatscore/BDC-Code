@@ -25,6 +25,8 @@ library(emmeans)
 library(data.table)
 library(knitr)
 
+# read in fig 1f
+
 fig1f <- read.csv("B:/Projects/Vira Kravets/PLOS BIO resubmission/Fig 1F By Cell_IslNorm.csv")
 colnames(fig1f) <- c("ID",colnames(fig1f[,2:8]))
 fig1f$mouse <- substring(fig1f$ID,1,5)
@@ -35,7 +37,6 @@ for (i in 1:nrow(fig1f)) {
   fig1f[i,]$unique_islet <- paste0(fig1f[i,]$mouse,fig1f[i,]$islet)
 }
 fig1f <- fig1f %>% group_by(unique_islet) %>% mutate(cell = sequence(n()))
-
 # make a long dataset
 fig1f_long <- reshape(fig1f, direction="long", idvar = c("mouse","islet","cell"), 
                       varying = c("Islet","X1st.resp","w.or","w.end","last.resp","hub.like..p1.","hub.like..p2."),
@@ -44,6 +45,26 @@ fig1f_long <- reshape(fig1f, direction="long", idvar = c("mouse","islet","cell")
 fig1f_long <- fig1f_long %>% arrange(mouse,islet,cell)
 fig1f_long$l_value <- log(fig1f_long$value)
 fig1f_long$Characteristic <- as.factor(fig1f_long$Characteristic)
+
+# read in fig 1g
+
+fig1g <- read.csv("B:/Projects/Vira Kravets/PLOS BIO resubmission/Fig 1G byCell_IslNorm.csv")
+colnames(fig1g) <- c("ID",colnames(fig1g[,2:8]))
+fig1g$mouse <- substring(fig1g$ID,1,5)
+fig1g$islet <- sub(".*_", "", fig1g$ID)
+# need to assign a cell ID within islets
+fig1g$unique_islet <- NA
+for (i in 1:nrow(fig1g)) {
+  fig1g[i,]$unique_islet <- paste0(fig1g[i,]$mouse,fig1g[i,]$islet)
+}
+fig1g <- fig1g %>% group_by(unique_islet) %>% mutate(cell = sequence(n()))
+# make a long dataset
+fig1g_long <- reshape(fig1g, direction="long", idvar = c("mouse","islet","cell"), 
+                      varying = c("Islet","X1st.resp","w.or","w.end","last.resp","hub.like..p1.","hub.like..p2."),
+                      v.names = "value",timevar = "Characteristic",
+                      times=c("Islet","X1st.resp","w.or","w.end","last.resp","hub.like..p1.","hub.like..p2."))
+fig1g_long <- fig1g_long %>% arrange(mouse,islet,cell)
+fig1g_long$Characteristic <- as.factor(fig1g_long$Characteristic)
 
 ###########
 # FIG 1f  #
@@ -59,9 +80,25 @@ mod_1f_anova <- anova.lme(mod_1f, type="marginal")
 # use emmeans 
 mod_1f_means <- emmeans(mod_1f,"Characteristic")
 mod_1f_pairs <-  pairs(mod_1f_means)
+
+###########
+# FIG 1g  #
+###########
+
+mod_1g <- lme(value ~ Characteristic,random=~1|unique_islet,data = fig1g_long,na.action=na.omit)
+resid_1g <- residuals(mod_1g)
+shapiro.test(resid(mod_1g))
+# QQplot
+a_1g <- qqnorm(mod_1g,abline = c(0,1))
+# ANOVA table
+mod_1g_anova <- anova.lme(mod_1g, type="marginal")
+# use emmeans 
+mod_1g_means <- emmeans(mod_1g,"Characteristic")
+mod_1g_pairs <-  pairs(mod_1g_means)
+
 ```
 
-# Figure 2c 
+# Figure 1f
 
 ```{r echo=FALSE, comment=""}
 summary(mod_1f)
@@ -84,4 +121,29 @@ kable(mod_1f_means)
 
 ```{r echo=FALSE, comment=""}
 kable(mod_1f_pairs)
+```
+
+# Figure 1g
+
+```{r echo=FALSE, comment=""}
+summary(mod_1g)
+a_1g
+```
+
+## ANOVA table
+
+```{r echo=FALSE, comment=""}
+kable(mod_1g_anova)
+```
+
+## Group means
+
+```{r echo=FALSE, comment=""}
+kable(mod_1g_means)
+```
+
+## Pairwise comparison of means with Tukey's HSD adjustment for multiple testing
+
+```{r echo=FALSE, comment=""}
+kable(mod_1g_pairs)
 ```
