@@ -7,9 +7,11 @@ output: html_document
 
 ```{r setup, include=FALSE}
 library(readr)
-library(knitr)
-library(tidyverse)
-library(ggplot2)
+library(readxl) # data import
+library(knitr) # tables
+library(tidyverse) # data manip
+library(ggplot2) # plots
+library(table1)
 
 knitr::opts_chunk$set(echo = FALSE)
 if(Sys.info()["sysname"] == "Windows"){
@@ -30,6 +32,10 @@ rm(home_dir)
 gri = read_csv("S:/Laura/BDC/Projects/Kaan Akturk/CGM Sampling/Data_Cleaned/gri.csv")
 gri_val = c("day7_gri","day14_gri","day30_gri","day60_gri","day90_gri")
 
+# subject info
+subject_info = read_csv("S:/Laura/BDC/Projects/Kaan Akturk/CGM Sampling/Data_Cleaned/subject_info.csv")
+baseline_char = read_excel("S:/Laura/BDC/Projects/Viral Shah/GRI/Data Clean/baseline_char.xlsx", 
+    na = "NULL")
 # compute correlations
 gri_cor = cor(gri[,gri_val], use = "pairwise.complete.obs")
 
@@ -38,6 +44,29 @@ gri_cor = as.data.frame(gri_cor[,5])
 gri_cor = rename(gri_cor, "r" =`gri_cor[, 5]`)
 gri_cor$r_sq = gri_cor$r^2
 gri_cor$Day = factor(c("7","14","30","60","90"), levels = c("7", "14","30", "60", "90"))
+
+# For demog table want age, sex, diabetes duration, a1c, bmi
+# dont have t1d or bmi yet
+subject_info = subject_info %>% mutate(id = tolower(paste0(FirstName, LastName))) %>% select(id, Gender, Age, MostRecentA1C) %>% 
+  filter(id %in% gri$id)
+baseline_char = baseline_char %>% mutate(id = tolower(paste0(FirstName, LastName))) %>% select(id, Gender, Age, MostRecentA1C, DiabetesDuration_MostRecentVisitDate, BMI) %>% 
+  filter(id %in% gri$id)
+# not sure why theres some missing data from the data w baseline char and tims data, so ill merge them
+subject_info = full_join(subject_info, baseline_char)
+
+gri = full_join(subject_info, gri)
+gri[gri$id == "cortneyfernandez", "Gender"] = "F"
+gri[gri$id == "cortneyfernandez", "Age"] = 41.41
+gri[gri$id == "cortneyfernandez", "MostRecentA1C"] = 6.6
+gri[gri$id == "cortneyfernandez", "DiabetesDuration_MostRecentVisitDate"] = 12.36
+gri[gri$id == "cortneyfernandez", "BMI"] = 21.87
+
+gri[gri$id == "lynellrice", "Gender"] = "F"
+gri[gri$id == "lynellrice", "Age"] = 41.75
+gri[gri$id == "lynellrice", "MostRecentA1C"] = 6.5
+gri[gri$id == "lynellrice", "DiabetesDuration_MostRecentVisitDate"] = 20.99
+gri[gri$id == "lynellrice", "BMI"] = 28.13
+
 ```
 
 
@@ -51,6 +80,31 @@ N/A
 R2 and R of GRI over 7-days, 14-days, 30-days, 60-days and 90-days vs 90 days GRI were calculated and plotted using the ggplot2 package in r. 
 
 # Analysis
+```{r table manip}
+label(gri$MostRecentA1C) = "Most Recent A1C"
+label(gri$Gender) = "Sex"
+label(gri$DiabetesDuration_MostRecentVisitDate) = "Diabetes Duration"
+
+rndr <- function(x, name, ...) {
+    if (!is.numeric(x)) return(render.categorical.default(x))
+    what <- switch(name,
+        Age = "Median [Q1, Q3]",
+        DiabetesDuration_MostRecentVisitDate  = "Median [Q1, Q3]",
+        MostRecentA1C = "Median [Q1, Q3]",
+        BMI = "Median [Q1, Q3]")
+    parse.abbrev.render.code(c("", what))(x)
+}
+
+demog_table = table1( ~ Age + Gender + DiabetesDuration_MostRecentVisitDate + MostRecentA1C + BMI, render = rndr,data = gri)
+```
+
+```{r baseline char}
+demog_table
+```
+
+Table 1 of the baseline characteristics added in 4/21/2022
+
+
 ```{r analysis}
 ggplot(data=gri_cor, aes(x=Day, y = r)) + 
   geom_point() +
