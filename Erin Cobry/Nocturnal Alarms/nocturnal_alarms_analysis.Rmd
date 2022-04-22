@@ -25,6 +25,7 @@ library(MASS)
 library(tidyverse)
 library(broom)
 library(broom.mixed)
+library(lubridate)
 library(emmeans)
 knitr::opts_chunk$set(echo = FALSE)
 if(Sys.info()["sysname"] == "Windows"){
@@ -39,7 +40,7 @@ knitr::opts_knit$set(root.dir = home_dir)
 
 ```{r echo=FALSE,include=FALSE}
 # Import Cari's data
-source("~/Documents/GitHub/BDC-Code/Erin Cobry/Nocturnal Alarms/AdvancedClosedLoopCl_R_2020-01-05_1101.r")
+source("~/GitHub/BDC-Code/Erin Cobry/Nocturnal Alarms/AdvancedClosedLoopCl_R_2020-01-05_1101.r")
 # Demographics
 demographics <- data %>% 
   filter(redcap_event_name %in% c("baseline_arm_1","baseline_arm_2"),
@@ -52,13 +53,21 @@ demographics <- demographics[-c(which(demographics$record_id %in% no_data)),]
 overnight_alarms <- read.csv("./Erin Cobry/Nocturnal Alarms/Data_Cleaned/nocturnal_alarms.csv",
                              na.strings = c("","No Data"))
 overnight_alarms = overnight_alarms[overnight_alarms$num_nights > 0,]
+daytime_alarms = read.csv("./Erin Cobry/Nocturnal Alarms/Data_Cleaned/daytime_alarms.csv",
+                          na.strings = c("","No Data"))
+daytime_alarms = daytime_alarms[daytime_alarms$num_nights > 0,]
 # Match IDs and filter
 dates = read.csv("./Erin Cobry/Nocturnal Alarms/Data_Cleaned/subject_dates.csv")
 overnight_alarms$id = dates$id[match(gsub(" ","",overnight_alarms$id),tolower(gsub(" ","",dates$name)))]
 overnight_alarms <- overnight_alarms %>% filter(!(id %in% no_data))
+daytime_alarms$id = dates$id[match(gsub(" ","",daytime_alarms$id),tolower(gsub(" ","",dates$name)))]
+daytime_alarms <- daytime_alarms %>% filter(!(id %in% no_data))
 # Format date columns
 overnight_alarms[,c("start_date","end_date")] <- 
   lapply(overnight_alarms[,c("start_date","end_date")], 
+         function(x) {lubridate::mdy(as.character(x))})
+daytime_alarms[,c("start_date","end_date")] <- 
+  lapply(daytime_alarms[,c("start_date","end_date")], 
          function(x) {lubridate::mdy(as.character(x))})
 # Numeric timepoints in months
 overnight_alarms$numeric_time <- 
@@ -66,18 +75,40 @@ overnight_alarms$numeric_time <-
               "'Baseline' = 0;'Post' = 0.5;'T1' = 3;'T2' = 6;'T3' = 9;'T4' = 12")
 overnight_alarms$numeric_time <- 
   as.numeric(as.character(overnight_alarms$numeric_time))
+daytime_alarms$numeric_time <- 
+  car::recode(daytime_alarms$timepoint,
+              "'Baseline' = 0;'Post' = 0.5;'T1' = 3;'T2' = 6;'T3' = 9;'T4' = 12")
+daytime_alarms$numeric_time <- 
+  as.numeric(as.character(daytime_alarms$numeric_time))
 # Alarms per day
 alarm_vars = c("num_alarms","threshold_alarms","maintenance_alarms","hcl_alarms",
                "pump_alarms","other_alarms")
 overnight_alarms = overnight_alarms %>%
-  mutate(across(all_of(alarm_vars),.fns = ~./num_nights,.names = "{col}_per_night"))
- # Get Erin's participants 
+  mutate(across(all_of(alarm_vars),.fns = ~./(num_nights*8),.names = "{col}_per_hour_night"))
+daytime_alarms = daytime_alarms %>%
+  mutate(across(all_of(alarm_vars),.fns = ~./((num_nights+1)*16),.names = "{col}_per_hour_day"))
+# Combine nocturnal and daytime
+overnight_alarms = overnight_alarms %>% 
+  select(id:end_date,numeric_time,num_alarms_per_hour_night:other_alarms_per_hour_night)
+daytime_alarms = daytime_alarms %>%
+  select(id:end_date,numeric_time,num_alarms_per_hour_day:other_alarms_per_hour_day)
+overnight_alarms = full_join(overnight_alarms,daytime_alarms,
+                             by = c("id", "timepoint", "start_date", "end_date", 
+                                    "numeric_time"))
+# Get Erin's participants 
 demographics <- demographics[which(demographics$record_id %in% overnight_alarms$id),]
 # Combine CGM and pump hx levels
 levels(demographics$demographics_cgmhx.factor) <-
   c("< 1 month","> 1 month","> 1 month","> 1 month","> 1 month","> 1 month")
 levels(demographics$demographics_pumphx.factor) <-
   c("< 1 month","> 1 month","> 1 month","> 1 month","> 1 month","> 1 month")
+# Time from AM start
+demographics$id = as.numeric(demographics$record_id)
+overnight_alarms = left_join(overnight_alarms,demographics[,c("id","automode_start")],by = "id")
+overnight_alarms$automode_start = ymd(overnight_alarms$automode_start)
+overnight_alarms$days_from_am_start = 
+  as.numeric(difftime(overnight_alarms$start_date,
+                      overnight_alarms$automode_start,units = "days"))
 ```
 
 # Descriptive Characteristics
@@ -122,6 +153,7 @@ overnight_alarms$timepoint <- factor(overnight_alarms$timepoint,
 levels(overnight_alarms$timepoint) <- c("Baseline","Week 2",
                                         "T1","T2","T3","T4" )
 overnight_alarms = overnight_alarms %>% arrange(id,timepoint)
+# Calc
 # Remove discontinuers
 discont = overnight_alarms %>% group_by(id) %>% 
   summarise(discont = any(sensor_wear <= 10,na.rm = T)) %>%
@@ -136,795 +168,806 @@ Discontinuers were defined as any participant who had $\leq$ 10% sensor wear at 
 overnight_alarms = overnight_alarms %>% filter(!id %in% discont)
 ```
 
-All alarms were analyzed using a linear mixed model with random intercept for participant and continuous AR1 correlation structure. All other outcomes were analyzed using a generalized Poisson mixed model with random intercept for subject and continuous AR1 correlation structure.
+All alarms were analyzed using a linear mixed model with random intercept for participant and continuous AR1 correlation structure.
 
-## Alarms per Night By Timepoint
-
-### Model Results - Unadjusted
-
-#### Comparison to Baseline
-
-```{r echo=FALSE,message=FALSE}
-# Random intercept (not enough data for a random slope)
-mod_ri_car1 <- lme(num_alarms_per_night ~ timepoint,random = ~1|id,
-                   data = overnight_alarms,correlation = corCAR1(form = ~numeric_time))
-results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
-results$term <- sub("timepoint","",results$term)
-results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2)
-# Anova
-an_res <- as.data.frame(Anova(mod_ri_car1,type = 3))
-# Print
-kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2)
+```{r}
+# Model function
+fit_mod = function(outcome,df = overnight_alarms){
+  # Random intercept (not enough data for a random slope)
+  f = as.formula(paste0(outcome,"~ timepoint"))
+  list2env(list(f=f,df=df),.GlobalEnv)
+  mod_ri_car1 <- lme(f,random = ~1|id,na.action = na.exclude,
+                     data = df,correlation = corCAR1(form = ~numeric_time))
+  results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
+  results$term <- sub("timepoint","",results$term)
+  results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2)
+  # Anova
+  an_res <- as.data.frame(Anova(mod_ri_car1,type = 3))
+  list2env(list(an_res=an_res),.GlobalEnv)
+  # Print
+  cat("\n")
+  cat("### Model Results - Unadjusted")
+  cat("\n")
+  cat("#### Comparison to Baseline")
+  cat("\n")
+  print(kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2))
+  # Timepoint means
+  emm1 = emmeans(mod_ri_car1,~timepoint)
+  means = data.frame(emm1)
+  cat("\n")
+  cat("#### Mean at Each Timepoint")
+  cat("\n")
+  print(kable(means,digits = 2))
+  means$numeric_time = c(0,0.5,3,6,9,12)
+  # Compare to week 2
+  base = c(1,0,0,0,0,0)
+  w2 = c(0,1,0,0,0,0)
+  t1 = c(0,0,1,0,0,0)
+  t2 = c(0,0,0,1,0,0)
+  t3 = c(0,0,0,0,1,0)
+  t4 = c(0,0,0,0,0,1)
+  con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base,
+                                    "Week 2 to T1"=t1 - w2,
+                                    "Week 2 to T2"=t2 - w2,
+                                    "Week 2 to T3"=t3 - w2,
+                                    "Week 2 to T4"=t4 - w2))
+  cat("\n")
+  cat("#### Comparison to Week 2")
+  cat("\n")
+  print(kable(con,digits = 2))
+}
 ```
 
-There was a statistically significant effect of timepoint on the rate of alarms per night (overall p = `r round(an_res["timepoint",3],3)`).
+## Alarms per Hour (Night) By Timepoint
 
-#### Mean at Each Timepoint
-
-```{r echo=FALSE}
-emm1 = emmeans(mod_ri_car1,~timepoint)
-means = data.frame(emm1)
-kable(means,digits = 2)
-means$numeric_time = c(0,0.5,3,6,9,12)
+```{r echo=FALSE,message=FALSE,results='asis'}
+fit_mod(outcome = "num_alarms_per_hour_night")
 ```
 
-#### Comparison to week 2
-
-```{r echo=FALSE}
-base = c(1,0,0,0,0,0)
-w2 = c(0,1,0,0,0,0)
-t1 = c(0,0,1,0,0,0)
-t2 = c(0,0,0,1,0,0)
-t3 = c(0,0,0,0,1,0)
-t4 = c(0,0,0,0,0,1)
-con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base,
-                            "Week 2 to T1"=t1 - w2,
-                            "Week 2 to T2"=t2 - w2,
-                            "Week 2 to T3"=t3 - w2,
-                            "Week 2 to T4"=t4 - w2))
-kable(con,digits = 2)
-```
-
-### Alarms per Night Over Time
-
-```{r echo=FALSE,warning=FALSE,dpi=600}
-alarms_over_time <- 
-  ggplot(overnight_alarms,aes(x = numeric_time, y = num_alarms_per_night,group = id)) + 
-  geom_line(alpha=0.1) + 
-  geom_line(data=means,aes(x=numeric_time,y=as.numeric(emmean),group=1),
-            size = 1,inherit.aes = F) + 
-  theme_bw() +xlab("Timepoint") + ylab("Alarms per Night") + 
-  theme(legend.position = "none",
-        axis.text.x = element_text(angle = 45, hjust=1)) +
-  scale_x_continuous(breaks=c(0,0.5,3,6,9,12),
-                   labels=c("Baseline","Week 2","3 Month","6 Month","9 Month","12 Month"))
-alarms_over_time
-```
-
-### Model Results - Adjusted for Time in AM
-
-```{r echo=FALSE,message=FALSE}
-# Random intercept (not enough data for a random slope)
-mod_ri_car1 = lme(num_alarms_per_night ~ timepoint + time_am,random = ~1|id,na.action = na.omit,
-                   data = overnight_alarms,correlation = corCAR1(form = ~numeric_time))
-results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
-results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" )
-results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2)
-# Anova
-an_res <- as.data.frame(Anova(mod_ri_car1,type = 3))
-# Print
-kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2)
-
-```
-
-There was no effect of timepoint on the rate of alarms per night after adjusting for time in AM (overall p = `r round(an_res["timepoint",3],3)`). There was a statistically significant effect of time in AM on the rate of alarms per night (overall p = `r round(an_res["time_am",3],3)`).
-
-#### LS Mean at Each Timepoint
-
-```{r echo=FALSE}
-emm1 = emmeans(mod_ri_car1,~timepoint)
-means = data.frame(emm1)
-kable(means,digits = 2)
-means$numeric_time = c(0,0.5,3,6,9,12)
-```
-
-#### Comparison to week 2
-
-```{r echo=FALSE}
-base = c(1,0,0,0,0,0)
-w2 = c(0,1,0,0,0,0)
-t1 = c(0,0,1,0,0,0)
-t2 = c(0,0,0,1,0,0)
-t3 = c(0,0,0,0,1,0)
-t4 = c(0,0,0,0,0,1)
-con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base,
-                            "Week 2 to T1"=t1 - w2,
-                            "Week 2 to T2"=t2 - w2,
-                            "Week 2 to T3"=t3 - w2,
-                            "Week 2 to T4"=t4 - w2))
-kable(con,digits = 2)
-```
-
-### Model Results - Adjusted for Sensor Wear
-
-```{r echo=FALSE,message=FALSE}
-# Random intercept (not enough data for a random slope)
-mod_ri_car1 = lme(num_alarms_per_night ~ timepoint + sensor_wear,random = ~1|id,
-                  na.action = na.omit,data = overnight_alarms,
-                  correlation = corCAR1(form = ~numeric_time))
-results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
-results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Sensor Wear" )
-results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2)
-# Anova
-an_res <- as.data.frame(Anova(mod_ri_car1,type = 3))
-# Print
-kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2)
-
-```
-
-There was a significant effect of timepoint on the rate of alarms per night after adjusting for sensor wear (overall p = `r round(an_res["timepoint",3],3)`). There was not a statistically significant effect of sensor wear on the rate of alarms per night (overall p = `r round(an_res["sensor_wear",3],3)`).
-
-#### LS Mean at Each Timepoint
-
-```{r echo=FALSE}
-emm1 = emmeans(mod_ri_car1,~timepoint)
-means = data.frame(emm1)
-kable(means,digits = 2)
-means$numeric_time = c(0,0.5,3,6,9,12)
-```
-
-#### Comparison to week 2
-
-```{r echo=FALSE}
-base = c(1,0,0,0,0,0)
-w2 = c(0,1,0,0,0,0)
-t1 = c(0,0,1,0,0,0)
-t2 = c(0,0,0,1,0,0)
-t3 = c(0,0,0,0,1,0)
-t4 = c(0,0,0,0,0,1)
-con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base,
-                            "Week 2 to T1"=t1 - w2,
-                            "Week 2 to T2"=t2 - w2,
-                            "Week 2 to T3"=t3 - w2,
-                            "Week 2 to T4"=t4 - w2))
-kable(con,digits = 2)
-```
-
-## Threshold Alarms per Night By Timepoint
-
-### Plot
-
-```{r echo=FALSE,warning=FALSE,dpi=600}
-alarms_over_time <- 
-  ggplot(overnight_alarms,aes(x = timepoint, y = threshold_alarms_per_night,group = id)) + 
-  geom_line(aes(color=factor(id))) + theme_bw() + 
-  xlab("Timepoint") + ylab("Threshold Alarms per Night") + 
-  theme(legend.position = "none")
-alarms_over_time
-```
-
-### Model Results - Unadjusted
-
-```{r echo=FALSE,message=FALSE}
-# Random intercept (not enough data for a random slope)
-mod_ri_car1 = lme(threshold_alarms_per_night ~ timepoint,
-                  random = ~1|id,na.action = na.omit,
-                   data = overnight_alarms,
-                  correlation = corCAR1(form = ~numeric_time))
-results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T,exponentiate = T)
-results$term <- sub("timepoint","",results$term)
-results[,c("estimate","conf.low","conf.high")] = 
-  lapply(results[,c("estimate","conf.low","conf.high")],exp)
-results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2)
-# Anova
-an_res <- as.data.frame(Anova(mod_ri_car1,type = 3))
-# Print
-kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2)
-
-```
-
-There was a statistically significant effect of timepoint on the rate of threshold alarms per night (overall p = `r round(an_res["timepoint",3],3)`). The estimates presented above are interpreted as incidence rate ratios.
-
-#### LS Mean at Each Timepoint
-
-```{r echo=FALSE}
-emm1 = emmeans(mod_ri_car1,~timepoint)
-means = data.frame(emm1)
-kable(means,digits = 2)
-means$numeric_time = c(0,0.5,3,6,9,12)
-```
-
-#### Comparison to week 2
-
-```{r echo=FALSE}
-base = c(1,0,0,0,0,0)
-w2 = c(0,1,0,0,0,0)
-t1 = c(0,0,1,0,0,0)
-t2 = c(0,0,0,1,0,0)
-t3 = c(0,0,0,0,1,0)
-t4 = c(0,0,0,0,0,1)
-con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base,
-                            "Week 2 to T1"=t1 - w2,
-                            "Week 2 to T2"=t2 - w2,
-                            "Week 2 to T3"=t3 - w2,
-                            "Week 2 to T4"=t4 - w2))
-kable(con,digits = 2)
-```
-
-### Model Results - Adjusted for Time in AM
-
-```{r echo=FALSE,message=FALSE}
-# Random intercept (not enough data for a random slope)
-mod_ri_car1 = lme(threshold_alarms_per_night ~ timepoint + time_am,
-                  random = ~1|id,na.action = na.omit,
-                   data = overnight_alarms,
-                  correlation = corCAR1(form = ~numeric_time))
-results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
-results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" )
-results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2)
-results[,c("estimate","conf.low","conf.high")] = 
-  lapply(results[,c("estimate","conf.low","conf.high")],exp)
-# Anova
-an_res <- as.data.frame(Anova(mod_ri_car1))
-# Print
-kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2)
-
-```
-
-There was a significant effect of timepoint on the rate of threshold alarms per night after adjusting for time in AM (overall p = `r round(an_res["timepoint",3],3)`). There was not a  statistically significant effect of time in AM on the rate of alarms per night (overall p = `r round(an_res["time_am",3],3)`). The estimates presented above are interpreted as incidence rate ratios.
-
-#### LS Mean at Each Timepoint
-
-```{r echo=FALSE}
-emm1 = emmeans(mod_ri_car1,~timepoint)
-means = data.frame(emm1)
-kable(means,digits = 2)
-means$numeric_time = c(0,0.5,3,6,9,12)
-```
-
-#### Comparison to week 2
-
-```{r echo=FALSE}
-base = c(1,0,0,0,0,0)
-w2 = c(0,1,0,0,0,0)
-t1 = c(0,0,1,0,0,0)
-t2 = c(0,0,0,1,0,0)
-t3 = c(0,0,0,0,1,0)
-t4 = c(0,0,0,0,0,1)
-con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base,
-                            "Week 2 to T1"=t1 - w2,
-                            "Week 2 to T2"=t2 - w2,
-                            "Week 2 to T3"=t3 - w2,
-                            "Week 2 to T4"=t4 - w2))
-kable(con,digits = 2)
-```
-
-### Model Results - Adjusted for Sensor Wear
-
-```{r echo=FALSE,message=FALSE}
-# Random intercept (not enough data for a random slope)
-mod_ri_car1 = lme(threshold_alarms_per_night ~ timepoint + sensor_wear,
-                  random = ~1|id,na.action = na.omit,
-                   data = overnight_alarms,
-                  correlation = corCAR1(form = ~numeric_time))
-results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
-results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Sensor Wear" )
-results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2)
-results[,c("estimate","conf.low","conf.high")] = 
-  lapply(results[,c("estimate","conf.low","conf.high")],exp)
-# Anova
-an_res <- as.data.frame(Anova(mod_ri_car1))
-# Print
-kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2)
-
-```
-
-There was not a significant effect of timepoint on the rate of threshold alarms per night after adjusting for sensor wear (overall p = `r round(an_res["timepoint",3],3)`). There was also not a statistically significant effect of sensor wear on the rate of alarms per night (overall p = `r round(an_res["sensor_wear",3],3)`). The estimates presented above are interpreted as incidence rate ratios.
-
-#### LS Mean at Each Timepoint
-
-```{r echo=FALSE}
-emm1 = emmeans(mod_ri_car1,~timepoint)
-means = data.frame(emm1)
-kable(means,digits = 2)
-means$numeric_time = c(0,0.5,3,6,9,12)
-```
-
-#### Comparison to week 2
-
-```{r echo=FALSE}
-base = c(1,0,0,0,0,0)
-w2 = c(0,1,0,0,0,0)
-t1 = c(0,0,1,0,0,0)
-t2 = c(0,0,0,1,0,0)
-t3 = c(0,0,0,0,1,0)
-t4 = c(0,0,0,0,0,1)
-con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base,
-                            "Week 2 to T1"=t1 - w2,
-                            "Week 2 to T2"=t2 - w2,
-                            "Week 2 to T3"=t3 - w2,
-                            "Week 2 to T4"=t4 - w2))
-kable(con,digits = 2)
-```
-
-## Maintenance Alarms per Night By Timepoint
-
-### Plot
-
-```{r echo=FALSE,warning=FALSE,dpi=600}
-alarms_over_time <- 
-  ggplot(overnight_alarms,aes(x = timepoint, y = maintenance_alarms_per_night,group = id)) + 
-  geom_line(aes(color=factor(id))) + theme_bw() + 
-  xlab("Timepoint") + ylab("Maintenance Alarms per Night") + 
-  theme(legend.position = "none")
-alarms_over_time
-```
-
-### Model Results - Unadjusted
-
-```{r echo=FALSE,message=FALSE}
-# Random intercept (not enough data for a random slope)
-mod_ri_car1 = lme(maintenance_alarms_per_night ~ timepoint,
-                  random = ~1|id,na.action = na.omit,
-                   data = overnight_alarms,
-                  correlation = corCAR1(form = ~numeric_time))
-results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
-results$term <- sub("timepoint","",results$term)
-results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2)
-
-# Anova
-an_res <- as.data.frame(Anova(mod_ri_car1,type = 3))
-# Print
-kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2)
-
-```
-
-There was an effect of timepoint on the rate of maintenance alarms per night (overall p = `r round(an_res["timepoint",3],3)`). The estimates presented above are interpreted as incidence rate ratios.
-
-#### LS Mean at Each Timepoint
-
-```{r echo=FALSE}
-emm1 = emmeans(mod_ri_car1,~timepoint)
-means = data.frame(emm1)
-kable(means,digits = 2)
-means$numeric_time = c(0,0.5,3,6,9,12)
-```
-
-#### Comparison to week 2
-
-```{r echo=FALSE}
-base = c(1,0,0,0,0,0)
-w2 = c(0,1,0,0,0,0)
-t1 = c(0,0,1,0,0,0)
-t2 = c(0,0,0,1,0,0)
-t3 = c(0,0,0,0,1,0)
-t4 = c(0,0,0,0,0,1)
-con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base,
-                            "Week 2 to T1"=t1 - w2,
-                            "Week 2 to T2"=t2 - w2,
-                            "Week 2 to T3"=t3 - w2,
-                            "Week 2 to T4"=t4 - w2))
-kable(con,digits = 2)
-```
-
-### Model Results - Adjusted for Time in AM
-
-```{r echo=FALSE,message=FALSE}
-# Random intercept (not enough data for a random slope)
-mod_ri_car1 = lme(maintenance_alarms_per_night ~ timepoint + time_am,
-                  random = ~1|id,na.action = na.omit,
-                   data = overnight_alarms,
-                  correlation = corCAR1(form = ~numeric_time))
-results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
-results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" )
-results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2)
-
-# Anova
-an_res <- as.data.frame(Anova(mod_ri_car1,type = 3))
-# Print
-kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2)
-
-```
-
-There was an effect of timepoint on the rate of maintenance alarms per night after adjusting for time in AM (overall p = `r round(an_res["timepoint",3],3)`). There was also an effect of time in AM on the rate of alarms per night (overall p = `r round(an_res["time_am",3],3)`). The estimates presented above are interpreted as incidence rate ratios.
-
-#### LS Mean at Each Timepoint
-
-```{r echo=FALSE}
-emm1 = emmeans(mod_ri_car1,~timepoint)
-means = data.frame(emm1)
-kable(means,digits = 2)
-means$numeric_time = c(0,0.5,3,6,9,12)
-```
-
-#### Comparison to week 2
-
-```{r echo=FALSE}
-base = c(1,0,0,0,0,0)
-w2 = c(0,1,0,0,0,0)
-t1 = c(0,0,1,0,0,0)
-t2 = c(0,0,0,1,0,0)
-t3 = c(0,0,0,0,1,0)
-t4 = c(0,0,0,0,0,1)
-con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base,
-                            "Week 2 to T1"=t1 - w2,
-                            "Week 2 to T2"=t2 - w2,
-                            "Week 2 to T3"=t3 - w2,
-                            "Week 2 to T4"=t4 - w2))
-kable(con,digits = 2)
-```
-
-### Model Results - Adjusted for Sensor Wear
-
-Model would not converge.
-
-```{r echo=FALSE,message=FALSE,eval=FALSE}
-# Random intercept (not enough data for a random slope)
-mod_ri_car1 = lme(maintenance_alarms_per_night ~ timepoint + sensor_wear,
-                  random = ~1|id,na.action = na.omit,
-                   data = overnight_alarms,
-                  correlation = corCAR1(form = ~numeric_time))
-results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
-results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" )
-results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2)
-
-# Anova
-an_res <- as.data.frame(Anova(mod_ri_car1,type = 3))
-# Print
-kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2)
-
-```
-
-## HCL Alarms per Night By Timepoint
-
-### Plot
-
-```{r echo=FALSE,warning=FALSE,dpi=600}
-alarms_over_time <- 
-  ggplot(overnight_alarms,aes(x = timepoint, y = hcl_alarms_per_night,group = id)) + 
-  geom_line(aes(color=factor(id))) + theme_bw() + 
-  xlab("Timepoint") + ylab("HCL Alarms per Night") + 
-  theme(legend.position = "none")
-alarms_over_time
-```
-
-### Model Results - Unadjusted
-
-```{r echo=FALSE,message=FALSE}
-# Random intercept (not enough data for a random slope)
-mod_ri_car1 = lme(hcl_alarms_per_night ~ timepoint,
-                  random = ~1|id,na.action = na.omit,
-                   data = overnight_alarms,
-                  correlation = corCAR1(form = ~numeric_time))
-results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
-results$term <- sub("timepoint","",results$term)
-results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2)
-
-# Anova
-an_res <- as.data.frame(Anova(mod_ri_car1))
-# Print
-kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2)
-```
-
-There was a significant effect of timepoint on the rate of HCL alarms per night (overall p < 0.001). The estimates presented above are interpreted as incidence rate ratios.
-
-#### LS Mean at Each Timepoint
-
-```{r echo=FALSE}
-emm1 = emmeans(mod_ri_car1,~timepoint)
-means = data.frame(emm1)
-kable(means,digits = 2)
-means$numeric_time = c(0,0.5,3,6,9,12)
-```
-
-#### Comparison to week 2
-
-```{r echo=FALSE}
-base = c(1,0,0,0,0,0)
-w2 = c(0,1,0,0,0,0)
-t1 = c(0,0,1,0,0,0)
-t2 = c(0,0,0,1,0,0)
-t3 = c(0,0,0,0,1,0)
-t4 = c(0,0,0,0,0,1)
-con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base,
-                            "Week 2 to T1"=t1 - w2,
-                            "Week 2 to T2"=t2 - w2,
-                            "Week 2 to T3"=t3 - w2,
-                            "Week 2 to T4"=t4 - w2))
-kable(con,digits = 2)
-```
-
-### Model Results - Adjusted for Time in AM
-
-```{r echo=FALSE,message=FALSE}
-# Random intercept (not enough data for a random slope)
-mod_ri_car1 = lme(hcl_alarms_per_night ~ timepoint + time_am,
-                  random = ~1|id,na.action = na.omit,
-                   data = overnight_alarms,
-                  correlation = corCAR1(form = ~numeric_time))
-results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
-results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" )
-results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2)
-
-# Anova
-an_res <- as.data.frame(Anova(mod_ri_car1,type = 3))
-# Print
-kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2)
-
-```
-
-There was an effect of timepoint on the rate of maintenance alarms per night after adjusting for time in AM (overall p = `r round(an_res["timepoint",3],3)`). There was also an effect of time in AM on the rate of alarms per night (overall p = `r round(an_res["time_am",3],3)`). The estimates presented above are interpreted as incidence rate ratios.
-
-#### LS Mean at Each Timepoint
-
-```{r echo=FALSE}
-emm1 = emmeans(mod_ri_car1,~timepoint)
-means = data.frame(emm1)
-kable(means,digits = 2)
-means$numeric_time = c(0,0.5,3,6,9,12)
-```
-
-#### Comparison to week 2
-
-```{r echo=FALSE}
-base = c(1,0,0,0,0,0)
-w2 = c(0,1,0,0,0,0)
-t1 = c(0,0,1,0,0,0)
-t2 = c(0,0,0,1,0,0)
-t3 = c(0,0,0,0,1,0)
-t4 = c(0,0,0,0,0,1)
-con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base,
-                            "Week 2 to T1"=t1 - w2,
-                            "Week 2 to T2"=t2 - w2,
-                            "Week 2 to T3"=t3 - w2,
-                            "Week 2 to T4"=t4 - w2))
-kable(con,digits = 2)
-```
-
-### Model Results - Adjusted for Sensor Wear
-
-```{r echo=FALSE,message=FALSE}
-# Random intercept (not enough data for a random slope)
-mod_ri_car1 = lme(hcl_alarms_per_night ~ timepoint + sensor_wear,
-                  random = ~1|id,na.action = na.omit,
-                   data = overnight_alarms,
-                  correlation = corCAR1(form = ~numeric_time))
-results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
-results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" )
-results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2)
-
-# Anova
-an_res <- as.data.frame(Anova(mod_ri_car1))
-# Print
-kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2)
-
-```
-
-There was a significant effect of timepoint on the rate of HCL alarms per night after adjusting for time in AM (overall p = `r round(an_res["timepoint",3],3)`). There was also a significant effect of time in AM on the rate of alarms per night (overall p < 0.001). The estimates presented above are interpreted as incidence rate ratios.
-
-#### LS Mean at Each Timepoint
-
-```{r echo=FALSE}
-emm1 = emmeans(mod_ri_car1,~timepoint)
-means = data.frame(emm1)
-kable(means,digits = 2)
-means$numeric_time = c(0,0.5,3,6,9,12)
-```
-
-#### Comparison to week 2
-
-```{r echo=FALSE}
-base = c(1,0,0,0,0,0)
-w2 = c(0,1,0,0,0,0)
-t1 = c(0,0,1,0,0,0)
-t2 = c(0,0,0,1,0,0)
-t3 = c(0,0,0,0,1,0)
-t4 = c(0,0,0,0,0,1)
-con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base,
-                            "Week 2 to T1"=t1 - w2,
-                            "Week 2 to T2"=t2 - w2,
-                            "Week 2 to T3"=t3 - w2,
-                            "Week 2 to T4"=t4 - w2))
-kable(con,digits = 2)
-```
-
-## Maintenance Alarms per Night By Timepoint
-
-### Model Results - Unadjusted
-
-```{r echo=FALSE,message=FALSE}
-# Random intercept (not enough data for a random slope)
-mod_ri_car1 = lme(maintenance_alarms_per_night ~ timepoint,
-                  random = ~1|id,na.action = na.omit,
-                   data = overnight_alarms,
-                  correlation = corCAR1(form = ~numeric_time))
-results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
-results$term <- sub("timepoint","",results$term)
-results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2)
-
-# Anova
-an_res <- as.data.frame(Anova(mod_ri_car1))
-# Print
-kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2)
-
-```
-
-#### LS Mean at Each Timepoint
-
-```{r echo=FALSE}
-emm1 = emmeans(mod_ri_car1,~timepoint)
-means = data.frame(emm1)
-kable(means,digits = 2)
-means$numeric_time = c(0,0.5,3,6,9,12)
-```
-
-#### Comparison to week 2
-
-```{r echo=FALSE}
-base = c(1,0,0,0,0,0)
-w2 = c(0,1,0,0,0,0)
-t1 = c(0,0,1,0,0,0)
-t2 = c(0,0,0,1,0,0)
-t3 = c(0,0,0,0,1,0)
-t4 = c(0,0,0,0,0,1)
-con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base,
-                            "Week 2 to T1"=t1 - w2,
-                            "Week 2 to T2"=t2 - w2,
-                            "Week 2 to T3"=t3 - w2,
-                            "Week 2 to T4"=t4 - w2))
-kable(con,digits = 2)
-```
-
-### Model Results - Adjusted for Time in AM
-
-```{r echo=FALSE,message=FALSE}
-# Random intercept (not enough data for a random slope)
-mod_ri_car1 = lme(maintenance_alarms_per_night ~ timepoint + time_am,
-                  random = ~1|id,na.action = na.omit,
-                   data = overnight_alarms,
-                  correlation = corCAR1(form = ~numeric_time))
-results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
-results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" )
-results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2)
-
-# Anova
-an_res <- as.data.frame(Anova(mod_ri_car1,type = 3))
-# Print
-kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2)
-
-```
-
-There was an effect of timepoint on the rate of maintenance alarms per night after adjusting for time in AM (overall p = `r round(an_res["timepoint",3],3)`). There was also an effect of time in AM on the rate of alarms per night (overall p = `r round(an_res["time_am",3],3)`). The estimates presented above are interpreted as incidence rate ratios.
-
-#### LS Mean at Each Timepoint
-
-```{r echo=FALSE}
-emm1 = emmeans(mod_ri_car1,~timepoint)
-means = data.frame(emm1)
-kable(means,digits = 2)
-means$numeric_time = c(0,0.5,3,6,9,12)
-```
-
-#### Comparison to week 2
-
-```{r echo=FALSE}
-base = c(1,0,0,0,0,0)
-w2 = c(0,1,0,0,0,0)
-t1 = c(0,0,1,0,0,0)
-t2 = c(0,0,0,1,0,0)
-t3 = c(0,0,0,0,1,0)
-t4 = c(0,0,0,0,0,1)
-con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base,
-                            "Week 2 to T1"=t1 - w2,
-                            "Week 2 to T2"=t2 - w2,
-                            "Week 2 to T3"=t3 - w2,
-                            "Week 2 to T4"=t4 - w2))
-kable(con,digits = 2)
-```
-
-### Model Results - Adjusted for Sensor Wear
-
-Model did not converge
-
-```{r echo=FALSE,message=FALSE,eval=FALSE}
-# Random intercept (not enough data for a random slope)
-mod_ri_car1 = lme(maintenance_alarms_per_night ~ timepoint + sensor_wear,
-                  random = ~1|id,na.action = na.omit,
-                   data = overnight_alarms,
-                  correlation = corCAR1(form = ~numeric_time))
-results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
-results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" )
-results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2)
-
-# Anova
-an_res <- as.data.frame(Anova(mod_ri_car1,type = 3))
-# Print
-kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2)
-```
-
-## Sensor Wear
-
-```{r echo=FALSE,message=FALSE}
-# Random intercept (not enough data for a random slope)
-mod_ri_car1 = lme(sensor_wear ~ timepoint,
-                  random = ~1|id,na.action = na.omit,
-                   data = overnight_alarms,
-                  correlation = corCAR1(form = ~numeric_time))
-results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
-results$term <- sub("timepoint","",results$term)
-results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2)
-
-# Anova
-an_res <- as.data.frame(Anova(mod_ri_car1))
-# Print
-kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2)
-```
-
-#### LS Mean at Each Timepoint
-
-```{r echo=FALSE}
-emm1 = emmeans(mod_ri_car1,~timepoint)
-means = data.frame(emm1)
-kable(means,digits = 2)
-means$numeric_time = c(0,0.5,3,6,9,12)
-```
-
-#### Comparison to week 2
-
-```{r echo=FALSE}
-base = c(1,0,0,0,0,0)
-w2 = c(0,1,0,0,0,0)
-t1 = c(0,0,1,0,0,0)
-t2 = c(0,0,0,1,0,0)
-t3 = c(0,0,0,0,1,0)
-t4 = c(0,0,0,0,0,1)
-con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base,
-                            "Week 2 to T1"=t1 - w2,
-                            "Week 2 to T2"=t2 - w2,
-                            "Week 2 to T3"=t3 - w2,
-                            "Week 2 to T4"=t4 - w2))
-kable(con,digits = 2)
-```
-
-## HCL Use
-
-```{r echo=FALSE,message=FALSE}
-overnight_alarms = overnight_alarms[overnight_alarms$timepoint != "Baseline",]
-overnight_alarms$timepoint = droplevels(overnight_alarms$timepoint)
-# Random intercept (not enough data for a random slope)
-mod_ri_car1 = lme(time_am ~ timepoint,
-                  random = ~1|id,na.action = na.omit,
-                   data = overnight_alarms,
-                  correlation = corCAR1(form = ~numeric_time))
-results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T)
-results$term <- sub("timepoint","",results$term)
-results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2)
-# Anova
-an_res <- as.data.frame(Anova(mod_ri_car1))
-# Print
-kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2)
-```
-
-#### LS Mean at Each Timepoint
-
-```{r echo=FALSE}
-emm1 = emmeans(mod_ri_car1,~timepoint)
-means = data.frame(emm1)
-kable(means,digits = 2)
-means$numeric_time = c(0.5,3,6,9,12)
-```
-
-#### Comparison to week 2
-
-```{r echo=FALSE}
-w2 = c(1,0,0,0,0)
-t1 = c(0,1,0,0,0)
-t2 = c(0,0,1,0,0)
-t3 = c(0,0,0,1,0)
-t4 = c(0,0,0,0,1)
-con = contrast(emm1,method = list("Week 2 to T1"=t1 - w2,
-                            "Week 2 to T2"=t2 - w2,
-                            "Week 2 to T3"=t3 - w2,
-                            "Week 2 to T4"=t4 - w2))
-kable(con,digits = 2)
-```
+
+
+<!-- ### Alarms per Night Over Time -->
+
+<!-- ```{r echo=FALSE,warning=FALSE,dpi=600} -->
+<!-- alarms_over_time <-  -->
+<!--   ggplot(overnight_alarms,aes(x = numeric_time, y = num_alarms_per_night,group = id)) +  -->
+<!--   geom_line(alpha=0.1) +  -->
+<!--   geom_line(data=means,aes(x=numeric_time,y=as.numeric(emmean),group=1), -->
+<!--             size = 1,inherit.aes = F) +  -->
+<!--   theme_bw() +xlab("Timepoint") + ylab("Alarms per Night") +  -->
+<!--   theme(legend.position = "none", -->
+<!--         axis.text.x = element_text(angle = 45, hjust=1)) + -->
+<!--   scale_x_continuous(breaks=c(0,0.5,3,6,9,12), -->
+<!--                      labels=c("Baseline","Week 2","3 Month","6 Month","9 Month","12 Month")) -->
+<!-- alarms_over_time -->
+<!-- ``` -->
+
+<!-- ### Model Results - Adjusted for Time in AM -->
+
+<!-- ```{r echo=FALSE,message=FALSE} -->
+<!-- # Random intercept (not enough data for a random slope) -->
+<!-- mod_ri_car1 = lme(num_alarms_per_night ~ timepoint + time_am,random = ~1|id,na.action = na.omit, -->
+<!--                   data = overnight_alarms,correlation = corCAR1(form = ~numeric_time)) -->
+<!-- results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T) -->
+<!-- results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" ) -->
+<!-- results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2) -->
+<!-- # Anova -->
+<!-- an_res <- as.data.frame(Anova(mod_ri_car1,type = 3)) -->
+<!-- # Print -->
+<!-- kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2) -->
+
+<!-- ``` -->
+
+<!-- There was no effect of timepoint on the rate of alarms per night after adjusting for time in AM (overall p = `r round(an_res["timepoint",3],3)`). There was a statistically significant effect of time in AM on the rate of alarms per night (overall p = `r round(an_res["time_am",3],3)`). -->
+
+<!-- #### LS Mean at Each Timepoint -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- emm1 = emmeans(mod_ri_car1,~timepoint) -->
+<!-- means = data.frame(emm1) -->
+<!-- kable(means,digits = 2) -->
+<!-- means$numeric_time = c(0,0.5,3,6,9,12) -->
+<!-- ``` -->
+
+<!-- #### Comparison to week 2 -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- base = c(1,0,0,0,0,0) -->
+<!-- w2 = c(0,1,0,0,0,0) -->
+<!-- t1 = c(0,0,1,0,0,0) -->
+<!-- t2 = c(0,0,0,1,0,0) -->
+<!-- t3 = c(0,0,0,0,1,0) -->
+<!-- t4 = c(0,0,0,0,0,1) -->
+<!-- con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base, -->
+<!--                                   "Week 2 to T1"=t1 - w2, -->
+<!--                                   "Week 2 to T2"=t2 - w2, -->
+<!--                                   "Week 2 to T3"=t3 - w2, -->
+<!--                                   "Week 2 to T4"=t4 - w2)) -->
+<!-- kable(con,digits = 2) -->
+<!-- ``` -->
+
+<!-- ### Model Results - Adjusted for Sensor Wear -->
+
+<!-- ```{r echo=FALSE,message=FALSE} -->
+<!-- # Random intercept (not enough data for a random slope) -->
+<!-- mod_ri_car1 = lme(num_alarms_per_night ~ timepoint + sensor_wear,random = ~1|id, -->
+<!--                   na.action = na.omit,data = overnight_alarms, -->
+<!--                   correlation = corCAR1(form = ~numeric_time)) -->
+<!-- results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T) -->
+<!-- results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Sensor Wear" ) -->
+<!-- results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2) -->
+<!-- # Anova -->
+<!-- an_res <- as.data.frame(Anova(mod_ri_car1,type = 3)) -->
+<!-- # Print -->
+<!-- kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2) -->
+
+<!-- ``` -->
+
+<!-- There was a significant effect of timepoint on the rate of alarms per night after adjusting for sensor wear (overall p = `r round(an_res["timepoint",3],3)`). There was not a statistically significant effect of sensor wear on the rate of alarms per night (overall p = `r round(an_res["sensor_wear",3],3)`). -->
+
+<!-- #### LS Mean at Each Timepoint -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- emm1 = emmeans(mod_ri_car1,~timepoint) -->
+<!-- means = data.frame(emm1) -->
+<!-- kable(means,digits = 2) -->
+<!-- means$numeric_time = c(0,0.5,3,6,9,12) -->
+<!-- ``` -->
+
+<!-- #### Comparison to week 2 -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- base = c(1,0,0,0,0,0) -->
+<!-- w2 = c(0,1,0,0,0,0) -->
+<!-- t1 = c(0,0,1,0,0,0) -->
+<!-- t2 = c(0,0,0,1,0,0) -->
+<!-- t3 = c(0,0,0,0,1,0) -->
+<!-- t4 = c(0,0,0,0,0,1) -->
+<!-- con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base, -->
+<!--                                   "Week 2 to T1"=t1 - w2, -->
+<!--                                   "Week 2 to T2"=t2 - w2, -->
+<!--                                   "Week 2 to T3"=t3 - w2, -->
+<!--                                   "Week 2 to T4"=t4 - w2)) -->
+<!-- kable(con,digits = 2) -->
+<!-- ``` -->
+
+<!-- ## Threshold Alarms per Night By Timepoint -->
+
+<!-- ### Plot -->
+
+<!-- ```{r echo=FALSE,warning=FALSE,dpi=600} -->
+<!-- alarms_over_time <-  -->
+<!--   ggplot(overnight_alarms,aes(x = timepoint, y = threshold_alarms_per_night,group = id)) +  -->
+<!--   geom_line(aes(color=factor(id))) + theme_bw() +  -->
+<!--   xlab("Timepoint") + ylab("Threshold Alarms per Night") +  -->
+<!--   theme(legend.position = "none") -->
+<!-- alarms_over_time -->
+<!-- ``` -->
+
+<!-- ### Model Results - Unadjusted -->
+
+<!-- ```{r echo=FALSE,message=FALSE} -->
+<!-- # Random intercept (not enough data for a random slope) -->
+<!-- mod_ri_car1 = lme(threshold_alarms_per_night ~ timepoint, -->
+<!--                   random = ~1|id,na.action = na.omit, -->
+<!--                   data = overnight_alarms, -->
+<!--                   correlation = corCAR1(form = ~numeric_time)) -->
+<!-- results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T,exponentiate = T) -->
+<!-- results$term <- sub("timepoint","",results$term) -->
+<!-- results[,c("estimate","conf.low","conf.high")] =  -->
+<!--   lapply(results[,c("estimate","conf.low","conf.high")],exp) -->
+<!-- results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2) -->
+<!-- # Anova -->
+<!-- an_res <- as.data.frame(Anova(mod_ri_car1,type = 3)) -->
+<!-- # Print -->
+<!-- kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2) -->
+
+<!-- ``` -->
+
+<!-- There was a statistically significant effect of timepoint on the rate of threshold alarms per night (overall p = `r round(an_res["timepoint",3],3)`). The estimates presented above are interpreted as incidence rate ratios. -->
+
+<!-- #### LS Mean at Each Timepoint -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- emm1 = emmeans(mod_ri_car1,~timepoint) -->
+<!-- means = data.frame(emm1) -->
+<!-- kable(means,digits = 2) -->
+<!-- means$numeric_time = c(0,0.5,3,6,9,12) -->
+<!-- ``` -->
+
+<!-- #### Comparison to week 2 -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- base = c(1,0,0,0,0,0) -->
+<!-- w2 = c(0,1,0,0,0,0) -->
+<!-- t1 = c(0,0,1,0,0,0) -->
+<!-- t2 = c(0,0,0,1,0,0) -->
+<!-- t3 = c(0,0,0,0,1,0) -->
+<!-- t4 = c(0,0,0,0,0,1) -->
+<!-- con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base, -->
+<!--                                   "Week 2 to T1"=t1 - w2, -->
+<!--                                   "Week 2 to T2"=t2 - w2, -->
+<!--                                   "Week 2 to T3"=t3 - w2, -->
+<!--                                   "Week 2 to T4"=t4 - w2)) -->
+<!-- kable(con,digits = 2) -->
+<!-- ``` -->
+
+<!-- ### Model Results - Adjusted for Time in AM -->
+
+<!-- ```{r echo=FALSE,message=FALSE} -->
+<!-- # Random intercept (not enough data for a random slope) -->
+<!-- mod_ri_car1 = lme(threshold_alarms_per_night ~ timepoint + time_am, -->
+<!--                   random = ~1|id,na.action = na.omit, -->
+<!--                   data = overnight_alarms, -->
+<!--                   correlation = corCAR1(form = ~numeric_time)) -->
+<!-- results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T) -->
+<!-- results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" ) -->
+<!-- results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2) -->
+<!-- results[,c("estimate","conf.low","conf.high")] =  -->
+<!--   lapply(results[,c("estimate","conf.low","conf.high")],exp) -->
+<!-- # Anova -->
+<!-- an_res <- as.data.frame(Anova(mod_ri_car1)) -->
+<!-- # Print -->
+<!-- kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2) -->
+
+<!-- ``` -->
+
+<!-- There was a significant effect of timepoint on the rate of threshold alarms per night after adjusting for time in AM (overall p = `r round(an_res["timepoint",3],3)`). There was not a  statistically significant effect of time in AM on the rate of alarms per night (overall p = `r round(an_res["time_am",3],3)`). The estimates presented above are interpreted as incidence rate ratios. -->
+
+<!-- #### LS Mean at Each Timepoint -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- emm1 = emmeans(mod_ri_car1,~timepoint) -->
+<!-- means = data.frame(emm1) -->
+<!-- kable(means,digits = 2) -->
+<!-- means$numeric_time = c(0,0.5,3,6,9,12) -->
+<!-- ``` -->
+
+<!-- #### Comparison to week 2 -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- base = c(1,0,0,0,0,0) -->
+<!-- w2 = c(0,1,0,0,0,0) -->
+<!-- t1 = c(0,0,1,0,0,0) -->
+<!-- t2 = c(0,0,0,1,0,0) -->
+<!-- t3 = c(0,0,0,0,1,0) -->
+<!-- t4 = c(0,0,0,0,0,1) -->
+<!-- con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base, -->
+<!--                                   "Week 2 to T1"=t1 - w2, -->
+<!--                                   "Week 2 to T2"=t2 - w2, -->
+<!--                                   "Week 2 to T3"=t3 - w2, -->
+<!--                                   "Week 2 to T4"=t4 - w2)) -->
+<!-- kable(con,digits = 2) -->
+<!-- ``` -->
+
+<!-- ### Model Results - Adjusted for Sensor Wear -->
+
+<!-- ```{r echo=FALSE,message=FALSE} -->
+<!-- # Random intercept (not enough data for a random slope) -->
+<!-- mod_ri_car1 = lme(threshold_alarms_per_night ~ timepoint + sensor_wear, -->
+<!--                   random = ~1|id,na.action = na.omit, -->
+<!--                   data = overnight_alarms, -->
+<!--                   correlation = corCAR1(form = ~numeric_time)) -->
+<!-- results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T) -->
+<!-- results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Sensor Wear" ) -->
+<!-- results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2) -->
+<!-- results[,c("estimate","conf.low","conf.high")] =  -->
+<!--   lapply(results[,c("estimate","conf.low","conf.high")],exp) -->
+<!-- # Anova -->
+<!-- an_res <- as.data.frame(Anova(mod_ri_car1)) -->
+<!-- # Print -->
+<!-- kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2) -->
+
+<!-- ``` -->
+
+<!-- There was not a significant effect of timepoint on the rate of threshold alarms per night after adjusting for sensor wear (overall p = `r round(an_res["timepoint",3],3)`). There was also not a statistically significant effect of sensor wear on the rate of alarms per night (overall p = `r round(an_res["sensor_wear",3],3)`). The estimates presented above are interpreted as incidence rate ratios. -->
+
+<!-- #### LS Mean at Each Timepoint -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- emm1 = emmeans(mod_ri_car1,~timepoint) -->
+<!-- means = data.frame(emm1) -->
+<!-- kable(means,digits = 2) -->
+<!-- means$numeric_time = c(0,0.5,3,6,9,12) -->
+<!-- ``` -->
+
+<!-- #### Comparison to week 2 -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- base = c(1,0,0,0,0,0) -->
+<!-- w2 = c(0,1,0,0,0,0) -->
+<!-- t1 = c(0,0,1,0,0,0) -->
+<!-- t2 = c(0,0,0,1,0,0) -->
+<!-- t3 = c(0,0,0,0,1,0) -->
+<!-- t4 = c(0,0,0,0,0,1) -->
+<!-- con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base, -->
+<!--                                   "Week 2 to T1"=t1 - w2, -->
+<!--                                   "Week 2 to T2"=t2 - w2, -->
+<!--                                   "Week 2 to T3"=t3 - w2, -->
+<!--                                   "Week 2 to T4"=t4 - w2)) -->
+<!-- kable(con,digits = 2) -->
+<!-- ``` -->
+
+<!-- ## Maintenance Alarms per Night By Timepoint -->
+
+<!-- ### Plot -->
+
+<!-- ```{r echo=FALSE,warning=FALSE,dpi=600} -->
+<!-- alarms_over_time <-  -->
+<!--   ggplot(overnight_alarms,aes(x = timepoint, y = maintenance_alarms_per_night,group = id)) +  -->
+<!--   geom_line(aes(color=factor(id))) + theme_bw() +  -->
+<!--   xlab("Timepoint") + ylab("Maintenance Alarms per Night") +  -->
+<!--   theme(legend.position = "none") -->
+<!-- alarms_over_time -->
+<!-- ``` -->
+
+<!-- ### Model Results - Unadjusted -->
+
+<!-- ```{r echo=FALSE,message=FALSE} -->
+<!-- # Random intercept (not enough data for a random slope) -->
+<!-- mod_ri_car1 = lme(maintenance_alarms_per_night ~ timepoint, -->
+<!--                   random = ~1|id,na.action = na.omit, -->
+<!--                   data = overnight_alarms, -->
+<!--                   correlation = corCAR1(form = ~numeric_time)) -->
+<!-- results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T) -->
+<!-- results$term <- sub("timepoint","",results$term) -->
+<!-- results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2) -->
+
+<!-- # Anova -->
+<!-- an_res <- as.data.frame(Anova(mod_ri_car1,type = 3)) -->
+<!-- # Print -->
+<!-- kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2) -->
+
+<!-- ``` -->
+
+<!-- There was an effect of timepoint on the rate of maintenance alarms per night (overall p = `r round(an_res["timepoint",3],3)`). The estimates presented above are interpreted as incidence rate ratios. -->
+
+<!-- #### LS Mean at Each Timepoint -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- emm1 = emmeans(mod_ri_car1,~timepoint) -->
+<!-- means = data.frame(emm1) -->
+<!-- kable(means,digits = 2) -->
+<!-- means$numeric_time = c(0,0.5,3,6,9,12) -->
+<!-- ``` -->
+
+<!-- #### Comparison to week 2 -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- base = c(1,0,0,0,0,0) -->
+<!-- w2 = c(0,1,0,0,0,0) -->
+<!-- t1 = c(0,0,1,0,0,0) -->
+<!-- t2 = c(0,0,0,1,0,0) -->
+<!-- t3 = c(0,0,0,0,1,0) -->
+<!-- t4 = c(0,0,0,0,0,1) -->
+<!-- con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base, -->
+<!--                                   "Week 2 to T1"=t1 - w2, -->
+<!--                                   "Week 2 to T2"=t2 - w2, -->
+<!--                                   "Week 2 to T3"=t3 - w2, -->
+<!--                                   "Week 2 to T4"=t4 - w2)) -->
+<!-- kable(con,digits = 2) -->
+<!-- ``` -->
+
+<!-- ### Model Results - Adjusted for Time in AM -->
+
+<!-- ```{r echo=FALSE,message=FALSE} -->
+<!-- # Random intercept (not enough data for a random slope) -->
+<!-- mod_ri_car1 = lme(maintenance_alarms_per_night ~ timepoint + time_am, -->
+<!--                   random = ~1|id,na.action = na.omit, -->
+<!--                   data = overnight_alarms, -->
+<!--                   correlation = corCAR1(form = ~numeric_time)) -->
+<!-- results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T) -->
+<!-- results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" ) -->
+<!-- results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2) -->
+
+<!-- # Anova -->
+<!-- an_res <- as.data.frame(Anova(mod_ri_car1,type = 3)) -->
+<!-- # Print -->
+<!-- kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2) -->
+
+<!-- ``` -->
+
+<!-- There was an effect of timepoint on the rate of maintenance alarms per night after adjusting for time in AM (overall p = `r round(an_res["timepoint",3],3)`). There was also an effect of time in AM on the rate of alarms per night (overall p = `r round(an_res["time_am",3],3)`). The estimates presented above are interpreted as incidence rate ratios. -->
+
+<!-- #### LS Mean at Each Timepoint -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- emm1 = emmeans(mod_ri_car1,~timepoint) -->
+<!-- means = data.frame(emm1) -->
+<!-- kable(means,digits = 2) -->
+<!-- means$numeric_time = c(0,0.5,3,6,9,12) -->
+<!-- ``` -->
+
+<!-- #### Comparison to week 2 -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- base = c(1,0,0,0,0,0) -->
+<!-- w2 = c(0,1,0,0,0,0) -->
+<!-- t1 = c(0,0,1,0,0,0) -->
+<!-- t2 = c(0,0,0,1,0,0) -->
+<!-- t3 = c(0,0,0,0,1,0) -->
+<!-- t4 = c(0,0,0,0,0,1) -->
+<!-- con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base, -->
+<!--                                   "Week 2 to T1"=t1 - w2, -->
+<!--                                   "Week 2 to T2"=t2 - w2, -->
+<!--                                   "Week 2 to T3"=t3 - w2, -->
+<!--                                   "Week 2 to T4"=t4 - w2)) -->
+<!-- kable(con,digits = 2) -->
+<!-- ``` -->
+
+<!-- ### Model Results - Adjusted for Sensor Wear -->
+
+<!-- Model would not converge. -->
+
+<!-- ```{r echo=FALSE,message=FALSE,eval=FALSE} -->
+<!-- # Random intercept (not enough data for a random slope) -->
+<!-- mod_ri_car1 = lme(maintenance_alarms_per_night ~ timepoint + sensor_wear, -->
+<!--                   random = ~1|id,na.action = na.omit, -->
+<!--                   data = overnight_alarms, -->
+<!--                   correlation = corCAR1(form = ~numeric_time)) -->
+<!-- results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T) -->
+<!-- results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" ) -->
+<!-- results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2) -->
+
+<!-- # Anova -->
+<!-- an_res <- as.data.frame(Anova(mod_ri_car1,type = 3)) -->
+<!-- # Print -->
+<!-- kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2) -->
+
+<!-- ``` -->
+
+<!-- ## HCL Alarms per Night By Timepoint -->
+
+<!-- ### Plot -->
+
+<!-- ```{r echo=FALSE,warning=FALSE,dpi=600} -->
+<!-- alarms_over_time <-  -->
+<!--   ggplot(overnight_alarms,aes(x = timepoint, y = hcl_alarms_per_night,group = id)) +  -->
+<!--   geom_line(aes(color=factor(id))) + theme_bw() +  -->
+<!--   xlab("Timepoint") + ylab("HCL Alarms per Night") +  -->
+<!--   theme(legend.position = "none") -->
+<!-- alarms_over_time -->
+<!-- ``` -->
+
+<!-- ### Model Results - Unadjusted -->
+
+<!-- ```{r echo=FALSE,message=FALSE} -->
+<!-- # Random intercept (not enough data for a random slope) -->
+<!-- mod_ri_car1 = lme(hcl_alarms_per_night ~ timepoint, -->
+<!--                   random = ~1|id,na.action = na.omit, -->
+<!--                   data = overnight_alarms, -->
+<!--                   correlation = corCAR1(form = ~numeric_time)) -->
+<!-- results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T) -->
+<!-- results$term <- sub("timepoint","",results$term) -->
+<!-- results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2) -->
+
+<!-- # Anova -->
+<!-- an_res <- as.data.frame(Anova(mod_ri_car1)) -->
+<!-- # Print -->
+<!-- kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2) -->
+<!-- ``` -->
+
+<!-- There was a significant effect of timepoint on the rate of HCL alarms per night (overall p < 0.001). The estimates presented above are interpreted as incidence rate ratios. -->
+
+<!-- #### LS Mean at Each Timepoint -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- emm1 = emmeans(mod_ri_car1,~timepoint) -->
+<!-- means = data.frame(emm1) -->
+<!-- kable(means,digits = 2) -->
+<!-- means$numeric_time = c(0,0.5,3,6,9,12) -->
+<!-- ``` -->
+
+<!-- #### Comparison to week 2 -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- base = c(1,0,0,0,0,0) -->
+<!-- w2 = c(0,1,0,0,0,0) -->
+<!-- t1 = c(0,0,1,0,0,0) -->
+<!-- t2 = c(0,0,0,1,0,0) -->
+<!-- t3 = c(0,0,0,0,1,0) -->
+<!-- t4 = c(0,0,0,0,0,1) -->
+<!-- con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base, -->
+<!--                                   "Week 2 to T1"=t1 - w2, -->
+<!--                                   "Week 2 to T2"=t2 - w2, -->
+<!--                                   "Week 2 to T3"=t3 - w2, -->
+<!--                                   "Week 2 to T4"=t4 - w2)) -->
+<!-- kable(con,digits = 2) -->
+<!-- ``` -->
+
+<!-- ### Model Results - Adjusted for Time in AM -->
+
+<!-- ```{r echo=FALSE,message=FALSE} -->
+<!-- # Random intercept (not enough data for a random slope) -->
+<!-- mod_ri_car1 = lme(hcl_alarms_per_night ~ timepoint + time_am, -->
+<!--                   random = ~1|id,na.action = na.omit, -->
+<!--                   data = overnight_alarms, -->
+<!--                   correlation = corCAR1(form = ~numeric_time)) -->
+<!-- results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T) -->
+<!-- results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" ) -->
+<!-- results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2) -->
+
+<!-- # Anova -->
+<!-- an_res <- as.data.frame(Anova(mod_ri_car1,type = 3)) -->
+<!-- # Print -->
+<!-- kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2) -->
+
+<!-- ``` -->
+
+<!-- There was an effect of timepoint on the rate of maintenance alarms per night after adjusting for time in AM (overall p = `r round(an_res["timepoint",3],3)`). There was also an effect of time in AM on the rate of alarms per night (overall p = `r round(an_res["time_am",3],3)`). The estimates presented above are interpreted as incidence rate ratios. -->
+
+<!-- #### LS Mean at Each Timepoint -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- emm1 = emmeans(mod_ri_car1,~timepoint) -->
+<!-- means = data.frame(emm1) -->
+<!-- kable(means,digits = 2) -->
+<!-- means$numeric_time = c(0,0.5,3,6,9,12) -->
+<!-- ``` -->
+
+<!-- #### Comparison to week 2 -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- base = c(1,0,0,0,0,0) -->
+<!-- w2 = c(0,1,0,0,0,0) -->
+<!-- t1 = c(0,0,1,0,0,0) -->
+<!-- t2 = c(0,0,0,1,0,0) -->
+<!-- t3 = c(0,0,0,0,1,0) -->
+<!-- t4 = c(0,0,0,0,0,1) -->
+<!-- con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base, -->
+<!--                                   "Week 2 to T1"=t1 - w2, -->
+<!--                                   "Week 2 to T2"=t2 - w2, -->
+<!--                                   "Week 2 to T3"=t3 - w2, -->
+<!--                                   "Week 2 to T4"=t4 - w2)) -->
+<!-- kable(con,digits = 2) -->
+<!-- ``` -->
+
+<!-- ### Model Results - Adjusted for Sensor Wear -->
+
+<!-- ```{r echo=FALSE,message=FALSE} -->
+<!-- # Random intercept (not enough data for a random slope) -->
+<!-- mod_ri_car1 = lme(hcl_alarms_per_night ~ timepoint + sensor_wear, -->
+<!--                   random = ~1|id,na.action = na.omit, -->
+<!--                   data = overnight_alarms, -->
+<!--                   correlation = corCAR1(form = ~numeric_time)) -->
+<!-- results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T) -->
+<!-- results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" ) -->
+<!-- results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2) -->
+
+<!-- # Anova -->
+<!-- an_res <- as.data.frame(Anova(mod_ri_car1)) -->
+<!-- # Print -->
+<!-- kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2) -->
+
+<!-- ``` -->
+
+<!-- There was a significant effect of timepoint on the rate of HCL alarms per night after adjusting for time in AM (overall p = `r round(an_res["timepoint",3],3)`). There was also a significant effect of time in AM on the rate of alarms per night (overall p < 0.001). The estimates presented above are interpreted as incidence rate ratios. -->
+
+<!-- #### LS Mean at Each Timepoint -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- emm1 = emmeans(mod_ri_car1,~timepoint) -->
+<!-- means = data.frame(emm1) -->
+<!-- kable(means,digits = 2) -->
+<!-- means$numeric_time = c(0,0.5,3,6,9,12) -->
+<!-- ``` -->
+
+<!-- #### Comparison to week 2 -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- base = c(1,0,0,0,0,0) -->
+<!-- w2 = c(0,1,0,0,0,0) -->
+<!-- t1 = c(0,0,1,0,0,0) -->
+<!-- t2 = c(0,0,0,1,0,0) -->
+<!-- t3 = c(0,0,0,0,1,0) -->
+<!-- t4 = c(0,0,0,0,0,1) -->
+<!-- con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base, -->
+<!--                                   "Week 2 to T1"=t1 - w2, -->
+<!--                                   "Week 2 to T2"=t2 - w2, -->
+<!--                                   "Week 2 to T3"=t3 - w2, -->
+<!--                                   "Week 2 to T4"=t4 - w2)) -->
+<!-- kable(con,digits = 2) -->
+<!-- ``` -->
+
+<!-- ## Maintenance Alarms per Night By Timepoint -->
+
+<!-- ### Model Results - Unadjusted -->
+
+<!-- ```{r echo=FALSE,message=FALSE} -->
+<!-- # Random intercept (not enough data for a random slope) -->
+<!-- mod_ri_car1 = lme(maintenance_alarms_per_night ~ timepoint, -->
+<!--                   random = ~1|id,na.action = na.omit, -->
+<!--                   data = overnight_alarms, -->
+<!--                   correlation = corCAR1(form = ~numeric_time)) -->
+<!-- results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T) -->
+<!-- results$term <- sub("timepoint","",results$term) -->
+<!-- results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2) -->
+
+<!-- # Anova -->
+<!-- an_res <- as.data.frame(Anova(mod_ri_car1)) -->
+<!-- # Print -->
+<!-- kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2) -->
+
+<!-- ``` -->
+
+<!-- #### LS Mean at Each Timepoint -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- emm1 = emmeans(mod_ri_car1,~timepoint) -->
+<!-- means = data.frame(emm1) -->
+<!-- kable(means,digits = 2) -->
+<!-- means$numeric_time = c(0,0.5,3,6,9,12) -->
+<!-- ``` -->
+
+<!-- #### Comparison to week 2 -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- base = c(1,0,0,0,0,0) -->
+<!-- w2 = c(0,1,0,0,0,0) -->
+<!-- t1 = c(0,0,1,0,0,0) -->
+<!-- t2 = c(0,0,0,1,0,0) -->
+<!-- t3 = c(0,0,0,0,1,0) -->
+<!-- t4 = c(0,0,0,0,0,1) -->
+<!-- con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base, -->
+<!--                                   "Week 2 to T1"=t1 - w2, -->
+<!--                                   "Week 2 to T2"=t2 - w2, -->
+<!--                                   "Week 2 to T3"=t3 - w2, -->
+<!--                                   "Week 2 to T4"=t4 - w2)) -->
+<!-- kable(con,digits = 2) -->
+<!-- ``` -->
+
+<!-- ### Model Results - Adjusted for Time in AM -->
+
+<!-- ```{r echo=FALSE,message=FALSE} -->
+<!-- # Random intercept (not enough data for a random slope) -->
+<!-- mod_ri_car1 = lme(maintenance_alarms_per_night ~ timepoint + time_am, -->
+<!--                   random = ~1|id,na.action = na.omit, -->
+<!--                   data = overnight_alarms, -->
+<!--                   correlation = corCAR1(form = ~numeric_time)) -->
+<!-- results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T) -->
+<!-- results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" ) -->
+<!-- results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2) -->
+
+<!-- # Anova -->
+<!-- an_res <- as.data.frame(Anova(mod_ri_car1,type = 3)) -->
+<!-- # Print -->
+<!-- kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2) -->
+
+<!-- ``` -->
+
+<!-- There was an effect of timepoint on the rate of maintenance alarms per night after adjusting for time in AM (overall p = `r round(an_res["timepoint",3],3)`). There was also an effect of time in AM on the rate of alarms per night (overall p = `r round(an_res["time_am",3],3)`). The estimates presented above are interpreted as incidence rate ratios. -->
+
+<!-- #### LS Mean at Each Timepoint -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- emm1 = emmeans(mod_ri_car1,~timepoint) -->
+<!-- means = data.frame(emm1) -->
+<!-- kable(means,digits = 2) -->
+<!-- means$numeric_time = c(0,0.5,3,6,9,12) -->
+<!-- ``` -->
+
+<!-- #### Comparison to week 2 -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- base = c(1,0,0,0,0,0) -->
+<!-- w2 = c(0,1,0,0,0,0) -->
+<!-- t1 = c(0,0,1,0,0,0) -->
+<!-- t2 = c(0,0,0,1,0,0) -->
+<!-- t3 = c(0,0,0,0,1,0) -->
+<!-- t4 = c(0,0,0,0,0,1) -->
+<!-- con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base, -->
+<!--                                   "Week 2 to T1"=t1 - w2, -->
+<!--                                   "Week 2 to T2"=t2 - w2, -->
+<!--                                   "Week 2 to T3"=t3 - w2, -->
+<!--                                   "Week 2 to T4"=t4 - w2)) -->
+<!-- kable(con,digits = 2) -->
+<!-- ``` -->
+
+<!-- ### Model Results - Adjusted for Sensor Wear -->
+
+<!-- Model did not converge -->
+
+<!-- ```{r echo=FALSE,message=FALSE,eval=FALSE} -->
+<!-- # Random intercept (not enough data for a random slope) -->
+<!-- mod_ri_car1 = lme(maintenance_alarms_per_night ~ timepoint + sensor_wear, -->
+<!--                   random = ~1|id,na.action = na.omit, -->
+<!--                   data = overnight_alarms, -->
+<!--                   correlation = corCAR1(form = ~numeric_time)) -->
+<!-- results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T) -->
+<!-- results$term <- c("(Intercept)","Week 2","T1","T2","T3","T4","% Time in AM" ) -->
+<!-- results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2) -->
+
+<!-- # Anova -->
+<!-- an_res <- as.data.frame(Anova(mod_ri_car1,type = 3)) -->
+<!-- # Print -->
+<!-- kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2) -->
+<!-- ``` -->
+
+<!-- ## Sensor Wear -->
+
+<!-- ```{r echo=FALSE,message=FALSE} -->
+<!-- # Random intercept (not enough data for a random slope) -->
+<!-- mod_ri_car1 = lme(sensor_wear ~ timepoint, -->
+<!--                   random = ~1|id,na.action = na.omit, -->
+<!--                   data = overnight_alarms, -->
+<!--                   correlation = corCAR1(form = ~numeric_time)) -->
+<!-- results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T) -->
+<!-- results$term <- sub("timepoint","",results$term) -->
+<!-- results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2) -->
+
+<!-- # Anova -->
+<!-- an_res <- as.data.frame(Anova(mod_ri_car1)) -->
+<!-- # Print -->
+<!-- kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2) -->
+<!-- ``` -->
+
+<!-- #### LS Mean at Each Timepoint -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- emm1 = emmeans(mod_ri_car1,~timepoint) -->
+<!-- means = data.frame(emm1) -->
+<!-- kable(means,digits = 2) -->
+<!-- means$numeric_time = c(0,0.5,3,6,9,12) -->
+<!-- ``` -->
+
+<!-- #### Comparison to week 2 -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- base = c(1,0,0,0,0,0) -->
+<!-- w2 = c(0,1,0,0,0,0) -->
+<!-- t1 = c(0,0,1,0,0,0) -->
+<!-- t2 = c(0,0,0,1,0,0) -->
+<!-- t3 = c(0,0,0,0,1,0) -->
+<!-- t4 = c(0,0,0,0,0,1) -->
+<!-- con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base, -->
+<!--                                   "Week 2 to T1"=t1 - w2, -->
+<!--                                   "Week 2 to T2"=t2 - w2, -->
+<!--                                   "Week 2 to T3"=t3 - w2, -->
+<!--                                   "Week 2 to T4"=t4 - w2)) -->
+<!-- kable(con,digits = 2) -->
+<!-- ``` -->
+
+<!-- ## HCL Use -->
+
+<!-- ```{r echo=FALSE,message=FALSE} -->
+<!-- overnight_alarms = overnight_alarms[overnight_alarms$timepoint != "Baseline",] -->
+<!-- overnight_alarms$timepoint = droplevels(overnight_alarms$timepoint) -->
+<!-- # Random intercept (not enough data for a random slope) -->
+<!-- mod_ri_car1 = lme(time_am ~ timepoint, -->
+<!--                   random = ~1|id,na.action = na.omit, -->
+<!--                   data = overnight_alarms, -->
+<!--                   correlation = corCAR1(form = ~numeric_time)) -->
+<!-- results <- tidy(mod_ri_car1,effects = "fixed",conf.int = T) -->
+<!-- results$term <- sub("timepoint","",results$term) -->
+<!-- results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2) -->
+<!-- # Anova -->
+<!-- an_res <- as.data.frame(Anova(mod_ri_car1)) -->
+<!-- # Print -->
+<!-- kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2) -->
+<!-- ``` -->
+
+<!-- #### LS Mean at Each Timepoint -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- emm1 = emmeans(mod_ri_car1,~timepoint) -->
+<!-- means = data.frame(emm1) -->
+<!-- kable(means,digits = 2) -->
+<!-- means$numeric_time = c(0.5,3,6,9,12) -->
+<!-- ``` -->
+
+<!-- #### Comparison to week 2 -->
+
+<!-- ```{r echo=FALSE} -->
+<!-- w2 = c(1,0,0,0,0) -->
+<!-- t1 = c(0,1,0,0,0) -->
+<!-- t2 = c(0,0,1,0,0) -->
+<!-- t3 = c(0,0,0,1,0) -->
+<!-- t4 = c(0,0,0,0,1) -->
+<!-- con = contrast(emm1,method = list("Week 2 to T1"=t1 - w2, -->
+<!--                                   "Week 2 to T2"=t2 - w2, -->
+<!--                                   "Week 2 to T3"=t3 - w2, -->
+<!--                                   "Week 2 to T4"=t4 - w2)) -->
+<!-- kable(con,digits = 2) -->
+<!-- ``` -->
+
+<!-- t -->
