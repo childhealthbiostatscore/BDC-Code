@@ -34,7 +34,7 @@ for file in os.listdir(wd+"Data_Cleaned/CSVs/"):
     # Check dates
     if type(start)!=str and type(end)!=str:
         continue
-                # Remove unnecessary top rows
+    # Remove unnecessary top rows
     df.columns = df.loc[5,]
     df = df.drop(list(range(0,6)),axis = 0)
     # Get correct dates
