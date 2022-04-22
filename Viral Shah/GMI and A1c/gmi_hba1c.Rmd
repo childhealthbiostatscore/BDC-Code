@@ -13,21 +13,71 @@ output:
 ```{r setup, include=FALSE}
 library(arsenal)
 library(tidyverse)
+library(readxl)
 library(performance)
 library(knitr)
 knitr::opts_chunk$set(echo = FALSE)
 if(Sys.info()["sysname"] == "Windows"){
-  home_dir = "B:/Projects"
+  home_dir = "B:/Projects/Viral Shah/GMI and A1c"
 } else if (Sys.info()["sysname"] == "Linux"){
-  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/GMI and A1c"
 } else if (Sys.info()["sysname"] == "Darwin"){
-  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/GMI and A1c"
 }
 knitr::opts_knit$set(root.dir = home_dir)
 rm(home_dir)
 ```
 
+# Data Cleaning
+
+- HbA1c and mean glucose data were pulled from Kaan's data, CGMND, FLAIR, MOBILE, CITY, DCLP3, WISDM, and data from Peter including participants from DIAMOND, REPLACE, and HypoDE. 
+
+
+
 ```{r}
+# Kaan
 # Import and clean
+kaan_demo = read_excel("./Data_Raw/Kaan's data with baseline characteristics.xlsx",
+                  na = "NULL")
+kaan_demo$ID = paste(tolower(kaan_demo$FirstName),tolower(kaan_demo$LastName),sep = "_")
+kaan_demo = kaan_demo %>% select(ID,Gender,Age,DiabetesDuration_MostRecentVisitDate,BMI)
+kaan_cgm = read.csv("./Data_Clean/kaan_mean_glucose.csv",na.strings = "")
+kaan_cgm = kaan_cgm %>% select(ID,HbA1c,X14.Overall.Mean) %>% rename(MSG = X14.Overall.Mean)
+# Some names in "kaan_mean_glucose.csv" were manually fixed for easier merging
+kaan = left_join(kaan_cgm,kaan_demo,by = "ID") %>%
+  rename(Duration = DiabetesDuration_MostRecentVisitDate) %>%
+  select(ID,Age,Duration,BMI,Gender,HbA1c,MSG)
+kaan$ID = paste0(1:nrow(kaan),"Kaan")
+# CGMND
+# Mean glucoses
+cgmnd_cgm = read.csv("./Data_Raw/CGMND-af920dee-2d6e-4436-bc89-7a7b51239837/NonDiabDeviceCGM.csv")
+cgmnd_cgm = split.data.frame(cgmnd_cgm,cgmnd_cgm$PtID)
+cgmnd_cgm = lapply(cgmnd_cgm, function(df){
+  df = df[df$RecordType == "CGM",]
+  return(c(df$PtID[1],mean(df$Value,na.rm = T)))
+})
+cgmnd_cgm = data.frame(do.call(rbind,cgmnd_cgm))
+colnames(cgmnd_cgm) = c("PtID","MSG")
+# Merge with HbA1c and demographics
+cgmnd = read.csv("./Data_Raw/CGMND-af920dee-2d6e-4436-bc89-7a7b51239837/NonDiabSampleResults.csv")
+cgmnd = cgmnd %>% filter(Analyte == "HBA1C")
+cgmnd = left_join(cgmnd_cgm,cgmnd,by = "PtID") %>% rename(HbA1c = Value)
+# Demographics
+cgmn_demo = read.csv("./Data_Raw/CGMND-af920dee-2d6e-4436-bc89-7a7b51239837/NonDiabScreening.csv")
+cgmn_demo$BMI = cgmn_demo$Weight/((cgmn_demo$Height/100)^2)
+cgmn_demo$HbA1c = NULL
+cgmnd = left_join(cgmnd,cgmn_demo,by = c("PtID"))
+# Age
+cgmnd_age = read.csv("./Data_Raw/CGMND-af920dee-2d6e-4436-bc89-7a7b51239837/NonDiabPtRoster.csv")
+cgmnd = left_join(cgmnd,cgmnd_age,by = c("PtID"))
+# New ID
+cgmnd$ID = paste0(1:nrow(cgmnd),"CGMND")
+# Duration = NA (non-diabetic)
+cgmnd$Duration = NA
+# Organize
+cgmnd = cgmnd %>% 
+  rename(Age = AgeAsOfEnrollDt) %>%
+  select(ID,Age,Duration,BMI,Gender,HbA1c,MSG)
+# FLAIR
 
 ```
