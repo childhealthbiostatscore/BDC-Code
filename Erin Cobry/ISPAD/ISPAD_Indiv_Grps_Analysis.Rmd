@@ -1,0 +1,342 @@
+---
+title: "ISPAD Individual Group Changes"
+author: "Casey Sakamoto"
+date: "4/26/2022"
+output: html_document
+---
+```{r setup, include=FALSE}
+library(readr)
+library(tidyverse)
+library(Hmisc)
+library(redcapAPI)
+library(knitr) # kable
+library(nlme) # mixed models
+library(emmeans) # contrast statement
+library(longCatEDA)
+library(table1)
+
+knitr::opts_chunk$set(echo = FALSE)
+if(Sys.info()["sysname"] == "Windows"){
+  home_dir = "S:/Laura/BDC/Projects/Erin Cobry/ISPAD 2022"
+} else if (Sys.info()["sysname"] == "Linux"){
+  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/ISPAD 2022"
+} else if (Sys.info()["sysname"] == "Darwin"){
+  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/ISPAD 2022"
+}
+knitr::opts_knit$set(root.dir = home_dir)
+
+setwd("S:/Laura/BDC/Projects/Erin Cobry/Prospective HCL and sleep study")
+
+```
+
+```{r data import,include=FALSE}
+token = read.table("S:/Laura/BDC/Projects/Erin Cobry/ADA 2022/HCL and Sleep/api_token.txt")[1,1]
+rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",token = token)
+data = exportRecords(rcon,dates = F)
+ids = data$record_id
+times = data$redcap_event_name
+exclude = c(101,201,102,202,103,203,110,210,119,219,121,221,131,231,141,241)
+
+# exclude 8 dyads
+data = data  %>% filter(!(record_id %in% exclude)) 
+
+######## Basic demographics & glycemic #################
+child_demographics = exportRecords(rcon,forms = "child_demographics_chart_review")
+child_demographics$record_id = ids
+# Get glycemic measures
+glyc = exportRecords(rcon,forms = "glycemic_data")
+glyc$record_id = ids
+glyc= glyc %>% filter(record_id >= 200,gyl_timepoint %in% c( "Baseline", "3 Months", "6 Months")) %>% 
+  mutate(timepoint = case_when(gyl_timepoint == "Baseline" ~ "baseline_day_1_arm_2",
+                               gyl_timepoint == "3 Months" ~ "hcl_month_3_day_1_arm_2",
+                               gyl_timepoint == "6 Months" ~ "hcl_month_6_day_1_arm_2"
+                               )) %>%
+  select(record_id, timepoint, hba1c, gmi,sensor_g251, sensor_181_250, sensor_70_180, sensor_55_69, sensor_u54)
+# Format
+child_demographics$t1d_duration = 
+  as.numeric(difftime(child_demographics$consent_date,
+                      child_demographics$t1d_diagnosis,units = "days"))/365.25
+child_demographics = child_demographics %>% 
+  select(record_id,cons_age,childgender,t1d_duration) %>%
+  filter(!record_id %in% exclude)
+child_demographics = 
+  child_demographics[rowSums(is.na(child_demographics)) < (ncol(child_demographics)-1),]
+# Add Hba1c
+child_demographics = left_join(child_demographics,glyc,by = "record_id")
+###############################################
+
+############### Actigraphy #####################
+# Get total sleep time, sleep efficiency, and WASO
+activity = exportRecords(rcon,forms = "wrist_actigraphy")
+activity$record_id = ids
+activity$timepoint = times
+child_activity = activity %>% 
+  select(record_id,timepoint,totalsleep_avg,sleepefficency_avg,waso_avg) %>% 
+  filter(!record_id %in% exclude,grepl("baseline|month_3|month_6",timepoint),
+         record_id >= 200,rowSums(is.na(.)) < ncol(.)-2) %>%
+  mutate(avg_sleep = as.character(totalsleep_avg),
+         totalsleep_avg = as.numeric(lubridate::hms(totalsleep_avg))/60) %>%
+  filter(totalsleep_avg < 21*60)
+child_activity = left_join(child_activity,child_demographics) %>% distinct()
+# child_activity$sufficient = apply(child_activity,1,function(r){
+#   age = as.numeric(r["cons_age"])
+#   time = as.numeric(r["totalsleep_avg"])/60
+#   if(age <= 2){
+#     if(time >= 11 & time <= 14){suff = "Yes"} else {suff = "No"}
+#   } else if (age <= 5){
+#     if(time >= 10 & time <= 13){suff = "Yes"} else {suff = "No"}
+#   } else if (age <= 12){
+#     if(time >= 9 & time <= 12){suff = "Yes"} else {suff = "No"}
+#   } else if (age <= 17){
+#     if(time >= 8 & time <= 10){suff = "Yes"} else {suff = "No"}
+#   } else if (age > 17) {
+#     if(time >= 7){suff = "Yes"} else {suff = "No"}
+#   }
+# })
+# child_activity$sufficient = as.factor(child_activity$sufficient)
+
+# Same for parents
+parent_activity = activity %>% 
+  select(record_id,timepoint,totalsleep_avg,sleepefficency_avg,waso_avg) %>% 
+  filter(!record_id %in% exclude,grepl("baseline|month_3|month_6",timepoint),
+         record_id < 200,rowSums(is.na(.)) < ncol(.)-2) %>%
+  mutate(avg_sleep = as.character(totalsleep_avg),
+         totalsleep_avg = as.numeric(lubridate::hms(totalsleep_avg))/60,
+         sufficient = ifelse(totalsleep_avg >= 7*60,"Yes","No"))
+parent_activity$sufficient = as.factor(parent_activity$sufficient)
+
+
+# Import select, filter, etc.
+promis_peds = exportRecords(rcon,forms = "promis_pediatric_817")
+promis_peds$record_id = ids
+promis_peds$timepoint = times
+promis_peds = promis_peds %>% select(record_id,timepoint,falling_asleep:bad_mood_sleepy) %>%
+  filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
+         record_id >= 200,rowSums(is.na(.)) < ncol(.)-2) %>%
+  mutate(across(falling_asleep:bad_mood_sleepy,.fns = as.numeric),
+         through_night = 6 - through_night) %>% 
+  mutate(disturbance = rowSums(select(.,falling_asleep:tossed_and_turned)),
+         impairment = rowSums(select(.,daytime:bad_mood_sleepy)))
+promis_peds$timepoint = sub("enrollment_","baseline_",promis_peds$timepoint)
+# Convert to T scores \Erin Cobry\ADA 2022\HCL and Sleep
+peds_disturbance = read.csv("S:/Laura/BDC/Projects/Erin Cobry/ADA 2022/HCL and Sleep/Data_Clean/peds_sleep_disturbance.csv")
+peds_impairment = read.csv("S:/Laura/BDC/Projects/Erin Cobry/ADA 2022/HCL and Sleep/Data_Clean/peds_sleep_impairment.csv")
+promis_peds$disturbance = 
+  peds_disturbance$T.Score[match(promis_peds$disturbance,
+                                 peds_disturbance$ï..Raw.Summed.Score)]
+promis_peds$impairment = 
+  peds_impairment$T.Score[match(promis_peds$impairment,
+                                peds_impairment$ï..Raw.Summed.Score)]
+# PROMIS PARENTS
+# Import select, filter, etc.
+promis_parent = exportRecords(rcon,forms = "promis_parent_proxy_817")
+promis_parent$record_id = ids
+promis_parent$timepoint = times
+promis_parent = promis_parent %>% select(record_id,timepoint,asleep:bad_mood) %>%
+  filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
+         record_id < 200,rowSums(is.na(.)) < ncol(.)-2) %>%
+  mutate(across(asleep:bad_mood,.fns = as.numeric),
+         night = 6 - night) %>% 
+  mutate(disturbance = rowSums(select(.,asleep:tossed)),
+         impairment = rowSums(select(.,sleepy:bad_mood)))
+promis_parent$timepoint = sub("enrollment_","baseline_",promis_parent$timepoint)
+# Convert to T scores
+parent_disturbance = read.csv("S:/Laura/BDC/Projects/Erin Cobry/ADA 2022/HCL and Sleep/Data_Clean/parent_proxy_sleep_disturbance.csv")
+parent_impairment = read.csv("S:/Laura/BDC/Projects/Erin Cobry/ADA 2022/HCL and Sleep/Data_Clean/parent_proxy_sleep_impairment.csv")
+promis_parent$disturbance = 
+  parent_disturbance$T.Score[match(promis_parent$disturbance,
+                                   parent_disturbance$ï..Raw.Summed.Score)]
+promis_parent$impairment = 
+  parent_impairment$T.Score[match(promis_parent$impairment,
+                                  parent_impairment$ï..Raw.Summed.Score)]
+
+## HFS Scoring
+# parents
+hfs_p = data %>% select(record_id,redcap_event_name,timepoint, hypoglycemia_fear_survey_parent_timestamp:hypoglycemia_fear_survey_parent_complete) %>% 
+  filter(grepl("enrollment|month_3|month_6",redcap_event_name), record_id < 200,rowSums(is.na(.)) < ncol(.)-2)  %>% 
+  mutate(across(c(snacks:having_low), as.integer)) %>% mutate(across(c(snacks:having_low),function(x){x-1})) %>%
+  select(-c(hfs_12_months_severe_lows___0:hypoglycemia_fear_survey_parent_complete))
+ 
+hfs_p = hfs_p %>% rowwise() %>% 
+  mutate(behave_s = sum(c_across(snacks:nighttime)),
+         worry_s = sum(c_across(recognize:having_low)),
+         maintain_high_s_p = sum(c_across(c(safe_side, higher_alone, away))),
+         worry_lowbg_s_p = sum(c_across(c(recognize, food, dizzy, asleep_low, low_alone, no_one, seizure, complications_low, faint, having_low))),
+         worry_negsc_s_p = sum(c_across(c(embarrassing, clumsy, behavior, accident, bad_evaluation))),
+         total_s = sum(c_across(behave_s:worry_s))) %>% ungroup()
+
+hfs_p$total_z_p = (hfs_p$total_s - mean(hfs_p$total_s, na.rm = T))/sd(hfs_p$total_s, na.rm = T)
+
+hfs_p = hfs_p %>% select(record_id, redcap_event_name, maintain_high_s_p, worry_lowbg_s_p, worry_negsc_s_p, total_z_p)
+# change event and id
+substring(hfs_p$redcap_event_name,nchar(hfs_p$redcap_event_name),nchar(hfs_p$redcap_event_name)) ="2"
+hfs_p$record_id = sub("1", "2", hfs_p$record_id)
+
+# children
+hfs_peds = data %>% select(record_id,redcap_event_name,
+                           hypoglycemia_fear_survey_childteen_timestamp:hypoglycemia_fear_survey_childteen_complete) %>% 
+  filter(grepl("enrollment|month_3|month_6",redcap_event_name), record_id > 199,rowSums(is.na(.)) < ncol(.)-2) %>%
+  mutate(across(c(bedtime_snacks:having_low_sugar), as.integer)) %>% mutate(across(c(bedtime_snacks:having_low_sugar),function(x){x-1})) 
+hfs_peds = hfs_peds %>% rowwise() %>%
+  mutate(behave_s = sum(c_across(bedtime_snacks:check_often)),
+         worry_s = sum(c_across(recognizing_low:having_low_sugar)),
+         maintain_high_s = sum(c_across(c(high_safe, alone_higher, higher_away))),
+         worry_lowbg_s= sum(c_across(c(recognizing_low, food_low, passing_out, low_asleep, low_while_alone, no_help, mistake, long_term, woozy))),
+         worry_negsc_s = sum(c_across(c(embarrassing_myself, looking_clumsy, trouble_at_school, seizure_low))),
+         total_s = sum(c_across(behave_s:worry_s))) %>% ungroup()
+
+hfs_peds$total_z = (hfs_peds$total_s - mean(hfs_peds$total_s, na.rm = T))/sd(hfs_peds$total_s, na.rm = T)
+
+hfs_peds = hfs_peds %>% select(record_id, redcap_event_name, maintain_high_s, worry_lowbg_s, worry_negsc_s, total_z)
+
+hfs_all = full_join(hfs_peds, hfs_p)
+```
+
+```{r group derive, include = FALSE}
+# put parents into psqi score >5
+# score parent outcomes; 1 = > 5, 0 = <=5, na else
+bl_psqi_groups = data %>% mutate(psqi_group = case_when(psqi_total > 5 ~ 1,
+                                              psqi_total <= 5 ~ 0)) %>%
+  filter(redcap_event_name == "enrollment_arm_1") %>%
+  select(record_id, psqi_total, psqi_group)
+bl_psqi_groups$psqi_group = factor(bl_psqi_groups$psqi_group, levels = c(0,1), labels = c("Parent Good Sleeper", "Parent Poor Sleeper") )
+# note 127 missing baseline psqi, but has a subsequent value of 4
+
+# add a child id for merging later
+bl_psqi_groups$child_id = sub("1", "2", bl_psqi_groups$record_id)
+bl_psqi_groups = bl_psqi_groups %>% select(child_id, psqi_group) 
+bl_psqi_groups = rename(bl_psqi_groups, c( "record_id" = "child_id"))
+```
+
+```{r data merge, include=FALSE}
+# child actigraphy, demog, & glycemic already merged
+# merge w parent actigraphy (rename vars to add _p)
+parent_activity$record_id = sub("1", "2", parent_activity$record_id)
+parent_activity = rename(parent_activity, c( "totalsleep_avg_p" = "totalsleep_avg"))
+parent_activity = rename(parent_activity, c( "sleepefficiency_avg_p" = "sleepefficency_avg"))
+parent_activity = rename(parent_activity, c( "waso_avg_p" = "waso_avg"))
+parent_activity = parent_activity %>% select(record_id, timepoint, totalsleep_avg_p, sleepefficiency_avg_p, waso_avg_p)
+# change arm so timepoint match up
+substring(parent_activity$timepoint,nchar(parent_activity$timepoint),nchar(parent_activity$timepoint)) ="2"
+
+# merge promis, child and parent (rename vars to add _p)
+promis_peds = promis_peds %>% select(record_id, timepoint, impairment, disturbance)
+promis_peds$timepoint = str_replace(promis_peds$timepoint, "baseline_arm_2", "baseline_day_1_arm_2")
+
+promis_parent = promis_parent %>% select(record_id, timepoint, impairment, disturbance)
+promis_parent$record_id = sub("1", "2", promis_parent$record_id)
+promis_parent = rename(promis_parent, c("impairment_p" = "impairment"))
+promis_parent = rename(promis_parent, c("disturbance_p" = "disturbance"))
+substring(promis_parent$timepoint,nchar(promis_parent$timepoint),nchar(promis_parent$timepoint)) ="2"
+promis_parent$timepoint = str_replace(promis_parent$timepoint, "baseline_arm_2", "baseline_day_1_arm_2")
+promis = full_join(promis_peds, promis_parent)
+
+# rename hfs event to timepoint
+hfs_all = rename(hfs_all, c( "timepoint" = "redcap_event_name"))
+hfs_all$timepoint = str_replace(hfs_all$timepoint, "enrollment_arm_2", "baseline_day_1_arm_2")
+
+
+analysis = full_join(child_activity, parent_activity) %>% distinct()
+analysis = full_join(analysis, promis) %>% distinct()
+analysis = full_join(bl_psqi_groups, analysis) %>% distinct()
+analysis = full_join(analysis, hfs_all)
+
+analysis = analysis %>% group_by(record_id) %>% fill(psqi_group)
+
+# change in group over time analysis
+psqi_scores = data %>% select(record_id, psqi_total, redcap_event_name) %>%
+  mutate(timepoint = case_when(redcap_event_name == "enrollment_arm_1" ~ "baseline_day_1_arm_2",
+                               redcap_event_name == "hcl_month_3_day_1_arm_1" ~ "hcl_month_3_day_1_arm_2",
+                               redcap_event_name == "hcl_month_6_day_1_arm_1" ~ "hcl_month_6_day_1_arm_2"),
+         psqi_group_d = case_when(psqi_total > 5 ~ 1,
+                                              psqi_total <= 5 ~ 0)) %>% 
+  filter(timepoint %in% c("baseline_day_1_arm_2","hcl_month_3_day_1_arm_2","hcl_month_6_day_1_arm_2" ))
+
+psqi_scores$psqi_group_d = factor(psqi_scores$psqi_group_d, levels = c(0,1), labels = c("Parent Good Sleeper", "Parent Poor Sleeper") )
+
+psqi_scores$record_id = sub("1", "2", psqi_scores$record_id)
+psqi_scores = psqi_scores %>% select(record_id, timepoint, psqi_group_d, psqi_total)
+
+analysis = full_join(analysis, psqi_scores)
+```
+
+```{r model functions, include=FALSE}
+fit_mod = function(outcome,df,plot = T,diagnostics = F){
+  
+  # Format timepoint
+  df$timepoint = as.factor(df$timepoint)
+  levels(df$timepoint) = gsub("baseline_.*","Baseline",levels(df$timepoint))
+  levels(df$timepoint) = gsub("hcl_month_3_.*","Month 3",levels(df$timepoint))
+  levels(df$timepoint) = gsub("hcl_month_6_.*","Month 6",levels(df$timepoint))
+ 
+  # Fit random intercept model
+  f = as.formula(paste0(outcome,"~timepoint*psqi_group"))
+  mod = lme(f,
+            random = ~1|record_id,
+            data = df,
+            na.action = na.omit)
+  # Plot
+  if(plot){
+    p = 
+      ggplot(data = df,aes_string(x = "timepoint",y = outcome,
+                                  color = "psqi_group",group = "record_id")) + 
+      geom_point() + geom_line() + xlab("Timepoint") +
+      theme_bw() 
+    print(p)
+  }
+  
+  # Anova
+  mod_anova = anova.lme(mod, type="marginal")
+  print(kable(mod_anova,digits = 3,caption = "Test of Overall Effect"))
+
+ 
+   # Means
+  mod_means = emmeans(mod,specs=pairwise ~ factor(timepoint):psqi_group, adjust="tukey")
+  print(kable(mod_means$contrasts[c(3,8,12),],digits = 3,caption = "Timepoint Means"))
+ # print(kable(mod_means$contrasts[c(3,8,12),],caption="Time point means.",format.args = list(scientific = FALSE)))
+
+   # Number of obs
+  cat("\n")
+  cat(paste("This model was fit using",nobs(mod),"observations."))
+  cat("\n")
+ 
+   # Check model
+  if(diagnostics){
+    print(check_model(mod))
+  }
+}
+
+
+# fit change mod
+fit_change_mod = function(outcome,df){
+  
+  # Format timepoint
+  df$timepoint = as.factor(df$timepoint)
+  levels(df$timepoint) = gsub("baseline_.*","Baseline",levels(df$timepoint))
+  levels(df$timepoint) = gsub("hcl_month_3_.*","Month 3",levels(df$timepoint))
+  levels(df$timepoint) = gsub("hcl_month_6_.*","Month 6",levels(df$timepoint))
+ 
+  # Fit random intercept model
+  f = as.formula(paste0(outcome,"~timepoint*psqi_group"))
+  mod = lme(f,
+            random = ~1|record_id,
+            data = df,
+            na.action = na.omit)
+
+  # Anova
+  mod_anova = anova.lme(mod, type="marginal")
+  print(kable(mod_anova,digits = 3,caption = "Test of Overall Effect"))
+
+ 
+   # Means
+  mod_means = emmeans(mod,specs=pairwise ~ factor(timepoint):psqi_group, adjust="tukey")
+  mod_contrasts = pairs(mod_means[[2]], simple = "contrast")
+  print(mod_contrasts[c(12,26),])
+   # Number of obs
+  cat("\n")
+  cat(paste("This model was fit using",nobs(mod),"observations."))
+  cat("\n")
+ 
+  }
+
+```
