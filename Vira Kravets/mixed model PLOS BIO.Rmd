@@ -24,9 +24,9 @@ library(dplyr)
 library(emmeans)
 library(data.table)
 library(knitr)
+library(stringr)
 
 # read in fig 1f
-
 fig1f <- read.csv("B:/Projects/Vira Kravets/PLOS BIO resubmission/Fig 1F By Cell_IslNorm.csv")
 colnames(fig1f) <- c("ID",colnames(fig1f[,2:8]))
 fig1f$mouse <- substring(fig1f$ID,1,5)
@@ -47,7 +47,6 @@ fig1f_long$l_value <- log(fig1f_long$value)
 fig1f_long$Characteristic <- as.factor(fig1f_long$Characteristic)
 
 # read in fig 1g
-
 fig1g <- read.csv("B:/Projects/Vira Kravets/PLOS BIO resubmission/Fig 1G byCell_IslNorm.csv")
 colnames(fig1g) <- c("ID",colnames(fig1g[,2:8]))
 fig1g$mouse <- substring(fig1g$ID,1,5)
@@ -66,11 +65,63 @@ fig1g_long <- reshape(fig1g, direction="long", idvar = c("mouse","islet","cell")
 fig1g_long <- fig1g_long %>% arrange(mouse,islet,cell)
 fig1g_long$Characteristic <- as.factor(fig1g_long$Characteristic)
 
+# read in fig S2
+files <- list.files(path = "B:/Projects/Vira Kravets/PLOS BIO resubmission/Fig S2 individual sheets",
+                          full.names = TRUE,recursive = T)
+figs2 <- NULL
+for (f in 1:length(files)) {
+  table <- read.csv(files[f],stringsAsFactors = FALSE,
+                               header = TRUE,
+                               na.strings = "")
+  table$id <- as.factor(as.character(str_extract_all(files[f], "(?<=sheets/).+(?=.csv)")))
+  figs2 <- rbind(figs2, table)
+}
+figs2$ï.. <- NULL
+figs2$Distance.to.1st.resp <- NULL
+figs2$um <- NULL
+colnames(figs2) <- c("Response_time","Distance_1st_resp","ID")
+
+# read in fig 2K
+fig2k <- read.csv("B:/Projects/Vira Kravets/PLOS BIO resubmission/1st resp Large bins (Fig 2K).csv")
+fig2k$X <- NULL
+fig2k$id <- fig2k$ï..
+fig2k$ï..<- NULL
+fig2k_sum <- fig2k %>% group_by(id) %>% summarise(X0h=mean(X0h, na.rm=T), X.6.12.h=mean(X.6.12.h, na.rm=T),
+                                                  X.18.24.h=mean(X.18.24.h, na.rm=T), X.30.36.h=mean(X.30.36.h, na.rm=T),
+                                                  X.42.48.h=mean(X.42.48.h, na.rm=T))
+fig2k_sum$X0h <- ifelse(is.nan(fig2k_sum$X0h),NA,fig2k_sum$X0h)
+fig2k_sum$X.6.12.h <- ifelse(is.nan(fig2k_sum$X.6.12.h),NA,fig2k_sum$X.6.12.h)
+fig2k_sum$X.18.24.h <- ifelse(is.nan(fig2k_sum$X.18.24.h),NA,fig2k_sum$X.18.24.h)
+fig2k_sum$X.30.36.h <- ifelse(is.nan(fig2k_sum$X.30.36.h),NA,fig2k_sum$X.30.36.h)
+fig2k_sum$X.42.48.h <- ifelse(is.nan(fig2k_sum$X.42.48.h),NA,fig2k_sum$X.42.48.h)
+fig2k_sum$mouse <- str_sub(fig2k_sum$id, 1, 2)
+fig2k_sum$islet <- str_sub(fig2k_sum$id, 4, 5)
+fig2k_sum$cell <- sub(".*_", "", fig2k_sum$id)
+
+# read in fig 2L
+fig2L <- read.csv("B:/Projects/Vira Kravets/PLOS BIO resubmission/last resp Large bins (Fig 2L).csv")
+fig2L$X <- NULL
+fig2L$id <- fig2L$ï..
+fig2L$ï..<- NULL
+fig2L_sum <- fig2L %>% group_by(id) %>% summarise(X0h=mean(X0h, na.rm=T), X.6.12.h=mean(X.6.12.h, na.rm=T),
+                                                  X.18.24.h=mean(X.18.24.h, na.rm=T), X.30.36.h=mean(X.30.36.h, na.rm=T),
+                                                  X.42.48.h=mean(X.42.48.h, na.rm=T))
+fig2L_sum$X0h <- ifelse(is.nan(fig2L_sum$X0h),NA,fig2L_sum$X0h)
+fig2L_sum$X.6.12.h <- ifelse(is.nan(fig2L_sum$X.6.12.h),NA,fig2L_sum$X.6.12.h)
+fig2L_sum$X.18.24.h <- ifelse(is.nan(fig2L_sum$X.18.24.h),NA,fig2L_sum$X.18.24.h)
+fig2L_sum$X.30.36.h <- ifelse(is.nan(fig2L_sum$X.30.36.h),NA,fig2L_sum$X.30.36.h)
+fig2L_sum$X.42.48.h <- ifelse(is.nan(fig2L_sum$X.42.48.h),NA,fig2L_sum$X.42.48.h)
+fig2L_sum$mouse <- str_sub(fig2L_sum$id, 1, 2)
+fig2L_sum$islet <- str_sub(fig2L_sum$id, 4, 5)
+fig2L_sum$cell <- sub(".*_", "", fig2L_sum$id)
+
 ###########
 # FIG 1f  #
 ###########
 
-mod_1f <- lme(value ~ Characteristic,random=~1|unique_islet,data = fig1f_long,na.action=na.omit)
+#mod_1f <- lme(value ~ Characteristic,random=~1|unique_islet,data = fig1f_long,na.action=na.omit)
+mod_1f <- lme(value ~ Characteristic,random=~1|mouse/islet,data = fig1f_long,na.action=na.omit,
+              correlation = corCompSymm())
 resid_1f <- residuals(mod_1f)
 shapiro.test(resid(mod_1f))
 # QQplot
@@ -85,7 +136,7 @@ mod_1f_pairs <-  pairs(mod_1f_means)
 # FIG 1g  #
 ###########
 
-mod_1g <- lme(value ~ Characteristic,random=~1|unique_islet,data = fig1g_long,na.action=na.omit)
+mod_1g <- lme(value ~ Characteristic,random=~1|mouse/islet,data = fig1g_long,na.action=na.omit)
 resid_1g <- residuals(mod_1g)
 shapiro.test(resid(mod_1g))
 # QQplot
@@ -96,22 +147,43 @@ mod_1g_anova <- anova.lme(mod_1g, type="marginal")
 mod_1g_means <- emmeans(mod_1g,"Characteristic")
 mod_1g_pairs <-  pairs(mod_1g_means)
 
+###########
+# FIG S2  #
+###########
+
+mod_s2 <- lme(Response_time ~ Distance_1st_resp,random=~1|ID,data = figs2,na.action=na.omit)
+resid_s2 <- residuals(mod_s2)
+shapiro.test(resid(mod_s2))
+# QQplot
+a_s2 <- qqnorm(mod_s2,abline = c(0,1))
+# ANOVA table
+mod_s2_anova <- anova.lme(mod_s2, type="marginal")
+
+###########
+# FIG 2K  #
+###########
+
 ```
 
 # Figure 1f
 
+This is the overall summary of the model.  However, most of the information you will need is below in the ANOVA table, estimated means, and pairwise comparisons.
+
 ```{r echo=FALSE, comment=""}
 summary(mod_1f)
-a_1f
 ```
 
 ## ANOVA table
+
+The p-value for Characteristic is the overall test of the effect.
 
 ```{r echo=FALSE, comment=""}
 kable(mod_1f_anova)
 ```
 
-## Group means
+## Estimated means
+
+The table below provides estimates of each mean.
 
 ```{r echo=FALSE, comment=""}
 kable(mod_1f_means)
@@ -119,24 +191,31 @@ kable(mod_1f_means)
 
 ## Pairwise comparison of means with Tukey's HSD adjustment for multiple testing
 
+The table below provides a comparison of each pairwise combination of means.
+
 ```{r echo=FALSE, comment=""}
 kable(mod_1f_pairs)
 ```
 
 # Figure 1g
 
+This is the overall summary of the model.  However, most of the information you will need is below in the ANOVA table, estimated means, and pairwise comparisons.
+
 ```{r echo=FALSE, comment=""}
 summary(mod_1g)
-a_1g
 ```
 
 ## ANOVA table
+
+The p-value for Characteristic is the overall test of the effect.
 
 ```{r echo=FALSE, comment=""}
 kable(mod_1g_anova)
 ```
 
-## Group means
+## Estimated means
+
+The table below provides estimates of each mean.
 
 ```{r echo=FALSE, comment=""}
 kable(mod_1g_means)
@@ -144,6 +223,24 @@ kable(mod_1g_means)
 
 ## Pairwise comparison of means with Tukey's HSD adjustment for multiple testing
 
+The table below provides a comparison of each pairwise combination of means.
+
 ```{r echo=FALSE, comment=""}
 kable(mod_1g_pairs)
+```
+
+# Figure S2
+
+This is the overall summary of the model. The slope of the regression of response time on distance can be found in the table labeled "fixed effects," under the column labeled "Value," in the row labeled "Distance_1st_resp."
+
+```{r echo=FALSE, comment=""}
+summary(mod_s2)
+```
+
+## ANOVA table
+
+The p-value for Distance_1st_resp is the test of whether there is a significant non-zero slope.
+
+```{r echo=FALSE, comment=""}
+kable(mod_s2_anova)
 ```
