@@ -37,7 +37,7 @@ knitr::opts_knit$set(root.dir = home_dir)
 setwd(home_dir)
 ```
 
-```{r}
+```{r, include=FALSE}
 # read in fig 1f
 fig1f <- read.csv("./Fig 1F By Cell_IslNorm.csv")
 colnames(fig1f) <- c("ID",colnames(fig1f[,2:8]))
@@ -94,6 +94,7 @@ figs2$um <- NULL
 colnames(figs2) <- c("Response_time","Distance_1st_resp","ID")
 figs2$mouse <- str_sub(figs2$ID, 1, 6)
 figs2$islet <-str_sub(figs2$ID, 8, 12)
+figs2$unique_islet <- figs2$ID
 
 # read in fig 2K
 fig2k <- read.csv("./1st resp Large bins (Fig 2K).csv")
@@ -111,6 +112,14 @@ fig2k_sum$X.42.48.h <- ifelse(is.nan(fig2k_sum$X.42.48.h),NA,fig2k_sum$X.42.48.h
 fig2k_sum$mouse <- str_sub(fig2k_sum$id, 1, 2)
 fig2k_sum$islet <- str_sub(fig2k_sum$id, 4, 5)
 fig2k_sum$cell <- sub(".*_", "", fig2k_sum$id)
+# now make a long dataset
+fig2k_sum_long <- reshape(fig2k_sum, direction="long", idvar = c("mouse","islet","cell"), 
+                      varying = c("X0h","X.6.12.h","X.18.24.h","X.30.36.h","X.42.48.h"),
+                      v.names = "value",timevar = "time",
+                      times=c("0","6-12","18-24","30-36","42-48"))
+fig2k_sum_long <- fig2k_sum_long %>% arrange(mouse,islet,cell,time)
+fig2k_sum_long$time <- as.factor(fig2k_sum_long$time)
+fig2k_sum_long$time <- factor(fig2k_sum_long$time, levels=c("0","6-12","18-24","30-36","42-48"))
 
 # read in fig 2L
 fig2L <- read.csv("./last resp Large bins (Fig 2L).csv")
@@ -128,6 +137,14 @@ fig2L_sum$X.42.48.h <- ifelse(is.nan(fig2L_sum$X.42.48.h),NA,fig2L_sum$X.42.48.h
 fig2L_sum$mouse <- str_sub(fig2L_sum$id, 1, 2)
 fig2L_sum$islet <- str_sub(fig2L_sum$id, 4, 5)
 fig2L_sum$cell <- sub(".*_", "", fig2L_sum$id)
+# now make a long dataset
+fig2L_sum_long <- reshape(fig2L_sum, direction="long", idvar = c("mouse","islet","cell"), 
+                      varying = c("X0h","X.6.12.h","X.18.24.h","X.30.36.h","X.42.48.h"),
+                      v.names = "value",timevar = "time",
+                      times=c("0","6-12","18-24","30-36","42-48"))
+fig2L_sum_long <- fig2L_sum_long %>% arrange(mouse,islet,cell,time)
+fig2L_sum_long$time <- as.factor(fig2L_sum_long$time)
+fig2L_sum_long$time <- factor(fig2L_sum_long$time, levels=c("0","6-12","18-24","30-36","42-48"))
 
 ###########
 # FIG 1f  #
@@ -165,8 +182,9 @@ mod_1g_pairs <-  pairs(mod_1g_means)
 ###########
 # FIG S2  #
 ###########
-ctrl <- lmeControl(maxIter = 10000);
-mod_s2 <- lme(Response_time ~ Distance_1st_resp,random=~1 + Distance_1st_resp|mouse,data = figs2,na.action=na.omit,
+
+ctrl <- lmeControl(maxIter = 100000);
+mod_s2 <- lme(Response_time ~ Distance_1st_resp,random=~1 + Distance_1st_resp|unique_islet,data = figs2,na.action=na.omit,
               correlation = corAR1(), control = ctrl)
 resid_s2 <- residuals(mod_s2)
 shapiro.test(resid(mod_s2))
@@ -178,12 +196,41 @@ mod_s2_anova <- anova.lme(mod_s2, type="marginal")
 ###########
 # FIG 2K  #
 ###########
+mod_2k <- lme(value ~ time,random=~1|mouse/islet,data = fig2k_sum_long,na.action=na.omit,
+              correlation = corAR1(), control = ctrl)
+# ANOVA table
+mod_2k_anova <- anova.lme(mod_2k, type="marginal")
+# use emmeans 
+mod_2k_means <- emmeans(mod_2k,"time")
+mod_2k_pairs <-  pairs(mod_2k_means)
+# contrast each mean with 50
+mod2k_con <- contrast(mod_2k_means,
+                 list(m0 = c(1, 0, 0, 0, 0), m6_12 = c(0, 1, 0, 0, 0), m18_24 = c(0, 0, 1, 0, 0),
+                      m30_36 = c(0, 0, 0, 1, 0), m42_48 = c(0, 0, 0, 0, 1)), offset = c(-50, -50, -50, -50, -50))
+
+###########
+# FIG 2L  #
+###########
+mod_2L <- lme(value ~ time,random=~1|mouse/islet,data = fig2L_sum_long,na.action=na.omit,
+              correlation = corAR1(), control = ctrl)
+# ANOVA table
+mod_2L_anova <- anova.lme(mod_2L, type="marginal")
+# use emmeans 
+mod_2L_means <- emmeans(mod_2L,"time")
+mod_2L_pairs <-  pairs(mod_2L_means)
+# contrast each mean with 50
+mod2L_con <- contrast(mod_2L_means,
+                 list(m0 = c(1, 0, 0, 0, 0), m6_12 = c(0, 1, 0, 0, 0), m18_24 = c(0, 0, 1, 0, 0),
+                      m30_36 = c(0, 0, 0, 1, 0), m42_48 = c(0, 0, 0, 0, 1)), offset = c(-50, -50, -50, -50, -50))
+
 
 ```
 
 # Figure 1f
 
 This is the overall summary of the model.  However, most of the information you will need is below in the ANOVA table, estimated means, and pairwise comparisons.
+
+The parameter labeled "rho" is the correlation between measures on the same mouse or islet. Because the sample size is relatively small, I needed to use a simple correlation structure with the same correlation between measures within a mouse as between measures within an islet. The model still accounts for both levels of correlation.
 
 ```{r echo=FALSE, comment=""}
 summary(mod_1f)
@@ -217,6 +264,8 @@ kable(mod_1f_pairs)
 
 This is the overall summary of the model.  However, most of the information you will need is below in the ANOVA table, estimated means, and pairwise comparisons.
 
+The parameter labeled "rho" is the correlation between measures on the same mouse or islet. Because the sample size is relatively small, I needed to use a simple correlation structure with the same correlation between measures within a mouse as between measures within an islet. The model still accounts for both levels of correlation.
+
 ```{r echo=FALSE, comment=""}
 summary(mod_1g)
 ```
@@ -247,6 +296,8 @@ kable(mod_1g_pairs)
 
 # Figure S2
 
+The model would not converge with a correlation structure of cell within islet within mouse, so a simpler correlation structure was used: cell within islet. This was compared to a model with a correlation structure of cell within mouse, but the first model had a better fit to the data. The parameter labeled "phi" is the estimate of the correlation.
+
 This is the overall summary of the model. The slope of the regression of response time on distance can be found in the table labeled "fixed effects," under the column labeled "Value," in the row labeled "Distance_1st_resp."
 
 ```{r echo=FALSE, comment=""}
@@ -267,4 +318,80 @@ These are the estimates of the islet-level intercepts and slopes.
 
 ```{r echo=FALSE, comment=""}
 kable(coef(mod_s2))
+```
+
+# Figure 2K
+
+This is the overall summary of the model. The parameter labeled "phi" is the correlation between times within the same cell.
+
+```{r echo=FALSE, comment=""}
+summary(mod_2k)
+```
+
+## ANOVA table
+
+The p-value for time is the overall test of the effect of time.
+
+```{r echo=FALSE, comment=""}
+kable(mod_2k_anova)
+```
+
+## Estimated means
+
+The table below provides estimates of each mean.
+
+```{r echo=FALSE, comment=""}
+kable(mod_2k_means)
+```
+
+## Pairwise comparison of means with Tukey's HSD adjustment for multiple testing
+
+The table below provides a comparison of each pairwise combination of means.
+
+```{r echo=FALSE, comment=""}
+kable(mod_2k_pairs)
+```
+
+## Comparison of each mean to fixed value islet median=50
+
+```{r echo=FALSE, comment=""}
+kable(mod2k_con)
+```
+
+# Figure 2L
+
+This is the overall summary of the model.  The parameter labeled "phi" is the correlation between times within the same cell.
+
+```{r echo=FALSE, comment=""}
+summary(mod_2L)
+```
+
+## ANOVA table
+
+The p-value for time is the overall test of the effect of time.
+
+```{r echo=FALSE, comment=""}
+kable(mod_2L_anova)
+```
+
+## Estimated means
+
+The table below provides estimates of each mean.
+
+```{r echo=FALSE, comment=""}
+kable(mod_2L_means)
+```
+
+## Pairwise comparison of means with Tukey's HSD adjustment for multiple testing
+
+The table below provides a comparison of each pairwise combination of means.
+
+```{r echo=FALSE, comment=""}
+kable(mod_2L_pairs)
+```
+
+## Comparison of each mean to fixed value islet median=50
+
+```{r echo=FALSE, comment=""}
+kable(mod2L_con)
 ```
