@@ -1,9 +1,9 @@
 ########Gerard Gonzalez Latino Program Analysis########
 library(Hmisc)
 ######### READ IN ALL DATASETS ########
-source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Gerard Gonzalez/01_functions.R')
+source('C:/Users/pylell/Documents/GitHub/BDC-Code/Gerard Gonzalez/01_functions.R')
 #Read in Data: LP patients - use old data, and merge in new year4 data
-setwd('S:/Shared Projects/Laura/BDC/Projects/Andrea Gerard Gonzalez/Data')
+setwd('S:/Shared Projects/Laura/BDC/Projects/Andrea Gerard Gonzalez/Latino Clinic/Data')
 dat.lp<-read.csv('10.11.18_Cleaned_latino_clinical.csv') 
 dat.lp<-dat.lp[,-c(which(colnames(dat.lp)=="Repeat_Instrument"),
                    which(colnames(dat.lp)=="Complete_"),
@@ -180,7 +180,7 @@ dat.3<-dat.3[,c(5,20,35)]
 
 dat.4<-dat[!duplicated(dat$MRN),]
 dat.4$year4<-1
-dat.4<-dat.4[,c(4,19,34)]
+dat.4<-dat.4[,c(4,19,35)]
 
 dat.pts<-merge(dat.3,dat.4,by=c("MRN","trt_grp"),all=T)
 

@@ -3,7 +3,7 @@
 library(nlme)
 library(afex)
 require(lsmeans)
-source('C:/Users/campbkri/Documents/GitHub/BDC-Code/Gerard Gonzalez/Year4 Code/00_data_yr4.R')
+source('C:/Users/pylell/Documents/GitHub/BDC-Code/Gerard Gonzalez/Year4 Code/00_data_yr4.R')
 length(unique(dat$MRN))
 
 dat$yeargrouping<-factor(dat$yeargrouping,levels=c("Year4","Base1","Year1","Year2","Year3"))
