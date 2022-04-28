@@ -40,40 +40,69 @@ analysis = analysis %>% mutate(fsbg = as.numeric(`Finger Stick Blood Glucose mg/
 
 # some hba1c are listed with a % sign (LITERALLY WHY); need to remove that
 analysis = analysis %>% mutate(hba1c = 
-                                 case_when("%" %in% `HbA1C value:` ~ as.numeric(str_sub(`HbA1C value:`, 1,str_length(`HbA1C value:`)-1)),
+                                 case_when(str_detect(`HbA1C value:`, "%") ~ as.numeric(str_sub(`HbA1C value:`, 1,str_length(`HbA1C value:`)-1)),
                                            TRUE ~ as.numeric(`HbA1C value:`))) %>% select(-`HbA1C value:`)
 
 # need to fix ctx with the truncated values by dividing by 2
 
-analysis$
+analysis = analysis %>% mutate(ctx_bl = 
+                                 case_when(str_detect(`CTX Baseline ng/ml`, "<") ~ (as.numeric(str_sub(`CTX Baseline ng/ml`, 2))/2),
+                                           TRUE ~ as.numeric(`CTX Baseline ng/ml`)),
+                               p1np_bl = `P1NP Baseline ng/ml`) %>% select(-c(`P1NP Baseline ng/ml`, `CTX Baseline ng/ml`))
 
 
 # function to output scatter, corr and linear mod; need to add in ctx later lol
 fit_mod = function(outcome,df,plot = T,diagnostics = F){
   
-
-  # Fit p1np model
-  f = as.formula(paste0("`P1NP Baseline ng/ml`~",outcome))
+    # Fit p1np model
+  f = as.formula(paste0("p1np_bl~",outcome))
   mod = lm(f,
             data = df,
             na.action = na.omit)
+   cat("\n")
+  cat(paste("P1NP Model"))
+  cat("\n")
+ 
   print(summary(mod))
-     # corr
-  cat("\n")
-  cat(paste("P1NP Pearson Corr Coef = ",sqrt(summary(mod)$r.squared)))
-  cat("\n")
+   
+
+  
    # Number of obs
   cat("\n")
   cat(paste("This model was fit using",nobs(mod),"observations."))
   cat("\n")
  
-  # Plot
+  # Fit ctx model
+  f2 = as.formula(paste0("ctx_bl~",outcome))
+  mod2 = lm(f,
+            data = df,
+            na.action = na.omit)
+   cat("\n")
+  cat(paste("CTX Model"))
+  cat("\n")
+ 
+  print(summary(mod2))
+   
+
+  
+   # Number of obs
+  cat("\n")
+  cat(paste("This model was fit using",nobs(mod2),"observations."))
+  cat("\n") 
+  
+  # Plots
   if(plot){
     p = 
-      ggplot(data = df,aes_string(x = outcome, y = "`P1NP Baseline ng/ml`")) + 
-      geom_point() + #geom_line() + 
+      ggplot(data = df,aes_string(x = outcome, y = "p1np_bl")) + 
+      geom_point(na.rm = T) + geom_smooth(method = lm, se= F, na.rm = T) + 
       theme_bw() 
     print(p)
+    
+        p2 = 
+      ggplot(data = df,aes_string(x = outcome, y = "ctx_bl")) + 
+      geom_point(na.rm = T) + geom_smooth(method = lm, se = F,na.rm = T) + 
+      theme_bw() 
+    print(p2)
   }
  
    # Check model
@@ -86,22 +115,48 @@ fit_mod = function(outcome,df,plot = T,diagnostics = F){
 
 # Outstanding Data Questions/ Remarks
 Remarks as of 4/27/2022
-* of 60 subjects in the set, 31 have a t1d diagnosis
 * Waiting on clean CGM data as of 4/27/2022
 * truncated values of ctx (some data listed as "<0.076") were inputted as 0.5 * truncated value
 
 # Methods
 
-Simple linear models  were fit with Fingerstick Glucose, 14 Days CGM metrics, and A1C respectively to assess the linear relationship with with P1NP and CTX
+Simple linear models  were fit with Fingerstick Glucose, 14 Days CGM metrics, and A1C respectively to assess the linear relationship with with P1NP and CTX. Only subjects with T1D diagnosis (n = 31) were included in analysis.
 
 # Analysis
-Correlation between Fingerstick glucose (available under clinic visit records) with P1NP and CTX- only in patients with type 1 diabetes  
 
-Correlation between 14-days CGM metrics (under NIH K23 folder) with P1NP and CTX- only in patients with type 1 diabetes  
- 
-Correlation between A1c with P1NP and CTX - only in patients with type 1 diabetes  
+## Fingerstick Glucose 
+
+```{r fingerstickglucose}
+# correlations
+f_c1 = cor(analysis$fsbg, analysis$p1np_bl, use = "pairwise.complete.obs")
+f_c2 = cor(analysis$fsbg, analysis$ctx_bl, use = "pairwise.complete.obs")
+
+# model and outputs
+fit_mod(outcome = "fsbg", df = analysis)
+
+cat("\n")
+cat(paste("P1NP Pearson Corr Coef = ",f_c1))
+cat(paste("CTX Pearson Corr Coef = ",f_c2))
+cat("\n")
+```
+
+## 14 Day CGM Metrics
+
+```{r cgm data}
+```
+
+## A1C
  
 ```{r hba1c}
+# correlations
+h_c1 = cor(analysis$hba1c, analysis$p1np_bl, use = "pairwise.complete.obs")
+h_c2 = cor(analysis$hba1c, analysis$ctx_bl, use = "pairwise.complete.obs")
+
+# model and outputs
 fit_mod(outcome = "hba1c", df = analysis)
 
+cat("\n")
+cat(paste("P1NP Pearson Corr Coef = ",h_c1))
+cat(paste("CTX Pearson Corr Coef = ",h_c2))
+cat("\n")
 ```
