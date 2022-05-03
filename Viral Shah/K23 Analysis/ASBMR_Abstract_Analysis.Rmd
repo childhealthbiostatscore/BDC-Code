@@ -10,7 +10,8 @@ library(readr)
 library(tidyverse)
 library(Hmisc)
 library(stringr)
-
+library(table1)
+library(knitr)
 knitr::opts_chunk$set(echo = FALSE)
 if(Sys.info()["sysname"] == "Windows"){
   home_dir = "S:/Laura/BDC/Projects/Viral Shah/K23"
@@ -28,7 +29,7 @@ rm(home_dir)
 ```{r data import and clean, include=FALSE}
 # import data
 BSTM_t1d <- read_csv("BSTM_t1d.csv")
-
+analysis_t = read_csv("bstm_t1d_raw.csv")
 # only interested in patients with t1d
 # want fingerstick glucose, 14 day cgm metrics, a1c, p1np and ctx
 analysis = BSTM_t1d %>% filter(`2. Clinical Diagnosis of T1D` == "Yes") %>% 
@@ -55,6 +56,43 @@ analysis = analysis %>% mutate(ctx_bl =
 # write.csv(subjdates, file = "asbmr_subjdates_cgm.csv")
 ```
 
+```{r table data import, include=FALSE}
+# variable select
+demog_df = analysis_t %>% filter(t1d_diagnosis == 1) %>% select(record_id, age, demo_gender1, fall_diab_duration, postmenopause_pill_42695d, are_you_currently_smoking_e66c9b, do_you_drink_3_or_more_uni_ca666a, hba1c_value_k, egfr,albumin_serum, creatinine_serum, pth_baseline, calcium_serum, p1np_baseline, ctx_baseline, finger_stick_blood_glucose)
+
+# some hba1c are listed with a % sign (LITERALLY WHY); need to remove that
+demog_df = demog_df %>% mutate(hba1c = 
+                                 case_when(str_detect(hba1c_value_k, "%") ~ as.numeric(str_sub(hba1c_value_k, 1,str_length(hba1c_value_k)-1)),
+                                           TRUE ~ as.numeric(hba1c_value_k))) %>% select(-hba1c_value_k)
+
+# need to fix ctx with the truncated values by dividing by 2
+demog_df = demog_df %>% mutate(ctx_bl = 
+                                 case_when(str_detect(ctx_baseline, "<") ~ (as.numeric(str_sub(ctx_baseline, 2))/2),
+                                           TRUE ~ as.numeric(ctx_baseline)),
+                              ) %>% select(-c( ctx_baseline))
+demog_df[demog_df == "not done" ] <- NA
+demog_df = demog_df %>% mutate(fsbg = as.numeric(finger_stick_blood_glucose)) %>% select(- `finger_stick_blood_glucose`)
+
+demog_df$demo_gender1 = factor(demog_df$demo_gender1, labels = c("Female"))
+demog_df$postmenopause_pill_42695d = factor(demog_df$postmenopause_pill_42695d, labels = c("No HRT", "HRT"))
+demog_df$are_you_currently_smoking_e66c9b = factor(demog_df$are_you_currently_smoking_e66c9b, labels = c("No", "Yes"))
+
+label(demog_df$fall_diab_duration) = "T1D Duration (Years)"
+label(demog_df$demo_gender1) = "Sex"
+label(demog_df$age) = "Age"
+label(demog_df$postmenopause_pill_42695d) = "HRT"
+label(demog_df$are_you_currently_smoking_e66c9b) = "Current Smoker"
+label(demog_df$hba1c) = "HBA1C"
+label(demog_df$egfr) = "eGFR"
+label(demog_df$albumin_serum) = "Serum Albumin"
+label(demog_df$creatinine_serum) = "Serum Creatinine"
+label(demog_df$pth_baseline) = "PTH"
+label(demog_df$calcium_serum) = "Calcium"
+label(demog_df$p1np_baseline) = "P1NP"
+label(demog_df$ctx_bl) = "CTX"
+label(demog_df$fsbg) = "Finger Stick Blood Glucose"
+```
+
 ```{r functions}
 # function to output scatter, corr and linear mod
 fit_mod = function(outcome,df,plot = T,diagnostics = F){
@@ -79,7 +117,7 @@ fit_mod = function(outcome,df,plot = T,diagnostics = F){
  
   # Fit ctx model
   f2 = as.formula(paste0("ctx_bl~",outcome))
-  mod2 = lm(f,
+  mod2 = lm(f2,
             data = df,
             na.action = na.omit)
    cat("\n")
@@ -100,13 +138,13 @@ fit_mod = function(outcome,df,plot = T,diagnostics = F){
     p = 
       ggplot(data = df,aes_string(x = outcome, y = "p1np_bl")) + 
       geom_point(na.rm = T) + geom_smooth(method = lm, se= F, na.rm = T) + 
-      theme_bw() 
+      theme_classic() 
     print(p)
     
         p2 = 
       ggplot(data = df,aes_string(x = outcome, y = "ctx_bl")) + 
       geom_point(na.rm = T) + geom_smooth(method = lm, se = F,na.rm = T) + 
-      theme_bw() 
+      theme_classic() 
     print(p2)
   }
  
@@ -119,10 +157,11 @@ fit_mod = function(outcome,df,plot = T,diagnostics = F){
 ```
 
 # Outstanding Data Questions/ Remarks
-Remarks as of 4/27/2022
-* Waiting on clean CGM data as of 4/27/2022
+Remarks as of 5/2/2022
+
+* Still working on cleaning CGM data as of 5/2/2022
+
 * truncated values of ctx (some data listed as "<0.076") were inputted as 0.5 * truncated value
-* get a list of subj ids and visit dates for tim for cgm data 
 
 
 # Methods
@@ -131,8 +170,20 @@ Simple linear models  were fit with Fingerstick Glucose, 14 Days CGM metrics, an
 
 # Analysis
 
+## Demographics Table
+
+```{r table 1 setup, include=FALSE}
+demogs = table1(~age+demo_gender1+fall_diab_duration+postmenopause_pill_42695d+are_you_currently_smoking_e66c9b+ hba1c+egfr+albumin_serum+ creatinine_serum+pth_baseline+calcium_serum+p1np_baseline+ctx_bl + fsbg,
+       data=demog_df,  render.continuous=c(.="Mean (SD)"))
+```
+
+```{r t1}
+demogs
+```
+
 ## Fingerstick Glucose 
 
+* very weak linear relationships between P1NP and CTX and Fingerstick Glucose (r = -0.20 and -0.07 respectively)
 ```{r fingerstickglucose}
 # correlations
 f_c1 = cor(analysis$fsbg, analysis$p1np_bl, use = "pairwise.complete.obs")
@@ -142,18 +193,19 @@ f_c2 = cor(analysis$fsbg, analysis$ctx_bl, use = "pairwise.complete.obs")
 fit_mod(outcome = "fsbg", df = analysis)
 
 cat("\n")
-cat(paste("P1NP Pearson Corr Coef = ",f_c1))
-cat(paste("CTX Pearson Corr Coef = ",f_c2))
+kable(cat(paste("P1NP Pearson Corr Coef = ",f_c1)))
+kable(cat(paste("CTX Pearson Corr Coef = ",f_c2)))
 cat("\n")
 ```
 
 ## 14 Day CGM Metrics
-
+* data still being cleaned
 ```{r cgm data}
 ```
 
 ## A1C
- 
+
+ * very weak linear relationships between P1NP and CTX and AIC (r = -0.18 and -0.18 respectively)
 ```{r hba1c}
 # correlations
 h_c1 = cor(analysis$hba1c, analysis$p1np_bl, use = "pairwise.complete.obs")
