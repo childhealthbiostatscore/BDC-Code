@@ -1,9 +1,7 @@
 import os
-import pathlib
 import pandas as pd
 import numpy as np
 import datetime
-from glob import glob
 from dateutil.parser import parse
 # Import data
 wd = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/K23/"
@@ -14,75 +12,28 @@ a1cs = pd.read_csv(wd + "Data_Clean/a1cs.csv",
 # Dictionary for storing results
 df = {
     "ID": [],
-    "Gender": [],
-    "Age": [],
-    "Insulin": [],
-    "HbA1c": [],
-    "14 Overall Mean": [],
-    "14 Overall TIR 70 - 140": [],
-    "14 Overall TIR 70 - 180": [],
-    "14 Overall TIR Over 180": [],
     "14 Day Mean": [],
+    "14 Day TIR < 70": [],
     "14 Day TIR 70 - 140": [],
     "14 Day TIR 70 - 180": [],
     "14 Day TIR Over 180": [],
-    "14 Night Mean": [],
-    "14 Night TIR 70 - 140": [],
-    "14 Night TIR 70 - 180": [],
-    "14 Night TIR Over 180": [],
-    "30 Overall Mean": [],
-    "30 Overall TIR 70 - 140": [],
-    "30 Overall TIR 70 - 180": [],
-    "30 Overall TIR Over 180": [],
-    "30 Day Mean": [],
-    "30 Day TIR 70 - 140": [],
-    "30 Day TIR 70 - 180": [],
-    "30 Day TIR Over 180": [],
-    "30 Night Mean": [],
-    "30 Night TIR 70 - 140": [],
-    "30 Night TIR 70 - 180": [],
-    "30 Night TIR Over 180": [],
-    "60 Overall Mean": [],
-    "60 Overall TIR 70 - 140": [],
-    "60 Overall TIR 70 - 180": [],
-    "60 Overall TIR Over 180": [],
-    "60 Day Mean": [],
-    "60 Day TIR 70 - 140": [],
-    "60 Day TIR 70 - 180": [],
-    "60 Day TIR Over 180": [],
-    "60 Night Mean": [],
-    "60 Night TIR 70 - 140": [],
-    "60 Night TIR 70 - 180": [],
-    "60 Night TIR Over 180": [],
-    "90 Overall Mean": [],
-    "90 Overall TIR 70 - 140": [],
-    "90 Overall TIR 70 - 180": [],
-    "90 Overall TIR Over 180": [],
-    "90 Day Mean": [],
-    "90 Day TIR 70 - 140": [],
-    "90 Day TIR 70 - 180": [],
-    "90 Day TIR Over 180": [],
-    "90 Night Mean": [],
-    "90 Night TIR 70 - 140": [],
-    "90 Night TIR 70 - 180": [],
-    "90 Night TIR Over 180": [],
+    "CV": []
 }
-# Iterate through files in wd
-files = os.listdir()
-files = glob(wd + "5. Subject data/K-23/" + '/**/*.csv', recursive=True)
-os.li
-files.sort()
-for file in files:
-    # File extensioncontinueading in
-    ext = pathlib.Path(wd + "Data_Clean/cgms/" + file).suffix
-    if "xls" in ext:
-        d = pd.read_excel(wd + "Data_Clean/cgms/" +
-                          file, engine="openpyxl")
-    elif "csv" in ext:
-        d = pd.read_csv(wd + "Data_Clean/cgms/" + file)
+# Get CGM file names
+all_files = []
+for root, subdirs, files in os.walk(wd+"5. Subject data/K-23"):
+    all_files += [os.path.join(root, file) for file in files]
+r1_csvs = [f for f in all_files if "r1-" in f.lower() or "r1_" in f.lower()]
+summaries = [f for f in all_files if "summ" in f.lower()]
+# Iterate through CGM files
+for file in r1_csvs:
+    # Read in
+    d = pd.read_csv(file)
     # Identify type of CGM file
-    if "Patient Info" in d.columns:
-        # Pull A1c and dempgraphic data
+    if "Index" in d.columns:
+        # Get date
+        # Pull timestamp and glucose
+        d = d[['Timestamp (YYYY-MM-DDThh:mm:ss)','Glucose Value (mg/dL)']]
         n = d["Patient Info"].iloc[0].lower() + "_" + \
             d["Patient Info"].iloc[1].lower()
         mask = a1cs["ID"].isin([n])
