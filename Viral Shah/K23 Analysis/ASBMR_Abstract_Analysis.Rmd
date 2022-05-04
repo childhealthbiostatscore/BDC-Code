@@ -22,14 +22,16 @@ if(Sys.info()["sysname"] == "Windows"){
 }
 knitr::opts_knit$set(root.dir = home_dir)
 
-setwd("S:/Laura/BDC/Projects/Viral Shah/K23")
+#setwd("S:/Laura/BDC/Projects/Viral Shah/K23")
 rm(home_dir)
 ```
 
 ```{r data import and clean, include=FALSE}
 # import data
-BSTM_t1d <- read_csv("BSTM_t1d.csv")
+BSTM_t1d = read_csv("BSTM_t1d.csv")
 analysis_t = read_csv("bstm_t1d_raw.csv")
+cgm_summary = read_csv("S:/Laura/BDC/Projects/Viral Shah/K23/Data_Clean/cgm_r1_summary_stats.csv")
+cgm_summary = cgm_summary %>% mutate(record_id = gsub("(\\w$)", "\\U\\1", ID, perl = TRUE))
 # only interested in patients with t1d
 # want fingerstick glucose, 14 day cgm metrics, a1c, p1np and ctx
 analysis = BSTM_t1d %>% filter(`2. Clinical Diagnosis of T1D` == "Yes") %>% 
@@ -50,6 +52,7 @@ analysis = analysis %>% mutate(ctx_bl =
                                            TRUE ~ as.numeric(`CTX Baseline ng/ml`)),
                                p1np_bl = `P1NP Baseline ng/ml`) %>% select(-c(`P1NP Baseline ng/ml`, `CTX Baseline ng/ml`))
 
+analysis = left_join(analysis, cgm_summary, by = c("Record ID" = "record_id"))
 # list of subj id's and date for tim
 # subjdates = BSTM_t1d %>% filter(`2. Clinical Diagnosis of T1D` == "Yes") %>% 
 #   select(`Record ID`, `Date of visit`, `Date of the study visit:`)
@@ -91,6 +94,13 @@ label(demog_df$calcium_serum) = "Calcium"
 label(demog_df$p1np_baseline) = "P1NP"
 label(demog_df$ctx_bl) = "CTX"
 label(demog_df$fsbg) = "Finger Stick Blood Glucose"
+
+demog_df = left_join(demog_df, cgm_summary, by = "record_id")
+# table 1 create
+demogs = table1(~age+demo_gender1+fall_diab_duration+postmenopause_pill_42695d+are_you_currently_smoking_e66c9b+ `14 Day Mean` + `14 Day TIR < 70` + 
+                   `14 Day TIR 70 - 140` + `14 Day TIR 70 - 180` + `14 Day TIR Over 180`+ CV + hba1c+egfr+
+                  albumin_serum+ creatinine_serum+pth_baseline+calcium_serum+p1np_baseline+ctx_bl + fsbg,
+       data=demog_df,  render.continuous=c(.="Mean (SD)"))
 ```
 
 ```{r functions}
@@ -159,8 +169,6 @@ fit_mod = function(outcome,df,plot = T,diagnostics = F){
 # Outstanding Data Questions/ Remarks
 Remarks as of 5/2/2022
 
-* Still working on cleaning CGM data as of 5/2/2022
-
 * truncated values of ctx (some data listed as "<0.076") were inputted as 0.5 * truncated value
 
 
@@ -171,11 +179,6 @@ Simple linear models  were fit with Fingerstick Glucose, 14 Days CGM metrics, an
 # Analysis
 
 ## Demographics Table
-
-```{r table 1 setup, include=FALSE}
-demogs = table1(~age+demo_gender1+fall_diab_duration+postmenopause_pill_42695d+are_you_currently_smoking_e66c9b+ hba1c+egfr+albumin_serum+ creatinine_serum+pth_baseline+calcium_serum+p1np_baseline+ctx_bl + fsbg,
-       data=demog_df,  render.continuous=c(.="Mean (SD)"))
-```
 
 ```{r t1}
 demogs
@@ -193,15 +196,104 @@ f_c2 = cor(analysis$fsbg, analysis$ctx_bl, use = "pairwise.complete.obs")
 fit_mod(outcome = "fsbg", df = analysis)
 
 cat("\n")
-kable(cat(paste("P1NP Pearson Corr Coef = ",f_c1)))
-kable(cat(paste("CTX Pearson Corr Coef = ",f_c2)))
+cat(paste("P1NP Pearson Corr Coef = ",f_c1))
+cat(paste("CTX Pearson Corr Coef = ",f_c2))
 cat("\n")
 ```
 
 ## 14 Day CGM Metrics
-* data still being cleaned
-```{r cgm data}
+
+### 14 Day Mean
+
+* weak linear relationship between 14 day mean and p1np and ctx (r = 0.29, 0.14 respectively)
+
+```{r 14dm}
+# correlations
+m14d_c1 = cor(analysis$`14 Day Mean`, analysis$p1np_bl, use = "pairwise.complete.obs")
+m14d_c2 = cor(analysis$`14 Day Mean`, analysis$ctx_bl, use = "pairwise.complete.obs")
+
+# model and outputs
+fit_mod(outcome = "`14 Day Mean`", df = analysis)
+
+cat("\n")
+cat(paste("P1NP Pearson Corr Coef = ",m14d_c1))
+cat(paste("CTX Pearson Corr Coef = ",m14d_c2))
+cat("\n")
 ```
+
+### 14 Day TIR < 70
+
+* very weak linear relationship between 14 day mean and p1np and ctx (r = 0.14, -0.04 respectively)
+
+```{r tir lt70}
+# correlations
+b70_c1 = cor(analysis$`14 Day TIR < 70`, analysis$p1np_bl, use = "pairwise.complete.obs")
+b70_c2 = cor(analysis$`14 Day TIR < 70`, analysis$ctx_bl, use = "pairwise.complete.obs")
+
+# model and outputs
+fit_mod(outcome = "`14 Day TIR < 70`", df = analysis)
+
+cat("\n")
+(cat(paste("P1NP Pearson Corr Coef = ",b70_c1)))
+(cat(paste("CTX Pearson Corr Coef = ",b70_c2)))
+cat("\n")
+```
+
+### 14 Day TIR 70-140
+
+* weak linear relationship between 14 day mean and p1np and ctx (r = -0.29, -0.16 respectively)
+
+```{r tir70140}
+# correlations
+b70_140_c1 = cor(analysis$`14 Day TIR 70 - 140`, analysis$p1np_bl, use = "pairwise.complete.obs")
+b70_140_c2 = cor(analysis$`14 Day TIR 70 - 140`, analysis$ctx_bl, use = "pairwise.complete.obs")
+
+# model and outputs
+fit_mod(outcome = "`14 Day TIR 70 - 140`", df = analysis)
+
+cat("\n")
+(cat(paste("P1NP Pearson Corr Coef = ",b70_140_c1)))
+(cat(paste("CTX Pearson Corr Coef = ",b70_140_c2)))
+cat("\n")
+```
+
+### 14 Day TIR 70-180
+
+* weak linear relationship between 14 day mean and p1np and ctx (r = -0.37, -0.20 respectively)
+
+```{r tir70180}
+# correlations
+b70_180_c1 = cor(analysis$`14 Day TIR 70 - 180`, analysis$p1np_bl, use = "pairwise.complete.obs")
+b70_180_c2 = cor(analysis$`14 Day TIR 70 - 180`, analysis$ctx_bl, use = "pairwise.complete.obs")
+
+# model and outputs
+fit_mod(outcome = "`14 Day TIR 70 - 180`", df = analysis)
+
+cat("\n")
+(cat(paste("P1NP Pearson Corr Coef = ",b70_180_c1)))
+(cat(paste("CTX Pearson Corr Coef = ",b70_180_c2)))
+cat("\n")
+```
+
+### 14 Day TIR >180
+
+* weak linear relationship between 14 day mean and p1np and ctx (r = 0.34, 0.20 respectively)
+
+```{r tirgt180}
+# correlations
+analysis$`14 Day TIR Over 180`
+g180_c1 = cor(analysis$`14 Day TIR Over 180`, analysis$p1np_bl, use = "pairwise.complete.obs")
+g180_c2 = cor(analysis$`14 Day TIR Over 180`, analysis$ctx_bl, use = "pairwise.complete.obs")
+
+# model and outputs
+fit_mod(outcome = "`14 Day TIR Over 180`", df = analysis)
+
+cat("\n")
+(cat(paste("P1NP Pearson Corr Coef = ",g180_c1)))
+(cat(paste("CTX Pearson Corr Coef = ",g180_c2)))
+cat("\n")
+```
+
 
 ## A1C
 
