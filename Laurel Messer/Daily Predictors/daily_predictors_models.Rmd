@@ -16,6 +16,7 @@ library(lme4)
 library(lmerTest)
 library(performance)
 library(broom.mixed)
+library(GLMMadaptive)
 knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
 if(Sys.info()["sysname"] == "Windows"){
   home_dir = "B:/Projects"
@@ -118,186 +119,51 @@ new_labels = list(age = "Age", duration = "Diabetes Duration", pt_a1c = "Baselin
 summary(t1,labelTranslations = new_labels)
 ```
 
-# Psychological Predictors
+# Final Models
 
-```{r results='asis'}
-marg_r2s = NA
-length(marg_r2s) = length(2:length(morning_items))
-for (v in 2:length(morning_items)) {
-  df = data
-  # Title
-  cat("\n")
-  cat(paste0("### ",morning_items[v]))
-  cat("\n")
-  # Get factor if necessary
-  var = morning_items[v]
-  # Fit simple model
-  f = as.formula(paste0("esq1~",var,"+(1|record_id)"))
-  m = lmer(f,data = df)
-  r = tidy(m,"fixed")
-  r$effect = NULL
-  print(kable(r,digits = 3)) 
-  r2 = r2_nakagawa(m)
-  print(paste("Marginal R2:",round(r2$R2_marginal,3)))
-  marg_r2s[v] = round(r2$R2_marginal,3)
-}
-```
+7 Items: 1, 7, 10, 21, 23, 25, 26
 
-Maximum marginal $R^2$: `r max(marg_r2s,na.rm=T)`
-
-# How many minutes do you think you spent caring for your diabetes today?
-
-```{r results='asis'}
-outs = c("tir","smg","boluses","combined","gsq")
-data$combined = factor(data$combined,levels = c(0,1),labels = c("No","Yes"))
-for (v in outs) {
-  # Title
-  cat("\n")
-  cat(paste0("### ",v))
-  cat("\n")
-  # Fit simple model
-  f = as.formula(paste0(v,"~dm_caretime","+(1|record_id)"))
-  if(v == "combined"){
-    m = glmer(f,data = data,family = "binomial")
-    cat("\n")
-    cat("The 'combined' outcome is a binary variable, so the results are interpreted on the odds ratio scale.")
-    cat("\n")
-  } else {
-    m = lmer(f,data = data)
-  }
-  r = tidy(m,"fixed")
-  r$effect = NULL
-  print(kable(r,digits = 3))
-}
-```
-
-# How many minutes do you think you spent thinking about your diabetes today?
-
-```{r results='asis'}
-for (v in outs) {
-  # Title
-  cat("\n")
-  cat(paste0("### ",v))
-  cat("\n")
-  f = as.formula(paste0(v,"~dm_thinktime","+(1|record_id)"))
-  if(v == "combined"){
-    m = glmer(f,data = data,family = "binomial")
-    cat("\n")
-    cat("The 'combined' outcome is a binary variable, so the results are interpreted on the odds ratio scale.")
-    cat("\n")
-  } else {
-    m = lmer(f,data = data)
-  }
-  r = tidy(m,"fixed")
-  r$effect = NULL
-  print(kable(r,digits = 3))
-}
-```
-
-# Characterizing variability
-
-```{r results='asis',message=FALSE}
-preds = outs[-4]
-for (v in preds) {
-  # Title
-  cat("\n")
-  cat(paste0("### ",v))
-  cat("\n")
-  # Calculate change over time 
-  df = data %>% filter(!grepl("E_",redcap_event_name.factor)) %>%
-    select(record_id,redcap_event_name.factor,all_of(v)) %>%
-    mutate(delta = abs((!!sym(v)) - lag((!!sym(v))))) %>%
-    group_by(record_id) %>% mutate(vis_num = row_number())
-  # Plot
-  p = ggplot(data,aes_string(x = "record_id",y = v)) + 
-    geom_boxplot() + theme_bw() + 
-    theme(axis.text.x=element_blank(),axis.title.x = element_blank(),
-          axis.ticks.x=element_blank())
-  cat("\n")
-  print(p)
-  cat("\n")
-  # Fit simple model
-  m = lmer(delta ~ 1+ (1|record_id),data = df)
-  r = tidy(m,"fixed")
-  r$effect = NULL
-  cat("\n")
-  cat(paste0("The mean absolute value of daily change was ",round(r$estimate[1],2),
-             " +/- ",round(r$std.error[1],2),". (p = ",
-             format.pval(r$p.value,eps = 0.001),")"))
-  cat("\n")
-}
-```
-
-```{r warning=FALSE,fig.height=12,fig.width=12,dpi=1200}
-library(patchwork)
-p_tir = ggplot(data,aes_string(x = "record_id",y = "tir")) + 
-    geom_boxplot() + theme_bw(base_size = 15) + ylab("TIR (%)") +
-    theme(axis.text.x=element_blank(),axis.title.x = element_blank(),
-          axis.ticks.x=element_blank())
-p_smg = ggplot(data,aes_string(x = "record_id",y = "smg")) + 
-    geom_boxplot() + theme_bw(base_size = 15) + ylab("Mean Glucose (mg/dL)") +
-    theme(axis.text.x=element_blank(),axis.title.x = element_blank(),
-          axis.ticks.x=element_blank())
-p_bol = ggplot(data[data$boluses < 40,],aes_string(x = "record_id",y = "boluses")) + 
-    geom_boxplot() + theme_bw(base_size = 15) + ylab("Boluses in One Day") +
-    theme(axis.text.x=element_blank(),
-          axis.ticks.x=element_blank()) + xlab("Participant")
-p_tir / p_smg / p_bol + plot_annotation(tag_levels = "A")
-```
-
-# Boluses
-
-## TIR
-
-```{r results='asis',message=FALSE}
-m = lmer(tir ~ boluses + (1|record_id),data = data)
-r = tidy(m,"fixed")
-r$effect = NULL
-p = ggplot(m@frame,aes(x=boluses,y=tir,color=record_id)) + 
-  geom_point() +
-  geom_smooth(method = "lm",se = F,aes(x=boluses,y=tir),inherit.aes = F) + 
-  theme_bw() + theme(legend.position = "none")
-print(p)
-kable(r,digits = 3)
-```
-
-## SMG 
-
-```{r results='asis',message=FALSE}
-m = lmer(smg ~ boluses + (1|record_id),data = data)
-r = tidy(m,"fixed")
-r$effect = NULL
-p = ggplot(m@frame,aes(x=boluses,y=smg,color=record_id)) + 
-  geom_point() +
-  geom_smooth(method = "lm",se = F,aes(x=boluses,y=smg),inherit.aes = F) + 
-  theme_bw() + theme(legend.position = "none")
-print(p)
-kable(r,digits = 3)
-```
-
-# Demographic information
-
-```{r results='asis'}
-ids = data %>% select(record_id,tir)
-ids = ids[complete.cases(ids),]
-ids = unique(as.character(ids$record_id))
-
-# Get first row for each person
-demographics = data %>% filter(record_id %in% ids) %>% group_by(record_id) %>% filter(row_number() == 1)
-# Table 
-t1 = tableby(~ age + duration + pt_a1c + pt_baseline1.factor + pt_baseline5.factor + 
-               pt_gender.factor + race + pt_eth.factor + p1_hedu.factor + 
-               p2_hedu.factor,demographics)
-# Labels
-new_labels = list(age = "Age", duration = "Diabetes Duration", pt_a1c = "Baseline HbA1c",
-                  pt_baseline1.factor = "Pump Hx",pt_baseline5.factor = "CGM Hx",
-                  pt_gender.factor = "Gender", race = "Race", pt_eth.factor = "Ethnicity", 
-                  p1_hedu.factor = "Parent 1 Education", p2_hedu.factor = "Parent 2 Education")
-summary(t1,labelTranslations = new_labels)
-```
-
-# Means
+Mixed model $R^2$ was calculated using the method presented in Nakagawa and Schielzeth (2013). Marginal $R^2$ represents the variability explained by just the fixed effects (survey questions), and conditional $R^2$ can be interpreted as the variance explained by the entire model (including random intercepts for each participant).
 
 ```{r}
-m = lmer(dm_thinktime ~ 1 + (1|record_id),data = data)
+# Predictors
+final_mod_7 = c(1, 7, 10, 21, 23, 25, 26)
+final_mod_7 = paste0("esq",final_mod_7)
+# Model function
+fit_final = function(outcome,predictors,df = data,fam = "gaussian"){
+  form = as.formula(paste0(outcome,"~",paste0(predictors,collapse = "+"),"+(1|record_id)"))
+  if(fam == "gaussian"){
+    mod = lmer(form,data = df,na.action = "na.omit")
+  } else if (fam == "poisson") {
+    df[,outcome] = sapply(df[,outcome],as.integer)
+    mod = glmer(form,data = df,family = fam,na.action = "na.omit")
+  } else if (fam == "binomial"){
+    mod = glmer(form,data = df,family = fam,na.action = "na.omit")
+  }
+  r2 = r2_nakagawa(mod)
+  res = list("fixed" = summary(mod)$coefficients,"marginal" = r2$R2_marginal,
+             "conditional" = r2$R2_conditional)
+  res = lapply(res, function(x){round(x,3)})
+  return(res)
+}
 ```
+
+## TBR
+
+Due to the high proportion of 0 values (253 out of 504 total observations, so approximately 50%) for this variable, we used a zero-inflated Poisson model.
+
+### Morning survey
+
+#### 7 item model
+
+```{r cache=FALSE}
+form = as.formula(paste0("tbr~",paste0(final_mod_7,collapse = "+")))
+df = data
+df[,final_mod_7] = scale(df[,final_mod_7])
+zip_mod = mixed_model(form,random = ~1|record_id,data = df,family = zi.poisson(),zi_fixed = ~ 1)
+
+m = fit_final(outcome = "tbr",predictors = final_mod_7,fam = "poisson",df = df)
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
