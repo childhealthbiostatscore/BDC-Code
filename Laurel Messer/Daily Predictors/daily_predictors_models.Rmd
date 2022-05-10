@@ -2,7 +2,12 @@
 title: "Daily Predictors for Diabetes Management"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: word_document
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
 ---
 
 ```{r setup, include=FALSE}
@@ -17,6 +22,10 @@ library(lmerTest)
 library(performance)
 library(broom.mixed)
 library(GLMMadaptive)
+library(naniar)
+library(psych)
+library(pheatmap)
+library(ltm)
 knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
 if(Sys.info()["sysname"] == "Windows"){
   home_dir = "B:/Projects"
@@ -108,10 +117,11 @@ data = data.frame(data)
 # Get first row for each person
 demographics = data %>% group_by(record_id) %>% filter(row_number() == 1)
 # Table 
-t1 = tableby(~ age + duration + pt_a1c + pt_baseline1.factor + pt_baseline5.factor + 
+t1 = tableby(~ notest(age,"median","range") + notest(duration,"median","range") + 
+               pt_a1c + pt_baseline1.factor + pt_baseline5.factor + 
                pt_gender.factor + race + pt_eth.factor + p1_hedu.factor + 
                p2_hedu.factor,demographics)
-# Labels
+# Labelst
 new_labels = list(age = "Age", duration = "Diabetes Duration", pt_a1c = "Baseline HbA1c",
                   pt_baseline1.factor = "Pump Hx",pt_baseline5.factor = "CGM Hx",
                   pt_gender.factor = "Gender", race = "Race", pt_eth.factor = "Ethnicity", 
@@ -119,7 +129,7 @@ new_labels = list(age = "Age", duration = "Diabetes Duration", pt_a1c = "Baselin
 summary(t1,labelTranslations = new_labels)
 ```
 
-# Final Models
+# Additional Models
 
 7 Items: 1, 7, 10, 21, 23, 25, 26
 
@@ -161,9 +171,64 @@ form = as.formula(paste0("tbr~",paste0(final_mod_7,collapse = "+")))
 df = data
 df[,final_mod_7] = scale(df[,final_mod_7])
 zip_mod = mixed_model(form,random = ~1|record_id,data = df,family = zi.poisson(),zi_fixed = ~ 1)
+r2(zip_mod)
+```
 
-m = fit_final(outcome = "tbr",predictors = final_mod_7,fam = "poisson",df = df)
+Estimates of conditional and marginal $R^2$ may be unreliable due to the presence of so many 0 values.
+
+## TAR
+
+### Morning survey
+
+#### 7 item model
+
+```{r cache=FALSE}
+data$tar = 100 - (data$tir + data$tbr)
+m = fit_final(outcome = "tar",predictors = final_mod_7)
 kable(m$fixed,caption = "Fixed Effects Coefficients")
 ```
 
 Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+## SD
+
+Standard deviation was log transformed due to right-skewed distribution, so fixed effects are reported on the log scale.
+
+### Morning survey
+
+#### 7 item model
+
+```{r cache=FALSE}
+data$log_sd = log(data$sd)
+m = fit_final(outcome = "log_sd",predictors = final_mod_7)
+kable(m$fixed,caption = "Fixed Effects Coefficients")
+```
+
+Marginal $R^2$ for this model was `r m$marginal` and conditional $R^2$ was `r m$conditional`.
+
+# Missing Data
+
+```{r}
+miss = data[,c("record_id","redcap_event_name",final_mod_7)]
+miss = miss[grep("sd\\d_.*",miss$redcap_event_name),]
+vis_miss(miss)
+gg_miss_var(miss)
+gg_miss_upset(miss,nset = n_var_miss(miss))
+```
+
+# Correlation between items
+
+```{r}
+c = corr.test(data[,final_mod_7],use = "pairwise.complete.obs")
+pheatmap(c$r,display_numbers = T)
+```
+
+All models were also evaluated for multi-collinearity issues, but variance inflation factors indicate that collinearity is not a problem.
+
+# Cronbach's alpha
+
+```{r}
+cron = data[,c("gsq1","gsq2","gsq3")]
+cron = cron[complete.cases(cron),]
+cronbach.alpha(cron)
+```
