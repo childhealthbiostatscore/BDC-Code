@@ -1,0 +1,207 @@
+---
+title: "Mean Glucose and HbA1c"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+format: 
+  html:
+    code-fold: false
+    toc: true
+    self-contained: true
+editor: visual
+---
+
+```{r}
+#| include: false
+# Import libraries, etc.
+library(ggplot2)
+library(plotly)
+library(mgcv)
+# Read in data
+df = read.csv("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/GMI and A1c/Data_Clean/analysis_dataset.csv")
+```
+
+# Data Cleaning
+
+-   HbA1c and mean glucose data were pulled from Kaan's data, CGMND, FLAIR, MOBILE, CITY, DCLP3, WISDM, and original data from Peter including participants from DIAMOND, REPLACE, and HypoDE.
+
+-   DCLP3 includes CGM data for two time periods ("Baseline" and "Post-Randomization") but HbA1c for "Randomization", "13 Week", and "26 Week" visits. Per Peter, 26 week HbA1c was matched with post-randomization mean glucose.
+
+-   CITY contains multiple files with HbA1c values. The file "vwCITY_STASampleResults.txt" was used for this report.
+
+-   Python code included below.
+
+```{python}
+#| eval: false
+#| code-fold: true
+# Import Kaan's data (use clean_cgms.py to generate mean glucose file)
+# Had to manually edit some names in glucose file to match demographics
+kaan = pd.read_csv(wd + 'Data_Clean/kaan_mean_glucose.csv',usecols=['ID','HbA1c','14 Overall Mean'])
+kaan.columns = ['ID','HbA1c','Mean Glucose']
+# CGMND
+cgmnd_a1c = pd.read_csv(wd+'Data_Raw/CGMND-af920dee-2d6e-4436-bc89-7a7b51239837/NonDiabSampleResults.csv')
+cgmnd_a1c = cgmnd_a1c[cgmnd_a1c['Analyte'] == "HBA1C"]
+cgmnd_a1c = cgmnd_a1c[['PtID','Value']]
+cgmnd_a1c.columns = ['ID','HbA1c']
+# Calculate mean glucose for each person in CGMND
+cgmnd_cgm = pd.read_csv(wd+'Data_Raw/CGMND-af920dee-2d6e-4436-bc89-7a7b51239837/NonDiabDeviceCGM.csv')
+ids = cgmnd_cgm['PtID'].unique()
+msgs = {'ID':[],'Mean Glucose':[]}
+for i in ids:
+    d = cgmnd_cgm[(cgmnd_cgm['PtID'] == i) & (cgmnd_cgm['RecordType'] == "CGM")]
+    msgs['ID'].append(i)
+    msgs['Mean Glucose'].append(d['Value'].mean())
+cgmnd_cgm = pd.DataFrame(msgs)
+# Merge
+cgmnd = pd.merge(cgmnd_a1c,cgmnd_cgm,on='ID')
+# FLAIR
+flair = pd.read_csv(wd+'Data_Raw/gmiDataFlair 042222 .csv',usecols=['DeidentID','a1cLab','gluMean'])
+flair.columns = ['ID','HbA1c','Mean Glucose']
+# MOBILE
+mobile = pd.read_csv(wd+'Data_Raw/gmiDataMobile 031722 .csv',usecols=['DeidentID','a1cLab','gluMean'])
+mobile.columns = ['ID','HbA1c','Mean Glucose']
+# DIAMOND, etc
+diamond = pd.read_csv(wd+'Data_Raw/gmiData 020222 .csv',usecols=['DeidentID','a1cLab','gluMean'])
+diamond.columns = ['ID','HbA1c','Mean Glucose']
+# CITY
+city = pd.read_csv(wd+'Data_Raw/CITYPublicDataset-344bea7d-8085-4deb-8038-6cb747a744e3/Data Tables/gluIndices Ext.txt',sep='|')
+city = city[city['time'] == '1) Overall']
+city['Visit'] = [v.lower() for v in city['Visit']]
+city_a1c = pd.read_csv(wd+'Data_Raw/CITYPublicDataset-344bea7d-8085-4deb-8038-6cb747a744e3/Data Tables/vwCITY_STASampleResults.txt',sep='|',encoding='utf-16')
+city_a1c = city_a1c[city_a1c['ResultName'] == 'GLYHB']
+city_a1c['Visit'] = [v.lower() for v in city_a1c['Visit']]
+city = pd.merge(city_a1c,city,on=['PtID','Visit'])
+city = city[['PtID','Value','gluMean']]
+city.columns = ['ID','HbA1c','Mean Glucose']
+# DCLP3
+# Per Peter, okay to use the 26 week HbA1c for post-randomization
+dclp3_cgm = pd.read_csv(wd+'Data_Raw/DCLP3 Public Dataset - Release 2 - 2022-01-18-9fc308ee-5d12-4651-8aec-262576777a31/Data Files/gluIndices.txt',sep='|')
+dclp3_cgm = dclp3_cgm[dclp3_cgm['analysis'] == '1. 24hr']
+dclp3_cgm['period'].replace({'1. Baseline':'Randomization','2. Post Randomization':'26 Week'},inplace=True)
+dclp3_cgm = dclp3_cgm[['PtID','period','gluMean']]
+dclp3_a1c = pd.read_csv(wd+'Data_Raw/DCLP3 Public Dataset - Release 2 - 2022-01-18-9fc308ee-5d12-4651-8aec-262576777a31/Data Files/SampleResults_a.txt',sep='|')
+dclp3_a1c = dclp3_a1c[dclp3_a1c['ResultName'] == 'GLYHB']
+dclp3_a1c = dclp3_a1c[(dclp3_a1c['Visit'] == 'Randomization') | (dclp3_a1c['Visit'] == '26 Week')]
+dclp3_a1c = dclp3_a1c[['PtID','Visit','Value']]
+dclp3_a1c.columns = ['PtID','period','HbA1c']
+# Merge and clean up
+dclp3 = pd.merge(dclp3_cgm,dclp3_a1c,on=['PtID','period'])
+dclp3 = dclp3[['PtID','HbA1c','gluMean']]
+dclp3.columns = ['ID','HbA1c','Mean Glucose']
+# WISDM
+wisdm = pd.read_csv(wd+'/Data_Raw/WISDMPublicDataset-18f24ae5-b4fb-4e93-bec6-7021086419fa/Data Tables/gluIndices Ext.txt',sep='|')
+wisdm = wisdm[wisdm['time'] == '1) Overall']
+wisdm_a1c = pd.read_csv(wd+'Data_Raw/WISDMPublicDataset-18f24ae5-b4fb-4e93-bec6-7021086419fa/Data Tables/STASampleResults.txt',sep='|',encoding='utf-16')
+wisdm_a1c = wisdm_a1c[wisdm_a1c['ResultName'] == 'GLYHB']
+wisdm = pd.merge(wisdm_a1c,wisdm,left_on=['PtID','Visit'],right_on=['PtID','visit'])
+wisdm = wisdm[['PtID','Value','gluMean']]
+wisdm.columns = ['ID','HbA1c','Mean Glucose']
+# Combine everything
+gmi_data = pd.concat([kaan,cgmnd,flair,mobile,diamond,city,dclp3,wisdm])
+# As numeric
+gmi_data['HbA1c'] = [float(n) for n in gmi_data['HbA1c']]
+gmi_data['Mean Glucose'] = [float(n) for n in gmi_data['Mean Glucose']]
+# Drop missing
+gmi_data.dropna(subset=['Mean Glucose','HbA1c'],inplace=True)
+# Write for checking results in R
+gmi_data.to_csv(wd+'/Data_Clean/analysis_dataset.csv',index=False)
+```
+
+# Existing GMI Equation
+
+-   Red line indicates the current GMI formula:
+
+    -   GMI (%) = 3.31 + 0.02392 \* \[mean glucose in mg/dL\]
+
+```{r}
+#| label: gmi-plot
+#| fig-cap: "GMI"
+#| echo: false
+#| warning: false
+p = ggplot(df,aes(x=Mean.Glucose,y=HbA1c))+
+  geom_point(alpha=0.5)+
+  ylab("HbA1c (%)")+xlab("Mean Sensor Glucose (mg/dL)")+
+  theme_bw()
+ggplotly(p + geom_abline(intercept = 3.31,slope = 0.02392,color = "red"))
+```
+
+# Generalized Additive Models (GAM)
+
+-   GAMs were fit using the mgcv R package, version `r packageVersion('mgcv')`.
+
+## Model 1
+
+The first model is a simple linear model fit with mgcv for comparison to smoothed models:
+
+```{r}
+m1 = gam(HbA1c ~ Mean.Glucose,data = df)
+summary(m1)
+```
+
+The results above are very close to the original GMI equation.
+
+## Model 2
+
+The second model is the simplest possible GAM that one can fit using mgcv defaults:
+
+```{r}
+m2 = gam(HbA1c ~ s(Mean.Glucose),data = df)
+summary(m2)
+gam.check(m2)
+```
+
+The diagnostics look okay, but it may be worth log-transforming the outcome to see if it helps with the residuals.
+
+```{r}
+m2_log = gam(log(HbA1c) ~ s(Mean.Glucose),data = df)
+gam.check(m2_log)
+```
+
+These look slightly better, so we'll continue using the log-transformed outcome from now on. Now, compare this model to the simple linear model:
+
+```{r}
+m1_log = gam(log(HbA1c)~Mean.Glucose, data = df)
+AIC(m1_log,m2_log)
+anova(m2_log)
+```
+
+Based on AIC and the approximate significance of the smooth term, the GAM appears to be slightly better. However, the $R^2$ values are relatively close (`r round(summary(m1_log)$r.sq,3)` for the linear model vs. `r round(summary(m2_log)$r.sq,3)` for the GAM).
+
+## Model 3
+
+The default mgcv settings use thin plate splines as a smoothing basis, but cubic regression splines are another common choice worth investigating:
+
+```{r}
+m3_log = gam(log(HbA1c) ~ s(Mean.Glucose,bs = "cr"),data = df)
+gam.check(m3_log)
+```
+
+These residuals look similar to previous models, so let's compare by AIC:
+
+```{r}
+AIC(m2_log,m3_log)
+```
+
+Model 2 is slightly better still, so now let's plot both:
+
+```{r}
+#| label: mod2-plot
+#| #| fig-cap: "Model 2 (Thin Plate Splines) Predicted Values"
+#| code-fold: true
+# Pedicted values
+newdat = data.frame(Mean.Glucose = seq(from = min(df$Mean.Glucose),to = max(df$Mean.Glucose),length.out = 100))
+newdat$pred = exp(predict(m2_log,newdata = newdat))
+# Add to plot
+p + geom_line(data = newdat,aes(y=pred,x=Mean.Glucose),color = "red")
+```
+
+```{r}
+#| label: mod3-plot
+#| #| fig-cap: "Model 3 (Cubic Splines) Predicted Values"
+#| code-fold: true
+# Pedicted values
+newdat$pred = exp(predict(m3_log,newdata = newdat))
+# Add to plot
+p + geom_line(data = newdat,aes(y=pred,x=Mean.Glucose),color = "red")
+```
+
+Model 3 appears to be overfit, because it's so wiggly around a mean glucose of 100 mg/dL.
