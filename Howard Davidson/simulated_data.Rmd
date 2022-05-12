@@ -11,54 +11,203 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-library(arsenal)
-library(tidyverse)
-library(performance)
 library(randcorr)
 library(MASS)
 library(igraph)
-library(networkD3)
+library(parallel)
 library(knitr)
 knitr::opts_chunk$set(echo = FALSE)
 ```
 
+# Functions
+
+```{r}
+# Cluster variables according to DIFAcTO pipeline.
+# If optimize_corr = T, this will override the manual corr_cutoff. Correlation
+# cutoff should be optimized for all assays, but does not need to be run every time.
+corr_cluster = function(df,folds = 5,outcome = "y",optimize_corr = T, 
+                        rseq = seq(0,1,by = 0.01),corr_cutoff = NULL){
+  require(igraph)
+  require(caret)
+  # Get predictors
+  pred = setdiff(colnames(df),outcome)
+  # Correlations between predictors
+  corr_mat = cor(df[,pred],use = "pairwise.complete.obs")
+  # Get pairs
+  var_cor = corr_mat*lower.tri(corr_mat)
+  # Find best correlation cutoff
+  if(optimize_corr){
+    rs = rseq
+    model_perf = lapply(rs, function(r){
+      # Correlation cutoff
+      check_cor = which(abs(var_cor) >= r, arr.ind=TRUE)
+      # Convert correlated pairs into graph clusters
+      graph_cor = graph.data.frame(check_cor, directed = FALSE)
+      # Get names
+      groups_cor = split(unique(as.vector(check_cor)), clusters(graph_cor)$membership)
+      groups = lapply(groups_cor,FUN=function(list_cor){rownames(var_cor)[list_cor]})
+      # Find highest correlation within each group
+      # Use logistic model estimate instead of correlation
+      best_cor = lapply(groups, function(g){
+        assocs = lapply(g, function(v){
+          form = as.formula(paste0(outcome,"~",v))
+          mod = lm(form,df)
+          coefs = summary(mod)$coefficients
+          return(abs(coefs[2,1]))
+        })
+        return(g[which.max(assocs)])
+      })
+      best_cor = as.character(best_cor)
+      if(length(best_cor)>0){
+        # CV with caret
+        set.seed(1017)
+        cv = trainControl(method = "cv",number = folds)
+        # Model
+        form = as.formula(paste0(outcome,"~",paste0(best_cor,collapse = "+")))
+        # CV
+        mod = train(
+          form, data = df,
+          method = "lm",
+          trControl = cv,
+          tuneLength = 25
+        )
+        return(mod$results$RMSE)
+      } else {return(NA)}
+    })
+    opt_r = rs[which.max(model_perf)]
+  } else {opt_r = corr_cutoff}
+  # final groups
+  # Correlation cutoff
+  check_cor = which(abs(var_cor) >= opt_r, arr.ind=TRUE)
+  # Convert correlated pairs into graph clusters
+  graph_cor = graph.data.frame(check_cor, directed = FALSE)
+  # Get names
+  groups_cor = split(unique(as.vector(check_cor)), clusters(graph_cor)$membership)
+  groups = lapply(groups_cor,FUN=function(list_cor){rownames(var_cor)[list_cor]})
+  # Find highest correlation within each group
+  best_cor = lapply(groups, function(g){
+    assocs = lapply(g, function(v){
+      form = as.formula(paste0(outcome,"~",v))
+      mod = lm(form,df)
+      coefs = summary(mod)$coefficients
+      return(abs(coefs[2,1]))
+    })
+    return(g[which.max(assocs)])
+  })
+  best_cor = as.character(best_cor)
+  # Results
+  return(list("best" = best_cor,"r_cutoff" = opt_r))
+}
+```
+
+```{r}
+elasticnet = function(df,folds = 5,outcome = "y",n_alphas = 10,n_lambdas = 100,
+                      out = "1se.error"){
+  require(ensr)
+  X = data.matrix(df[,setdiff(colnames(df),outcome)])
+  Y = data.matrix(df[,outcome])
+  # Grid search
+  list2env(list(X=X,Y=Y,n_alphas=n_alphas,n_lambdas=n_lambdas,folds=folds),.GlobalEnv)
+  e = ensr(X,Y,alphas = seq(0, 1, length = n_alphas),nlambda = n_lambdas,
+             nfolds = folds,parallel = T)
+  # Get lambda and alpha
+  res = summary(e)
+  min_err = min(res$cvm,na.rm = T)
+  se_err = sd(res$cvm,na.rm = T)/sqrt(sum(!is.na(res$cvm)))
+  if (out == "min.error"){
+    good_mods = which.min(res$cvm)
+  } else if (out == "1se.error"){
+    good_mods = which(res$cvm <= (min_err + se_err))
+  }
+  params = data.frame(res[good_mods,])
+  params = params[which(params$nzero == min(params$nzero)),]
+  params = params[which.min(params$cvm),]
+  # Refit models to get selected parameters (the coef() function output for caret is confusing)
+  a = params$alpha
+  l = params$lambda
+  mod = glmnet(y = Y,x = X,alpha = a,lambda = l)
+  selected = as.matrix(coef(mod))
+  selected = rownames(selected)[selected[,1] != 0]
+  selected = selected[selected != "(Intercept)"]
+  return(as.numeric(sub("X","",selected)))
+}
+```
+
 ```{r warning=FALSE}
-set.seed(1017)
-# Random correlation matrix
-N = 50
-r = randcorr(N)
-# Set some correlations to 0 (p_con controls likelihood of connected nodes)
-p_con = 0.02
-net = matrix(sample(0:1, N^2, replace=TRUE, prob=c(1-p_con,p_con)), nc=N)
-r = net*r
-# Make symmetric
-l = lower.tri(r)*r
-u = t(l)
-r = l + u
-diag(r) = 1
+# N is the number of metabolites, and n is the number of samples
+# p_con controls likelihood of connected nodes
+# sd_mean and sd_sd determine the parameters of the normal distribution that the 
+# metabolite standard deviations are drawn from
+# mean_mean and mean_sd determine the parameters of the normal distribution that the 
+# metabolite means are drawn from
+sim_data = function(N = 50, n = 1000,p_con = 0.02,
+                    sd_mean = 10,sd_sd = 1,
+                    mean_mean = 100,mean_sd = 10,
+                    seed = 1017){
+  set.seed(seed)
+  # Random correlation matrix
+  r = randcorr(N)
+  # Set some correlations to 0
+  net = matrix(sample(0:1, N^2, replace=TRUE, prob=c(1-p_con,p_con)), nc=N)
+  r = net*r
+  # Make symmetric
+  l = lower.tri(r)*r
+  u = t(l)
+  r = l + u
+  diag(r) = 1
+  # Correlation matrix to covariance
+  # No 0s in SD!
+  sds = round(rnorm(N,mean = sd_mean,sd = sd_sd))
+  # diag(S)%*%R%*%diag(S) is covariance where S is SD vector
+  cov = diag(sds) %*% r %*% diag(sds)
+  # Means
+  mus = round(rnorm(N,mean = mean_mean,sd = mean_sd))
+  sim <- data.frame(mvrnorm(n,mus,cov)) 
+  # Outcome related to 3 correlated metabolite pairs
+  met = which(r!=0,arr.ind = T)
+  met = met[which(met[,1] != met[,2]),]
+  met = met[sample(1:nrow(met),3),]
+  met = unique(as.vector(met))
+  sim$y = apply(sim[,met],1,function(r){
+    sum(r)
+  })
+  return(list("simulated_data" = sim,"true_metabs" = met))
+}
 ```
 
 ```{r}
-# To igraph object
-g = graph_from_adjacency_matrix(r,weighted = T,diag = F)
-# Edge and node lists for plotting
-e = igraph_to_networkD3(g)
-# Plot
-forceNetwork(Links = e$links, Nodes = e$nodes, Source = "source",
-             Target = "target", Value = "value", NodeID = "name",
-             Group = "name",zoom = T,charge = -10)
+# Jaccard similarity
+jaccard <- function(a, b) {
+    intersection = length(intersect(a, b))
+    union = length(a) + length(b) - intersection
+    return (intersection/union)
+}
 ```
 
+# 
+
 ```{r}
-set.seed(1017)
-# Number of samples
-n = 1000
-# Correlation matrix to covariance
-# No 0s in SD!
-sds = round(rnorm(N,mean = 10,sd = 1))
-# diag(S)%*%R%*%diag(S) is covariance where S is SD vector
-cov = diag(sds) %*% r %*% diag(sds)
-# Means
-mus = round(rnorm(N,mean = 100,sd = 10))
-sim <- mvrnorm(n,mus,cov) 
+# Simulate multiple datasets
+sims = lapply(1:100, function(i){
+  t = sim_data(seed = i)
+  return(t)
+})
+# Check approaches
+cl = makeForkCluster(0.5*detectCores())
+t = lapply(sims, function(s){
+  d = s$simulated_data
+  # Difacto
+  difacto = corr_cluster(d)
+  difacto = as.numeric(sub("X","",difacto$best))
+  # ElasticNet
+  elastic = elasticnet(d)
+  # Agreement
+  return(list("elastic" = jaccard(elastic,s$true_metabs),
+              "difacto" = jaccard(difacto,s$true_metabs)))
+})
+stopCluster(cl)
 ```
+
+# Questions
+1. What measure of agreement to use? Cohen's Kappa? Do we need to account for accidentally picking the correct measure?
+  - Or do we want some sort of continuous measure like RMSE for the model re-fit with selected variables?
