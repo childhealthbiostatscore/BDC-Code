@@ -35,7 +35,7 @@ rm(home_dir)
 ```{r include=FALSE}
 api = read.table("./Data_Raw/api_token.txt")
 rcon <- redcapConnection(url="https://redcap.ucdenver.edu/api/", token=api[1,1])
-data = exportRecords(rcon)
+data = exportRecords(rcon,labels = FALSE)
 ```
 
 ```{r}
@@ -72,21 +72,30 @@ my_labels = list(
   practicetype = "Practice type")
 ```
 
+# Distributions etc.
+
+```{r message=FALSE}
+skimr::skim(data)
+```
+
 # Table 1: Participant Characteristics
 
 ```{r results='asis'}
+my_controls = list(numeric.stats=c("Nmiss","median","q1q3","range"),
+                                          numeric.test="kwt",cat.test="fe",
+                                          simulate.p.value = T)
 f = as.formula(paste0("specialty~",paste0(con_vars,collapse = "+"),"+",
                       paste0(cat_vars,collapse = "+")))
-t1 = tableby(f,data = data)
+t1 = tableby(f,data = data,control = my_controls)
 summary(t1,pfootnote = T,labelTranslations = my_labels)
 ```
 
 ## Table 1 for VAS Completers
 
-```{r results='asis'}
+```{r results='asis',message=FALSE}
 keep = data %>% select(deviceselectiontool:consulttool)
 keep = which(rowSums(is.na(keep))==0)
-t1 = tableby(f,data = data[keep,])
+t1 = tableby(f,data = data[keep,],control = my_controls)
 summary(t1,pfootnote = T,labelTranslations = my_labels)
 ```
 
@@ -130,11 +139,9 @@ ggplot(plot_df,aes(x = variable,y = value,fill = specialty)) +
 ## Tools Tables
 
 ```{r results='asis'}
-labels(data[,tools]) = NULL
 f = as.formula(paste0("specialty~",paste0(tools,collapse = "+")))
-t = tableby(f,data = data,
-            control = list(numeric.stats=c("N", "median", "q1q3")))
-summary(t)
+t = tableby(f,data = data,control = my_controls)
+summary(t,pfootnote = T)
 ```
 
 # Description/state of current practices
@@ -144,13 +151,18 @@ summary(t)
 data = data %>% group_by(specialty) %>% 
   mutate(num_states = length(unique(practicestate)),
          num_practices = length(unique(tolower(gsub("[[:punct:]]|[[:space:]]","",practicename)))))
+# Combine levels of practice type
+levels(data$practicetype) = c("Academic Medical Center/faculty practice",
+                              "Hospital or Health system owned","Other",
+                              "Clinician-owned solo or group practice",
+                              "Other","Other","Other")
 # Table
 current_practices = tableby(specialty ~ notest(num_states,"unique") + 
                               notest(num_practices,"unique") + age + gender +
                               race + ethnicity + providertype + practicetype + 
                               practicesetting + medicaid + medicare + uninsured,
-                            data = data)
-summary(current_practices,labelTranslations = my_labels,total=FALSE)
+                            data = data,control = my_controls)
+summary(current_practices,labelTranslations = my_labels,total=FALSE,pfootnote = TRUE)
 ```
 
 # Description of diabetes resources and insulin requiring patients
@@ -188,8 +200,8 @@ resources = tableby(specialty ~ staffsupport___0 + staffsupport___1 +
                       education_timesperyear + educationtime + 
                       cgmpatientratio + penpatientratio + 
                       pumppatientratio + hclpatientratio,
-                            data = data)
-summary(resources,labelTranslations = my_labels,total=FALSE)
+                            data = data,control = my_controls)
+summary(resources,labelTranslations = my_labels,total=FALSE,pfootnote = T)
 ```
 
 # Diabetes technology attitudes
@@ -204,8 +216,8 @@ levels(data$tech_persona) = c("% positive attitudes, low barriers",
 # Labels
 my_labels["tech_persona"] = "Diabetes technology attitudes"
 # Table
-attitudes = tableby(specialty ~ tech_persona,data = data)
-summary(attitudes,labelTranslations = my_labels,total=FALSE)
+attitudes = tableby(specialty ~ tech_persona,data = data,control = my_controls)
+summary(attitudes,labelTranslations = my_labels,total=FALSE,pfootnote = T)
 ```
 
 ## Bar chart
@@ -219,3 +231,14 @@ ggplot(data[!is.na(data$tech_persona),],
 ```
 
 # HCP comfort level with diabetes technologies—mean or median score (1 – not at all, 10 = very)
+
+```{r results='asis'}
+comfort = c("cgmcomfort","cgmcanidacy","cgmqs","cgminscov","cgmprescription","cgmtraining","cgmreview",
+            "pencomfort","pencandidacy","penqs","peninscov","penprescription","pentraining","penreview",
+            "pumpcomfort","pumpcandidacy","pumpqs","pumpinscov","pumpprescription","pumptraining","pumpreview",
+            "hclcomfort","hclcandidacy","hclqs","hclinscov","hclprescription","hcltraining","hclreview")
+data[,comfort] = lapply(data[,comfort],as.numeric)
+f = as.formula(paste0("specialty~",paste0(comfort,collapse = "+")))
+t = tableby(f,data = data,control = my_controls)
+summary(t,pfootnote = T)
+```
