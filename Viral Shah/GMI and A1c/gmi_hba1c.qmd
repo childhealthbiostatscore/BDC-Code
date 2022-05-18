@@ -14,10 +14,13 @@ editor: visual
 #| include: false
 # Import libraries, etc.
 library(ggplot2)
+library(tidyr)
 library(plotly)
 library(mgcv)
+library(arsenal)
 # Read in data
 df = read.csv("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/GMI and A1c/Data_Clean/analysis_dataset.csv")
+df$gmi = 3.31 + 0.02392*df$Mean.Glucose
 ```
 
 # Data Cleaning
@@ -188,7 +191,8 @@ Model 2 is slightly better still, so now let's plot both:
 #| #| fig-cap: "Model 2 (Thin Plate Splines) Predicted Values"
 #| code-fold: true
 # Pedicted values
-newdat = data.frame(Mean.Glucose = seq(from = min(df$Mean.Glucose),to = max(df$Mean.Glucose),length.out = 100))
+newdat = data.frame(Mean.Glucose = seq(from = min(df$Mean.Glucose),
+                                       to = max(df$Mean.Glucose),length.out = 100))
 newdat$pred = exp(predict(m2_log,newdata = newdat))
 # Add to plot
 p + geom_line(data = newdat,aes(y=pred,x=Mean.Glucose),color = "red")
@@ -205,3 +209,51 @@ p + geom_line(data = newdat,aes(y=pred,x=Mean.Glucose),color = "red")
 ```
 
 Model 3 appears to be overfit, because it's so wiggly around a mean glucose of 100 mg/dL.
+
+## Combined plots
+
+### All participants
+
+```{r}
+df$mod1 = predict(m1,newdata = df)
+df$mod2 = predict(m2,newdata = df)
+plot_df = df %>% pivot_longer(cols = c("mod1","mod2","gmi"))
+p = ggplot(plot_df,aes(x=Mean.Glucose,y=HbA1c))+
+  geom_point(alpha=0.2)+
+  ylab("HbA1c (%)")+xlab("Mean Sensor Glucose (mg/dL)")+
+  theme_bw() +
+  geom_line(aes(y = value,color = name),size = 1) + 
+  scale_color_discrete(name = "Model", labels = c("GMI", "Linear Model", "Simple GAM"))
+p
+```
+
+### Excluding Non-Diabetic Cohort
+
+```{r}
+# Re-fit
+df2 = df[df$Study != "CGMND",]
+m1 = lm(HbA1c ~ Mean.Glucose,data = df2)
+m2 = gam(HbA1c ~ s(Mean.Glucose),data = df2)
+df2$mod1 = predict(m1,newdata = df2)
+df2$mod2 = predict(m2,newdata = df2)
+# Plot
+plot_df = df2 %>% pivot_longer(cols = c("mod1","mod2","gmi"))
+p = ggplot(plot_df[plot_df$Study != "CGMND",],aes(x=Mean.Glucose,y=HbA1c))+
+  geom_point(alpha=0.2)+
+  ylab("HbA1c (%)")+xlab("Mean Sensor Glucose (mg/dL)")+
+  theme_bw() +
+  geom_line(aes(y = value,color = name),size = 1) + 
+  scale_color_discrete(name = "Model", labels = c("GMI", "Linear Model", "Simple GAM"))
+p
+```
+
+# Differences Between HbA1c and GMI by Mean Glucose Group
+
+```{r results='asis'}
+df[,"HbA1c - GMI"] = df$HbA1c - df$gmi
+df$Group = cut(df$Mean.Glucose,c(-Inf,150,200,250,Inf))
+table = tableby(Group ~ `HbA1c - GMI`,data = df)
+summary(table)
+```
+
+
