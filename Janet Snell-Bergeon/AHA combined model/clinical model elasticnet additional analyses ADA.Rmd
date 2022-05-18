@@ -1,0 +1,416 @@
+---
+title: "AHA clinical model - all variables - addtional analyses for ADA"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(broom)
+library(survival)
+library(performance)
+library(knitr)
+library(pROC)
+library(naniar)
+knitr::opts_chunk$set(echo = FALSE,fig.height = 10,fig.width = 10)
+if(Sys.info()["sysname"] == "Windows"){
+  home_dir = "B:/Projects"
+} else if (Sys.info()["sysname"] == "Linux"){
+  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+} else if (Sys.info()["sysname"] == "Darwin"){
+  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+}
+knitr::opts_knit$set(root.dir = home_dir)
+rm(home_dir)
+```
+
+```{r}
+# Function and master data
+source("~/Documents/GitHub/shared-resources/Machine Learning/Tim - ElasticNet CV/easy_elasticnet.R")
+load("./Janet Snell-Bergeon/AHA collaborative grant/aha_master_data_no_snps.Rdata")
+# omics selected by moderated t-test and PLSDA
+omics = unique(c("gly_P02671.7","gly_P02671.5","gly_P02671.4","gly_P02671.3",
+          "AAA01201000179.0807263.4","gly_P02679","HMDB00510161.0696402.9",
+          "AAA01201000179.0809235.7","gly_P02675.4","gly_P02675","gly_P02647",
+          "P02655","gly_P02647.1","HMDB00510161.0694436","gly_P02652",
+          "gly_P01009","gly_P01834.11","P01817","AcCa 10:3",
+          "HMDB0028822260.1378628.6","AAA01201000179.0807263.4",
+          "gly_P02671.3","gly_P02671.7"))
+limited_omics = c("AAA01201000179.0807263.4","gly.P02671.7","gly.P02671.3",
+          "gly.P02671.5","gly.P02671.4")
+# Take out people without diabetes, remove diabetes status from predictors
+df = df[df$diabetic == 1,]
+clinical_predictors = clinical_predictors[-which(clinical_predictors == "dia")]
+# Log transform 
+df[,omics] = log(df[,omics])
+# Fix names
+colnames(df)[which(colnames(df) %in% omics)] = make.names(omics,unique = T,allow_ = F)
+omics = make.names(omics,unique = T,allow_ = F)
+# Variables for null model
+null_vars <- c("age","sex","durcatV1")
+```
+
+# ElasticNet on clinical variables only
+
+## CAC progression at visit 3
+
+```{r include=FALSE}
+# Sometimes using too many alpha/lambda values results in duplicate values for the 
+# error metric. This doesn't seem to be a problem but throws a lot of warnings
+cac_prog_select = easy_elasticnet(data = df,outcome = "CACprogV3",
+                           predictors = clinical_predictors,
+                           model_type = "binomial")
+```
+
+### Null model (age, sex, T1D duration only)
+
+```{r}
+n_cac_prog = as.formula(paste0("CACprogV3~",paste0(null_vars,collapse = "+")))
+null_mod = glm(formula = n_cac_prog,data = df,family = "binomial")
+kable(tidy(null_mod),digits = 3)
+```
+
+### Clinical model results
+
+```{r}
+f_cac_prog = as.formula(paste0("CACprogV3~",paste0(cac_prog_select,collapse = "+")))
+clin_mod = glm(formula = f_cac_prog,data = df,family = "binomial")
+kable(tidy(clin_mod),digits = 3)
+```
+
+### Omics model results (no imputation)
+
+```{r}
+omics_mod = glm(formula = update(f_cac_prog,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
+          data = df,family = "binomial")
+kable(tidy(omics_mod),digits = 3)
+```
+
+### Model comparison
+
+Green indicates the omics model, blue is the clinical model, and red is the null model (age, sex, T1D duration only).
+
+```{r message=FALSE}
+# Predicted values
+clin_pred = predict(clin_mod,type="response")
+omics_pred = predict(omics_mod,type="response")
+null_pred = predict(null_mod,type="response")
+# Plot
+plot(roc(clin_mod$model$CACprogV3, clin_pred), 
+                 levels = c("No Progression","Progression"),direction = "<",
+                 print.auc = TRUE, col = "blue",quiet = T)
+plot(roc(omics_mod$model$CACprogV3, omics_pred), 
+                 levels = c("No Progression","Progression"),direction = "<",
+                 print.auc = TRUE, col = "green",add = T,quiet = T,print.auc.y = .4)
+plot(roc(null_mod$model$CACprogV3, null_pred), 
+                 levels = c("No Progression","Progression"),direction = "<",
+                 print.auc = TRUE, col = "red",add = T,quiet = T,print.auc.y = .2)
+```
+
+## CAC progression at last visit
+
+```{r include=FALSE}
+# Sometimes using too many alpha/lambda values results in duplicate values for the 
+# error metric. This doesn't seem to be a problem but throws a lot of warnings
+cac_prog_any_select = easy_elasticnet(data = df,outcome = "cac_prog_last_vis",
+                           predictors = clinical_predictors,
+                           model_type = "binomial")
+```
+
+### Null model (age, sex, T1D duration only)
+
+```{r}
+n_cac_prog_any = as.formula(paste0("cac_prog_last_vis~",paste0(null_vars,collapse = "+")))
+null_mod = glm(formula = n_cac_prog_any,data = df,family = "binomial")
+kable(tidy(null_mod),digits = 3)
+```
+
+### Clinical model results
+
+```{r}
+f_cac_prog_any = as.formula(paste0("cac_prog_last_vis~",paste0(cac_prog_any_select,
+                                                               collapse = "+")))
+clin_mod = glm(formula = f_cac_prog_any,data = df,family = "binomial")
+kable(tidy(clin_mod),digits = 3)
+```
+
+### Omics model results (no imputation)
+
+```{r}
+omics_mod = glm(formula = 
+                  update(f_cac_prog_any,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
+          data = df,family = "binomial")
+kable(tidy(omics_mod),digits = 3)
+```
+
+### Model comparison
+
+Green indicates the omics model and blue is the clinical model.
+
+```{r message=FALSE}
+# Predicted values
+clin_pred = predict(clin_mod,type="response")
+omics_pred = predict(omics_mod,type="response")
+null_pred = predict(null_mod,type="response")
+# Plot
+plot(roc(clin_mod$model$cac_prog_last_vis, clin_pred), 
+                 levels = c("No Progression","Progression"),direction = "<",
+                 print.auc = TRUE, col = "blue",quiet = T)
+plot(roc(omics_mod$model$cac_prog_last_vis, omics_pred), 
+                 levels = c("No Progression","Progression"),direction = "<",
+                 print.auc = TRUE, col = "green",add = T,quiet = T,print.auc.y = .4)
+plot(roc(null_mod$model$CACprogV3, null_pred), 
+                 levels = c("No Progression","Progression"),direction = "<",
+                 print.auc = TRUE, col = "red",add = T,quiet = T,print.auc.y = .2)
+```
+
+## Change in CAC per year
+
+```{r include=FALSE}
+# Sometimes using too many alpha/lambda values results in duplicate values for the 
+# error metric. This doesn't seem to be a problem but throws a lot of warnings
+cac_change_select = easy_elasticnet(data = df,outcome = "cac_change_per_yr",
+                           predictors = clinical_predictors,
+                           model_type = "gaussian")
+```
+
+### Null model (age, sex, T1D duration only)
+
+```{r}
+n_cac_change  = as.formula(paste0("cac_change_per_yr~",paste0(null_vars,collapse = "+")))
+null_mod = lm(formula = n_cac_change,data = df)
+kable(tidy(null_mod),digits = 3)
+```
+
+### Clinical model results
+
+```{r}
+f_cac_change = as.formula(paste0("cac_change_per_yr~",
+                                 paste0(cac_change_select,collapse = "+")))
+clin_mod = lm(formula = f_cac_change,data = df)
+kable(tidy(clin_mod),digits = 3)
+```
+
+### Omics model results (no imputation)
+
+```{r}
+omics_mod = lm(formula = update(f_cac_change,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
+         data = df)
+kable(tidy(omics_mod),digits = 3)
+```
+
+### Model comparison
+
+```{r}
+mc = as.data.frame(compare_performance(clin_mod,omics_mod,null_mod,
+                                       metrics = c("R2","R2_adj"),verbose = F))
+mc$Name = c("Clinical Model","Omics Model","Null model")
+kable(mc,digits = 3)
+```
+
+## Death
+
+```{r include=FALSE}
+# Sometimes using too many alpha/lambda values results in duplicate values for the 
+# error metric. This doesn't seem to be a problem but throws a lot of warnings
+death_select = easy_elasticnet(data = df,outcome = "Deceased",
+                           predictors = clinical_predictors,
+                           model_type = "cox",time = "PersonYrsDeath")
+```
+
+### Null model (age, sex, T1D duration only)
+
+```{r}
+n_death  = as.formula(paste0("Surv(time = df$PersonYrsDeath,event = df$Deceased)~",paste0(null_vars,collapse = "+")))
+null_mod = lm(formula = n_death,data = df)
+kable(tidy(null_mod),digits = 3)
+```
+
+### Clinical model results
+
+```{r}
+f_death = as.formula(paste0("Surv(time = df$PersonYrsDeath,event = df$Deceased)~",
+                      paste0(death_select,collapse = "+")))
+clin_mod = coxph(formula = f_death,data = df,id = StudyID)
+kable(tidy(clin_mod),digits = 3)
+```
+
+### Omics model results (no imputation)
+
+The coefficient for `durcat` refuses to converge.
+
+```{r}
+omics_mod = coxph(formula = update(f_death,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
+            data = df,id = StudyID,control = coxph.control(iter.max = 1000))
+kable(tidy(omics_mod),digits = 3)
+```
+
+### Model comparison
+
+Concordance in the clinical model was `r round(as.numeric(summary(clin_mod)$concordance[1]),3)` compared to `r round(as.numeric(summary(omics_mod)$concordance[1]),3)` for the omics model and `r round(as.numeric(summary(null_mod)$concordance[1]),3)` for the null model.
+
+## CAD
+
+```{r include=FALSE}
+# Sometimes using too many alpha/lambda values results in duplicate values for the 
+# error metric. This doesn't seem to be a problem but throws a lot of warnings
+cad_select = easy_elasticnet(data = df,outcome = "CAD",
+                           predictors = clinical_predictors,
+                           model_type = "cox",time = "PersonYrsCAD")
+```
+
+### Null model (age, sex, T1D duration only)
+
+```{r}
+n_cad  = as.formula(paste0("Surv(time = df$PersonYrsCAD,event = df$CAD)~",paste0(null_vars,collapse = "+")))
+null_mod = lm(formula = n_cad,data = df)
+kable(tidy(null_mod),digits = 3)
+```
+
+### Clinical model results
+
+```{r}
+f_cad = as.formula(paste0("Surv(time = df$PersonYrsCAD,event = df$CAD)~",
+                      paste0(cad_select,collapse = "+")))
+clin_mod = coxph(formula = f_cad,data = df,id = StudyID)
+kable(tidy(clin_mod),digits = 3)
+```
+
+### Omics model results (no imputation)
+
+```{r}
+omics_mod = coxph(formula = update(f_cad,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
+            data = df,id = StudyID)
+kable(tidy(omics_mod),digits = 3)
+```
+
+### Model comparison
+
+Concordance in the clinical model was `r round(as.numeric(summary(clin_mod)$concordance[1]),3)` compared to `r round(as.numeric(summary(omics_mod)$concordance[1]),3)` for the omics model and `r round(as.numeric(summary(null_mod)$concordance[1]),3)` for the null model.
+
+## Hard CAD
+
+```{r include=FALSE}
+# Sometimes using too many alpha/lambda values results in duplicate values for the 
+# error metric. This doesn't seem to be a problem but throws a lot of warnings
+hard_cad_select = easy_elasticnet(data = df,outcome = "HardCAD",
+                           predictors = clinical_predictors,
+                           model_type = "cox",time = "PersonYrsHardCAD")
+```
+
+### Null model (age, sex, T1D duration only)
+
+```{r}
+n_hard_cad  = as.formula(paste0("Surv(time = df$PersonYrsHardCAD,event = df$HardCAD)~",paste0(null_vars,collapse = "+")))
+null_mod = lm(formula = n_hard_cad,data = df)
+kable(tidy(null_mod),digits = 3)
+```
+
+### Clinical model results
+
+```{r}
+f_hard_cad = as.formula(paste0("Surv(time = df$PersonYrsHardCAD,event = df$HardCAD)~",
+                      paste0(hard_cad_select,collapse = "+")))
+clin_mod = coxph(formula = f_hard_cad,data = df,id = StudyID)
+kable(tidy(clin_mod),digits = 3)
+```
+
+### Omics model results (no imputation)
+
+`NHW` and `smknum` refuse to converge.
+
+```{r}
+omics_mod = coxph(formula = update(f_hard_cad,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
+            data = df,id = StudyID,control = coxph.control(iter.max = 1000))
+kable(tidy(omics_mod),digits = 3)
+```
+
+### Model comparison
+
+Concordance in the clinical model was `r round(as.numeric(summary(clin_mod)$concordance[1]),3)` compared to `r round(as.numeric(summary(omics_mod)$concordance[1]),3)` for the omics model and `r round(as.numeric(summary(null_mod)$concordance[1]),3)` for the null model.
+
+## CVD
+
+```{r include=FALSE}
+# Sometimes using too many alpha/lambda values results in duplicate values for the 
+# error metric. This doesn't seem to be a problem but throws a lot of warnings
+cvd_select = easy_elasticnet(data = df,outcome = "CVD",
+                           predictors = clinical_predictors,
+                           model_type = "cox",time = "PersonYrsCVD")
+```
+
+### Null model (age, sex, T1D duration only)
+
+```{r}
+n_cvd  = as.formula(paste0("Surv(time = df$PersonYrsCVD,event = df$CVD)~",paste0(null_vars,collapse = "+")))
+null_mod = lm(formula = n_cvd,data = df)
+kable(tidy(null_mod),digits = 3)
+```
+
+### Clinical model results
+
+```{r}
+f_cvd = as.formula(paste0("Surv(time = df$PersonYrsCVD,event = df$CVD)~",
+                      paste0(cvd_select,collapse = "+")))
+clin_mod = coxph(formula = f_cvd,data = df,id = StudyID)
+kable(tidy(clin_mod),digits = 3)
+```
+
+### Omics model results (no imputation)
+
+```{r}
+omics_mod = coxph(formula = update(f_cvd,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
+            data = df,id = StudyID)
+kable(tidy(omics_mod),digits = 3)
+```
+
+### Model comparison
+
+Concordance in the clinical model was `r round(as.numeric(summary(clin_mod)$concordance[1]),3)` compared to `r round(as.numeric(summary(omics_mod)$concordance[1]),3)` for the omics model and `r round(as.numeric(summary(null_mod)$concordance[1]),3)` for the null model.
+
+## Hard CVD
+
+```{r include=FALSE}
+# Sometimes using too many alpha/lambda values results in duplicate values for the 
+# error metric. This doesn't seem to be a problem but throws a lot of warnings
+hard_cvd_select = easy_elasticnet(data = df,outcome = "HardCVD",
+                           predictors = clinical_predictors,
+                           model_type = "cox",time = "PersonYrsHardCVD")
+```
+
+### Null model (age, sex, T1D duration only)
+
+```{r}
+n_hard_cvd  = as.formula(paste0("Surv(time = df$PersonYrsHardCVD,event = df$HardCVD)~",paste0(null_vars,collapse = "+")))
+null_mod = lm(formula = n_hard_cvd,data = df)
+kable(tidy(null_mod),digits = 3)
+```
+
+### Clinical model results
+
+```{r}
+f_hard_cvd = as.formula(paste0("Surv(time = df$PersonYrsHardCVD,event = df$HardCVD)~",
+                      paste0(hard_cvd_select,collapse = "+")))
+clin_mod = coxph(formula = f_hard_cvd,data = df,id = StudyID)
+kable(tidy(clin_mod),digits = 3)
+```
+
+### Omics model results (no imputation)
+
+Basically this whole model refused to converge.
+
+```{r}
+omics_mod = coxph(formula = update(f_hard_cvd,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
+            data = df,id = StudyID,control = coxph.control(iter.max = 1000))
+kable(tidy(omics_mod),digits = 3)
+```
+
+### Model comparison
+
+Concordance in the clinical model was `r round(as.numeric(summary(clin_mod)$concordance[1]),3)` compared to `r round(as.numeric(summary(omics_mod)$concordance[1]),3)` for the omics model and `r round(as.numeric(summary(null_mod)$concordance[1]),3)` for the null model.
