@@ -12,7 +12,7 @@ subject_dates = pd.read_csv(wd+"Data_Cleaned/subject_dates.csv")
 names = [name.lower() for name in subject_dates['name']]
 names = np.array(names)
 # Dictionary for results
-dict={'id': [], 'timepoint': [], 'start_date': [], 'end_date': [], 'num_nights': [],\
+dict={'id': [], 'timepoint': [], 'start_date': [], 'end_date': [], 'num_days': [],\
 'num_alarms': [], 'threshold_alarms': [], 'maintenance_alarms': [], 'hcl_alarms': [],\
 'pump_alarms': [], 'other_alarms': []}
 # Iterate through files in wd
@@ -50,7 +50,7 @@ for file in os.listdir(wd+"Data_Cleaned/CSVs/"):
     df.sort_index(inplace=True)
     df = df[df.index.notnull()]
     df = df.loc[start:end]
-    nights = df['Date'].nunique() - 1
+    nights = df['Date'].nunique()
     # Pull all alarms between 10p-6a
     df['Time'] = pd.to_datetime(df['Time'],format="%H:%M:%S",errors="coerce")
     df = df.set_index('Time')
@@ -81,7 +81,7 @@ for file in os.listdir(wd+"Data_Cleaned/CSVs/"):
     dict['timepoint'].append(t)
     dict['start_date'].append(start)
     dict['end_date'].append(end)
-    dict['num_nights'].append(nights)
+    dict['num_days'].append(nights)
     dict['num_alarms'].append(len(all_alarms))
     dict['threshold_alarms'].append(len(threshold))
     dict['maintenance_alarms'].append(len(maintenance))
