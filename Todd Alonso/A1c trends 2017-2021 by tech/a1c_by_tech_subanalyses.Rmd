@@ -1,0 +1,69 @@
+---
+title: "a1c by tech sub analyses"
+author: "Casey Sakamoto"
+date: '2022-05-20'
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(knitr)
+library(readxl)
+library(lubridate)
+library(table1)
+library(nlme) # mixed models
+library(emmeans)
+
+knitr::opts_chunk$set(echo = FALSE)
+if(Sys.info()["sysname"] == "Windows"){
+  home_dir = "S:/Laura/BDC/Projects/Todd Alonso/A1c trends 2017 to 2021 by tech"
+} else if (Sys.info()["sysname"] == "Linux"){
+  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+} else if (Sys.info()["sysname"] == "Darwin"){
+  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+}
+knitr::opts_knit$set(root.dir = home_dir)
+rm(home_dir)
+
+#import data
+a1c_tech = read_excel("S:/Laura/BDC/Projects/Todd Alonso/A1c trends 2017 to 2021 by tech/Data raw/Change in A1c 2017 to 2021 by tech_only encounters to be used for analysis.xlsx")
+```
+
+
+```{r data clean, include=FALSE}
+# only patients w data in both time windows 
+
+analysis = a1c_tech %>% 
+  mutate(time_group = case_when(year(VisitDate) == 2016 | year(VisitDate) == 2017 ~ "2016-2017",
+                                year(VisitDate) == 2020 | year(VisitDate) == 2021 ~ "2020-2021"),
+         tech_group = case_when(tolower(InsulinRegimen) == "insulin pump" & CGM == "Yes" ~ "CGM + Pump",
+                                tolower(InsulinRegimen) == "insulin pump" & CGM != "Yes" ~ "Pump Alone",
+                                tolower(InsulinRegimen) != "insulin pump" & CGM == "Yes" ~ "CGM Alone",
+                                TRUE ~ "None")) %>% 
+  select(EPICMRN, VisitDate, Age_A1cResultDate, A1c_Value, tech_group, InsulinRegimen, CGM, time_group, DiabetesDuration_A1cResultDate) 
+
+# factor tech type for order
+analysis$tech_group = factor(analysis$tech_group, levels = c("CGM + Pump", "CGM Alone", "Pump Alone", "None"))
+
+# list of id's in both subj
+id_list = analysis %>% group_by(EPICMRN) %>% summarise(n = n())
+id_list = id_list %>% filter(n == 2) %>% select(EPICMRN)
+# filter based on list
+analysis = analysis %>% filter(EPICMRN %in% id_list$EPICMRN); rm(id_list)
+
+
+# for group change paste 2017 and 2020 group into a variable, filter by same/same (subanalsyis2) or switched groups (3)
+a_2017 = analysis %>% filter(time_group == "2016-2017") %>% mutate(grp2016 = tech_group) %>% select(EPICMRN, grp2016)
+a_2020 = analysis %>% filter(time_group == "2020-2021") %>% mutate(grp2020 = tech_group) %>% select(EPICMRN, grp2020)
+a_combined = full_join(a_2017, a_2020) %>% mutate(tech_group_change = paste0(grp2016, "/", grp2020)); rm(a_2017, a_2020)
+
+analysis = full_join(analysis, a_combined) # only those with both time windows
+same_groups =  c("None/None", "Pump Alone/Pump Alone", "CGM Alone/CGM Alone", "CGM + Pump/CGM + Pump" )
+analysis_same_grp = analysis %>% filter(tech_group_change %in% same_groups)
+analysis_switch_grp = analysis %>% filter(grp2016 != grp2020)
+```
