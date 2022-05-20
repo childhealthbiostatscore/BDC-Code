@@ -11,13 +11,13 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-library(arsenal)
 library(tidyverse)
-library(performance)
 library(knitr)
 library(readxl)
 library(lubridate)
-library(Hmisc)
+library(table1)
+library(nlme) # mixed models
+library(emmeans)
 
 knitr::opts_chunk$set(echo = FALSE)
 if(Sys.info()["sysname"] == "Windows"){
@@ -34,8 +34,6 @@ rm(home_dir)
 a1c_tech = read_excel("S:/Laura/BDC/Projects/Todd Alonso/A1c trends 2017 to 2021 by tech/Data raw/Change in A1c 2017 to 2021 by tech_only encounters to be used for analysis.xlsx")
 ```
 
-
-
 ```{r data clean, include=FALSE}
 # stratify into oct-march 2016-2017 and oct-march 2020-2021
 analysis = a1c_tech %>% 
@@ -45,13 +43,81 @@ analysis = a1c_tech %>%
                                 tolower(InsulinRegimen) == "insulin pump" & CGM != "Yes" ~ "Pump Alone",
                                 tolower(InsulinRegimen) != "insulin pump" & CGM == "Yes" ~ "CGM Alone",
                                 TRUE ~ "None")) %>% 
-  select(EPICMRN, VisitDate, Age_VisitDate, A1c_Value, tech_group, InsulinRegimen, CGM, time_group) 
+  select(EPICMRN, VisitDate, Age_A1cResultDate, A1c_Value, tech_group, InsulinRegimen, CGM, time_group, DiabetesDuration_A1cResultDate) 
 
 # factor tech type for order
 analysis$tech_group = factor(analysis$tech_group, levels = c("CGM + Pump", "CGM Alone", "Pump Alone", "None"))
 
-# count longi data
+# check for multicollinearity between age and diabetes duration
+cor(analysis$Age_A1cResultDate, a1c_tech$DiabetesDuration_A1cResultDate) # 0.58 correlation, pretty strong
+
+
+# vif seems ok though
+# test_mod = lm(A1c_Value ~ Age_A1cResultDate + DiabetesDuration_A1cResultDate + time_group + tech_group, data = analysis)
+# test_mod2 = lm(A1c_Value ~ Age_A1cResultDate  + time_group + tech_group, data = analysis)
+# 
+# vif(test_mod)
+# vif(test_mod2)
 ```
+
+```{r analysis, include=FALSE}
+# table 1
+a1c_table1 = table1(~ A1c_Value + Age_A1cResultDate + DiabetesDuration_A1cResultDate | tech_group*time_group,
+                    render.continuous = c(.="Mean (SD)"),
+                     data = analysis)
+
+# Fit random intercept model
+a1c_mod = lme(A1c_Value ~ Age_A1cResultDate + DiabetesDuration_A1cResultDate + tech_group + time_group + tech_group*time_group,
+            random = ~1|EPICMRN,
+            data = analysis,
+            na.action = na.omit)
+
+a1c_mod2 = lme(A1c_Value ~ Age_A1cResultDate +  tech_group + time_group + tech_group*time_group,
+            random = ~1|EPICMRN,
+            data = analysis,
+            na.action = na.omit)
+# Anova
+mod_anova = anova.lme(a1c_mod, type="marginal")
+mod2_anova =  anova.lme(a1c_mod2, type="marginal")
+# Means
+mod_means = emmeans(a1c_mod,specs=pairwise ~ tech_group:time_group, adjust="tukey")
+  
+# Plot
+a1c_predict = cbind(analysis, a1cpred = predict(a1c_mod))
+```
+
+# Outstanding Data Questions/ Remarks
+
+* Not much demographics provided in dataset; let me know if you'd like anything added
+
+# Methods
+
+A1c values were modeled with a Linear Mixed Model with time groups(2016-2017, 2020-2021) and tech groups(CGM+Pump, CGM only, Pump Only, None) and an interaction term of time and tech, adjusting for age and diabetes duration. A random intercept for subject was added to account for subjects with repeated measurements. Contrasts of estimated marginal means (least squares means) were used to determine the difference within tech groups at each time point.
+
+# Analysis
+
+## Demographics Table
+```{r Table 1}
+a1c_table1
+```
+
+## Model Fit and Contrasts
+
+Adjusting for age and diabetes duration, there is a significant difference in A1c within the different tech groups across the 2016-2017 and 2020-2021 time periods (p < 0.0001).
+
+The average A1c decreased by 0.44 (95% CI : 0.29, 0.58) in the CGM + Pump group (p < 0.0001), increased by 0.31 (95% CI: 0.09, 0.53) in the Pump Only groups (p = 0.022), and increased by 0.45 (95% CI: 0.26, 0.64) in the No Tech group (p < 0.0001). There was no significant difference in the time periods within the CGM only group (p = 0.84) 
+
+
+```{r model}
+kable(mod_anova,digits = 3,caption = "Test of Overall Effect")
+
+kable(mod_means$contrasts[c(4,11,17,22),],digits = 3,caption = "Timepoint Means")
+
+ggplot(data = a1c_predict,aes(x = time_group, y = a1cpred, group = tech_group, color = tech_group))+
+  geom_smooth(method = lm, se = F,na.rm = T) + 
+  xlab("Time Groups") + ylab("Predicted Mean A1c") + theme_classic() 
+```
+
 
 ```{r plot, include=FALSE}
 a1ctech_plot_loess = ggplot(data = analysis, aes(x = Age_VisitDate, y = A1c_Value, color = tech_group, linetype = time_group)) + geom_smooth(method = "loess", se = FALSE) + theme_classic() + labs(title = "Loess")
@@ -59,11 +125,8 @@ a1ctech_plot_loess = ggplot(data = analysis, aes(x = Age_VisitDate, y = A1c_Valu
 a1ctech_plot_gam = ggplot(data = analysis, aes(x = Age_VisitDate, y = A1c_Value, color = tech_group, linetype = time_group)) + geom_smooth(method = "gam", se = FALSE) + theme_classic() + labs(title = "gam")
 
 a1ctech_plot_lm = ggplot(data = analysis, aes(x = Age_VisitDate, y = A1c_Value, color = tech_group, linetype = time_group)) + geom_smooth(method = "lm", se = FALSE) + theme_classic() + labs(title = "lm")
-```
 
-
-```{r plots}
-a1ctech_plot_loess
-a1ctech_plot_gam
-a1ctech_plot_lm
+# a1ctech_plot_loess
+# a1ctech_plot_gam
+# a1ctech_plot_lm
 ```
