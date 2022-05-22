@@ -19,6 +19,8 @@ library(knitr)
 library(pROC)
 library(naniar)
 library(readxl)
+library(psych)
+library(pheatmap)
 knitr::opts_chunk$set(echo = FALSE,fig.height = 10,fig.width = 10)
 if(Sys.info()["sysname"] == "Windows"){
   home_dir = "B:/Projects"
@@ -58,7 +60,13 @@ omics = make.names(omics,unique = T,allow_ = F)
 null_vars <- c("age","sex","durcatV1")
 
 # add in post-baseline A1c values
-sample_info <- read_excel("~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant/QVisits_LastVisit.xlsx")
+sample_info <- read_csv("~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/QAllVisits_Long_V1_V4_Glycemic_Vars.csv")
+# calculate within person variability
+sample_info <- sample_info[,c("StudyID","hba1c","glu","egdr","eis","eis_nf","eis_exA")]
+sample_info$StudyID <- as.factor(as.character(sample_info$StudyID))
+sample_info_var <- sample_info %>% group_by(StudyID) %>% summarise(across(.cols = where(is.numeric),.fns = list(SD=sd), na.rm=T, .names="{col}_{fn}"))
+# merge in omics data
+corr_df <- merge(sample_info_var,df[,c("StudyID",limited_omics)],by="StudyID",all.x = F, all.y = T)
 ```
 
 # ElasticNet on clinical variables only
@@ -419,3 +427,10 @@ kable(tidy(omics_mod),digits = 3)
 ### Model comparison
 
 Concordance in the clinical model was `r round(as.numeric(summary(clin_mod)$concordance[1]),3)` compared to `r round(as.numeric(summary(omics_mod)$concordance[1]),3)` for the omics model and `r round(as.numeric(summary(null_mod)$concordance[1]),3)` for the null model.
+
+# Correlation between omics markers and glycemic variability
+
+```{r}
+c = corr.test(corr_df[,-1],use = "pairwise.complete.obs")
+pheatmap(c$r,display_numbers = T)
+```
