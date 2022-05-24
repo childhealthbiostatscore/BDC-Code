@@ -7,10 +7,12 @@ format:
     self-contained: true
 editor: visual
 echo: false
+warning: false
 ---
 
 ```{r}
 #| include: false
+library(readxl)
 library(arsenal)
 library(tidyverse)
 library(reshape2)
@@ -19,42 +21,51 @@ library(pheatmap)
 library(patchwork)
 library(broom)
 library(knitr)
-if(Sys.info()["sysname"] == "Windows"){
-  home_dir = "B:/Projects"
-} else if (Sys.info()["sysname"] == "Linux"){
-  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
-} else if (Sys.info()["sysname"] == "Darwin"){
-  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
-}
-knitr::opts_knit$set(root.dir = home_dir)
-rm(home_dir)
 ```
 
 ```{r}
 # Import
-df = read.csv("./Viral Shah/Day and Night CGM/Data_Clean/combined_analysis_data.csv")
+df = read.csv("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Day and Night CGM/Data_Clean/combined_analysis_data.csv",na.strings = "")
+# Get MDI data
+kaan_mdi = read_excel("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Day and Night CGM/Data_Raw/Adult Dexcom 14_30_90/AdultPt_DexcomG6_12192019.First 21_combined.xlsx",na = "NULL")
+df$mdi = kaan_mdi$InsulinRegimen[match(paste(df$FirstName,df$LastName),paste(kaan_mdi$FirstName,kaan_mdi$LastName))]
+viral_mdi = read_excel("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Day and Night CGM/Data_Raw/Group 1_Continous data_2-7-2022.xlsx",na = "NULL")
+viral_mdi = viral_mdi %>% group_by(`Study ID`) %>% 
+  summarise(mdi = first(na.omit(`Insulin delivery methods- MDI vs Insulin pump`)))
+w = which(!is.na(match(df$id,viral_mdi$`Study ID`)))
+df$mdi[w] = 
+  viral_mdi$mdi[match(df$id[w],viral_mdi$`Study ID`)]
+viral_mdi = read_excel("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/Day and Night CGM/Data_Raw/Group 2_Continous variables_2-7-2022.xlsx",na = "NULL")
+viral_mdi = viral_mdi %>% group_by(`Study ID`) %>% 
+  summarise(mdi = first(na.omit(`Insulin delivery methods- MDI vs Insulin pump`)))
+w = which(!is.na(match(df$id,viral_mdi$`Study ID`)))
+df$mdi[w] = 
+  viral_mdi$mdi[match(df$id[w],viral_mdi$`Study ID`)]
+df$mdi = factor(df$mdi)
+levels(df$mdi) = c("Insulin Pump","MDI","MDI")
 # Order
 df$a1c_group = factor(df$a1c_group,levels = c("<7%","[7.0%, 8.0%)","[8.0%, 9.0%)",
                                               "[9.0%, 10.0%)",">10%"))
 ```
 
 # Data Characteristics
-- TIR was calculated using 2 weeks of CGM data prior to an office visit.
-- For participants with multiple A1C measures, the CGM wear with the largest number of sensor readings was used. This was done to prevent auto-correlation between measures within a subject.
-- CGM with < 70% wear were excluded.
+
+-   TIR was calculated using 2 weeks of CGM data prior to an office visit.
+-   For participants with multiple A1C measures, the CGM wear with the largest number of sensor readings was used. This was done to prevent auto-correlation between measures within a subject.
+-   CGM with \< 70% wear were excluded.
 
 # Participant Characteristics
 
 ```{r results='asis'}
-columns = make.names(c('a1c','Age','Gender', 'BMI', 'DiabetesDuration_MostRecentVisitDate','Hemoglobin_Value','MCV_Value', 'eGFR_Value', 'Autoimmune Disease?', 'Retinopathy?'))
+columns = make.names(c('a1c','Age','Gender', 'BMI', 'DiabetesDuration_MostRecentVisitDate','Hemoglobin_Value','MCV_Value', 'eGFR_Value', 'Autoimmune Disease?', 'Retinopathy?','mdi'))
 
-f = as.formula(paste0("~",paste0(columns,collapse = "+")))
+f = as.formula(paste0("a1c_group~",paste0(columns,collapse = "+")))
 
 t1 = tableby(f,data = df)
 summary(t1,pfootnote = T)
 ```
 
-# Summary Table and Variable Distributions
+# Variable Comparisons
 
 ```{r results='asis'}
 columns = make.names(c('mbg','total_tir_70_140','total_tir_70_180','total_tir_over_180',
@@ -64,7 +75,10 @@ columns = make.names(c('mbg','total_tir_70_140','total_tir_70_180','total_tir_ov
 
 f = as.formula(paste0("~",paste0(columns,collapse = "+")))
 
-t2 = tableby(f,data = df)
+t2 = tableby(a1c_group ~ mbg + total_tir_70_140 + total_tir_70_180 + 
+               total_tir_over_180 + day_mbg + day_tir_70_140 + day_tir_70_180 + 
+               day_tir_over_180 + night_mbg + night_tir_70_140 + night_tir_70_180 + 
+               night_tir_over_180,data = df)
 summary(t2,pfootnote = T)
 ```
 
@@ -93,8 +107,12 @@ mod = lm(a1c ~ tir_70_140*time, data = int_df)
 plot_df = mod$model
 plot_df$pred = predict(mod)
 ggplot(plot_df,aes(x = tir_70_140,y = pred,color = time)) + 
-  geom_line() + theme_bw() + xlab("TTIR (%)") + ylab("A1C (%)") +
-  scale_color_discrete(name = "", labels = c("Day","Night"))
+  geom_line() + theme_bw() + 
+  xlab("TTIR (%)") + ylab("A1C (%)") + 
+  scale_color_discrete(name = "", labels = c("Day","Night")) +
+  scale_y_continuous(breaks = seq(5, 11, by = 1),limits = c(5,11)) +
+  scale_x_continuous(breaks = seq(25, 75, by = 10),limits = c(25,75)) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
 # Table
 kable(tidy(mod),digits = 3)
 ```
@@ -108,8 +126,12 @@ mod = lm(a1c ~ tir_70_180*time, data = int_df)
 plot_df = mod$model
 plot_df$pred = predict(mod)
 ggplot(plot_df,aes(x = tir_70_180,y = pred,color = time)) + 
-  geom_line() + theme_bw() + xlab("TIR (%)") + ylab("A1C (%)") +
-  scale_color_discrete(name = "", labels = c("Day","Night"))
+  geom_line() + theme_bw() + 
+  xlab("TIR (%)") + ylab("A1C (%)") + 
+  scale_color_discrete(name = "", labels = c("Day","Night")) +
+  scale_y_continuous(breaks = seq(5, 11, by = 1),limits = c(5,11)) +
+  scale_x_continuous(breaks = seq(25, 75, by = 10),limits = c(25,75)) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
 # Table
 kable(tidy(mod),digits = 3)
 ```
@@ -123,8 +145,12 @@ mod = lm(a1c ~ tir_over_180*time, data = int_df)
 plot_df = mod$model
 plot_df$pred = predict(mod)
 ggplot(plot_df,aes(x = tir_over_180,y = pred,color = time)) + 
-  geom_line() + theme_bw() + xlab("TAR (%)") + ylab("A1C (%)") +
-  scale_color_discrete(name = "", labels = c("Day","Night"))
+  geom_line() + theme_bw() + 
+  xlab("TAR (%)") + ylab("A1C (%)") + 
+  scale_color_discrete(name = "", labels = c("Day","Night")) +
+  scale_y_continuous(breaks = seq(5, 11, by = 1),limits = c(5,11)) +
+  scale_x_continuous(breaks = seq(25, 75, by = 10),limits = c(25,75)) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
 # Table
 kable(tidy(mod),digits = 3)
 ```
@@ -138,8 +164,12 @@ mod = lm(a1c ~ mbg*time, data = int_df)
 plot_df = mod$model
 plot_df$pred = predict(mod)
 ggplot(plot_df,aes(x = mbg,y = pred,color = time)) + 
-  geom_line() + theme_bw() + xlab("MG (mg/dL)") + ylab("A1C (%)") +
-  scale_color_discrete(name = "", labels = c("Day","Night"))
+  geom_line() + theme_bw() + 
+  xlab("MG (mg/dL)") + ylab("A1C (%)") + 
+  scale_color_discrete(name = "", labels = c("Day","Night")) +
+  scale_y_continuous(breaks = seq(5, 11, by = 1),limits = c(5,11)) +
+  scale_x_continuous(breaks = seq(100, 300, by = 50),limits = c(100,300)) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
 # Table
 kable(tidy(mod),digits = 3)
 ```
