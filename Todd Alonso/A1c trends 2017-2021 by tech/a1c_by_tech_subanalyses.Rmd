@@ -67,3 +67,123 @@ same_groups =  c("None/None", "Pump Alone/Pump Alone", "CGM Alone/CGM Alone", "C
 analysis_same_grp = analysis %>% filter(tech_group_change %in% same_groups)
 analysis_switch_grp = analysis %>% filter(grp2016 != grp2020)
 ```
+
+```{r subanaly 1, include = FALSE}
+# Fit random intercept model
+a1c_mod = lme(A1c_Value ~ Age_A1cResultDate + DiabetesDuration_A1cResultDate + tech_group + time_group + tech_group*time_group,
+            random = ~1|EPICMRN,
+            data = analysis,
+            na.action = na.omit)
+
+a1c_mod2 = lme(A1c_Value ~ Age_A1cResultDate +  tech_group + time_group + tech_group*time_group,
+            random = ~1|EPICMRN,
+            data = analysis,
+            na.action = na.omit)
+# Anova
+mod_anova = anova.lme(a1c_mod, type="marginal")
+mod2_anova =  anova.lme(a1c_mod2, type="marginal")
+# Means
+mod_means = emmeans(a1c_mod,specs=pairwise ~ tech_group:time_group, adjust="tukey")
+  
+# Plot
+a1c_predict = cbind(analysis, a1cpred = predict(a1c_mod))
+```
+
+```{r subanaly 2, include = FALSE}
+# Fit random intercept model
+a1c_mod_2 = lme(A1c_Value ~ Age_A1cResultDate + DiabetesDuration_A1cResultDate + tech_group + time_group + tech_group*time_group,
+            random = ~1|EPICMRN,
+            data = analysis_same_grp,
+            na.action = na.omit)
+
+a1c_mod2_2 = lme(A1c_Value ~ Age_A1cResultDate +  tech_group + time_group + tech_group*time_group,
+            random = ~1|EPICMRN,
+            data = analysis_same_grp,
+            na.action = na.omit)
+# Anova
+mod_anova_2 = anova.lme(a1c_mod_2, type="marginal")
+mod2_anova_2 =  anova.lme(a1c_mod2_2, type="marginal")
+# Means
+mod_means_2 = emmeans(a1c_mod_2,specs=pairwise ~ tech_group:time_group, adjust="tukey")
+  
+# Plot
+a1c_predict_2 = cbind(analysis_same_grp, a1cpred = predict(a1c_mod_2))
+```
+
+```{r changed grop, include=FALSE}
+# model
+a1c_mod_switch = lme(A1c_Value ~ Age_A1cResultDate +  tech_group_change + time_group + tech_group_change*time_group,
+            random = ~1|EPICMRN,
+            data = analysis_switch_grp,
+            na.action = na.omit)
+# anova
+mod_anova_switch = anova.lme(a1c_mod_switch, type="marginal")
+# means 
+mod_means_switch = emmeans(a1c_mod_switch,specs=pairwise ~ tech_group_change:time_group, adjust="tukey")
+  
+# Plot
+a1c_predict_switch = cbind(analysis_switch_grp, a1cpred = predict(a1c_mod_switch))
+
+```
+# Outstanding Data Questions/ Remarks
+
+* n/a
+
+# Methods
+
+A1c values were modeled with a Linear Mixed Model with time groups(2016-2017, 2020-2021) and tech groups(CGM+Pump, CGM only, Pump Only, None) and an interaction term of time and tech, adjusting for age and diabetes duration. A random intercept for subject was added to account for subjects with repeated measurements. Contrasts of estimated marginal means (least squares means) were used to determine the difference within tech groups at each time point.
+
+For subanalyses, data were filtered for: 
+* including patients with data in both time windows
+* patients with data in both windows who remained in the same group
+* patients who switched groups
+
+# Analysis
+
+## Model Fit and Contrasts (Both Time Windows)
+
+Adjusting for age and diabetes duration, there is a significant difference in A1c within the different tech groups across the 2016-2017 and 2020-2021 time periods (p < 0.0001).
+
+The average A1c decreased by 0.43 (95% CI : 0.24, 0.62) in the CGM + Pump group (p < 0.0001), increased by 0.34 (95% CI: 0.09, 0.53) in the Pump Only groups (p = 0.041), and increased by 0.85 (95% CI: 0.58, 1.11) in the No Tech group (p < 0.0001). There was no significant difference in the time periods within the CGM only group (p = 1.00) 
+```{r both windows}
+# .429+c(-1,1)*1.96*.097
+kable(mod_anova,digits = 3,caption = "Test of Overall Effect")
+
+kable(mod_means$contrasts[c(4,11,17,22),],digits = 3,caption = "Timepoint Means")
+
+ggplot(data = a1c_predict,aes(x = time_group, y = a1cpred, group = tech_group, color = tech_group))+
+  geom_smooth(method = lm, se = F,na.rm = T) + 
+  xlab("Time Groups") + ylab("Predicted Mean A1c") + theme_classic() 
+```
+
+## Model Fit and Contrasts (Both Time Windows, Stayed Same Groups)
+
+Adjusting for age and diabetes duration, there is a significant difference in A1c within the different tech groups across the 2016-2017 and 2020-2021 time periods (p < 0.0001).
+
+The average A1c decreased by 0.49 (95% CI : 0.27, 0.71) in the CGM + Pump group (p < 0.0001), and increased by 0.81 (95% CI: 0.50, 1.11) in the No Tech group (p < 0.0001). There was no significant difference in the time periods within the CGM only group (p = 1.00) and the pump only group (p = 0.491) 
+```{r both windows same grp}
+kable(mod_anova_2,digits = 3,caption = "Test of Overall Effect")
+
+kable(mod_means_2$contrasts[c(4,11,17,22),],digits = 3,caption = "Timepoint Means")
+
+ggplot(data = a1c_predict_2,aes(x = time_group, y = a1cpred, group = tech_group, color = tech_group))+
+  geom_smooth(method = lm, se = F,na.rm = T) + 
+  xlab("Time Groups") + ylab("Predicted Mean A1c") + theme_classic() 
+```
+
+## Change in A1C for those who Switched Groups
+Adjusting for age, there is a significant difference in A1c within the different tech groups across the 2016-2017 and 2020-2021 time periods (p < 0.0001).
+
+There was a significant difference in A1c for patients who went from the CGM + Pump to Pump only (increased by 0.924, p = 0.038)
+There was a significant difference in A1c for patients who went from Pump only to CGM + Pump (decreased by 0.502, p = 0.001)
+
+
+```{r both windowsswtch grp}
+kable(mod_anova_switch,digits = 3,caption = "Test of Overall Effect")
+
+kable(mod_means_switch$contrasts[c(12, 35, 57, 78, 98, 117, 135, 152, 168, 183, 197, 210),],digits = 3,caption = "Timepoint Means")
+
+ggplot(data = a1c_predict_switch,aes(x = time_group, y = a1cpred, group = tech_group_change, color = tech_group_change))+
+  geom_smooth(method = lm, se = F,na.rm = T) + 
+  xlab("Time Groups") + ylab("Predicted Mean A1c") + theme_classic() 
+```
