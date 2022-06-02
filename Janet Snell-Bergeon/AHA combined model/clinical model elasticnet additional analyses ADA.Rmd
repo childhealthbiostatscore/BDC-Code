@@ -22,6 +22,11 @@ library(readxl)
 library(psych)
 library(pheatmap)
 library(tableone)
+library(sjPlot)
+library(sjlabelled)
+library(sjmisc)
+library(ggplot2)
+library(reshape2)
 knitr::opts_chunk$set(echo = FALSE,fig.height = 10,fig.width = 10)
 if(Sys.info()["sysname"] == "Windows"){
   home_dir = "B:/Projects"
@@ -67,7 +72,7 @@ sample_info <- sample_info[,c("StudyID","hba1c","glu","egdr","eis_nf")]
 sample_info$StudyID <- as.factor(as.character(sample_info$StudyID))
 sample_info_var <- sample_info %>% group_by(StudyID) %>% summarise(across(.cols = where(is.numeric),.fns = list(SD=sd, MEAN=mean), na.rm=T, .names="{col}_{fn}"))
 # merge in omics data
-corr_df <- merge(sample_info_var,df[,c("StudyID",limited_omics)],by="StudyID",all.x = F, all.y = T)
+corr_df <- merge(sample_info_var,df_labelled[,c("StudyID",limited_omics)],by="StudyID",all.x = F, all.y = T)
 
 # exploratory correlations
 explor <- corr_df
@@ -129,12 +134,48 @@ clin_mod = glm(formula = f_cac_prog,data = df,family = "binomial")
 kable(tidy(clin_mod, exponentiate=TRUE, conf.int=TRUE),digits = 3)
 ```
 
+```{r}
+df_labelled <- df
+df_labelled$acV1 <- set_label(df_labelled$acV1,"Albumin:creatinine*")
+df_labelled$age <- set_label(df_labelled$age,"Age (yrs)")
+df_labelled$avesystbpV1 <- set_label(df_labelled$avesystbpV1,"SBP (mmHg)*")
+df_labelled$bmiV1 <- set_label(df_labelled$bmiV1,"BMI (kg/m2)")
+df_labelled$cholV1 <- set_label(df_labelled$cholV1,"Total cholesterol (mg/dL)")
+df_labelled$durcatV1 <- set_labels(df_labelled$durcatV1,labels=c("T1D duration <20 yrs", "T1D duration 20-39 yrs","T1D duration 40+ yrs"))
+df_labelled$hba1cV1 <- set_label(df_labelled$hba1cV1,"HbA1c (%)*")
+df_labelled$hdlcV1 <- set_label(df_labelled$hdlcV1,"HDL (mg/dL)*")
+df_labelled$homoV1 <- set_label(df_labelled$homoV1,"Homocysteine (umol/L)*")
+df_labelled$insdoseperkgV1 <- set_label(df_labelled$insdoseperkgV1,"Insulin dose (units/kg)*")
+df_labelled$l45sqfV1 <- set_label(df_labelled$l45sqfV1,"Subq fat L4-L5 (mm3)*")
+df_labelled$onhypermedsV1 <- set_labels(df_labelled$onhypermedsV1,labels=c("No anti-hypertensives","Anti-hypertensives"))
+df_labelled$onlipidmedsV1 <- set_labels(df_labelled$onlipidmedsV1,labels=c("No lipid medications","Lipid medications"))
+df_labelled$PAT_V1 <- set_label(df_labelled$PAT_V1,"Pericardial fat (cm3)*")
+df_labelled$sex <- set_labels(df_labelled$sex,labels=c("Male","Female"))
+df_labelled$smknum <- set_labels(df_labelled$smknum,labels=c("Non-smoker","Current smoker"))
+df_labelled$triV1 <- set_label(df_labelled$triV1,"Triglycerides (mg/dL)*")
+df_labelled$UA_V1 <- set_label(df_labelled$UA_V1,"Serum uric acid (mg/dL)*")
+df_labelled$AAA01201000179.0807263.4 <- set_label(df_labelled$AAA01201000179.0807263.4,"D-Glucosamine/D-Galactosamine*")
+df_labelled$gly.P02671.3 <- set_label(df_labelled$gly.P02671.3,"Glycated fibrinogen 3*")
+df_labelled$gly.P02671.7 <- set_label(df_labelled$gly.P02671.7,"Glycated fibrinogen 7*")
+df_labelled$gly.P02671.5 <- set_label(df_labelled$gly.P02671.5,"Glycated fibrinogen 5*")
+df_labelled$gly.P02671.4 <- set_label(df_labelled$gly.P02671.4,"Glycated fibrinogen 4*")
+clin_mod_labelled = glm(formula = f_cac_prog,data = df_labelled,family = "binomial")
+plot_model(clin_mod_labelled, title="Clinical model of CAC progression", auto.label = TRUE)
+```
+
 ### Omics model results (no imputation)
 
 ```{r}
 omics_mod = glm(formula = update(f_cac_prog,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
           data = df,family = "binomial")
 kable(tidy(omics_mod, exponentiate=TRUE, conf.int=TRUE),digits = 3)
+```
+
+```{r}
+omics_mod_labelled = glm(formula = update(f_cac_prog,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
+          data = df_labelled,family = "binomial")
+plot_model(omics_mod_labelled, title="Omics model of CAC progression", auto.label = TRUE) 
+
 ```
 
 ### Model comparison
@@ -147,6 +188,7 @@ clin_pred = predict(clin_mod,type="response")
 omics_pred = predict(omics_mod,type="response")
 null_pred = predict(null_mod,type="response")
 # Plot
+par(pty="s")
 plot(roc(clin_mod$model$CACprogV3, clin_pred), 
                  levels = c("No Progression","Progression"),direction = "<",
                  print.auc = TRUE, col = "blue",quiet = T,print.auc.y = .4)
@@ -415,6 +457,15 @@ omics_mod = coxph(formula = update(f_cvd,paste0("~ . +",paste0(limited_omics,col
 kable(tidy(omics_mod, exponentiate = TRUE, conf.int = TRUE),digits = 3)
 ```
 
+```{r}
+f_cvd_labelled = as.formula(paste0("Surv(time = PersonYrsCVD,event = CVD)~",
+                      paste0(cvd_select,collapse = "+")))
+omics_mod_labelled = coxph(formula = update(f_cvd,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
+            data = df_labelled,id = StudyID)
+plot_model(omics_mod_labelled, title="Omics model of CVD events", auto.label = TRUE)
+```
+
+
 ### Model comparison
 
 Concordance in the clinical model was `r round(as.numeric(summary(clin_mod)$concordance[1]),3)` compared to `r round(as.numeric(summary(omics_mod)$concordance[1]),3)` for the omics model and `r round(as.numeric(summary(null_mod)$concordance[1]),3)` for the null model.
@@ -504,6 +555,8 @@ ce_flat$p <- round(ce_flat$p,3)
 ce_flat_sig <- ce_flat[ce_flat$p<0.05,]
 
 explor_sig <- explor[,colnames(explor) %in% ce_flat_sig$row | colnames(explor) %in% ce_flat_sig$column]
+colnames(explor_sig) <- c("D-Glucosamine","Glycated fibrinogen 7","Glycated fibrinogen 3","Glycated fibrinogen 5",
+                          "HDL","Homocysteine","Pericardial fat","Sex","Triglycerides","Serum uric acid","Waist:hip ratio")
 ce_sig = corr.test(explor_sig,use = "pairwise.complete.obs")
 pheatmap(ce_sig$r,display_numbers = T)
 ```
@@ -513,6 +566,19 @@ pheatmap(ce_sig$r,display_numbers = T)
 ```{r, include=FALSE}
 stable <- CreateTableOne(data=df, vars = limited_omics, strata = "sex")
 stable <- print(stable)
+
+sdata <- df_labelled[,c("sex",limited_omics)]
+sdata_long <- melt(sdata)
+sdata_long$variable <- ifelse(sdata_long$variable=="AAA01201000179.0807263.4","D-Glucosamine",
+                             ifelse(sdata_long$variable=="gly.P02671.7","Glycated fibrinogen 7",
+                             ifelse(sdata_long$variable=="gly.P02671.3","Glycated fibrinogen 3",
+                             ifelse(sdata_long$variable=="gly.P02671.5","Glycated fibrinogen 5",
+                             ifelse(sdata_long$variable=="gly.P02671.4","Glycated fibrinogen 4",NA)))))
+                              
+p <- ggplot(sdata_long, aes(x=variable,y=value,fill=sex)) + geom_boxplot() +
+  xlab("") + ylab("") + theme(axis.text.x=element_text(angle=45, vjust = 0.5)) + scale_fill_manual(values=c("#ed2213","#809fd1"))
+ 
+p
 ```
 
 ```{r}
