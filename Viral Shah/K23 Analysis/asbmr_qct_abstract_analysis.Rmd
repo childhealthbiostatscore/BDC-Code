@@ -1,0 +1,99 @@
+---
+title: "ASBMR_QCT"
+author: "Casey Sakamoto"
+date: "6/3/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(readr)
+library(tidyverse)
+library(Hmisc)
+library(stringr)
+library(table1)
+library(knitr)
+knitr::opts_chunk$set(echo = FALSE)
+if(Sys.info()["sysname"] == "Windows"){
+  home_dir = "S:/Laura/BDC/Projects/Viral Shah/K23"
+} else if (Sys.info()["sysname"] == "Linux"){
+  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/K23"
+} else if (Sys.info()["sysname"] == "Darwin"){
+  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/K23"
+}
+knitr::opts_knit$set(root.dir = home_dir)
+
+setwd("S:/Laura/BDC/Projects/Viral Shah/K23")
+rm(home_dir)
+```
+
+```{r dataup, include = FALSE}
+BSTM_t1d = read_csv("BSTM_t1d_raw.csv")
+
+# grab vars of interest
+analysis = BSTM_t1d %>% filter(qct == 1) %>% select(record_id, age,t1d_diagnosis, demo_gender1, postmenopause_pill_42695d, are_you_currently_smoking_e66c9b, do_you_drink_3_or_more_uni_ca666a, stairs_flight, sports_past_week,did_you_participate_in_any, sport_team_text, regular_activity_past_week, last_week_regular_number_of_times, fall_diab_duration, hba1c_value_k, egfr,albumin_serum, creatinine_serum, pth_baseline, calcium_serum, p1np_baseline, ctx_baseline, age_menopause_7904ab, fe_hip_stance:qct_complete)
+
+# some hba1c are listed with a % sign (LITERALLY WHY); need to remove that
+analysis = analysis %>% mutate(hba1c = 
+                                 case_when(str_detect(hba1c_value_k, "%") ~ as.numeric(str_sub(hba1c_value_k, 1,str_length(hba1c_value_k)-1)),
+                                           TRUE ~ as.numeric(hba1c_value_k))) %>% select(-hba1c_value_k)
+
+# need to fix ctx with the truncated values by dividing by 2
+analysis = analysis %>% mutate(ctx_bl = 
+                                 case_when(str_detect(ctx_baseline, "<") ~ (as.numeric(str_sub(ctx_baseline, 2))/2),
+                                           TRUE ~ as.numeric(ctx_baseline)),
+                              ) %>% select(-c( ctx_baseline))
+analysis[analysis == "not done" ] <- NA
+
+# add in menopausal duration
+analysis = analysis %>% mutate(menopause_dur = age - age_menopause_7904ab)
+label(analysis$menopause_dur) = "Menopausal Duration"
+
+label(analysis$t1d_diagnosis) = "Clinical T1D Diagnosis"
+analysis$t1d_diagnosis = factor(analysis$t1d_diagnosis, labels = c("Control", "T1D"))
+
+analysis$demo_gender1 = factor(analysis$demo_gender1, labels = c("Female"))
+analysis$postmenopause_pill_42695d = factor(analysis$postmenopause_pill_42695d, labels = c("No HRT", "HRT"))
+analysis$are_you_currently_smoking_e66c9b = factor(analysis$are_you_currently_smoking_e66c9b, labels = c("No", "Yes"))
+
+label(analysis$fall_diab_duration) = "T1D Duration (Years)"
+label(analysis$do_you_drink_3_or_more_uni_ca666a) = "Alcohol > 3 Drinks"
+label(analysis$demo_gender1) = "Sex"
+label(analysis$age) = "Age"
+label(analysis$postmenopause_pill_42695d) = "HRT"
+label(analysis$are_you_currently_smoking_e66c9b) = "Current Smoker"
+label(analysis$hba1c) = "HBA1C"
+label(analysis$egfr) = "eGFR"
+label(analysis$albumin_serum) = "Serum Albumin"
+label(analysis$creatinine_serum) = "Serum Creatinine"
+label(analysis$pth_baseline) = "PTH"
+label(analysis$calcium_serum) = "Calcium"
+label(analysis$p1np_baseline) = "P1NP"
+label(analysis$ctx_bl) = "CTX"
+
+# factor the phys act variables
+label(analysis$sports_past_week) = "Sports/Recreation Past Week"
+analysis$sports_past_week = factor(analysis$sports_past_week, labels = c("No", "Yes"))
+
+label(analysis$did_you_participate_in_any) = "Sports/Recreation Past Year"
+analysis$did_you_participate_in_any = factor(analysis$did_you_participate_in_any, labels = c("No", "Yes"))
+
+label(analysis$regular_activity_past_week) = "Regular Activity Past Week"
+analysis$regular_activity_past_week = factor(analysis$regular_activity_past_week, labels = c("No", "Yes"))
+```
+
+
+# Baseline Characteristics
+```{r t1}
+bl_t1 = table1(~  age+demo_gender1+postmenopause_pill_42695d+menopause_dur+are_you_currently_smoking_e66c9b+do_you_drink_3_or_more_uni_ca666a+sports_past_week+did_you_participate_in_any+regular_activity_past_week+fall_diab_duration+hba1c+ egfr+albumin_serum+creatinine_serum+pth_baseline+calcium_serum+ p1np_baseline+ctx_bl|t1d_diagnosis,data = analysis, render.continuous=c(.="Mean (SD)") )
+
+bl_t1
+```
+
+# QCT Hip Differences 
+```{r t2}
+analysis_2 = analysis %>% select(t1d_diagnosis,fe_hip_stance:l2_bmd_mg_cm_3 )
+bl_t2 = table1(~.  |t1d_diagnosis,data = analysis_2, render.continuous=c(.="Mean (SD)") )
+
+bl_t2
+```
+```
