@@ -2,7 +2,12 @@
 title: "ASBMR_QCT"
 author: "Casey Sakamoto"
 date: "6/3/2022"
-output: html_document
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
 ---
 
 ```{r setup, include=FALSE}
@@ -96,9 +101,58 @@ pvalue <- function(x, ...) {
     # The initial empty string places the output on the line below the variable label.
     c("", sub("<", "&lt;", format.pval(p, digits=3, eps=0.001)))
 }
+
+# function to fit interaction linear mod
+fit_mod = function(outcome,df){
+  
+    # Fit p1np model
+  f = as.formula(paste0("p1np_baseline~",outcome, "*", "t1d_diagnosis"))
+  mod = lm(f,
+            data = df,
+            na.action = na.omit)
+   cat("\n")
+  cat(paste("P1NP Model"))
+  cat("\n")
+ 
+  print(summary(mod))
+   
+ 
+  # Fit ctx model
+  f2 = as.formula(paste0("ctx_bl~",outcome,"*","t1d_diagnosis"))
+  mod2 = lm(f2,
+            data = df,
+            na.action = na.omit)
+   cat("\n")
+  cat(paste("CTX Model"))
+  cat("\n")
+ 
+  print(summary(mod2))
+   
+  }
+
 ```
+ggplot(data = a1c_predict,aes(x = time_group, y = a1cpred, group = tech_group, color = tech_group))+
+  geom_smooth(method = lm, se = F,na.rm = T) + 
+  xlab("Time Groups") + ylab("Predicted Mean A1c") + theme_classic() 
 
+```{r plots}
+# predict the p1np/ctx for hba1c interaction
+analysis_plot = analysis %>% select(record_id,t1d_diagnosis, hba1c, p1np_baseline, ctx_bl) %>% filter(!is.na(p1np_baseline) | !is.na(ctx_bl))
 
+# splitup data set to make lines & plot
+analysis_control = analysis_plot %>% filter(t1d_diagnosis == "Control")
+analysis_t1d = analysis_plot %>% filter(t1d_diagnosis == "T1D")
+#p1np
+hba1c_p = ggplot(data = analysis_plot , aes(x = hba1c, y = p1np_baseline,  color = t1d_diagnosis)) + 
+      geom_point(na.rm = T) + geom_smooth(method = lm, se = F,na.rm = T, data = analysis_control)  + geom_smooth(method = lm, se = F,na.rm = T, data = analysis_t1d) +
+      theme_classic() 
+
+hba1c_c = ggplot(data = analysis_plot , aes(x = hba1c, y = ctx_bl,  color = t1d_diagnosis)) + 
+      geom_point(na.rm = T) + geom_smooth(method = lm, se = F,na.rm = T, data = analysis_control)  + geom_smooth(method = lm, se = F,na.rm = T, data = analysis_t1d) +
+      theme_classic() 
+hba1c_c = hba1c_c + theme(text = element_text(size = 20)) + labs(y = "CTX Baseline")
+hba1c_p = hba1c_p + theme(text = element_text(size = 20)) + labs(y = "P1NP Baseline")
+```
 # Baseline Characteristics
 ```{r t1}
 bl_t1 = table1(~  age+demo_gender1+postmenopause_pill_42695d+menopause_dur+are_you_currently_smoking_e66c9b+do_you_drink_3_or_more_uni_ca666a+sports_past_week+did_you_participate_in_any+regular_activity_past_week+fall_diab_duration+hba1c+ egfr+albumin_serum+creatinine_serum+pth_baseline+calcium_serum|t1d_diagnosis,data = analysis, render.continuous=c(.="Mean (SD)") )
@@ -116,4 +170,25 @@ bl_t2 = table1(~.  |t1d_diagnosis,data = analysis_2, render.continuous=c(.="Mean
 
 bl_t2
 ```
+
+# Interactions
+## HBA1C
+P1NP: Hba1c levels affect p1np differences between t1d and controls (p = 0.04)
+CTX: Hba1c levels do not affect ctx differences between groups (p = 0.15)
+
+```{r plotts}
+hba1c_p
+hba1c_c
+```
+
+
+
+# Code Appendix
+```{r qct interactions}
+# any interaction between QCT variables and age of onset t1d, diabetes duration, hba1c
+
+# hba1c
+fit_mod("hba1c", analysis)
+
+
 ```
