@@ -15,6 +15,7 @@ library(randcorr)
 library(MASS)
 library(igraph)
 library(parallel)
+library(performance)
 library(knitr)
 knitr::opts_chunk$set(echo = TRUE)
 ```
@@ -109,7 +110,7 @@ elasticnet = function(df,folds = 5,outcome = "y",n_alphas = 10,n_lambdas = 100,
   # Grid search
   list2env(list(X=X,Y=Y,n_alphas=n_alphas,n_lambdas=n_lambdas,folds=folds),.GlobalEnv)
   e = ensr(X,Y,alphas = seq(0, 1, length = n_alphas),nlambda = n_lambdas,
-             nfolds = folds,parallel = T)
+           nfolds = folds,parallel = T)
   # Get lambda and alpha
   res = summary(e)
   min_err = min(res$cvm,na.rm = T)
@@ -170,7 +171,7 @@ sim_data = function(N = 50, n = 1000,p_con = 0.02,
   met = met[sample(1:nrow(met),3),]
   met = unique(as.vector(met))
   sim$y = apply(sim[,met],1,function(r){
-    sum(r) + rnorm()
+    sum(r) + rnorm(1,0,1)
   })
   return(list("simulated_data" = sim,"true_metabs" = met))
 }
@@ -179,9 +180,13 @@ sim_data = function(N = 50, n = 1000,p_con = 0.02,
 ```{r}
 # Jaccard similarity
 jaccard <- function(a, b) {
-    intersection = length(intersect(a, b))
-    union = length(a) + length(b) - intersection
-    return (intersection/union)
+  intersection = length(intersect(a, b))
+  union = length(a) + length(b) - intersection
+  return (intersection/union)
+}
+# RMSE
+rmse = function(mod1,mod2){
+  
 }
 ```
 
@@ -202,9 +207,23 @@ t = parLapply(cl,sims, function(s){
   difacto = as.numeric(sub("X","",difacto$best))
   # ElasticNet
   elastic = elasticnet(d)
-  # Agreement
-  return(list("elastic" = jaccard(elastic,s$true_metabs),
-              "difacto" = jaccard(difacto,s$true_metabs)))
+  # RMSE
+  difacto_mod = lm(as.formula(paste0("y~",paste0("X",difacto,collapse = "+"))),d)
+  elastic_mod = lm(as.formula(paste0("y~",paste0("X",elastic,collapse = "+"))),d)
+  # Results
+  return(list(
+    # Agreement
+    "elastic_jacc" = jaccard(elastic,s$true_metabs),
+    "difacto_jacc" = jaccard(difacto,s$true_metabs),
+    # RMSE
+    "elastic_rmse" = rmse(elastic_mod),"difacto_rmse" = rmse(difacto_mod)))
 })
 stopCluster(cl)
 ```
+
+# Limitations
+
+1. DIFAcTO was designed for continuous outcomes and features, so for the abstract we had to make some minor changes to work with our binary outcome.
+2. The DIFAcTO code was difficult to run on anything but the example data, so we wrote custom code to reproduce the pipeline. There may be important differences in our code (clustering algorithm, etc.), but the overall idea is the same.
+3. We assume a multivariate normal distribution for our features, and a linear model with no interactions or polynomial trends. 
+4. So many parameters! Ours were chosen based on COPD gene, but there is no gold standard for metabolomics data.
