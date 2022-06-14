@@ -69,6 +69,8 @@ hist(epsilon_resid)
 
 - To find appropriate values for the simulated model error, we calculated the SD of the residuals from the above models (all residuals were pooled together before calculating SD). We assumed $\epsilon\sim N(0,8)$ as a starting point. 
 
+- Features included in the outcome model were selected randomly.
+
 # Functions
 
 ```{r}
@@ -179,7 +181,7 @@ elasticnet = function(df,folds = 5,outcome = "y",n_alphas = 10,n_lambdas = 100,
   selected = as.matrix(coef(mod))
   selected = rownames(selected)[selected[,1] != 0]
   selected = selected[selected != "(Intercept)"]
-  return(as.numeric(sub("X","",selected)))
+  return(selected)
 }
 ```
 
@@ -197,7 +199,7 @@ sim_data = function(N = 50, n = 1000,p_con = 0.02,
                     mean_mean = 1500,mean_sd = 830,
                     err_mean = 0,err_sd = 1,
                     beta_mean = 0.002,beta_sd = 0.04,
-                    error_sd = 8,
+                    error_sd = 8,model_size = 5,
                     corr_struct = "random",
                     seed = 1017){
   set.seed(seed)
@@ -219,12 +221,9 @@ sim_data = function(N = 50, n = 1000,p_con = 0.02,
   # Means
   mus = round(rnorm(N,mean = mean_mean,sd = mean_sd))
   sim = data.frame(mvrnorm(n,mus,cov)) 
-  # Outcome related to 3 correlated metabolite pairs
-  met = which(r!=0,arr.ind = T)
-  met = met[which(met[,1] != met[,2]),]
-  met = met[sample(1:nrow(met),3),]
-  met = unique(as.vector(met))
-  betas = rnorm(length(met),beta_mean,beta_sd)
+  # Outcome model
+  met = sample(colnames(sim),size = model_size)
+  betas = rnorm(model_size,beta_mean,beta_sd)
   sim$y = apply(sim[,met],1,function(r){
     sum(betas*r) + rnorm(1,0,8)
   })
@@ -243,34 +242,48 @@ jaccard <- function(a, b) {
 
 ```{r}
 # Model comparison
-compare = function(simulated_data,core_ratio = 0.5){
-  cl = makeForkCluster(core_ratio*detectCores())
-  t = parLapply(cl,sims, function(s){
+compare = function(simulated_data,core_ratio = 0.5,digits = 3){
+  # Calculate metrics and store in table
+  cl = makeForkCluster(round(core_ratio*detectCores()))
+  results = parLapply(cl,sims, function(s){
     d = s$simulated_data
     # Difacto
-    difacto = corr_cluster(d)
-    difacto = as.numeric(sub("X","",difacto$best))
+    difacto = corr_cluster(d)$best
     # ElasticNet
     elastic = elasticnet(d)
     # RMSE
-    difacto_mod = lm(as.formula(paste0("y~",paste0("X",difacto,collapse = "+"))),d)
-    elastic_mod = lm(as.formula(paste0("y~",paste0("X",elastic,collapse = "+"))),d)
+    difacto_mod = lm(as.formula(paste0("y~",paste0(difacto,collapse = "+"))),d)
+    elastic_mod = lm(as.formula(paste0("y~",paste0(elastic,collapse = "+"))),d)
     # Results
-    return(list(
+    return(c(
       # Agreement
       "elastic_jacc" = jaccard(elastic,s$true_metabs),
       "difacto_jacc" = jaccard(difacto,s$true_metabs),
       # RMSE
-      "elastic_rmse" = rmse(elastic_mod),"difacto_rmse" = rmse(difacto_mod)))
+      "elastic_rmse" = rmse(elastic_mod),
+      "difacto_rmse" = rmse(difacto_mod),
+      # Model size selected
+      "elastic_size" = length(elastic),
+      "difacto_size" = length(difacto)
+      ))
   })
   stopCluster(cl)
+  results = round(do.call(rbind,results),digits)
+  return(results)
+}
+```
+
+```{r}
+# 3D plot
+plot_3d = function(results1,results2,results3,axes){
+  print("hi")
 }
 ```
 
 example
 
 ```{r}
-n_sims = 1000
+n_sims = 10
 # Simulate multiple datasets
 sims = lapply(1:n_sims, function(i){
   t = sim_data(seed = i)
