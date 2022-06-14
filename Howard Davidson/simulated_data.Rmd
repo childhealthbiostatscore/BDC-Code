@@ -6,11 +6,14 @@ output:
   html_document:
     number_sections: yes
     toc: yes
-    toc_depth: 2
+    toc_depth: 4
     toc_float: yes
 ---
 
 ```{r setup, include=FALSE}
+library(tidyr)
+library(reshape2)
+library(plotly)
 library(randcorr)
 library(MASS)
 library(parallel)
@@ -245,7 +248,7 @@ jaccard <- function(a, b) {
 compare = function(simulated_data,core_ratio = 0.5,digits = 3){
   # Calculate metrics and store in table
   cl = makeForkCluster(round(core_ratio*detectCores()))
-  results = parLapply(cl,sims, function(s){
+  results = parLapply(cl,simulated_data, function(s){
     d = s$simulated_data
     # Difacto
     difacto = corr_cluster(d)$best
@@ -265,30 +268,114 @@ compare = function(simulated_data,core_ratio = 0.5,digits = 3){
       # Model size selected
       "elastic_size" = length(elastic),
       "difacto_size" = length(difacto)
-      ))
+    ))
   })
   stopCluster(cl)
   results = round(do.call(rbind,results),digits)
-  return(results)
+  return(data.frame(results))
 }
 ```
 
 ```{r}
 # 3D plot
-plot_3d = function(results1,results2,results3,axes){
-  print("hi")
+plot_3d = function(results_df,model_size = 5){
+  # Long dataset
+  plot_df = data.frame(results_df) %>% pivot_longer(elastic_jacc:difacto_size,
+                                                    names_to = c("type",".value"),
+                                                    names_pattern = "(.*)_(.*)")
+  # Plot
+  # Make data for correct model size
+  df_mesh <- data.frame(X_VAL = c(0, 0, 1, 1),
+                        Y_VAL = c(min(plot_df$rmse),max(plot_df$rmse), 
+                                  max(plot_df$rmse),min(plot_df$rmse)),
+                        Z_VAL = rep(model_size,4))
+  # Put together
+  p = plot_ly(plot_df,x = ~jacc, y = ~rmse, z = ~size,color = ~type,
+              type="scatter3d",mode="markers",colors = c("#FC8D62","#8DA0CB"),
+              size = 0) %>% 
+    layout(scene = list(xaxis=list(title = "Jaccard Index"),
+                        yaxis=list(title = "RMSE"),
+                        zaxis=list(title = "Model Size"))) %>%
+    add_trace(type = 'mesh3d',data = df_mesh,x = ~X_VAL,y = ~Y_VAL,z = ~Z_VAL,
+              color = NULL,mode = NULL,opacity = 0.1) 
+  return(p)
 }
 ```
 
-example
+# Results
+
+- 1000 datasets per simulation.
 
 ```{r}
-n_sims = 10
+n_sims = 1000
+```
+
+## 5% Connected Nodes
+
+### 50 Features
+
+#### 30 Samples
+
+```{r}
 # Simulate multiple datasets
 sims = lapply(1:n_sims, function(i){
-  t = sim_data(seed = i)
+  t = sim_data(seed = i,p_con = 0.05,N = 50,n = 30)
   return(t)
 })
+res = compare(simulated_data = sims)
+```
+
+```{r}
+kable(t(colMeans(res)),caption = "Average Performance")
+plot_3d(res,model_size = 5)
+```
+
+#### 100 Samples
+
+```{r}
+# Simulate multiple datasets
+sims = lapply(1:n_sims, function(i){
+  t = sim_data(seed = i,p_con = 0.05,N = 50,n = 100)
+  return(t)
+})
+res = compare(simulated_data = sims)
+```
+
+```{r}
+kable(t(colMeans(res)),caption = "Average Performance")
+plot_3d(res,model_size = 5)
+```
+
+#### 200 Samples
+
+```{r}
+# Simulate multiple datasets
+sims = lapply(1:n_sims, function(i){
+  t = sim_data(seed = i,p_con = 0.05,N = 50,n = 200)
+  return(t)
+})
+res = compare(simulated_data = sims)
+```
+
+```{r}
+kable(t(colMeans(res)),caption = "Average Performance")
+plot_3d(res,model_size = 5)
+```
+
+#### 500 Samples
+
+```{r}
+# Simulate multiple datasets
+sims = lapply(1:n_sims, function(i){
+  t = sim_data(seed = i,p_con = 0.05,N = 50,n = 500)
+  return(t)
+})
+res = compare(simulated_data = sims)
+```
+
+```{r}
+kable(t(colMeans(res)),caption = "Average Performance")
+plot_3d(res,model_size = 5)
 ```
 
 # Limitations
@@ -297,7 +384,8 @@ sims = lapply(1:n_sims, function(i){
 2. The DIFAcTO code was difficult to run on anything but the example data, so we wrote custom code to reproduce the pipeline. There may be important differences in our code (clustering algorithm, etc.), but the overall idea is the same.
 3. We assume a multivariate normal distribution for our features, and a linear model with no interactions or polynomial trends. 
 4. So many parameters! Ours were chosen based on COPD gene, but there is no gold standard for metabolomics data.
+5. We optimized the correlation cutoff for DIFAcTO each time, which significantly slows computation.
 
 # Questions for Laura
 
-1. Are these betas too small?
+1. Are these betas too small? How much do we want to look at signal vs. noise?
