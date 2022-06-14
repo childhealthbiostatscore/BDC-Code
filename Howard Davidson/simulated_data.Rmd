@@ -17,8 +17,58 @@ library(igraph)
 library(parallel)
 library(performance)
 library(knitr)
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE,cache = TRUE)
 ```
+
+# COPD Gene
+
+```{r}
+# Import and clean COPD gene data
+copd20 = read.delim("/Users/timvigers/Documents/Work/Metabolomics/COPD Gene/ST000601_AN000920_Results.txt")
+copd20 = copd20[-1,]
+rownames(copd20) = copd20$Compound
+
+copd21 = read.delim("/Users/timvigers/Documents/Work/Metabolomics/COPD Gene/ST000601_AN000921_Results.txt")
+copd21 = copd21[-1,]
+rownames(copd21) = copd21$Compound
+
+copd = data.frame(rbind(copd20,copd21))
+copd[,c("Retention.Time","Mass","Compound")] = NULL
+copd = data.matrix(copd)
+# Get means and SDs of metabolites
+means = apply(copd,1,mean)
+sds = apply(copd,1,sd)
+# Plots
+hist(means)
+hist(sds)
+heatmap(cor(copd))
+# Use age as the outcome for univariate associations
+copd_info = read.csv("/Users/timvigers/Documents/Work/Metabolomics/COPD Gene/ST000601_AN000921_info.csv")
+copd_info$ID = paste0("X",copd_info$ID)
+age = matrix(copd_info$Age)
+copd = data.frame(t(copd))
+copd2 = copd[copd_info$ID,]
+# Get betas and error from univariate models
+betas = sapply(copd, function(m){
+  mod = lm(age~m)
+  return(summary(mod)$coefficients[2,1])
+})
+epsilon_resid = unlist(lapply(copd, function(m){
+  mod = lm(age~m)
+  return(residuals(mod))
+}))
+# Plots
+hist(betas)
+hist(epsilon_resid)
+```
+
+- To find reasonable parameters for simulated data, we calculated the mean and standard deviation for each metabolite in the COPD Gene dataset. For the sake of simplicity, simulated means are drawn from a $N(1500,830)$ distribution and simulated SDs are drawn from a $U(1,500)$ distribution (to prevent 0s and negatives).
+
+- There does not appear to be much correlation structure in COPD Gene, so we only looked at a random correlation matrix. 
+
+- To find appropriate beta values for the simulated model, we regressed each metabolite from COPD gene on age and examined the distribution of univariate beta values. The beta values appeared to be approximately $N(0.002,0.04)$.
+
+- To find appropriate values for the simulated model error, we calculated the SD of the residuals from the above models (all residuals were pooled together before calculating SD). We assumed $\epsilon\sim N(0,8)$ as a starting point. 
 
 # Functions
 
@@ -141,10 +191,15 @@ elasticnet = function(df,folds = 5,outcome = "y",n_alphas = 10,n_lambdas = 100,
 # metabolite standard deviations are drawn from
 # mean_mean and mean_sd determine the parameters of the normal distribution that the 
 # metabolite means are drawn from
+# corr_struct determines whether the correlation matrix is completely random or 
+# has a clustered structure
 sim_data = function(N = 50, n = 1000,p_con = 0.02,
-                    sd_mean = 10,sd_sd = 1,
-                    mean_mean = 100,mean_sd = 10,
+                    sd_min = 1,sd_max = 500,
+                    mean_mean = 1500,mean_sd = 830,
                     err_mean = 0,err_sd = 1,
+                    beta_mean = 0.002,beta_sd = 0.04,
+                    error_sd = 8,
+                    corr_struct = "random",
                     seed = 1017){
   set.seed(seed)
   # Random correlation matrix
@@ -157,23 +212,24 @@ sim_data = function(N = 50, n = 1000,p_con = 0.02,
   u = t(l)
   r = l + u
   diag(r) = 1
+  r = data.matrix(r)
   # Correlation matrix to covariance
-  # No 0s in SD!
-  sds = round(rnorm(N,mean = sd_mean,sd = sd_sd))
+  sds = runif(N,min = sd_min,max = sd_max)
   # diag(S)%*%R%*%diag(S) is covariance where S is SD vector
   cov = diag(sds) %*% r %*% diag(sds)
   # Means
   mus = round(rnorm(N,mean = mean_mean,sd = mean_sd))
-  sim <- data.frame(mvrnorm(n,mus,cov)) 
+  sim = data.frame(mvrnorm(n,mus,cov)) 
   # Outcome related to 3 correlated metabolite pairs
   met = which(r!=0,arr.ind = T)
   met = met[which(met[,1] != met[,2]),]
   met = met[sample(1:nrow(met),3),]
   met = unique(as.vector(met))
+  betas = rnorm(length(met),beta_mean,beta_sd)
   sim$y = apply(sim[,met],1,function(r){
-    sum(r) + rnorm(1,0,1)
+    sum(betas*r) + rnorm(1,0,8)
   })
-  return(list("simulated_data" = sim,"true_metabs" = met))
+  return(list("simulated_data" = sim,"true_metabs" = met,"true_betas" = betas))
 }
 ```
 
@@ -184,17 +240,14 @@ jaccard <- function(a, b) {
   union = length(a) + length(b) - intersection
   return (intersection/union)
 }
-# RMSE
-rmse = function(mod1,mod2){
-  
-}
 ```
 
 # Comparison example
 
-```{r}
+```{r eval=FALSE}
+n_sims = 1000
 # Simulate multiple datasets
-sims = lapply(1:100, function(i){
+sims = lapply(1:n_sims, function(i){
   t = sim_data(seed = i)
   return(t)
 })
@@ -227,3 +280,7 @@ stopCluster(cl)
 2. The DIFAcTO code was difficult to run on anything but the example data, so we wrote custom code to reproduce the pipeline. There may be important differences in our code (clustering algorithm, etc.), but the overall idea is the same.
 3. We assume a multivariate normal distribution for our features, and a linear model with no interactions or polynomial trends. 
 4. So many parameters! Ours were chosen based on COPD gene, but there is no gold standard for metabolomics data.
+
+# Questions for Laura
+
+1. Are these betas too small?
