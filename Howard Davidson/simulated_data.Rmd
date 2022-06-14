@@ -13,7 +13,6 @@ output:
 ```{r setup, include=FALSE}
 library(randcorr)
 library(MASS)
-library(igraph)
 library(parallel)
 library(performance)
 library(knitr)
@@ -242,7 +241,33 @@ jaccard <- function(a, b) {
 }
 ```
 
-# Comparison example
+```{r}
+# Model comparison
+compare = function(simulated_data,core_ratio = 0.5){
+  cl = makeForkCluster(core_ratio*detectCores())
+  t = parLapply(cl,sims, function(s){
+    d = s$simulated_data
+    # Difacto
+    difacto = corr_cluster(d)
+    difacto = as.numeric(sub("X","",difacto$best))
+    # ElasticNet
+    elastic = elasticnet(d)
+    # RMSE
+    difacto_mod = lm(as.formula(paste0("y~",paste0("X",difacto,collapse = "+"))),d)
+    elastic_mod = lm(as.formula(paste0("y~",paste0("X",elastic,collapse = "+"))),d)
+    # Results
+    return(list(
+      # Agreement
+      "elastic_jacc" = jaccard(elastic,s$true_metabs),
+      "difacto_jacc" = jaccard(difacto,s$true_metabs),
+      # RMSE
+      "elastic_rmse" = rmse(elastic_mod),"difacto_rmse" = rmse(difacto_mod)))
+  })
+  stopCluster(cl)
+}
+```
+
+example
 
 ```{r}
 n_sims = 1000
@@ -251,27 +276,6 @@ sims = lapply(1:n_sims, function(i){
   t = sim_data(seed = i)
   return(t)
 })
-# Check approaches
-cl = makeForkCluster(0.5*detectCores())
-t = parLapply(cl,sims, function(s){
-  d = s$simulated_data
-  # Difacto
-  difacto = corr_cluster(d)
-  difacto = as.numeric(sub("X","",difacto$best))
-  # ElasticNet
-  elastic = elasticnet(d)
-  # RMSE
-  difacto_mod = lm(as.formula(paste0("y~",paste0("X",difacto,collapse = "+"))),d)
-  elastic_mod = lm(as.formula(paste0("y~",paste0("X",elastic,collapse = "+"))),d)
-  # Results
-  return(list(
-    # Agreement
-    "elastic_jacc" = jaccard(elastic,s$true_metabs),
-    "difacto_jacc" = jaccard(difacto,s$true_metabs),
-    # RMSE
-    "elastic_rmse" = rmse(elastic_mod),"difacto_rmse" = rmse(difacto_mod)))
-})
-stopCluster(cl)
 ```
 
 # Limitations
