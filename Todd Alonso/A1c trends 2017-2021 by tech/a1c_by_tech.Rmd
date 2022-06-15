@@ -31,48 +31,83 @@ knitr::opts_knit$set(root.dir = home_dir)
 rm(home_dir)
 
 #import data
-a1c_tech = read_excel("S:/Laura/BDC/Projects/Todd Alonso/A1c trends 2017 to 2021 by tech/Data raw/Change in A1c 2017 to 2021 by tech_only encounters to be used for analysis.xlsx")
+#a1c_tech = read_excel("S:/Laura/BDC/Projects/Todd Alonso/A1c trends 2017 to 2021 by tech/Data raw/Change in A1c 2017 to 2021 by tech_only encounters to be used for analysis.xlsx")
+a1c_tech_2016 <- read_excel("S:/Laura/BDC/Projects/Todd Alonso/A1c trends 2017 to 2021 by tech/Data raw/Change in A1c 2017 to 2021_new.xlsx", 
+    sheet = "2016-2017")
+a1c_tech_2020 <- read_excel("S:/Laura/BDC/Projects/Todd Alonso/A1c trends 2017 to 2021 by tech/Data raw/Change in A1c 2017 to 2021_new.xlsx", 
+    sheet = "2020-2021")
+a1c_tech_2020$`Race/Ethnicity` = a1c_tech_2020$`Race/ethnicity`
+a1c_tech_2020 = a1c_tech_2020 %>% select(-`Race/ethnicity`)
+
+a1c_tech = full_join(a1c_tech_2016, a1c_tech_2020)
+
+a1c_tech = a1c_tech %>% mutate(Race_Ethn = `Race/Ethnicity`) %>% select(-`Race/Ethnicity`)
+label(a1c_tech$Race_Ethn) = "Race/Ethnicity"
 ```
 
-```{r data clean, include=FALSE}
-# stratify into oct-march 2016-2017 and oct-march 2020-2021
+```{r data clean1, include=FALSE}
+# # stratify into oct-march 2016-2017 and oct-march 2020-2021
+# analysis = a1c_tech %>% 
+#   mutate(time_group = case_when(year(VisitDate) == 2016 | year(VisitDate) == 2017 ~ "2016-2017",
+#                                 year(VisitDate) == 2020 | year(VisitDate) == 2021 ~ "2020-2021"),
+#          tech_group = case_when(tolower(InsulinRegimen) == "insulin pump" & CGM == "Yes" ~ "CGM + Pump",
+#                                 tolower(InsulinRegimen) == "insulin pump" & CGM != "Yes" ~ "Pump Alone",
+#                                 tolower(InsulinRegimen) != "insulin pump" & CGM == "Yes" ~ "CGM Alone",
+#                                 TRUE ~ "None")) %>% 
+#   select(EPICMRN, VisitDate, Age_A1cResultDate, A1c_Value, tech_group, InsulinRegimen, CGM, time_group, DiabetesDuration_A1cResultDate) 
+# 
+# # factor tech type for order
+# analysis$tech_group = factor(analysis$tech_group, levels = c("CGM + Pump", "CGM Alone", "Pump Alone", "None"))
+# 
+# # check for multicollinearity between age and diabetes duration
+# cor(analysis$Age_A1cResultDate, a1c_tech$DiabetesDuration_A1cResultDate) # 0.58 correlation, pretty strong
+# 
+# 
+# # vif seems ok though
+# # test_mod = lm(A1c_Value ~ Age_A1cResultDate + DiabetesDuration_A1cResultDate + time_group + tech_group, data = analysis)
+# # test_mod2 = lm(A1c_Value ~ Age_A1cResultDate  + time_group + tech_group, data = analysis)
+# # 
+# # vif(test_mod)
+# # vif(test_mod2)
+```
+
+```{r dataclean2}
+# used cgm/pump visits instead of the actual variables to create groups to align with Todd's counts
 analysis = a1c_tech %>% 
   mutate(time_group = case_when(year(VisitDate) == 2016 | year(VisitDate) == 2017 ~ "2016-2017",
                                 year(VisitDate) == 2020 | year(VisitDate) == 2021 ~ "2020-2021"),
-         tech_group = case_when(tolower(InsulinRegimen) == "insulin pump" & CGM == "Yes" ~ "CGM + Pump",
-                                tolower(InsulinRegimen) == "insulin pump" & CGM != "Yes" ~ "Pump Alone",
-                                tolower(InsulinRegimen) != "insulin pump" & CGM == "Yes" ~ "CGM Alone",
+         tech_group = case_when(Pump_VisitDate == "Y" & CGM_VisitDate == "Y" ~ "CGM + Pump",
+                                Pump_VisitDate == "Y" & CGM_VisitDate != "Y" ~ "Pump Alone",
+                                Pump_VisitDate != "Y" & CGM_VisitDate == "Y" ~ "CGM Alone",
                                 TRUE ~ "None")) %>% 
-  select(EPICMRN, VisitDate, Age_A1cResultDate, A1c_Value, tech_group, InsulinRegimen, CGM, time_group, DiabetesDuration_A1cResultDate) 
+  select(EPICMRN, VisitDate, Age_A1cResultDate, A1c_Value, tech_group, time_group, DiabetesDuration_A1cResultDate, Gender, Race_Ethn) 
 
 # factor tech type for order
 analysis$tech_group = factor(analysis$tech_group, levels = c("CGM + Pump", "CGM Alone", "Pump Alone", "None"))
 
-# check for multicollinearity between age and diabetes duration
-cor(analysis$Age_A1cResultDate, a1c_tech$DiabetesDuration_A1cResultDate) # 0.58 correlation, pretty strong
-
-
-# vif seems ok though
-# test_mod = lm(A1c_Value ~ Age_A1cResultDate + DiabetesDuration_A1cResultDate + time_group + tech_group, data = analysis)
-# test_mod2 = lm(A1c_Value ~ Age_A1cResultDate  + time_group + tech_group, data = analysis)
-# 
-# vif(test_mod)
-# vif(test_mod2)
+# # check for multicollinearity between age and diabetes duration
+#cor(analysis$Age_A1cResultDate, a1c_tech$DiabetesDuration_A1cResultDate) # 0.58 correlation, pretty strong, same as above
 ```
 
 ```{r analysis, include=FALSE}
 # table 1
-a1c_table1 = table1(~ A1c_Value + Age_A1cResultDate + DiabetesDuration_A1cResultDate | tech_group*time_group,
+a1c_table1 = table1(~ Gender + Race_Ethn + A1c_Value + Age_A1cResultDate + DiabetesDuration_A1cResultDate  | tech_group*time_group,
                     render.continuous = c(.="Mean (SD)"),
                      data = analysis)
 
 # Fit random intercept model
-a1c_mod = lme(A1c_Value ~ Age_A1cResultDate + DiabetesDuration_A1cResultDate + tech_group + time_group + tech_group*time_group,
+a1c_mod = lme(A1c_Value ~ Age_A1cResultDate + DiabetesDuration_A1cResultDate + Race_Ethn + tech_group + time_group + tech_group*time_group,
             random = ~1|EPICMRN,
             data = analysis,
             na.action = na.omit)
 
-a1c_mod2 = lme(A1c_Value ~ Age_A1cResultDate +  tech_group + time_group + tech_group*time_group,
+a1c_mod2 = lme(A1c_Value ~ Age_A1cResultDate + Race_Ethn +  tech_group + time_group + tech_group*time_group,
+            random = ~1|EPICMRN,
+            data = analysis,
+            na.action = na.omit)
+
+# entire cohort, just a1c change between time grp
+a1c_mod_all = lme(A1c_Value ~ Age_A1cResultDate + DiabetesDuration_A1cResultDate + Race_Ethn +  time_group ,
             random = ~1|EPICMRN,
             data = analysis,
             na.action = na.omit)
@@ -92,7 +127,7 @@ a1c_predict = cbind(analysis, a1cpred = predict(a1c_mod))
 
 # Methods
 
-A1c values were modeled with a Linear Mixed Model with time groups(2016-2017, 2020-2021) and tech groups(CGM+Pump, CGM only, Pump Only, None) and an interaction term of time and tech, adjusting for age and diabetes duration. A random intercept for subject was added to account for subjects with repeated measurements. Contrasts of estimated marginal means (least squares means) were used to determine the difference within tech groups at each time point.
+A1c values were modeled with a Linear Mixed Model with time groups(2016-2017, 2020-2021) and tech groups(CGM+Pump, CGM only, Pump Only, None) and an interaction term of time and tech, adjusting for age, diabetes duration, and race/ethnicity. A random intercept for subject was added to account for subjects with repeated measurements. Contrasts of estimated marginal means (least squares means) were used to determine the difference within tech groups at each time point.
 
 # Analysis
 
@@ -103,12 +138,19 @@ a1c_table1
 
 ## Model Fit and Contrasts
 
-Adjusting for age and diabetes duration, there is a significant difference in A1c within the different tech groups across the 2016-2017 and 2020-2021 time periods (p < 0.0001).
+Adjusting for age, diabetes duration, and race there is a significant difference in A1c across the 2016-2017 and 2020-2021 time periods (p < 0.0001). The average A1c decreased by 0.47 (95% CI: 0.39, 0.56). 
 
-The average A1c decreased by 0.44 (95% CI : 0.29, 0.58) in the CGM + Pump group (p < 0.0001), increased by 0.31 (95% CI: 0.09, 0.53) in the Pump Only groups (p = 0.022), and increased by 0.45 (95% CI: 0.26, 0.64) in the No Tech group (p < 0.0001). There was no significant difference in the time periods within the CGM only group (p = 0.84) 
+When only including patients who had data in both time periods, the average A1c decreased by 0.39 (95% CI: 0.25, 0.53; p <0.0001). 
+
+Adjusting for age, diabetes duration, and race there is a significant difference in A1c within the different tech groups across the 2016-2017 and 2020-2021 time periods (p < 0.0001).
+
+The average A1c decreased by 0.45 (95% CI : 0.31, 0.59) in the CGM + Pump group (p < 0.0001), increased by 0.40 (95% CI: 0.17, 0.62) in the Pump Only groups (p = 0.002), and increased by 0.42 (95% CI: 0.23, 0.62) in the No Tech group (p < 0.0001). There was no significant difference in the time periods within the CGM only group (p = 0.619) 
 
 
 ```{r model}
+a = summary(a1c_mod_all)
+kable(a$tTable, digits = 3, caption = "Base A1c Model")
+
 kable(mod_anova,digits = 3,caption = "Test of Overall Effect")
 
 kable(mod_means$contrasts[c(4,11,17,22),],digits = 3,caption = "Timepoint Means")
@@ -129,4 +171,36 @@ a1ctech_plot_lm = ggplot(data = analysis, aes(x = Age_VisitDate, y = A1c_Value, 
 # a1ctech_plot_loess
 # a1ctech_plot_gam
 # a1ctech_plot_lm
+```
+# Code Appendix
+complete summary of full model (no tech groups)
+```{r code appendix}
+a = summary(a1c_mod_all)
+a
+```
+
+model no groups only those with 2 both visits
+```{r all grps}
+# list of id's in both subj
+id_list = analysis %>% group_by(EPICMRN) %>% summarise(n = n())
+id_list = id_list %>% filter(n == 2) %>% select(EPICMRN)
+# filter based on list
+analysis2 = analysis %>% filter(EPICMRN %in% id_list$EPICMRN); rm(id_list)
+
+
+# for group change paste 2017 and 2020 group into a variable, filter by same/same (subanalsyis2) or switched groups (3)
+a_2017 = analysis2 %>% filter(time_group == "2016-2017") %>% mutate(grp2016 = tech_group) %>% select(EPICMRN, grp2016)
+a_2020 = analysis2 %>% filter(time_group == "2020-2021") %>% mutate(grp2020 = tech_group) %>% select(EPICMRN, grp2020)
+a_combined = full_join(a_2017, a_2020) %>% mutate(tech_group_change = paste0(grp2016, "/", grp2020)); rm(a_2017, a_2020)
+
+analysis2 = full_join(analysis2, a_combined) # only those with both time windows
+
+a1c_mod_all_2v = lme(A1c_Value ~ Age_A1cResultDate + DiabetesDuration_A1cResultDate + Race_Ethn +  time_group ,
+            random = ~1|EPICMRN,
+            data = analysis2,
+            na.action = na.omit)
+
+b = summary(a1c_mod_all_2v)
+kable(b$tTable)
+.39 + 1.96*c(-1, 1)*0.0704927
 ```
