@@ -16,7 +16,9 @@ dict = {'id': [], 'timepoint': [], 'start_date': [], 'end_date': [], 'num_days':
         'num_alarms': [], 'threshold_alarms': [], 'maintenance_alarms': [], 'hcl_alarms': [],
         'pump_alarms': [], 'other_alarms': []}
 # Iterate through files in wd
-for file in os.listdir(wd+"Data_Cleaned/CSVs/"):
+files = os.listdir(wd+"Data_Cleaned/CSVs/")
+files.sort()
+for file in files:
     if file == ".DS_Store":
         continue
     # Get subject name and dates
@@ -51,7 +53,7 @@ for file in os.listdir(wd+"Data_Cleaned/CSVs/"):
     df.sort_index(inplace=True)
     df = df[df.index.notnull()]
     df = df.loc[start:end]
-    # Pull all alarms between 6a-10p
+    # Pull all alarms between 10p-6a
     df['Time'] = pd.to_datetime(df['Time'], format="%H:%M:%S", errors="coerce")
     df = df.set_index('Time')
     # Alarms
@@ -95,9 +97,7 @@ for file in os.listdir(wd+"Data_Cleaned/CSVs/"):
     dict['other_alarms'].append(other)
 # Results as a dataframe
 df = pd.DataFrame(data=dict)
-# Remove those with no data
 # Remove those missing data
-ind = df.iloc[:, 4:10].sum(axis=1) > 0
-df = df.loc[ind, :]
+df = df.loc[df['num_days'] > 0, :]
 # Write
 df.to_csv(wd+"Data_Cleaned/daytime_alarms.csv", index=False)
