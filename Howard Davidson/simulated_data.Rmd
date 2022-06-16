@@ -164,7 +164,7 @@ elasticnet = function(df,folds = 5,outcome = "y",n_alphas = 10,n_lambdas = 100,
   # Grid search
   list2env(list(X=X,Y=Y,n_alphas=n_alphas,n_lambdas=n_lambdas,folds=folds),.GlobalEnv)
   e = ensr(X,Y,alphas = seq(0, 1, length = n_alphas),nlambda = n_lambdas,
-           nfolds = folds,parallel = T)
+           nfolds = folds,parallel = F)
   # Get lambda and alpha
   res = summary(e)
   min_err = min(res$cvm,na.rm = T)
@@ -247,14 +247,14 @@ jaccard <- function(a, b) {
 # Model comparison
 compare = function(simulated_data,core_ratio = 0.5,digits = 3){
   # Calculate metrics and store in table
-  cl = makeForkCluster(round(core_ratio*detectCores()))
-  results = parLapply(cl,simulated_data, function(s){
+  results = mclapply(simulated_data, function(s){
     d = s$simulated_data
     # Difacto
     difacto = corr_cluster(d)$best
     # ElasticNet
     elastic = elasticnet(d)
-    # RMSE
+    if (length(elastic) == 0){elastic = "1"}
+    # Models for RMSE
     difacto_mod = lm(as.formula(paste0("y~",paste0(difacto,collapse = "+"))),d)
     elastic_mod = lm(as.formula(paste0("y~",paste0(elastic,collapse = "+"))),d)
     # Results
@@ -266,13 +266,17 @@ compare = function(simulated_data,core_ratio = 0.5,digits = 3){
       "elastic_rmse" = rmse(elastic_mod),
       "difacto_rmse" = rmse(difacto_mod),
       # Model size selected
-      "elastic_size" = length(elastic),
-      "difacto_size" = length(difacto)
+      if(length(elastic) == 1 & elastic[1] == "1"){
+        "elastic_size" = 0
+      } else {
+        "elastic_size" = length(elastic)
+      }
+      ,"difacto_size" = length(difacto)
     ))
-  })
-  stopCluster(cl)
-  results = round(do.call(rbind,results),digits)
-  return(data.frame(results))
+  },mc.cores = round(core_ratio*detectCores()))
+  # Combine into one dataframe
+  results = data.frame(round(do.call(rbind,results),digits))
+  return(results)
 }
 ```
 
