@@ -63,7 +63,7 @@ for file in files:
     all_alarms = df['Alarm'].between_time(
         "6:00:00", "22:00:00", inclusive="right").dropna().str.lower()
     dates = df.loc[all_alarms.index, 'Date']
-    days = dates.nunique()
+    days = dates.nunique()-1
     # Don't count the alarm if it includes the words:  QUIET, BOLUS, ENTER BG,
     matches = ["quiet", "bolus", "enter bg"]
     all_alarms = [alarm for alarm in all_alarms if all(
