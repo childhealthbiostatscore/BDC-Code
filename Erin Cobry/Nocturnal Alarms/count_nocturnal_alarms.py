@@ -49,18 +49,21 @@ for file in files:
     else:
         df['Datetime'] = df['Date'] + ' ' + df['Time']
         df['Datetime'] = pd.to_datetime(df['Datetime'], errors='coerce')
-    df = df.set_index('Datetime')
+    df['Datetime'] = df['Datetime'].round('s')
+    df['Date'] = df['Datetime'].dt.date
+    df['Time'] = df['Datetime'].dt.time
+    df = df.set_index('Datetime', drop=False)
     df.sort_index(inplace=True)
     df = df[df.index.notnull()]
     df = df.loc[start:end]
     # Pull all alarms between 10p-6a
     df['Time'] = pd.to_datetime(df['Time'], format="%H:%M:%S", errors="coerce")
-    df = df.set_index('Time')
+    df = df.set_index('Time', drop=False)
     # Alarms
     all_alarms = df['Alarm'].between_time(
         "22:00:00", "6:00:00", inclusive="right").dropna().str.lower()
     dates = df.loc[all_alarms.index, 'Date']
-    nights = dates.nunique()
+    nights = dates.nunique()-1
     # Don't count the alarm if it includes the words:  QUIET, BOLUS, ENTER BG,
     matches = ["quiet", "bolus", "enter bg"]
     all_alarms = [alarm for alarm in all_alarms if all(
