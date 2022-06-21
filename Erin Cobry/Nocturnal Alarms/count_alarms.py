@@ -1,7 +1,9 @@
 import os
 import math
+import functools
 from itertools import combinations
 from datetime import datetime
+from unittest import result
 from dateutil.parser import parse
 import xlrd
 import pandas as pd
@@ -12,12 +14,16 @@ subject_dates = pd.read_csv(wd+"Data_Cleaned/subject_dates.csv")
 names = [name.lower() for name in subject_dates['name']]
 names = np.array(names)
 # Time intervals
-times = {"Day": ["06:00:00", "22:00:00"], "Night": ["22:00:00", "06:00:00"],
-         "10pm - 12am": ["22:00:00", "00:00:00"], "12am - 2am": ["00:00:00", "02:00:00"],
-         "2am - 4am": ["02:00:00", "04:00:00"], "4am - 6am": ["04:00:00", "06:00:00"]}
+times = {"day": ["06:00:00", "22:00:00"], "night": ["22:00:00", "06:00:00"],
+         "10pm_12am": ["22:00:00", "00:00:00"], "12am_2am": ["00:00:00", "02:00:00"],
+         "2am_4am": ["02:00:00", "04:00:00"], "4am_6am": ["04:00:00", "06:00:00"]}
 # Dictionary for results
-dict = {'id': [], 'timepoint': [], 'start_date': [], 'end_date': [], 'days_with_data': [], 'interval': [], 'num_alarms': [
-], 'threshold_alarms': [], 'maintenance_alarms': [], 'hcl_alarms': [], 'pump_alarms': [], 'other_alarms': []}
+base_vars = ['num_alarms', 'threshold_alarms', 'maintenance_alarms',
+             'hcl_alarms', 'pump_alarms', 'other_alarms']
+vars = [[v+"_"+var for var in list(times.keys())] for v in base_vars]
+vars = [item for sublist in vars for item in sublist]
+vars = ['id', 'timepoint', 'start_date', 'end_date', 'days_with_data'] + vars
+results = {k: [] for k in vars}
 # Iterate through files in wd
 files = os.listdir(wd+"Data_Cleaned/CSVs/")
 files.sort()
@@ -60,6 +66,12 @@ for file in files:
     df = df[df.index.notnull()]
     df = df.loc[start:end]
     days = df['Date'].nunique()
+    # Base variables
+    results['id'].append(first[0].lower()+last[0].lower())
+    results['timepoint'].append(t)
+    results['start_date'].append(start)
+    results['end_date'].append(end)
+    results['days_with_data'].append(days)
     # Pull all alarms for each time period
     for time in times:
         t1 = times[time][0]
@@ -67,10 +79,15 @@ for file in files:
         # Pull all alarms in time period
         all_alarms = df['Alarm'].between_time(
             t1, t2, inclusive="right").dropna().str.lower()
+        # Number of hours
+        hours = (pd.to_datetime(t2)-pd.to_datetime(t1)).seconds/3600
+        hours = hours*days
         # Don't count the alarm if it includes the words:  QUIET, BOLUS, ENTER BG,
         matches = ["quiet", "bolus", "enter bg"]
         all_alarms = [alarm for alarm in all_alarms if all(
             x not in alarm for x in matches)]
+        if len(all_alarms) == 0 and hours == 0:
+            hours = 1
         # Alarm types (per Cari)
         # Threshold
         threshold = [alarm for alarm in all_alarms if 'alert' in alarm]
@@ -92,21 +109,15 @@ for file in files:
         other = len(all_alarms) - \
             sum([len(threshold), len(maintenance), len(hcl), len(pump)])
         # Return
-        dict['id'].append(first[0].lower()+last[0].lower())
-        dict['timepoint'].append(t)
-        dict['start_date'].append(start)
-        dict['end_date'].append(end)
-        dict['days_with_data'].append(days)
-        dict['interval'].append(time)
-        dict['num_alarms'].append(len(all_alarms))
-        dict['threshold_alarms'].append(len(threshold))
-        dict['maintenance_alarms'].append(len(maintenance))
-        dict['hcl_alarms'].append(len(hcl))
-        dict['pump_alarms'].append(len(pump))
-        dict['other_alarms'].append(other)
+        results['num_alarms'+'_'+time].append(len(all_alarms)/hours)
+        results['threshold_alarms'+'_'+time].append(len(threshold)/hours)
+        results['maintenance_alarms'+'_'+time].append(len(maintenance)/hours)
+        results['hcl_alarms'+'_'+time].append(len(hcl)/hours)
+        results['pump_alarms'+'_'+time].append(len(pump)/hours)
+        results['other_alarms'+'_'+time].append(other/hours)
 # Results as a dataframe
-df = pd.DataFrame(data=dict)
+df = pd.DataFrame(data=results)
 # Remove those missing data
 df = df.loc[df['days_with_data'] > 0, :]
 # Write
-df.to_csv(wd+"Data_Cleaned/alarms.csv", index=False)
+df.to_csv(wd+"Data_Cleaned/alarms_per_hour.csv", index=False)

@@ -50,51 +50,27 @@ no_data <- c("27","30","38","41")
 demographics <- demographics[-c(which(demographics$record_id %in% no_data)),]
 # Manually corrected a few dates in CSV file.
 # Read in (manually converted to long format from Erin's Excel spreadsheet)
-overnight_alarms <- read.csv("./Erin Cobry/Nocturnal Alarms/Data_Cleaned/nocturnal_alarms.csv",
-                             na.strings = c("","No Data"))
-overnight_alarms$timepoint = as.factor(overnight_alarms$timepoint)
-levels(overnight_alarms$timepoint) = c("Baseline","T1","Post","Post","Post",
+alarms <- read.csv("./Erin Cobry/Nocturnal Alarms/Data_Cleaned/alarms_per_hour.csv",na.strings = "")
+alarms$timepoint = as.factor(alarms$timepoint)
+levels(alarms$timepoint) = c("Baseline","T1","Post","Post","Post",
                                        "Post","Baseline","Baseline","T1","T2","T3","T4")
-
-daytime_alarms = read.csv("./Erin Cobry/Nocturnal Alarms/Data_Cleaned/daytime_alarms.csv",
-                          na.strings = c("","No Data"))
-daytime_alarms$timepoint = as.factor(daytime_alarms$timepoint)
-levels(daytime_alarms$timepoint) = c("Baseline","Post","Post","Post","Post",
-                                     "Post","Baseline","Baseline","T1","T2","T3","T4" )
 # Match IDs and filter
 dates = read.csv("./Erin Cobry/Nocturnal Alarms/Data_Cleaned/subject_dates.csv")
-overnight_alarms$id = dates$id[match(gsub(" ","",overnight_alarms$id),tolower(gsub(" ","",dates$name)))]
-overnight_alarms <- overnight_alarms %>% filter(!(id %in% no_data))
-daytime_alarms$id = dates$id[match(gsub(" ","",daytime_alarms$id),tolower(gsub(" ","",dates$name)))]
-daytime_alarms <- daytime_alarms %>% filter(!(id %in% no_data))
+alarms$id = dates$id[match(gsub(" ","",alarms$id),tolower(gsub(" ","",dates$name)))]
+alarms <- alarms %>% filter(!(id %in% no_data))
 # Format date columns
-overnight_alarms[,c("start_date","end_date")] <- 
-  lapply(overnight_alarms[,c("start_date","end_date")], 
-         function(x) {lubridate::mdy(as.character(x))})
-daytime_alarms[,c("start_date","end_date")] <- 
-  lapply(daytime_alarms[,c("start_date","end_date")], 
+alarms[,c("start_date","end_date")] <- 
+  lapply(alarms[,c("start_date","end_date")], 
          function(x) {lubridate::mdy(as.character(x))})
 # Numeric timepoints in months
-overnight_alarms$numeric_time <- 
-  car::recode(overnight_alarms$timepoint,
+alarms$numeric_time <- 
+  car::recode(alarms$timepoint,
               "'Baseline' = 0;'Post' = 0.5;'T1' = 3;'T2' = 6;'T3' = 9;'T4' = 12")
-overnight_alarms$numeric_time <- 
-  as.numeric(as.character(overnight_alarms$numeric_time))
-daytime_alarms$numeric_time <- 
-  car::recode(daytime_alarms$timepoint,
-              "'Baseline' = 0;'Post' = 0.5;'T1' = 3;'T2' = 6;'T3' = 9;'T4' = 12")
-daytime_alarms$numeric_time <- 
-  as.numeric(as.character(daytime_alarms$numeric_time))
+alarms$numeric_time <- 
+  as.numeric(as.character(alarms$numeric_time))
 # Calculate alarms per hour
-overnight_alarms = overnight_alarms %>% 
-  mutate(across(num_alarms:other_alarms,~ . / (num_nights*8),.names = "night_{col}")) %>%
-  select(id:end_date,numeric_time,starts_with("night"))
-daytime_alarms = daytime_alarms %>% 
-  mutate(across(num_alarms:other_alarms,~ . / (num_days*16),.names = "day_{col}")) %>%
-  select(id:end_date,numeric_time,starts_with("day"))
-# Combine nocturnal and daytime
-alarms = full_join(overnight_alarms,daytime_alarms,
-                   by = c("id", "timepoint", "start_date", "end_date", "numeric_time"))
+alarms = alarms %>% 
+  select(id:end_date,numeric_time,everything())
 # Get Erin's participants 
 demographics <- demographics[which(demographics$record_id %in% alarms$id),]
 # Combine CGM and pump hx levels
@@ -118,7 +94,6 @@ alarms$days_from_am_start =
 Participants were split into two equal groups based on AM start date. Due to several duplicated AM start dates, the groups were not exactly even but are reasonably close. 
 
 ```{r echo=FALSE,results='asis'}
-
 # Labels
 labels <- list(demographics_t1d_duration = "Diabetes Dur. (years)", 
                demographics_ethnicity.factor = "Ethnicity",
@@ -227,11 +202,11 @@ fit_mod = function(outcome,df = alarms){
 ### Nighttime
 
 ```{r echo=FALSE,message=FALSE,results='asis'}
-fit_mod(outcome = "night_num_alarms")
+fit_mod(outcome = "num_alarms_night")
 ```
 
 ### Daytime
 
 ```{r echo=FALSE,message=FALSE,results='asis'}
-fit_mod(outcome = "day_num_alarms")
+fit_mod(outcome = "num_alarms_day")
 ```
