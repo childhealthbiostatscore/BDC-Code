@@ -6,7 +6,7 @@ output:
   html_document:
     number_sections: yes
     toc: yes
-    toc_depth: 2
+    toc_depth: 4
     toc_float: yes
 ---
 
@@ -150,63 +150,182 @@ All alarms were analyzed using a linear mixed model with random intercept for pa
 
 ```{r}
 # Model function
-fit_mod = function(outcome,df = alarms){
+fit_mod = function(outcome,covariates = NULL,df = alarms){
   # Random intercept (not enough data for a random slope). CAR1 structure didn't
   # seem to make a difference
-  f = as.formula(paste0(outcome,"~ timepoint*early_late+(1|id)"))
+  if(!is.null(covariates)){
+    f = as.formula(paste0(outcome,"~ timepoint*early_late+",
+                          paste0(covariates,collapse = "+"),"+(1|id)"))
+  } else {
+    f = as.formula(paste0(outcome,"~ timepoint*early_late+(1|id)"))
+  }
   list2env(list(f=f,df=df),.GlobalEnv)
   mod_ri <- lmer(f,data = df)
   results <- tidy(mod_ri,effects = "fixed",conf.int = T)
   results$term <- sub("timepoint","",results$term)
   results$term <- sub("early_late","",results$term)
-  results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 2)
+  results$term <- sub("sensor_wear","Sensor Wear",results$term)
+  results$term <- sub("time_am","Time in AM",results$term)
+  results$p.value <- format.pval(results$p.value,eps = 0.001,digits = 3)
   # Anova
   an_res <- as.data.frame(Anova(mod_ri,type = 3))
+  rownames(an_res) <- sub("timepoint","Timepoint",rownames(an_res))
+  rownames(an_res) <- sub("early_late","Early vs. Late Adopter",rownames(an_res))
+  rownames(an_res) <- sub("sensor_wear","Sensor Wear",rownames(an_res))
+  rownames(an_res) <- sub("time_am","Time in AM",rownames(an_res))
+  an_res$`Pr(>Chisq)` <- format.pval(an_res$`Pr(>Chisq)`,eps = 0.001,digits = 3)
   list2env(list(an_res=an_res),.GlobalEnv)
   # Print
   cat("\n")
-  cat("### Model Results - Unadjusted")
+  cat("#### Model Results")
   cat("\n")
-  cat("#### Comparison to Baseline")
+  print(kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 3))
   cat("\n")
-  print(kable(results[,c("term","estimate","conf.low","conf.high","p.value")],digits = 2))
-  # Timepoint means
-  emm1 = emmeans(mod_ri,~timepoint)
-  means = data.frame(emm1)
+  cat("#### Type III Tests of Fixed Effects")
   cat("\n")
-  cat("#### Mean at Each Timepoint")
+  print(kable(an_res,digits = 3))
   cat("\n")
-  print(kable(means,digits = 2))
-  means$numeric_time = c(0,0.5,3,6,9,12)
-  # Compare to week 2
-  base = c(1,0,0,0,0,0)
-  w2 = c(0,1,0,0,0,0)
-  t1 = c(0,0,1,0,0,0)
-  t2 = c(0,0,0,1,0,0)
-  t3 = c(0,0,0,0,1,0)
-  t4 = c(0,0,0,0,0,1)
-  con = contrast(emm1,method = list("Baseline to Week 2"= w2 - base,
-                                    "Week 2 to T1"=t1 - w2,
-                                    "Week 2 to T2"=t2 - w2,
-                                    "Week 2 to T3"=t3 - w2,
-                                    "Week 2 to T4"=t4 - w2))
-  cat("\n")
-  cat("#### Comparison to Week 2")
-  cat("\n")
-  print(kable(con,digits = 2))
 }
 ```
 
-## Alarms per Hour
+## Total alarms per hour
 
-### Nighttime
+### Unadjusted
 
-```{r echo=FALSE,message=FALSE,results='asis'}
+```{r echo=FALSE,results='asis'}
 fit_mod(outcome = "num_alarms_night")
 ```
 
-### Daytime
+### Adjusted for time in AM
 
-```{r echo=FALSE,message=FALSE,results='asis'}
-fit_mod(outcome = "num_alarms_day")
+```{r echo=FALSE,results='asis'}
+fit_mod(outcome = "num_alarms_night",covariates = "time_am")
+```
+
+### Adjusted for sensor wear
+
+```{r echo=FALSE,results='asis'}
+fit_mod(outcome = "num_alarms_night",covariates = "sensor_wear")
+```
+
+## Threshold alarms per hour
+
+### Unadjusted
+
+```{r echo=FALSE,results='asis'}
+fit_mod(outcome = "threshold_alarms_night")
+```
+
+### Adjusted for time in AM
+
+```{r echo=FALSE,results='asis'}
+fit_mod(outcome = "threshold_alarms_night",covariates = "time_am")
+```
+
+### Adjusted for sensor wear
+
+```{r echo=FALSE,results='asis'}
+fit_mod(outcome = "threshold_alarms_night",covariates = "sensor_wear")
+```
+
+## Maintenance alarms per hour
+
+### Unadjusted
+
+```{r echo=FALSE,results='asis'}
+fit_mod(outcome = "maintenance_alarms_night")
+```
+
+### Adjusted for time in AM
+
+```{r echo=FALSE,results='asis'}
+fit_mod(outcome = "maintenance_alarms_night",covariates = "time_am")
+```
+
+### Adjusted for sensor wear
+
+```{r echo=FALSE,results='asis'}
+fit_mod(outcome = "maintenance_alarms_night",covariates = "sensor_wear")
+```
+
+## HCL alarms per hour
+
+### Unadjusted
+
+```{r echo=FALSE,results='asis'}
+fit_mod(outcome = "hcl_alarms_night")
+```
+
+### Adjusted for time in AM
+
+```{r echo=FALSE,results='asis'}
+fit_mod(outcome = "hcl_alarms_night",covariates = "time_am")
+```
+
+### Adjusted for sensor wear
+
+```{r echo=FALSE,results='asis'}
+fit_mod(outcome = "hcl_alarms_night",covariates = "sensor_wear")
+```
+
+## Pump alarms per hour
+
+### Unadjusted
+
+```{r echo=FALSE,results='asis'}
+fit_mod(outcome = "pump_alarms_night")
+```
+
+### Adjusted for time in AM
+
+```{r echo=FALSE,results='asis'}
+fit_mod(outcome = "pump_alarms_night",covariates = "time_am")
+```
+
+### Adjusted for sensor wear
+
+```{r echo=FALSE,results='asis'}
+fit_mod(outcome = "pump_alarms_night",covariates = "sensor_wear")
+```
+
+## Other alarms per hour
+
+### Unadjusted
+
+```{r echo=FALSE,results='asis'}
+fit_mod(outcome = "other_alarms_night")
+```
+
+### Adjusted for time in AM
+
+```{r echo=FALSE,results='asis'}
+fit_mod(outcome = "other_alarms_night",covariates = "time_am")
+```
+
+### Adjusted for sensor wear
+
+```{r echo=FALSE,results='asis'}
+fit_mod(outcome = "other_alarms_night",covariates = "sensor_wear")
+```
+
+# Figure
+
+```{r fig.width=10,fig.height=8}
+# Just relevant variables, melt to longer
+plot_df = alarms %>% select(id,timepoint,ends_with("am"),-time_am) %>%
+  pivot_longer(num_alarms_10pm_12am:other_alarms_4am_6am,
+               names_to = c("type", "time"),names_pattern = "(.*_.*)_(.*_.*)") %>%
+  filter(type != "num_alarms")
+plot_df$time = factor(plot_df$time,levels = c("10pm_12am","12am_2am","2am_4am","4am_6am"),
+                      labels = c("10pm-12am","12am-2am","2am-4am","4am-6am"))
+plot_df$type = factor(plot_df$type,levels = c("hcl_alarms","maintenance_alarms","other_alarms",
+                                              "pump_alarms","threshold_alarms"),
+                      labels = c("HCL Alarms","Maintenance Alarms",
+                                 "Other Alarms","Pump Alarms","Threshold Alarms"))
+# Bar chart
+ggplot(plot_df,aes(x=time,y=value,fill=type)) + 
+  geom_boxplot() +
+  scale_fill_brewer(palette = "Set2",name = "") +
+  theme_bw() + xlab("Time") + ylab("Alarms Per Hour") +
+  facet_wrap(~ timepoint)
 ```
