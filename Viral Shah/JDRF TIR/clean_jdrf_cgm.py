@@ -14,9 +14,11 @@ for subject_folder in case_folders:
     subject_info = pd.read_excel(subject_folder + "/" + subject_info[0])
     # Format subject info for easier reading
     subject_info.columns = [c.lower() for c in subject_info.columns]
+    subject_info.columns = ["visit date" if "date" in c.lower()
+                            else c for c in subject_info.columns]
     # Combine all CGM data from CSVs
     csvs = [f for f in files if ".csv" in f.lower()]
-    all_cgm = {"datetime": [], "sensor_glucose": []}
+    all_cgm = []
     for cgm_file in csvs:
         cgm = pd.read_csv(subject_folder+"/"+cgm_file)
         # Detect file type and format accordingly
@@ -32,14 +34,15 @@ for subject_folder in case_folders:
             cgm["datetime"] = [pd.to_datetime(d.replace("T", " "))
                                for d in cgm["datetime"]]
             # "Low" and "High" to 40 and 400 respectively
-            cgm[cgm['sensor_glucose'] == "Low"] = 40
-            cgm[cgm['sensor_glucose'] == "High"] = 400
+            cgm.loc[cgm['sensor_glucose'] == "Low", 'sensor_glucose'] = 40
+            cgm.loc[cgm['sensor_glucose'] == "High", 'sensor_glucose'] = 400
             cgm['sensor_glucose'] = pd.to_numeric(cgm['sensor_glucose'])
         # Add to combined
-        all_cgm["datetime"].append(cgm["datetime"])
-        all_cgm["sensor_glucose"].append(cgm["sensor_glucose"])
+        all_cgm.append(cgm)
     # Flatten lists and convert to dataframe
-    all_cgm["datetime"] = list(itertools.chain(*all_cgm["datetime"]))
-    all_cgm["sensor_glucose"] = \
-        list(itertools.chain(*all_cgm["sensor_glucose"]))
-    all_cgm = pd.DataFrame(all_cgm)
+    all_cgm = pd.concat(all_cgm)
+    all_cgm.sort_values(by="datetime", inplace=True)
+    # Go through visit dates and get two weeks of data
+    for visit_date in subject_info["visit date"]:
+        print(visit_date)
+        end = visit_date - pd.Timedelta(14, unit="d")
