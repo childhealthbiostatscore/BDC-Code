@@ -17,6 +17,7 @@ library(Hmisc)
 library(stringr)
 library(table1)
 library(knitr)
+library(lubridate)
 knitr::opts_chunk$set(echo = FALSE)
 if(Sys.info()["sysname"] == "Windows"){
   home_dir = "S:/Laura/BDC/Projects/Viral Shah/K23"
@@ -35,7 +36,10 @@ rm(home_dir)
 BSTM_t1d = read_csv("BSTM_t1d_raw.csv")
 
 # grab vars of interest
-analysis = BSTM_t1d %>% filter(qct == 1) %>% select(record_id, age,t1d_diagnosis, demo_gender1, postmenopause_pill_42695d, are_you_currently_smoking_e66c9b, do_you_drink_3_or_more_uni_ca666a, stairs_flight, sports_past_week,did_you_participate_in_any, sport_team_text, regular_activity_past_week, last_week_regular_number_of_times, fall_diab_duration, hba1c_value_k, egfr,albumin_serum, creatinine_serum, pth_baseline, calcium_serum, p1np_baseline, ctx_baseline, age_menopause_7904ab, fe_hip_stance:qct_complete)
+analysis = BSTM_t1d %>% filter(qct == 1) %>% mutate(age_onset = as.numeric(difftime(date_of_diabetes_diagnosis, date_of_birth)/365.25),
+                                                    age_onset_gt20 = case_when(age_onset > 20~1,
+                                                                               age_onset<= 20 ~ 0))%>%
+  select(record_id, age,age_onset_gt20,t1d_diagnosis, demo_gender1, postmenopause_pill_42695d, are_you_currently_smoking_e66c9b, do_you_drink_3_or_more_uni_ca666a, stairs_flight, sports_past_week,did_you_participate_in_any, sport_team_text, regular_activity_past_week, last_week_regular_number_of_times, fall_diab_duration, hba1c_value_k, egfr,albumin_serum, creatinine_serum, pth_baseline, calcium_serum, p1np_baseline, ctx_baseline, age_menopause_7904ab, fe_hip_stance:qct_complete)
 
 # some hba1c are listed with a % sign (LITERALLY WHY); need to remove that
 analysis = analysis %>% mutate(hba1c = 
@@ -102,11 +106,15 @@ pvalue <- function(x, ...) {
     c("", sub("<", "&lt;", format.pval(p, digits=3, eps=0.001)))
 }
 
-# function to fit interaction linear mod
+# function to fit interaction linear mod 
+
+# add in?
+# "fall_diab_duration","+","age_onset_gt20"
+
 fit_mod = function(outcome,df){
-  
+
     # Fit p1np model
-  f = as.formula(paste0("p1np_baseline~",outcome, "*", "t1d_diagnosis"))
+  f = as.formula(paste0("p1np_baseline~",outcome, "*", "t1d_diagnosis","+","age","+","hba1c"))
   mod = lm(f,
             data = df,
             na.action = na.omit)
@@ -118,7 +126,7 @@ fit_mod = function(outcome,df){
    
  
   # Fit ctx model
-  f2 = as.formula(paste0("ctx_bl~",outcome,"*","t1d_diagnosis"))
+  f2 = as.formula(paste0("ctx_bl~",outcome,"*","t1d_diagnosis","+","age","+","hba1c"))
   mod2 = lm(f2,
             data = df,
             na.action = na.omit)
@@ -169,22 +177,46 @@ bl_t2 = table1(~.  |t1d_diagnosis,data = analysis_2, render.continuous=c(.="Mean
 bl_t2
 ```
 
-# Interactions
-## HBA1C
-P1NP: Hba1c levels affect p1np differences between t1d and controls (p = 0.04)
-CTX: Hba1c levels do not affect ctx differences between groups (p = 0.15)
+# Bone Quality Predictors
+Models adjusted for Age, diabetes duration, age of onset (<20 years vs >20 years), and HbA1c  
+
+## tot_bon_tot_hip_mass
+### P1NP: Not associated with P1np (p = 0.42 ), or different between groups (p = 0.72)
+### CTX: Not associated with CTX (p = 0.38 ), or different between groups (p = 0.57)
+
+
+## cort_bone_comp_tot_hip_vbmd
+### P1NP: Not associated with P1np (p = 0.58 ), or different between groups (p = 0.97)
+### CTX: Not associated with CTX (p = 0.68 ), or different between groups (p = 0.83)
+
+## l1_bmd_mg_cm_3
+### P1NP: Not associated with P1np (p = 0.74), or different between groups (p = 0.94)
+### CTX: Not associated with CTX (p = 0.45 ), or different between groups (p = 0.85)
+
+
+## l2_bmd_mg_cm_3
+### P1NP: Not associated with P1np (p = 0.42 ), or different between groups (p = 0.72)
+### CTX: Not associated with CTX (p = 0.74 ), or different between groups (p = 0.92)
+
 
 ```{r plotts}
-hba1c_p
-hba1c_c
+# hba1c_p
+# hba1c_c
 ```
-
-
 
 # Code Appendix
 ```{r qct interactions}
-# any interaction between QCT variables and age of onset t1d, diabetes duration, hba1c
+# any interaction between QCT variables
 
-# hba1c
-fit_mod("hba1c", analysis)
+# tot_bon_tot_hip_mass
+fit_mod("tot_bon_tot_hip_mass", analysis)
+
+# cort_bone_comp_tot_hip_vbmd
+fit_mod("cort_bone_comp_tot_hip_vbmd", analysis)
+
+# l1_bmd_mg_cm_3
+fit_mod("l1_bmd_mg_cm_3", analysis)
+
+# l2_bmd_mg_cm_3
+fit_mod("l2_bmd_mg_cm_3", analysis)
 ```

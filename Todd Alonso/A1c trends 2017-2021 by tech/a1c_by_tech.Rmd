@@ -18,7 +18,7 @@ library(lubridate)
 library(table1)
 library(nlme) # mixed models
 library(emmeans)
-
+library(ggrepel)
 knitr::opts_chunk$set(echo = FALSE)
 if(Sys.info()["sysname"] == "Windows"){
   home_dir = "S:/Laura/BDC/Projects/Todd Alonso/A1c trends 2017 to 2021 by tech"
@@ -45,45 +45,20 @@ a1c_tech = a1c_tech %>% mutate(Race_Ethn = `Race/Ethnicity`) %>% select(-`Race/E
 label(a1c_tech$Race_Ethn) = "Race/Ethnicity"
 ```
 
-```{r data clean1, include=FALSE}
-# # stratify into oct-march 2016-2017 and oct-march 2020-2021
-# analysis = a1c_tech %>% 
-#   mutate(time_group = case_when(year(VisitDate) == 2016 | year(VisitDate) == 2017 ~ "2016-2017",
-#                                 year(VisitDate) == 2020 | year(VisitDate) == 2021 ~ "2020-2021"),
-#          tech_group = case_when(tolower(InsulinRegimen) == "insulin pump" & CGM == "Yes" ~ "CGM + Pump",
-#                                 tolower(InsulinRegimen) == "insulin pump" & CGM != "Yes" ~ "Pump Alone",
-#                                 tolower(InsulinRegimen) != "insulin pump" & CGM == "Yes" ~ "CGM Alone",
-#                                 TRUE ~ "None")) %>% 
-#   select(EPICMRN, VisitDate, Age_A1cResultDate, A1c_Value, tech_group, InsulinRegimen, CGM, time_group, DiabetesDuration_A1cResultDate) 
-# 
-# # factor tech type for order
-# analysis$tech_group = factor(analysis$tech_group, levels = c("CGM + Pump", "CGM Alone", "Pump Alone", "None"))
-# 
-# # check for multicollinearity between age and diabetes duration
-# cor(analysis$Age_A1cResultDate, a1c_tech$DiabetesDuration_A1cResultDate) # 0.58 correlation, pretty strong
-# 
-# 
-# # vif seems ok though
-# # test_mod = lm(A1c_Value ~ Age_A1cResultDate + DiabetesDuration_A1cResultDate + time_group + tech_group, data = analysis)
-# # test_mod2 = lm(A1c_Value ~ Age_A1cResultDate  + time_group + tech_group, data = analysis)
-# # 
-# # vif(test_mod)
-# # vif(test_mod2)
-```
-
-```{r dataclean2}
+```{r dataclean}
 # used cgm/pump visits instead of the actual variables to create groups to align with Todd's counts
 analysis = a1c_tech %>% 
   mutate(time_group = case_when(year(VisitDate) == 2016 | year(VisitDate) == 2017 ~ "2016-2017",
                                 year(VisitDate) == 2020 | year(VisitDate) == 2021 ~ "2020-2021"),
-         tech_group = case_when(Pump_VisitDate == "Y" & CGM_VisitDate == "Y" ~ "CGM + Pump",
-                                Pump_VisitDate == "Y" & CGM_VisitDate != "Y" ~ "Pump Alone",
-                                Pump_VisitDate != "Y" & CGM_VisitDate == "Y" ~ "CGM Alone",
+         tech_group = case_when(HCL == "Yes"~ "HCL",
+                                HCL == "No" & Pump_VisitDate == "Y" & CGM_VisitDate == "Y" ~ "CGM + Pump",
+                                HCL == "No" & Pump_VisitDate == "Y" & CGM_VisitDate != "Y" ~ "Pump Alone",
+                                HCL == "No" & Pump_VisitDate != "Y" & CGM_VisitDate == "Y" ~ "CGM Alone",
                                 TRUE ~ "None")) %>% 
   select(EPICMRN, VisitDate, Age_A1cResultDate, A1c_Value, tech_group, time_group, DiabetesDuration_A1cResultDate, Gender, Race_Ethn) 
 
 # factor tech type for order
-analysis$tech_group = factor(analysis$tech_group, levels = c("CGM + Pump", "CGM Alone", "Pump Alone", "None"))
+analysis$tech_group = factor(analysis$tech_group, levels = c("HCL", "CGM + Pump", "CGM Alone", "Pump Alone", "None"))
 
 # # check for multicollinearity between age and diabetes duration
 #cor(analysis$Age_A1cResultDate, a1c_tech$DiabetesDuration_A1cResultDate) # 0.58 correlation, pretty strong, same as above
@@ -119,6 +94,8 @@ mod_means = emmeans(a1c_mod,specs=pairwise ~ tech_group:time_group, adjust="tuke
   
 # Plot
 a1c_predict = cbind(analysis, a1cpred = predict(a1c_mod))
+a1c_predict = a1c_predict %>% group_by(tech_group, time_group) %>% mutate(grpmean = mean(a1cpred),
+                                                                          ss = n())
 ```
 
 # Outstanding Data Questions/ Remarks
@@ -144,7 +121,7 @@ When only including patients who had data in both time periods, the average A1c 
 
 Adjusting for age, diabetes duration, and race there is a significant difference in A1c within the different tech groups across the 2016-2017 and 2020-2021 time periods (p < 0.0001).
 
-The average A1c decreased by 0.45 (95% CI : 0.31, 0.59) in the CGM + Pump group (p < 0.0001), increased by 0.40 (95% CI: 0.17, 0.62) in the Pump Only groups (p = 0.002), and increased by 0.42 (95% CI: 0.23, 0.62) in the No Tech group (p < 0.0001). There was no significant difference in the time periods within the CGM only group (p = 0.619) 
+The average A1c Increased by 0.39 (95% CI: 0.17, 0.62) in the Pump Only groups (p = 0.003), and increased by 0.42 (95% CI: 0.23, 0.62) in the No Tech group (p < 0.0001). There was no significant difference in the time periods within the HCL group (p = 0.995), CGM + Pump group (p = 0.527), or CGM only group (p = 0.679) 
 
 
 ```{r model}
@@ -153,11 +130,21 @@ kable(a$tTable, digits = 3, caption = "Base A1c Model")
 
 kable(mod_anova,digits = 3,caption = "Test of Overall Effect")
 
-kable(mod_means$contrasts[c(4,11,17,22),],digits = 3,caption = "Timepoint Means")
+kable(mod_means$contrasts[c(5,14,22,29, 35),],digits = 3,caption = "Timepoint Means")
 
-ggplot(data = a1c_predict,aes(x = time_group, y = a1cpred, group = tech_group, color = tech_group))+
-  geom_smooth(method = lm, se = F,na.rm = T) + 
+
+
+ggplot(data = a1c_predict,aes(x = time_group, y = a1cpred, group = tech_group, color = tech_group)) +
+  geom_smooth(method = lm, se = F,na.rm = T)  +
+  geom_label(data = a1c_predict,
+             aes(
+             x = time_group,
+             y = grpmean,
+             color = tech_group,
+             label = ss,
+             inherit.aes = F)) + 
   xlab("Time Groups") + ylab("Predicted Mean A1c") + theme_classic() 
+
 ```
 
 
