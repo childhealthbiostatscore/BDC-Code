@@ -38,7 +38,12 @@ rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",token = token)
 data = exportRecords(rcon,dates = F)
 ids = data$record_id
 times = data$redcap_event_name
-exclude = c(101,201,102,202,103,203,110,210,119,219,121,221,131,231,141,241)
+seasons = read.csv("./Erin Cobry/Summer vs. School Sleep/Data_Clean/summer_vs_school.csv",na.strings = "")
+seasons = seasons[complete.cases(seasons),]
+adult_visits = seasons
+adult_visits$ID = seasons$ID - 100
+seasons = rbind(adult_visits,seasons)
+seasons$ID = as.character(seasons$ID)
 ```
 
 # Table 1a: Parent Characteristics
@@ -53,14 +58,14 @@ parent_demographics$age =
 parent_demographics = parent_demographics %>% 
   select(record_id,age,parent_gender,race,parent_check_night,child_check_glucose,
          insulinmethod,previous_cgm_use,currenthcltech) %>% 
-  filter(!record_id %in% exclude)
+  filter(record_id %in% seasons$ID)
 parent_demographics = 
   parent_demographics[rowSums(is.na(parent_demographics)) < (ncol(parent_demographics)-1),]
 # Table
 f = as.formula(paste("~",paste0(colnames(parent_demographics)[-1],collapse = "+")))
 t1a = tableby(f,data = parent_demographics)
 summary(t1a,digits = 2,labelTranslations = list(age = "Age (years)",
-                                                currenthcltech = "currenthcltech"))
+                                                currenthcltech = "Currently using HCL?"))
 ```
 
 # Table 1b: Child Characteristics
@@ -80,7 +85,7 @@ child_demographics$t1d_duration =
                       child_demographics$t1d_diagnosis,units = "days"))/365.25
 child_demographics = child_demographics %>% 
   select(record_id,cons_age,childgender,t1d_duration) %>%
-  filter(!record_id %in% exclude)
+  filter(record_id %in% seasons$ID)
 child_demographics = 
   child_demographics[rowSums(is.na(child_demographics)) < (ncol(child_demographics)-1),]
 # Add Hba1c
@@ -91,51 +96,11 @@ t1a = tableby(f,data = child_demographics)
 summary(t1a,digits = 3,labelTranslations = list(t1d_duration = "T1D Duration (years)"))
 ```
 
-```{r model functions}
-fit_mod = function(outcome,df,plot = T,diagnostics = F){
-  # Format timepoint
-  df$timepoint = as.factor(df$timepoint)
-  levels(df$timepoint) = gsub("baseline_.*","Baseline",levels(df$timepoint))
-  levels(df$timepoint) = gsub("hcl_month_3_.*","Month 3",levels(df$timepoint))
-  levels(df$timepoint) = gsub("hcl_month_6_.*","Month 6",levels(df$timepoint))
-  # Fit random intercept model
-  f = as.formula(paste0(outcome,"~timepoint+(1|record_id)"))
-  mod = lmer(f,data = df)
-  # Plot
-  if(plot){
-    p = 
-      ggplot(data = df,aes_string(x = "timepoint",y = outcome,
-                                  color = "record_id",group = "record_id")) + 
-      geom_point() + geom_line() + xlab("Timepoint") +
-      theme_bw() + theme(legend.position = "none")
-    print(p)
-  }
-  # Type 3
-  type3 = data.frame(car::Anova(mod,type = 3))
-  colnames(type3)[3] = "p.value"
-  print(kable(type3,digits = 3,caption = "Test of Overall Effect"))
-  # Model results
-  res = tidy(mod,"fixed")
-  res$term = sub("timepoint","",res$term)
-  res$effect = NULL
-  print(kable(res,digits = 3,caption = "Comparison to Baseline"))
-  # Means
-  means = data.frame(emmeans(mod,~timepoint))
-  print(kable(means,digits = 3,caption = "Model Means"))
-  # Number of obs
-  cat("\n")
-  cat(paste("This model was fit using",nobs(mod),"observations."))
-  cat("\n")
-  # Check model
-  if(diagnostics){
-    print(check_model(mod))
-  }
-}
-```
-
 # Methods
 
-Each outcome was modeled using a linear mixed effects model with random intercept for participant to account for within-subject correlation. Random slope models would not converge for several outcomes, including average sleep time.
+Because some participants were included in both the summer and school year groups, a paired t test was used to compare summertime and school year for participants with both. 
+
+Average sleep time was converted to minutes for all analyses.
 
 # Actigraphy
 
@@ -146,16 +111,16 @@ activity$record_id = ids
 activity$timepoint = times
 child_activity = activity %>% 
   select(record_id,timepoint,totalsleep_avg,sleepefficency_avg,waso_avg) %>% 
-  filter(!record_id %in% exclude,grepl("baseline|month_3|month_6",timepoint),
-         record_id >= 200,rowSums(is.na(.)) < ncol(.)-2) %>%
-  mutate(avg_sleep = as.character(totalsleep_avg),
-         totalsleep_avg = as.numeric(lubridate::hms(totalsleep_avg))/60) %>%
-  filter(totalsleep_avg < 21*60)
+  filter(record_id %in% seasons$ID,record_id >= 200,
+         grepl("month_3|month_6",timepoint)) %>%
+  mutate(totalsleep_avg = as.numeric(lubridate::hms(as.character(totalsleep_avg)))/60)
 child_activity = left_join(child_activity,child_demographics,by = "record_id")
 child_activity$sufficient = apply(child_activity,1,function(r){
   age = as.numeric(r["cons_age"])
   time = as.numeric(r["totalsleep_avg"])/60
-  if(age <= 2){
+  if (is.na(time) | is.na(age)){
+    suff = NA
+  } else if(age <= 2){
     if(time >= 11 & time <= 14){suff = "Yes"} else {suff = "No"}
   } else if (age <= 5){
     if(time >= 10 & time <= 13){suff = "Yes"} else {suff = "No"}
@@ -171,59 +136,36 @@ child_activity$sufficient = as.factor(child_activity$sufficient)
 # Same for parents
 parent_activity = activity %>% 
   select(record_id,timepoint,totalsleep_avg,sleepefficency_avg,waso_avg) %>% 
-  filter(!record_id %in% exclude,grepl("baseline|month_3|month_6",timepoint),
-         record_id < 200,rowSums(is.na(.)) < ncol(.)-2) %>%
+  filter(record_id %in% seasons$ID,record_id < 200,
+         grepl("month_3|month_6",timepoint)) %>%
   mutate(avg_sleep = as.character(totalsleep_avg),
          totalsleep_avg = as.numeric(lubridate::hms(totalsleep_avg))/60,
          sufficient = ifelse(totalsleep_avg >= 7*60,"Yes","No"))
 parent_activity$sufficient = as.factor(parent_activity$sufficient)
 ```
 
-## Average sleep time
-
-Average sleep time was converted to minutes for all analyses.
-
-### Children
-
-Participant 225 had an average of 21 hours of sleep at month 6, so this value was excluded.
+## Children
 
 ```{r results='asis'}
-fit_mod(outcome = "totalsleep_avg",df = child_activity)
+p <- paired(timepoint ~ totalsleep_avg + sleepefficency_avg + waso_avg, 
+            data = child_activity,id = record_id, signed.rank.exact = FALSE)
+summary(p,labelTranslations = list(totalsleep_avg = "Average Total Sleep Time (minutes)"))
 ```
 
-### Parents
+## Parents
 
 ```{r results='asis'}
-fit_mod(outcome = "totalsleep_avg",df = parent_activity)
+p <- paired(timepoint ~ totalsleep_avg + sleepefficency_avg + waso_avg, 
+            data = parent_activity,id = record_id, signed.rank.exact = FALSE)
+summary(p,labelTranslations = list(totalsleep_avg = "Average Total Sleep Time (minutes)"))
 ```
 
-## Average sleep efficiency
 
-### Children
 
-```{r results='asis'}
-fit_mod(outcome = "sleepefficency_avg",df = child_activity)
-```
 
-### Parents
 
-```{r results='asis'}
-fit_mod(outcome = "sleepefficency_avg",df = parent_activity)
-```
 
-## Average WASO
 
-### Children
-
-```{r results='asis'}
-fit_mod(outcome = "waso_avg",df = child_activity)
-```
-
-### Parents
-
-```{r results='asis'}
-fit_mod(outcome = "waso_avg",df = parent_activity)
-```
 
 ## Sufficient sleep
 
