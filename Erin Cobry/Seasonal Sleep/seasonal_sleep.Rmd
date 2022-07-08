@@ -1,0 +1,469 @@
+---
+title: "HCL and Sleep (ADA 2022)"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(redcapAPI)
+library(arsenal)
+library(tidyverse)
+library(lmerTest)
+library(broom.mixed)
+library(emmeans)
+library(performance)
+library(knitr)
+library(DT)
+library(GLMMadaptive)
+knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
+if(Sys.info()["sysname"] == "Windows"){
+  home_dir = "B:/Projects"
+} else if (Sys.info()["sysname"] == "Linux"){
+  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+} else if (Sys.info()["sysname"] == "Darwin"){
+  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+}
+knitr::opts_knit$set(root.dir = home_dir)
+```
+
+```{r api import,include=FALSE}
+token = read.table("./Erin Cobry/ADA 2022/HCL and Sleep/api_token.txt")[1,1]
+rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",token = token)
+data = exportRecords(rcon,dates = F)
+ids = data$record_id
+times = data$redcap_event_name
+exclude = c(101,201,102,202,103,203,110,210,119,219,121,221,131,231,141,241)
+```
+
+# Table 1a: Parent Characteristics
+
+```{r results='asis'}
+# Basic demographics
+parent_demographics = exportRecords(rcon,forms = "parent_demographics")
+parent_demographics$record_id = ids
+parent_demographics$age = 
+  as.numeric(difftime(parent_demographics$parent_demographics_timestamp,
+                      parent_demographics$parent_bday,units = "days"))/365.25
+parent_demographics = parent_demographics %>% 
+  select(record_id,age,parent_gender,race,parent_check_night,child_check_glucose,
+         insulinmethod,previous_cgm_use,currenthcltech) %>% 
+  filter(!record_id %in% exclude)
+parent_demographics = 
+  parent_demographics[rowSums(is.na(parent_demographics)) < (ncol(parent_demographics)-1),]
+# Table
+f = as.formula(paste("~",paste0(colnames(parent_demographics)[-1],collapse = "+")))
+t1a = tableby(f,data = parent_demographics)
+summary(t1a,digits = 2,labelTranslations = list(age = "Age (years)",
+                                                currenthcltech = "currenthcltech"))
+```
+
+# Table 1b: Child Characteristics
+
+```{r results='asis'}
+# Basic demographics
+child_demographics = exportRecords(rcon,forms = "child_demographics_chart_review")
+child_demographics$record_id = ids
+# Get Hba1c
+hba1c = exportRecords(rcon,forms = "glycemic_data")
+hba1c$record_id = ids
+hba1c = hba1c %>% filter(record_id >= 200,gyl_timepoint == "Baseline") %>%
+  select(record_id,hba1c)
+# Format
+child_demographics$t1d_duration = 
+  as.numeric(difftime(child_demographics$consent_date,
+                      child_demographics$t1d_diagnosis,units = "days"))/365.25
+child_demographics = child_demographics %>% 
+  select(record_id,cons_age,childgender,t1d_duration) %>%
+  filter(!record_id %in% exclude)
+child_demographics = 
+  child_demographics[rowSums(is.na(child_demographics)) < (ncol(child_demographics)-1),]
+# Add Hba1c
+child_demographics = left_join(child_demographics,hba1c,by = "record_id")
+# Table
+f = as.formula(paste("~",paste0(colnames(child_demographics)[-1],collapse = "+")))
+t1a = tableby(f,data = child_demographics)
+summary(t1a,digits = 3,labelTranslations = list(t1d_duration = "T1D Duration (years)"))
+```
+
+```{r model functions}
+fit_mod = function(outcome,df,plot = T,diagnostics = F){
+  # Format timepoint
+  df$timepoint = as.factor(df$timepoint)
+  levels(df$timepoint) = gsub("baseline_.*","Baseline",levels(df$timepoint))
+  levels(df$timepoint) = gsub("hcl_month_3_.*","Month 3",levels(df$timepoint))
+  levels(df$timepoint) = gsub("hcl_month_6_.*","Month 6",levels(df$timepoint))
+  # Fit random intercept model
+  f = as.formula(paste0(outcome,"~timepoint+(1|record_id)"))
+  mod = lmer(f,data = df)
+  # Plot
+  if(plot){
+    p = 
+      ggplot(data = df,aes_string(x = "timepoint",y = outcome,
+                                  color = "record_id",group = "record_id")) + 
+      geom_point() + geom_line() + xlab("Timepoint") +
+      theme_bw() + theme(legend.position = "none")
+    print(p)
+  }
+  # Type 3
+  type3 = data.frame(car::Anova(mod,type = 3))
+  colnames(type3)[3] = "p.value"
+  print(kable(type3,digits = 3,caption = "Test of Overall Effect"))
+  # Model results
+  res = tidy(mod,"fixed")
+  res$term = sub("timepoint","",res$term)
+  res$effect = NULL
+  print(kable(res,digits = 3,caption = "Comparison to Baseline"))
+  # Means
+  means = data.frame(emmeans(mod,~timepoint))
+  print(kable(means,digits = 3,caption = "Model Means"))
+  # Number of obs
+  cat("\n")
+  cat(paste("This model was fit using",nobs(mod),"observations."))
+  cat("\n")
+  # Check model
+  if(diagnostics){
+    print(check_model(mod))
+  }
+}
+```
+
+# Methods
+
+Each outcome was modeled using a linear mixed effects model with random intercept for participant to account for within-subject correlation. Random slope models would not converge for several outcomes, including average sleep time.
+
+# Actigraphy
+
+```{r}
+# Get total sleep time, sleep efficiency, and WASO
+activity = exportRecords(rcon,forms = "wrist_actigraphy")
+activity$record_id = ids
+activity$timepoint = times
+child_activity = activity %>% 
+  select(record_id,timepoint,totalsleep_avg,sleepefficency_avg,waso_avg) %>% 
+  filter(!record_id %in% exclude,grepl("baseline|month_3|month_6",timepoint),
+         record_id >= 200,rowSums(is.na(.)) < ncol(.)-2) %>%
+  mutate(avg_sleep = as.character(totalsleep_avg),
+         totalsleep_avg = as.numeric(lubridate::hms(totalsleep_avg))/60) %>%
+  filter(totalsleep_avg < 21*60)
+child_activity = left_join(child_activity,child_demographics,by = "record_id")
+child_activity$sufficient = apply(child_activity,1,function(r){
+  age = as.numeric(r["cons_age"])
+  time = as.numeric(r["totalsleep_avg"])/60
+  if(age <= 2){
+    if(time >= 11 & time <= 14){suff = "Yes"} else {suff = "No"}
+  } else if (age <= 5){
+    if(time >= 10 & time <= 13){suff = "Yes"} else {suff = "No"}
+  } else if (age <= 12){
+    if(time >= 9 & time <= 12){suff = "Yes"} else {suff = "No"}
+  } else if (age <= 17){
+    if(time >= 8 & time <= 10){suff = "Yes"} else {suff = "No"}
+  } else if (age > 17) {
+    if(time >= 7){suff = "Yes"} else {suff = "No"}
+  }
+})
+child_activity$sufficient = as.factor(child_activity$sufficient)
+# Same for parents
+parent_activity = activity %>% 
+  select(record_id,timepoint,totalsleep_avg,sleepefficency_avg,waso_avg) %>% 
+  filter(!record_id %in% exclude,grepl("baseline|month_3|month_6",timepoint),
+         record_id < 200,rowSums(is.na(.)) < ncol(.)-2) %>%
+  mutate(avg_sleep = as.character(totalsleep_avg),
+         totalsleep_avg = as.numeric(lubridate::hms(totalsleep_avg))/60,
+         sufficient = ifelse(totalsleep_avg >= 7*60,"Yes","No"))
+parent_activity$sufficient = as.factor(parent_activity$sufficient)
+```
+
+## Average sleep time
+
+Average sleep time was converted to minutes for all analyses.
+
+### Children
+
+Participant 225 had an average of 21 hours of sleep at month 6, so this value was excluded.
+
+```{r results='asis'}
+fit_mod(outcome = "totalsleep_avg",df = child_activity)
+```
+
+### Parents
+
+```{r results='asis'}
+fit_mod(outcome = "totalsleep_avg",df = parent_activity)
+```
+
+## Average sleep efficiency
+
+### Children
+
+```{r results='asis'}
+fit_mod(outcome = "sleepefficency_avg",df = child_activity)
+```
+
+### Parents
+
+```{r results='asis'}
+fit_mod(outcome = "sleepefficency_avg",df = parent_activity)
+```
+
+## Average WASO
+
+### Children
+
+```{r results='asis'}
+fit_mod(outcome = "waso_avg",df = child_activity)
+```
+
+### Parents
+
+```{r results='asis'}
+fit_mod(outcome = "waso_avg",df = parent_activity)
+```
+
+## Sufficient sleep
+
+### Children
+
+```{r results='asis'}
+child_activity %>% select(record_id,timepoint,cons_age,avg_sleep,sufficient) %>% 
+  datatable(.)
+```
+
+```{r}
+child_activity %>% group_by(timepoint) %>% count(sufficient) %>% kable(.)
+```
+
+### Parents
+
+```{r results='asis'}
+parent_activity %>%select(record_id,timepoint,avg_sleep,sufficient) %>% 
+  datatable(.)
+```
+
+```{r}
+parent_activity %>% group_by(timepoint) %>% count(sufficient) %>% kable(.)
+```
+
+# Surveys
+
+## PSQI 
+
+```{r}
+psqi = exportRecords(rcon,forms = "psqi",dates = F)
+psqi$record_id = ids
+psqi$timepoint = times
+psqi = psqi %>% select(record_id,timepoint,psqi_total) %>% 
+  filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
+         rowSums(is.na(.)) < ncol(.)-2)
+psqi$timepoint = sub("enrollment_","baseline_",psqi$timepoint)
+```
+
+```{r results='asis'}
+fit_mod(outcome = "psqi_total",df = psqi)
+```
+
+## PROMIS: Sleep Disturbance
+
+### Children
+
+```{r}
+# Import select, filter, etc.
+promis_peds = exportRecords(rcon,forms = "promis_pediatric_817")
+promis_peds$record_id = ids
+promis_peds$timepoint = times
+promis_peds = promis_peds %>% select(record_id,timepoint,falling_asleep:bad_mood_sleepy) %>%
+  filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
+         record_id >= 200,rowSums(is.na(.)) < ncol(.)-2) %>%
+  mutate(across(falling_asleep:bad_mood_sleepy,.fns = as.numeric),
+         through_night = 6 - through_night) %>% 
+  mutate(disturbance = rowSums(select(.,falling_asleep:tossed_and_turned)),
+         impairment = rowSums(select(.,daytime:bad_mood_sleepy)))
+promis_peds$timepoint = sub("enrollment_","baseline_",promis_peds$timepoint)
+# Convert to T scores
+peds_disturbance = read.csv("./Erin Cobry/ADA 2022/HCL and Sleep/Data_Clean/peds_sleep_disturbance.csv")
+peds_impairment = read.csv("./Erin Cobry/ADA 2022/HCL and Sleep/Data_Clean/peds_sleep_impairment.csv")
+promis_peds$disturbance = 
+  peds_disturbance$T.Score[match(promis_peds$disturbance,
+                                 peds_disturbance$Raw.Summed.Score)]
+promis_peds$impairment = 
+  peds_impairment$T.Score[match(promis_peds$impairment,
+                                peds_impairment$Raw.Summed.Score)]
+```
+
+```{r results='asis'}
+fit_mod(outcome = "disturbance",df = promis_peds)
+```
+
+### Parents
+
+```{r}
+# Import select, filter, etc.
+promis_parent = exportRecords(rcon,forms = "promis_parent_proxy_817")
+promis_parent$record_id = ids
+promis_parent$timepoint = times
+promis_parent = promis_parent %>% select(record_id,timepoint,asleep:bad_mood) %>%
+  filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
+         record_id < 200,rowSums(is.na(.)) < ncol(.)-2) %>%
+  mutate(across(asleep:bad_mood,.fns = as.numeric),
+         night = 6 - night) %>% 
+  mutate(disturbance = rowSums(select(.,asleep:tossed)),
+         impairment = rowSums(select(.,sleepy:bad_mood)))
+promis_parent$timepoint = sub("enrollment_","baseline_",promis_parent$timepoint)
+# Convert to T scores
+parent_disturbance = read.csv("./Erin Cobry/ADA 2022/HCL and Sleep/Data_Clean/parent_proxy_sleep_disturbance.csv")
+parent_impairment = read.csv("./Erin Cobry/ADA 2022/HCL and Sleep/Data_Clean/parent_proxy_sleep_impairment.csv")
+promis_parent$disturbance = 
+  parent_disturbance$T.Score[match(promis_parent$disturbance,
+                                   parent_disturbance$Raw.Summed.Score)]
+promis_parent$impairment = 
+  parent_impairment$T.Score[match(promis_parent$impairment,
+                                  parent_impairment$Raw.Summed.Score)]
+```
+
+```{r results='asis'}
+fit_mod(outcome = "disturbance",df = promis_parent)
+```
+
+## PROMIS: Impairment
+
+### Children
+
+```{r results='asis'}
+fit_mod(outcome = "impairment",df = promis_peds)
+```
+
+### Parents
+
+```{r results='asis'}
+fit_mod(outcome = "impairment",df = promis_parent)
+```
+
+# Awakenings
+
+Due to the large number of participants with 0 awakenings (diabetes-related or otherwise), awakening outcomes were modeled using a zero-inflated Poisson mixed model. The Poisson model was found to perform better than a negative binomial.
+
+The interpretation of the coefficients from a zero-inflated Poisson model are: the expected number of awakenings (for those with more than 0 awakenings) changes by $x$ amount compared to baseline. However, unlike the mixed models above, these coefficients are multiplicative, so given a coefficient of 0.694 for month 3 and an average of 0.173 awakenings at baseline, the expected number of awakenings at month 3 is: $0.173*0.694$.
+
+```{r}
+# Data cleaning
+data$timepoint = times
+child_awakenings = data %>% 
+  select(record_id,timepoint,diabetes_awakenings,all_awakenings) %>% 
+  filter(!record_id %in% exclude,grepl("baseline|month_3|month_6",timepoint),
+         record_id >= 200,rowSums(is.na(.)) < ncol(.)-2)
+child_awakenings$timepoint = as.factor(child_awakenings$timepoint)
+levels(child_awakenings$timepoint) = 
+  gsub("baseline_.*","Baseline",levels(child_awakenings$timepoint))
+levels(child_awakenings$timepoint) = 
+  gsub("hcl_month_3_.*","Month 3",levels(child_awakenings$timepoint))
+levels(child_awakenings$timepoint) = 
+  gsub("hcl_month_6_.*","Month 6",levels(child_awakenings$timepoint))
+# Parents
+parent_awakenings = data %>% 
+  select(record_id,timepoint,diabetes_awakenings,all_awakenings) %>% 
+  filter(!record_id %in% exclude,grepl("baseline|month_3|month_6",timepoint),
+         record_id < 200,rowSums(is.na(.)) < ncol(.)-2)
+parent_awakenings$timepoint = as.factor(parent_awakenings$timepoint)
+levels(parent_awakenings$timepoint) = 
+  gsub("baseline_.*","Baseline",levels(parent_awakenings$timepoint))
+levels(parent_awakenings$timepoint) = 
+  gsub("hcl_month_3_.*","Month 3",levels(parent_awakenings$timepoint))
+levels(parent_awakenings$timepoint) = 
+  gsub("hcl_month_6_.*","Month 6",levels(parent_awakenings$timepoint))
+```
+
+## Diabetes-Related Awakenings
+
+### Children
+
+```{r results='asis'}
+# Plot
+p = ggplot(data = child_awakenings,aes(x = timepoint,y = diabetes_awakenings,
+                                color = record_id,group = record_id)) + 
+  geom_point() + geom_line() + xlab("Timepoint") +
+  theme_bw() + theme(legend.position = "none")
+print(p)
+# Model
+mod <- mixed_model(diabetes_awakenings ~ timepoint, random = ~ 1 | record_id, 
+                   data = child_awakenings,
+                   family = zi.poisson(), 
+                   zi_fixed = ~1,zi_random = ~ 1 | record_id)
+res = tidy(mod,"fixed")
+res$term = sub("timepoint","",res$term)
+res = res[,c("term","estimate","conf.low","conf.high","std.error","p.value")]
+res[,c("estimate","conf.low","conf.high")] = exp(res[,c("estimate","conf.low","conf.high")])
+print(kable(res,digits = 3,caption = "Comparison to Baseline"))
+```
+
+### Parents
+
+```{r results='asis'}
+# Plot
+p = ggplot(data = parent_awakenings,aes(x = timepoint,y = diabetes_awakenings,
+                                color = record_id,group = record_id)) + 
+  geom_point() + geom_line() + xlab("Timepoint") +
+  theme_bw() + theme(legend.position = "none")
+print(p)
+# Model
+mod <- mixed_model(diabetes_awakenings ~ timepoint, random = ~ 1 | record_id, 
+                   data = parent_awakenings,control = list(iter_EM = 0),
+                   family = zi.poisson(), 
+                   zi_fixed = ~1,zi_random = ~ 1 | record_id)
+res = tidy(mod,"fixed")
+res$term = sub("timepoint","",res$term)
+res = res[,c("term","estimate","conf.low","conf.high","std.error","p.value")]
+res[,c("estimate","conf.low","conf.high")] = exp(res[,c("estimate","conf.low","conf.high")])
+print(kable(res,digits = 3,caption = "Comparison to Baseline"))
+```
+
+## All Awakenings
+
+### Children
+
+```{r results='asis'}
+# Plot
+p = ggplot(data = child_awakenings,aes(x = timepoint,y = all_awakenings,
+                                color = record_id,group = record_id)) + 
+  geom_point() + geom_line() + xlab("Timepoint") +
+  theme_bw() + theme(legend.position = "none")
+print(p)
+# Model
+mod <- mixed_model(all_awakenings ~ timepoint, random = ~ 1 | record_id, 
+                   data = child_awakenings,control = list(iter_EM = 0),
+                   family = zi.poisson(), 
+                   zi_fixed = ~1,zi_random = ~ 1 | record_id)
+# Anova
+
+# Results
+res = tidy(mod,"fixed")
+res$term = sub("timepoint","",res$term)
+res = res[,c("term","estimate","conf.low","conf.high","std.error","p.value")]
+res[,c("estimate","conf.low","conf.high")] = exp(res[,c("estimate","conf.low","conf.high")])
+print(kable(res,digits = 3,caption = "Comparison to Baseline"))
+```
+
+### Parents
+
+```{r results='asis'}
+# Plot
+p = ggplot(data = parent_awakenings,aes(x = timepoint,y = all_awakenings,
+                                color = record_id,group = record_id)) + 
+  geom_point() + geom_line() + xlab("Timepoint") +
+  theme_bw() + theme(legend.position = "none")
+print(p)
+# Model
+mod <- mixed_model(all_awakenings ~ timepoint, random = ~ 1 | record_id, 
+                   data = parent_awakenings,control = list(iter_EM = 0),
+                   family = zi.poisson(), 
+                   zi_fixed = ~1,zi_random = ~ 1 | record_id)
+res = tidy(mod,"fixed")
+res$term = sub("timepoint","",res$term)
+res = res[,c("term","estimate","conf.low","conf.high","std.error","p.value")]
+res[,c("estimate","conf.low","conf.high")] = exp(res[,c("estimate","conf.low","conf.high")])
+print(kable(res,digits = 3,caption = "Comparison to Baseline"))
+```
