@@ -14,13 +14,7 @@ output:
 library(redcapAPI)
 library(arsenal)
 library(tidyverse)
-library(lmerTest)
-library(broom.mixed)
-library(emmeans)
-library(performance)
 library(knitr)
-library(DT)
-library(GLMMadaptive)
 knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
 if(Sys.info()["sysname"] == "Windows"){
   home_dir = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
@@ -44,6 +38,13 @@ adult_visits = seasons
 adult_visits$ID = seasons$ID - 100
 seasons = rbind(adult_visits,seasons)
 seasons$ID = as.character(seasons$ID)
+seasons = seasons %>% 
+  pivot_longer(cols = c("Summer","School"),names_to = "Period",values_to = "Visit")
+seasons$Visit[seasons$ID < 200 & seasons$Visit == "M3"] = "hcl_month_3_day_1_arm_1"
+seasons$Visit[seasons$ID < 200 & seasons$Visit == "M6"] = "hcl_month_6_day_1_arm_1"
+seasons$Visit[seasons$ID >= 200 & seasons$Visit == "M3"] = "hcl_month_3_day_1_arm_2"
+seasons$Visit[seasons$ID >= 200 & seasons$Visit == "M6"] = "hcl_month_6_day_1_arm_2"
+seasons = seasons %>% rename(record_id = "ID",timepoint = "Visit")
 ```
 
 # Table 1a: Parent Characteristics
@@ -51,14 +52,14 @@ seasons$ID = as.character(seasons$ID)
 ```{r results='asis'}
 # Basic demographics
 parent_demographics = exportRecords(rcon,forms = "parent_demographics")
-parent_demographics$record_id = ids
+parent_demographics$record_id = as.character(ids)
 parent_demographics$age = 
   as.numeric(difftime(parent_demographics$parent_demographics_timestamp,
                       parent_demographics$parent_bday,units = "days"))/365.25
 parent_demographics = parent_demographics %>% 
   select(record_id,age,parent_gender,race,parent_check_night,child_check_glucose,
          insulinmethod,previous_cgm_use,currenthcltech) %>% 
-  filter(record_id %in% seasons$ID)
+  filter(record_id %in% seasons$record_id)
 parent_demographics = 
   parent_demographics[rowSums(is.na(parent_demographics)) < (ncol(parent_demographics)-1),]
 # Table
@@ -73,10 +74,10 @@ summary(t1a,digits = 2,labelTranslations = list(age = "Age (years)",
 ```{r results='asis'}
 # Basic demographics
 child_demographics = exportRecords(rcon,forms = "child_demographics_chart_review")
-child_demographics$record_id = ids
+child_demographics$record_id = as.character(ids)
 # Get Hba1c
 hba1c = exportRecords(rcon,forms = "glycemic_data")
-hba1c$record_id = ids
+hba1c$record_id = as.character(ids)
 hba1c = hba1c %>% filter(record_id >= 200,gyl_timepoint == "Baseline") %>%
   select(record_id,hba1c)
 # Format
@@ -85,7 +86,7 @@ child_demographics$t1d_duration =
                       child_demographics$t1d_diagnosis,units = "days"))/365.25
 child_demographics = child_demographics %>% 
   select(record_id,cons_age,childgender,t1d_duration) %>%
-  filter(record_id %in% seasons$ID)
+  filter(record_id %in% seasons$record_id)
 child_demographics = 
   child_demographics[rowSums(is.na(child_demographics)) < (ncol(child_demographics)-1),]
 # Add Hba1c
@@ -100,21 +101,23 @@ summary(t1a,digits = 3,labelTranslations = list(t1d_duration = "T1D Duration (ye
 
 Because some participants were included in both the summer and school year groups, a paired t test was used to compare summertime and school year for participants with both. 
 
-Average sleep time was converted to minutes for all analyses.
-
 # Actigraphy
+
+Average sleep time was converted to minutes for all analyses.
 
 ```{r}
 # Get total sleep time, sleep efficiency, and WASO
 activity = exportRecords(rcon,forms = "wrist_actigraphy")
-activity$record_id = ids
+activity$record_id = as.character(ids)
 activity$timepoint = times
 child_activity = activity %>% 
-  select(record_id,timepoint,totalsleep_avg,sleepefficency_avg,waso_avg) %>% 
-  filter(record_id %in% seasons$ID,record_id >= 200,
+  select(record_id,timepoint,totalsleep_avg,sleepefficency_avg,waso_avg,timeinbed_avg) %>% 
+  filter(record_id %in% seasons$record_id,record_id >= 200,
          grepl("month_3|month_6",timepoint)) %>%
-  mutate(totalsleep_avg = as.numeric(lubridate::hms(as.character(totalsleep_avg)))/60)
+  mutate(totalsleep_avg = as.numeric(lubridate::hms(as.character(totalsleep_avg)))/60,
+         timeinbed_avg = as.numeric(lubridate::hms(as.character(timeinbed_avg)))/60)
 child_activity = left_join(child_activity,child_demographics,by = "record_id")
+child_activity = left_join(child_activity,seasons,by = c("record_id", "timepoint"))
 child_activity$sufficient = apply(child_activity,1,function(r){
   age = as.numeric(r["cons_age"])
   time = as.numeric(r["totalsleep_avg"])/60
@@ -135,60 +138,35 @@ child_activity$sufficient = apply(child_activity,1,function(r){
 child_activity$sufficient = as.factor(child_activity$sufficient)
 # Same for parents
 parent_activity = activity %>% 
-  select(record_id,timepoint,totalsleep_avg,sleepefficency_avg,waso_avg) %>% 
-  filter(record_id %in% seasons$ID,record_id < 200,
+  select(record_id,timepoint,totalsleep_avg,sleepefficency_avg,waso_avg,timeinbed_avg) %>% 
+  filter(record_id %in% seasons$record_id,record_id < 200,
          grepl("month_3|month_6",timepoint)) %>%
   mutate(avg_sleep = as.character(totalsleep_avg),
          totalsleep_avg = as.numeric(lubridate::hms(totalsleep_avg))/60,
+         timeinbed_avg = as.numeric(lubridate::hms(timeinbed_avg))/60,
          sufficient = ifelse(totalsleep_avg >= 7*60,"Yes","No"))
 parent_activity$sufficient = as.factor(parent_activity$sufficient)
+parent_activity = left_join(parent_activity,seasons,by = c("record_id", "timepoint"))
 ```
 
 ## Children
 
 ```{r results='asis'}
-p <- paired(timepoint ~ totalsleep_avg + sleepefficency_avg + waso_avg, 
+p <- paired(Period ~ totalsleep_avg + sleepefficency_avg + waso_avg + timeinbed_avg + sufficient, 
             data = child_activity,id = record_id, signed.rank.exact = FALSE)
-summary(p,labelTranslations = list(totalsleep_avg = "Average Total Sleep Time (minutes)"))
+summary(p,labelTranslations = list(totalsleep_avg = "Average Total Sleep Time (minutes)",
+                                   timeinbed_avg = "Average Time  in Bed (minutes)",
+                                   sufficient = "Sufficient sleep?"))
 ```
 
 ## Parents
 
 ```{r results='asis'}
-p <- paired(timepoint ~ totalsleep_avg + sleepefficency_avg + waso_avg, 
+p <- paired(Period ~ totalsleep_avg + sleepefficency_avg + waso_avg + timeinbed_avg + sufficient, 
             data = parent_activity,id = record_id, signed.rank.exact = FALSE)
-summary(p,labelTranslations = list(totalsleep_avg = "Average Total Sleep Time (minutes)"))
-```
-
-
-
-
-
-
-
-
-## Sufficient sleep
-
-### Children
-
-```{r results='asis'}
-child_activity %>% select(record_id,timepoint,cons_age,avg_sleep,sufficient) %>% 
-  datatable(.)
-```
-
-```{r}
-child_activity %>% group_by(timepoint) %>% count(sufficient) %>% kable(.)
-```
-
-### Parents
-
-```{r results='asis'}
-parent_activity %>%select(record_id,timepoint,avg_sleep,sufficient) %>% 
-  datatable(.)
-```
-
-```{r}
-parent_activity %>% group_by(timepoint) %>% count(sufficient) %>% kable(.)
+summary(p,labelTranslations = list(totalsleep_avg = "Average Total Sleep Time (minutes)",
+                                   timeinbed_avg = "Average Time  in Bed (minutes)",
+                                   sufficient = "Sufficient sleep?"))
 ```
 
 # Surveys
@@ -197,16 +175,17 @@ parent_activity %>% group_by(timepoint) %>% count(sufficient) %>% kable(.)
 
 ```{r}
 psqi = exportRecords(rcon,forms = "psqi",dates = F)
-psqi$record_id = ids
+psqi$record_id = as.character(ids)
 psqi$timepoint = times
 psqi = psqi %>% select(record_id,timepoint,psqi_total) %>% 
-  filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
-         rowSums(is.na(.)) < ncol(.)-2)
-psqi$timepoint = sub("enrollment_","baseline_",psqi$timepoint)
+  filter(record_id %in% seasons$record_id,record_id < 200,
+         grepl("month_3|month_6",timepoint))
+psqi = left_join(psqi,seasons,by = c("record_id", "timepoint"))
 ```
 
 ```{r results='asis'}
-fit_mod(outcome = "psqi_total",df = psqi)
+p <- paired(Period ~ psqi_total,data = psqi,id = record_id, signed.rank.exact = FALSE)
+summary(p)
 ```
 
 ## PROMIS: Sleep Disturbance
@@ -216,10 +195,10 @@ fit_mod(outcome = "psqi_total",df = psqi)
 ```{r}
 # Import select, filter, etc.
 promis_peds = exportRecords(rcon,forms = "promis_pediatric_817")
-promis_peds$record_id = ids
+promis_peds$record_id = as.character(ids)
 promis_peds$timepoint = times
 promis_peds = promis_peds %>% select(record_id,timepoint,falling_asleep:bad_mood_sleepy) %>%
-  filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
+  filter(record_id %in% seasons$record_id,grepl("enrollment|month_3|month_6",timepoint),
          record_id >= 200,rowSums(is.na(.)) < ncol(.)-2) %>%
   mutate(across(falling_asleep:bad_mood_sleepy,.fns = as.numeric),
          through_night = 6 - through_night) %>% 
@@ -246,10 +225,10 @@ fit_mod(outcome = "disturbance",df = promis_peds)
 ```{r}
 # Import select, filter, etc.
 promis_parent = exportRecords(rcon,forms = "promis_parent_proxy_817")
-promis_parent$record_id = ids
+promis_parent$record_id = as.character(ids)
 promis_parent$timepoint = times
 promis_parent = promis_parent %>% select(record_id,timepoint,asleep:bad_mood) %>%
-  filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
+  filter(record_id %in% seasons$record_id,grepl("enrollment|month_3|month_6",timepoint),
          record_id < 200,rowSums(is.na(.)) < ncol(.)-2) %>%
   mutate(across(asleep:bad_mood,.fns = as.numeric),
          night = 6 - night) %>% 
@@ -296,7 +275,7 @@ The interpretation of the coefficients from a zero-inflated Poisson model are: t
 data$timepoint = times
 child_awakenings = data %>% 
   select(record_id,timepoint,diabetes_awakenings,all_awakenings) %>% 
-  filter(!record_id %in% exclude,grepl("baseline|month_3|month_6",timepoint),
+  filter(record_id %in% seasons$record_id,grepl("baseline|month_3|month_6",timepoint),
          record_id >= 200,rowSums(is.na(.)) < ncol(.)-2)
 child_awakenings$timepoint = as.factor(child_awakenings$timepoint)
 levels(child_awakenings$timepoint) = 
@@ -308,7 +287,7 @@ levels(child_awakenings$timepoint) =
 # Parents
 parent_awakenings = data %>% 
   select(record_id,timepoint,diabetes_awakenings,all_awakenings) %>% 
-  filter(!record_id %in% exclude,grepl("baseline|month_3|month_6",timepoint),
+  filter(record_id %in% seasons$record_id,grepl("baseline|month_3|month_6",timepoint),
          record_id < 200,rowSums(is.na(.)) < ncol(.)-2)
 parent_awakenings$timepoint = as.factor(parent_awakenings$timepoint)
 levels(parent_awakenings$timepoint) = 
