@@ -1,7 +1,8 @@
+from datetime import datetime
 import os
 import itertools
 import pandas as pd
-wd = "/Users/timvigers/Documents/Work/Viral Shah/JDRF/"
+wd = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/JDRF/"
 # List all CGM files
 # Group 1
 # List subject folders
@@ -9,6 +10,11 @@ case_folders = [f.path for f in os.scandir(
     wd + "Data_Raw/13. JDRF_TIR/3. Data Collection/Cleaned Final Data/Group 1/Cases_T1D+DR") if f.is_dir()]
 case_folders.sort()
 for subject_folder in case_folders:
+    # Get ID
+    id = os.path.basename(subject_folder)
+    id = [int(s) for s in id.split() if s.isdigit()][0]
+    id = str(id).zfill(3)
+    # Find relevant files
     files = os.listdir(subject_folder)
     subject_info = [f for f in files if "summary" in f.lower()]
     subject_info = pd.read_excel(subject_folder + "/" + subject_info[0])
@@ -43,6 +49,46 @@ for subject_folder in case_folders:
     all_cgm = pd.concat(all_cgm)
     all_cgm.sort_values(by="datetime", inplace=True)
     # Go through visit dates and get two weeks of data
-    for visit_date in subject_info["visit date"]:
-        print(visit_date)
-        end = visit_date - pd.Timedelta(14, unit="d")
+    subject_data = {"id": [], "visit_num": [], "visit_date": [], "a1c": [],
+                    "sensor_readings": [], "sensor_interval": [],
+                    "tbr": [], "ttir": [], "tir": [], "tar": [], "mean_glucose": []}
+    for index, row in subject_info.iterrows():
+        # Fill in summary data from Viral
+        subject_data["id"].append(id)
+        subject_data["visit_num"].append(row.iloc[1])
+        subject_data["visit_date"].append(row.iloc[2].strftime('%Y-%m-%d'))
+        subject_data["a1c"].append(row.iloc[3])
+        # Calculate last two weeks CGM metrics
+        visit_date = row.iloc[2]
+        start = visit_date - pd.Timedelta(14, unit="d")
+        cgm = all_cgm.loc[(all_cgm["datetime"] >= start) &
+                          (all_cgm["datetime"] <= visit_date)]
+        # Basic metrics
+        subject_data["sensor_readings"].append(cgm.shape[0])
+        # Check that CGM data exists
+        if cgm.shape[0] == 0:
+            subject_data["sensor_interval"].append("NA")
+            subject_data["tbr"].append("NA")
+            subject_data["ttir"].append("NA")
+            subject_data["tir"].append("NA")
+            subject_data["tar"].append("NA")
+            subject_data["mean_glucose"].append("NA")
+            continue
+        # TIR, etc.
+        ttir = len([g for g in cgm["sensor_glucose"] if g >=
+                   70 and g <= 140])/cgm.shape[0] * 100
+        tir = len([g for g in cgm["sensor_glucose"] if g >=
+                  70 and g <= 180])/cgm.shape[0] * 100
+        tbr = len([g for g in cgm["sensor_glucose"] if g < 70]) / \
+            cgm.shape[0] * 100
+        tar = len([g for g in cgm["sensor_glucose"] if g > 180]) / \
+            cgm.shape[0] * 100
+        mean_glu = cgm["sensor_glucose"].mean()
+        # Append
+        subject_data["sensor_interval"].append(
+            cgm["datetime"].diff().mode()[0].seconds/60)
+        subject_data["tbr"].append(round(tbr, 3))
+        subject_data["ttir"].append(round(ttir, 3))
+        subject_data["tir"].append(round(tir, 3))
+        subject_data["tar"].append(round(tar, 3))
+        subject_data["mean_glucose"].append(round(mean_glu, 3))
