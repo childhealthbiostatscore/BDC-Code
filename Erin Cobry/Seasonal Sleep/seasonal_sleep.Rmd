@@ -14,6 +14,8 @@ output:
 library(redcapAPI)
 library(arsenal)
 library(tidyverse)
+library(lme4)
+library(broom.mixed)
 library(knitr)
 knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
 if(Sys.info()["sysname"] == "Windows"){
@@ -169,6 +171,31 @@ summary(p,labelTranslations = list(totalsleep_avg = "Average Total Sleep Time (m
                                    sufficient = "Sufficient sleep?"))
 ```
 
+# Glycemic outcomes
+
+GMI is a linear transformation of mean glucose, so was not included in this report. 
+
+```{r}
+# Get total sleep time, sleep efficiency, and WASO
+glycemic = exportRecords(rcon,forms = "glycemic_data")
+glycemic$record_id = as.character(ids)
+glycemic$timepoint = times
+glycemic = glycemic %>% 
+  mutate(sensor_u70 = sensor_55_69 + sensor_u54,
+         sensor_g180 = sensor_181_250 + sensor_g251) %>% 
+  select(record_id,timepoint,sensor_u70,sensor_70_180,sensor_g180,sensor_mean) %>% 
+  filter(record_id %in% seasons$record_id,record_id >= 200,
+         grepl("month_3|month_6",timepoint))
+glycemic = left_join(glycemic,seasons,by = c("record_id", "timepoint"))
+```
+
+```{r results='asis'}
+p <- paired(Period ~ sensor_u70+sensor_70_180+sensor_g180+sensor_mean, 
+            data = glycemic,id = record_id, signed.rank.exact = FALSE)
+summary(p,labelTranslations = list(sensor_u70 = "% time sensor values < 70 mg/dL",
+                                   sensor_g180 = "% time sensor values > 180 mg/dL"))
+```
+
 # Surveys
 
 ## PSQI 
@@ -198,7 +225,12 @@ promis_peds = exportRecords(rcon,forms = "promis_pediatric_817")
 promis_peds$record_id = as.character(ids)
 promis_peds$timepoint = times
 promis_peds = promis_peds %>% select(record_id,timepoint,falling_asleep:bad_mood_sleepy) %>%
+<<<<<<< HEAD
+  filter(record_id %in% seasons$record_id,grepl("enrollment|month_3|month_6",timepoint),
+         record_id >= 200) %>%
+=======
   filter(record_id %in% seasons$record_id,grepl("month_3|month_6",timepoint),record_id >= 200) %>%
+>>>>>>> master
   mutate(across(falling_asleep:bad_mood_sleepy,.fns = as.numeric),
          through_night = 6 - through_night) %>% 
   mutate(disturbance = rowSums(select(.,falling_asleep:tossed_and_turned)),
@@ -216,7 +248,12 @@ promis_peds = left_join(promis_peds,seasons,by = c("record_id", "timepoint"))
 ```
 
 ```{r results='asis'}
+<<<<<<< HEAD
+p <- paired(Period ~ disturbance + impairment,
+            data = promis_peds,id = record_id,signed.rank.exact = FALSE)
+=======
 p <- paired(Period ~ disturbance,data = promis_peds,id = record_id, signed.rank.exact = FALSE)
+>>>>>>> master
 summary(p)
 ```
 
@@ -229,7 +266,7 @@ promis_parent$record_id = as.character(ids)
 promis_parent$timepoint = times
 promis_parent = promis_parent %>% select(record_id,timepoint,asleep:bad_mood) %>%
   filter(record_id %in% seasons$record_id,grepl("enrollment|month_3|month_6",timepoint),
-         record_id < 200,rowSums(is.na(.)) < ncol(.)-2) %>%
+         record_id < 200) %>%
   mutate(across(asleep:bad_mood,.fns = as.numeric),
          night = 6 - night) %>% 
   mutate(disturbance = rowSums(select(.,asleep:tossed)),
@@ -244,102 +281,52 @@ promis_parent$disturbance =
 promis_parent$impairment = 
   parent_impairment$T.Score[match(promis_parent$impairment,
                                   parent_impairment$Raw.Summed.Score)]
+promis_parent = left_join(promis_parent,seasons,by = c("record_id", "timepoint"))
 ```
 
 ```{r results='asis'}
-fit_mod(outcome = "disturbance",df = promis_parent)
-```
-
-## PROMIS: Impairment
-
-### Children
-
-```{r results='asis'}
-fit_mod(outcome = "impairment",df = promis_peds)
-```
-
-### Parents
-
-```{r results='asis'}
-fit_mod(outcome = "impairment",df = promis_parent)
+p <- paired(Period ~ disturbance + impairment,
+            data = promis_parent,id = record_id,signed.rank.exact = FALSE)
+summary(p)
 ```
 
 # Awakenings
 
-Due to the large number of participants with 0 awakenings (diabetes-related or otherwise), awakening outcomes were modeled using a zero-inflated Poisson mixed model. The Poisson model was found to perform better than a negative binomial.
-
-The interpretation of the coefficients from a zero-inflated Poisson model are: the expected number of awakenings (for those with more than 0 awakenings) changes by $x$ amount compared to baseline. However, unlike the mixed models above, these coefficients are multiplicative, so given a coefficient of 0.694 for month 3 and an average of 0.173 awakenings at baseline, the expected number of awakenings at month 3 is: $0.173*0.694$.
+Awakenings were analyzed using a generalized linear mixed effects model for the negative binomial family, with a random effect for participant. The "Summer" term indicates the difference between school and summer, with school time as the reference.
 
 ```{r}
 # Data cleaning
+data$record_id = as.character(data$record_id)
 data$timepoint = times
 child_awakenings = data %>% 
   select(record_id,timepoint,diabetes_awakenings,all_awakenings) %>% 
-  filter(record_id %in% seasons$record_id,grepl("baseline|month_3|month_6",timepoint),
-         record_id >= 200,rowSums(is.na(.)) < ncol(.)-2)
-child_awakenings$timepoint = as.factor(child_awakenings$timepoint)
-levels(child_awakenings$timepoint) = 
-  gsub("baseline_.*","Baseline",levels(child_awakenings$timepoint))
-levels(child_awakenings$timepoint) = 
-  gsub("hcl_month_3_.*","Month 3",levels(child_awakenings$timepoint))
-levels(child_awakenings$timepoint) = 
-  gsub("hcl_month_6_.*","Month 6",levels(child_awakenings$timepoint))
+  filter(record_id %in% seasons$record_id,grepl("month_3|month_6",timepoint),
+         record_id >= 200)
+child_awakenings = left_join(child_awakenings,seasons,by = c("record_id", "timepoint"))
 # Parents
 parent_awakenings = data %>% 
   select(record_id,timepoint,diabetes_awakenings,all_awakenings) %>% 
-  filter(record_id %in% seasons$record_id,grepl("baseline|month_3|month_6",timepoint),
-         record_id < 200,rowSums(is.na(.)) < ncol(.)-2)
-parent_awakenings$timepoint = as.factor(parent_awakenings$timepoint)
-levels(parent_awakenings$timepoint) = 
-  gsub("baseline_.*","Baseline",levels(parent_awakenings$timepoint))
-levels(parent_awakenings$timepoint) = 
-  gsub("hcl_month_3_.*","Month 3",levels(parent_awakenings$timepoint))
-levels(parent_awakenings$timepoint) = 
-  gsub("hcl_month_6_.*","Month 6",levels(parent_awakenings$timepoint))
+  filter(record_id %in% seasons$record_id,grepl("month_3|month_6",timepoint),
+         record_id < 200)
+parent_awakenings = left_join(parent_awakenings,seasons,by = c("record_id", "timepoint"))
 ```
-
-## Diabetes-Related Awakenings
 
 ### Children
 
 ```{r results='asis'}
-# Plot
-p = ggplot(data = child_awakenings,aes(x = timepoint,y = diabetes_awakenings,
-                                color = record_id,group = record_id)) + 
-  geom_point() + geom_line() + xlab("Timepoint") +
-  theme_bw() + theme(legend.position = "none")
-print(p)
-# Model
-mod <- mixed_model(diabetes_awakenings ~ timepoint, random = ~ 1 | record_id, 
-                   data = child_awakenings,
-                   family = zi.poisson(), 
-                   zi_fixed = ~1,zi_random = ~ 1 | record_id)
+mod = glmer.nb(diabetes_awakenings ~ Period + (1|record_id),data = child_awakenings)
 res = tidy(mod,"fixed")
-res$term = sub("timepoint","",res$term)
-res = res[,c("term","estimate","conf.low","conf.high","std.error","p.value")]
-res[,c("estimate","conf.low","conf.high")] = exp(res[,c("estimate","conf.low","conf.high")])
-print(kable(res,digits = 3,caption = "Comparison to Baseline"))
+res$term = sub("Period","",res$term)
+kable(res[,2:ncol(res)],digits = 3)
 ```
 
 ### Parents
 
 ```{r results='asis'}
-# Plot
-p = ggplot(data = parent_awakenings,aes(x = timepoint,y = diabetes_awakenings,
-                                color = record_id,group = record_id)) + 
-  geom_point() + geom_line() + xlab("Timepoint") +
-  theme_bw() + theme(legend.position = "none")
-print(p)
-# Model
-mod <- mixed_model(diabetes_awakenings ~ timepoint, random = ~ 1 | record_id, 
-                   data = parent_awakenings,control = list(iter_EM = 0),
-                   family = zi.poisson(), 
-                   zi_fixed = ~1,zi_random = ~ 1 | record_id)
+mod = glmer.nb(diabetes_awakenings ~ Period + (1|record_id),data = parent_awakenings)
 res = tidy(mod,"fixed")
-res$term = sub("timepoint","",res$term)
-res = res[,c("term","estimate","conf.low","conf.high","std.error","p.value")]
-res[,c("estimate","conf.low","conf.high")] = exp(res[,c("estimate","conf.low","conf.high")])
-print(kable(res,digits = 3,caption = "Comparison to Baseline"))
+res$term = sub("Period","",res$term)
+kable(res[,2:ncol(res)],digits = 3)
 ```
 
 ## All Awakenings
@@ -347,44 +334,17 @@ print(kable(res,digits = 3,caption = "Comparison to Baseline"))
 ### Children
 
 ```{r results='asis'}
-# Plot
-p = ggplot(data = child_awakenings,aes(x = timepoint,y = all_awakenings,
-                                color = record_id,group = record_id)) + 
-  geom_point() + geom_line() + xlab("Timepoint") +
-  theme_bw() + theme(legend.position = "none")
-print(p)
-# Model
-mod <- mixed_model(all_awakenings ~ timepoint, random = ~ 1 | record_id, 
-                   data = child_awakenings,control = list(iter_EM = 0),
-                   family = zi.poisson(), 
-                   zi_fixed = ~1,zi_random = ~ 1 | record_id)
-# Anova
-
-# Results
+mod = glmer.nb(all_awakenings ~ Period + (1|record_id),data = child_awakenings)
 res = tidy(mod,"fixed")
-res$term = sub("timepoint","",res$term)
-res = res[,c("term","estimate","conf.low","conf.high","std.error","p.value")]
-res[,c("estimate","conf.low","conf.high")] = exp(res[,c("estimate","conf.low","conf.high")])
-print(kable(res,digits = 3,caption = "Comparison to Baseline"))
+res$term = sub("Period","",res$term)
+kable(res[,2:ncol(res)],digits = 3)
 ```
 
 ### Parents
 
 ```{r results='asis'}
-# Plot
-p = ggplot(data = parent_awakenings,aes(x = timepoint,y = all_awakenings,
-                                color = record_id,group = record_id)) + 
-  geom_point() + geom_line() + xlab("Timepoint") +
-  theme_bw() + theme(legend.position = "none")
-print(p)
-# Model
-mod <- mixed_model(all_awakenings ~ timepoint, random = ~ 1 | record_id, 
-                   data = parent_awakenings,control = list(iter_EM = 0),
-                   family = zi.poisson(), 
-                   zi_fixed = ~1,zi_random = ~ 1 | record_id)
+mod = glmer.nb(all_awakenings ~ Period + (1|record_id),data = parent_awakenings)
 res = tidy(mod,"fixed")
-res$term = sub("timepoint","",res$term)
-res = res[,c("term","estimate","conf.low","conf.high","std.error","p.value")]
-res[,c("estimate","conf.low","conf.high")] = exp(res[,c("estimate","conf.low","conf.high")])
-print(kable(res,digits = 3,caption = "Comparison to Baseline"))
+res$term = sub("Period","",res$term)
+kable(res[,2:ncol(res)],digits = 3)
 ```
