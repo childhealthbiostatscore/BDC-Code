@@ -1,0 +1,117 @@
+---
+title: "Cortical Bone Samples T1DM"
+author: "Casey Sakamoto"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 5
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(arsenal)
+library(tidyverse)
+library(ggplot2)
+library(performance)
+library(knitr)
+library(readxl)
+library(nlme) # mixed models
+
+# upload dataset and change names
+ht1d_raman = read_excel("S:/Laura/BDC/Projects/Viral Shah/Bone samples t1dm - ginger/2022-07-07_hT1D_Raman_FullDataset-deidentified.xlsx")
+# interested in coritcal bone
+ht1d_raman_c = ht1d_raman %>% mutate(subjectid= `Subject #`, t1d_grp = `...3` ) %>% select(-c(`...3`,`Subject #`)) %>% filter(`Bone type`=="C")
+```
+
+```{r heterogeneity, include=FALSE}
+# compress sd's down into one subj/row
+ht1d_sd = ht1d_raman_c %>% group_by(subjectid, t1d_grp) %>% summarise(v2pa3_sd = sd(v2phos_amideIII),
+                                                             cp_sd = sd(carbonate_phosphate),
+                                                             cryst_sd = sd(crystallinity))
+
+het_t1 = ht1d_sd %>% 
+  select(t1d_grp, v2pa3_sd, cp_sd, cryst_sd, -subjectid) %>% 
+  gather(key = variable, value = value, -t1d_grp) %>% 
+  group_by(t1d_grp, variable) %>% 
+  summarise(value = list(value)) %>% 
+  spread(t1d_grp, value) %>% 
+  group_by(variable) %>% 
+  mutate(t_value = t.test(unlist(T1D), unlist(C))$statistic,
+         p_value = t.test(unlist(T1D), unlist(C))$p.value
+         )
+
+het_t1 = het_t1 %>% filter(variable != "subjectid") %>% select(-c(T1D, C))
+```
+
+```{r mods, include=FALSE}
+# phos amideIII
+pa_mod = lme(v2phos_amideIII ~ t1d_grp ,
+            random = ~1|subjectid,
+            data = ht1d_raman_c,
+            na.action = na.omit)
+
+# carbphos
+cp_mod = lme(carbonate_phosphate ~ t1d_grp ,
+            random = ~1|subjectid,
+            data = ht1d_raman_c,
+            na.action = na.omit)
+
+# cryst
+cry_mod = lme(crystallinity ~ t1d_grp ,
+            random = ~1|subjectid,
+            data = ht1d_raman_c,
+            na.action = na.omit)
+```
+
+# Outstanding Data Remarks/Questions
+note: n for groups is a bit small (n = 17 (10 t1d, 7 c))
+
+# Methods
+Only Subject's cortical bone measurements were used in primary analysis (n = 425 measurements from 17 subjects).
+
+For v2phos, carbonatephos, and crystallinity, mixed models with random intercept for subject were fit with t1d status as a fixed effect. Model output included in code appendix. To assess heterogeneity, standard deviations of measures within subjects were aggregated and compared between groups using a t-test.
+
+# Analysis
+## v2Phosphate:Amide III
+### Group Differences
+Adjusting for within subject correlation, there is no significant difference between T1d and Control groups (p = 0.85)
+```{r phosamide plot}
+ggplot(ht1d_raman_c, aes(x = v2phos_amideIII)) + 
+  geom_histogram(aes(color = t1d_grp, fill = t1d_grp), bins = 30, alpha = 0.4) + theme_classic()
+```
+
+### Heterogeneity
+There is no significant difference between t1d and control groups (p = 0.61)
+
+## Carbonate:Phosphate
+### Group Differences
+Adjusting for within subject correlation, there is no significant difference between T1d and Control groups (p = 0.29)
+```{r carbphos plot}
+ggplot(ht1d_raman_c, aes(x = carbonate_phosphate)) + 
+  geom_histogram(aes(color = t1d_grp, fill = t1d_grp), bins = 30, alpha = 0.4) + theme_classic()
+```
+
+### Heterogeneity
+There is no significant difference between t1d and control groups (p = 0.36)
+
+## Crystallinity
+### Group Differences
+Adjusting for within subject correlation, there is no significant difference between T1d and Control groups (p = 0.25)
+```{r crystallinnity plot}
+ggplot(ht1d_raman_c, aes(x = crystallinity)) + 
+  geom_histogram(aes(color = t1d_grp, fill = t1d_grp), bins = 30, alpha = 0.4) + theme_classic()
+```
+
+### Heterogeneity
+There is no significant difference between t1d and control groups (p = 0.61)
+
+# Code Appendix
+```{r mods sum}
+summary(pa_mod)
+summary(cp_mod)
+summary(cry_mod)
+
+kable(het_t1)
+```
