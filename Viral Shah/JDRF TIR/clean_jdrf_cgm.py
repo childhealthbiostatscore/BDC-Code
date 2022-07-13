@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 import numpy as np
-wd = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/JDRF/"
+wd = "UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/JDRF/"
 # List all CGM files
 # Group 1
 # List subject folders
@@ -11,6 +11,8 @@ control_folders = [f.path for f in os.scandir(
     wd + "Data_Raw/13. JDRF_TIR/3. Data Collection/Cleaned Final Data/Group 2/Control_T1D+No DR") if f.is_dir()]
 folders = case_folders + control_folders
 folders.sort()
+# List for storing results from all participants
+final = []
 for subject_folder in folders:
     # Get ID
     id = os.path.basename(subject_folder)
@@ -25,7 +27,7 @@ for subject_folder in folders:
     subject_info.columns = [c.lower() for c in subject_info.columns]
     subject_info.columns = ["visit date" if "date" in c.lower()
                             else c for c in subject_info.columns]
-    # Combine all CGM data from CSVs
+    # Combine all CGM data from CSVs for each subject
     csvs = [f for f in files if ".csv" in f.lower()]
     all_cgm = []
     for cgm_file in csvs:
@@ -80,6 +82,8 @@ for subject_folder in folders:
     # Flatten lists and convert to dataframe
     all_cgm = pd.concat(all_cgm)
     all_cgm.sort_values(by="datetime", inplace=True)
+    # Drop duplicates
+    all_cgm.drop_duplicates(inplace=True)
     # Go through visit dates and get two weeks of data
     subject_data = {"id": [], "visit_num": [], "visit_date": [], "a1c": [],
                     "sensor_readings": [], "sensor_interval": [],
@@ -124,7 +128,10 @@ for subject_folder in folders:
         subject_data["tir"].append(round(tir, 3))
         subject_data["tar"].append(round(tar, 3))
         subject_data["mean_glucose"].append(round(mean_glu, 3))
-    # Write
+    # Add to final results
     subject_data = pd.DataFrame(subject_data)
-    dir = wd + "Data_Cleaned/cgm_a1c_files/"
-    subject_data.to_csv(dir+id+".csv", index=False)
+    final.append(subject_data)
+# Write
+final = pd.concat(final)
+final.dropna(subset=['sensor_readings'], inplace=True)
+final.to_csv(wd+"Data_Cleaned/cgm_metrics.csv", index=False)
