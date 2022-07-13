@@ -28,62 +28,60 @@ for subject_folder in folders:
     subject_info.columns = [c.lower() for c in subject_info.columns]
     subject_info.columns = ["visit date" if "date" in c.lower()
                             else c for c in subject_info.columns]
-    # Combine all CGM data
+    # Combine all CGM data from CSVs for each subject
+    csvs = [f for f in files if ".csv" in f.lower()]
     all_cgm = []
-    for cgm_file in files:
+    if len(csvs) == 0:
+        continue
+    for cgm_file in csvs:
         print(cgm_file)
-        if cgm_file.lower().endswith(".csv"):
-            cgm = pd.read_csv(subject_folder+"/"+cgm_file, low_memory=False)
-            # Detect file type and format accordingly
-            if cgm.shape[1] == 14:  # Dexcom
-                # Get datetime and glucose columns
-                cols = [c for c in cgm.columns if (
-                    "timestamp" in c.lower()) or ("glucose value" in c.lower())]
-                cgm = cgm[cols]
-                cgm.columns = ["datetime" if "timestamp" in c.lower()
-                               else 'sensor_glucose' for c in cgm.columns]
-                # Format date
-                cgm["datetime"] = [str(d).replace("T", " ")
-                                   for d in cgm["datetime"]]
-            elif cgm.shape[1] == 19:
-                cgm.columns = cgm.iloc[1, :]
-                cols = [c for c in cgm.columns if ("timestamp" in c.lower()) or (
-                    "historic glucose" in c.lower())]
-                cgm = cgm[cols]
-                cgm.columns = ["datetime", "sensor_glucose"]
-            elif cgm.shape[1] >= 46:
-                file_start = np.where(cgm.iloc[:, 2] == "Sensor")[0]
-                if len(file_start) == 0:
-                    continue
-                cgm.columns = cgm.iloc[file_start[0]+1, :]
-                cgm["datetime"] = cgm["Date"] + " " + cgm["Time"]
-                cols = [c for c in cgm.columns if (
-                    "datetime" in c.lower()) or ("sensor glucose" in c.lower())]
-                cgm = cgm[cols]
-                colnames = cgm.columns.to_list()
-                colnames[np.where(colnames != "datetime")[
-                    0][0]] = 'sensor_glucose'
-                cgm.columns = colnames
-            else:
-                break
-            # Format columns
-            cgm = cgm[["datetime", "sensor_glucose"]]
-            cgm["datetime"] = pd.to_datetime(cgm["datetime"], errors="coerce")
-            # "Low" and "High" to 40 and 400 respectively
-            cgm.loc[cgm['sensor_glucose'] == "Low", 'sensor_glucose'] = 40
-            cgm.loc[cgm['sensor_glucose'] == "High", 'sensor_glucose'] = 400
-            cgm['sensor_glucose'] = pd.to_numeric(
-                cgm['sensor_glucose'], errors="coerce")
-            # Drop missing
-            cgm.dropna(inplace=True)
-            if cgm.shape[0] == 0:
+        cgm = pd.read_csv(subject_folder+"/"+cgm_file, low_memory=False)
+        # Detect file type and format accordingly
+        if cgm.shape[1] == 14:  # Dexcom
+            # Get datetime and glucose columns
+            cols = [c for c in cgm.columns if (
+                "timestamp" in c.lower()) or ("glucose value" in c.lower())]
+            cgm = cgm[cols]
+            cgm.columns = ["datetime" if "timestamp" in c.lower()
+                           else 'sensor_glucose' for c in cgm.columns]
+            # Format date
+            cgm["datetime"] = [str(d).replace("T", " ")
+                               for d in cgm["datetime"]]
+        elif cgm.shape[1] == 19:
+            cgm.columns = cgm.iloc[1, :]
+            cols = [c for c in cgm.columns if ("timestamp" in c.lower()) or (
+                "historic glucose" in c.lower())]
+            cgm = cgm[cols]
+            cgm.columns = ["datetime", "sensor_glucose"]
+        elif cgm.shape[1] >= 46:
+            file_start = np.where(cgm.iloc[:, 2] == "Sensor")[0]
+            if len(file_start) == 0:
                 continue
-            # Add to combined
-            all_cgm.append(cgm)
-        elif cgm_file.lower().endswith(".pdf"):
-            with pdfplumber.open(subject_folder+"/"+cgm_file) as pdf:
-                first_page = pdf.pages[0]
-                print(first_page.extract_text())
+            cgm.columns = cgm.iloc[file_start[0]+1, :]
+            cgm["datetime"] = cgm["Date"] + " " + cgm["Time"]
+            cols = [c for c in cgm.columns if (
+                "datetime" in c.lower()) or ("sensor glucose" in c.lower())]
+            cgm = cgm[cols]
+            colnames = cgm.columns.to_list()
+            colnames[np.where(colnames != "datetime")[
+                0][0]] = 'sensor_glucose'
+            cgm.columns = colnames
+        else:
+            break
+        # Format columns
+        cgm = cgm[["datetime", "sensor_glucose"]]
+        cgm["datetime"] = pd.to_datetime(cgm["datetime"], errors="coerce")
+        # "Low" and "High" to 40 and 400 respectively
+        cgm.loc[cgm['sensor_glucose'] == "Low", 'sensor_glucose'] = 40
+        cgm.loc[cgm['sensor_glucose'] == "High", 'sensor_glucose'] = 400
+        cgm['sensor_glucose'] = pd.to_numeric(
+            cgm['sensor_glucose'], errors="coerce")
+        # Drop missing
+        cgm.dropna(inplace=True)
+        if cgm.shape[0] == 0:
+            continue
+        # Add to combined
+        all_cgm.append(cgm)
     # Flatten lists and convert to dataframe
     all_cgm = pd.concat(all_cgm)
     all_cgm.sort_values(by="datetime", inplace=True)
