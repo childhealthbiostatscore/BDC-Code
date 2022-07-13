@@ -1,8 +1,7 @@
 import os
-import pdfplumber
 import pandas as pd
 import numpy as np
-wd = "UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/JDRF/"
+wd = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/JDRF/"
 # List all CGM files
 # Group 1
 # List subject folders
@@ -137,4 +136,4 @@ for subject_folder in folders:
 # Write
 final = pd.concat(final)
 final.dropna(subset=['sensor_readings'], inplace=True)
-final.to_csv(wd+"Data_Cleaned/cgm_metrics.csv", index=False)
+final.to_csv(wd+"Data_Cleaned/cgm_metrics_from_csvs.csv", index=False)
