@@ -53,16 +53,30 @@ for subject_folder in folders:
             cgm = cgm[cols]
             cgm.columns = ["datetime", "sensor_glucose"]
         elif cgm.shape[1] >= 46:
-            cgm.columns = cgm.iloc[5, :]
-            cgm = cgm.loc[:, cgm.columns.notna()]
-            cgm["datetime"] = cgm["Date"] + " " + cgm["Time"]
-            cols = [c for c in cgm.columns if (
-                "datetime" in c.lower()) or ("sensor glucose" in c.lower())]
-            cgm = cgm[cols]
-            colnames = cgm.columns.to_list()
-            colnames[np.where(colnames != "datetime")[
-                0][0]] = "sensor_glucose"
-            cgm.columns = colnames
+            cgm_list = []
+            sensor_starts = np.where(cgm.iloc[:, 2] == "Sensor")[0]
+            if len(sensor_starts) == 0:
+                continue
+            for i in range(0, len(sensor_starts)):
+                sens_start = sensor_starts[i]
+                if(i+1 < len(sensor_starts)):
+                    sens_end = sensor_starts[i+1]-1
+                else:
+                    sens_end = cgm.shape[0]
+
+                t = cgm.iloc[sens_start:sens_end, :]
+                t.columns = t.iloc[1, :]
+                t = t.loc[:, t.columns.notna()]
+                t["datetime"] = t["Date"] + " " + t["Time"]
+                cols = [c for c in t.columns if (
+                    "datetime" in c.lower()) or ("sensor glucose" in c.lower())]
+                t = t[cols]
+                colnames = t.columns.to_list()
+                colnames[np.where(colnames != "datetime")[
+                    0][0]] = "sensor_glucose"
+                t.columns = colnames
+                cgm_list.append(t)
+            cgm = pd.concat(cgm_list)
         elif cgm.shape[1] == 40 | cgm.shape[1] == 41:
             file_end = np.where(cgm.iloc[:, 4] == "BG")[0][0] - 1
             cgm.columns = cgm.iloc[5, :]
@@ -84,6 +98,7 @@ for subject_folder in folders:
         cgm.loc[cgm["sensor_glucose"] == "High", "sensor_glucose"] = 400
         cgm["sensor_glucose"] = pd.to_numeric(
             cgm["sensor_glucose"], errors="coerce")
+        # Remove ISIG values (they have )
         # Drop missing
         cgm.dropna(inplace=True)
         if cgm.shape[0] == 0:
