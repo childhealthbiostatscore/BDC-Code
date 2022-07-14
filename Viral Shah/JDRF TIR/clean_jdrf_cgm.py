@@ -18,7 +18,6 @@ for subject_folder in folders:
     id = os.path.basename(subject_folder)
     id = [int(s) for s in id.split() if s.isdigit()][0]
     id = str(id).zfill(3)
-    print(id)
     # Find relevant files
     files = os.listdir(subject_folder)
     subject_info = [f for f in files if "summary" in f.lower()]
@@ -27,13 +26,13 @@ for subject_folder in folders:
     subject_info.columns = [c.lower() for c in subject_info.columns]
     subject_info.columns = ["visit date" if "date" in c.lower()
                             else c for c in subject_info.columns]
+    subject_info.dropna(subset=["visit date"], inplace=True)
     # Combine all CGM data from CSVs for each subject
     csvs = [f for f in files if ".csv" in f.lower()]
     all_cgm = []
     if len(csvs) == 0:
         continue
     for cgm_file in csvs:
-        print(cgm_file)
         cgm = pd.read_csv(subject_folder+"/"+cgm_file, low_memory=False)
         # Detect file type and format accordingly
         if cgm.shape[1] == 14:  # Dexcom
@@ -53,10 +52,8 @@ for subject_folder in folders:
             cgm = cgm[cols]
             cgm.columns = ["datetime", "sensor_glucose"]
         elif cgm.shape[1] >= 46:
-            file_start = np.where(cgm.iloc[:, 2] == "Sensor")[0]
-            if len(file_start) == 0:
-                continue
-            cgm.columns = cgm.iloc[file_start[0]+1, :]
+            cgm.columns = cgm.iloc[5, :]
+            cgm = cgm.loc[:, cgm.columns.notna()]
             cgm["datetime"] = cgm["Date"] + " " + cgm["Time"]
             cols = [c for c in cgm.columns if (
                 "datetime" in c.lower()) or ("sensor glucose" in c.lower())]
@@ -65,6 +62,13 @@ for subject_folder in folders:
             colnames[np.where(colnames != "datetime")[
                 0][0]] = 'sensor_glucose'
             cgm.columns = colnames
+        elif cgm.shape[1] == 40 | cgm.shape[1] == 41:
+            file_end = np.where(cgm.iloc[:, 4] == "BG")[0][0] - 1
+            cgm.columns = cgm.iloc[5, :]
+            cols = ['EventDateTime', 'Readings (CGM / BGM)']
+            cgm = cgm[cols]
+            cgm.columns = ["datetime", "sensor_glucose"]
+            cgm = cgm.iloc[:file_end, :]
         else:
             break
         # Format columns
