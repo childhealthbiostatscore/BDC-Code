@@ -1,4 +1,5 @@
 import os
+import re
 import pandas as pd
 import numpy as np
 wd = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/JDRF/"
@@ -41,7 +42,7 @@ for subject_folder in folders:
                 "timestamp" in c.lower()) or ("glucose value" in c.lower())]
             cgm = cgm[cols]
             cgm.columns = ["datetime" if "timestamp" in c.lower()
-                           else 'sensor_glucose' for c in cgm.columns]
+                           else "sensor_glucose" for c in cgm.columns]
             # Format date
             cgm["datetime"] = [str(d).replace("T", " ")
                                for d in cgm["datetime"]]
@@ -60,12 +61,12 @@ for subject_folder in folders:
             cgm = cgm[cols]
             colnames = cgm.columns.to_list()
             colnames[np.where(colnames != "datetime")[
-                0][0]] = 'sensor_glucose'
+                0][0]] = "sensor_glucose"
             cgm.columns = colnames
         elif cgm.shape[1] == 40 | cgm.shape[1] == 41:
             file_end = np.where(cgm.iloc[:, 4] == "BG")[0][0] - 1
             cgm.columns = cgm.iloc[5, :]
-            cols = ['EventDateTime', 'Readings (CGM / BGM)']
+            cols = ["EventDateTime", "Readings (CGM / BGM)"]
             cgm = cgm[cols]
             cgm.columns = ["datetime", "sensor_glucose"]
             cgm = cgm.iloc[:file_end, :]
@@ -73,12 +74,16 @@ for subject_folder in folders:
             break
         # Format columns
         cgm = cgm[["datetime", "sensor_glucose"]]
-        cgm["datetime"] = pd.to_datetime(cgm["datetime"], errors="coerce")
+        # Format datetime (some have decimal points?)
+        cgm["datetime"] = [re.sub(r"\..*", "", str(d))
+                           for d in cgm["datetime"]]
+        cgm["datetime"] = pd.to_datetime(cgm["datetime"],
+                                         errors="coerce")
         # "Low" and "High" to 40 and 400 respectively
-        cgm.loc[cgm['sensor_glucose'] == "Low", 'sensor_glucose'] = 40
-        cgm.loc[cgm['sensor_glucose'] == "High", 'sensor_glucose'] = 400
-        cgm['sensor_glucose'] = pd.to_numeric(
-            cgm['sensor_glucose'], errors="coerce")
+        cgm.loc[cgm["sensor_glucose"] == "Low", "sensor_glucose"] = 40
+        cgm.loc[cgm["sensor_glucose"] == "High", "sensor_glucose"] = 400
+        cgm["sensor_glucose"] = pd.to_numeric(
+            cgm["sensor_glucose"], errors="coerce")
         # Drop missing
         cgm.dropna(inplace=True)
         if cgm.shape[0] == 0:
@@ -98,7 +103,7 @@ for subject_folder in folders:
         # Fill in summary data from Viral
         subject_data["id"].append(id)
         subject_data["visit_num"].append(row.iloc[1])
-        subject_data["visit_date"].append(row.iloc[2].strftime('%Y-%m-%d'))
+        subject_data["visit_date"].append(row.iloc[2].strftime("%Y-%m-%d"))
         subject_data["a1c"].append(row.iloc[3])
         # Calculate last two weeks CGM metrics
         visit_date = row.iloc[2]
@@ -128,7 +133,7 @@ for subject_folder in folders:
         mean_glu = cgm["sensor_glucose"].mean()
         # Append
         subject_data["sensor_interval"].append(
-            cgm["datetime"].diff().mode()[0].seconds/60)
+            round(cgm["datetime"].diff().mode()[0].seconds/60))
         subject_data["tbr"].append(round(tbr, 3))
         subject_data["ttir"].append(round(ttir, 3))
         subject_data["tir"].append(round(tir, 3))
@@ -139,5 +144,6 @@ for subject_folder in folders:
     final.append(subject_data)
 # Write
 final = pd.concat(final)
-final.dropna(subset=['sensor_readings'], inplace=True)
+final.dropna(subset=["sensor_readings"], inplace=True)
+final = final[final["sensor_readings"] >= 100]
 final.to_csv(wd+"Data_Cleaned/cgm_metrics_from_csvs.csv", index=False)
