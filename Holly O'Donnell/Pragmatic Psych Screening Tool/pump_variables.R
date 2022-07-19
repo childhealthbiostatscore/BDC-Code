@@ -1,5 +1,3 @@
-library(tidyverse)
-library(parsedate)
 # Function
 pump_variables = function(indir,outdir,outname){
   # Import data
@@ -8,8 +6,6 @@ pump_variables = function(indir,outdir,outname){
   summary <- data.frame(matrix(nrow = length(files),ncol = 0))
   # Iterate through each file
   for (f in 1:length(files)) {
-    # Clear workspace
-    rm(list = ls()[-which(ls() %in% c("indir","outdir","files","summary","f","pump_variables"))])
     # Read in
     table = read.csv(files[f],header = T,stringsAsFactors = FALSE,na.strings = "")
     if (nrow(table) == 0){
@@ -26,7 +22,9 @@ pump_variables = function(indir,outdir,outname){
     # ID
     id <- sub(".csv","",basename(files[f]))
     # Date time column
-    table$datetime <- paste(table$Date,table$Time)
+    if (!"datetime" %in% colnames(table)){
+      table$datetime <- paste(table$Date,table$Time)
+    }
     table$datetime <- parse_date(table$datetime,approx = F)
     table = table[!is.na(table$datetime),]
     # Sort by datetime
@@ -34,6 +32,7 @@ pump_variables = function(indir,outdir,outname){
     # Get day of the week
     table$weekday <- lubridate::wday(table$datetime)
     # Count days and days of week
+    table$Date = as.Date(table$datetime)
     day_table <- table %>% group_by(Date) %>%
       summarise(day = weekday[1],.groups = "drop_last")
     days <- nrow(day_table)
@@ -131,8 +130,7 @@ pump_variables = function(indir,outdir,outname){
                  } else if (length(x == 1)) {
                    paste(c(x,'00'),collapse = ":")
                  }})
-      bg_time_df$bg_datetimes = 
-        lubridate::ymd_hm(paste(bg_time_df$date,bg_time_df$time_char))
+      bg_time_df$bg_datetimes = parse_date(paste(bg_time_df$date,bg_time_df$time_char))
       bg_time_df = bg_time_df %>% group_by(date) %>%
         mutate(diff = difftime(bg_datetimes,lag(bg_datetimes),units = "hours"))
       bg_diffs <- bg_time_df %>% 
@@ -277,8 +275,8 @@ pump_variables = function(indir,outdir,outname){
       bolus_days_6 = sum(bolus_diffs$m >= 6)
     }
     # Link behaviors
-    carb_datetimes <- lubridate::ymd_hms(carb_datetimes)
-    bolus_datetimes <- lubridate::ymd_hms(bolus_datetimes)
+    carb_datetimes <- parse_date(carb_datetimes,approx = F)
+    bolus_datetimes <- parse_date(bolus_datetimes,approx = F)
     bg_datetimes <- parse_date(bg_datetimes,approx = F)
     for (bgt in bg_datetimes[!is.na(bg_datetimes)]) {
       # Check for a carb input within 15 minutes
