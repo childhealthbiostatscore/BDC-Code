@@ -3,7 +3,7 @@ library(readxl)
 library(tools)
 library(parsedate)
 library(cgmanalysis)
-source("/Users/timvigers/GitHub/BDC-Code/Holly O'Donnell/Pragmatic Psych Screening Tool/cgm_and_pump variables.R")
+source("/Users/timvigers/GitHub/BDC-Code/Holly O'Donnell/Pragmatic Psych Screening Tool/pump_variables.R")
 setwd("~/Documents/Pragmatic Psych Screening Tool")
 # Want data about 1 month prior to questionnaires
 dates = read_excel("./Data_Raw/Device Files/Device Information thru 405.xlsx")
@@ -112,7 +112,7 @@ for (f in files) {
   table$sensorglucose = suppressWarnings(as.numeric(table$sensorglucose))
   # Remove data > 1 month before date
   rows = table$timestamp <= date & table$timestamp > (as.Date(date)-30)
-  if(sum(rows,na.rm = T) > 100){
+  if(sum(rows,na.rm = T) > 288){
     table = table[rows,]
   }
   # Remove blank rows
@@ -127,7 +127,7 @@ for (f in files) {
   }
 }
 # Analyze
-cgmvariables("./Data_Clean/Dexcom Files","./Data_Clean",printname = T,
+cgmvariables("./Data_Clean/Dexcom Files","./Data_Clean",
              outputname = "dexcom_sensor_summary",id_filename = T)
 # TConnect
 dir.create("./Data_Clean/TConnect Pump Files",showWarnings = F)
