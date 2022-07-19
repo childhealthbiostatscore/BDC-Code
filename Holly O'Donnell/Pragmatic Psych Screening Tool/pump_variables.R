@@ -1,13 +1,13 @@
 library(tidyverse)
+library(parsedate)
 # Import data
-indir <- "B:/Projects/Kim Driscoll/DP3 high risk/Data_Cleaned/T1 Device Data Cleaned"
-outdir <- "B:/Projects/Kim Driscoll/DP3 high risk/Data_Cleaned"
+indir <- "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Holly O'Donnell/Pragmatic Psych Screening Tool/Data_Clean/Carelink Pump Files"
+outdir <- "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Holly O'Donnell/Pragmatic Psych Screening Tool/Data_Clean"
 files <- list.files(indir,full.names = T)
 # Make a summary variables table.
 summary <- data.frame(matrix(nrow = length(files),ncol = 0))
 # Iterate through each file
 for (f in 1:length(files)) {
-  print(files[f])
   # Clear workspace
   rm(list = ls()[-which(ls() %in% c("indir","outdir","files","summary","f"))])
   # Read in
@@ -25,16 +25,9 @@ for (f in 1:length(files)) {
   }
   # ID
   id <- sub(".csv","",basename(files[f]))
-  timepoint <- sub("_.*","",id)
-  id <- sub("T._","",id)
   # Date time column
   table$datetime <- paste(table$Date,table$Time)
-  table$datetime <- 
-    lubridate::parse_date_time(table$datetime,exact = T,
-                               orders = c("%m/%d/%Y %H:%M","%m/%d/%Y %H:%M:%S",
-                                          "%m/%d/%y %H:%M","%m/%d/%y %H:%M:%S",
-                                          "%Y/%m/%d %H:%M","%Y/%m/%d %H:%M:%S",
-                                          "%Y-%m-%d %H:%M","%Y-%m-%d %H:%M:%S"))
+  table$datetime <- parse_date(table$datetime,approx = F)
   table = table[!is.na(table$datetime),]
   # Sort by datetime
   table = table[order(table$datetime),]
@@ -340,7 +333,6 @@ for (f in 1:length(files)) {
   # Fill in summary df
   # Subject
   summary[f,"subject_id"] <- id
-  summary[f,"study_visit"] <- timepoint
   summary[f,"start_date"] = table$Date[1]
   summary[f,"end_date"] = table$Date[nrow(table)]
   summary[f,"days_worn"] <- days
@@ -394,9 +386,7 @@ for (f in 1:length(files)) {
   summary[f,"bg_above_250_with_bolus_carb"] <- bg_with_carb_bolus_above_250
   
   summary[f,"avg_mins_btw_rewinds"] <- round(mean_rewind,3)
-  # Print progress
-  print(paste0(round(f / length(files) * 100,1),"% complete"))
 }
 # Write summary variables
-filename <- paste0(outdir,"/summary.csv")
+filename <- paste0(outdir,"/carelink_pump_summary.csv")
 write.csv(summary,file = filename,row.names = F,na = "")
