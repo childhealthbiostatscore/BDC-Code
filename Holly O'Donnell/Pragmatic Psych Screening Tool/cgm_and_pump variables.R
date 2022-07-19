@@ -2,6 +2,7 @@ library(tidyverse)
 library(readxl)
 library(parsedate)
 library(cgmanalysis)
+source("C:/Users/timbv/Documents/GitHub/BDC-Code/Holly O'Donnell/Pragmatic Psych Screening Tool/pump_variables.R")
 setwd("Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Holly O'Donnell/Pragmatic Psych Screening Tool")
 # Want data about 1 month prior to questionnaires
 dates = read_excel("./Data_Raw/Device Files/Device Information thru 405.xlsx")
@@ -45,7 +46,7 @@ for (f in files) {
     table = table[-blank,]
   }
   # Write file
-  filename <- paste0("./Data_Clean/Carelink Pump Files/",id,"_cleaned.csv")
+  filename <- paste0("./Data_Clean/Carelink Pump Files/",id,".csv")
   write.csv(table,file = filename,row.names = F,na = "")
   # Sensor
   # Read in
@@ -81,12 +82,13 @@ for (f in files) {
   }
   if(sum(!is.na(table$sensorglucose))>0){
     # Write file
-    filename <- paste0("./Data_Clean/Carelink Sensor Files/",id,"_cleaned.csv")
+    filename <- paste0("./Data_Clean/Carelink Sensor Files/",id,".csv")
     write.csv(table,file = filename,row.names = F,na = "")
   }
 }
 # Analyze
-source("C:/Users/timbv/Documents/GitHub/BDC-Code/Holly O'Donnell/Pragmatic Psych Screening Tool/pump_variables.R")
+pump_variables(indir = "./Data_Clean/Carelink Pump Files",
+               outdir = "./Data_Clean",outname = "carelink_pump_summary")
 cgmvariables("./Data_Clean/Carelink Sensor Files","./Data_Clean",
              outputname = "carelink_sensor_summary",id_filename = T)
 # Dexcom
@@ -95,7 +97,7 @@ for (f in files) {
   id <- sub("_.*","",basename(f))
   date = dates$`Date Questionnaires`[match(as.numeric(id),dates$`Participant ID`)]
   # Read in
-  table2 = read.csv(f,na.strings = "")
+  table = read.csv(f,na.strings = "")
   # Format
   colnames(table)[grep("timestamp",tolower(colnames(table)))] = "timestamp"
   colnames(table)[grep("glucose.value",tolower(colnames(table)))] = "sensorglucose"
@@ -116,10 +118,42 @@ for (f in files) {
   }
   if(sum(!is.na(table$sensorglucose))>0){
     # Write file
-    filename <- paste0("./Data_Clean/Dexcom Files/",id,"_cleaned.csv")
+    filename <- paste0("./Data_Clean/Dexcom Files/",id,".csv")
     write.csv(table,file = filename,row.names = F,na = "")
   }
 }
 # Analyze
+cgmvariables("./Data_Clean/Dexcom Files","./Data_Clean",
+             outputname = "dexcom_sensor_summary",id_filename = T)
+# TConnect
+files = list.files("./Data_Raw/Device Files/TConnect",full.names = T)
+for (f in files) {
+  id <- sub("_.*","",basename(f))
+  date = dates$`Date Questionnaires`[match(as.numeric(id),dates$`Participant ID`)]
+  # Read in
+  table = read.csv(f,na.strings = "")
+  # Find pump data start
+  start = which.min(rowSums(is.na(table)))
+  colnames(table) = table[start,]
+  table = table[(start+1):nrow(table),]
+  # Format - change column names to match pump variable code
+  table$EventDateTime = parse_date(sub("T","",table$EventDateTime))
+  colnames(table)[colnames(table)=="BG"] = "bg"
+  colnames(table)[colnames(table)=="EventDateTime"] = "datetime"
+  colnames(table)[colnames(table)=="CarbSize"] = "BWZ.Carb.Input..grams."
+  colnames(table)[colnames(table)=="InsulinDelivered"] = "Bolus.Volume.Delivered..U."
+  table$BWZ.Estimate..U. = NA
+  # Remove data > 1 month before date
+  rows = table$EventDateTime <= date & table$EventDateTime > (as.Date(date)-30)
+  if(sum(rows,na.rm = T) > 10){
+    table = table[rows,]
+  }
+  # Write file
+  filename <- paste0("./Data_Clean/TConnect Pump Files/",id,".csv")
+  write.csv(table,file = filename,row.names = F,na = "")
+}
+# Analyze
+pump_variables(indir = "./Data_Clean/Carelink Pump Files",
+               outdir = "./Data_Clean",outname = "carelink_pump_summary")
 cgmvariables("./Data_Clean/Dexcom Files","./Data_Clean",
              outputname = "dexcom_sensor_summary",id_filename = T)
