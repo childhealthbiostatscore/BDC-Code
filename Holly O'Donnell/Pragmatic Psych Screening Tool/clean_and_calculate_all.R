@@ -3,8 +3,9 @@ library(readxl)
 library(tools)
 library(parsedate)
 library(cgmanalysis)
+library(pdftools)
 source("/Users/timvigers/GitHub/BDC-Code/Holly O'Donnell/Pragmatic Psych Screening Tool/pump_variables.R")
-setwd("~/Documents/Pragmatic Psych Screening Tool")
+setwd("~/Documents/Work/Holly O'Donnell/Pragmatic Psych Screening Tool")
 # Want data about 1 month prior to questionnaires
 dates = read_excel("./Data_Raw/Device Files/Device Information thru 405.xlsx")
 dates$`Date Questionnaires` = parse_date(dates$`Date Questionnaires`,approx = F)
@@ -282,3 +283,53 @@ for (f in files) {
 # Analyze
 pump_variables(indir = "./Data_Clean/Tidepool Files",
                outdir = "./Data_Clean",outname = "tidepool_pump_summary")
+# Glooko
+dir.create("./Data_Clean/Glooko Files",showWarnings = F)
+files = list.files("./Data_Raw/Device Files/Glooko (PDFs)",full.names = T)
+# Summary data frame
+pdf_summary = data.frame()
+# Iterate through files
+for (f in 1:length(files)) {
+  id <- sub("_.*","",basename(files[f]))
+  # Read PDF into list
+  pdf = pdf_data(files[f])
+  # First page
+  # Page as a dataframe, sort by x and y values
+  df = as.data.frame(pdf[[1]])
+  df = df %>% arrange(x,y)
+  # Average and readings
+  avg_sg = as.numeric(df$text[which(df$x == 107 & df$y == 186)])
+  sd_sg = as.numeric(df$text[which(df$x == 107 & df$y == 196)])
+  readings = as.numeric(df$text[which(df$x == 107 & df$y == 206)])
+  # Insulin and diet
+  basal = as.numeric(df$text[which(df$x %in% c(374,383,380,389) & df$y == 116)])
+  bolus = as.numeric(df$text[which(df$x == 469 & df$y == 116)])
+  overrides = df$text[which(df$x == 466 & df$y == 161)]
+  bolus_day = as.numeric(df$text[which(df$x == 466 & df$y == 171)])
+  carbs_day = as.numeric(df$text[which(df$x == 467 & (df$y == 227 | df$y == 228))])
+  entries_day = as.numeric(df$text[which(df$x == 467 & df$y == 238)])
+  # TIR
+  # CGM data
+  very_high = sub("%","",df$text[which(df$x == 109 & df$y == 118)])
+  high = sub("%","",df$text[which(df$x == 109 & df$y == 129)])
+  target = sub("%","",df$text[which(df$x == 109 & df$y == 142)])
+  low = sub("%","",df$text[which(df$x == 109 & df$y == 155)])
+  very_low = sub("%","",df$text[which(df$x == 109 & (df$y == 165 | df$y == 166))])
+  # Add to summary df
+  pdf_summary[f,"id"] = id
+  pdf_summary[f,"readings_per_day"] = readings
+  pdf_summary[f,"basal_units"] = basal
+  pdf_summary[f,"bolus_units"] = bolus
+  pdf_summary[f,"overrides"] = overrides
+  pdf_summary[f,"bolus_per_day"] = bolus_day
+  pdf_summary[f,"carbs_per_day"] = carbs_day
+  pdf_summary[f,"carb_entries_per_day"] = entries_day
+  pdf_summary[f,"very_high"] = very_high
+  pdf_summary[f,"high"] = high
+  pdf_summary[f,"tir"] = target
+  pdf_summary[f,"low"] = low
+  pdf_summary[f,"very_low"] = very_low
+  pdf_summary[f,"avg_sg"] = avg_sg
+  pdf_summary[f,"sd_sg"] = sd_sg
+}
+write.csv(pdf_summary,file = paste0("./Data_Clean/glooko_summary.csv"),row.names = F,na = "")
