@@ -52,14 +52,15 @@ label(a1c_tech$Race_Ethn) = "Race/Ethnicity"
 analysis = a1c_tech %>% 
   mutate(time_group = case_when(year(VisitDate) == 2016 | year(VisitDate) == 2017 ~ "2016-2017",
                                 year(VisitDate) == 2020 | year(VisitDate) == 2021 ~ "2020-2021"),
-         tech_group = case_when(Pump_VisitDate == "Y" & CGM_VisitDate == "Y" ~ "CGM + Pump",
-                                Pump_VisitDate == "Y" & CGM_VisitDate != "Y" ~ "Pump Alone",
-                                Pump_VisitDate != "Y" & CGM_VisitDate == "Y" ~ "CGM Alone",
+         tech_group = case_when(HCL == "Yes"~ "HCL",
+                                HCL == "No" & Pump_VisitDate == "Y" & CGM_VisitDate == "Y" ~ "CGM + Pump",
+                                HCL == "No" & Pump_VisitDate == "Y" & CGM_VisitDate != "Y" ~ "Pump Alone",
+                                HCL == "No" & Pump_VisitDate != "Y" & CGM_VisitDate == "Y" ~ "CGM Alone",
                                 TRUE ~ "None")) %>% 
   select(EPICMRN, VisitDate, Age_A1cResultDate, A1c_Value, tech_group, time_group, DiabetesDuration_A1cResultDate, Gender, Race_Ethn) 
 
 # factor tech type for order
-analysis$tech_group = factor(analysis$tech_group, levels = c("CGM + Pump", "CGM Alone", "Pump Alone", "None"))
+analysis$tech_group = factor(analysis$tech_group, levels = c("HCL", "CGM + Pump", "CGM Alone", "Pump Alone", "None"))
 
 
 # list of id's in both subj
@@ -75,7 +76,7 @@ a_2020 = analysis %>% filter(time_group == "2020-2021") %>% mutate(grp2020 = tec
 a_combined = full_join(a_2017, a_2020) %>% mutate(tech_group_change = paste0(grp2016, "/", grp2020)); rm(a_2017, a_2020)
 
 analysis = full_join(analysis, a_combined) # only those with both time windows
-same_groups =  c("None/None", "Pump Alone/Pump Alone", "CGM Alone/CGM Alone", "CGM + Pump/CGM + Pump" )
+same_groups =  c("None/None", "Pump Alone/Pump Alone", "CGM Alone/CGM Alone", "CGM + Pump/CGM + Pump", "HCL/HCL" )
 analysis_same_grp = analysis %>% filter(tech_group_change %in% same_groups)
 analysis_switch_grp = analysis %>% filter(grp2016 != grp2020)
 ```
@@ -99,6 +100,8 @@ mod_means = emmeans(a1c_mod,specs=pairwise ~ tech_group:time_group, adjust="tuke
   
 # Plot
 a1c_predict = cbind(analysis, a1cpred = predict(a1c_mod))
+a1c_predict = a1c_predict %>% group_by(tech_group, time_group) %>% mutate(grpmean = mean(a1cpred),
+                                                                          ss = n())
 ```
 
 ```{r same grp, include = FALSE}
@@ -120,7 +123,8 @@ mod_means_2 = emmeans(a1c_mod_2,specs=pairwise ~ tech_group:time_group, adjust="
   
 # Plot
 a1c_predict_2 = cbind(analysis_same_grp, a1cpred = predict(a1c_mod_2))
-
+a1c_predict_2 = a1c_predict_2 %>% group_by(tech_group, time_group) %>% mutate(grpmean = mean(a1cpred),
+                                                                          ss = n())
 # table for number in each group
 same_t1 = table1(~tech_group,data = analysis_same_grp)
 ```
@@ -138,7 +142,8 @@ mod_means_switch = emmeans(a1c_mod_switch,specs=pairwise ~ tech_group_change:tim
   
 # Plot
 a1c_predict_switch = cbind(analysis_switch_grp, a1cpred = predict(a1c_mod_switch))
-
+a1c_predict_switch = a1c_predict_switch %>% group_by(tech_group_change, time_group) %>% mutate(grpmean = mean(a1cpred),
+                                                                          ss = n())
 
 # table for number in each group
 switch_t1 = table1(~tech_group_change,data = analysis_switch_grp)
@@ -162,15 +167,21 @@ For subanalyses, data were filtered for:
 
 Adjusting for age, race, and diabetes duration, there is a significant difference in A1c within the different tech groups across the 2016-2017 and 2020-2021 time periods (p < 0.0001).
 
-The average A1c decreased by 0.44 (95% CI : 0.25, 0.63) in the CGM + Pump group (p < 0.0001), increased by 0.41 (95% CI: 0.14, 0.68) in the Pump Only groups (p = 0.01), and increased by 0.81 (95% CI: 0.55, 1.07) in the No Tech group (p < 0.0001). There was no significant difference in the time periods within the CGM only group (p = 1.00) 
+The average A1c increased by 0.41 (95% CI: 0.14, 0.68) in the Pump Only groups (p = 0.01), and increased by 0.81 (95% CI: 0.55, 1.07) in the No Tech group (p < 0.0001). There was no significant difference in the time periods within the HCL, CGM+Pump, or CGM only group (p = 0.98, 0.99, 1.00 respectively) 
 
 ```{r both windows}
 kable(mod_anova,digits = 3,caption = "Test of Overall Effect")
 
-kable(mod_means$contrasts[c(4,11,17,22),],digits = 3,caption = "Timepoint Means")
+kable(mod_means$contrasts[c(5,14,22,29, 35),],digits = 3,caption = "Timepoint Means")
 
 ggplot(data = a1c_predict,aes(x = time_group, y = a1cpred, group = tech_group, color = tech_group))+
   geom_smooth(method = lm, se = F,na.rm = T) + 
+  geom_label(data = a1c_predict,
+             aes(
+             x = time_group,
+             y = grpmean,
+             label = ss,
+             inherit.aes = F))  + 
   xlab("Time Groups") + ylab("Predicted Mean A1c") + theme_classic() 
 ```
 
@@ -180,14 +191,21 @@ same_t1
 ```
 Adjusting for age and diabetes duration, there is a significant difference in A1c within the different tech groups across the 2016-2017 and 2020-2021 time periods (p < 0.0001).
 
-The average A1c decreased by 0.45 (95% CI : 0.24, 0.66) in the CGM + Pump group (p < 0.0001), and increased by 0.83 (95% CI: 0.53, 1.13) in the No Tech group (p < 0.0001). There was no significant difference in the time periods within the CGM only group (p = 0.994) and the pump only group (p = 0.129) 
+The average A1c increased by 0.83 (95% CI: 0.53, 1.13) in the No Tech group (p < 0.0001). There was no significant difference in the time periods within the HCL (p = 0.96), CGM + Pump (p = 0.49), CGM only group (p = 0.997) or the pump only group (p = 0.43) 
 ```{r both windows same grp}
 kable(mod_anova_2,digits = 3,caption = "Test of Overall Effect")
 
-kable(mod_means_2$contrasts[c(4,11,17,22),],digits = 3,caption = "Timepoint Means")
+kable(mod_means_2$contrasts[c(5,14,22,29, 35),],digits = 3,caption = "Timepoint Means")
 
 ggplot(data = a1c_predict_2,aes(x = time_group, y = a1cpred, group = tech_group, color = tech_group))+
   geom_smooth(method = lm, se = F,na.rm = T) + 
+  geom_label(data = a1c_predict_2,
+             aes(
+             x = time_group,
+             y = grpmean,
+             color = tech_group,
+             label = ss,
+             inherit.aes = F))  + 
   xlab("Time Groups") + ylab("Predicted Mean A1c") + theme_classic() 
 ```
 
@@ -199,17 +217,26 @@ switch_t1
 ```
 Adjusting for age and race, there is a significant difference in A1c within the different tech groups across the 2016-2017 and 2020-2021 time periods (p < 0.0001).
 
-There was a significant difference in A1c for patients who went from the CGM + Pump to Pump only (increased by 0.966, p = 0.038)
-There was a significant difference in A1c for patients who went from Pump only to CGM + Pump (decreased by 0.585, p < 0.0001)
+There was a significant difference in A1c for patients who went from the CGM + Pump to HCL (decreased by 0.463, p = 0.003)
+There was a significant difference in A1c for patients who went from the CGM + Pump to Pump only (increased by 0.980, p = 0.014)
+There was a significant difference in A1c for patients who went from Pump only to HCL (decreased by 0.913, p < 0.0001)
 
 
 ```{r both windowsswtch grp}
 kable(mod_anova_switch,digits = 3,caption = "Test of Overall Effect")
+kable(mod_means_switch$contrasts[c(17, 50, 82, 113, 143, 172, 200, 227, 253, 278, 302, 325, 347, 368, 388, 407, 425),],digits = 3,caption = "Timepoint Means")
 
-kable(mod_means_switch$contrasts[c(12, 35, 57, 78, 98, 117, 135, 152, 168, 183, 197, 210),],digits = 3,caption = "Timepoint Means")
 
-ggplot(data = a1c_predict_switch,aes(x = time_group, y = a1cpred, group = tech_group_change, color = tech_group_change, linetype = tech_group_change))+
-  geom_smooth(method = lm, se = F,na.rm = T) + scale_linetype_manual(values = c(rep("dashed", 6), rep("solid", 6))) +
-  xlab("Time Groups") + ylab("Predicted Mean A1c")  +   
-  scale_color_manual(values = c(brewer.pal(6, "Paired"), brewer.pal(6, "Paired"))) + theme_classic()
+# just the significant lines to avoid insane spaghetti overload
+a1c_predict_switch = a1c_predict_switch %>% filter(tech_group_change %in% c("CGM + Pump/HCL", "CGM + Pump/Pump Alone", "Pump Alone/None"))
+
+ggplot(data = a1c_predict_switch,aes(x = time_group, y = a1cpred, group = tech_group_change, color = tech_group_change))+
+  geom_smooth(method = lm, se = F,na.rm = T) + 
+  geom_label(data = a1c_predict_switch,
+             aes(
+             x = time_group,
+             y = grpmean,
+             label = ss,
+             inherit.aes = F))  + 
+  xlab("Time Groups") + ylab("Predicted Mean A1c") + theme_classic()
 ```
