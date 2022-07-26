@@ -24,12 +24,6 @@ if(Sys.info()["sysname"] == "Windows"){
 }
 knitr::opts_knit$set(root.dir = home_dir)
 
-# import cgm and lab data to be merged    
-cgm_cases <- read_csv("S:/Laura/BDC/Projects/Viral Shah/JDRF/Data_Cleaned/cgm_cases.csv")
-cgm_cases$group = 1
-cgm_controls <- read_csv("S:/Laura/BDC/Projects/Viral Shah/JDRF/Data_Cleaned/cgm_controls.csv")
-cgm_controls$group = 2
-
 jdrf_data_clean <- read_csv("S:/Laura/BDC/Projects/Viral Shah/JDRF/Data_Cleaned/jdrf_data_clean.csv")
 ```
 
@@ -45,33 +39,36 @@ rm(cgm_cases, cgm_controls)
 combined_jdrf = full_join(cgm_total, jdrf_data_clean)
 
 # for use once we have a date to go off of
-# analysis = full_join(analysis %>% group_by(ResultDate) %>% mutate(dummy = row_number()),
+analysis = full_join(analysis %>% group_by(ResultDate) %>% mutate(dummy = row_number()),
 #                      hemo %>% group_by(ResultDate) %>% mutate(dummy = row_number())) %>% select(-dummy)
 ```
 
 
 ```{r var summarizing, include=FALSE} 
+# commented out old var names
 # here we are averaging subjects across visits, and then comparing these averages between groups
-cgm_table_df = cgm_total %>% select(-c(visit, visit_date, sensor_readings, sensor_interval_mins, id) ) %>% group_by(`Study ID`, group) %>% summarise(mean_cgm = mean(mean_sensor),
-                                                                                                                                             mean_a1c = mean(a1c),
-                                                                                                                                             mean_tir_70_180 = mean(tir_70_180),
-                                                                                                                                             mean_tbr_70 = mean(time_below_70),
-                                                                                                                                             mean_tbr_54 = mean(time_below_54),
-                                                                                                                                             mean_tar_180 = mean(time_above_180),
-                                                                                                                                             mean_tar_250 = mean(time_above_250),
-                                                                                                                                             mean_cv = mean(cv_sensor),
-                                                                                                                                             mean_sd = mean(sd_sensor))
+jdrf_data_clean = jdrf_data_clean %>% mutate(a1c = case_when(a1c == "televisit" ~ NA_character_,
+                                                             a1c == "-" ~ NA_character_,
+                                                             TRUE ~ a1c))
+jdrf_data_clean$a1c = as.numeric(jdrf_data_clean$a1c)
+cgm_table_df = jdrf_data_clean %>% group_by(`Study ID`, Group) %>% summarise(
+                                                                                                                                             mean_a1c = mean(a1c, na.rm = T),
+                                                                                                                                             mean_tir = mean(tir, na.rm = T),
+                                                                                                                                             mean_tbr = mean(tbr, na.rm = T),
+                                                                                                                                             mean_tar = mean(tar, na.rm = T),
+                                                                                                                                             mean_ttir = mean(ttir, na.rm = T),
+                                                                                                                                             mean_glucose = mean(mean_glucose, na.rm = T))
 # all of the variables we are interested in here is collected at basaeline i believe
 # so i will filter out the mrn lab data and only include those with a study id
 lab_table_df = jdrf_data_clean %>% 
-  select(`Study ID`,group, Age_DateOfEyeExam, Sex, Race_Ethnicity, Htcm, Wtkg, BMI, InsuranceCategory_DateOfEyeExam, DiabetesDuration_DateOfEyeExam, HistoryOfCardiovascularDisease_YesNo,
+  select(`Study ID`,Group, Age_DateOfEyeExam, Sex, Race_Ethnicity, Htcm, Wtkg, BMI, InsuranceCategory_DateOfEyeExam, DiabetesDuration_DateOfEyeExam, HistoryOfCardiovascularDisease_YesNo,
          Hyperthyroidism_YesNo, GravesDisease_YesNo, AddisonsDisease_YesNo, CeliacDisease_YesNo) %>% 
-  group_by(`Study ID`, group) %>%
+  group_by(`Study ID`, Group) %>%
   filter(!is.na(`Study ID`)) %>% distinct()
 
 # ccombine the two for table 1
 table1_df = full_join(lab_table_df, cgm_table_df)
-table1_df = table1_df %>% ungroup %>% select(-`Study ID`)
+table1_df = table1_df %>% ungroup 
 ```
 
 
@@ -81,7 +78,7 @@ table1_df = table1_df %>% ungroup %>% select(-`Study ID`)
 #                         render.continuous=c( "Median [IQR]"="Median [Q1, Q3]"), overall=F, extra.col=list(`P-value`=pvalue))
 
 
-jdrf_table1 = table1( ~ .| group,
+jdrf_table1 = table1( ~ .| Group,
                       data = table1_df,
                       topclass ="Rtable1-zebra",
                       render.continuous=c( "Mean (SD)"="Mean (SD)"))
