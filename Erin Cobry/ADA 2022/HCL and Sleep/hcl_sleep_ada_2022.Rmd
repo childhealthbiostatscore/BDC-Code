@@ -12,6 +12,7 @@ output:
 
 ```{r setup, include=FALSE}
 library(redcapAPI)
+library(naniar)
 library(arsenal)
 library(tidyverse)
 library(lmerTest)
@@ -21,19 +22,20 @@ library(performance)
 library(knitr)
 library(DT)
 library(GLMMadaptive)
-knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
-if(Sys.info()["sysname"] == "Windows"){
-  home_dir = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
-} else if (Sys.info()["sysname"] == "Linux"){
-  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
-} else if (Sys.info()["sysname"] == "Darwin"){
-  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
-}
-knitr::opts_knit$set(root.dir = home_dir)
+
+# knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
+# if(Sys.info()["sysname"] == "Windows"){
+#   home_dir = "S:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+# } else if (Sys.info()["sysname"] == "Linux"){
+#   home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+# } else if (Sys.info()["sysname"] == "Darwin"){
+#   home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+# }
+# knitr::opts_knit$set(root.dir = home_dir)
 ```
 
 ```{r api import,include=FALSE}
-token = read.table("./Erin Cobry/ADA 2022/HCL and Sleep/api_token.txt")[1,1]
+token = read.table("S:/Laura/BDC/Projects/Erin Cobry/ADA 2022/HCL and Sleep/api_token.txt")[1,1]
 rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",token = token)
 data = exportRecords(rcon,dates = F)
 ids = data$record_id
@@ -262,11 +264,392 @@ dtq = dtq  %>%
   filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
          rowSums(is.na(.)) < ncol(.)-2)
 dtq$timepoint = sub("enrollment_","baseline_",dtq$timepoint)
+
+levels(dtq$tech) = c(1,2,3,4,5)
+levels(dtq$life_easier) = c(1,2,3,4,5)
+levels(dtq$health) = c(1,2,3,4,5)
+levels(dtq$good) = c(1,2,3,4,5)
+levels(dtq$time) = c(1,2,3,4,5)
+
+dtq = dtq %>% mutate(dtq_total = as.numeric(tech) + as.numeric(life_easier) + as.numeric(health) + as.numeric(good) + as.numeric(time))
 ```
 
 ```{r results='asis'}
+fit_mod(outcome = "dtq_total", df = dtq)
 ```
 
+## childrens sleep habits questionnaire
+
+```{r childrens shq scoring}
+cshq = exportRecords(rcon,forms = "childrens_sleep_habits_questionnaire_27",dates = F)
+cshq$record_id = ids
+cshq$timepoint = times
+
+cshq = cshq  %>% 
+  filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
+         rowSums(is.na(.)) < ncol(.)-2)
+cshq$timepoint = sub("enrollment_","baseline_",cshq$timepoint)
+
+# regular score 1,2,3,10
+levels(cshq$same_time) = c(1,2,3,4,5)
+levels(cshq$falls_asleep) = c(1,2,3,4,5)
+levels(cshq$own_bed) = c(1,2,3,4,5)
+levels(cshq$amount) = c(1,2,3,4,5)
+
+# reverse score rest
+levels(cshq$parents_bed) = c(5,4,3,2,1)
+levels(cshq$rocking) = c(5,4,3,2,1)
+levels(cshq$object) = c(5,4,3,2,1)
+levels(cshq$parent) = c(5,4,3,2,1)
+levels(cshq$resists) = c(5,4,3,2,1)
+levels(cshq$afraid) = c(5,4,3,2,1)
+levels(cshq$moves) = c(5,4,3,2,1)
+levels(cshq$moves_beds) = c(5,4,3,2,1)
+levels(cshq$dentist) = c(5,4,3,2,1)
+levels(cshq$snores_loudly) = c(5,4,3,2,1)
+levels(cshq$sweating) = c(5,4,3,2,1)
+levels(cshq$naps_day) = c(5,4,3,2,1)
+levels(cshq$wakes_once) = c(5,4,3,2,1)
+levels(cshq$wakes_up) = c(5,4,3,2,1)
+levels(cshq$early_wake_up) = c(5,4,3,2,1)
+levels(cshq$daytime_tired) = c(5,4,3,2,1)
+levels(cshq$asleep_activities) = c(5,4,3,2,1)
+# remove questions 6, 9, 13, 19 = col 10, 13, 17, 23
+vars = c(5:9,11:12, 15,16,18:21,24,27:30)
+cshq = cshq %>% mutate_at(c(5:13, 15:21,23,24,27:30), as.numeric)
+cshq = cshq %>% mutate(cshq_total = rowSums(.[vars])/18)
+```
+
+```{r results='asis'}
+fit_mod(outcome = "cshq_total", df = cshq)
+```
+
+## PAID peds
+
+```{r paid peds scoring}
+paid_p = exportRecords(rcon,forms = "paidpeds",dates = F)
+paid_p$record_id = ids
+paid_p$timepoint = times
+
+paid_p = paid_p  %>% 
+  filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
+         rowSums(is.na(.)) < ncol(.)-2)
+paid_p$timepoint = sub("enrollment_","baseline_",paid_p$timepoint)
+
+# set levels
+paid_p[3:22] = lapply(paid_p[3:22], function(x) {levels(x) = c(4,3,2,1,0);x } )
+paid_p = paid_p %>% mutate_at(c(3:22), as.integer)
+paid_p = paid_p %>% mutate_at(c(3:22), function(x){y = x-1;y})
+
+# score 
+paid_p = paid_p %>% mutate(paid_peds_total = (rowSums(.[3:22])/20)*25)
+```
+
+```{r results='asis'}
+fit_mod(outcome = "paid_peds_total", df = paid_p)
+```
+
+## PAID PR
+
+```{r paid pr scoring}
+paid_pr = exportRecords(rcon,forms = "paidpr",dates = F)
+paid_pr$record_id = ids
+paid_pr$timepoint = times
+
+paid_pr = paid_pr  %>% 
+  filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
+         rowSums(is.na(.)) < ncol(.)-2)
+paid_pr$timepoint = sub("enrollment_","baseline_",paid_pr$timepoint)
+
+# set levels
+paid_pr[3:20] = lapply(paid_pr[3:20], function(x) {levels(x) = c(4,3,2,1,0);x } )
+paid_pr = paid_pr %>% mutate_at(c(3:20), as.integer)
+paid_pr = paid_pr %>% mutate_at(c(3:20), function(x){y = x-1;y})
+
+# score 
+paid_pr = paid_pr %>% mutate(paid_pr_total = (rowSums(.[3:20])/20)*25)
+```
+
+```{r results='asis'}
+fit_mod(outcome = "paid_pr_total", df = paid_pr)
+```
+
+## PAID T
+
+no data for paid t
+
+## PEDS QL PR Teens
+
+```{r pedsqlprt scoring}
+pedsql_pr_t = exportRecords(rcon,forms = "pedsql_parent_report_for_teens_1318",dates = F)
+pedsql_pr_t$record_id = ids
+pedsql_pr_t$timepoint = times
+
+pedsql_pr_t = pedsql_pr_t  %>% 
+  filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
+         rowSums(is.na(.)) < ncol(.)-2)
+pedsql_pr_t$timepoint = sub("enrollment_","baseline_",pedsql_pr_t$timepoint)
+
+# set levels
+pedsql_pr_t[3:30] = lapply(pedsql_pr_t[3:30], function(x) {levels(x) = c(4,3,2,1,0);x } )
+pedsql_pr_t = pedsql_pr_t %>% mutate_at(c(3:30), as.integer)
+pedsql_pr_t = pedsql_pr_t %>% mutate_at(c(3:30), function(x){y = (x-1)*25;y})
+
+# score 
+pedsql_pr_t = pedsql_pr_t %>% mutate(pedsql_pr_t_total = (rowSums(.[3:30])/28))
+```
+
+```{r results='asis'}
+fit_mod(outcome = "pedsql_pr_t_total", df = pedsql_pr_t)
+```
+
+## PEDS QL PR Childrem
+
+```{r pedsqlprc scoring}
+pedsql_pr_c = exportRecords(rcon,forms = "pedsql_parent_report_for_children_812",dates = F)
+pedsql_pr_c$record_id = ids
+pedsql_pr_c$timepoint = times
+
+pedsql_pr_c = pedsql_pr_c  %>% 
+  filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
+         rowSums(is.na(.)) < ncol(.)-2)
+pedsql_pr_c$timepoint = sub("enrollment_","baseline_",pedsql_pr_c$timepoint)
+
+# set levels
+pedsql_pr_c[3:30] = lapply(pedsql_pr_c[3:30], function(x) {levels(x) = c(4,3,2,1,0);x } )
+pedsql_pr_c = pedsql_pr_c %>% mutate_at(c(3:30), as.integer)
+pedsql_pr_c = pedsql_pr_c %>% mutate_at(c(3:30), function(x){y = (x-1)*25;y})
+
+# score 
+pedsql_pr_c = pedsql_pr_c %>% mutate(pedsql_pr_c_total = (rowSums(.[3:30])/28))
+```
+
+```{r results='asis'}
+fit_mod(outcome = "pedsql_pr_c_total", df = pedsql_pr_c)
+```
+
+## PEDS QL PR Young Childrem
+
+```{r pedsqlpryc scoring}
+pedsql_pr_yc = exportRecords(rcon,forms = "pedsql_parent_report_for_young_children_57",dates = F)
+pedsql_pr_yc$record_id = ids
+pedsql_pr_yc$timepoint = times
+
+pedsql_pr_yc = pedsql_pr_yc  %>% 
+  filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
+         rowSums(is.na(.)) < ncol(.)-2)
+pedsql_pr_yc$timepoint = sub("enrollment_","baseline_",pedsql_pr_yc$timepoint)
+
+# set levels
+pedsql_pr_yc[3:30] = lapply(pedsql_pr_yc[3:30], function(x) {levels(x) = c(4,3,2,1,0);x } )
+pedsql_pr_yc = pedsql_pr_yc %>% mutate_at(c(3:30), as.integer)
+pedsql_pr_yc = pedsql_pr_yc %>% mutate_at(c(3:30), function(x){y = (x-1)*25;y})
+
+# score 
+pedsql_pr_yc = pedsql_pr_yc %>% mutate(pedsql_pr_yc_total = (rowSums(.[3:30])/28))
+```
+
+```{r results='asis'}
+fit_mod(outcome = "pedsql_pr_yc_total", df = pedsql_pr_yc)
+```
+
+## PEDS QL PR toddlers
+
+```{r pedsqlprto scoring}
+pedsql_pr_t = exportRecords(rcon,forms = "pedsql_parent_report_for_toddlers_24",dates = F)
+pedsql_pr_t$record_id = ids
+pedsql_pr_t$timepoint = times
+
+pedsql_pr_t = pedsql_pr_t  %>% 
+  filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
+         rowSums(is.na(.)) < ncol(.)-2)
+pedsql_pr_t$timepoint = sub("enrollment_","baseline_",pedsql_pr_t$timepoint)
+
+# set levels
+pedsql_pr_t[3:30] = lapply(pedsql_pr_t[3:30], function(x) {levels(x) = c(4,3,2,1,0);x } )
+pedsql_pr_t = pedsql_pr_t %>% mutate_at(c(3:30), as.integer)
+pedsql_pr_t = pedsql_pr_t %>% mutate_at(c(3:30), function(x){y = (x-1)*25;y})
+
+# score 
+pedsql_pr_t = pedsql_pr_t %>% mutate(pedsql_pr_t_total = (rowSums(.[3:30])/28))
+```
+
+```{r results='asis'}
+fit_mod(outcome = "pedsql_pr_t_total", df = pedsql_pr_t)
+```
+
+## PEDS QL Teen report
+
+```{r pedsqlt scoring}
+pedsql_t = exportRecords(rcon,forms = "pedsql_teen_report_1318",dates = F)
+pedsql_t$record_id = ids
+pedsql_t$timepoint = times
+
+pedsql_t = pedsql_t  %>% 
+  filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
+         rowSums(is.na(.)) < ncol(.)-2)
+pedsql_t$timepoint = sub("enrollment_","baseline_",pedsql_t$timepoint)
+
+# set levels
+pedsql_t[3:30] = lapply(pedsql_t[3:30], function(x) {levels(x) = c(4,3,2,1,0);x } )
+pedsql_t = pedsql_t %>% mutate_at(c(3:30), as.integer)
+pedsql_t = pedsql_t %>% mutate_at(c(3:30), function(x){y = (x-1)*25;y})
+
+# score 
+pedsql_t = pedsql_t %>% mutate(pedsql_t_total = (rowSums(.[3:30])/28))
+```
+
+```{r results='asis'}
+fit_mod(outcome = "pedsql_t_total", df = pedsql_t)
+```
+
+## PEDS QL child report
+
+```{r pedsqlc scoring}
+pedsql_c = exportRecords(rcon,forms = "pedsql_child_report_812",dates = F)
+pedsql_c$record_id = ids
+pedsql_c$timepoint = times
+
+pedsql_c = pedsql_c  %>% 
+  filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
+         rowSums(is.na(.)) < ncol(.)-2)
+pedsql_c$timepoint = sub("enrollment_","baseline_",pedsql_c$timepoint)
+
+# set levels
+pedsql_c[3:30] = lapply(pedsql_c[3:30], function(x) {levels(x) = c(4,3,2,1,0);x } )
+pedsql_c = pedsql_c %>% mutate_at(c(3:30), as.integer)
+pedsql_c = pedsql_c %>% mutate_at(c(3:30), function(x){y = (x-1)*25;y})
+
+# score 
+pedsql_c = pedsql_c %>% mutate(pedsql_c_total = (rowSums(.[3:30])/28))
+```
+
+```{r results='asis'}
+fit_mod(outcome = "pedsql_c_total", df = pedsql_c)
+```
+
+## PEDS QL young child report
+
+```{r pedsqlyc scoring}
+pedsql_yc = exportRecords(rcon,forms = "pedsql_young_child_report_57",dates = F)
+pedsql_yc$record_id = ids
+pedsql_yc$timepoint = times
+
+pedsql_yc = pedsql_yc  %>% 
+  filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
+         rowSums(is.na(.)) < ncol(.)-2)
+pedsql_yc$timepoint = sub("enrollment_","baseline_",pedsql_yc$timepoint)
+
+# set levels
+pedsql_yc[3:30] = lapply(pedsql_yc[3:30], function(x) {levels(x) = c(4,3,2,1,0);x } )
+pedsql_yc = pedsql_yc %>% mutate_at(c(3:30), as.integer)
+pedsql_yc = pedsql_yc %>% mutate_at(c(3:30), function(x){y = (x-1)*25;y})
+
+# score 
+pedsql_yc = pedsql_yc %>% mutate(pedsql_yc_total = (rowSums(.[3:30])/28))
+```
+
+```{r results='asis'}
+fit_mod(outcome = "pedsql_yc_total", df = pedsql_yc)
+```
+
+## Inspire Parent
+
+```{r inspirep scoring}
+# baseline
+inspire_pb = exportRecords(rcon,forms = "inspire_parent_baseline",dates = F)
+inspire_pb$record_id = ids
+inspire_pb$timepoint = times
+
+inspire_pb = inspire_pb  %>% 
+  filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
+         rowSums(is.na(.)) < ncol(.)-2)
+inspire_pb$timepoint = sub("enrollment_","baseline_",inspire_pb$timepoint)
+
+# set levels
+inspire_pb[3:23] = lapply(inspire_pb[3:23], function(x) {levels(x) = c(0,1,2,3,4, -99);x } )
+inspire_pb = inspire_pb %>% mutate_at(c(3:23), as.integer)
+inspire_pb = inspire_pb %>% replace_with_na(replace = list(x = 6))
+inspire_pb = inspire_pb %>% mutate_at(c(3:23), function(x){y = (x-1)*25;y})
+
+# score 
+inspire_pb = inspire_pb %>% mutate(inspire_p_total = (rowMeans(.[3:23])))
+
+# followup
+inspire_pf = exportRecords(rcon,forms = "inspire_parent_follow_up",dates = F)
+inspire_pf$record_id = ids
+inspire_pf$timepoint = times
+
+inspire_pf = inspire_pf  %>% 
+  filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
+         rowSums(is.na(.)) < ncol(.)-2)
+inspire_pf$timepoint = sub("enrollment_","baseline_",inspire_pf$timepoint)
+
+# set levels
+inspire_pf[3:23] = lapply(inspire_pf[3:23], function(x) {levels(x) = c(0,1,2,3,4, -99);x } )
+inspire_pf = inspire_pf %>% mutate_at(c(3:23), as.integer)
+inspire_pf = inspire_pf %>% replace_with_na(replace = list(x = 6))
+inspire_pf = inspire_pf %>% mutate_at(c(3:23), function(x){y = (x-1)*25;y})
+
+# score 
+inspire_pf = inspire_pf %>% mutate(inspire_p_total = (rowMeans(.[3:23])))
+
+# one dataframe
+inspire_p = full_join(inspire_pb, inspire_pf)
+```
+
+```{r results='asis'}
+fit_mod(outcome = "inspire_p_total", df = inspire_p)
+```
+
+## Inspire Youth
+
+```{r inspirey scoring}
+# baseline
+inspire_yb = exportRecords(rcon,forms = "inspire_youth_baseline",dates = F)
+inspire_yb$record_id = ids
+inspire_yb$timepoint = times
+
+inspire_yb = inspire_yb  %>% 
+  filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
+         rowSums(is.na(.)) < ncol(.)-2)
+inspire_yb$timepoint = sub("enrollment_","baseline_",inspire_yb$timepoint)
+
+# set levels
+inspire_yb[3:19] = lapply(inspire_yb[3:19], function(x) {levels(x) = c(0,1,2,3,4, -99);x } )
+inspire_yb = inspire_yb %>% mutate_at(c(3:19), as.integer)
+inspire_yb = inspire_yb %>% replace_with_na(replace = list(x = 6))
+inspire_yb = inspire_yb %>% mutate_at(c(3:19), function(x){y = (x-1)*25;y})
+
+# score 
+inspire_yb = inspire_yb %>% mutate(inspire_total = (rowMeans(.[3:19])))
+
+# followup
+inspire_yf = exportRecords(rcon,forms = "inspire_youth_follow_up",dates = F)
+inspire_yf$record_id = ids
+inspire_yf$timepoint = times
+
+inspire_yf = inspire_yf  %>% 
+  filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
+         rowSums(is.na(.)) < ncol(.)-2)
+inspire_yf$timepoint = sub("enrollment_","baseline_",inspire_yf$timepoint)
+
+# set levels
+inspire_yf[3:19] = lapply(inspire_yf[3:19], function(x) {levels(x) = c(0,1,2,3,4, -99);x } )
+inspire_yf = inspire_yf %>% mutate_at(c(3:19), as.integer)
+inspire_yf = inspire_yf %>% replace_with_na(replace = list(x = 6))
+inspire_yf = inspire_yf %>% mutate_at(c(3:19), function(x){y = (x-1)*25;y})
+
+# score 
+inspire_yf = inspire_yf %>% mutate(inspire_total = (rowMeans(.[3:19])))
+
+# one dataframe
+inspire_y = full_join(inspire_yb, inspire_yf)
+```
+
+```{r results='asis'}
+fit_mod(outcome = "inspire_total", df = inspire_y)
+```
 
 ## PSQI 
 
@@ -302,8 +685,8 @@ promis_peds = promis_peds %>% select(record_id,timepoint,falling_asleep:bad_mood
          impairment = rowSums(select(.,daytime:bad_mood_sleepy)))
 promis_peds$timepoint = sub("enrollment_","baseline_",promis_peds$timepoint)
 # Convert to T scores
-peds_disturbance = read.csv("./Erin Cobry/ADA 2022/HCL and Sleep/Data_Clean/peds_sleep_disturbance.csv")
-peds_impairment = read.csv("./Erin Cobry/ADA 2022/HCL and Sleep/Data_Clean/peds_sleep_impairment.csv")
+peds_disturbance = read.csv("S:/Laura/BDC/Projects/Erin Cobry/ADA 2022/HCL and Sleep/Data_Clean/peds_sleep_disturbance.csv")
+peds_impairment = read.csv("S:/Laura/BDC/Projects/Erin Cobry/ADA 2022/HCL and Sleep/Data_Clean/peds_sleep_impairment.csv")
 promis_peds$disturbance = 
   peds_disturbance$T.Score[match(promis_peds$disturbance,
                                  peds_disturbance$Raw.Summed.Score)]
@@ -332,8 +715,8 @@ promis_parent = promis_parent %>% select(record_id,timepoint,asleep:bad_mood) %>
          impairment = rowSums(select(.,sleepy:bad_mood)))
 promis_parent$timepoint = sub("enrollment_","baseline_",promis_parent$timepoint)
 # Convert to T scores
-parent_disturbance = read.csv("./Erin Cobry/ADA 2022/HCL and Sleep/Data_Clean/parent_proxy_sleep_disturbance.csv")
-parent_impairment = read.csv("./Erin Cobry/ADA 2022/HCL and Sleep/Data_Clean/parent_proxy_sleep_impairment.csv")
+parent_disturbance = read.csv("S:/Laura/BDC/Projects/Erin Cobry/ADA 2022/HCL and Sleep/Data_Clean/parent_proxy_sleep_disturbance.csv")
+parent_impairment = read.csv("S:/Laura/BDC/Projects/Erin Cobry/ADA 2022/HCL and Sleep/Data_Clean/parent_proxy_sleep_impairment.csv")
 promis_parent$disturbance = 
   parent_disturbance$T.Score[match(promis_parent$disturbance,
                                    parent_disturbance$Raw.Summed.Score)]
