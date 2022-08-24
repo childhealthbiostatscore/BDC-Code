@@ -1,21 +1,18 @@
-library(lubridate)
+library(parsedate)
 library(cgmanalysis)
 library(readxl)
 library(dplyr)
-setwd("/Volumes/BDC/SHARED/POLSKY/Triple C/Tim")
-dateparseorder <- c("mdy","mdy HM","mdy HMS","mdY HM","mdY HMS","dmy HM","dmy HMS",
-                    "dmY HM","dmY HMS","Ymd HM","Ymd HMS","ymd HM","ymd HMS",
-                    "Ydm HM","Ydm HMS","ydm HM","ydm HMS")
+setwd("/Users/timvigers/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/BDC/Janet Snell-Bergeon/Triple C")
 # Output location
-outdir = paste0(getwd(),"/","Cleaned/")
+outdir = paste0(getwd(),"/","Data_Cleaned/")
 # Import dates - remove spaces and characters from names
-dates = read_excel("./Trimesters_Corrected_Final.xlsx")
+dates = read_excel("./Data_Raw/Trimesters_Corrected_Final.xlsx")
 dates$`Last name` = tolower(gsub(" ","",dates$`Last name`))
 dates$`Last name` = tolower(gsub("[[:punct:]]","",dates$`Last name`))
 dates$`First name` = tolower(gsub(" ","",dates$`First name`))
 dates$`First name` = tolower(gsub("[[:punct:]]","",dates$`First name`))
 # List all the directories
-dirs = list.dirs("RAW DATA- CGM downloads")
+dirs = list.dirs("./Data_Raw/Tim/RAW DATA- CGM downloads")
 # Loop through directories
 for (d in dirs[2:length(dirs)]) {
   # Get name - lowercase and remove special characters
@@ -43,12 +40,12 @@ for (d in dirs[2:length(dirs)]) {
       df = df[,grep("timestamp|glucose value",tolower(colnames(df)))]
       colnames(df) = c("timestamp","sensorglucose")
       df$timestamp = sub("T"," ",df$timestamp)
-      df$timestamp = parse_date_time(df$timestamp,dateparseorder,tz = "UTC")
+      df$timestamp = parse_date(df$timestamp,approx = F)
     } else if (ncol(df) >= 48) {
       sensor = which(df$V3 == "Sensor")
       colnames(df) = df[sensor[1]+1,]
       df = df[(sensor[1]+2):nrow(df),]
-      df$timestamp = parse_date_time(paste(df$Date,df$Time),dateparseorder,tz = "UTC")
+      df$timestamp = parse_date(paste(df$Date,df$Time),approx = F)
       df = df[,grep("timestamp|sensor glucose",tolower(colnames(df)))]
       colnames(df)[1] = "sensorglucose"
     } else if (ncol(df) == 19) {
@@ -56,7 +53,14 @@ for (d in dirs[2:length(dirs)]) {
       df = df[4: nrow(df),]
       df = df[,grep("timestamp|historic glucose",tolower(colnames(df)))]
       colnames(df) = c("timestamp","sensorglucose")
-      df$timestamp = parse_date_time(df$timestamp,dateparseorder,tz = "UTC")
+      df$timestamp = parse_date(df$timestamp,approx = F)
+    } else if (ncol(df) == 13){
+      colnames(df) = df[1,]
+      df = df[2:nrow(df),]
+      df = df[,grep("datetime|glucoseinternaltime|glucosevalue",tolower(colnames(df)))]
+      colnames(df) = c("timestamp","sensorglucose")
+      df$timestamp = sub("T"," ",df$timestamp)
+      df$timestamp = parse_date(df$timestamp,approx = F)
     }
     return(df)
   })
@@ -91,13 +95,19 @@ for (d in dirs[2:length(dirs)]) {
     write.csv(wk28_dd,file = paste0(outdir,id,"_wk28_dd.csv"),
               row.names = F,na = "")
   }
+  # Set to missing for next loop
+  t0 = NA
+  wk14 = NA
+  wk28 = NA
+  dd = NA
 }
 # Variables
 out = paste0("polsky_triple_c_cgm_",Sys.Date())
-cgmvariables("./Cleaned","./Reports",id_filename = T,outputname = out)
+cgmvariables(outdir,"./Reports",id_filename = T,outputname = out)
 # Split id column for Janet
 cgm = read.csv(paste0("./Reports/",out,".csv"))
 cgm$timepoint = sub("\\d*_","",cgm$subject_id)
 cgm$subject_id = sub("_.*","",cgm$subject_id)
-cgm = cgm %>% select(subject_id,timepoint,everything())
+cgm = cgm %>% select(subject_id,timepoint,everything(),
+                     -any_of(c("percent_cgm_wear","num_days")))
 write.csv(cgm,paste0("./Reports/",out,".csv"),row.names = F)
