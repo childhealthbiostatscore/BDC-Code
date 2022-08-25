@@ -59,7 +59,7 @@ for subject_folder in folders:
                 continue
             for i in range(0, len(sensor_starts)):
                 sens_start = sensor_starts[i]
-                if(i+1 < len(sensor_starts)):
+                if (i+1 < len(sensor_starts)):
                     sens_end = sensor_starts[i+1]-1
                 else:
                     sens_end = cgm.shape[0]
@@ -84,6 +84,12 @@ for subject_folder in folders:
             cgm = cgm[cols]
             cgm.columns = ["datetime", "sensor_glucose"]
             cgm = cgm.iloc[:file_end, :]
+        elif cgm.shape[1] == 6:
+            start = np.where(cgm.iloc[:, 0] == "DeviceType")[0][0]
+            cgm.columns = cgm.iloc[start, :]
+            cols = ['EventDateTime', 'Readings (CGM / BGM)']
+            cgm = cgm[cols]
+            cgm.columns = ["datetime", "sensor_glucose"]
         else:
             break
         # Format columns
