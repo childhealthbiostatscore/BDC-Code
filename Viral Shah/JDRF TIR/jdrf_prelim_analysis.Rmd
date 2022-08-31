@@ -40,14 +40,33 @@ jdrf_data_clean <- read_csv("S:/Laura/BDC/Projects/Viral Shah/JDRF/Data_Cleaned/
 fit_mod = function(outcome,df){
 
     # Fit model
-  f = as.formula(paste0(outcome,"~","Group","+","visit_num","+","Age_DateOfEyeExam","+", "Sex","+","Race_Ethnicity" ))
+  f = as.formula(paste0(outcome,"~","Group","+","visit_num","+","Age_DateOfEyeExam","+", "DiabetesDuration_DateOfEyeExam" ))
   mod = lme(f,
             random = ~1|MRN,
             data = df,
             na.action = na.omit)
  
   print(summary(mod))
-  }
+}
+
+
+# function for pvalue in table1
+pvalue <- function(x, ...) {
+    # Construct vectors of data y, and groups (strata) g
+    y <- unlist(x)
+    g <- factor(rep(1:length(x), times=sapply(x, length)))
+    if (is.numeric(y)) {
+        # For numeric variables, perform a standard 2-sample t-test
+        p <- t.test(y ~ g)$p.value
+    } else {
+        # For categorical variables, perform a chi-squared test of independence
+        p <- chisq.test(table(y, g))$p.value
+    }
+    # Format the p-value, using an HTML entity for the less-than sign.
+    # The initial empty string places the output on the line below the variable label.
+    c("", sub("<", "&lt;", format.pval(p, digits=3, eps=0.001)))
+}
+
 ```
 
 ```{r ids check, include=FALSE}
@@ -79,8 +98,8 @@ rm(Group_1_Demographic_data, Group_2_Demographic_Data)
 
 # check that each id is in the demogs
 jdrf_data_clean = jdrf_data_clean %>% filter(MRN %in% Demographic_data$MRN)
+jdrf_a1c = jdrf_data_clean %>% filter(!is.na(visit_num))
 
-jdrf_a1c = jdrf_data_clean %>% filter(!is.na(a1c))
 ```
 
 ```{r var summarizing, include=FALSE, eval=FALSE} 
@@ -90,15 +109,18 @@ jdrf_data_clean = jdrf_data_clean %>% mutate(a1c = case_when(a1c == "televisit" 
                                                              a1c == "-" ~ NA_character_,
                                                              TRUE ~ a1c))
 jdrf_data_clean$a1c = as.numeric(jdrf_data_clean$a1c)
-cgm_table_df = jdrf_data_clean %>% group_by(`Study ID`, Group) %>% summarise(mean_a1c = mean(a1c, na.rm = T),
+
+
+
+cgm_table_df = jdrf_a1c %>% group_by(`Study ID`, Group) %>% summarise(mean_a1c = mean(a1c, na.rm = T),
                                                                              mean_tir = mean(tir, na.rm = T),
                                                                              mean_tbr = mean(tbr, na.rm = T),
                                                                              mean_tar = mean(tar, na.rm = T),
                                                                              mean_ttir = mean(ttir, na.rm = T),
                                                                              mean_glucose = mean(mean_glucose, na.rm = T))
-# all of the variables we are interested in here is collected at basaeline i believe
+# all of the variables we are interested in here is collected at baseline i believe
 # so i will filter out the mrn lab data and only include those with a study id
-lab_table_df = jdrf_data_clean %>% 
+lab_table_df = jdrf_a1c %>% 
   select(`Study ID`,Group, Age_DateOfEyeExam, Sex, Race_Ethnicity, Htcm, Wtkg, BMI, InsuranceCategory_DateOfEyeExam, DiabetesDuration_DateOfEyeExam, HistoryOfCardiovascularDisease_YesNo,
          Hyperthyroidism_YesNo, GravesDisease_YesNo, AddisonsDisease_YesNo, CeliacDisease_YesNo) %>% 
   group_by(`Study ID`, Group) %>%
@@ -110,6 +132,11 @@ lab_table_df = lab_table_df %>% group_by(`Study ID`) %>% fill(c(Wtkg, Htcm, BMI)
 # combine the two for table 1
 table1_df = full_join(lab_table_df, cgm_table_df) %>% filter(!is.na(Group))
 table1_df = table1_df %>% ungroup 
+
+# T1D_lab_table1 =  table1( ~ `duration_of_t1d (years)` + home_regimen + hba1c + ph + bicarbonate + glargine_dose_per_kg 
+#                        | diabetes_diagnosis, data = EG_patient_char, topclass="Rtable1-zebra",
+#                         render.continuous=c( "Median [IQR]"="Median [Q1, Q3]"), overall=F, extra.col=list(`P-value`=pvalue))
+
 ```
 
 ```{r var summarizing only those visits with a1c, include=FALSE} 
@@ -119,12 +146,29 @@ jdrf_a1c = jdrf_a1c %>% mutate(a1c = case_when(a1c == "televisit" ~ NA_character
                                                              a1c == "-" ~ NA_character_,
                                                              TRUE ~ a1c))
 jdrf_a1c$a1c = as.numeric(jdrf_a1c$a1c)
+
+# UACR Variable looks terrible
+jdrf_a1c = jdrf_a1c %>% mutate(uacr = case_when(str_detect(uacr, "<") ~ (as.character(as.numeric(str_sub(uacr, 2))/2)),
+                                                uacr == "NOTE" ~ NA_character_,
+                                                uacr == "CANCELLED" ~ NA_character_,
+                                                uacr == "SEE COMMENTS" ~ NA_character_,
+                                                uacr == "NOTE" ~ NA_character_,
+                                                uacr == "LESS THAN 4.6" ~ "2.3",
+                                                uacr == "2E-3" ~ ".002",
+                                                TRUE ~ uacr))
+jdrf_a1c$uacr = as.numeric(jdrf_a1c$uacr)
+
 cgm_table_df = jdrf_a1c %>% group_by(`Study ID`, Group) %>% summarise(mean_a1c = mean(a1c, na.rm = T),
-                                                                             mean_tir = mean(tir, na.rm = T),
-                                                                             mean_tbr = mean(tbr, na.rm = T),
-                                                                             mean_tar = mean(tar, na.rm = T),
-                                                                             mean_ttir = mean(ttir, na.rm = T),
-                                                                             mean_glucose = mean(mean_glucose, na.rm = T))
+                                                                      mean_tir = mean(tir, na.rm = T),
+                                                                      mean_tbr = mean(tbr, na.rm = T),
+                                                                      mean_tar = mean(tar, na.rm = T),
+                                                                      mean_ttir = mean(ttir, na.rm = T),
+                                                                      mean_glucose = mean(mean_glucose, na.rm = T),
+                                                                      mean_egfr = mean(egfr, na.rm = T),
+                                                                      mean_ldl = mean(ldl, na.rm = T),
+                                                                      mean_hdl = mean(hdl, na.rm = T),
+                                                                      mean_tc = mean(tc, na.rm = T),
+                                                                      mean_uacr = mean(uacr, na.rm = T))
 # all of the variables we are interested in here is collected at basaeline i believe
 # so i will filter out the mrn lab data and only include those with a study id
 lab_table_df = jdrf_a1c %>% 
@@ -139,32 +183,40 @@ lab_table_df = lab_table_df %>% group_by(`Study ID`) %>% fill(c(Wtkg, Htcm, BMI)
 # combine the two for table 1
 table1_df = full_join(lab_table_df, cgm_table_df) %>% filter(!is.na(Group))
 table1_df = table1_df %>% ungroup 
-```
 
-# Outstanding Questions/Remarks
-
-- For the longitudinal plots, we have multiple subjects with lots of visits and clutter for the early visits. should we look at maybe mean or predicted outcomes so its less?
-
-- what other variables should we adjust for when doing the associations between cgm variables and retinopathy groups? right now adjusting for age, sex, race
-
-# Methods
-
-Associations between Retinopathy and CGM groups were assessed via linear mixed models with a random intercept for subjects, adjusting for age, sex, race. Plots of the outcomes over visits were produced. 
-
-# Analysis
-
-# table 1
-```{r table1, echo=FALSE}
-# T1D_lab_table1 =  table1( ~ `duration_of_t1d (years)` + home_regimen + hba1c + ph + bicarbonate + glargine_dose_per_kg 
-#                        | diabetes_diagnosis, data = EG_patient_char, topclass="Rtable1-zebra",
-#                         render.continuous=c( "Median [IQR]"="Median [Q1, Q3]"), overall=F, extra.col=list(`P-value`=pvalue))
 table1_df = table1_df %>% select(-`Study ID`)
 
 jdrf_table1 = table1( ~ .| Group,
                       data = table1_df,
                       topclass ="Rtable1-zebra",
-                      render.continuous=c( "Mean (SD)"="Mean (SD)"))
+                      render.continuous=c( "Mean (SD)"="Mean (SD)"),overall = FALSE, extra.col=list(`P-value`=pvalue))
+```
+
+# Outstanding Questions/Remarks
+
+* Subjects 216, 304 have no A1c Data in any of their visits, but some CGM; opting to include them for now
+
+* Included visits with cgm data but no a1c
+
+# Methods
+
+Associations between Retinopathy and CGM groups were assessed via linear mixed models with a random intercept for subjects, adjusting for age and diabetes duration. Plots of the outcomes over visits were produced. 
+
+# Analysis
+
+# Table 1
+```{r table1, echo=FALSE}
 jdrf_table1
+```
+
+# A1c and TIR by visit and group
+```{r visitgrp cgm}
+table1( ~ a1c +  tir | visit_num+Group,
+                      data = jdrf_a1c,
+                      topclass ="Rtable1-zebra",
+                      render.continuous=c( "Mean (SD)"="Mean (SD)"),overall = FALSE)
+
+
 ```
 
 # a1c
@@ -178,7 +230,7 @@ a1c_p + geom_line() + theme_classic()
 ```
 
 # tir
-Retinopathy status is associated with tir (p = 0.006)
+Retinopathy status is associated with tir (p = 0.01)
 ```{r tir}
 fit_mod(outcome = "tir", df = jdrf_a1c)
 
@@ -187,7 +239,7 @@ tir_p + geom_line() + theme_classic()
 ```
 
 # tar
-Retinopathy status is associated with tar (p = 0.001)
+Retinopathy status is associated with tar (p = 0.005)
 ```{r tar}
 fit_mod(outcome = "tar", df = jdrf_a1c)
 
@@ -196,7 +248,7 @@ tar_p + geom_line() + theme_classic()
 ```
 
 # tbr
-Retinopathy status is associated with tbr (p = 0.01)
+Retinopathy status is associated with tbr (p = 0.02)
 ```{r tbr}
 fit_mod(outcome = "tbr", df = jdrf_a1c)
 
@@ -205,7 +257,7 @@ tbr_p + geom_line() + theme_classic()
 ```
 
 # ttir
-Retinopathy status is associated with ttir (p = 0.0018)
+Retinopathy status is associated with ttir (p = 0.001)
 ```{r ttir}
 fit_mod(outcome = "ttir", df = jdrf_a1c)
 
@@ -214,7 +266,7 @@ tbr_p + geom_line() + theme_classic()
 ```
 
 # mean glucose
-Retinopathy status is associated with mean glucose (p = 0.0008)
+Retinopathy status is associated with mean glucose (p = 0.005)
 ```{r mg}
 fit_mod(outcome = "mean_glucose", df = jdrf_a1c)
 
