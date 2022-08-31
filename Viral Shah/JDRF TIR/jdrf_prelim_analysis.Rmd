@@ -1,8 +1,13 @@
 ---
 title: "JDRF Prelim Analysis"
 author: "Casey Sakamoto"
-date: "7/26/2022"
-output: html_document
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: 
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
 ---
 
 ```{r setup, include=FALSE}
@@ -13,6 +18,8 @@ library(lubridate)
 library(ggplot2)
 library(readr)
 library(table1)
+library(Hmisc)
+library(nlme)
 
 knitr::opts_chunk$set(echo = FALSE)
 if(Sys.info()["sysname"] == "Windows"){
@@ -24,24 +31,71 @@ if(Sys.info()["sysname"] == "Windows"){
 }
 knitr::opts_knit$set(root.dir = home_dir)
 
-jdrf_data_clean <- read_csv("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/JDRF/Data_Cleaned/jdrf_data_clean.csv")
+# cleaned data upload
+# jdrf_data_clean <- read_csv("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/JDRF/Data_Cleaned/jdrf_data_clean.csv")
+jdrf_data_clean <- read_csv("S:/Laura/BDC/Projects/Viral Shah/JDRF/Data_Cleaned/jdrf_data_clean.csv")
 ```
 
+```{r functions, include=FALSE}
+fit_mod = function(outcome,df){
 
-```{r var summarizing, include=FALSE} 
+    # Fit model
+  f = as.formula(paste0(outcome,"~","Group","+","visit_num","+","Age_DateOfEyeExam","+", "Sex","+","Race_Ethnicity" ))
+  mod = lme(f,
+            random = ~1|MRN,
+            data = df,
+            na.action = na.omit)
+ 
+  print(summary(mod))
+  }
+```
+
+```{r ids check, include=FALSE}
+# list to check by
+# import demographics data
+Group_1_Demographic_data = read_excel("S:/Laura/BDC/Projects/Viral Shah/JDRF/Data_Raw/13. JDRF_TIR/3. Data Collection/Cleaned Final Data/Group 1/2. Group 1_Demographic data_2-3-2022.xlsx",
+                                      na = "NULL") %>%
+  rename(Date = "Vital_VisitDate")
+# need to account for na = null
+# Group_1_Demographic_data =  read_excel("./Data_Raw/Group 1_Demographic data_2-3-2022.xlsx", 
+#     col_types = c("numeric", "numeric", "text", 
+#         "text", "text", "text", "date", "date", 
+#         "numeric", "text", "text", "text", 
+#         "date", "numeric", "numeric", "numeric", 
+#         "text", "date", "numeric", "text", 
+#         "text", "text", "text", "text", "text", 
+#         "text", "text"))
+
+Group_2_Demographic_Data = read_excel("S:/Laura/BDC/Projects/Viral Shah/JDRF/Data_Raw/13. JDRF_TIR/3. Data Collection/Cleaned Final Data/Group 2/2. Group 2_ Demographics_6-13-2022.xlsx",
+                                      na = "NULL") %>%
+  rename(Date = "Vital_VisitDate")
+# add group number variable
+Group_1_Demographic_data$Group = "Case"
+Group_2_Demographic_Data$Group = "Control"
+# note there is a comment variable in group 2 not in group 1
+Demographic_data = full_join(Group_1_Demographic_data, Group_2_Demographic_Data)
+rm(Group_1_Demographic_data, Group_2_Demographic_Data)
+
+
+# check that each id is in the demogs
+jdrf_data_clean = jdrf_data_clean %>% filter(MRN %in% Demographic_data$MRN)
+
+jdrf_a1c = jdrf_data_clean %>% filter(!is.na(a1c))
+```
+
+```{r var summarizing, include=FALSE, eval=FALSE} 
 # commented out old var names
 # here we are averaging subjects across visits, and then comparing these averages between groups
 jdrf_data_clean = jdrf_data_clean %>% mutate(a1c = case_when(a1c == "televisit" ~ NA_character_,
                                                              a1c == "-" ~ NA_character_,
                                                              TRUE ~ a1c))
 jdrf_data_clean$a1c = as.numeric(jdrf_data_clean$a1c)
-cgm_table_df = jdrf_data_clean %>% group_by(`Study ID`, Group) %>% summarise(
-                                                                                                                                             mean_a1c = mean(a1c, na.rm = T),
-                                                                                                                                             mean_tir = mean(tir, na.rm = T),
-                                                                                                                                             mean_tbr = mean(tbr, na.rm = T),
-                                                                                                                                             mean_tar = mean(tar, na.rm = T),
-                                                                                                                                             mean_ttir = mean(ttir, na.rm = T),
-                                                                                                                                             mean_glucose = mean(mean_glucose, na.rm = T))
+cgm_table_df = jdrf_data_clean %>% group_by(`Study ID`, Group) %>% summarise(mean_a1c = mean(a1c, na.rm = T),
+                                                                             mean_tir = mean(tir, na.rm = T),
+                                                                             mean_tbr = mean(tbr, na.rm = T),
+                                                                             mean_tar = mean(tar, na.rm = T),
+                                                                             mean_ttir = mean(ttir, na.rm = T),
+                                                                             mean_glucose = mean(mean_glucose, na.rm = T))
 # all of the variables we are interested in here is collected at basaeline i believe
 # so i will filter out the mrn lab data and only include those with a study id
 lab_table_df = jdrf_data_clean %>% 
@@ -58,12 +112,53 @@ table1_df = full_join(lab_table_df, cgm_table_df) %>% filter(!is.na(Group))
 table1_df = table1_df %>% ungroup 
 ```
 
+```{r var summarizing only those visits with a1c, include=FALSE} 
+# commented out old var names
+# here we are averaging subjects across visits, and then comparing these averages between groups
+jdrf_a1c = jdrf_a1c %>% mutate(a1c = case_when(a1c == "televisit" ~ NA_character_,
+                                                             a1c == "-" ~ NA_character_,
+                                                             TRUE ~ a1c))
+jdrf_a1c$a1c = as.numeric(jdrf_a1c$a1c)
+cgm_table_df = jdrf_a1c %>% group_by(`Study ID`, Group) %>% summarise(mean_a1c = mean(a1c, na.rm = T),
+                                                                             mean_tir = mean(tir, na.rm = T),
+                                                                             mean_tbr = mean(tbr, na.rm = T),
+                                                                             mean_tar = mean(tar, na.rm = T),
+                                                                             mean_ttir = mean(ttir, na.rm = T),
+                                                                             mean_glucose = mean(mean_glucose, na.rm = T))
+# all of the variables we are interested in here is collected at basaeline i believe
+# so i will filter out the mrn lab data and only include those with a study id
+lab_table_df = jdrf_a1c %>% 
+  select(`Study ID`,Group, Age_DateOfEyeExam, Sex, Race_Ethnicity, Htcm, Wtkg, BMI, InsuranceCategory_DateOfEyeExam, DiabetesDuration_DateOfEyeExam, HistoryOfCardiovascularDisease_YesNo,
+         Hyperthyroidism_YesNo, GravesDisease_YesNo, AddisonsDisease_YesNo, CeliacDisease_YesNo) %>% 
+  group_by(`Study ID`, Group) %>%
+  filter(!is.na(`Study ID`)) %>% distinct()
 
+# remove dupe rows
+lab_table_df = lab_table_df %>% group_by(`Study ID`) %>% fill(c(Wtkg, Htcm, BMI), .direction = "up") %>% distinct()
+
+# combine the two for table 1
+table1_df = full_join(lab_table_df, cgm_table_df) %>% filter(!is.na(Group))
+table1_df = table1_df %>% ungroup 
+```
+
+# Outstanding Questions/Remarks
+
+- For the longitudinal plots, we have multiple subjects with lots of visits and clutter for the early visits. should we look at maybe mean or predicted outcomes so its less?
+
+- what other variables should we adjust for when doing the associations between cgm variables and retinopathy groups? right now adjusting for age, sex, race
+
+# Methods
+
+Associations between Retinopathy and CGM groups were assessed via linear mixed models with a random intercept for subjects, adjusting for age, sex, race. Plots of the outcomes over visits were produced. 
+
+# Analysis
+
+# table 1
 ```{r table1, echo=FALSE}
 # T1D_lab_table1 =  table1( ~ `duration_of_t1d (years)` + home_regimen + hba1c + ph + bicarbonate + glargine_dose_per_kg 
 #                        | diabetes_diagnosis, data = EG_patient_char, topclass="Rtable1-zebra",
 #                         render.continuous=c( "Median [IQR]"="Median [Q1, Q3]"), overall=F, extra.col=list(`P-value`=pvalue))
-
+table1_df = table1_df %>% select(-`Study ID`)
 
 jdrf_table1 = table1( ~ .| Group,
                       data = table1_df,
@@ -72,10 +167,57 @@ jdrf_table1 = table1( ~ .| Group,
 jdrf_table1
 ```
 
+# a1c
+Retinopathy status is associated with A1c (p = 0.01)
+```{r a1c}
+fit_mod(outcome = "a1c", df = jdrf_a1c)
+  
+# plot
+a1c_p = ggplot(data = jdrf_a1c, aes(x = visit_num, y = a1c, group = MRN, color = Group))
+a1c_p + geom_line() + theme_classic()
+```
 
-```{r dataset output, include=FALSE}
-# 
-# setwd("S:/Laura/BDC/Projects/Viral Shah/JDRF/Data_Cleaned")
-# write.csv(combined_jdrf, file = "jdrf_reallylong_long.csv")
-# output the long duped out jdrf data for tim, sorry dude its ugly
+# tir
+Retinopathy status is associated with tir (p = 0.006)
+```{r tir}
+fit_mod(outcome = "tir", df = jdrf_a1c)
+
+tir_p = ggplot(data = jdrf_a1c, aes(x = visit_num, y = tir, group = MRN, color = Group))
+tir_p + geom_line() + theme_classic()
+```
+
+# tar
+Retinopathy status is associated with tar (p = 0.001)
+```{r tar}
+fit_mod(outcome = "tar", df = jdrf_a1c)
+
+tar_p = ggplot(data = jdrf_a1c, aes(x = visit_num, y = tar, group = MRN, color = Group))
+tar_p + geom_line() + theme_classic()
+```
+
+# tbr
+Retinopathy status is associated with tbr (p = 0.01)
+```{r tbr}
+fit_mod(outcome = "tbr", df = jdrf_a1c)
+
+tbr_p = ggplot(data = jdrf_a1c, aes(x = visit_num, y = tbr, group = MRN, color = Group))
+tbr_p + geom_line() + theme_classic()
+```
+
+# ttir
+Retinopathy status is associated with ttir (p = 0.0018)
+```{r ttir}
+fit_mod(outcome = "ttir", df = jdrf_a1c)
+
+tbr_p = ggplot(data = jdrf_a1c, aes(x = visit_num, y = ttir, group = MRN, color = Group))
+tbr_p + geom_line() + theme_classic()
+```
+
+# mean glucose
+Retinopathy status is associated with mean glucose (p = 0.0008)
+```{r mg}
+fit_mod(outcome = "mean_glucose", df = jdrf_a1c)
+
+tbr_p = ggplot(data = jdrf_a1c, aes(x = visit_num, y = mean_glucose, group = MRN, color = Group))
+tbr_p + geom_line() + theme_classic()
 ```
