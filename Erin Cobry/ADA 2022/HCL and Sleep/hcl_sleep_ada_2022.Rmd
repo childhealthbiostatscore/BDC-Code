@@ -147,7 +147,7 @@ activity = exportRecords(rcon,forms = "wrist_actigraphy")
 activity$record_id = ids
 activity$timepoint = times
 child_activity = activity %>% 
-  select(record_id,timepoint,totalsleep_avg,sleepefficency_avg,waso_avg) %>% 
+  select(record_id,timepoint,totalsleep_avg,sleepefficency_avg,waso_avg,onsetlatency_avg) %>% 
   filter(!record_id %in% exclude,grepl("baseline|month_3|month_6",timepoint),
          record_id >= 200,rowSums(is.na(.)) < ncol(.)-2) %>%
   mutate(avg_sleep = as.character(totalsleep_avg),
@@ -172,7 +172,7 @@ child_activity$sufficient = apply(child_activity,1,function(r){
 child_activity$sufficient = as.factor(child_activity$sufficient)
 # Same for parents
 parent_activity = activity %>% 
-  select(record_id,timepoint,totalsleep_avg,sleepefficency_avg,waso_avg) %>% 
+  select(record_id,timepoint,totalsleep_avg,sleepefficency_avg,waso_avg,onsetlatency_avg) %>% 
   filter(!record_id %in% exclude,grepl("baseline|month_3|month_6",timepoint),
          record_id < 200,rowSums(is.na(.)) < ncol(.)-2) %>%
   mutate(avg_sleep = as.character(totalsleep_avg),
@@ -180,6 +180,21 @@ parent_activity = activity %>%
          sufficient = ifelse(totalsleep_avg >= 7*60,"Yes","No"))
 parent_activity$sufficient = as.factor(parent_activity$sufficient)
 ```
+## Average sleep latency
+
+### Children
+
+```{r results='asis'}
+fit_mod(outcome = "onsetlatency_avg",df = child_activity)
+```
+
+### Parents
+
+```{r results='asis'}
+fit_mod(outcome = "onsetlatency_avg",df = parent_activity)
+```
+
+
 
 ## Average sleep time
 
@@ -253,6 +268,73 @@ parent_activity %>% group_by(timepoint) %>% count(sufficient) %>% kable(.)
 
 # Surveys
 
+## Hypoglycemia Fear Survey Child
+
+```{r hfs c scoring}
+## HFS Scoring
+# parents
+hfs_p = data %>% select(record_id,redcap_event_name,timepoint, hypoglycemia_fear_survey_parent_timestamp:hypoglycemia_fear_survey_parent_complete) %>% 
+  filter(grepl("enrollment|month_3|month_6",redcap_event_name), record_id < 200,rowSums(is.na(.)) < ncol(.)-2)  %>% 
+  mutate(across(c(snacks:having_low), as.integer)) %>% mutate(across(c(snacks:having_low),function(x){x-1})) %>%
+  select(-c(hfs_12_months_severe_lows___0:hypoglycemia_fear_survey_parent_complete))
+ 
+hfs_p = hfs_p %>% rowwise() %>% 
+  mutate(behave_s = sum(c_across(snacks:nighttime)),
+         worry_s = sum(c_across(recognize:having_low)),
+         maintain_high_s_p = sum(c_across(c(safe_side, higher_alone, away))),
+         worry_lowbg_s_p = sum(c_across(c(recognize, food, dizzy, asleep_low, low_alone, no_one, seizure, complications_low, faint, having_low))),
+         worry_negsc_s_p = sum(c_across(c(embarrassing, clumsy, behavior, accident, bad_evaluation))),
+         total_s = sum(c_across(behave_s:worry_s))) %>% ungroup()
+
+hfs_p$total_z_p = (hfs_p$total_s - mean(hfs_p$total_s, na.rm = T))/sd(hfs_p$total_s, na.rm = T)
+
+hfs_p = hfs_p %>% select(record_id, redcap_event_name, maintain_high_s_p, worry_lowbg_s_p, worry_negsc_s_p, total_z_p)
+# change event and id
+substring(hfs_p$redcap_event_name,nchar(hfs_p$redcap_event_name),nchar(hfs_p$redcap_event_name)) ="2"
+hfs_p$record_id = sub("1", "2", hfs_p$record_id)
+
+# children
+hfs_peds = data %>% select(record_id,redcap_event_name,
+                           hypoglycemia_fear_survey_childteen_timestamp:hypoglycemia_fear_survey_childteen_complete) %>% 
+  filter(grepl("enrollment|month_3|month_6",redcap_event_name), record_id > 199,rowSums(is.na(.)) < ncol(.)-2) %>%
+  mutate(across(c(bedtime_snacks:having_low_sugar), as.integer)) %>% mutate(across(c(bedtime_snacks:having_low_sugar),function(x){x-1})) 
+hfs_peds = hfs_peds %>% rowwise() %>%
+  mutate(behave_s = sum(c_across(bedtime_snacks:check_often)),
+         worry_s = sum(c_across(recognizing_low:having_low_sugar)),
+         maintain_high_s = sum(c_across(c(high_safe, alone_higher, higher_away))),
+         worry_lowbg_s= sum(c_across(c(recognizing_low, food_low, passing_out, low_asleep, low_while_alone, no_help, mistake, long_term, woozy))),
+         worry_negsc_s = sum(c_across(c(embarrassing_myself, looking_clumsy, trouble_at_school, seizure_low))),
+         total_s = sum(c_across(behave_s:worry_s))) %>% ungroup()
+
+hfs_peds$total_z = (hfs_peds$total_s - mean(hfs_peds$total_s, na.rm = T))/sd(hfs_peds$total_s, na.rm = T)
+
+hfs_peds = hfs_peds %>% select(record_id, redcap_event_name, maintain_high_s, worry_lowbg_s, worry_negsc_s, total_z)
+
+hfs_all = full_join(hfs_peds, hfs_p)
+
+#####################################################
+hfs_c = exportRecords(rcon,forms = "hypoglycemia_fear_survey_childteen",dates = F)
+hfs_c$record_id = ids
+hfs_c$timepoint = times
+
+hfs_c = hfs_c  %>% 
+  filter(!record_id %in% exclude,grepl("enrollment|month_3|month_6",timepoint),
+         rowSums(is.na(.)) < ncol(.)-2)
+hfs_c$timepoint = sub("enrollment_","baseline_",hfs_c$timepoint)
+
+levels(dtq$tech) = c(1,2,3,4,5)
+levels(dtq$life_easier) = c(1,2,3,4,5)
+levels(dtq$health) = c(1,2,3,4,5)
+levels(dtq$good) = c(1,2,3,4,5)
+levels(dtq$time) = c(1,2,3,4,5)
+
+dtq = dtq %>% mutate(dtq_total = as.numeric(tech) + as.numeric(life_easier) + as.numeric(health) + as.numeric(good) + as.numeric(time))
+
+dtq_p  = dtq %>% filter(record_id %in% parent_demographics$record_id)
+dtq_c  = dtq %>% filter(record_id %in% child_demographics$record_id)
+
+```
+
 ## Diabetes Technology Questionnaire
 
 ```{r dtc scoring}
@@ -272,10 +354,22 @@ levels(dtq$good) = c(1,2,3,4,5)
 levels(dtq$time) = c(1,2,3,4,5)
 
 dtq = dtq %>% mutate(dtq_total = as.numeric(tech) + as.numeric(life_easier) + as.numeric(health) + as.numeric(good) + as.numeric(time))
+
+dtq_p  = dtq %>% filter(record_id %in% parent_demographics$record_id)
+dtq_c  = dtq %>% filter(record_id %in% child_demographics$record_id)
+
 ```
 
+### Children
+
 ```{r results='asis'}
-fit_mod(outcome = "dtq_total", df = dtq)
+fit_mod(outcome = "dtq_total", df = dtq_c)
+```
+
+### Parents
+
+```{r results='asis'}
+fit_mod(outcome = "dtq_total", df = dtq_p)
 ```
 
 ## childrens sleep habits questionnaire
@@ -321,6 +415,9 @@ cshq = cshq %>% mutate(cshq_total = rowSums(.[vars])/18)
 ```
 
 ```{r results='asis'}
+# n 
+cshq %>% filter(childrens_sleep_habits_questionnaire_27_complete == "Complete") %>% group_by(timepoint) %>% summarize(n = n())
+# mod
 fit_mod(outcome = "cshq_total", df = cshq)
 ```
 
@@ -346,6 +443,9 @@ paid_p = paid_p %>% mutate(paid_peds_total = (rowSums(.[3:22])/20)*25)
 ```
 
 ```{r results='asis'}
+# n 
+paid_p %>% filter(paidpeds_complete == "Complete") %>%group_by(timepoint) %>% summarize(n = n())
+# mod
 fit_mod(outcome = "paid_peds_total", df = paid_p)
 ```
 
@@ -371,6 +471,9 @@ paid_pr = paid_pr %>% mutate(paid_pr_total = (rowSums(.[3:20])/20)*25)
 ```
 
 ```{r results='asis'}
+# n 
+paid_pr %>% filter(paidpr_complete == "Complete") %>% group_by(timepoint) %>% summarize(n = n())
+# mod
 fit_mod(outcome = "paid_pr_total", df = paid_pr)
 ```
 
@@ -400,6 +503,9 @@ pedsql_pr_t = pedsql_pr_t %>% mutate(pedsql_pr_t_total = (rowSums(.[3:30])/28))
 ```
 
 ```{r results='asis'}
+# n 
+pedsql_pr_t %>% filter(pedsql_parent_report_for_teens_1318_complete == "Complete") %>% group_by(timepoint) %>% summarize(n = n())
+# mod
 fit_mod(outcome = "pedsql_pr_t_total", df = pedsql_pr_t)
 ```
 
@@ -425,6 +531,9 @@ pedsql_pr_c = pedsql_pr_c %>% mutate(pedsql_pr_c_total = (rowSums(.[3:30])/28))
 ```
 
 ```{r results='asis'}
+# n 
+pedsql_pr_c %>% filter(pedsql_parent_report_for_children_812_complete == "Complete") %>% group_by(timepoint) %>% summarize(n = n())
+# mod
 fit_mod(outcome = "pedsql_pr_c_total", df = pedsql_pr_c)
 ```
 
@@ -450,6 +559,9 @@ pedsql_pr_yc = pedsql_pr_yc %>% mutate(pedsql_pr_yc_total = (rowSums(.[3:30])/28
 ```
 
 ```{r results='asis'}
+# n 
+pedsql_pr_yc %>% filter(pedsql_parent_report_for_young_children_57_complete == "Complete") %>% group_by(timepoint) %>% summarize(n = n())
+# mod
 fit_mod(outcome = "pedsql_pr_yc_total", df = pedsql_pr_yc)
 ```
 
@@ -475,6 +587,9 @@ pedsql_pr_t = pedsql_pr_t %>% mutate(pedsql_pr_t_total = (rowSums(.[3:30])/28))
 ```
 
 ```{r results='asis'}
+# n 
+pedsql_pr_t %>% filter(pedsql_parent_report_for_toddlers_24_complete == "Complete") %>% group_by(timepoint) %>% summarize(n = n())
+# mod
 fit_mod(outcome = "pedsql_pr_t_total", df = pedsql_pr_t)
 ```
 
@@ -500,6 +615,9 @@ pedsql_t = pedsql_t %>% mutate(pedsql_t_total = (rowSums(.[3:30])/28))
 ```
 
 ```{r results='asis'}
+# n 
+pedsql_t %>% filter(pedsql_teen_report_1318_complete == "Complete") %>% group_by(timepoint) %>% summarize(n = n())
+# mod
 fit_mod(outcome = "pedsql_t_total", df = pedsql_t)
 ```
 
@@ -525,6 +643,9 @@ pedsql_c = pedsql_c %>% mutate(pedsql_c_total = (rowSums(.[3:30])/28))
 ```
 
 ```{r results='asis'}
+# n 
+pedsql_c %>% filter(pedsql_child_report_812_complete == "Complete") %>% group_by(timepoint) %>% summarize(n = n())
+# mod
 fit_mod(outcome = "pedsql_c_total", df = pedsql_c)
 ```
 
@@ -550,6 +671,9 @@ pedsql_yc = pedsql_yc %>% mutate(pedsql_yc_total = (rowSums(.[3:30])/28))
 ```
 
 ```{r results='asis'}
+# n 
+pedsql_yc %>% filter(pedsql_young_child_report_57_complete == "Complete") %>% group_by(timepoint) %>% summarize(n = n())
+# mod
 fit_mod(outcome = "pedsql_yc_total", df = pedsql_yc)
 ```
 
@@ -599,6 +723,11 @@ inspire_p = full_join(inspire_pb, inspire_pf)
 ```
 
 ```{r results='asis'}
+# n 
+inspire_p %>% filter(inspire_parent_baseline_complete == "Complete") %>% group_by(timepoint) %>% summarize(n = n())
+inspire_p %>% filter(inspire_parent_follow_up_complete == "Complete") %>% group_by(timepoint) %>% summarize(n = n())
+
+# mod
 fit_mod(outcome = "inspire_p_total", df = inspire_p)
 ```
 
@@ -648,6 +777,11 @@ inspire_y = full_join(inspire_yb, inspire_yf)
 ```
 
 ```{r results='asis'}
+# n 
+inspire_y %>% filter(inspire_youth_baseline_complete == "Complete") %>% group_by(timepoint) %>% summarize(n = n())
+inspire_y %>% filter(inspire_youth_follow_up_complete == "Complete") %>% group_by(timepoint) %>% summarize(n = n())
+
+# mod
 fit_mod(outcome = "inspire_total", df = inspire_y)
 ```
 
@@ -664,6 +798,9 @@ psqi$timepoint = sub("enrollment_","baseline_",psqi$timepoint)
 ```
 
 ```{r results='asis'}
+# n 
+psqi %>% group_by(timepoint) %>% summarize(n = n())
+# mod
 fit_mod(outcome = "psqi_total",df = psqi)
 ```
 
@@ -696,6 +833,9 @@ promis_peds$impairment =
 ```
 
 ```{r results='asis'}
+# n 
+promis_peds %>%  group_by(timepoint) %>% summarize(n = n())
+# mod
 fit_mod(outcome = "disturbance",df = promis_peds)
 ```
 
@@ -726,6 +866,9 @@ promis_parent$impairment =
 ```
 
 ```{r results='asis'}
+# n 
+promis_parent %>% group_by(timepoint) %>% summarize(n = n())
+# mod
 fit_mod(outcome = "disturbance",df = promis_parent)
 ```
 
