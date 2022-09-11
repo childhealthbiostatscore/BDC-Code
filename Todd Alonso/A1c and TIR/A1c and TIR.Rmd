@@ -20,17 +20,17 @@ library(dplyr)
 library(tidyr)
 library(stringr)
 library(car)
+library(emmeans)
 
 alldata <- read.csv("B:\\Projects\\Todd Alonso\\A1c and TIR\\Raw data\\Peds_T1D_5groups_5_11_withDKAcol.csv",na.strings = c(" ","","NULL","#VALUE","#VALUE!","?"))
 
-### LIMIT TO >= 70% SENSOR WEAR...SHOULD BE N=1952
+# original analysis limited to >= 70% SENSOR WEAR, with N=1952
+# for now, keep all patients in regardless of CGM use
 alldata$CGMUsePercent <- ifelse(alldata$CGMUsePercent %in% c("attemptedboth","x"),NA,alldata$CGMUsePercent)
 alldata$CGMUsePercent <- as.numeric(as.character(alldata$CGMUsePercent))
 alldata$CGMUsePercent_group <- ifelse(is.na(alldata$CGMUsePercent),NA,
-                                      ifelse(alldata$CGMUsePercent<1,1,
-                                             ifelse(alldata$CGMUsePercent<70,2,3)))
-
-# for now, keep all patients in regardless of CGM use
+                                      ifelse(alldata$CGMUsePercent<1,"<1% CGM use",
+                                             ifelse(alldata$CGMUsePercent<70,"1-69% CGM use",">=70% CGM use")))
 #data <- alldata %>% filter(CGMUsePercent>=70)
 data <- alldata
 data <- data %>% filter(OnCGM==1)
@@ -116,11 +116,13 @@ The purpose of this analysis is to examine the association between HbA1c and CGM
 
 # Methods
 
-Patient recorded as not on CGM or with CGM use <70% were excluded.  Pearson's correlation coefficient and generalized linear models were used to examine the relationship between HbA1c and CGM time in range.
+Patient recorded as not on CGM were excluded.  Pearson's correlation coefficient and generalized linear models were used to examine the relationship between HbA1c and CGM time in range.
 
 # Results
 
-## Number of DKA and SH events
+## DKA and SH events
+
+### Descriptive statistics
 
 - Number of DKA events: `r DKA_tot`
 
@@ -139,6 +141,42 @@ Patient recorded as not on CGM or with CGM use <70% were excluded.  Pearson's co
 - SH events/100 patient-years (patients with non-missing SH data): `r SH_per100yr`
 
 - SH events/100 patient-years (all patients): `r SH_per100yr_missing0`
+
+### Comparison by CGM use group
+
+#### DKA
+
+Model summary
+
+```{r echo=FALSE, include=T, comment=""}
+dka_mod <- glm(DKA ~ as.factor(CGMUsePercent_group), data=data, offset = log(Visit.interval_days/365), family = "poisson")
+dka_mod_anova <- Anova(dka_mod, type="III")
+print(dka_mod_anova)
+```
+
+Estimated rates per 100 patient years 
+
+```{r echo=FALSE, include=T, comment=""}
+dka_mod_means <- emmeans(dka_mod, "CGMUsePercent_group", type = "response", offset=log(100))
+print(dka_mod_means)
+```
+
+#### SH
+
+Model summary
+
+```{r echo=FALSE, include=T, comment=""}
+sh_mod <- glm(SH ~ as.factor(CGMUsePercent_group), data=data, offset = log(Visit.interval_days/365), family = "poisson")
+sh_mod_anova <- Anova(sh_mod, type="III")
+print(sh_mod_anova)
+```
+
+Estimated rates per 100 patient years 
+
+```{r echo=FALSE, include=T, comment=""}
+sh_mod_means <- emmeans(sh_mod, "CGMUsePercent_group", type = "response", offset=log(100))
+print(sh_mod_means)
+```
 
 ## HbA1c values >14% included, recoded as 14%
 
