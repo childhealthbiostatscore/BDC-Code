@@ -19,134 +19,154 @@ knitr::opts_knit$set(root.dir = "/Users/timvigers/Documents/Work/BDC/Jenna Sopfe
 
 ```{r data import}
 # REDCap import
-api <- read.table("./api_token.txt",header = T,sep = "\t")
-rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
-                         token = as.character(api[1,1]))
+api <- read.table("./api_token.txt", header = T, sep = "\t")
+rcon <- redcapConnection(
+  url = "https://redcap.ucdenver.edu/api/",
+  token = as.character(api[1, 1])
+)
 data_full <- exportRecords(rcon)
 # Remove participant 10
 data_full <- data_full %>% filter(study_id != "10")
 # Fill down Tx date
-data_full <- data_full %>% group_by(study_id) %>% fill(date_of_tx)
+data_full <- data_full %>%
+  group_by(study_id) %>%
+  fill(date_of_tx)
 # Format dates
-datecols = c("time_engraft","time_plt_engraft")
-data_full[,datecols] <- lapply(data_full[,datecols],lubridate::ymd)
-data_full$study_id = as.numeric(data_full$study_id)
+datecols <- c("time_engraft", "time_plt_engraft")
+data_full[, datecols] <- lapply(data_full[, datecols], lubridate::ymd)
+data_full$study_id <- as.numeric(data_full$study_id)
 # Calculate BMI
-data_full$bmi = data_full$weight/((data_full$height/100)^2)
+data_full$bmi <- data_full$weight / ((data_full$height / 100)^2)
 # Count infections, TPN
-data_full = data_full %>% group_by(study_id) %>% 
+data_full <- data_full %>%
+  group_by(study_id) %>%
   mutate(infections = sum(!is.na(infxn_type)))
-data_full$infections_yn = ifelse(data_full$infections>0,"Yes","No")
+data_full$infections_yn <- ifelse(data_full$infections > 0, "Yes", "No")
 # Clean
-cgm = read.csv("./CGM Accuracy in BMT/Data_Cleaned/Prospective HSCT CGM Data Updated 6.24.19 FULL DATA SET.csv",na.strings = "")
-cgm$Time = mdy_hm(cgm$Time)
-cgm$Tx_date = mdy(cgm$Tx_date)
-cgm$dx_cat = factor(cgm$dx_cat)
-cgm$tx_type = factor(cgm$tx_type)
+cgm <- read.csv("./CGM Accuracy in BMT/Data_Cleaned/Prospective HSCT CGM Data Updated 6.24.19 FULL DATA SET.csv", na.strings = "")
+cgm$Time <- mdy_hm(cgm$Time)
+cgm$Tx_date <- mdy(cgm$Tx_date)
+cgm$dx_cat <- factor(cgm$dx_cat)
+cgm$tx_type <- factor(cgm$tx_type)
 # Get other dates
-dates = data_full %>% select(study_id,bmi,all_of(datecols)) %>% 
-  group_by(study_id) %>% fill(all_of(datecols),.direction = "updown") %>%
+dates <- data_full %>%
+  select(study_id, bmi, all_of(datecols)) %>%
+  group_by(study_id) %>%
+  fill(all_of(datecols), .direction = "updown") %>%
   filter(row_number() == 1)
-cgm = left_join(cgm,dates,by = c("SubjectID" = "study_id"))
-cgm$time_engraft_minus_3 = cgm$time_engraft - 3
+cgm <- left_join(cgm, dates, by = c("SubjectID" = "study_id"))
+cgm$time_engraft_minus_3 <- cgm$time_engraft - 3
 # Time since engraftment
-cgm$time_from_engraft = as.numeric(difftime(cgm$Time,cgm$time_engraft_minus_3,units = "mins"))
+cgm$time_from_engraft <- as.numeric(difftime(cgm$Time, cgm$time_engraft_minus_3, units = "mins"))
 # Wide format for SAS
-cgm_wide = cgm %>% filter(time_from_engraft >= 0) %>%
-  group_by(SubjectID) %>% mutate(n = row_number()) %>% 
-  select(SubjectID,tx_type,dx_cat,bmi,Historic_Glucose,time_from_engraft,n) %>%
-  pivot_wider(names_from = n,
-              values_from = c("Historic_Glucose","time_from_engraft")) %>%
-  filter(!is.na(tx_type) & !is.na(dx_cat)) %>% ungroup()
+cgm_wide <- cgm %>%
+  filter(time_from_engraft >= 0) %>%
+  group_by(SubjectID) %>%
+  mutate(n = row_number()) %>%
+  select(SubjectID, tx_type, dx_cat, bmi, Historic_Glucose, time_from_engraft, n) %>%
+  pivot_wider(
+    names_from = n,
+    values_from = c("Historic_Glucose", "time_from_engraft")
+  ) %>%
+  filter(!is.na(tx_type) & !is.na(dx_cat)) %>%
+  ungroup()
 # Write CSV for checking with SAS
-write.csv(cgm_wide,file = "./CGM and BMT FDA/Data_Cleaned/cleaned_for_traj.csv",
-          row.names = F,na = "")
+write.csv(cgm_wide,
+  file = "./CGM and BMT FDA/Data_Cleaned/cleaned_for_traj.csv",
+  row.names = F, na = ""
+)
 # Convert to mmol/L
-cgm$mmol = cgm$Historic_Glucose / 18.0182
+cgm$mmol <- cgm$Historic_Glucose / 18.0182
 # Split by ID and sensor number
-cgm_list = split.data.frame(cgm,list(cgm$SubjectID))
-cgm_list = lapply(cgm_list, function(df){
-  df = df %>% arrange(Time)
+cgm_list <- split.data.frame(cgm, list(cgm$SubjectID))
+cgm_list <- lapply(cgm_list, function(df) {
+  df <- df %>% arrange(Time)
   df
 })
-tg3.9 = lapply(cgm_list, function(df){
-  mean(df$mmol < 3.9,na.rm = T) * 24
-}) 
-tg8.9 = lapply(cgm_list, function(df){
-  mean(df$mmol > 8.9,na.rm = T) * 24
+tg3.9 <- lapply(cgm_list, function(df) {
+  mean(df$mmol < 3.9, na.rm = T) * 24
 })
-mbg = lapply(cgm_list, function(df){
-  mean(df$mmol,na.rm = T)
+tg8.9 <- lapply(cgm_list, function(df) {
+  mean(df$mmol > 8.9, na.rm = T) * 24
 })
-r = lapply(cgm_list, function(df){
-  abs(diff(range(df$mmol,na.rm = T)))
+mbg <- lapply(cgm_list, function(df) {
+  mean(df$mmol, na.rm = T)
 })
-modd = lapply(cgm_list, function(df){
-  df$round_time = lubridate::round_date(df$Time,unit = "5 minutes")
-  df$round_time = sapply(strsplit(as.character(df$round_time)," "),"[[",2)
-  modd = df %>% group_by(round_time) %>% 
+r <- lapply(cgm_list, function(df) {
+  abs(diff(range(df$mmol, na.rm = T)))
+})
+modd <- lapply(cgm_list, function(df) {
+  df$round_time <- lubridate::round_date(df$Time, unit = "5 minutes")
+  df$round_time <- sapply(strsplit(as.character(df$round_time), " "), "[[", 2)
+  modd <- df %>%
+    group_by(round_time) %>%
     mutate(t_diff = abs(mmol - lag(mmol)))
-  modd = mean(modd$t_diff,na.rm = T)
+  modd <- mean(modd$t_diff, na.rm = T)
   modd
 })
 # Q score for each sensor - calculate hours per day from percent time
-q_scores = lapply(cgm_list, function(df){
-  tg3.9 = mean(df$mmol < 3.9,na.rm = T) * 24
-  tg8.9 = mean(df$mmol > 8.9,na.rm = T) * 24
-  mbg = mean(cgm$mmol,na.rm = T)
-  r = abs(diff(range(cgm$mmol,na.rm = T)))
-  df$round_time = lubridate::round_date(df$Time,unit = "5 minutes")
-  df$round_time = sapply(strsplit(as.character(df$round_time)," "),"[[",2)
-  modd = df %>% group_by(round_time) %>% 
+q_scores <- lapply(cgm_list, function(df) {
+  tg3.9 <- mean(df$mmol < 3.9, na.rm = T) * 24
+  tg8.9 <- mean(df$mmol > 8.9, na.rm = T) * 24
+  mbg <- mean(cgm$mmol, na.rm = T)
+  r <- abs(diff(range(cgm$mmol, na.rm = T)))
+  df$round_time <- lubridate::round_date(df$Time, unit = "5 minutes")
+  df$round_time <- sapply(strsplit(as.character(df$round_time), " "), "[[", 2)
+  modd <- df %>%
+    group_by(round_time) %>%
     mutate(t_diff = abs(mmol - lag(mmol)))
-  modd = mean(modd$t_diff,na.rm = T)
-  q = 8 + (mbg - 7.8)/1.7 + (r - 7.5)/2.9 + (tg3.9-0.6)/1.2 + (tg8.9 - 6.2)/5.7 + 
-    (modd - 1.8)/0.9
+  modd <- mean(modd$t_diff, na.rm = T)
+  q <- 8 + (mbg - 7.8) / 1.7 + (r - 7.5) / 2.9 + (tg3.9 - 0.6) / 1.2 + (tg8.9 - 6.2) / 5.7 +
+    (modd - 1.8) / 0.9
   return(q)
 })
-q_scores = data.frame(do.call(rbind,q_scores))
-colnames(q_scores) = "q_score"
-q_scores$study_id = as.numeric(rownames(q_scores))
+q_scores <- data.frame(do.call(rbind, q_scores))
+colnames(q_scores) <- "q_score"
+q_scores$study_id <- as.numeric(rownames(q_scores))
 # Mean, SD, and CV
-means = lapply(cgm_list, function(df){
-  return(mean(df$Historic_Glucose,na.rm = T))
+means <- lapply(cgm_list, function(df) {
+  return(mean(df$Historic_Glucose, na.rm = T))
 })
-means = data.frame(do.call(rbind,means))
-colnames(means) = "mean_glucose"
-sds = lapply(cgm_list, function(df){
-  return(sd(df$Historic_Glucose,na.rm = T))
+means <- data.frame(do.call(rbind, means))
+colnames(means) <- "mean_glucose"
+sds <- lapply(cgm_list, function(df) {
+  return(sd(df$Historic_Glucose, na.rm = T))
 })
-sds = data.frame(do.call(rbind,sds))
-colnames(sds) = "sd_glucose"
-cvs = lapply(cgm_list, function(df){
-  m = mean(df$Historic_Glucose,na.rm = T)
-  s = sd(df$Historic_Glucose,na.rm = T)
-  return(s/m)
+sds <- data.frame(do.call(rbind, sds))
+colnames(sds) <- "sd_glucose"
+cvs <- lapply(cgm_list, function(df) {
+  m <- mean(df$Historic_Glucose, na.rm = T)
+  s <- sd(df$Historic_Glucose, na.rm = T)
+  return(s / m)
 })
-cvs = data.frame(do.call(rbind,cvs))
-colnames(cvs) = "cv_glucose"
+cvs <- data.frame(do.call(rbind, cvs))
+colnames(cvs) <- "cv_glucose"
 # Add to Q scores
-q_scores = data.frame(do.call(cbind,c(q_scores,means,sds,cvs)))
+q_scores <- data.frame(do.call(cbind, c(q_scores, means, sds, cvs)))
 # Merge into full data
-data_full = left_join(data_full,q_scores,by = "study_id")
+data_full <- left_join(data_full, q_scores, by = "study_id")
 # Get each person's first row, fix race, etc.
-df = data_full %>% group_by(study_id) %>% filter(is.na(redcap_repeat_instance))
-levels(df$race___0) <- c(NA,"AI or AN")
-levels(df$race___1) <- c(NA,"Asian")
-levels(df$race___2) <- c(NA,"African American")
-levels(df$race___3) <- c(NA,"NH or PI")
-levels(df$race___4) <- c(NA,"White")
-levels(df$race___5) <- c(NA,"Hispanic")
-levels(df$race___6) <- c(NA,"Other")
-df <- df %>% ungroup() %>% 
-  unite("Race",race___0,race___1,race___2,race___3,race___4,race___5,race___6)
-df$Race <- gsub("NA","",df$Race)
-df$Race <- gsub("_","",df$Race)
+df <- data_full %>%
+  group_by(study_id) %>%
+  filter(is.na(redcap_repeat_instance))
+levels(df$race___0) <- c(NA, "AI or AN")
+levels(df$race___1) <- c(NA, "Asian")
+levels(df$race___2) <- c(NA, "African American")
+levels(df$race___3) <- c(NA, "NH or PI")
+levels(df$race___4) <- c(NA, "White")
+levels(df$race___5) <- c(NA, "Hispanic")
+levels(df$race___6) <- c(NA, "Other")
+df <- df %>%
+  ungroup() %>%
+  unite("Race", race___0, race___1, race___2, race___3, race___4, race___5, race___6)
+df$Race <- gsub("NA", "", df$Race)
+df$Race <- gsub("_", "", df$Race)
 df$Race[which(df$race_multi == "yes")] <- "Multiple"
 df$Race[which(df$Race == "")] <- "Unknown"
-df$AgeTx <- 
-  as.numeric(difftime(df$date_of_tx,df$date_of_birth,
-                      units = "days")) / 365.25
+df$AgeTx <-
+  as.numeric(difftime(df$date_of_tx, df$date_of_birth,
+    units = "days"
+  )) / 365.25
 ```
 
 # Table 1: Participant Characteristics
@@ -154,69 +174,81 @@ df$AgeTx <-
 Participant 21 has a high Q score, but this appears to be correct and largely due to spending a lot of time below 3.9 mmol/L.
 
 ```{r results='asis'}
-t1 = tableby(~notest(q_score,"N", "median", "q1q3")+ notest(mean_glucose,"N", "median", "q1q3") + notest(sd_glucose,"N", "median", "q1q3") +notest(cv_glucose,"N", "median", "q1q3") + AgeTx+gender+Race+tanner_stage+tx_type+
-               primary_dx_cat+spec_dx_cat+prep_regimen+sec_icu+factor(infections)+
-               post_tx_tpn,
-             data = df)
-summary(t1,labelTranslations = list(AgeTx = "Age at Tx",q_score = "Q Score",
-                                    `factor(infections)` = "Num. Infections"))
+t1 <- tableby(~ notest(q_score, "N", "median", "q1q3") + notest(mean_glucose, "N", "median", "q1q3") + notest(sd_glucose, "N", "median", "q1q3") + notest(cv_glucose, "N", "median", "q1q3") + AgeTx + gender + Race + tanner_stage + tx_type +
+  primary_dx_cat + spec_dx_cat + prep_regimen + sec_icu + factor(infections) +
+  post_tx_tpn,
+data = df
+)
+summary(t1, labelTranslations = list(
+  AgeTx = "Age at Tx", q_score = "Q Score",
+  `factor(infections)` = "Num. Infections"
+))
 ```
 
 # Q score component quantiles
 
 ```{r results='asis'}
-li = list(tg3.9,tg8.9,mbg,r,modd)
-names(li) = c("tg<3.9","tg>8.9","MBG","range","MODD")
-l = lapply(li, function(x){
-  d = unlist(x)
+li <- list(tg3.9, tg8.9, mbg, r, modd)
+names(li) <- c("tg<3.9", "tg>8.9", "MBG", "range", "MODD")
+l <- lapply(li, function(x) {
+  d <- unlist(x)
   quantile(d)
 })
-l = as.data.frame(l)
-kable(l,digits = 2)
+l <- as.data.frame(l)
+kable(l, digits = 2)
 ```
 
 # Q Score by Group
 
 ```{r}
 # Any ICU admission
-df$any_icu = factor(rowSums(df[,c("prim_icu","sec_icu")]=="Yes") > 0)
-levels(df$any_icu) = c("No","Yes")
+df$any_icu <- factor(rowSums(df[, c("prim_icu", "sec_icu")] == "Yes") > 0)
+levels(df$any_icu) <- c("No", "Yes")
 ```
 
 Q score was compared between groups using a Wilcoxon rank sum test.
 
 ```{r comparison function}
-compare = function(data,group){
+compare <- function(data, group) {
   # Test
-  f = as.formula(paste0("q_score ~ ",group))
-  w = wilcox.test(f,data = data)
-  p = w$p.value
-  p_form = format.pval(p,digits = 3,eps = 0.001)
+  f <- as.formula(paste0("q_score ~ ", group))
+  w <- wilcox.test(f, data = data)
+  p <- w$p.value
+  p_form <- format.pval(p, digits = 3, eps = 0.001)
   # Plot
-  plot = ggplot(data,aes_string(x = group,y = "q_score",fill = group)) + 
-    geom_boxplot() + ylab("Q score") + theme_bw() + theme(legend.position = "none")
+  plot <- ggplot(data, aes_string(x = group, y = "q_score", fill = group)) +
+    geom_boxplot() +
+    ylab("Q score") +
+    theme_bw() +
+    theme(legend.position = "none")
   # Print results
   cat("\n")
   cat("\n")
-  cat(paste("##",group))
+  cat(paste("##", group))
   cat("\n")
   cat("\n")
   print(plot)
   cat("\n")
   cat("\n")
   # Medians
-  data %>% group_by_(group) %>% 
-    summarise(median = median(q_score,na.rm=T),
-              q1q3 = paste0(round(quantile(q_score,na.rm=T)[2],2),
-                            " - ",
-                            round(quantile(q_score,na.rm=T)[4],2))) %>% 
-    kable(.,digits = 2) %>% print(.)
+  data %>%
+    group_by_(group) %>%
+    summarise(
+      median = median(q_score, na.rm = T),
+      q1q3 = paste0(
+        round(quantile(q_score, na.rm = T)[2], 2),
+        " - ",
+        round(quantile(q_score, na.rm = T)[4], 2)
+      )
+    ) %>%
+    kable(., digits = 2) %>%
+    print(.)
   cat("\n")
   cat("\n")
-  if(p > 0.05){
-    cat(paste0("Q score was not significantly different by ",group," (p = ",p_form,")."))
-  } else if (p <= 0.05){
-    cat(paste0("Q score was significantly different by ",group," (p = ",p_form,")."))
+  if (p > 0.05) {
+    cat(paste0("Q score was not significantly different by ", group, " (p = ", p_form, ")."))
+  } else if (p <= 0.05) {
+    cat(paste0("Q score was significantly different by ", group, " (p = ", p_form, ")."))
   } else {
     cat("Test failed.")
   }
@@ -224,9 +256,9 @@ compare = function(data,group){
 ```
 
 ```{r results='asis'}
-vars = c("tx_type","primary_dx_cat","prep_regimen","any_icu","infections_yn","post_tx_tpn")
+vars <- c("tx_type", "primary_dx_cat", "prep_regimen", "any_icu", "infections_yn", "post_tx_tpn")
 for (v in vars) {
-  compare(df,v)
+  compare(df, v)
 }
 ```
 
@@ -235,37 +267,46 @@ for (v in vars) {
 Mean glucose was compared between groups using a Wilcoxon rank sum test.
 
 ```{r}
-compare = function(data,group){
+compare <- function(data, group) {
   # Test
-  f = as.formula(paste0("mean_glucose ~ ",group))
-  w = wilcox.test(f,data = data)
-  p = w$p.value
-  p_form = format.pval(p,digits = 3,eps = 0.001)
+  f <- as.formula(paste0("mean_glucose ~ ", group))
+  w <- wilcox.test(f, data = data)
+  p <- w$p.value
+  p_form <- format.pval(p, digits = 3, eps = 0.001)
   # Plot
-  plot = ggplot(data,aes_string(x = group,y = "mean_glucose",fill = group)) + 
-    geom_boxplot() + ylab("Mean glucose") + theme_bw() + theme(legend.position = "none")
+  plot <- ggplot(data, aes_string(x = group, y = "mean_glucose", fill = group)) +
+    geom_boxplot() +
+    ylab("Mean glucose") +
+    theme_bw() +
+    theme(legend.position = "none")
   # Print results
   cat("\n")
   cat("\n")
-  cat(paste("##",group))
+  cat(paste("##", group))
   cat("\n")
   cat("\n")
   print(plot)
   cat("\n")
   cat("\n")
   # Medians
-  data %>% group_by_(group) %>% 
-    summarise(median = median(mean_glucose,na.rm=T),
-              q1q3 = paste0(round(quantile(mean_glucose,na.rm=T)[2],2),
-                            " - ",
-                            round(quantile(mean_glucose,na.rm=T)[4],2))) %>% 
-    kable(.,digits = 2) %>% print(.)
+  data %>%
+    group_by_(group) %>%
+    summarise(
+      median = median(mean_glucose, na.rm = T),
+      q1q3 = paste0(
+        round(quantile(mean_glucose, na.rm = T)[2], 2),
+        " - ",
+        round(quantile(mean_glucose, na.rm = T)[4], 2)
+      )
+    ) %>%
+    kable(., digits = 2) %>%
+    print(.)
   cat("\n")
   cat("\n")
-  if(p > 0.05){
-    cat(paste0("Mean glucose was not significantly different by ",group," (p = ",p_form,")."))
-  } else if (p <= 0.05){
-    cat(paste0("Mean glucose was significantly different by ",group," (p = ",p_form,")."))
+  if (p > 0.05) {
+    cat(paste0("Mean glucose was not significantly different by ", group, " (p = ", p_form, ")."))
+  } else if (p <= 0.05) {
+    cat(paste0("Mean glucose was significantly different by ", group, " (p = ", p_form, ")."))
   } else {
     cat("Test failed.")
   }
@@ -273,9 +314,9 @@ compare = function(data,group){
 ```
 
 ```{r results='asis'}
-vars = c("tx_type","primary_dx_cat","prep_regimen","any_icu","infections_yn","post_tx_tpn")
+vars <- c("tx_type", "primary_dx_cat", "prep_regimen", "any_icu", "infections_yn", "post_tx_tpn")
 for (v in vars) {
-  compare(df,v)
+  compare(df, v)
 }
 ```
 
@@ -284,37 +325,46 @@ for (v in vars) {
 Glucose SD was compared between groups using a Wilcoxon rank sum test.
 
 ```{r}
-compare = function(data,group){
+compare <- function(data, group) {
   # Test
-  f = as.formula(paste0("sd_glucose ~ ",group))
-  w = wilcox.test(f,data = data)
-  p = w$p.value
-  p_form = format.pval(p,digits = 3,eps = 0.001)
+  f <- as.formula(paste0("sd_glucose ~ ", group))
+  w <- wilcox.test(f, data = data)
+  p <- w$p.value
+  p_form <- format.pval(p, digits = 3, eps = 0.001)
   # Plot
-  plot = ggplot(data,aes_string(x = group,y = "sd_glucose",fill = group)) + 
-    geom_boxplot() + ylab("Glucose SD") + theme_bw() + theme(legend.position = "none")
+  plot <- ggplot(data, aes_string(x = group, y = "sd_glucose", fill = group)) +
+    geom_boxplot() +
+    ylab("Glucose SD") +
+    theme_bw() +
+    theme(legend.position = "none")
   # Print results
   cat("\n")
   cat("\n")
-  cat(paste("##",group))
+  cat(paste("##", group))
   cat("\n")
   cat("\n")
   print(plot)
   cat("\n")
   cat("\n")
   # Medians
-  data %>% group_by_(group) %>% 
-    summarise(median = median(sd_glucose,na.rm=T),
-              q1q3 = paste0(round(quantile(sd_glucose,na.rm=T)[2],2),
-                            " - ",
-                            round(quantile(sd_glucose,na.rm=T)[4],2))) %>% 
-    kable(.,digits = 2) %>% print(.)
+  data %>%
+    group_by_(group) %>%
+    summarise(
+      median = median(sd_glucose, na.rm = T),
+      q1q3 = paste0(
+        round(quantile(sd_glucose, na.rm = T)[2], 2),
+        " - ",
+        round(quantile(sd_glucose, na.rm = T)[4], 2)
+      )
+    ) %>%
+    kable(., digits = 2) %>%
+    print(.)
   cat("\n")
   cat("\n")
-  if(p > 0.05){
-    cat(paste0("Glucose SD was not significantly different by ",group," (p = ",p_form,")."))
-  } else if (p <= 0.05){
-    cat(paste0("Glucose SD was significantly different by ",group," (p = ",p_form,")."))
+  if (p > 0.05) {
+    cat(paste0("Glucose SD was not significantly different by ", group, " (p = ", p_form, ")."))
+  } else if (p <= 0.05) {
+    cat(paste0("Glucose SD was significantly different by ", group, " (p = ", p_form, ")."))
   } else {
     cat("Test failed.")
   }
@@ -322,9 +372,9 @@ compare = function(data,group){
 ```
 
 ```{r results='asis'}
-vars = c("tx_type","primary_dx_cat","prep_regimen","any_icu","infections_yn","post_tx_tpn")
+vars <- c("tx_type", "primary_dx_cat", "prep_regimen", "any_icu", "infections_yn", "post_tx_tpn")
 for (v in vars) {
-  compare(df,v)
+  compare(df, v)
 }
 ```
 
@@ -333,37 +383,46 @@ for (v in vars) {
 Glucose CV was compared between groups using a Wilcoxon rank sum test.
 
 ```{r}
-compare = function(data,group){
+compare <- function(data, group) {
   # Test
-  f = as.formula(paste0("cv_glucose ~ ",group))
-  w = wilcox.test(f,data = data)
-  p = w$p.value
-  p_form = format.pval(p,digits = 3,eps = 0.001)
+  f <- as.formula(paste0("cv_glucose ~ ", group))
+  w <- wilcox.test(f, data = data)
+  p <- w$p.value
+  p_form <- format.pval(p, digits = 3, eps = 0.001)
   # Plot
-  plot = ggplot(data,aes_string(x = group,y = "cv_glucose",fill = group)) + 
-    geom_boxplot() + ylab("Glucose CV") + theme_bw() + theme(legend.position = "none")
+  plot <- ggplot(data, aes_string(x = group, y = "cv_glucose", fill = group)) +
+    geom_boxplot() +
+    ylab("Glucose CV") +
+    theme_bw() +
+    theme(legend.position = "none")
   # Print results
   cat("\n")
   cat("\n")
-  cat(paste("##",group))
+  cat(paste("##", group))
   cat("\n")
   cat("\n")
   print(plot)
   cat("\n")
   cat("\n")
   # Medians
-  data %>% group_by_(group) %>% 
-    summarise(median = median(cv_glucose,na.rm=T),
-              q1q3 = paste0(round(quantile(cv_glucose,na.rm=T)[2],2),
-                            " - ",
-                            round(quantile(cv_glucose,na.rm=T)[4],2))) %>% 
-    kable(.,digits = 2) %>% print(.)
+  data %>%
+    group_by_(group) %>%
+    summarise(
+      median = median(cv_glucose, na.rm = T),
+      q1q3 = paste0(
+        round(quantile(cv_glucose, na.rm = T)[2], 2),
+        " - ",
+        round(quantile(cv_glucose, na.rm = T)[4], 2)
+      )
+    ) %>%
+    kable(., digits = 2) %>%
+    print(.)
   cat("\n")
   cat("\n")
-  if(p > 0.05){
-    cat(paste0("Glucose CV was not significantly different by ",group," (p = ",p_form,")."))
-  } else if (p <= 0.05){
-    cat(paste0("Glucose CV was significantly different by ",group," (p = ",p_form,")."))
+  if (p > 0.05) {
+    cat(paste0("Glucose CV was not significantly different by ", group, " (p = ", p_form, ")."))
+  } else if (p <= 0.05) {
+    cat(paste0("Glucose CV was significantly different by ", group, " (p = ", p_form, ")."))
   } else {
     cat("Test failed.")
   }
@@ -371,9 +430,8 @@ compare = function(data,group){
 ```
 
 ```{r results='asis'}
-vars = c("tx_type","primary_dx_cat","prep_regimen","any_icu","infections_yn","post_tx_tpn")
+vars <- c("tx_type", "primary_dx_cat", "prep_regimen", "any_icu", "infections_yn", "post_tx_tpn")
 for (v in vars) {
-  compare(df,v)
+  compare(df, v)
 }
 ```
-
