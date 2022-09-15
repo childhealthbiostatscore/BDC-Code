@@ -14,14 +14,7 @@ library(knitr)
 library(tidyverse)
 library(arsenal)
 knitr::opts_chunk$set(echo = F)
-if(Sys.info()["sysname"] == "Windows"){
-  home_dir = "B:/Projects/Jenna Sopfe/"
-} else if (Sys.info()["sysname"] == "Linux"){
-  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/"
-} else if (Sys.info()["sysname"] == "Darwin"){
-  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe/"
-}
-knitr::opts_knit$set(root.dir = home_dir)
+knitr::opts_knit$set(root.dir = "/Users/timvigers/Documents/Work/BDC/Jenna Sopfe")
 ```
 
 ```{r data import}
@@ -114,6 +107,26 @@ q_scores = lapply(cgm_list, function(df){
 q_scores = data.frame(do.call(rbind,q_scores))
 colnames(q_scores) = "q_score"
 q_scores$study_id = as.numeric(rownames(q_scores))
+# Mean, SD, and CV
+means = lapply(cgm_list, function(df){
+  return(mean(df$Historic_Glucose,na.rm = T))
+})
+means = data.frame(do.call(rbind,means))
+colnames(means) = "mean_glucose"
+sds = lapply(cgm_list, function(df){
+  return(sd(df$Historic_Glucose,na.rm = T))
+})
+sds = data.frame(do.call(rbind,sds))
+colnames(sds) = "sd_glucose"
+cvs = lapply(cgm_list, function(df){
+  m = mean(df$Historic_Glucose,na.rm = T)
+  s = sd(df$Historic_Glucose,na.rm = T)
+  return(s/m)
+})
+cvs = data.frame(do.call(rbind,cvs))
+colnames(cvs) = "cv_glucose"
+# Add to Q scores
+q_scores = data.frame(do.call(cbind,c(q_scores,means,sds,cvs)))
 # Merge into full data
 data_full = left_join(data_full,q_scores,by = "study_id")
 # Get each person's first row, fix race, etc.
@@ -141,7 +154,7 @@ df$AgeTx <-
 Participant 21 has a high Q score, but this appears to be correct and largely due to spending a lot of time below 3.9 mmol/L.
 
 ```{r results='asis'}
-t1 = tableby(~notest(q_score,"N", "median", "q1q3")+AgeTx+gender+Race+tanner_stage+tx_type+
+t1 = tableby(~notest(q_score,"N", "median", "q1q3")+ notest(mean_glucose,"N", "median", "q1q3") + notest(sd_glucose,"N", "median", "q1q3") +notest(cv_glucose,"N", "median", "q1q3") + AgeTx+gender+Race+tanner_stage+tx_type+
                primary_dx_cat+spec_dx_cat+prep_regimen+sec_icu+factor(infections)+
                post_tx_tpn,
              data = df)
@@ -216,3 +229,151 @@ for (v in vars) {
   compare(df,v)
 }
 ```
+
+# Mean Glucose by Group
+
+Mean glucose was compared between groups using a Wilcoxon rank sum test.
+
+```{r}
+compare = function(data,group){
+  # Test
+  f = as.formula(paste0("mean_glucose ~ ",group))
+  w = wilcox.test(f,data = data)
+  p = w$p.value
+  p_form = format.pval(p,digits = 3,eps = 0.001)
+  # Plot
+  plot = ggplot(data,aes_string(x = group,y = "mean_glucose",fill = group)) + 
+    geom_boxplot() + ylab("Mean glucose") + theme_bw() + theme(legend.position = "none")
+  # Print results
+  cat("\n")
+  cat("\n")
+  cat(paste("##",group))
+  cat("\n")
+  cat("\n")
+  print(plot)
+  cat("\n")
+  cat("\n")
+  # Medians
+  data %>% group_by_(group) %>% 
+    summarise(median = median(mean_glucose,na.rm=T),
+              q1q3 = paste0(round(quantile(mean_glucose,na.rm=T)[2],2),
+                            " - ",
+                            round(quantile(mean_glucose,na.rm=T)[4],2))) %>% 
+    kable(.,digits = 2) %>% print(.)
+  cat("\n")
+  cat("\n")
+  if(p > 0.05){
+    cat(paste0("Mean glucose was not significantly different by ",group," (p = ",p_form,")."))
+  } else if (p <= 0.05){
+    cat(paste0("Mean glucose was significantly different by ",group," (p = ",p_form,")."))
+  } else {
+    cat("Test failed.")
+  }
+}
+```
+
+```{r results='asis'}
+vars = c("tx_type","primary_dx_cat","prep_regimen","any_icu","infections_yn","post_tx_tpn")
+for (v in vars) {
+  compare(df,v)
+}
+```
+
+# Glucose SD by Group
+
+Glucose SD was compared between groups using a Wilcoxon rank sum test.
+
+```{r}
+compare = function(data,group){
+  # Test
+  f = as.formula(paste0("sd_glucose ~ ",group))
+  w = wilcox.test(f,data = data)
+  p = w$p.value
+  p_form = format.pval(p,digits = 3,eps = 0.001)
+  # Plot
+  plot = ggplot(data,aes_string(x = group,y = "sd_glucose",fill = group)) + 
+    geom_boxplot() + ylab("Glucose SD") + theme_bw() + theme(legend.position = "none")
+  # Print results
+  cat("\n")
+  cat("\n")
+  cat(paste("##",group))
+  cat("\n")
+  cat("\n")
+  print(plot)
+  cat("\n")
+  cat("\n")
+  # Medians
+  data %>% group_by_(group) %>% 
+    summarise(median = median(sd_glucose,na.rm=T),
+              q1q3 = paste0(round(quantile(sd_glucose,na.rm=T)[2],2),
+                            " - ",
+                            round(quantile(sd_glucose,na.rm=T)[4],2))) %>% 
+    kable(.,digits = 2) %>% print(.)
+  cat("\n")
+  cat("\n")
+  if(p > 0.05){
+    cat(paste0("Glucose SD was not significantly different by ",group," (p = ",p_form,")."))
+  } else if (p <= 0.05){
+    cat(paste0("Glucose SD was significantly different by ",group," (p = ",p_form,")."))
+  } else {
+    cat("Test failed.")
+  }
+}
+```
+
+```{r results='asis'}
+vars = c("tx_type","primary_dx_cat","prep_regimen","any_icu","infections_yn","post_tx_tpn")
+for (v in vars) {
+  compare(df,v)
+}
+```
+
+# Glucose CV by Group
+
+Glucose CV was compared between groups using a Wilcoxon rank sum test.
+
+```{r}
+compare = function(data,group){
+  # Test
+  f = as.formula(paste0("cv_glucose ~ ",group))
+  w = wilcox.test(f,data = data)
+  p = w$p.value
+  p_form = format.pval(p,digits = 3,eps = 0.001)
+  # Plot
+  plot = ggplot(data,aes_string(x = group,y = "cv_glucose",fill = group)) + 
+    geom_boxplot() + ylab("Glucose CV") + theme_bw() + theme(legend.position = "none")
+  # Print results
+  cat("\n")
+  cat("\n")
+  cat(paste("##",group))
+  cat("\n")
+  cat("\n")
+  print(plot)
+  cat("\n")
+  cat("\n")
+  # Medians
+  data %>% group_by_(group) %>% 
+    summarise(median = median(cv_glucose,na.rm=T),
+              q1q3 = paste0(round(quantile(cv_glucose,na.rm=T)[2],2),
+                            " - ",
+                            round(quantile(cv_glucose,na.rm=T)[4],2))) %>% 
+    kable(.,digits = 2) %>% print(.)
+  cat("\n")
+  cat("\n")
+  if(p > 0.05){
+    cat(paste0("Glucose CV was not significantly different by ",group," (p = ",p_form,")."))
+  } else if (p <= 0.05){
+    cat(paste0("Glucose CV was significantly different by ",group," (p = ",p_form,")."))
+  } else {
+    cat("Test failed.")
+  }
+}
+```
+
+```{r results='asis'}
+vars = c("tx_type","primary_dx_cat","prep_regimen","any_icu","infections_yn","post_tx_tpn")
+for (v in vars) {
+  compare(df,v)
+}
+```
+
