@@ -40,7 +40,7 @@ jdrf_data_clean <- read_csv("S:/Laura/BDC/Projects/Viral Shah/JDRF/Data_Cleaned/
 fit_mod = function(outcome,df){
 
     # Fit model
-  f = as.formula(paste0(outcome,"~","Group","+","visit_num","+","Age_DateOfEyeExam","+", "DiabetesDuration_DateOfEyeExam" ))
+  f = as.formula(paste0(outcome,"~","Group","+","visit","+","Age_DateOfEyeExam","+", "DiabetesDuration_DateOfEyeExam" ))
   mod = lme(f,
             random = ~1|MRN,
             data = df,
@@ -100,6 +100,7 @@ rm(Group_1_Demographic_data, Group_2_Demographic_Data)
 jdrf_data_clean = jdrf_data_clean %>% filter(MRN %in% Demographic_data$MRN)
 jdrf_a1c = jdrf_data_clean %>% filter(!is.na(visit_num))
 
+jdrf_a1c = jdrf_a1c %>% group_by(`Study ID`) %>% mutate(visit = ((max(visit_num)+1) - visit_num)) %>% select(-c(visit_num, X))
 ```
 
 ```{r var summarizing, include=FALSE, eval=FALSE} 
@@ -180,6 +181,12 @@ lab_table_df = jdrf_a1c %>%
 # remove dupe rows
 lab_table_df = lab_table_df %>% group_by(`Study ID`) %>% fill(c(Wtkg, Htcm, BMI), .direction = "up") %>% distinct()
 
+# combine hypertyroidism, graves, addisons, celiac -> presence of autoimmune diseases
+lab_table_df = lab_table_df %>% mutate(autoimmunedisease_presence = case_when(Hyperthyroidism_YesNo == "Yes" | GravesDisease_YesNo == "Yes" |
+                                                                                AddisonsDisease_YesNo == "Yes" | CeliacDisease_YesNo == "Yes" ~ "Yes",
+                                                                              TRUE ~ "No")) %>% select(-c(Hyperthyroidism_YesNo, GravesDisease_YesNo,
+                                                                                                          AddisonsDisease_YesNo, CeliacDisease_YesNo))
+
 # combine the two for table 1
 table1_df = full_join(lab_table_df, cgm_table_df) %>% filter(!is.na(Group))
 table1_df = table1_df %>% ungroup 
@@ -190,6 +197,32 @@ jdrf_table1 = table1( ~ .| Group,
                       data = table1_df,
                       topclass ="Rtable1-zebra",
                       render.continuous=c( "Mean (SD)"="Mean (SD)"),overall = FALSE, extra.col=list(`P-value`=pvalue))
+
+# table by visit for a1c and tir
+at_table = table1( ~ a1c +  tir | visit+Group,
+                      data = jdrf_a1c,
+                      topclass ="Rtable1-zebra",
+                      render.continuous=c( "Mean (SD)"="Mean (SD)"),overall = FALSE)
+
+# mean a1c and tir by group and visit
+a1c_tir_by_visit = jdrf_a1c %>% group_by(visit, Group) %>% summarise(mean_a1c = mean(a1c, na.rm = T),
+                                                                     mean_tir = mean(tir, na.rm = T),
+                                                                     mean_tar = mean(tar, na.rm = T),
+                                                                     mean_tbr = mean(tbr, na.rm = T),
+                                                                     mean_ttir = mean(ttir, na.rm = T),
+                                                                     mean_mg = mean(mean_glucose, na.rm = T),
+                                                                     n_grp = n())
+# plots
+a1c_visit_p = ggplot(data = a1c_tir_by_visit, aes(x = visit, y = mean_a1c, group = Group, color = Group)) + theme_classic()
+tir_visit_p = ggplot(data = a1c_tir_by_visit, aes(x = visit, y = mean_tir, group = Group, color = Group)) + theme_classic()
+tar_visit_p = ggplot(data = a1c_tir_by_visit, aes(x = visit, y = mean_tar, group = Group, color = Group)) + theme_classic()
+tbr_visit_p = ggplot(data = a1c_tir_by_visit, aes(x = visit, y = mean_tbr, group = Group, color = Group)) + theme_classic()
+ttir_visit_p = ggplot(data = a1c_tir_by_visit, aes(x = visit, y = mean_ttir, group = Group, color = Group)) + theme_classic()
+mg_visit_p = ggplot(data = a1c_tir_by_visit, aes(x = visit, y = mean_mg, group = Group, color = Group)) + theme_classic()
+
+
+
+
 ```
 
 # Outstanding Questions/Remarks
@@ -211,31 +244,27 @@ jdrf_table1
 
 # A1c and TIR by visit and group
 ```{r visitgrp cgm}
-table1( ~ a1c +  tir | visit_num+Group,
-                      data = jdrf_a1c,
-                      topclass ="Rtable1-zebra",
-                      render.continuous=c( "Mean (SD)"="Mean (SD)"),overall = FALSE)
+Ns = a1c_tir_by_visit %>% select(visit, Group, n_grp)
+kable(Ns)
 
-
+a1c_visit_p + geom_line()
+tir_visit_p + geom_line()
 ```
 
 # a1c
 Retinopathy status is associated with A1c (p = 0.01)
+
+plot above
 ```{r a1c}
 fit_mod(outcome = "a1c", df = jdrf_a1c)
-  
-# plot
-a1c_p = ggplot(data = jdrf_a1c, aes(x = visit_num, y = a1c, group = MRN, color = Group))
-a1c_p + geom_line() + theme_classic()
 ```
 
 # tir
 Retinopathy status is associated with tir (p = 0.01)
+
+plot above
 ```{r tir}
 fit_mod(outcome = "tir", df = jdrf_a1c)
-
-tir_p = ggplot(data = jdrf_a1c, aes(x = visit_num, y = tir, group = MRN, color = Group))
-tir_p + geom_line() + theme_classic()
 ```
 
 # tar
@@ -243,8 +272,7 @@ Retinopathy status is associated with tar (p = 0.005)
 ```{r tar}
 fit_mod(outcome = "tar", df = jdrf_a1c)
 
-tar_p = ggplot(data = jdrf_a1c, aes(x = visit_num, y = tar, group = MRN, color = Group))
-tar_p + geom_line() + theme_classic()
+tar_visit_p + geom_line()
 ```
 
 # tbr
@@ -252,8 +280,7 @@ Retinopathy status is associated with tbr (p = 0.02)
 ```{r tbr}
 fit_mod(outcome = "tbr", df = jdrf_a1c)
 
-tbr_p = ggplot(data = jdrf_a1c, aes(x = visit_num, y = tbr, group = MRN, color = Group))
-tbr_p + geom_line() + theme_classic()
+tbr_visit_p + geom_line()
 ```
 
 # ttir
@@ -261,8 +288,7 @@ Retinopathy status is associated with ttir (p = 0.001)
 ```{r ttir}
 fit_mod(outcome = "ttir", df = jdrf_a1c)
 
-tbr_p = ggplot(data = jdrf_a1c, aes(x = visit_num, y = ttir, group = MRN, color = Group))
-tbr_p + geom_line() + theme_classic()
+ttir_visit_p + geom_line()
 ```
 
 # mean glucose
@@ -270,6 +296,5 @@ Retinopathy status is associated with mean glucose (p = 0.005)
 ```{r mg}
 fit_mod(outcome = "mean_glucose", df = jdrf_a1c)
 
-tbr_p = ggplot(data = jdrf_a1c, aes(x = visit_num, y = mean_glucose, group = MRN, color = Group))
-tbr_p + geom_line() + theme_classic()
+mg_visit_p + geom_line()
 ```
