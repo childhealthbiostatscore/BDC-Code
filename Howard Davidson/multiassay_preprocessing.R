@@ -12,8 +12,16 @@ X = lapply(names(raw_data), function(x){
   dats = raw_data[[x]]
   ts = lapply(names(dats), function(t){
     d = dats[[t]]$X # Predictors (variable column numbers)
+    # Lower case ID columns
     y = dats[[t]]$Y
     colnames(y) = tolower(colnames(y))
+    # Some overlap between positive and negative lipidomics, so specify which is which
+    if(x== "Negative Lipidomics"){
+      colnames(d) = paste0(colnames(d),"_negative")
+    }
+    if(x=="Positive Lipidomics"){
+      colnames(d) = paste0(colnames(d),"_positive")
+    }
     y = y[,c(id_cols)] # All need same columns for y
     d = cbind(d,y)
     if(ncol(dats[[t]]$X) == 1){
@@ -26,8 +34,10 @@ X = lapply(names(raw_data), function(x){
   df = data.frame(do.call(rbind,ts)) # Bind together
 })
 names(X) = tolower(gsub(" ","_",names(raw_data)))
-# Turn into long dataset
+names(X$positive_lipidomics)
+# Turn into long dataset, sort
 df = X %>% reduce(full_join) %>% as.data.frame(.)
-df = df %>% select(id,time,y,everything())
+df = df %>% select(id,time,y,everything()) %>%
+  arrange(id,time)
 # Save data as a list with a dataframe for each assay
 save(df,file = "./Data_Clean/all_timepoints.RData")
