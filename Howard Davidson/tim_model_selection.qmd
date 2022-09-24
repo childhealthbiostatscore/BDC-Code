@@ -1,5 +1,5 @@
 ---
-title: "gvljkweblkqebjkkej;bn;kjngekj"
+title: "TEDDY Model Selection"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
 format:
@@ -15,13 +15,49 @@ editor: visual
 ```{r include=FALSE}
 # Libraries
 library(caret)
-library(glmnet)
+library(elasticnet)
+library(doParallel)
+```
+
+```{r include=FALSE,cache=TRUE}
 # Import data
-load("/Users/timvigers/Documents/Work/BDC/Howard Davidson/TEDDY data/Data_Clean/all_timepoints.RData")
+load("~/Documents/Work/BDC/Howard Davidson/TEDDY data/Data_Clean/all_timepoints.RData")
+df$y <- as.factor(df$y)
+df$time <- as.factor(df$time)
 ```
 
 # Model Selection with ElasticNet
 
-```{r}
+Data pre-processing steps were completed using the `caret` R package with default settings for all functions (unless otherwise specified). Pre-processing includes zero-variance filter, near-zero variance filter, correlation filter,centering, and scaling.
 
+## Time 0
+
+```{r cache=TRUE}
+# Just t0
+X <- df[df$time == 0, ]
+X$id <- NULL
+X$time <- NULL
+# Remove those with high missingness
+missing <- as.numeric(which(lapply(X, function(c) {
+  sum(is.na(c)) / length(c)
+}) >= 0.75))
+if (length(missing) > 0) {
+  X <- X[, -missing]
+}
+# Process
+pp_X <- preProcess(X[, -1], outcome = X$y, method = c("center", "scale", "zv", "nzv", "conditionalX", "corr"))
+# Transform
+X[, 2:ncol(X)] <- predict(pp_X, X[, 2:ncol(X)])
 ```
+
+```{r}
+set.seed(1017)
+cv <- trainControl(method = "cv", number = 10)
+elnet <- train(
+  y ~ .,
+  data = na.omit(X),
+  method = "glmnet",
+  trControl = cv
+)
+```
+
