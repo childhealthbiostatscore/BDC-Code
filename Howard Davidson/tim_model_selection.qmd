@@ -13,52 +13,98 @@ editor: visual
 ---
 
 ```{r include=FALSE}
+library(tidymodels)
 library(caret)
+library(knitr)
 # Import data
 load("~/Documents/Work/BDC/Howard Davidson/TEDDY data/Data_Clean/all_timepoints.RData")
 df$y <- as.factor(df$y)
-df$time <- as.factor(df$time)
 ```
 
-# Model Selection with ElasticNet
+# Methods
 
-Data pre-processing steps were completed using the `caret` R package with default settings for all functions (unless otherwise specified). Pre-processing includes zero-variance filter, near-zero variance filter, correlation filter,centering, and scaling.
+## Pre-processing
 
-Using a missingness cutoff of < 75% results in 140 observations of 1,350 variables going into the ElasticNet step. Increasing this threshold to 80% results in 40 observations of 48,535 variables.
+Data pre-processing steps were completed using the `caret` R package with default settings for all functions (unless otherwise specified). Pre-processing includes a near-zero variance filter, Yeo-Johnson transformation (an extension of the Box-Cox transformation that allows for 0 and/or negative values), centering, and scaling.
 
-## Time 0
+Using a missingness cutoff of \< 75% results in `r nrow(small_subset)` observations of `r ncol(small_subset)-1` variables. Increasing this threshold to 80% results in `r nrow(large_subset)` observations of `r ncol(large_subset)-1` variables.
 
-```{r cache=TRUE}
+## ElasticNet
+
+We used the `caret` R package to find optimal $\lambda$ and $\alpha$ values for an ElasticNet model (these are tuning parameters that are altered to produce a parsimonious model with high accuracy) based on 5-fold cross-validation.
+
+# Time 0
+
+```{r}
 # Just t0
 X <- df[df$time == 0, ]
 X$id <- NULL
 X$time <- NULL
-# Remove those with high missingness
-missing <- as.numeric(which(lapply(X, function(c) {
-  sum(is.na(c)) / length(c)
-}) >= 0.8))
-if (length(missing) > 0) {
-  X <- X[, -missing]
-}
-# Process
-pp_X <- preProcess(X[, -1], outcome = X$y, method = c("center", "scale", "zv", "nzv", "conditionalX", "corr"))
-# Transform
-X[, 2:ncol(X)] <- predict(pp_X, X[, 2:ncol(X)])
+# Recipes for future steps
+## Pre-processing
+small_subset_recipe <- 
+  recipe(y ~ ., data = X) %>%
+  step_filter_missing(all_predictors(),threshold = 0.75) %>% 
+  step_nzv(all_predictors()) %>%
+  step_YeoJohnson(all_predictors()) %>%
+  step_normalize(all_predictors())
+large_subset_recipe <- 
+  recipe(y ~ ., data = X) %>%
+  step_filter_missing(all_predictors(),threshold = 0.8) %>% 
+  step_nzv(all_predictors()) %>%
+  step_YeoJohnson(all_predictors()) %>%
+  step_normalize(all_predictors())
+## PCA
+pca_small_subset = 
+  small_subset_recipe %>%
+  step_pca(all_predictors(), num_comp = 2)
+pca_large_subset = 
+  large_subset_recipe %>%
+  step_pca(all_predictors(), num_comp = 2)
 ```
 
+## Small subset
+
+### ElasticNet
+
 ```{r}
+# Use caret to train the model
 set.seed(1017)
-cv <- trainControl(method = "cv", number = 10)
+cv <- trainControl(method = "cv", number = 5)
 elnet <- train(
-  y ~ .,
-  data = na.omit(X),
+  small_subset_recipe,
+  data = small_subset,
   method = "glmnet",
+  family = "binomial",
   trControl = cv,
   tuneLength = 100
 )
-elnet
+# Get the best alpha and lambda values
+res = elnet$results
+kable(head(res[order(res$Accuracy,decreasing = T),],5),row.names = F)
+```
+
+Unfortunately, ElasticNet does not seem to produce a helpful model in this case (the maximum accuracy was 0.51, so essentially a coin toss).
+
+### PCA
+
+```{r}
+
+  
+pca_estimates <- prep(pca_trans, training = USArrests)
+pca_data <- bake(pca_estimates, USArrests)
+```
+
+When limiting PCA to the pre-processed variables, there is very little separation between the groups. 
+
+### sPLS-DA
+
+```{r}
+
 ```
 
 # Questions
 
-1. What is going on with the missing data threshold? Is this due to the transcriptomics data and should we exclude that?
+1.  What is going on with the missing data threshold? Is this due to the transcriptomics data and should we exclude that?
+
+2. What was the final model selected by DIFAcTO?
