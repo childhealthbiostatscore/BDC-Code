@@ -19,6 +19,7 @@ library(caret)
 library(tidymodels)
 library(doParallel)
 library(knitr)
+set.seed(1017)
 # Import data
 load("~/Documents/Work/BDC/Howard Davidson/TEDDY data/Data_Clean/all_timepoints.RData")
 # load("~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data/Data_Clean/all_timepoints.RData")
@@ -84,7 +85,7 @@ We used the `caret` R package to find optimal $\lambda$ and $\alpha$ values for 
 
 ## sPLS-DA
 
-The number of selected variables used in sPLS-DA was determined based on leave-one-out (LOO) CV.
+The number of selected variables used in sPLS-DA was determined based on 5-fold CV.
 
 ## Other Machine Learning Methods
 
@@ -120,8 +121,7 @@ pca_small_subset =
 
 ```{r}
 # Use caret to train the model
-set.seed(1017)
-cv <- trainControl(method = "repeatedcv", number = 10,repeats = 5)
+cv <- trainControl(method = "cv", number = 5,allowParallel = T)
 # Parallel training
 cl <- makePSOCKcluster(detectCores()*0.5)
 registerDoParallel(cl)
@@ -131,15 +131,16 @@ elnet <- train(
   method = "glmnet",
   family = "binomial",
   trControl = cv,
-  tuneLength = 100
+  tuneLength = 100,
+  allowParallel = T
 )
 stopCluster(cl)
-# Get the best alpha and lambda values
+# Get the best models
 res = elnet$results
 kable(head(res[order(res$Accuracy,decreasing = T),],5),row.names = F)
 ```
 
-Unfortunately, ElasticNet does not seem to produce a helpful model in this case (the maximum accuracy was 0.51, so essentially a coin toss).
+Unfortunately, ElasticNet does not seem to produce a particularly helpful model in this case.
 
 ### PCA
 
@@ -162,7 +163,7 @@ small_outcome = prep(small_subset_recipe,small_subset)
 small_outcome = bake(small_outcome,all_outcomes(),new_data = small_subset)
 # Tune sPLS-DA
 tune_splsda = mixOmics::tune.splsda(X = small_predictors,Y = small_outcome$y,
-                                    ncomp = 2,validation = "loo")
+                                    ncomp = 2,validation = "Mfold",folds = 5)
 # Fit
 splsda_res = mixOmics::splsda(X = small_predictors,Y = small_outcome$y,
                               keepX = tune_splsda$choice.keepX,
@@ -180,24 +181,7 @@ mixOmics::plotLoadings(splsda_res)
 mixOmics::plotLoadings(splsda_res,comp=2)
 ```
 
-sPLS-DA does a much better job of distinguishing classes, with an AUC of approximately 0.8.
-
-### Boosted Classification Trees
-
-```{r}
-# Parallel training
-cl <- makePSOCKcluster(detectCores()*0.5)
-registerDoParallel(cl)
-bct <- train(
-  small_subset_recipe,
-  data = small_subset,
-  method = 'ada',
-  trControl = cv,
-  tuneLength = 100
-)
-stopCluster(cl)
-bct
-```
+sPLS-DA does a better job of distinguishing classes, with an AUC of approximately 0.71.
 
 ### Support Vector Machines
 
@@ -212,10 +196,13 @@ svmlc <- train(
   data = small_subset,
   method = "svmLinear",
   trControl = cv,
-  tuneLength = 100
+  tuneLength = 100,
+  allowParallel = T
 )
 stopCluster(cl)
-svmlc
+# Get the best models
+res = svmlc$results
+kable(head(res[order(res$Accuracy,decreasing = T),],5),row.names = F)
 ```
 
 #### Radial Kernel Classifier with Class Weights
@@ -229,10 +216,13 @@ svmrw <- train(
   data = small_subset,
   method = 'svmRadialWeights',
   trControl = cv,
-  tuneLength = 100
+  tuneLength = 100,
+  allowParallel = T
 )
 stopCluster(cl)
-svmrw
+# Get the best models
+res = svmrw$results
+kable(head(res[order(res$Accuracy,decreasing = T),],5),row.names = F)
 ```
 
 #### Polynomial Kernel Classifier
@@ -246,10 +236,13 @@ svmp <- train(
   data = small_subset,
   method = "svmPoly",
   trControl = cv,
-  tuneLength = 100
+  tuneLength = 100,
+  allowParallel = T
 )
 stopCluster(cl)
-svmp
+# Get the best models
+res = svmp$results
+kable(head(res[order(res$Accuracy,decreasing = T),],5),row.names = F)
 ```
 
 ### Random Forest
@@ -263,14 +256,17 @@ rf <- train(
   data = small_subset,
   method = "ranger",
   trControl = cv,
-  tuneLength = 100
+  tuneLength = 100,
+  allowParallel = T
 )
 stopCluster(cl)
-rf
+# Get the best models
+res = rf$results
+kable(head(res[order(res$Accuracy,decreasing = T),],5),row.names = F)
 ```
 
 # Questions
 
-1.  What is going on with the missing data threshold? Is this due to the transcriptomics data and should we exclude that?
+1.  What is going on with the missing data threshold? Is this due to the transcriptomics data and should we exclude that? Is there something we're missing with these data?
 
 2.  What was the final model selected by DIFAcTO?
