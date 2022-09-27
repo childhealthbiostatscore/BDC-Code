@@ -316,8 +316,8 @@ pump_variables = function(indir,outdir,outname){
     # Fill in summary df
     # Subject
     summary[f,"subject_id"] <- id
-    summary[f,"start_date"] = table$Date[1]
-    summary[f,"end_date"] = table$Date[nrow(table)]
+    summary[f,"start_date"] = day_table$Date[1]
+    summary[f,"end_date"] = day_table$Date[nrow(day_table)]
     summary[f,"days_worn"] <- days
     summary[f,"weekday_days"] <- weekdays
     summary[f,"weekend_days"] <- weekends

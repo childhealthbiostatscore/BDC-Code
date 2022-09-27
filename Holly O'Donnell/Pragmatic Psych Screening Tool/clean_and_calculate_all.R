@@ -4,8 +4,8 @@ library(tools)
 library(parsedate)
 library(cgmanalysis)
 library(pdftools)
-source("/Users/timvigers/GitHub/BDC-Code/Holly O'Donnell/Pragmatic Psych Screening Tool/pump_variables.R")
-setwd("~/Documents/Work/Holly O'Donnell/Pragmatic Psych Screening Tool")
+source("~/GitHub/BDC-Code/Holly O'Donnell/Pragmatic Psych Screening Tool/pump_variables.R")
+setwd("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Holly O'Donnell/Pragmatic Psych Screening Tool")
 # Want data about 1 month prior to questionnaires
 dates = read_excel("./Data_Raw/Device Files/Device Information thru 405.xlsx")
 dates$`Date Questionnaires` = parse_date(dates$`Date Questionnaires`,approx = F)
@@ -38,11 +38,13 @@ for (f in files) {
   table = table[!is.na(table$Date) & !is.na(table$Time),]
   # Date time column
   table$datetime <- paste(table$Date,table$Time)
-  table$datetime <- parse_date(table$datetime)
+  table$datetime <- parse_date(table$datetime,approx = F)
   # Remove data > 1 month before date
   rows = table$datetime <= date & table$datetime > (as.Date(date)-30)
   if(sum(rows,na.rm = T) > 0){
     table = table[rows,]
+  } else {
+    table = table[-c(1:nrow(table)),]
   }
   # Remove blank rows
   blank = which(rowSums(is.na(table))==ncol(table))
@@ -50,8 +52,10 @@ for (f in files) {
     table = table[-blank,]
   }
   # Write file
-  filename <- paste0("./Data_Clean/Carelink Pump Files/",id,".csv")
-  write.csv(table,file = filename,row.names = F,na = "")
+  if(nrow(table)>0){
+    filename <- paste0("./Data_Clean/Carelink Pump Files/",id,".csv")
+    write.csv(table,file = filename,row.names = F,na = "")
+  }
   # Sensor
   # Read in
   table = read.csv(f,na.strings = "")
@@ -71,13 +75,15 @@ for (f in files) {
     table$sensorglucose = table[,sensor_cols]
   }
   table$sensorglucose = suppressWarnings(as.numeric(table$sensorglucose))
-  table$timestamp = parse_date(paste(table[,date_col],table[,time_col]))
+  table$timestamp = parse_date(paste(table[,date_col],table[,time_col]),approx = F)
   table$subjectid = NA
   table = table[,c("subjectid","timestamp","sensorglucose")]
   # Remove data > 1 month before date
   rows = table$timestamp <= date & table$timestamp > (as.Date(date)-30)
   if(sum(rows,na.rm = T) > 100){
     table = table[rows,]
+  }else {
+    table = table[-c(1:nrow(table)),]
   }
   # Remove blank rows
   blank = which(rowSums(is.na(table))==ncol(table))
@@ -109,12 +115,14 @@ for (f in files) {
   table$subjectid = NA
   table$subjectid[1] = id
   table = table[,c("subjectid","timestamp","sensorglucose")]
-  table$timestamp = parse_date(sub("T"," ",table$timestamp))
+  table$timestamp = parse_date(sub("T"," ",table$timestamp),approx = F)
   table$sensorglucose = suppressWarnings(as.numeric(table$sensorglucose))
   # Remove data > 1 month before date
   rows = table$timestamp <= date & table$timestamp > (as.Date(date)-30)
   if(sum(rows,na.rm = T) > 288){
     table = table[rows,]
+  }else {
+    table = table[-c(1:nrow(table)),]
   }
   # Remove blank rows
   blank = which(rowSums(is.na(table))==ncol(table))
@@ -144,7 +152,7 @@ for (f in files) {
   colnames(table) = table[start,]
   table = table[(start+1):nrow(table),]
   # Format - change column names to match pump variable code
-  table$EventDateTime = parse_date(sub("T","",table$EventDateTime))
+  table$EventDateTime = parse_date(sub("T","",table$EventDateTime),approx = F)
   colnames(table)[colnames(table)=="BG"] = "bg"
   colnames(table)[colnames(table)=="EventDateTime"] = "datetime"
   colnames(table)[colnames(table)=="CarbSize"] = "BWZ.Carb.Input..grams."
@@ -152,13 +160,17 @@ for (f in files) {
   table$BWZ.Estimate..U. = NA
   table$Bolus.Type = NA
   # Remove data > 1 month before date
-  rows = table$EventDateTime <= date & table$EventDateTime > (as.Date(date)-30)
+  rows = table$datetime <= date & table$datetime > (as.Date(date)-30)
   if(sum(rows,na.rm = T) > 10){
     table = table[rows,]
+  }else {
+    table = table[-c(1:nrow(table)),]
   }
   # Write file
-  filename <- paste0("./Data_Clean/TConnect Pump Files/",id,".csv")
-  write.csv(table,file = filename,row.names = F,na = "")
+  if(nrow(table)>0){
+    filename <- paste0("./Data_Clean/TConnect Pump Files/",id,".csv")
+    write.csv(table,file = filename,row.names = F,na = "")
+  }
   # Sensor
   table = read.csv(f,na.strings = "")
   w = which(table == "Readings (CGM / BGM)", arr.ind=TRUE)
@@ -170,12 +182,14 @@ for (f in files) {
   colnames(table) = c("timestamp","sensorglucose")
   table$subjectid = NA
   table = table[,c("subjectid","timestamp","sensorglucose")]
-  table$timestamp = parse_date(sub("T"," ",table$timestamp))
+  table$timestamp = parse_date(sub("T"," ",table$timestamp),approx = F)
   table$sensorglucose = suppressWarnings(as.numeric(table$sensorglucose))
   # Remove data > 1 month before date
   rows = table$timestamp <= date & table$timestamp > (as.Date(date)-30)
   if(sum(rows,na.rm = T) > 100){
     table = table[rows,]
+  }else {
+    table = table[-c(1:nrow(table)),]
   }
   # Remove blank rows
   blank = which(rowSums(is.na(table))==ncol(table))
@@ -271,14 +285,18 @@ for (f in files) {
   t = t[lubridate::year(t$Date)!=2009,]
   # Get dates
   v1 = dates$`Date Questionnaires`[match(as.numeric(id),dates$`Participant ID`)]
-  start = v1-(60*60*24*90)
-  t = t[t$Date >= start & t$Date < v1,]
-  if (any(rowSums(is.na(t)) == ncol(t))){
-    t = t[-which(rowSums(is.na(t)) == ncol(t)),]
+  # Remove data > 1 month before date
+  rows = t$datetime <= v1 & t$datetime > (as.Date(v1)-30)
+  if(sum(rows,na.rm = T) > 0){
+    t = t[rows,]
+  }else {
+    t = t[-c(1:nrow(t)),]
   }
   # Write file
-  filename <- paste0("./Data_Clean/Tidepool Files/",id,".csv")
-  write.csv(t[,vars],file = filename,row.names = F,na = "")
+  if(nrow(t)>0){
+    filename <- paste0("./Data_Clean/Tidepool Files/",id,".csv")
+    write.csv(t[,vars],file = filename,row.names = F,na = "")
+  }
 }
 # Analyze
 pump_variables(indir = "./Data_Clean/Tidepool Files",
