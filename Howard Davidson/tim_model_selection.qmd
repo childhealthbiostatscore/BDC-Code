@@ -1,9 +1,7 @@
 ---
-title: "TEDDY Model Selection"
+title: "JDRFCAV Model Selection"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-execute:
-  warning: false
 format:
   html:
     toc: true
@@ -18,255 +16,31 @@ editor: visual
 library(caret)
 library(tidymodels)
 library(doParallel)
+library(DataExplorer)
 library(knitr)
 set.seed(1017)
 # Import data
-load("~/Documents/Work/BDC/Howard Davidson/TEDDY data/Data_Clean/all_timepoints.RData")
-# load("~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/TEDDY data/Data_Clean/all_timepoints.RData")
-# Just t0
-X <- df[df$time == 0, ]
-X$id <- NULL
-X$time <- NULL
-X$pair = NULL
-# Remove those with >= 75% missingness
-missing <- as.numeric(which(lapply(X, function(c) {
-  sum(is.na(c)) / length(c)
-}) >= 0.5))
-small_subset = na.omit(X[,-missing])
-# Also look at a >= 80% cutoff
-missing <- as.numeric(which(lapply(X, function(c) {
-  sum(is.na(c)) / length(c)
-}) >= 0.8))
-large_subset = na.omit(X[,-missing])
-```
-
-```{r eval=FALSE,include=TRUE}
-library(DataExplorer)
-# Base recipe (no transform)
-small_subset_recipe <- 
-  recipe(y ~ ., data = small_subset) %>%
-  step_nzv(all_predictors()) %>%
-  step_normalize(all_predictors())
-# EDA for small subset without Yeo-Johnson
-eda = prep(small_subset_recipe,small_subset)
-eda = bake(eda,new_data = small_subset)
-eda %>%
-    create_report(
-        output_file = "EDA_small_subset_no_transform.html",
-        output_dir = "~/Documents/Work/BDC/Howard Davidson/TEDDY data/Reports",
-        report_title = "EDA: Small Subset (No Transform)",
-        y = "y"
-    )
-# EDA for small subset with Yeo-Johnson
-small_subset_recipe = small_subset_recipe %>%
-  step_YeoJohnson(all_predictors()) 
-eda = prep(small_subset_recipe,small_subset)
-eda = bake(eda,new_data = small_subset)
-eda %>%
-    create_report(
-        output_file = "EDA_small_subset.html",
-        output_dir = "~/Documents/Work/BDC/Howard Davidson/TEDDY data/Reports",
-        report_title = "EDA: Small Subset",
-        y = "y"
-    )
+df = readRDS("/Users/timvigers/Documents/Work/BDC/Howard Davidson/R01/Data_Raw/subset_data.rds")
+df = df$env$data
 ```
 
 # Methods
 
-## Pre-processing
-
-Data pre-processing steps were completed using the `caret` R package with default settings for all functions (unless otherwise specified). Pre-processing includes a near-zero variance filter, Yeo-Johnson transformation (an extension of the Box-Cox transformation that allows for 0 and/or negative values), centering, and scaling.
-
-Using a missingness cutoff of \< 50% results in `r nrow(small_subset)` observations of `r ncol(small_subset)-1` variables. Increasing this threshold to 80% results in `r nrow(large_subset)` observations of `r ncol(large_subset)-1` variables.
-
-## ElasticNet
-
-We used the `caret` R package to find optimal $\lambda$ and $\alpha$ values for an ElasticNet model (these are tuning parameters that are altered to produce a parsimonious model with high accuracy) based on 5-fold cross-validation (CV).
-
-## sPLS-DA
-
-The number of selected variables used in sPLS-DA was determined based on 5-fold CV.
-
-## Other Machine Learning Methods
-
-All other machine learning methods were also fit using `caret` defaults and 5-fold CV.
-
-# Time 0
-
 ```{r}
-# Recipes for future steps
-## Pre-processing
-small_subset_recipe <- 
-  recipe(y ~ ., data = small_subset) %>%
-  step_nzv(all_predictors()) %>%
-  step_YeoJohnson(all_predictors()) %>%
-  step_normalize(all_predictors())
-# large_subset_recipe <-
-#   recipe(y ~ ., data = large_subset) %>%
-#   step_nzv(all_predictors()) %>%
-#   step_YeoJohnson(all_predictors()) %>%
-#   step_normalize(all_predictors())
-## PCA
-pca_small_subset = 
-  small_subset_recipe %>%
-  step_pca(all_predictors(), num_comp = 2)
-# pca_large_subset = 
-#   large_subset_recipe %>%
-#   step_pca(all_predictors(), num_comp = 2)
+# Base recipes
+cpep_recipe <- recipe(cpep_model_decayrate ~ ., data = df)
 ```
 
-## Small subset
-
-### ElasticNet
-
-```{r}
-# Use caret to train the model
-cv <- trainControl(method = "cv", number = 5,allowParallel = T)
-# Parallel training
-cl <- makePSOCKcluster(detectCores()*0.5)
-registerDoParallel(cl)
-elnet <- train(
-  small_subset_recipe,
-  data = small_subset,
-  method = "glmnet",
-  family = "binomial",
-  trControl = cv,
-  tuneLength = 100,
-  allowParallel = T
-)
-stopCluster(cl)
-# Get the best models
-res = elnet$results
-kable(head(res[order(res$Accuracy,decreasing = T),],5),row.names = F)
+```{r echo=FALSE,eval=FALSE}
+# EDA
+eda = prep(cpep_recipe,df)
+eda = bake(eda,new_data = df)
+eda %>%
+    create_report(
+        output_file = "EDA.html",
+        output_dir = "~/Documents/Work/BDC/Howard Davidson/R01/Reports",
+        report_title = "Exploratory Data Analysis",
+        y = "cpep_model_decayrate"
+    )
 ```
 
-Unfortunately, ElasticNet does not seem to produce a particularly helpful model in this case.
-
-### PCA
-
-```{r}
-pca_estimates <- prep(pca_small_subset,small_subset)
-pca_data <- bake(pca_estimates,small_subset)
-ggplot(pca_data,aes(x=PC1,y=PC2,color = y)) + 
-  geom_point() + theme_bw()
-```
-
-When limiting PCA to the pre-processed variables, there is virtually no separation between the groups.
-
-### sPLS-DA
-
-```{r}
-# Get matrices
-small_predictors = prep(small_subset_recipe,small_subset)
-small_predictors = bake(small_predictors,all_predictors(),new_data = small_subset)
-small_outcome = prep(small_subset_recipe,small_subset)
-small_outcome = bake(small_outcome,all_outcomes(),new_data = small_subset)
-# Tune sPLS-DA
-tune_splsda = mixOmics::tune.splsda(X = small_predictors,Y = small_outcome$y,
-                                    ncomp = 2,validation = "Mfold",folds = 5)
-# Fit
-splsda_res = mixOmics::splsda(X = small_predictors,Y = small_outcome$y,
-                              keepX = tune_splsda$choice.keepX,
-                              ncomp = 2,scale = F,)
-# Background
-background_mahal <- mixOmics::background.predict(splsda_res,comp.predicted = 2,
-                                        dist = 'mahalanobis.dist')
-# Performance
-perf_splsda = mixOmics::perf(splsda_res)
-# Plots
-mixOmics::plotIndiv(splsda_res,pch=20,background = background_mahal,
-                    style = 'ggplot2')
-mixOmics::auroc(splsda_res,print=F)
-mixOmics::plotLoadings(splsda_res)
-mixOmics::plotLoadings(splsda_res,comp=2)
-```
-
-sPLS-DA does a better job of distinguishing classes, with an AUC of approximately 0.71.
-
-### Support Vector Machines
-
-#### Linear Classifier
-
-```{r}
-# Parallel training
-cl <- makePSOCKcluster(detectCores()*0.5)
-registerDoParallel(cl)
-svmlc <- train(
-  small_subset_recipe,
-  data = small_subset,
-  method = "svmLinear",
-  trControl = cv,
-  tuneLength = 100,
-  allowParallel = T
-)
-stopCluster(cl)
-# Get the best models
-res = svmlc$results
-kable(head(res[order(res$Accuracy,decreasing = T),],5),row.names = F)
-```
-
-#### Radial Kernel Classifier with Class Weights
-
-```{r}
-# Parallel training
-cl <- makePSOCKcluster(detectCores()*0.5)
-registerDoParallel(cl)
-svmrw <- train(
-  small_subset_recipe,
-  data = small_subset,
-  method = 'svmRadialWeights',
-  trControl = cv,
-  tuneLength = 100,
-  allowParallel = T
-)
-stopCluster(cl)
-# Get the best models
-res = svmrw$results
-kable(head(res[order(res$Accuracy,decreasing = T),],5),row.names = F)
-```
-
-#### Polynomial Kernel Classifier
-
-```{r}
-# Parallel training
-cl <- makePSOCKcluster(detectCores()*0.5)
-registerDoParallel(cl)
-svmp <- train(
-  small_subset_recipe,
-  data = small_subset,
-  method = "svmPoly",
-  trControl = cv,
-  tuneLength = 100,
-  allowParallel = T
-)
-stopCluster(cl)
-# Get the best models
-res = svmp$results
-kable(head(res[order(res$Accuracy,decreasing = T),],5),row.names = F)
-```
-
-### Random Forest
-
-```{r}
-# Parallel training
-cl <- makePSOCKcluster(detectCores()*0.5)
-registerDoParallel(cl)
-rf <- train(
-  small_subset_recipe,
-  data = small_subset,
-  method = "ranger",
-  trControl = cv,
-  tuneLength = 100,
-  allowParallel = T
-)
-stopCluster(cl)
-# Get the best models
-res = rf$results
-kable(head(res[order(res$Accuracy,decreasing = T),],5),row.names = F)
-```
-
-# Questions
-
-1.  What is going on with the missing data threshold? Is this due to the transcriptomics data and should we exclude that? Is there something we're missing with these data?
-
-2.  What was the final model selected by DIFAcTO?
