@@ -2,7 +2,12 @@
 title: "CGM and BMT"
 author: "Tim Vigers & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: word_document
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 5
+    toc_float: yes
 ---
 
 ```{r setup, include=FALSE}
@@ -14,7 +19,7 @@ library(knitr)
 library(tidyverse)
 library(arsenal)
 knitr::opts_chunk$set(echo = F)
-knitr::opts_knit$set(root.dir = "/Users/timvigers/Documents/Work/BDC/Jenna Sopfe")
+knitr::opts_knit$set(root.dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Jenna Sopfe")
 ```
 
 ```{r data import}
@@ -72,8 +77,8 @@ cgm_wide <- cgm %>%
   ungroup()
 # Write CSV for checking with SAS
 write.csv(cgm_wide,
-  file = "./CGM and BMT FDA/Data_Cleaned/cleaned_for_traj.csv",
-  row.names = F, na = ""
+          file = "./CGM and BMT FDA/Data_Cleaned/cleaned_for_traj.csv",
+          row.names = F, na = ""
 )
 # Convert to mmol/L
 cgm$mmol <- cgm$Historic_Glucose / 18.0182
@@ -108,8 +113,8 @@ modd <- lapply(cgm_list, function(df) {
 q_scores <- lapply(cgm_list, function(df) {
   tg3.9 <- mean(df$mmol < 3.9, na.rm = T) * 24
   tg8.9 <- mean(df$mmol > 8.9, na.rm = T) * 24
-  mbg <- mean(cgm$mmol, na.rm = T)
-  r <- abs(diff(range(cgm$mmol, na.rm = T)))
+  mbg <- mean(df$mmol, na.rm = T)
+  r <- abs(diff(range(df$mmol, na.rm = T)))
   df$round_time <- lubridate::round_date(df$Time, unit = "5 minutes")
   df$round_time <- sapply(strsplit(as.character(df$round_time), " "), "[[", 2)
   modd <- df %>%
@@ -165,7 +170,7 @@ df$Race[which(df$race_multi == "yes")] <- "Multiple"
 df$Race[which(df$Race == "")] <- "Unknown"
 df$AgeTx <-
   as.numeric(difftime(df$date_of_tx, df$date_of_birth,
-    units = "days"
+                      units = "days"
   )) / 365.25
 ```
 
@@ -175,9 +180,9 @@ Participant 21 has a high Q score, but this appears to be correct and largely du
 
 ```{r results='asis'}
 t1 <- tableby(~ notest(q_score, "N", "median", "q1q3") + notest(mean_glucose, "N", "median", "q1q3") + notest(sd_glucose, "N", "median", "q1q3") + notest(cv_glucose, "N", "median", "q1q3") + AgeTx + gender + Race + tanner_stage + tx_type +
-  primary_dx_cat + spec_dx_cat + prep_regimen + sec_icu + factor(infections) +
-  post_tx_tpn,
-data = df
+                primary_dx_cat + spec_dx_cat + prep_regimen + sec_icu + factor(infections) +
+                post_tx_tpn,
+              data = df
 )
 summary(t1, labelTranslations = list(
   AgeTx = "Age at Tx", q_score = "Q Score",
@@ -434,4 +439,124 @@ vars <- c("tx_type", "primary_dx_cat", "prep_regimen", "any_icu", "infections_yn
 for (v in vars) {
   compare(df, v)
 }
+```
+
+# Pre-/Post-BMT Comparisons
+
+```{r}
+# Find which sensors were pre vs. post BMT
+sensors = data_full %>% group_by(study_id) %>% 
+  filter(row_number()==1) %>% 
+  select(study_id,date_of_tx,contains("_place"))
+t = apply(sensors, 1, function(r){
+  tx = r["date_of_tx"]
+  placements = r[paste0("sens",1:6,"_place")]
+  w_post = which(unlist(placements)>=tx)
+  w_pre = which(unlist(placements)<tx)
+  return(list("pre"=w_pre,"post"=w_post))
+})
+names(t)=sensors$study_id
+cgm$Pre_Post = apply(cgm, 1, function(r){
+  # Get ID and sensor number
+  id = trimws(as.character(r["SubjectID"]))
+  sens = as.numeric(r["SensorNum"])
+  if(sens %in% t[[id]]$pre){
+    time = "Pre"
+  } else if (sens %in% t[[id]]$post){
+    time = "Post"
+  } else {
+    time = NA
+  }
+  return(time)
+})
+# Calculate pre/post Q scores
+# Q score for each sensor - calculate hours per day from percent time
+cgm_list = split(cgm,list(cgm$SubjectID,cgm$Pre_Post),drop = T)
+q_scores_pre_post <- lapply(cgm_list, function(df) {
+  # ID and pre or post
+  id = as.character(df$SubjectID[1])
+  time = df$Pre_Post[1]
+  # Q score
+  tg3.9 <- mean(df$mmol < 3.9, na.rm = T) * 24
+  tg8.9 <- mean(df$mmol > 8.9, na.rm = T) * 24
+  mbg <- mean(df$mmol, na.rm = T)
+  r <- abs(diff(range(df$mmol, na.rm = T)))
+  df$round_time <- lubridate::round_date(df$Time, unit = "5 minutes")
+  df$round_time <- sapply(strsplit(as.character(df$round_time), " "), "[[", 2)
+  modd <- df %>%
+    group_by(round_time) %>%
+    mutate(t_diff = abs(mmol - lag(mmol)))
+  modd <- mean(modd$t_diff, na.rm = T)
+  q <- 8 + (mbg - 7.8) / 1.7 + (r - 7.5) / 2.9 + (tg3.9 - 0.6) / 1.2 + (tg8.9 - 6.2) / 5.7 +
+    (modd - 1.8) / 0.9
+  s = sd(df$Historic_Glucose,na.rm = T)
+  cv = s/mbg
+  return(c(id = id,"time"=time,"q"=q,"mean"=mbg,"cv"=cv))
+})
+pre_post = data.frame(do.call(rbind,q_scores_pre_post))
+pre_post[,c("id","q","mean","cv")]=
+  lapply(pre_post[,c("id","q","mean","cv")],as.numeric)
+pre_post$time = factor(pre_post$time,levels = c("Pre","Post"))
+pre_post = pre_post %>% arrange(id,time)
+# Add groups
+pre_post = left_join(pre_post,
+                     df %>% select(study_id,tx_type,primary_dx_cat,prep_regimen,
+                                   any_icu,infections_yn,post_tx_tpn),
+                     by = c("id"="study_id"))
+```
+
+## Overall
+
+```{r results='asis'}
+labels = list("q" = "Q score","mean" = "Mean Glucose","cv" = "Glucose CV")
+p = paired(time~q+mean+cv,data = pre_post,id = id,numeric.test = "signed.rank")
+summary(p,pfootnote = T,labelTranslations = labels)
+```
+
+## tx_type
+
+```{r results='asis'}
+labels = list("q" = "Q score","mean" = "Mean Glucose","cv" = "Glucose CV")
+p = paired(time~q+mean+cv,data = pre_post,id = id,numeric.test = "signed.rank",strata = tx_type)
+summary(p,pfootnote = T,labelTranslations = labels)
+```
+
+## primary_dx_cat
+
+```{r results='asis'}
+labels = list("q" = "Q score","mean" = "Mean Glucose","cv" = "Glucose CV")
+p = paired(time~q+mean+cv,data = pre_post,id = id,numeric.test = "signed.rank",strata = primary_dx_cat)
+summary(p,pfootnote = T,labelTranslations = labels)
+```
+
+## prep_regimen
+
+```{r results='asis'}
+labels = list("q" = "Q score","mean" = "Mean Glucose","cv" = "Glucose CV")
+p = paired(time~q+mean+cv,data = pre_post,id = id,numeric.test = "signed.rank",strata = prep_regimen)
+summary(p,pfootnote = T,labelTranslations = labels)
+```
+
+## any_icu
+
+```{r results='asis'}
+labels = list("q" = "Q score","mean" = "Mean Glucose","cv" = "Glucose CV")
+p = paired(time~q+mean+cv,data = pre_post,id = id,numeric.test = "signed.rank",strata = any_icu)
+summary(p,pfootnote = T,labelTranslations = labels)
+```
+
+## infections_yn
+
+```{r results='asis'}
+labels = list("q" = "Q score","mean" = "Mean Glucose","cv" = "Glucose CV")
+p = paired(time~q+mean+cv,data = pre_post,id = id,numeric.test = "signed.rank",strata = infections_yn)
+summary(p,pfootnote = T,labelTranslations = labels)
+```
+
+## post_tx_tpn
+
+```{r results='asis'}
+labels = list("q" = "Q score","mean" = "Mean Glucose","cv" = "Glucose CV")
+p = paired(time~q+mean+cv,data = pre_post,id = id,numeric.test = "signed.rank",strata = post_tx_tpn)
+summary(p,pfootnote = T,labelTranslations = labels)
 ```
