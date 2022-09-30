@@ -42,6 +42,7 @@ patient <- patient %>% filter(!record_id %in% c("Test 1","Test 2"))
 patient$record_id <- str_pad(as.character(patient$record_id),3,side="left",pad="0")
 patient$race <- as.factor(patient$race)
 patient$ethnicity <- as.factor(patient$ethnicity)
+patient_keep <- patient %>% select(record_id,locationfloor.factor)
 
 # Read in csv files
 cleandata(inputdirectory = "B:/Projects/Erin Cobry/Inpatient CGM study/Data raw/Dexcom CSVs", outputdirectory = "B:/Projects/Erin Cobry/Inpatient CGM study/Data clean/Clean CSVs", verbose = F, id_filename = T, gapfill = F, removegaps = F)
@@ -70,15 +71,38 @@ glucose_keep$cgm_glucose <- unlist(apply(glucose_keep,1,function(r){
   i = as.character(r["record_id"])
   dat = cgm_keep[cgm_keep$record_id==i,]
   x = dat$sensorglucose[which.min(abs(dat$date_time-dt))]
-  if(is.na(dt) | difftime(dat$date_time[which.min(abs(dat$date_time-dt))],dt,units = "mins") > 15 ){x = NA}
+  if(is.na(dt) | abs(difftime(dat$date_time[which.min(abs(dat$date_time-dt))],dt,units = "mins")) > 15 ){x = NA}
   return(x)
 }))
+
+# merge in patient location
+glucose_keep <- merge(glucose_keep,patient_keep,by="record_id",all.x = T,all.y=F)
+
+# calculate absolute and relative difference
+glucose_keep$absdiff <- glucose_keep$cgm_glucose - glucose_keep$bgvalue
+glucose_keep$relativediff <- (glucose_keep$absdiff/glucose_keep$bgvalue)*100
+
+# separate df for ICU and medical floor/ED
+icu <- glucose_keep %>% filter(locationfloor.factor=="ICU")
+med_ed <- glucose_keep %>% filter(locationfloor.factor=="Medical Floor/ED")
 
 # for demographics, remove duplicate MRNs
 demo <- patient %>% group_by(mrn) %>% slice(1)
 
  
 ```
+
+# Background and Methods
+
+-   Hospital glucose values were imported from REDCap. For this analysis, only POC glucose values were included.
+
+-   CGM data were processed using the cgmanalysis package.
+
+-   For each hospital glucose value, the closest CGM glucose value within 15 minutes was identified.
+
+-   The Clarke Error Grid was plotted using the $ega$ package in R.
+
+-   The relative difference was calculated as $(CGM glucose - hospital glucose) / hospital glucose) * 100%$.
 
 # Descriptive statistics
 
@@ -87,3 +111,56 @@ t1 <- tableby(data=demo,  ~ age + gender.factor + race + ethnicity + pumpuser.fa
 kable(summary(t1))
 
 ```
+
+# All locations combined
+
+## Clarke error grid
+
+```{r include=TRUE, warning=FALSE, message=F}
+plotClarkeGrid(referenceVals = glucose_keep$bgvalue, testVals = glucose_keep$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
+
+```
+
+## MARD
+
+```{r include=TRUE, warning=FALSE, message=F}
+mardt <- tableby(data=glucose_keep,  ~ relativediff,numeric.stats=c("meansd"))
+kable(summary(mardt))
+
+```
+
+# Medical Floor/ED
+
+## Clarke error grid
+
+```{r include=TRUE, warning=FALSE, message=F}
+plotClarkeGrid(referenceVals = med_ed$bgvalue, testVals = med_ed$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
+
+```
+
+## MARD
+
+```{r include=TRUE, warning=FALSE, message=F}
+mardt <- tableby(data=med_ed,  ~ relativediff,numeric.stats=c("meansd"))
+kable(summary(mardt))
+
+```
+
+# ICU
+
+## Clarke error grid
+
+```{r include=TRUE, warning=FALSE, message=F}
+plotClarkeGrid(referenceVals = icu$bgvalue, testVals = icu$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
+
+```
+
+## MARD
+
+```{r include=TRUE, warning=FALSE, message=F}
+mardt <- tableby(data=icu,  ~ relativediff,numeric.stats=c("meansd"))
+kable(summary(mardt))
+
+```
+
+# 
