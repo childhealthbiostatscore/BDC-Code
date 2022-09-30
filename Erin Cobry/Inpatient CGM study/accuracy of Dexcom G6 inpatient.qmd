@@ -15,11 +15,21 @@ editor: visual
 ```{r include=FALSE}
 library(dplyr)
 library(cgmanalysis)
+library(stringr)
+library(data.table)
+```
 
+```{r include=FALSE}
 # Import data
 source("B:/Projects/Erin Cobry/Inpatient CGM study/Data raw/AccuracyOfTheDexcomG-Glucose_R_2022-09-29_1357.r")
 glucose <- data
 glucose <- glucose %>% filter(!is.na(bgvalue))
+glucose <- glucose %>% filter(!glucose$record_id %in% c("Test 1","Test 2"))
+glucose$date <- as.Date(glucose$date)
+glucose$time <- as.ITime(glucose$time)
+glucose$date_time <- as.POSIXct(paste(glucose$date, glucose$time), format="%Y-%m-%d %H:%M:%S")
+glucose$record_id <- str_pad(as.character(glucose$record_id),3,side="left",pad="0")
+glucose_keep <- glucose %>% select(record_id,date_time,bgvalue,bgtype.factor)
 
 source("B:/Projects/Erin Cobry/Inpatient CGM study/Data raw/AccuracyOfTheDexcomG-PatientInfoAndLocati_R_2022-09-29_1356.r")
 patient <- data
@@ -28,14 +38,33 @@ patient <- patient %>% filter(!record_id %in% c("Test 1","Test 2"))
 # Read in csv files
 cleandata(inputdirectory = "B:/Projects/Erin Cobry/Inpatient CGM study/Data raw/Dexcom CSVs", outputdirectory = "B:/Projects/Erin Cobry/Inpatient CGM study/Data clean/Clean CSVs", verbose = T, id_filename = T, gapfill = F, removegaps = F)
 
-files <- base::list.files(path = "B:/Projects/Erin Cobry/Inpatient CGM study/Data raw/Dexcom CSVs",full.names = TRUE,recursive = T)
+files <- base::list.files(path = "B:/Projects/Erin Cobry/Inpatient CGM study/Data clean/Clean CSVs",full.names = TRUE,recursive = T)
 
+cgm <- NULL
 for (f in 1:length(files)){
   table <- read.csv(files[f])
   # fix study ID in each file
+  for (i in 1:nrow(table)) {
+    table[i,]$subjectid <- str_sub(table[1,]$subjectid,1,3)
+  }
   # append the files
-  
+  cgm <- rbind(cgm,table)
 }
+cgm$date_time <- as.POSIXct(cgm$timestamp, '%Y-%m-%d %H:%M:%S', tz=Sys.timezone())
+cgm$date <- as.Date(cgm$date_time)
+cgm$time <- as.ITime(cgm$date_time)
+cgm$record_id <- cgm$subjectid
+cgm_keep <- cgm %>% select(record_id,date_time,sensorglucose)
+
+# now find hospital glucose that is closest to each CGM measure by ID and date/time
+cgm_keep$inpt_glucose <- unlist(apply(cgm_keep,1,function(r){
+  dt = as.POSIXct(r["date_time"])
+  i = as.character(r["record_id"])
+  dat = glucose_keep[glucose_keep$record_id==i,]
+  x = dat$bgvalue[which.min(abs(dat$date_time - dt))]
+  if(is.na(dt)){x = NA}
+  return(x)
+}))
 
 
 ```
