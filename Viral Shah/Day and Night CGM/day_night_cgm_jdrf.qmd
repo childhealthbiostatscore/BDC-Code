@@ -55,9 +55,22 @@ library(knitr)
 
 # Windows Import
 df <- read.csv("S:/Laura/BDC/Projects/Viral Shah/Day and Night CGM/Data_Clean/combined_analysis_data.csv", na.strings = "")
+
 # Get MDI data
 kaan_mdi <- read_excel("S:/Laura/BDC/Projects/Viral Shah/Day and Night CGM/Data_Raw/Adult Dexcom 14_30_90/AdultPt_DexcomG6_12192019.First 21_combined.xlsx", na = "NULL")
+# kaan demogs
+bl_kaan <- read_excel("S:/Laura/BDC/Projects/Viral Shah/Day and Night CGM/Data_Clean/bl_kaan.xlsx")
+# viral demogs
+jdrf_demographics <- read.csv("S:/Laura/BDC/Projects/Viral Shah/Day and Night CGM/Data_Clean/jdrf_demographics.csv")
+bl_kaan = bl_kaan %>% dplyr::select(-c(`Patient Identifier`))
+kaan_mdi = left_join(kaan_mdi, bl_kaan)
+
+df$Race_Ethnicity =  kaan_mdi$Race_Ethnicity[match(paste(df$FirstName, df$LastName), paste(kaan_mdi$FirstName, kaan_mdi$LastName))]
+
+
+# MDI 
 df$mdi <- kaan_mdi$InsulinRegimen[match(paste(df$FirstName, df$LastName), paste(kaan_mdi$FirstName, kaan_mdi$LastName))]
+
 viral_mdi <- read_excel("S:/Laura/BDC/Projects/Viral Shah/Day and Night CGM/Data_Raw/Group 1_Continous data_2-7-2022.xlsx", na = "NULL")
 viral_mdi <- viral_mdi %>%
   group_by(`Study ID`) %>%
@@ -74,6 +87,18 @@ df$mdi[w] <-
   viral_mdi$mdi[match(df$id[w], viral_mdi$`Study ID`)]
 df$mdi <- factor(df$mdi)
 levels(df$mdi) <- c("Insulin Pump", "MDI", "MDI")
+
+# jdrf race 
+jdrf_demographics = jdrf_demographics %>% filter(id %in% viral_mdi$`Study ID`)
+jdrf_demographics$id = as.character(jdrf_demographics$id)
+w <- which(!is.na(match(df$id, jdrf_demographics$id)))
+df$Race_Ethnicity[w] <-
+  jdrf_demographics$Race_Ethnicity[match(df$id[w], jdrf_demographics$id)]
+
+df = df %>% replace_na(list(Race_Ethnicity = "Unknown"))
+
+# jdrf number
+df = df %>% mutate(jdrf = ifelse(grepl("_", id),"Non JDRF", "JDRF"))
 # Order
 df$a1c_group <- factor(df$a1c_group, levels = c(
   "<7%", "[7.0%, 8.0%)", "[8.0%, 9.0%)",
@@ -90,7 +115,7 @@ df$a1c_group <- factor(df$a1c_group, levels = c(
 # Participant Characteristics
 
 ```{r results='asis'}
-columns <- make.names(c("a1c", "Age", "Gender", "BMI", "DiabetesDuration_MostRecentVisitDate", "Hemoglobin_Value", "MCV_Value", "eGFR_Value", "Autoimmune Disease?", "Retinopathy?", "mdi"))
+columns <- make.names(c("jdrf","a1c", "Age", "Gender", "BMI", "Race_Ethnicity", "DiabetesDuration_MostRecentVisitDate", "Hemoglobin_Value", "MCV_Value", "eGFR_Value", "Autoimmune Disease?", "Retinopathy?", "mdi"))
 
 f <- as.formula(paste0("a1c_group~", paste0(columns, collapse = "+")))
 
@@ -117,6 +142,68 @@ t2 <- tableby(a1c_group ~ mbg + total_tir_70_140 + total_tir_70_180 +
 summary(t2, pfootnote = T)
 ```
 
+# Differences by A1c Group
+
+## TIR 70 - 140 mg/dL
+
+The differences between a1c groups' Day - Night TIR 70-140 are not statistically significant (p = 0.96)
+
+```{r}
+# plot
+ggline(df, x = "a1c_group", y = "tir_70_140_diff",
+       add = c("mean_ci"))
+# Model
+mod <- aov( tir_70_140_diff ~ a1c_group, data = df)
+
+# Table
+kable(tidy(mod), digits = 3)
+```
+
+## TIR 70 - 180 mg/dL
+
+The differences between a1c groups' Day - Night TIR 70-180 are not statistically significant (p = 0.35)
+
+```{r}
+# plot
+ggline(df, x = "a1c_group", y = "tir_70_180_diff",
+       add = c("mean_ci"))
+# Model
+mod <- aov( tir_70_180_diff ~ a1c_group, data = df)
+
+# Table
+kable(tidy(mod), digits = 3)
+```
+
+## TIR \> 180 mg/dL
+
+The differences between a1c groups' Day - Night TIR \>180 are not statistically significant (p = 0.27)
+
+```{r}
+# plot
+ggline(df, x = "a1c_group", y = "tir_over_180_diff",
+       add = c("mean_ci"))
+# Model
+mod <- aov( tir_over_180_diff ~ a1c_group, data = df)
+
+# Table
+kable(tidy(mod), digits = 3)
+```
+
+## MBG
+
+The differences between a1c groups' Day - Night Mean Blood Glucose are not statistically significant (p = 0.48)
+
+```{r}
+# plot
+ggline(df, x = "a1c_group", y = "mbg_diff",
+       add = c("mean_ci"))
+# Model
+mod <- aov( mbg_diff ~ a1c_group, data = df)
+
+# Table
+kable(tidy(mod), digits = 3)
+```
+
 # Interaction tests
 
 To test whether there was a difference in the level of association between daytime and nighttime metrics, we used a linear model with interaction term between CGM metric and daytime vs. nighttime.
@@ -129,6 +216,15 @@ corr_vars <- c(
   "day_mbg", "day_tir_70_140", "day_tir_70_180", "day_tir_over_180",
   "night_mbg", "night_tir_70_140", "night_tir_70_180", "night_tir_over_180"
 )
+
+# cv =  c("a1c",  "day_mbg", "day_tir_70_140", "day_tir_70_180", "day_tir_over_180",
+#   "night_mbg", "night_tir_70_140", "night_tir_70_180", "night_tir_over_180")
+# int_df <- df %>%
+#   select(cv) %>%
+#   pivot_longer(day_mbg:night_tir_over_180,
+#     names_to = c("time", ".value"),
+#     names_pattern = "^(day|night)_(.*)$"
+#   )
 int_df <- df %>%
   select(all_of(corr_vars)) %>%
   select(-contains("total_"), -mbg) %>%
