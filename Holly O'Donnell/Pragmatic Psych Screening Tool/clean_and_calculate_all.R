@@ -5,7 +5,7 @@ library(parsedate)
 library(cgmanalysis)
 library(pdftools)
 source("~/GitHub/BDC-Code/Holly O'Donnell/Pragmatic Psych Screening Tool/pump_variables.R")
-setwd("/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Holly O'Donnell/Pragmatic Psych Screening Tool")
+setwd("~/Dropbox/Work/BDC/Holly O'Donnell/Pragmatic Psych Screening Tool")
 # Want data about 1 month prior to questionnaires
 dates = read_excel("./Data_Raw/Device Files/Device Information thru 405.xlsx")
 dates$`Date Questionnaires` = parse_date(dates$`Date Questionnaires`,approx = F)

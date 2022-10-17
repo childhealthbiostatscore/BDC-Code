@@ -141,6 +141,7 @@ pump_variables = function(indir,outdir,outname){
     table$BWZ.Carb.Input..grams.[table$BWZ.Carb.Input..grams. == 0] <- NA
     # Carb counters
     total_carbs = 0
+    total_carbs_g = 0
     weekday_carbs = 0
     weekend_carbs = 0
     carb_dates = NULL
@@ -153,6 +154,7 @@ pump_variables = function(indir,outdir,outname){
       total_carbs <- total_carbs + 1
       if (table$weekday[r] %in% c(2:6)) {weekday_carbs <- weekday_carbs + 1}
       if (table$weekday[r] %in% c(1,7)) {weekend_carbs <- weekend_carbs + 1}
+      total_carbs_g = total_carbs_g + table$BWZ.Carb.Input..grams.[r]
       # Dates
       carb_datetimes <- c(carb_datetimes,as.character(table$datetime[r]))
       carb_dates <- c(carb_dates,table$Date[r])
@@ -336,7 +338,8 @@ pump_variables = function(indir,outdir,outname){
     summary[f,"days_4_bgs"] <- length(which(table(bg_dates)>=4))
     summary[f,"days_bg_>=6_hours"] <- bg_days_6
     # Carbs
-    summary[f,"total_carbs"] <- total_carbs
+    summary[f,"total_carb_entries"] <- total_carbs
+    summary[f,"total_carb_g"] <- total_carbs_g
     summary[f,"weekday_carbs"] <- weekday_carbs
     summary[f,"weekend_carbs"] <- weekend_carbs
     summary[f,"days_3_carbs"] <- length(which(table(carb_dates)>=3))
