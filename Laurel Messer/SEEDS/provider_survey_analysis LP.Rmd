@@ -1,0 +1,262 @@
+---
+title: "SEEDS Provider Survey Analysis"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,fig.width = 12,fig.height = 12,warning = FALSE)
+library(redcapAPI)
+library(Hmisc)
+library(arsenal)
+library(tidyverse)
+library(performance)
+library(usmap)
+library(reshape2)
+library(knitr)
+knitr::opts_chunk$set(echo = FALSE)
+if(Sys.info()["sysname"] == "Windows"){
+  home_dir = "B:/Projects/Laurel Messer/SEEDS"
+} else if (Sys.info()["sysname"] == "Linux"){
+  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Laurel Messer/SEEDS"
+} else if (Sys.info()["sysname"] == "Darwin"){
+  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Laurel Messer/SEEDS"
+}
+knitr::opts_knit$set(root.dir = home_dir)
+rm(home_dir)
+```
+
+```{r include=FALSE}
+api = read.table("B:/Projects/Data_Raw/api_token.txt")
+rcon <- redcapConnection(url="https://redcap.ucdenver.edu/api/", token=api[1,1])
+data = exportRecords(rcon,labels = FALSE)
+```
+
+```{r}
+# Filter
+data = data %>% filter(real_record == "Real")# Remove bots
+# Change specialty types per Laurel
+data$specialty[which(data$otherspecialty == "Pediatric Diabetology")] = "Pediatric Endocrinology"
+data$specialty[which(data$otherspecialty == "Adult Gerontology Primary Care")] = 
+  "Primary care-family medicine"
+# Combine levels 
+levels(data$specialty) = c("Primary Care","Primary Care","Primary Care","Primary Care",
+                           "Pediatric Endocrinology","Adult Endocrinology","Other")
+levels(data$providertype) = c("Prescriber","Prescriber","Non-Prescriber",
+                              "Prescriber","Non-Prescriber","Other")
+# Drop "Other" providers
+data = data %>% filter(specialty != "Other")
+# Drop levels for categorical variables
+cat_vars = c("gender","race","providertype","specialty","practicesetting",
+             "medicare","medicaid","privateins","uninsured")
+data[,cat_vars] = lapply(data[,cat_vars],droplevels)
+# Continuous variables for table 1
+con_vars = c("age","practiceyears","cgmpatientratio","pumppatientratio",
+             "penpatientratio","hclpatientratio","educationtime")
+# Table labels
+my_labels = list(
+  age = "Age", practiceyears = "Practice Years",gender = "Gender",race = "Race",
+  providertype = "Provider Type",practicesetting = "Practice Setting",
+  medicare = "Medicare",medicaid = "Medicaid",privateins = "Private Insurance",
+  uninsured = "No Insurance",educationtime = "Education Time",
+  cgmpatientratio = "% on CGM",penpatientratio = "% on Smart Pen",
+  hclpatientratio = "% on HCL",pumppatientratio = "% on Pump",
+  num_states = "# states represented",num_practices = "# unique practices",
+  ethnicity = "Ethnicity",race = "Race",practicesetting = "Practice setting",
+  practicetype = "Practice type")
+```
+
+# Distributions etc.
+
+```{r message=FALSE}
+skimr::skim(data)
+```
+
+# Table 1: Participant Characteristics
+
+```{r results='asis'}
+my_controls = list(numeric.stats=c("Nmiss","median","q1q3","range"),
+                   numeric.test="kwt",cat.test="fe",
+                   simulate.p.value = T)
+f = as.formula(paste0("specialty~",paste0(con_vars,collapse = "+"),"+",
+                      paste0(cat_vars,collapse = "+")))
+t1 = tableby(f,data = data,control = my_controls)
+summary(t1,pfootnote = T,labelTranslations = my_labels)
+```
+
+## Table 1 for VAS Completers
+
+```{r results='asis',message=FALSE}
+keep = data %>% select(deviceselectiontool:consulttool)
+keep = which(rowSums(is.na(keep))==0)
+t1 = tableby(f,data = data[keep,],control = my_controls)
+summary(t1,pfootnote = T,labelTranslations = my_labels)
+```
+
+# Respondents by State
+
+```{r}
+states = us_map(regions = "states")
+state_count = data %>% count(practicestate) %>% 
+  rename(state = "practicestate") 
+plot_usmap(data = state_count, values = "n") + 
+  scale_fill_continuous(name = "n")
+```
+
+# Online Diabetes Device Pathway Tools
+
+```{r}
+plot_df = data %>% select(record_id,specialty,deviceselectiontool:consulttool)
+tools = colnames(plot_df)[3:ncol(plot_df)]
+tools = c(tools,"toolehrinterate","dataehrintegrate","directehrsend")
+plot_df = melt(plot_df,id.vars = c("record_id","specialty"))
+old <- levels(plot_df$variable)
+new <- c("Device Selection Tool","Insurance Coverage Tool","Automated Decision Support",
+         "Online Data Platform","Device Training Contacts","Patient Education Modules",
+         "Device Troubleshooting","Consultation With Expert")
+order = plot_df %>% filter(specialty == "Primary Care") %>% group_by(variable) %>% 
+  summarise(m = median(value,na.rm = T)) %>% arrange(desc(m))
+order$name = new[match(order$variable,old)]
+
+plot_df$variable = factor(plot_df$variable,levels = order$variable,labels = order$name)
+p = ggplot(plot_df,aes(x = variable,y = value,fill = specialty,group= specialty)) + 
+  geom_boxplot(alpha = 0.5) +
+  stat_summary(fun = "median", size = 5,geom = "text",vjust = 1.5,
+               aes(label = after_stat(y)),position = position_dodge(width = 0.75)) + 
+  theme_bw() + xlab("Variable") + ylab("VAS Score") + 
+  theme(axis.text.x = element_blank(),axis.ticks.x = element_blank(),
+        axis.title.x = element_blank()) + 
+  facet_wrap(~variable,scales = "free",strip.position = "bottom") +
+  theme(legend.position = c(0.85,0.15),legend.key.size = unit(2, 'cm'),
+        strip.text = element_text(size=20)) + 
+  labs(fill = "Specialty") + scale_fill_grey() +
+  theme(text = element_text(size = 18)) 
+ggsave("~/plot.png",plot = p,width = 14,height = 12,dpi = 600)
+```
+
+## Tools Tables
+
+```{r results='asis'}
+f = as.formula(paste0("specialty~",paste0(tools,collapse = "+")))
+t = tableby(f,data = data,control = my_controls)
+summary(t,pfootnote = T)
+```
+
+# Description/state of current practices
+
+```{r results='asis'}
+# Calculate Ns
+data = data %>% group_by(specialty) %>% 
+  mutate(num_states = length(unique(practicestate)),
+         num_practices = length(unique(tolower(gsub("[[:punct:]]|[[:space:]]","",practicename)))))
+# Combine levels of practice type
+levels(data$practicetype) = c("Academic Medical Center/faculty practice",
+                              "Hospital or Health system owned","Other",
+                              "Clinician-owned solo or group practice",
+                              "Other","Other","Other")
+# Table
+current_practices = tableby(specialty ~ notest(num_states,"unique") + 
+                              notest(num_practices,"unique") + age + gender +
+                              race + ethnicity + providertype + practicetype + 
+                              practicesetting + medicaid + medicare + uninsured,
+                            data = data,control = my_controls)
+summary(current_practices,labelTranslations = my_labels,pfootnote = TRUE)
+```
+
+# Description of diabetes resources and insulin requiring patients
+
+```{r results='asis'}
+# Labels
+my_labels["staffsupport___0"] = "Clinical pharmacist"
+my_labels["staffsupport___1"] = "DE"
+my_labels["staffsupport___2"] = "Care manager"
+my_labels["staffsupport___3"] = "APP"
+my_labels["staffsupport___4"] = "Behavioral health"
+my_labels["patientage___0"] = "% practices who see peds patients"
+my_labels["patientage___1"] = "% practices who see adult patients"
+my_labels["diabetestype___0"] = "% practices who see T1D"
+my_labels["diabetestype___2"] = "% practices who see T2D"
+my_labels["diabetestype___3"] = "% practices who see other diabetes"
+my_labels["patientsoninsulin"] = "# of insulin-requiring pts/month"
+my_labels["mdi_type_sliding"] = "Sliding scale dosing"
+my_labels["mdi_type_fixed_sliding"] = "Fixed meal dose +/- sliding scale"
+my_labels["mdi_type_est_sliding"] = "Meal estimation +/- sliding scale"
+my_labels["mdi_type_ratios"] = "Carb counting and correction factor"
+my_labels["education_timesperyear"] = "times/year get diabetes education"
+my_labels["educationtime"] = "Min spent on diabetes education at a clinical visit"
+my_labels["cgmpatientratio"] = "% use CGM"
+my_labels["penpatientratio"] = "% use smart insulin pen"
+my_labels["pumppatientratio"] = "% use insulin pump"
+my_labels["hclpatientratio"] = "% use HCL"
+# Table
+resources = tableby(specialty ~ staffsupport___0 + staffsupport___1 + 
+                      staffsupport___2 + 	staffsupport___3 + staffsupport___4 + 
+                      patientage___0 + patientage___1 + 
+                      diabetestype___0 + diabetestype___2 + diabetestype___3 + 
+                      patientsoninsulin + mdi_type_sliding + mdi_type_fixed_sliding + 
+                      mdi_type_est_sliding + mdi_type_ratios + 
+                      education_timesperyear + educationtime + 
+                      cgmpatientratio + penpatientratio + 
+                      pumppatientratio + hclpatientratio,
+                    data = data,control = my_controls)
+summary(resources,labelTranslations = my_labels,total=FALSE,pfootnote = T)
+```
+
+# Diabetes technology attitudes
+
+## By specialty
+
+```{r results='asis'}
+# Shorten descriptions
+levels(data$tech_persona) = c("% positive attitudes, low barriers",
+                              "% positive attitudes, high barriers",
+                              "% more cautious")
+# Labels
+my_labels["tech_persona"] = "Diabetes technology attitudes"
+# Table
+attitudes = tableby(specialty ~ tech_persona,data = data,control = my_controls)
+summary(attitudes,labelTranslations = my_labels,total=FALSE,pfootnote = T)
+```
+
+## Academic practice vs. other (primary care only)
+
+```{r results='asis'}
+# Labels
+my_labels["tech_persona"] = "Diabetes technology attitudes"
+# Table
+data$academic = data$practicetype
+levels(data$academic) = c("Academic Medical Center/faculty practice","Other","Other","Other")
+
+academic = tableby(academic ~ fe(tech_persona),data = data[data$specialty == "Primary Care",])
+summary(academic,labelTranslations = my_labels,total=FALSE,pfootnote = T)
+```
+
+## Bar chart
+
+```{r}
+ggplot(data[!is.na(data$tech_persona),],
+       aes(x = specialty,group = tech_persona,fill = tech_persona)) + 
+  geom_bar(position = "fill") + 
+  theme_bw() + xlab("Specialty") + ylab("") +
+  theme(legend.title = element_blank())
+```
+
+# HCP comfort level with diabetes technologies—mean or median score (1 – not at all, 10 = very)
+
+```{r results='asis'}
+comfort = 
+  c("cgmcomfort","cgmcanidacy","cgmqs","cgminscov","cgmprescription","cgmtraining","cgmreview",
+    "pencomfort","pencandidacy","penqs","peninscov","penprescription","pentraining","penreview",
+    "pumpcomfort","pumpcandidacy","pumpqs","pumpinscov","pumpprescription","pumptraining","pumpreview",
+    "hclcomfort","hclcandidacy","hclqs","hclinscov","hclprescription","hcltraining","hclreview")
+data[,comfort] = lapply(data[,comfort],as.numeric)
+f = as.formula(paste0("specialty~",paste0(comfort,collapse = "+")))
+t = tableby(f,data = data,control = my_controls)
+summary(t,pfootnote = T)
+```
