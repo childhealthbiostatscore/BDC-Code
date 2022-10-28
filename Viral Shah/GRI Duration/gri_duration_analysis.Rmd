@@ -67,6 +67,33 @@ gri[gri$id == "lynellrice", "MostRecentA1C"] = 6.5
 gri[gri$id == "lynellrice", "DiabetesDuration_MostRecentVisitDate"] = 20.99
 gri[gri$id == "lynellrice", "BMI"] = 28.13
 
+# extra cgm data
+cgm = read.csv("S:/Laura/BDC/Projects/Viral Shah/GRI/Data Clean/extracgm.csv")
+cgm = cgm %>% select(subject_id, percent_time_under_70)
+gri = left_join(gri, cgm, by = c("id" = "subject_id"))
+gri = gri %>% mutate(TBR4 = case_when(percent_time_under_70 < 4 ~ "TBR < 4%",
+                                      percent_time_under_70 >= 4 ~ "TBR > 4%"))
+
+# add in whether tbr > 4%
+gri_u4tbr = gri %>% filter(percent_time_under_70 < 4)
+# compute correlations
+gri_u4tbr_cor = cor(gri_u4tbr[,gri_val], use = "pairwise.complete.obs", method = "pearson")
+
+# put into data frame and compute r^2
+gri_u4tbr_cor = as.data.frame(gri_u4tbr_cor[,5])
+gri_u4tbr_cor = rename(gri_u4tbr_cor, "r" =`gri_u4tbr_cor[, 5]`)
+gri_u4tbr_cor$r_sq = gri_u4tbr_cor$r^2
+gri_u4tbr_cor$Day = factor(c("7","14","30","60","90"), levels = c("7", "14","30", "60", "90"))
+
+gri_o4tbr = gri %>% filter(percent_time_under_70 >= 4)
+# compute correlations
+gri_o4tbr_cor = cor(gri_o4tbr[,gri_val], use = "pairwise.complete.obs", method = "pearson")
+
+# put into data frame and compute r^2
+gri_o4tbr_cor = as.data.frame(gri_o4tbr_cor[,5])
+gri_o4tbr_cor = rename(gri_o4tbr_cor, "r" =`gri_o4tbr_cor[, 5]`)
+gri_o4tbr_cor$r_sq = gri_o4tbr_cor$r^2
+gri_o4tbr_cor$Day = factor(c("7","14","30","60","90"), levels = c("7", "14","30", "60", "90"))
 ```
 
 
@@ -95,7 +122,7 @@ rndr <- function(x, name, ...) {
     parse.abbrev.render.code(c("", what))(x)
 }
 
-demog_table = table1( ~ Age + Gender + DiabetesDuration_MostRecentVisitDate + MostRecentA1C + BMI, render = rndr,data = gri)
+demog_table = table1( ~ Age + Gender + DiabetesDuration_MostRecentVisitDate + MostRecentA1C + BMI|TBR4, render = rndr,data = gri)
 ```
 
 ```{r baseline char}
@@ -108,7 +135,7 @@ Table 1 of the baseline characteristics added in 4/21/2022
 ```{r analysis}
 ggplot(data=gri_cor, aes(x=Day, y = r^2)) + 
   geom_point() +
-  scale_y_continuous(name = "R2", sec.axis = sec_axis(~.^.5, name = "R"), limits = c(0.75,1)) +
+  scale_y_continuous(name = "R2", sec.axis = sec_axis(~.^.5, name = "R"), limits = c(0,1)) +
   scale_x_discrete(name = "CGM Sampling Period Length") + geom_hline(aes(yintercept = 1), linetype = "dashed") + 
   theme_classic()
 ```
@@ -117,4 +144,37 @@ We observe a very strong linear relationship between the 7 day GRI and 90 day GR
 
 ```{r corr table}
 kable(gri_cor[,1:2], digits = 3)
+```
+
+
+# Analysis Subjects <4% TBR
+
+```{r}
+ggplot(data=gri_u4tbr_cor, aes(x=Day, y = r^2)) + 
+  geom_point() +
+  scale_y_continuous(name = "R2", sec.axis = sec_axis(~.^.5, name = "R"), limits = c(0,1)) +
+  scale_x_discrete(name = "CGM Sampling Period Length") + geom_hline(aes(yintercept = 1), linetype = "dashed") + 
+  theme_classic()
+```
+
+We observe a very strong linear relationship between the 7 day GRI and 90 day GRI (r = 0.899). Increasing the days to 14 from 7, we observe a 0.043 increase in the r coefficient. Increasing the days to 30 from 14 we observe a 0.026 increase in the r coefficient. Increasing the days to 60 from 30 we observe a 0.011 increase in the r coefficient.
+
+```{r}
+kable(gri_u4tbr_cor[,1:2], digits = 3)
+```
+
+# Analysis Subjects >4% TBR
+
+```{r}
+ggplot(data=gri_o4tbr_cor, aes(x=Day, y = r^2)) + 
+  geom_point() +
+  scale_y_continuous(name = "R2", sec.axis = sec_axis(~.^.5, name = "R"), limits = c(0,1)) +
+  scale_x_discrete(name = "CGM Sampling Period Length") + geom_hline(aes(yintercept = 1), linetype = "dashed") + 
+  theme_classic()
+```
+
+We observe a very strong linear relationship between the 7 day GRI and 90 day GRI (r = 0.864). Increasing the days to 14 from 7, we observe a 0.056 increase in the r coefficient. Increasing the days to 30 from 14 we observe a 0.043 increase in the r coefficient. Increasing the days to 60 from 30 we observe a 0.031 increase in the r coefficient.
+
+```{r}
+kable(gri_o4tbr_cor[,1:2], digits = 3)
 ```
