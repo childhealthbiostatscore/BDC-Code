@@ -23,13 +23,22 @@ labor_dates$pid <- labor_dates$`Study ID`
 labor_dates$`Study ID` <- NULL
 labor_dates <- labor_dates %>% filter(!is.na(pid))
 dates <- merge(tri_dates,labor_dates,by="pid",all.x = T,all.y = T)
+dates$subjectid <- dates$pid
+dates$pid <- NULL
+
+# get date of visit 15 for restarting PP data
+ppdates <- read.csv("B:/Projects/Sarit Polsky/PICLS/Data cleaning/Data files/PICLSStudyHCLVsSAPTI-V15Dates_DATA_2022-11-07_2228.csv")
+ppdates <- ppdates %>% filter(redcap_repeat_instrument=="pregnancy_visits")
+ppdates$subjectid <- ppdates$pid
+ppdates$pid <- NULL
+ppdates <- ppdates %>% select(date_preg,subjectid)
+colnames(ppdates) <- c("v15date","subjectid")
 
 # combine all the data files into 1
 d <- getwd()
 files <-list.files(d, full.names = T)
 alldata <- NULL
-#for (f in 1:length(files)) {
-for (f in 10:14) {
+for (f in 1:length(files)) {
   print(files[f])
   df <- read.csv(files[f], na.strings = "", header = F)
   df <- df[8:nrow(df),]
@@ -44,6 +53,28 @@ for (f in 10:14) {
   # all the data are combined, now need to merge in trimester dates by subject ID 
   # then output records based on dates into separate files in cleaned directory
 }
+alldata <- alldata %>% filter(!is.na(sensorglucose))
+
+alldata <- merge(alldata,dates,by="subjectid",all.x = T, all.y = F)
+alldata <- merge(alldata,ppdates,by="subjectid",all.x = T, all.y = F)
+# convert trimester dates to POSIXlt
+alldata$FirstTri <- as.POSIXct(alldata$FirstTri,tz="America/Denver") + 25200
+alldata$SecondTri <- as.POSIXct(alldata$SecondTri,tz="America/Denver") + 25200
+t1data <- t1data %>% filter(timestamp>=FirstTri & timestamp<SecondTri)
+  
+alldata[alldata$timestamp>=alldata$FirstTri & alldata$timestamp<alldata$SecondTri,]
+t2data <- alldata[alldata$timestamp>=alldata$SecondTri & alldata$timestamp<alldata$ThirdTri,]
+t3data <- alldata[alldata$timestamp>=alldata$ThirdTri & alldata$timestamp<alldata$`L&D Admission Date`,]
+ppdata <- alldata[alldata$timestamp>=alldata$v15date,]
+
+t0_wk14 <- df[df$timestamp >= t0 & df$timestamp < wk14, ]
+if (nrow(t0_wk14) > 0 & sum(is.na(t0_wk14$sensorglucose)) < nrow(t0_wk14)) {
+  t0_wk14$subjectid[1] <- id
+  write.csv(t0_wk14,
+            file = paste0(outdir, id, "_t0_wk14.csv"),
+            row.names = F, na = ""
+  )
+
 
 # Tim's triple C code
 setwd("~/Dropbox/Work/BDC/Janet Snell-Bergeon/Triple C/Data_Raw/Tim/Rerun")
