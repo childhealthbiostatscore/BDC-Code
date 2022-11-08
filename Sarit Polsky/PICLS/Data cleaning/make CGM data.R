@@ -54,26 +54,20 @@ for (f in 1:length(files)) {
   # then output records based on dates into separate files in cleaned directory
 }
 alldata <- alldata %>% filter(!is.na(sensorglucose))
+alldata2 <- merge(alldata,dates,by="subjectid",all.x = T, all.y = F)
+alldata2 <- merge(alldata2,ppdates,by="subjectid",all.x = T, all.y = F)
 
-alldata <- merge(alldata,dates,by="subjectid",all.x = T, all.y = F)
-alldata <- merge(alldata,ppdates,by="subjectid",all.x = T, all.y = F)
 # convert trimester dates to POSIXlt
-alldata$FirstTri <- as.POSIXct(alldata$FirstTri,tz="America/Denver") + 25200
-alldata$SecondTri <- as.POSIXct(alldata$SecondTri,tz="America/Denver") + 25200
-t1data <- t1data %>% filter(timestamp>=FirstTri & timestamp<SecondTri)
-  
-alldata[alldata$timestamp>=alldata$FirstTri & alldata$timestamp<alldata$SecondTri,]
+t1data <- alldata2 %>% filter(as.Date(timestamp)>=FirstTri & as.Date(timestamp)<SecondTri)
+t2data <- alldata2 %>% filter(as.Date(timestamp)>=SecondTri & as.Date(timestamp)<ThirdTri)
+t3data <- alldata2 %>% filter(as.Date(timestamp)>=ThirdTri & as.Date(timestamp)<as.Date(`L&D Admission Date`))
+ppdata <- alldata2 %>% filter(as.Date(timestamp)>=as.Date(`L&D Admission Date`) & as.Date(timestamp)<v15date)
+
+
 t2data <- alldata[alldata$timestamp>=alldata$SecondTri & alldata$timestamp<alldata$ThirdTri,]
 t3data <- alldata[alldata$timestamp>=alldata$ThirdTri & alldata$timestamp<alldata$`L&D Admission Date`,]
 ppdata <- alldata[alldata$timestamp>=alldata$v15date,]
 
-t0_wk14 <- df[df$timestamp >= t0 & df$timestamp < wk14, ]
-if (nrow(t0_wk14) > 0 & sum(is.na(t0_wk14$sensorglucose)) < nrow(t0_wk14)) {
-  t0_wk14$subjectid[1] <- id
-  write.csv(t0_wk14,
-            file = paste0(outdir, id, "_t0_wk14.csv"),
-            row.names = F, na = ""
-  )
 
 
 # Tim's triple C code
