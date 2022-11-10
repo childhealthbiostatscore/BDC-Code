@@ -61,6 +61,7 @@ for (f in 1:length(files)) {
 }
 alldata2 <- merge(alldata,dates,by="subjectid",all.x = T, all.y = F)
 alldata2 <- merge(alldata2,ppdates,by="subjectid",all.x = T, all.y = F)
+alldata2$sensorglucose <- as.numeric(alldata2$sensorglucose)
 t1data <- alldata2 %>% filter(as.Date(timestamp)>=FirstTri & as.Date(timestamp)<SecondTri)
 t1data$trimester <- "T1"
 t2data <- alldata2 %>% filter(as.Date(timestamp)>=SecondTri & as.Date(timestamp)<ThirdTri)
@@ -110,11 +111,8 @@ for (df in splitpp) {
 # then run cgmvariables()
 cgmvariables(inputdirectory = "B:/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/", 
              outputdirectory = "B:/Projects/Sarit Polsky/PICLS/Data_Clean/Cleaned CGM data", 
-             id_filename = T, printname = T)
+             id_filename = T, printname = T,
+             customintervals = list(c(0,54),c(0,63),c(63,140),c(140,600)))
 
-# need to deal with custom intervals after I see what we have 
-# customintervals = ,
-# hypo <54
-# hyp <63
-# in range 63-140
-# hyper >140
+# does not appear to be counting excursions correctly, probably because of all the gaps
+# when I finalize the dataset, should exclude these variables
