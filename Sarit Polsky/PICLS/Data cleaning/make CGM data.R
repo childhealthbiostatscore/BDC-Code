@@ -4,6 +4,7 @@ library(cgmanalysis)
 library(readxl)
 library(dplyr)
 library(stringr)
+library(lubridate)
 
 # setup
 setwd("B:/Projects/Sarit Polsky/PICLS/Data_Raw/Final raw CGM files for analysis")
@@ -45,28 +46,24 @@ for (f in 1:length(files)) {
   df <- df[8:nrow(df),]
   df <- as.data.frame(cbind(df[,2],df[,3],df[,5]))
   names(df) <- c("date","time","sensorglucose")
+  df$date <- parse_date_time(df$date, orders = c('ymd','mdy', 'dmy'))
+  df <- df %>% filter(!is.na(df$sensorglucose))
+  df <- df %>% filter(!is.na(df$date))
   df$dt <- paste(df$date,df$time)
-  df$timestamp <- strptime(df$dt, format = "%Y/%m/%d %H:%M:%S")
+  df$timestamp <- ymd_hms(df$dt)
   # get subject ID from file name
   df$subjectid <- str_sub(basename(files[f]),1,4)
-  df <- df %>% select(subjectid,timestamp,sensorglucose)
+  df <- df %>% select(subjectid,timestamp,dt,sensorglucose)
   alldata <- rbind(alldata,df)
   # all the data are combined, now need to merge in trimester dates by subject ID 
   # then output records based on dates into separate files in cleaned directory
 }
-alldata <- alldata %>% filter(!is.na(sensorglucose))
-#alldata <- alldata %>% filter(!is.na(sensorglucose) & !is.na(timestamp))
 alldata2 <- merge(alldata,dates,by="subjectid",all.x = T, all.y = F)
 alldata2 <- merge(alldata2,ppdates,by="subjectid",all.x = T, all.y = F)
-
-
 t1data <- alldata2 %>% filter(as.Date(timestamp)>=FirstTri & as.Date(timestamp)<SecondTri)
 t2data <- alldata2 %>% filter(as.Date(timestamp)>=SecondTri & as.Date(timestamp)<ThirdTri)
 t3data <- alldata2 %>% filter(as.Date(timestamp)>=ThirdTri & as.Date(timestamp)<as.Date(`L&D Admission Date`))
 ppdata <- alldata2 %>% filter(as.Date(timestamp)>=as.Date(`L&D Admission Date`) & as.Date(timestamp)<v15date)
 
-
-t2data <- alldata[alldata$timestamp>=alldata$SecondTri & alldata$timestamp<alldata$ThirdTri,]
-t3data <- alldata[alldata$timestamp>=alldata$ThirdTri & alldata$timestamp<alldata$`L&D Admission Date`,]
-ppdata <- alldata[alldata$timestamp>=alldata$v15date,]
-
+# now I just need to split the trimester files by ID
+# then run cgmvariables()
