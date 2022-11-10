@@ -61,9 +61,49 @@ for (f in 1:length(files)) {
 alldata2 <- merge(alldata,dates,by="subjectid",all.x = T, all.y = F)
 alldata2 <- merge(alldata2,ppdates,by="subjectid",all.x = T, all.y = F)
 t1data <- alldata2 %>% filter(as.Date(timestamp)>=FirstTri & as.Date(timestamp)<SecondTri)
+t1data$trimester <- "T1"
 t2data <- alldata2 %>% filter(as.Date(timestamp)>=SecondTri & as.Date(timestamp)<ThirdTri)
+t2data$trimester <- "T2"
 t3data <- alldata2 %>% filter(as.Date(timestamp)>=ThirdTri & as.Date(timestamp)<as.Date(`L&D Admission Date`))
+t3data$trimester <- "T3"
 ppdata <- alldata2 %>% filter(as.Date(timestamp)>=as.Date(`L&D Admission Date`) & as.Date(timestamp)<v15date)
+ppdata$trimester <- "Post-partum"
 
 # now I just need to split the trimester files by ID
+split1 <- split(t1data,t1data$subjectid)
+for (df in split1) {
+  df <- as.data.frame(df)
+  df <- df[,c("subjectid","timestamp","sensorglucose")]
+  df <- df[order(df$timestamp),]
+  filename <- paste0("B:/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/",df$subjectid[1],"_T1.csv")
+  write.csv(df,file = filename,row.names = F)
+}
+
+split2 <- split(t2data,t2data$subjectid)
+for (df in split2) {
+  df <- as.data.frame(df)
+  df <- df[,c("subjectid","timestamp","sensorglucose")]
+  df <- df[order(df$timestamp),]
+  filename <- paste0("B:/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/",df$subjectid[1],"_T2.csv")
+  write.csv(df,file = filename,row.names = F)
+}
+
+split3 <- split(t3data,t3data$subjectid)
+for (df in split3) {
+  df <- as.data.frame(df)
+  df <- df[,c("subjectid","timestamp","sensorglucose")]
+  df <- df[order(df$timestamp),]
+  filename <- paste0("B:/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/",df$subjectid[3],"_T1.csv")
+  write.csv(df,file = filename,row.names = F)
+}
+
+splitpp <- split(ppdata,ppdata$subjectid)
+for (df in splitpp) {
+  df <- as.data.frame(df)
+  df <- df[,c("subjectid","timestamp","sensorglucose")]
+  df <- df[order(df$timestamp),]
+  filename <- paste0("B:/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/",df$subjectid[1],"_PP.csv")
+  write.csv(df,file = filename,row.names = F)
+}
+
 # then run cgmvariables()
