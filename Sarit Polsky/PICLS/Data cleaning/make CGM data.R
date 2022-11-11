@@ -39,8 +39,9 @@ colnames(ppdates) <- c("v15date","subjectid")
 d <- getwd()
 files <-list.files(d, full.names = T)
 alldata <- NULL
-# try f=10,11,12
+
 for (f in 1:length(files)) {
+#for (f in 122:130) {
   print(files[f])
   df <- read.csv(files[f], na.strings = "", header = F)
   df <- df[8:nrow(df),]
@@ -60,13 +61,14 @@ for (f in 1:length(files)) {
 }
 alldata2 <- merge(alldata,dates,by="subjectid",all.x = T, all.y = F)
 alldata2 <- merge(alldata2,ppdates,by="subjectid",all.x = T, all.y = F)
+alldata2$sensorglucose <- as.numeric(alldata2$sensorglucose)
 t1data <- alldata2 %>% filter(as.Date(timestamp)>=FirstTri & as.Date(timestamp)<SecondTri)
 t1data$trimester <- "T1"
 t2data <- alldata2 %>% filter(as.Date(timestamp)>=SecondTri & as.Date(timestamp)<ThirdTri)
 t2data$trimester <- "T2"
 t3data <- alldata2 %>% filter(as.Date(timestamp)>=ThirdTri & as.Date(timestamp)<as.Date(`L&D Admission Date`))
 t3data$trimester <- "T3"
-ppdata <- alldata2 %>% filter(as.Date(timestamp)>=as.Date(`L&D Admission Date`) & as.Date(timestamp)<v15date)
+ppdata <- alldata2 %>% filter(as.Date(timestamp)>=v15date)
 ppdata$trimester <- "Post-partum"
 
 # now I just need to split the trimester files by ID
@@ -93,7 +95,7 @@ for (df in split3) {
   df <- as.data.frame(df)
   df <- df[,c("subjectid","timestamp","sensorglucose")]
   df <- df[order(df$timestamp),]
-  filename <- paste0("B:/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/",df$subjectid[3],"_T1.csv")
+  filename <- paste0("B:/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/",df$subjectid[3],"_T3.csv")
   write.csv(df,file = filename,row.names = F)
 }
 
@@ -107,3 +109,10 @@ for (df in splitpp) {
 }
 
 # then run cgmvariables()
+cgmvariables(inputdirectory = "B:/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/", 
+             outputdirectory = "B:/Projects/Sarit Polsky/PICLS/Data_Clean/Cleaned CGM data", 
+             id_filename = T, printname = T,
+             customintervals = list(c(0,54),c(0,63),c(63,140),c(140,600)))
+
+# does not appear to be counting excursions correctly, probably because of all the gaps
+# when I finalize the dataset, should exclude these variables
