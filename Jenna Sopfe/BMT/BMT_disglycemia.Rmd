@@ -7,7 +7,7 @@ output: word_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/Volumes/peds/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
+knitr::opts_knit$set(root.dir = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects")
 library(redcapAPI)
 library(arsenal)
 library(skimr) 
@@ -19,7 +19,7 @@ library(tidyverse)
 
 ```{r data import,echo=FALSE,cache=TRUE}
 # REDCap API data import
-api <- read.table("./Jenna Sopfe/api_token.txt",header = T,sep = "\t")
+api <- read.csv("./Jenna Sopfe/api_token.csv")
 rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",
                          token = as.character(api[1,1]))
 data_full <- exportRecords(rcon)
@@ -79,6 +79,33 @@ cgm_data$plt <- as.numeric(cgm_data$plt)
 cgm_data$plt[cgm_data$transfuse == "Yes"] <- NA # Remove those with transfusion = "yes"
 cgm_data$plt_bleed <- ifelse(cgm_data$bleed == "Yes",cgm_data$plt,NA)
 cgm_data$plt_no_bleed <- ifelse(cgm_data$bleed == "No",cgm_data$plt,NA)
+# Add steroid info
+steroid = data_full %>% select(study_id,steroid_dates) %>% filter(!is.na(steroid_dates))
+cgm_data = left_join(cgm_data,steroid,by = "study_id")
+# Add TIR
+cgm = read.csv("./Jenna Sopfe/CGM Accuracy in BMT/Data_Cleaned/Prospective HSCT CGM Data Updated 6.24.19 FULL DATA SET.csv")
+cgm_summ = cgm %>% select(SubjectID,SensorNum,Historic_Glucose) %>% 
+  group_by(SubjectID,SensorNum) %>%
+  summarise(avg = mean(Historic_Glucose,na.rm = T),
+            sd = sd(Historic_Glucose,na.rm = T),
+            cv = avg / sd(Historic_Glucose,na.rm = T),
+            perc_under_70 = round(sum(Historic_Glucose < 70)/n(),3) * 100,
+            perc_70_140 = round(sum(Historic_Glucose >= 70 & 
+                                      Historic_Glucose <= 140)/n(),3) * 100,
+            perc_over_140 = round(sum(Historic_Glucose > 140)/n(),3) * 100,
+            perc_70_180 = round(sum(Historic_Glucose >= 70 & 
+                                      Historic_Glucose <= 180)/n(),3) * 100,
+            perc_over_180 = round(sum(Historic_Glucose > 180)/n(),3) * 100,
+            perc_over_200 = round(sum(Historic_Glucose > 200)/n(),3) * 100,
+            .groups = "keep")
+# Cleanup other data before merge
+cgm_data= cgm_data %>% select(study_id,time,date_of_tx,sens_place,sens_remove,sens_reason,steroid_dates)
+cgm_data$study_id = as.numeric(cgm_data$study_id)
+df = left_join(cgm_summ,cgm_data,by=c("SubjectID"="study_id","SensorNum" = "time")) %>%
+  select(SubjectID,SensorNum,date_of_tx:steroid_dates,everything())
+# Write
+write.csv(df,file = "./Jenna Sopfe/hsct_cgm_data.csv",
+          row.names = F,na="")
 ```
 
 ```{r demographics,echo=FALSE,cache=TRUE}
