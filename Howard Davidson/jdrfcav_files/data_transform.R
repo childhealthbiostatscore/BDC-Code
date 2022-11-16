@@ -11,8 +11,7 @@ cpep_recipe <- recipe(df) %>%
   step_nzv(all_predictors()) %>%
   step_YeoJohnson(all_predictors()) %>%
   step_normalize(all_predictors()) %>%
-  step_corr(all_predictors()) %>% 
   prep()
 # Save transformed data
-transformed_df <- bake(transformed,df)
+transformed_df <- bake(cpep_recipe,df)
 save(transformed_df,file = "./JDRFCAV_preprocessed_transformed.Rdata")
