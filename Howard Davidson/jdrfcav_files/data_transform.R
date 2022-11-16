@@ -1,5 +1,7 @@
+library(recipes)
 library(caret)
-load("~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/JDRFCAV_preprocessed.Rdata")
+setwd("/Users/timvigers/Dropbox/Work/BDC/Howard Davidson/R01/Data_Raw")
+load("JDRFCAV_preprocessed.Rdata")
 # Base recipe
 # Need to use role updating for large dimension datasets
 cpep_recipe <- recipe(df) %>%
@@ -9,8 +11,7 @@ cpep_recipe <- recipe(df) %>%
   step_nzv(all_predictors()) %>%
   step_YeoJohnson(all_predictors()) %>%
   step_normalize(all_predictors()) %>%
-  step_corr(all_predictors()) %>% 
   prep()
 # Save transformed data
-transformed_df <- bake(transformed,df)
-save(transformed_df,file = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/JDRFCAV_preprocessed_transformed.Rdata")
+transformed_df <- bake(cpep_recipe,df)
+save(transformed_df,file = "./JDRFCAV_preprocessed_transformed.Rdata")
