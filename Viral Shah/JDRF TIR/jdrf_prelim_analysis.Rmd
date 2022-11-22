@@ -9,7 +9,7 @@ output:
     toc_depth: 2
     toc_float: yes
 ---
-```{r setup, include=FALSE}
+```{r, include=FALSE}
 library(knitr)
 library(readxl)
 library(tidyverse) # data manipulation
@@ -19,6 +19,7 @@ library(readr)
 library(table1)
 library(Hmisc)
 library(nlme)
+library(emmeans)
 
 knitr::opts_chunk$set(echo = FALSE)
 if(Sys.info()["sysname"] == "Windows"){
@@ -39,15 +40,29 @@ jdrf_data_clean <- read_csv("S:/Laura/BDC/Projects/Viral Shah/JDRF/Data_Cleaned/
 fit_mod = function(outcome,df){
 
     # Fit model
-  f = as.formula(paste0(outcome,"~","Group","+","YEAR","+","Age_DateOfEyeExam","+", "DiabetesDuration_DateOfEyeExam" ))
+  f = as.formula(paste0(outcome,"~","Group*YEAR","+","Age_DateOfEyeExam","+", "DiabetesDuration_DateOfEyeExam"))
   mod = lme(f,
             random = ~1|MRN,
             data = df,
             na.action = na.omit)
  
-  print(summary(mod))
-}
+  #print(summary(mod))
+  
+    # Anova
+  mod_anova = anova.lme(mod, type="marginal")
+  print(kable(mod_anova,digits = 3,caption = "Test of Overall Effect"))
 
+ 
+   # Means
+  mod_means = emmeans(mod,specs=pairwise ~ factor(YEAR):Group, adjust="tukey")
+  print(kable(mod_means$contrasts[c(7,20,32,43,53,62,70)],digits = 3,caption = "Timepoint Means"))
+ # print(kable(mod_means$contrasts[c(3,8,12),],caption="Time point means.",format.args = list(scientific = FALSE)))
+
+   # Number of obs
+  cat("\n")
+  cat(paste("This model was fit using",nobs(mod),"observations."))
+  cat("\n")
+}
 
 # function for pvalue in table1
 pvalue <- function(x, ...) {
@@ -141,6 +156,10 @@ jdrf_a1c_ann = jdrf_a1c %>% group_by(`Study ID`, YEAR) %>% summarise(mean_a1c = 
                                                                       mean_uacr = mean(uacr, na.rm = T))
 other_vars = jdrf_a1c %>% select(`Study ID`, MRN, Age_DateOfEyeExam, Group, DiabetesDuration_DateOfEyeExam)
 jdrf_a1c_ann = left_join(jdrf_a1c_ann, other_vars) %>% distinct()
+jdrf_a1c_ann = jdrf_a1c_ann %>% filter(YEAR > 0)
+jdrf_a1c_ann$YEAR = factor(jdrf_a1c_ann$YEAR, levels = c(1,2,3,4,5,6,7))
+jdrf_a1c_ann$Group = factor(jdrf_a1c_ann$Group, levels = c("Control", "Case"))
+
 #################
 
 cgm_table_df = jdrf_a1c %>% group_by(`Study ID`, Group) %>% summarise(mean_a1c = mean(a1c, na.rm = T),
@@ -208,17 +227,47 @@ a1c_tir_by_YEAR = jdrf_a1c %>% group_by(YEAR, Group) %>% summarise(mean_a1c = me
                                                                    sd_mg = sd(mean_glucose, na.rm = T),
                                                                      n_grp = length(unique(`Study ID`)))
 a1c_tir_by_YEAR = a1c_tir_by_YEAR %>% filter(YEAR > 0)
+group_ns = a1c_tir_by_YEAR %>% select(Group, YEAR, n_grp)
+group_ns$YEAR = factor(group_ns$YEAR, levels = c(1,2,3,4,5,6,7))
+```
+
+```{r plots}
 # plots
-a1c_YEAR_p = ggplot(data = a1c_tir_by_YEAR, aes(x = YEAR, y = mean_a1c, group = Group, color = Group)) + scale_x_reverse(breaks = seq(0,8,1))  + scale_y_continuous(breaks = seq(6,11,1))  + theme_classic()
-tir_YEAR_p = ggplot(data = a1c_tir_by_YEAR, aes(x = YEAR, y = mean_tir, group = Group, color = Group)) + scale_x_reverse(breaks = seq(0,8,1)) + theme_classic()
-tar_YEAR_p = ggplot(data = a1c_tir_by_YEAR, aes(x = YEAR, y = mean_tar, group = Group, color = Group)) + scale_x_reverse(breaks = seq(0,8,1)) + theme_classic()
-tbr_YEAR_p = ggplot(data = a1c_tir_by_YEAR, aes(x = YEAR, y = mean_tbr, group = Group, color = Group)) + scale_x_reverse(breaks = seq(0,8,1)) + theme_classic()
-ttir_YEAR_p = ggplot(data = a1c_tir_by_YEAR, aes(x = YEAR, y = mean_ttir, group = Group, color = Group)) + scale_x_reverse(breaks = seq(0,8,1)) + theme_classic()
-mg_YEAR_p = ggplot(data = a1c_tir_by_YEAR, aes(x = YEAR, y = mean_mg, group = Group, color = Group)) + scale_x_reverse(breaks = seq(0,8,1)) + theme_classic()
 
+# a1c
+# model
+# model
+a1c_mod1 = lme(mean_a1c ~ Group*YEAR + Age_DateOfEyeExam + DiabetesDuration_DateOfEyeExam, 
+               random = ~1|MRN,
+               data = jdrf_a1c_ann, 
+               na.action = na.omit)
+a1c_means = emmeans(a1c_mod1,specs=pairwise ~ YEAR:Group)
+a1c_results = summary(a1c_means$emmeans)
 
+a1c_results = left_join(a1c_results, group_ns)
 
+# plot
+a1c_YEAR_p = ggplot(data = a1c_results, aes(x = as.numeric(YEAR), y = emmean, group = Group, color = Group)) + scale_x_reverse(breaks = seq(0,8,1))  + scale_y_continuous(breaks = seq(6,11,1))  + theme_classic()
 
+# tir
+# model
+tir_mod1 = lme(mean_tir ~ Group*YEAR + Age_DateOfEyeExam + DiabetesDuration_DateOfEyeExam, 
+               random = ~1|MRN,
+               data = jdrf_a1c_ann, 
+               na.action = na.omit)
+tir_means = emmeans(tir_mod1,specs=pairwise ~ YEAR:Group)
+tir_results = summary(tir_means$emmeans)
+
+tir_results = left_join(tir_results, group_ns)
+
+# plot
+tir_YEAR_p = ggplot(data = tir_results, aes(x = as.numeric(YEAR), y = emmean, group = Group, color = Group)) + scale_x_reverse(breaks = seq(0,8,1)) + theme_classic()
+
+###########################
+# tar_YEAR_p = ggplot(data = a1c_tir_by_YEAR, aes(x = YEAR, y = mean_tar, group = Group, color = Group)) + scale_x_reverse(breaks = seq(0,8,1)) + theme_classic()
+# tbr_YEAR_p = ggplot(data = a1c_tir_by_YEAR, aes(x = YEAR, y = mean_tbr, group = Group, color = Group)) + scale_x_reverse(breaks = seq(0,8,1)) + theme_classic()
+# ttir_YEAR_p = ggplot(data = a1c_tir_by_YEAR, aes(x = YEAR, y = mean_ttir, group = Group, color = Group)) + scale_x_reverse(breaks = seq(0,8,1)) + theme_classic()
+# mg_YEAR_p = ggplot(data = a1c_tir_by_YEAR, aes(x = YEAR, y = mean_mg, group = Group, color = Group)) + scale_x_reverse(breaks = seq(0,8,1)) + theme_classic()
 ```
 
 # Outstanding Questions/Remarks
@@ -242,14 +291,23 @@ jdrf_table2
 Ns = a1c_tir_by_YEAR %>% select(YEAR, Group, n_grp)
 kable(Ns)
 
-a1c_YEAR_p + geom_line() + geom_errorbar(aes(ymin = mean_a1c - sd_a1c, ymax = mean_a1c + sd_a1c), alpha = 0.25) +
-  geom_text(aes(label =paste0("n = ",n_grp)),size = 3, nudge_y = 0.52, show.legend = F, nudge_x = -0.25) +
-  geom_text(aes(label = round(mean_a1c, 2)), nudge_y = .35, nudge_x = -0.25, show.legend = F)
-tir_YEAR_p + geom_line()
+a1c_YEAR_p + geom_line() + 
+  geom_errorbar(aes(ymin = lower.CL,
+                    ymax = upper.CL), alpha = 0.25) +
+  geom_text(aes(label =paste0("n = ",n_grp)),size = 3, nudge_y = 0.34, show.legend = F, nudge_x = -0.25) +
+  geom_text(aes(label = round(emmean, 2)), nudge_y = .22, nudge_x = -0.25, show.legend = F) + 
+  labs(x ="Year", y = "A1c (%)")
+
+tir_YEAR_p + geom_line()+ 
+  geom_errorbar(aes(ymin = lower.CL,
+                    ymax = upper.CL), alpha = 0.25) +
+  geom_text(aes(label =paste0("n = ",n_grp)),size = 3, nudge_y = 4, show.legend = F, nudge_x = -0.25) +
+  geom_text(aes(label = round(emmean, 2)), nudge_y = 3, nudge_x = -0.25, show.legend = F)+ 
+  labs(x ="Year", y = "TIR (%)")
 ```
 
 # a1c
-Retinopathy status is associated with A1c (p = 0.01)
+Retinopathy status is associated with A1c (p = 0.03)
 
 plot above
 ```{r a1c}
@@ -257,7 +315,7 @@ fit_mod(outcome = "mean_a1c", df = jdrf_a1c_ann)
 ```
 
 # tir
-Retinopathy status is associated with tir (p = 0.01)
+Retinopathy status is not associated with tir (p = 0.05)
 
 plot above
 ```{r tir}
@@ -265,33 +323,33 @@ fit_mod(outcome = "mean_tir", df = jdrf_a1c_ann)
 ```
 
 # tar
-Retinopathy status is associated with tar (p = 0.002)
+Retinopathy status is associated with tar (p = 0.02)
 ```{r tar}
 fit_mod(outcome = "mean_tar", df = jdrf_a1c_ann)
 
-tar_YEAR_p + geom_line()
+# tar_YEAR_p + geom_line()
 ```
 
 # tbr
-Retinopathy status is associated with tbr (p = 0.01)
+Retinopathy status is not associated with tbr (p = 0.05)
 ```{r tbr}
 fit_mod(outcome = "mean_tbr", df = jdrf_a1c_ann)
 
-tbr_YEAR_p + geom_line()
+# tbr_YEAR_p + geom_line()
 ```
 
 # ttir
-Retinopathy status is associated with ttir (p = 0.002)
+Retinopathy status is associated with ttir (p = 0.01)
 ```{r ttir}
 fit_mod(outcome = "mean_ttir", df = jdrf_a1c_ann)
 
-ttir_YEAR_p + geom_line()
+# ttir_YEAR_p + geom_line()
 ```
 
 # mean glucose
-Retinopathy status is associated with mean glucose (p = 0.003)
+Retinopathy status is associated with mean glucose (p = 0.04)
 ```{r mg}
 fit_mod(outcome = "mean_glucose", df = jdrf_a1c_ann)
 
-mg_YEAR_p + geom_line()
+# mg_YEAR_p + geom_line()
 ```
