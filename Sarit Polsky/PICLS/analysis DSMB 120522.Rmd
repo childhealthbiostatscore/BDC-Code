@@ -49,6 +49,8 @@ cgmdata <- merge(cgmdata, rand_keep, by="pid", all.x = T, all.y = T)
 cgmdata <- cgmdata %>% filter(!pid=="102A")
 
 # get baseline values
+# CGM variables to test
+# %time <54, %time 63-140, %time <63, % time >140 
 base <- cgmdata %>% filter(time=="T1")
 base$percent_time_under_54_t1 <- base$percent_time_under_54
 base$percent_time_63_140_t1 <- base$percent_time_63_140
@@ -57,9 +59,19 @@ base$percent_time_over_140_t1 <- base$percent_time_over_140
 base <- base %>% select(pid,percent_time_under_54_t1, percent_time_63_140_t1, percent_time_under_63_t1, percent_time_over_140_t1)
 cgmdata <- merge(cgmdata, base, by="pid", all.x = T, all.y = T)
 
-# CGM variables to test
-# %time <54, %time 63-140, %time <63, % time >140 
-
+# read in a1c data
+a1cdata <- read.csv("B:/Projects/Sarit Polsky/PICLS/Data_Clean/AllLabs_VenousA1c.csv")
+a1cdata$Lab.Collection.Trimester <- as.factor(a1cdata$Lab.Collection.Trimester)
+a1cdata$pid <- a1cdata$ParticipantID
+# now take the average of any multiple A1c values within the same trimester
+a1cdata_sum <- a1cdata %>% group_by(pid,Lab.Collection.Trimester) %>% summarise(mean_a1c = mean(Labvalue, na.rm=TRUE))
+a1cdata_sum <- merge(a1cdata_sum, rand_keep, by="pid", all.x = F, all.y = T)
+a1cdata_sum <- a1cdata_sum %>% select(pid, randomization_group,  Lab.Collection.Trimester, mean_a1c)
+# get baseline values
+base_a1c <- a1cdata_sum %>% filter(Lab.Collection.Trimester=="1st")
+base_a1c$a1c_t1 <- base_a1c$mean_a1c
+base_a1c <- base_a1c %>% select(pid, a1c_t1)
+a1cdata_sum <- merge(a1cdata_sum, base_a1c, by="pid", all.x = T, all.y = T)
 ```
 
 # Results
@@ -289,7 +301,6 @@ mod_pairs
 plot_model(mod, type="pred", terms=c("time","randomization_group"))
 ```
 
-
 ### With adjustment for baseline
 
 #### ANOVA table
@@ -320,3 +331,68 @@ mod_pairs
 ```{r, echo=FALSE, message=FALSE}
 plot_model(mod, type="pred", terms=c("time","randomization_group"))
 ```
+
+## HbA1c
+
+### Without adjustment for baseline
+
+#### ANOVA table
+
+```{r, echo=FALSE, message=FALSE}
+mod <- lme(mean_a1c ~ Lab.Collection.Trimester*randomization_group ,random=~1|pid,data = a1cdata_sum,na.action = na.omit)
+mod_anova <- anova.lme(mod, type="marginal")
+mod_means <- emmeans(mod,c("Lab.Collection.Trimester","randomization_group"))
+mod_pairs <-  pairs(mod_means,adjust="tukey", simple="each")
+
+kable(mod_anova)
+```
+
+#### Model means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_means
+```
+
+#### Pairwise comparison of means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_pairs
+```
+
+#### Plot
+
+```{r, echo=FALSE, message=FALSE}
+plot_model(mod, type="pred", terms=c("Lab.Collection.Trimester","randomization_group"))
+```
+
+### With adjustment for baseline
+
+#### ANOVA table
+
+```{r, echo=FALSE, message=FALSE}
+mod <- lme(mean_a1c ~ Lab.Collection.Trimester*randomization_group + a1c_t1,random=~1|pid,data = a1cdata_sum,na.action = na.omit)
+mod_anova <- anova.lme(mod, type="marginal")
+mod_means <- emmeans(mod,c("Lab.Collection.Trimester","randomization_group"))
+mod_pairs <-  pairs(mod_means,adjust="tukey", simple="each")
+
+kable(mod_anova)
+```
+
+#### Model means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_means
+```
+
+#### Pairwise comparison of means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_pairs
+```
+
+#### Plot
+
+```{r, echo=FALSE, message=FALSE}
+plot_model(mod, type="pred", terms=c("Lab.Collection.Trimester","randomization_group"))
+```
+
