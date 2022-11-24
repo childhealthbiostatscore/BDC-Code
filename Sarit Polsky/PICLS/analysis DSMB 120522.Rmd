@@ -15,6 +15,9 @@ output:
 library(knitr)
 library(stringr)
 library(dplyr)
+library(nlme)
+library(emmeans)
+library(sjPlot)
 
 knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
 
@@ -35,6 +38,7 @@ setwd(home_dir)
 cgmdata <- read.csv("./Data_Clean/Cleaned CGM data/REDCap Upload.csv")
 cgmdata$pid <- str_sub(cgmdata$subject_id,1,4)
 cgmdata$time <- str_sub(cgmdata$subject_id,6,7)
+cgmdata$time <- factor(cgmdata$time, c("T1","T2","T3","PP"))
 
 # merge in randomization groups
 rand <- read.csv("./Data_Clean/PICLSStudyHCLVsSAPTI-RandomizedPatients_DATA_2022-11-14_1616.csv")
@@ -43,10 +47,43 @@ cgmdata <- merge(cgmdata, rand_keep, by="pid", all.x = T, all.y = T)
 
 # remove 102A for now, because we don't have any CGM data
 cgmdata <- cgmdata %>% filter(!pid=="102A")
+
+# CGM variables to test
+# %time <54, %time 63-140, %time <63, % time >140 
+
+```
+
+# Results
+
+## Percent time <54 mg/dL
+
+### ANOVA table
+
+```{r, echo=FALSE, message=FALSE}
+mod <- lme(percent_time_under_54 ~ time*randomization_group,random=~1|pid,data = cgmdata,na.action = na.omit)
+mod_anova <- anova.lme(mod, type="marginal")
+mod_means <- emmeans(mod,c("time","randomization_group"))
+mod_pairs <-  pairs(mod_means,adjust="tukey", simple="each")
+
+kable(mod_anova)
+```
+
+### Model means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_means
+```
+
+### Pairwise comparison of means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_pairs
+```
+
+### Plot
+
+```{r, echo=FALSE, message=FALSE}
+plot_model(mod, type="pred", terms=c("time","randomization_group"))
 ```
 
 
-```{r echo=FALSE}
-kable(t1,caption = "")
-```
-<br>
