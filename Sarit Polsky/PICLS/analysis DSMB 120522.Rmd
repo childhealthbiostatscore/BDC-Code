@@ -45,6 +45,10 @@ rand <- read.csv("B:/Projects/Sarit Polsky/PICLS/Data_Clean/PICLSStudyHCLVsSAPTI
 rand_keep <- rand %>% select(pid,randomization_group)
 cgmdata <- merge(cgmdata, rand_keep, by="pid", all.x = T, all.y = T)
 
+# merge in baseline BMI
+basebmi <- read.csv("B:/Projects/Sarit Polsky/PICLS/Data_Clean/PICLSStudyHCLVsSAPTI-BaselineBMI_DATA_2022-11-28_1039.csv")
+cgmdata <- merge(cgmdata, basebmi, by="pid", all.x = T, all.y = F)
+
 # remove 102A for now, because we don't have any CGM data
 cgmdata <- cgmdata %>% filter(!pid=="102A")
 
@@ -72,9 +76,51 @@ base_a1c <- a1cdata_sum %>% filter(Lab.Collection.Trimester=="1st")
 base_a1c$a1c_t1 <- base_a1c$mean_a1c
 base_a1c <- base_a1c %>% select(pid, a1c_t1)
 a1cdata_sum <- merge(a1cdata_sum, base_a1c, by="pid", all.x = T, all.y = T)
+a1cdata_sum <- merge(a1cdata_sum, basebmi, by="pid", all.x = T, all.y = F)
+
+# HFS data
+hfs <- read.csv("B:/Projects/Sarit Polsky/PICLS/Data_Clean/PICLSStudyHCLVsSAPTI-HFS_DATA_2022-11-28_1622.csv")
+hfs$time <- ifelse(hfs$redcap_event_name=="visit_1_baseline_arm_1","T1",
+                        ifelse(hfs$redcap_event_name %in% c("visit_8_2nd_trimes_arm_1","visit_9_2nd_trimes_arm_1"),"T2",
+                               ifelse(hfs$redcap_event_name %in% c("visit_11_3rd_trime_arm_1","visit_12_3rd_trime_arm_1","visit_13_3rd_trime_arm_1"),"T3",
+                                      ifelse(hfs$redcap_event_name=="visit_16_46_wks_po_arm_1","PP",NA))))
+x <- hfs[,c("pid","redcap_event_name")]
+write.csv(x,"C:/temp/visits_trimesters.csv", row.names = F)
 ```
 
 # Results
+
+## Histogram of number of days of CGM wear per trimester
+
+### Overall
+
+```{r, echo=FALSE, message=FALSE}
+hist(cgmdata$num_days)
+```
+
+### Trimester 1
+
+```{r, echo=FALSE, message=FALSE}
+hist(cgmdata[cgmdata$time=="T1",]$num_days)
+```
+
+### Trimester 2
+
+```{r, echo=FALSE, message=FALSE}
+hist(cgmdata[cgmdata$time=="T2",]$num_days)
+```
+
+### Trimester 3
+
+```{r, echo=FALSE, message=FALSE}
+hist(cgmdata[cgmdata$time=="T3",]$num_days)
+```
+
+### Post-partum
+
+```{r, echo=FALSE, message=FALSE}
+hist(cgmdata[cgmdata$time=="PP",]$num_days)
+```
 
 ## Percent time <54 mg/dL
 
@@ -83,7 +129,7 @@ a1cdata_sum <- merge(a1cdata_sum, base_a1c, by="pid", all.x = T, all.y = T)
 #### ANOVA table
 
 ```{r, echo=FALSE, message=FALSE}
-mod <- lme(percent_time_under_54 ~ time*randomization_group ,random=~1|pid,data = cgmdata,na.action = na.omit)
+mod <- lme(percent_time_under_54 ~ time*randomization_group,random=~1|pid,data = cgmdata,na.action = na.omit)
 mod_anova <- anova.lme(mod, type="marginal")
 mod_means <- emmeans(mod,c("time","randomization_group"))
 mod_pairs <-  pairs(mod_means,adjust="tukey", simple="each")
@@ -109,12 +155,13 @@ mod_pairs
 plot_model(mod, type="pred", terms=c("time","randomization_group"))
 ```
 
-### With adjustment for baseline
+### With adjustment for baseline value and baseline BMI
 
 #### ANOVA table
 
 ```{r, echo=FALSE, message=FALSE}
-mod <- lme(percent_time_under_54 ~ time*randomization_group + percent_time_under_54_t1,random=~1|pid,data = cgmdata,na.action = na.omit)
+mod <- lme(percent_time_under_54 ~ time*randomization_group + percent_time_under_54_t1 + bmi_baseline,
+           random=~1|pid,data = cgmdata,na.action = na.omit)
 mod_anova <- anova.lme(mod, type="marginal")
 mod_means <- emmeans(mod,c("time","randomization_group"))
 mod_pairs <-  pairs(mod_means,adjust="tukey", simple="each")
@@ -173,12 +220,13 @@ mod_pairs
 plot_model(mod, type="pred", terms=c("time","randomization_group"))
 ```
 
-### With adjustment for baseline
+### With adjustment for baseline value and baseline BMI
 
 #### ANOVA table
 
 ```{r, echo=FALSE, message=FALSE}
-mod <- lme(percent_time_63_140 ~ time*randomization_group + percent_time_63_140_t1,random=~1|pid,data = cgmdata,na.action = na.omit)
+mod <- lme(percent_time_63_140 ~ time*randomization_group + percent_time_63_140_t1 + bmi_baseline,
+           random=~1|pid,data = cgmdata,na.action = na.omit)
 mod_anova <- anova.lme(mod, type="marginal")
 mod_means <- emmeans(mod,c("time","randomization_group"))
 mod_pairs <-  pairs(mod_means,adjust="tukey", simple="each")
@@ -237,12 +285,13 @@ mod_pairs
 plot_model(mod, type="pred", terms=c("time","randomization_group"))
 ```
 
-### With adjustment for baseline
+### With adjustment for baseline value and baseline BMI
 
 #### ANOVA table
 
 ```{r, echo=FALSE, message=FALSE}
-mod <- lme(percent_time_under_63 ~ time*randomization_group + percent_time_under_63_t1,random=~1|pid,data = cgmdata,na.action = na.omit)
+mod <- lme(percent_time_under_63 ~ time*randomization_group + percent_time_under_63_t1 + bmi_baseline,
+           random=~1|pid,data = cgmdata,na.action = na.omit)
 mod_anova <- anova.lme(mod, type="marginal")
 mod_means <- emmeans(mod,c("time","randomization_group"))
 mod_pairs <-  pairs(mod_means,adjust="tukey", simple="each")
@@ -270,7 +319,7 @@ plot_model(mod, type="pred", terms=c("time","randomization_group"))
 
 ## Percent time >140 mg/dL
 
-### Without adjustment for baseline
+### Without adjustment for baseline 
 
 #### ANOVA table
 
@@ -301,12 +350,13 @@ mod_pairs
 plot_model(mod, type="pred", terms=c("time","randomization_group"))
 ```
 
-### With adjustment for baseline
+### With adjustment for baseline value and baseline BMI
 
 #### ANOVA table
 
 ```{r, echo=FALSE, message=FALSE}
-mod <- lme(percent_time_over_140 ~ time*randomization_group + percent_time_over_140_t1,random=~1|pid,data = cgmdata,na.action = na.omit)
+mod <- lme(percent_time_over_140 ~ time*randomization_group + percent_time_over_140_t1 + bmi_baseline,
+           random=~1|pid,data = cgmdata,na.action = na.omit)
 mod_anova <- anova.lme(mod, type="marginal")
 mod_means <- emmeans(mod,c("time","randomization_group"))
 mod_pairs <-  pairs(mod_means,adjust="tukey", simple="each")
@@ -365,12 +415,13 @@ mod_pairs
 plot_model(mod, type="pred", terms=c("Lab.Collection.Trimester","randomization_group"))
 ```
 
-### With adjustment for baseline
+### With adjustment for baseline value and baseline BMI
 
 #### ANOVA table
 
 ```{r, echo=FALSE, message=FALSE}
-mod <- lme(mean_a1c ~ Lab.Collection.Trimester*randomization_group + a1c_t1,random=~1|pid,data = a1cdata_sum,na.action = na.omit)
+mod <- lme(mean_a1c ~ Lab.Collection.Trimester*randomization_group + a1c_t1 + bmi_baseline,
+           random=~1|pid,data = a1cdata_sum,na.action = na.omit)
 mod_anova <- anova.lme(mod, type="marginal")
 mod_means <- emmeans(mod,c("Lab.Collection.Trimester","randomization_group"))
 mod_pairs <-  pairs(mod_means,adjust="tukey", simple="each")
