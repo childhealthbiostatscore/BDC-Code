@@ -1,5 +1,6 @@
 # Function
 pump_variables = function(indir,outdir,outname){
+  library(parsedate)
   # Import data
   files <- list.files(indir,full.names = T)
   # Make a summary variables table.
@@ -176,18 +177,34 @@ pump_variables = function(indir,outdir,outname){
     bolus_lower_bwz = 0
     bolus_higher_bwz = 0
     total_estimates = 0
+    
     bg_with_bolus_70 = 0
     bg_with_bolus_70_149 = 0
     bg_with_bolus_150_249 = 0
     bg_with_bolus_above_250 = 0
+    bg_with_bolus_70_180 = 0
+    bg_with_bolus_181_250 = 0
+    bg_with_bolus_251_400 = 0
+    bg_with_bolus_above_400 = 0
+    
     bg_with_carb_70 = 0
     bg_with_carb_70_149 = 0
     bg_with_carb_150_249 = 0
     bg_with_carb_above_250 = 0
+    bg_with_carb_70_180 = 0
+    bg_with_carb_181_250 = 0
+    bg_with_carb_251_400 = 0
+    bg_with_carb_above_400 = 0
+    
     bg_with_carb_bolus_70 = 0
     bg_with_carb_bolus_70_149 = 0
     bg_with_carb_bolus_150_249 = 0
     bg_with_carb_bolus_above_250 = 0
+    bg_with_carb_bolus_70_180 = 0
+    bg_with_carb_bolus_181_250 = 0
+    bg_with_carb_bolus_251_400 = 0
+    bg_with_carb_bolus_above_400 = 0
+    
     bolus_dates = NULL
     bolus_datetimes = NULL
     estimate_dates = NULL
@@ -292,6 +309,11 @@ pump_variables = function(indir,outdir,outname){
         if (bg %in% 70:149) {bg_with_bolus_70_149 <- bg_with_bolus_70_149 + 1}
         if (bg %in% 150:249) {bg_with_bolus_150_249 <- bg_with_bolus_150_249 + 1}
         if (bg >= 250) {bg_with_bolus_above_250 <- bg_with_bolus_above_250 + 1}
+        
+        if (bg %in% 70:180) {bg_with_bolus_70_180 <- bg_with_bolus_70_180 + 1}
+        if (bg %in% 181:250) {bg_with_bolus_181_250 <- bg_with_bolus_181_250 + 1}
+        if (bg %in% 251:400) {bg_with_bolus_251_400 <- bg_with_bolus_251_400 + 1}
+        if (bg > 400) {bg_with_bolus_above_400 <- bg_with_bolus_above_400 + 1}
       }
       # Count carbs with no boluses
       if (any(carb_datetimes %in% time.range) & !any(bolus_datetimes %in% time.range)) {
@@ -299,6 +321,11 @@ pump_variables = function(indir,outdir,outname){
         if (bg %in% 70:149) {bg_with_carb_70_149 <- bg_with_carb_70_149 + 1}
         if (bg %in% 150:249) {bg_with_carb_150_249 <- bg_with_carb_150_249 + 1}
         if (bg >= 250) {bg_with_carb_above_250 <- bg_with_carb_above_250 + 1}
+        
+        if (bg %in% 70:180) {bg_with_carb_70_180 <- bg_with_carb_70_180 + 1}
+        if (bg %in% 181:250) {bg_with_carb_181_250 <- bg_with_carb_181_250 + 1}
+        if (bg %in% 251:400) {bg_with_carb_251_400 <- bg_with_carb_251_400 + 1}
+        if (bg > 400) {bg_with_carb_above_400 <- bg_with_carb_above_400 + 1}
       }
       # Count carbs and boluses
       if (any(bolus_datetimes %in% time.range) & any(carb_datetimes %in% time.range)) {
@@ -306,6 +333,11 @@ pump_variables = function(indir,outdir,outname){
         if (bg %in% 70:149) {bg_with_carb_bolus_70_149 <- bg_with_carb_bolus_70_149 + 1}
         if (bg %in% 150:249) {bg_with_carb_bolus_150_249 <- bg_with_carb_bolus_150_249 + 1}
         if (bg >= 250) {bg_with_carb_bolus_above_250 <- bg_with_carb_bolus_above_250 + 1}
+        
+        if (bg %in% 70:180) {bg_with_carb_bolus_70_180 <- bg_with_carb_bolus_70_180 + 1}
+        if (bg %in% 181:250) {bg_with_carb_bolus_181_250 <- bg_with_carb_bolus_181_250 + 1}
+        if (bg %in% 251:400) {bg_with_carb_bolus_251_400 <- bg_with_carb_bolus_251_400 + 1}
+        if (bg > 400) {bg_with_carb_bolus_above_400 <- bg_with_carb_bolus_above_400 + 1}
       }
     }
     # Of all boluses given, how many a BG reading within 15 minutes prior
@@ -370,6 +402,22 @@ pump_variables = function(indir,outdir,outname){
     summary[f,"bg_above_250_with_bolus_only"] <- bg_with_bolus_above_250
     summary[f,"bg_above_250_with_carb_only"] <- bg_with_carb_above_250
     summary[f,"bg_above_250_with_bolus_carb"] <- bg_with_carb_bolus_above_250
+    
+    summary[f,"bg_70_180_with_bolus_only"] <- bg_with_bolus_70_180
+    summary[f,"bg_70_180_with_carb_only"] <- bg_with_carb_70_180
+    summary[f,"bg_70_180_with_bolus_carb"] <- bg_with_carb_bolus_70_180
+    
+    summary[f,"bg_181_250_with_bolus_only"] <- bg_with_bolus_181_250
+    summary[f,"bg_181_250_with_carb_only"] <- bg_with_carb_181_250
+    summary[f,"bg_181_250_with_bolus_carb"] <- bg_with_carb_bolus_181_250
+    
+    summary[f,"bg_251_400_with_bolus_only"] <- bg_with_bolus_251_400
+    summary[f,"bg_251_400_with_carb_only"] <- bg_with_carb_251_400
+    summary[f,"bg_251_400_with_bolus_carb"] <- bg_with_carb_bolus_251_400
+    
+    summary[f,"bg_above_400_with_bolus_only"] <- bg_with_bolus_above_400
+    summary[f,"bg_above_400_with_carb_only"] <- bg_with_carb_above_400
+    summary[f,"bg_above_400_with_bolus_carb"] <- bg_with_carb_bolus_above_400
     
     summary[f,"avg_mins_btw_rewinds"] <- round(mean_rewind,3)
   }
