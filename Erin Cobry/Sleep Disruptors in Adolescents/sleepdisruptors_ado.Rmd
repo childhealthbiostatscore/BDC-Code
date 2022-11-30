@@ -17,53 +17,82 @@ library(performance)
 library(knitr)
 library(table1)
 
-knitr::opts_chunk$set(echo = FALSE)
-if(Sys.info()["sysname"] == "Windows"){
-  home_dir = "S:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/Sleep Disruptors in t1d Adolescents"
-} else if (Sys.info()["sysname"] == "Linux"){
-  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
-} else if (Sys.info()["sysname"] == "Darwin"){
-  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
-}
-knitr::opts_knit$set(root.dir = home_dir)
-rm(home_dir)
+# knitr::opts_chunk$set(echo = FALSE)
+# if(Sys.info()["sysname"] == "Windows"){
+#   home_dir = "S:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/Sleep Disruptors in t1d Adolescents"
+# } else if (Sys.info()["sysname"] == "Linux"){
+#   home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+# } else if (Sys.info()["sysname"] == "Darwin"){
+#   home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+# }
+# knitr::opts_knit$set(root.dir = home_dir)
+# rm(home_dir)
 ```
 
-```{r data step}
+```{r data step, include=FALSE}
 # upload data
 sleep_disruptors = read.csv("S:/Laura/BDC/Projects/Erin Cobry/Sleep Disruptors in t1d Adolescents/Data/SleepDisruptorsInAdo_DATA_2022-11-29_1035.csv")
 
 # for table1 right now we need age, gender, race, a1c and maybe therapy
-df = sleep_disruptors %>% select(record_id , redcap_event_name, season, age, parent_gender, race___1:race___8, hba1c, diabetesduration, insulinmethod, currenthcltech, current_cgm_use) %>% filter(redcap_event_name == "enrollment_arm_1")
+df = sleep_disruptors %>% select(record_id , redcap_event_name, season, age, parent_gender, race___1:race___8, insulinmethod, currenthcltech, current_cgm_use) %>% filter(redcap_event_name == "enrollment_arm_1")
 
-df_a1c = sleep_disruptors %>% select(record_id , hba1c, diabetesduration, dxdate, enrollementdate)
+# new variabls
+df = df %>% mutate(group = case_when(as.numeric(substr(record_id, 3,4)) < 11 ~ "Summer",
+                                     TRUE ~ "Spring/Fall"),
+                   race = case_when(race___1 == 1 ~ "White, Non-Hispanic",
+                                    race___2 == 1 ~ "Black/African American",
+                                    race___3 == 1 ~ "Hispanic/Latino",
+                                    race___4 == 1 ~ "Native Hawaiian/Pacific Islander",
+                                    race___5 == 1 ~ "Asian",
+                                    race___6 == 1 ~ "American Indian/Alaska Native",
+                                    TRUE ~ "Unknown"),
+                   gender = case_when(parent_gender == 1 ~ "Male",
+                                      parent_gender == 2 ~ "Female",
+                                      parent_gender == 3 ~ "Other"),
+                   age_cat = case_when(age < 13 ~ "11-12",
+                                       age > 12 & age < 18 ~ "13-17"))
+# labels
+df$insulinmethod = factor(df$insulinmethod, labels = c("Injections", "Insulin Pump"))
+df$current_cgm_use = factor(df$current_cgm_use, labels = c("Yes", "No"))
+df$currenthcltech = factor(df$currenthcltech, labels = c("Yes", "No"))
 
+# glycemic for t1
+df_a1c = sleep_disruptors %>% select(record_id , hba1c, diabetesduration, dxdate, enrollementdate) %>% filter(!is.na(hba1c) | !is.na(diabetesduration))
+
+# t1 df
+t1_df = full_join(df, df_a1c) %>% select(group,age, age_cat,gender, race, insulinmethod, currenthcltech, current_cgm_use, hba1c, diabetesduration)
+t1 = table1(~.|group, data = t1_df,
+            render.continuous=c(.="Mean (SD)"))
+```
+
+# Outstanding data remarks:
+
+Redcap season variable incomplete
+
+No diabetes duration/ diagnosis dates for most subj
+
+only 10 hba1c values (all summer)
+
+3 ages missing (subj 1036-38) -- also missing mostly everything
+
+```{r, include=FALSE}
+# Variables:
+# Sleep measures (RedCap wrist actigraphy variable)
+# Total sleep
+# Sleep latency
+# Sleep efficiency
+# WASO
+# 
+# Diabetes measures (RedCap Pump & CGM Glycemic Data OR Injection & BG Meter Glycemic Data Instruments [depending on the insulin method for each patient])
+# Time in range (70-180)
+# Time hypoglycemic (<70 – combine <54 and 55-69)
+# Time hyperglycemic (>180 – combine 181-250 and >250)
+# HCL use (for those on HCL, if RedCap value blank do not include)
+# Sensor use (for those on sensor, if RedCap value blank do not include)
 ```
 
 
-ADA 2023 abstract plan
-
-Summer vs school sleep and glycemic measurements in adolescents with type 1 diabetes
-
-Summer: 10 participants (Redcap “Season” variable [summer] in enrollment instrument) 
-School: 10+ participants (RedCap “Season” variable [fall and spring] in enrollment instrument)
-
-Demographics:
-No diabetes duration/ diagnosis dates for most subj
-only 10 hba1c values
-
-Incomplete season values (only 1's)
-
-Variables:
-Sleep measures (RedCap wrist actigraphy variable)
-Total sleep
-Sleep latency
-Sleep efficiency
-WASO
-
-Diabetes measures (RedCap Pump & CGM Glycemic Data OR Injection & BG Meter Glycemic Data Instruments [depending on the insulin method for each patient])
-Time in range (70-180)
-Time hypoglycemic (<70 – combine <54 and 55-69)
-Time hyperglycemic (>180 – combine 181-250 and >250)
-HCL use (for those on HCL, if RedCap value blank do not include)
-Sensor use (for those on sensor, if RedCap value blank do not include)
+# table 1
+```{r table1, echo=FALSE}
+t1
+```
