@@ -60,7 +60,10 @@ base$percent_time_under_54_t1 <- base$percent_time_under_54
 base$percent_time_63_140_t1 <- base$percent_time_63_140
 base$percent_time_under_63_t1 <- base$percent_time_under_63
 base$percent_time_over_140_t1 <- base$percent_time_over_140
-base <- base %>% select(pid,percent_time_under_54_t1, percent_time_63_140_t1, percent_time_under_63_t1, percent_time_over_140_t1)
+base$percent_time_over_180_t1 <- base$percent_time_over_180
+base$mean_sensor_t1 <- base$mean_sensor
+base <- base %>% select(pid,percent_time_under_54_t1, percent_time_63_140_t1, percent_time_under_63_t1, percent_time_over_140_t1,
+                        percent_time_over_180_t1, mean_sensor_t1)
 cgmdata <- merge(cgmdata, base, by="pid", all.x = T, all.y = T)
 
 # read in a1c data
@@ -79,13 +82,33 @@ a1cdata_sum <- merge(a1cdata_sum, base_a1c, by="pid", all.x = T, all.y = T)
 a1cdata_sum <- merge(a1cdata_sum, basebmi, by="pid", all.x = T, all.y = F)
 
 # HFS data
-hfs <- read.csv("B:/Projects/Sarit Polsky/PICLS/Data_Clean/PICLSStudyHCLVsSAPTI-HFS_DATA_2022-11-28_1622.csv")
-hfs$time <- ifelse(hfs$redcap_event_name=="visit_1_baseline_arm_1","T1",
-                        ifelse(hfs$redcap_event_name %in% c("visit_8_2nd_trimes_arm_1","visit_9_2nd_trimes_arm_1"),"T2",
-                               ifelse(hfs$redcap_event_name %in% c("visit_11_3rd_trime_arm_1","visit_12_3rd_trime_arm_1","visit_13_3rd_trime_arm_1"),"T3",
-                                      ifelse(hfs$redcap_event_name=="visit_16_46_wks_po_arm_1","PP",NA))))
-x <- hfs[,c("pid","redcap_event_name")]
-write.csv(x,"C:/temp/visits_trimesters.csv", row.names = F)
+hfs <- read.csv("B:/Projects/Sarit Polsky/PICLS/Data_Clean/PICLSStudyHCLVsSAPTI-HFS_DATA_2022-11-28_1622.csv",
+                na.strings = c("NA",""," "))
+hfs <- hfs %>% filter(!is.na(fear_visit_date))
+hfs$visit <- ifelse(hfs$redcap_event_name=="visit_1_baseline_arm_1","Baseline",
+                    ifelse(hfs$redcap_event_name=="visit_10_3032_week_arm_1","Visit 10",
+                           ifelse(hfs$redcap_event_name=="visit_16_46_wks_po_arm_1","Visit 16",
+                                  ifelse(hfs$redcap_event_name=="visit_4_68_weeks_arm_1","Visit 4","Visit 7"))))
+hfs$visit <- factor(hfs$visit, levels = c("Baseline","Visit 4","Visit 7","Visit 10","Visit 16"))
+hfs$behavior <- rowSums(hfs[,c("fear_beh_bedtime_snacks","fear_beh_not_alone","fear_beh_finagle_test",
+                               "fear_beh_high_when_alone","fear_beh_eat","fear_beh_reduce_meds",
+                               "fear_beh_meeting","fear_beh_fast_sugar","fear_beh_no_exercise",
+                               "fear_beh_check_often")])
+hfs$worry <- rowSums((hfs[,c("fear_wor_unaware","fear_wor_no_food","fear_wor_dizzy","fear_wor_asleep",
+                             "fear_wor_embarrass","fear_wor_reaction_alone","fear_wor_seem_drunk",
+                             "fear_wor_losing_control","fear_wor_no_help","fear_wor_driving",
+                             "fear_wor_work_mistake","fear_wor_work_eval","fear_wor_seizure",
+                             "fear_caring_for_others","fear_long_term","fear_faint","fear_insulin_reaction")]))
+hfs$total <- hfs$behavior + hfs$worry
+# get baseline values
+base_hfs <- hfs %>% filter(redcap_event_name=="visit_1_baseline_arm_1")
+base_hfs$total_baseline <- base_hfs$total
+base_hfs$worry_baseline <- base_hfs$worry
+base_hfs$behavior_baseline <- base_hfs$behavior
+base_hfs <- base_hfs %>% select(pid,total_baseline,worry_baseline,behavior_baseline)
+hfs <- merge(hfs,base_hfs,by="pid",all.x = T, all.y = T)
+# merge in randomization group
+hfs <- merge(hfs, rand_keep, by="pid", all.x = F, all.y = T)
 ```
 
 # Results
@@ -382,6 +405,136 @@ mod_pairs
 plot_model(mod, type="pred", terms=c("time","randomization_group"))
 ```
 
+## Percent time >180
+
+### Without adjustment for baseline 
+
+#### ANOVA table
+
+```{r, echo=FALSE, message=FALSE}
+mod <- lme(percent_time_over_180 ~ time*randomization_group ,random=~1|pid,data = cgmdata,na.action = na.omit)
+mod_anova <- anova.lme(mod, type="marginal")
+mod_means <- emmeans(mod,c("time","randomization_group"))
+mod_pairs <-  pairs(mod_means,adjust="tukey", simple="each")
+
+kable(mod_anova)
+```
+
+#### Model means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_means
+```
+
+#### Pairwise comparison of means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_pairs
+```
+
+#### Plot
+
+```{r, echo=FALSE, message=FALSE}
+plot_model(mod, type="pred", terms=c("time","randomization_group"))
+```
+
+### With adjustment for baseline value and baseline BMI
+
+#### ANOVA table
+
+```{r, echo=FALSE, message=FALSE}
+mod <- lme(percent_time_over_180 ~ time*randomization_group + percent_time_over_180_t1 + bmi_baseline,
+           random=~1|pid,data = cgmdata,na.action = na.omit)
+mod_anova <- anova.lme(mod, type="marginal")
+mod_means <- emmeans(mod,c("time","randomization_group"))
+mod_pairs <-  pairs(mod_means,adjust="tukey", simple="each")
+
+kable(mod_anova)
+```
+
+#### Model means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_means
+```
+
+#### Pairwise comparison of means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_pairs
+```
+
+#### Plot
+
+```{r, echo=FALSE, message=FALSE}
+plot_model(mod, type="pred", terms=c("time","randomization_group"))
+```
+
+## Mean sensor glucose
+
+### Without adjustment for baseline 
+
+#### ANOVA table
+
+```{r, echo=FALSE, message=FALSE}
+mod <- lme(mean_sensor ~ time*randomization_group ,random=~1|pid,data = cgmdata,na.action = na.omit)
+mod_anova <- anova.lme(mod, type="marginal")
+mod_means <- emmeans(mod,c("time","randomization_group"))
+mod_pairs <-  pairs(mod_means,adjust="tukey", simple="each")
+
+kable(mod_anova)
+```
+
+#### Model means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_means
+```
+
+#### Pairwise comparison of means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_pairs
+```
+
+#### Plot
+
+```{r, echo=FALSE, message=FALSE}
+plot_model(mod, type="pred", terms=c("time","randomization_group"))
+```
+
+### With adjustment for baseline value and baseline BMI
+
+#### ANOVA table
+
+```{r, echo=FALSE, message=FALSE}
+mod <- lme(mean_sensor ~ time*randomization_group + mean_sensor_t1 + bmi_baseline,
+           random=~1|pid,data = cgmdata,na.action = na.omit)
+mod_anova <- anova.lme(mod, type="marginal")
+mod_means <- emmeans(mod,c("time","randomization_group"))
+mod_pairs <-  pairs(mod_means,adjust="tukey", simple="each")
+
+kable(mod_anova)
+```
+
+#### Model means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_means
+```
+
+#### Pairwise comparison of means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_pairs
+```
+
+#### Plot
+
+```{r, echo=FALSE, message=FALSE}
+plot_model(mod, type="pred", terms=c("time","randomization_group"))
+```
+
 ## HbA1c
 
 ### Without adjustment for baseline
@@ -445,5 +598,200 @@ mod_pairs
 
 ```{r, echo=FALSE, message=FALSE}
 plot_model(mod, type="pred", terms=c("Lab.Collection.Trimester","randomization_group"))
+```
+
+## HFS total score
+
+### Without adjustment for baseline
+
+#### ANOVA table
+
+```{r, echo=FALSE, message=FALSE}
+mod <- lme(total ~ visit*randomization_group ,random=~1|pid,data = hfs,na.action = na.omit)
+mod_anova <- anova.lme(mod, type="marginal")
+mod_means <- emmeans(mod,c("visit","randomization_group"))
+mod_pairs <-  pairs(mod_means,adjust="tukey", simple="each")
+
+kable(mod_anova)
+```
+
+#### Model means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_means
+```
+
+#### Pairwise comparison of means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_pairs
+```
+
+#### Plot
+
+```{r, echo=FALSE, message=FALSE}
+plot_model(mod, type="pred", terms=c("visit","randomization_group"))
+```
+
+### With adjustment for baseline value 
+
+#### ANOVA table
+
+```{r, echo=FALSE, message=FALSE}
+mod <- lme(total ~ visit*randomization_group + total_baseline ,
+           random=~1|pid,data = hfs,na.action = na.omit)
+mod_anova <- anova.lme(mod, type="marginal")
+mod_means <- emmeans(mod,c("visit","randomization_group"))
+mod_pairs <-  pairs(mod_means,adjust="tukey", simple="each")
+
+kable(mod_anova)
+```
+
+#### Model means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_means
+```
+
+#### Pairwise comparison of means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_pairs
+```
+
+#### Plot
+
+```{r, echo=FALSE, message=FALSE}
+plot_model(mod, type="pred", terms=c("visit","randomization_group"))
+```
+
+## HFS worry
+
+### Without adjustment for baseline
+
+#### ANOVA table
+
+```{r, echo=FALSE, message=FALSE}
+mod <- lme(worry ~ visit*randomization_group ,random=~1|pid,data = hfs,na.action = na.omit)
+mod_anova <- anova.lme(mod, type="marginal")
+mod_means <- emmeans(mod,c("visit","randomization_group"))
+mod_pairs <-  pairs(mod_means,adjust="tukey", simple="each")
+
+kable(mod_anova)
+```
+
+#### Model means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_means
+```
+
+#### Pairwise comparison of means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_pairs
+```
+
+#### Plot
+
+```{r, echo=FALSE, message=FALSE}
+plot_model(mod, type="pred", terms=c("visit","randomization_group"))
+```
+
+### With adjustment for baseline value 
+
+#### ANOVA table
+
+```{r, echo=FALSE, message=FALSE}
+mod <- lme(worry ~ visit*randomization_group + worry_baseline ,
+           random=~1|pid,data = hfs,na.action = na.omit)
+mod_anova <- anova.lme(mod, type="marginal")
+mod_means <- emmeans(mod,c("visit","randomization_group"))
+mod_pairs <-  pairs(mod_means,adjust="tukey", simple="each")
+
+kable(mod_anova)
+```
+
+#### Model means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_means
+```
+
+#### Pairwise comparison of means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_pairs
+```
+
+#### Plot
+
+```{r, echo=FALSE, message=FALSE}
+plot_model(mod, type="pred", terms=c("visit","randomization_group"))
+```
+
+## HFS behavior
+
+### Without adjustment for baseline
+
+#### ANOVA table
+
+```{r, echo=FALSE, message=FALSE}
+mod <- lme(behavior ~ visit*randomization_group ,random=~1|pid,data = hfs,na.action = na.omit)
+mod_anova <- anova.lme(mod, type="marginal")
+mod_means <- emmeans(mod,c("visit","randomization_group"))
+mod_pairs <-  pairs(mod_means,adjust="tukey", simple="each")
+
+kable(mod_anova)
+```
+
+#### Model means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_means
+```
+
+#### Pairwise comparison of means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_pairs
+```
+
+#### Plot
+
+```{r, echo=FALSE, message=FALSE}
+plot_model(mod, type="pred", terms=c("visit","randomization_group"))
+```
+
+### With adjustment for baseline value 
+
+#### ANOVA table
+
+```{r, echo=FALSE, message=FALSE}
+mod <- lme(behavior ~ visit*randomization_group + behavior_baseline ,
+           random=~1|pid,data = hfs,na.action = na.omit)
+mod_anova <- anova.lme(mod, type="marginal")
+mod_means <- emmeans(mod,c("visit","randomization_group"))
+mod_pairs <-  pairs(mod_means,adjust="tukey", simple="each")
+
+kable(mod_anova)
+```
+
+#### Model means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_means
+```
+
+#### Pairwise comparison of means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_pairs
+```
+
+#### Plot
+
+```{r, echo=FALSE, message=FALSE}
+plot_model(mod, type="pred", terms=c("visit","randomization_group"))
 ```
 
