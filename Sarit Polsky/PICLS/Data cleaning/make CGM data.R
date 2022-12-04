@@ -112,7 +112,7 @@ for (df in splitpp) {
 cgmvariables(inputdirectory = "B:/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/", 
              outputdirectory = "B:/Projects/Sarit Polsky/PICLS/Data_Clean/Cleaned CGM data", 
              id_filename = T, printname = T,
-             customintervals = list(c(0,54),c(0,63),c(63,140),c(140,600)))
+             customintervals = list(c(0,54),c(0,63),c(63,140),c(140,600),c(0,69)))
 
 # does not appear to be counting excursions correctly, probably because of all the gaps
 # when I finalize the dataset, should exclude these variables
