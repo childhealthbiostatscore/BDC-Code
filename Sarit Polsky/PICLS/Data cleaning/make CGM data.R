@@ -45,8 +45,9 @@ for (f in 1:length(files)) {
   print(files[f])
   df <- read.csv(files[f], na.strings = "", header = F)
   df <- df[8:nrow(df),]
-  df <- as.data.frame(cbind(df[,2],df[,3],df[,5]))
+  df <- as.data.frame(cbind(df[,2],df[,3],df[,32]))
   names(df) <- c("date","time","sensorglucose")
+  df$sensorglucose <- as.numeric(df$sensorglucose)
   df$date <- parse_date_time(df$date, orders = c('ymd','mdy', 'dmy'))
   df <- df %>% filter(!is.na(df$sensorglucose))
   df <- df %>% filter(!is.na(df$date))
