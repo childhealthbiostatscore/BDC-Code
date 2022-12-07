@@ -160,6 +160,7 @@ jdrf_a1c_ann = jdrf_a1c_ann %>% filter(YEAR > 0)
 jdrf_a1c_ann$YEAR = factor(jdrf_a1c_ann$YEAR, levels = c(1,2,3,4,5,6,7))
 jdrf_a1c_ann$Group = factor(jdrf_a1c_ann$Group, levels = c("Control", "Case"))
 
+
 #################
 
 cgm_table_df = jdrf_a1c %>% group_by(`Study ID`, Group) %>% summarise(mean_a1c = mean(a1c, na.rm = T),
@@ -187,14 +188,16 @@ lab_table_df = lab_table_df %>% group_by(`Study ID`) %>% fill(c(Wtkg, Htcm, BMI)
 # combine hypertyroidism, graves, addisons, celiac -> presence of autoimmune diseases
 lab_table_df = lab_table_df %>% mutate(autoimmunedisease_presence = case_when(Hyperthyroidism_YesNo == "Yes" | GravesDisease_YesNo == "Yes" |
                                                                                 AddisonsDisease_YesNo == "Yes" | CeliacDisease_YesNo == "Yes" ~ "Yes",
-                                                                              TRUE ~ "No")) %>% select(-c(Hyperthyroidism_YesNo, GravesDisease_YesNo,
-                                                                                                          AddisonsDisease_YesNo, CeliacDisease_YesNo))
+                                                                              TRUE ~ "No"),
+                                       mean_total_cgm_time = mean(totalcgmtime)) %>% 
+  select(-c(Hyperthyroidism_YesNo, GravesDisease_YesNo, AddisonsDisease_YesNo, CeliacDisease_YesNo, totalcgmtime)) %>% fill(Htcm, Wtkg, BMI) %>% distinct()
 
+  
 # combine the two for table 1
 table1_df = full_join(lab_table_df, cgm_table_df) %>% filter(!is.na(Group))
 table1_df = table1_df %>% ungroup 
 
-table1_df = table1_df %>% select(-`Study ID`)
+#table1_df = table1_df %>% select(-`Study ID`)
 
 jdrf_table1 = table1( ~ .| Group,
                       data = lab_table_df,
@@ -229,6 +232,13 @@ a1c_tir_by_YEAR = jdrf_a1c %>% group_by(YEAR, Group) %>% summarise(mean_a1c = me
 a1c_tir_by_YEAR = a1c_tir_by_YEAR %>% filter(YEAR > 0)
 group_ns = a1c_tir_by_YEAR %>% select(Group, YEAR, n_grp)
 group_ns$YEAR = factor(group_ns$YEAR, levels = c(1,2,3,4,5,6,7))
+
+
+
+# check how many have a year 1
+test = jdrf_a1c_ann %>% filter(YEAR=="1")
+
+subj_miss_list = lab_table_df %>% filter(!(`Study ID` %in% test$`Study ID`)) %>% select(`Study ID`)
 ```
 
 ```{r plots}
@@ -272,7 +282,10 @@ tir_YEAR_p = ggplot(data = tir_results, aes(x = as.numeric(YEAR), y = emmean, gr
 
 # Outstanding Questions/Remarks
 
-Quite a few subjects with visits after their retinopathy date. What to do with these visits?
+I've attached a list of subjects that have data, but not within the first year of retinopathy. For example, subject 21 has dates starting at year 2, and has visits in year 2,3,4 (similar for 44, 54, 62, 74 etc). This is probably why the graphs are showing year 1 as 63 and 77 rather than 70 and 90.
+```{r}
+kable(subj_miss_list)
+```
 
 # Methods
 
@@ -283,6 +296,7 @@ Associations between Retinopathy and CGM groups were assessed via linear mixed m
 # Table 1
 ```{r table1, echo=FALSE}
 jdrf_table1
+
 jdrf_table2
 ```
 
