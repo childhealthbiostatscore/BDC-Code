@@ -20,6 +20,8 @@ library(data.table)
 library(ega)
 library(arsenal)
 library(knitr)
+library(chron)
+library(M3)
 ```
 
 ```{r include=TRUE, warning=FALSE, message=F}
@@ -36,19 +38,19 @@ glucose$record_id <- str_pad(as.character(glucose$record_id),3,side="left",pad="
 glucose <- glucose %>% filter(bgtype==1)
 glucose_keep <- glucose %>% select(record_id,date_time,bgvalue,bgtype.factor)
 
-source("B:/Projects/Erin Cobry/Inpatient CGM study/Data raw/AccuracyOfTheDexcomG-PatientInfoAndLocati_R_2022-12-05_1533.r")
+source("B:/Projects/Erin Cobry/Inpatient CGM study/Data raw/AccuracyOfTheDexcomG-PatientInfoAndLocati_R_2022-12-08_1319.r")
 patient <- data
 patient <- patient %>% filter(!record_id %in% c("Test 1","Test 2"))
 patient$record_id <- str_pad(as.character(patient$record_id),3,side="left",pad="0")
 patient$race <- as.factor(patient$raceopts)
 patient$ethnicity <- as.factor(patient$ethnicityopts)
+patient$a1c <- as.numeric(patient$a1c)
 patient_keep <- patient %>% select(record_id,locationfloor.factor)
 
 # looks like a new Clarity format for the new files, need to remove first line
-#newclarityfiles <- base::list.files(path = "B:/Projects/Erin Cobry/Inpatient CGM study/Data raw/Dexcom CSVs",full.names = TRUE,recursive = T)
-#newclarityfiles <- base::list.files(path = "C:/Temp/csvtest",full.names = TRUE,recursive = T)
+newclarityfiles <- base::list.files(path = "B:/Projects/Erin Cobry/Inpatient CGM study/Data raw/Dexcom CSVs",full.names = TRUE,recursive = T)
 
-#for (f in 53:length(newclarityfiles)) {
+# for (f in 51:length(newclarityfiles)) {
 #   print(newclarityfiles[f])
 #   table <- read.csv(newclarityfiles[f])
 #   table <- table[-1,]
@@ -60,7 +62,7 @@ patient_keep <- patient %>% select(record_id,locationfloor.factor)
 #                        "Duration (hh:mm:ss)","Glucose Rate of Change (mg/dL/min)",
 #                        "Transmitter Time (Long Integer)","Transmitter ID")
 #   write.csv(table,newclarityfiles[f], row.names = F)
-#}
+# }
 
 # Read in csv files
 cleandata(inputdirectory = "B:/Projects/Erin Cobry/Inpatient CGM study/Data raw/Dexcom CSVs", outputdirectory = "B:/Projects/Erin Cobry/Inpatient CGM study/Data clean/Clean CSVs", verbose = T, id_filename = T, gapfill = F, removegaps = F)
@@ -73,7 +75,8 @@ for (f in 1:length(files)){
   table <- read.csv(files[f])
   # fix study ID in each file
   for (i in 1:nrow(table)) {
-    table[i,]$subjectid <- str_sub(table[1,]$subjectid,1,3)
+    table[i,]$subjectid <- word(table[1,]$subjectid,1,sep="_")    
+    table[i,]$subjectid <- str_pad(as.character(table[i,]$subjectid),3,side="left",pad="0")
   }
   # append the files
   cgm <- rbind(cgm,table)
@@ -107,8 +110,16 @@ med_ed <- glucose_keep %>% filter(locationfloor.factor=="Medical Floor/ED")
 
 # for demographics, remove duplicate MRNs
 demo <- patient %>% group_by(mrn) %>% slice(1)
-
- 
+demo$admissiondate <- as.Date(demo$admissiondate, format="%Y-%m-%d")
+demo$admissiontime <- as.ITime(demo$admissiontime)
+demo$diagnosis_date <- as.Date(demo$diagnosis_date, format="%Y-%m-%d")
+demo$dischargedate <- as.Date(demo$dischargedate, format="%Y-%m-%d")
+demo$dischargetime <- as.ITime(demo$dischargetime)
+demo$dob <- as.Date(demo$dob, format="%Y-%m-%d")
+demo$duration_years <- difftime(demo$diagnosis_date, demo$dob)/365.25
+demo$admit <- combine.date.and.time(demo$admissiondate,demo$admissiontime)
+demo$discharge <- combine.date.and.time(demo$dischargedate,demo$dischargetime)
+demo$admit_length_hours <- difftime(demo$discharge, demo$admit)
 ```
 
 # Background and Methods
@@ -126,7 +137,7 @@ demo <- patient %>% group_by(mrn) %>% slice(1)
 # Descriptive statistics
 
 ```{r include=TRUE, warning=FALSE, message=F}
-t1 <- tableby(data=demo,  ~ age + gender.factor + race + ethnicity + pumpuser.factor + automatedyn.factor,numeric.stats=c("Nmiss2","median","q1q3"))
+t1 <- tableby(data=demo,  ~ age + gender.factor + race + ethnicity + pumpuser.factor + automatedyn.factor + a1c + duration + admit_length,numeric.stats=c("Nmiss2","median","q1q3"))
 kable(summary(t1))
 
 ```
@@ -141,7 +152,7 @@ table(zones)
 round (table (zones) / length (zones) * 100, digits=2)
 
 p <- plotClarkeGrid(referenceVals = glucose_keep$bgvalue, testVals = glucose_keep$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
-p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue"))
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
 
 ```
 
@@ -164,7 +175,7 @@ round (table (zones) / length (zones) * 100, digits=2)
 
 p <- plotClarkeGrid(referenceVals = med_ed$bgvalue, testVals = med_ed$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
 
-p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue"))
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
 ```
 
 ## MARD
@@ -186,7 +197,7 @@ round (table (zones) / length (zones) * 100, digits=2)
 
 p <- plotClarkeGrid(referenceVals = icu$bgvalue, testVals = icu$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
 
-p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue"))
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
 ```
 
 ## MARD
