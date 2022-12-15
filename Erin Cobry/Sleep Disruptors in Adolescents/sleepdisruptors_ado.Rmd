@@ -4,7 +4,7 @@ author: "Casey Sakamoto & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
 output:
   html_document:
-    number_sections: yes
+    number_sections: no
     toc: yes
     toc_depth: 5
     toc_float: yes
@@ -16,7 +16,7 @@ library(tidyverse)
 library(performance)
 library(knitr)
 library(table1)
-
+library(tableone)
 # knitr::opts_chunk$set(echo = FALSE)
 # if(Sys.info()["sysname"] == "Windows"){
 #   home_dir = "S:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/Sleep Disruptors in t1d Adolescents"
@@ -29,7 +29,7 @@ library(table1)
 # rm(home_dir)
 ```
 
-```{r data step, include=FALSE}
+```{r data step, include=FALSE, echo=FALSE}
 # upload data
 sleep_disruptors = read.csv("S:/Laura/BDC/Projects/Erin Cobry/Sleep Disruptors in t1d Adolescents/Data/SleepDisruptorsInAdo_DATA_2022-11-29_1035.csv")
 
@@ -59,27 +59,13 @@ df$currenthcltech = factor(df$currenthcltech, labels = c("Yes", "No"))
 # glycemic for t1
 df_a1c = sleep_disruptors %>% select(record_id , hba1c, diabetesduration, dxdate, enrollementdate) %>% filter(!is.na(hba1c) | !is.na(diabetesduration))
 
-# t1 df
-pvalue <- function(x, ...) {
-    # Construct vectors of data y, and groups (strata) g
-    y <- unlist(x)
-    g <- factor(rep(1:length(x), times=sapply(x, length)))
-    if (is.numeric(y)) {
-        # For numeric variables, perform a standard 2-sample t-test
-        p <- t.test(y ~ g)$p.value
-    } else {
-        # For categorical variables, perform a chi-squared test of independence
-        p <- chisq.test(table(y, g))$p.value
-    }
-    # Format the p-value, using an HTML entity for the less-than sign.
-    # The initial empty string places the output on the line below the variable label.
-    c("", sub("<", "&lt;", format.pval(p, digits=3, eps=0.001)))
-}
 
-t1_df = full_join(df, df_a1c) %>% select(group,age, age_cat,gender, race, insulinmethod, currenthcltech, current_cgm_use, hba1c, diabetesduration)
-t1 = table1(~.|group, data = t1_df,
-            render.continuous=c(.="Mean (SD)"),
-            overall=F, extra.col=list(`P-value`=pvalue))
+# t1 df
+t1_df = full_join(df, df_a1c) %>% select(record_id, group,age, age_cat,gender, race, insulinmethod, currenthcltech, current_cgm_use, hba1c, diabetesduration)
+
+t1 = CreateTableOne(vars = c("age", "age_cat", "gender", "race", "insulinmethod", "currenthcltech", "current_cgm_use","hba1c", "diabetesduration"), factorVars = c( "age_cat", "gender", "race", "insulinmethod", "currenthcltech", "current_cgm_use"), strata = "group", data = t1_df)
+
+t1 = print(t1)
 ```
 
 # Outstanding data remarks:
@@ -106,10 +92,40 @@ only 10 hba1c values (all summer)
 # Time hyperglycemic (>180 – combine 181-250 and >250)
 # HCL use (for those on HCL, if RedCap value blank do not include)
 # Sensor use (for those on sensor, if RedCap value blank do not include)
+# group,age, age_cat,gender, race, insulinmethod, currenthcltech, current_cgm_use, hba1c, diabetesduration
 ```
 
+```{r matching, include = FALSE, echo=FALSE}
+# summer group has 3 `11-12` group and 7 `13-17` group
+# other group has 4 and 21
+# df %>% filter(group == "Summer") %>% select(age_cat) %>% table()
+# df %>% filter(group != "Summer") %>% select(age_cat) %>% table()
 
+
+# sample 3 11-12 and 7 13-17 in the fall spring groups
+samplingdf = t1_df %>% filter(group != "Summer") %>% select(record_id, age_cat)
+samplingdf_12 = samplingdf %>% filter(age_cat == "11-12")
+samplingdf_17 = samplingdf %>% filter(age_cat == "13-17")
+
+# reproducible
+set.seed(512)
+control_ids = c(sample(samplingdf_12$record_id, 3, replace = FALSE), sample(samplingdf_17$record_id, 7, replace = FALSE))
+
+# t1_df for matched
+t1_df_matched = t1_df %>% filter(group == "Summer" | record_id %in% control_ids) 
+t1_m = CreateTableOne(vars = c("age", "age_cat", "gender", "race", "insulinmethod", "currenthcltech", "current_cgm_use","hba1c", "diabetesduration"), factorVars = c( "age_cat", "gender", "race", "insulinmethod", "currenthcltech", "current_cgm_use"), strata = "group", data = t1_df_matched)
+
+t1_m = print(t1_m)
+```
 # table 1
 ```{r table1, echo=FALSE}
-t1
+kable(t1)
 ```
+
+# matched subjects t1
+```{r table 1 matched, echo=FALSE}
+kable(control_ids)
+
+kable(t1_m)
+```
+

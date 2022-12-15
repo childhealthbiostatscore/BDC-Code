@@ -60,6 +60,12 @@ peds_fr_short <- read_excel("S:/Laura/BDC/Projects/Erin Cobry/ADA 2022/COVID/Dat
 pp_fr_short = read_excel("S:/Laura/BDC/Projects/Erin Cobry/ADA 2022/COVID/Data clean/Relationships T-tables.xlsx", 
                           sheet = "Parent Prox Family Relat 8a")
 
+peds_anger_short <- read_excel("S:/Laura/BDC/Projects/Erin Cobry/ADA 2022/COVID/Data clean/Anger T-tables.xlsx", 
+                            sheet = "Pediatric Self Report 5a")
+
+pp_anger_short = read_excel("S:/Laura/BDC/Projects/Erin Cobry/ADA 2022/COVID/Data clean/Anger T-tables.xlsx", 
+                         sheet = "Parent Proxy 5a")
+
 # anger ttables?
 
 ##########
@@ -131,6 +137,10 @@ promis_peds$fam_rel =
   peds_pr_short$`T-score`[match(promis_peds$fam_rel,
                                 peds_pr_short$`Raw Score`)]
 
+promis_peds$anger = 
+  peds_anger_short$`T-Score`[match(promis_peds$anger,
+                                peds_anger_short$`Raw Summed Score`)]
+
 ##################
 # PARENT PROXY   #
 ##################
@@ -192,6 +202,10 @@ promis_parent_proxy$depression =
 promis_parent_proxy$fam_rel = 
   pp_fr_short$`T-score`[match(promis_parent_proxy$fam_rel,
                                pp_fr_short$`Raw Score`)]
+
+promis_parent_proxy$anger = 
+  pp_anger_short$`T-Score`[match(promis_parent_proxy$anger,
+                              pp_anger_short$`Raw Summed Score`)]
 
 ########################
 # PARENT SELF REPORT   #
