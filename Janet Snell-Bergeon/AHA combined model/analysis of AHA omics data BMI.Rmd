@@ -1,0 +1,469 @@
+---
+title: "Analysis of AHA omics data"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    theme: readable
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
+library(arsenal)
+library(skimr)
+library(knitr)
+library(mixOmics)
+library(tidyverse)
+library(limma)
+library(webchem)
+library(omu)
+library(PCAtools)
+library(openxlsx)
+library(dplyr)
+library(multtest)
+library(pls)
+library(parallel)
+home_dir = ifelse(.Platform$OS.type != "unix","/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant",
+                  "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant/")
+#home_dir = ("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant")
+#knitr::opts_knit$set(root.dir = home_dir)
+
+#setwd("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant")
+
+# Basic workflow:
+# log transform prior to analyses
+# Moderated t-tests
+# Linear model in limma containing interaction with sex
+# sPLS-DA
+# No multiple correction
+```
+
+```{r read AHA data,echo=FALSE}
+#load(file="T:/Janet Snell-Bergeon/AHA collaborative grant/aha_master_data.Rdata")
+load(file="~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant//aha_master_data.Rdata")
+
+# before log transform, convert 0 lineolic acid to a small number
+df$linoleic.acid <- ifelse(df$linoleic.acid==0,0.001,df$linoleic.acid)
+
+# log-transform
+# NOTE: per Qibin, lipids are already log transformed
+df[,c(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins)] = 
+  apply(df[,c(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins)], 2, log)
+
+# delete records with missing eIS
+df <- df[!is.na(df$bmiV1),]
+
+# remove low variance items
+# no_var = caret::nearZeroVar(df[,colnames(df) %in% c(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins,lipids)])
+# df = df[,-c(no_var)]
+
+# remove the compounds with missing data and low variance from the strings of names
+# untargeted_metabs <- untargeted_metabs[untargeted_metabs %in% colnames(df)]
+# targeted_metabs <- targeted_metabs[targeted_metabs %in% colnames(df)]
+# global_proteins <- global_proteins[global_proteins %in% colnames(df)]
+# glycated_proteins <- glycated_proteins[glycated_proteins %in% colnames(df)]
+# lipids <- lipids[lipids %in% colnames(df)]
+
+# remove markers with >=80% missing 
+# miss <- df[,colnames(df) %in% c(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins,lipids)] %>% dplyr::select(where(~mean(is.na(.)) > 0.8))
+# don't want to select clinical variables with >80% missing
+# miss <- miss[,colnames(miss) %in% c(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins,lipids)]
+# df <- df %>% dplyr::select(-one_of(colnames(miss)))
+
+# remove the compounds with missing data and low variance from the strings of names
+# untargeted_metabs <- untargeted_metabs[untargeted_metabs %in% colnames(df)]
+# targeted_metabs <- targeted_metabs[targeted_metabs %in% colnames(df)]
+# global_proteins <- global_proteins[global_proteins %in% colnames(df)]
+# glycated_proteins <- glycated_proteins[glycated_proteins %in% colnames(df)]
+# lipids <- lipids[lipids %in% colnames(df)]
+
+# calculate change in square-root transformed CAC volume
+# df$delta_cac_v2 <- (df$C2 - df$C1)
+# df$delta_cac_v3 <- (df$C3 - df$C1)
+# df$delta_cac_v4 <- (df$C4 - df$C1)
+
+# create scaled version of df for pls-da of all measures
+df_z <- df[,colnames(df) %in% c(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins,lipids)]
+df_z <- scale(df_z)
+
+# variable for lean vs. obese
+df$obese <- ifelse(df$bmiV1>=30,1,0)
+```
+
+```{r moderated ttests,echo=FALSE, message=FALSE, results="hide"}
+# CAC progression
+#bmi_contrast <- ifelse(df$CACp=="Yes",1,0)
+#bmi_contrast <- cbind(rep(1,nrow(df)),bmi_contrast)
+
+# insulin tertiles
+# code the contrast so that high insulin sensitivity=1 and low=0
+bmi_contrast <- ifelse(df$obese==1,1,0)
+bmi_contrast <- cbind(rep(1,nrow(df)),bmi_contrast)
+
+# untargeted metabolites
+ymat <- df[,names(df) %in% untargeted_metabs]
+ymat <- t(ymat)
+fit <- lmFit(ymat,bmi_contrast)
+fit <- eBayes(fit)
+results_untargeted_metabs <- topTable(fit,coef = 2,number = nrow(ymat))
+results_untargeted_metabs <- results_untargeted_metabs[order(results_untargeted_metabs$P.Value),] 
+# trying permutation test based adjustment
+resT_untargeted_metabs<-mt.maxT(ymat,bmi_contrast[,2])
+resP_untargeted_metabs<-mt.minP(ymat,bmi_contrast[,2])
+ymat <- NULL
+fit <- NULL
+
+# targeted metabolites
+ymat <- t(df[,names(df) %in% targeted_metabs])
+fit <- lmFit(ymat,bmi_contrast)
+fit <- eBayes(fit)
+results_targeted_metabs <- topTable(fit,coef = 2,number = nrow(ymat))
+results_targeted_metabs <- results_targeted_metabs[order(results_targeted_metabs$P.Value),] 
+# trying permutation test based adjustment
+#resT_targeted_metabs<-mt.maxT(ymat,bmi_contrast[,2])
+#resP_targeted_metabs<-mt.minP(ymat,bmi_contrast[,2])
+ymat <- NULL
+fit <- NULL
+
+# global proteomics
+ymat <- t(df[,names(df) %in% global_proteins])
+fit <- lmFit(ymat,bmi_contrast)
+fit <- eBayes(fit)
+results_global_proteins <- topTable(fit,coef = 2,number = nrow(ymat))
+results_global_proteins <- results_global_proteins[order(results_global_proteins$P.Value),] 
+# trying permutation test based adjustment
+resT_global_proteins<-mt.maxT(ymat,bmi_contrast[,2])
+resP_global_proteins<-mt.minP(ymat,bmi_contrast[,2])
+ymat <- NULL
+fit <- NULL
+
+# glycated proteomics
+ymat <- t(df[,names(df) %in% glycated_proteins])
+fit <- lmFit(ymat,bmi_contrast)
+fit <- eBayes(fit)
+results_glycated_proteins <- topTable(fit,coef = 2,number = nrow(ymat))
+results_glycated_proteins <- results_glycated_proteins[order(results_glycated_proteins$P.Value),] 
+# trying permutation test based adjustment
+resT_glycated_proteins<-mt.maxT(ymat,bmi_contrast[,2])
+resP_glycated_proteins<-mt.minP(ymat,bmi_contrast[,2])
+ymat <- NULL
+fit <- NULL
+
+# lipidomics
+ymat <- t(df[,names(df) %in% lipids])
+fit <- lmFit(ymat,bmi_contrast)
+fit <- eBayes(fit)
+results_lipids <- topTable(fit,coef = 2,number = nrow(ymat))
+results_lipids <- results_lipids[order(results_lipids$P.Value),] 
+# trying permutation test based adjustment
+resT_lipids<-mt.maxT(ymat,bmi_contrast[,2])
+resP_lipids<-mt.minP(ymat,bmi_contrast[,2])
+ymat <- NULL
+fit <- NULL
+
+# write to file
+wb <- createWorkbook()
+addWorksheet(wb,"untargeted_metab_moderated_FDR")
+writeData(wb,"untargeted_metab_moderated_FDR",results_untargeted_metabs,rowNames = T)
+#addWorksheet(wb,"untargeted_metab_maxT")
+#writeData(wb,"untargeted_metab_maxT",resT_untargeted_metabs,rowNames = T)
+#addWorksheet(wb,"untargeted_metab_minP")
+#writeData(wb,"untargeted_metab_minP",resP_untargeted_metabs,rowNames = T)
+addWorksheet(wb,"targeted_metab_moderated_FDR")
+writeData(wb,"targeted_metab_moderated_FDR",results_targeted_metabs,rowNames = T)
+#addWorksheet(wb,"targeted_metabolomics_maxT")
+#writeData(wb,"resT_targeted_metabolomics",results_untargeted_metabs,rowNames = T)
+#addWorksheet(wb,"targeted_metabolomics_minP")
+#writeData(wb,"resP_targeted_metabolomics",results_untargeted_metabs,rowNames = T)
+addWorksheet(wb,"global_prot_moderated_FDR")
+writeData(wb,"global_prot_moderated_FDR",results_global_proteins,rowNames = T)
+#addWorksheet(wb,"global_prot_maxT")
+#writeData(wb,"global_prot_maxT",resT_global_proteins,rowNames = T)
+#addWorksheet(wb,"global_prot_minP")
+#writeData(wb,"global_prot_minP",resP_global_proteins,rowNames = T)
+addWorksheet(wb,"glycated_prot_moderated_FDR")
+writeData(wb,"glycated_prot_moderated_FDR",results_glycated_proteins,rowNames = T)
+#addWorksheet(wb,"glycated_prot_maxT")
+#writeData(wb,"glycated_prot_maxT",resT_glycated_proteins,rowNames = T)
+#addWorksheet(wb,"glycated_prot_minP")
+#writeData(wb,"glycated_prot_minP",resP_glycated_proteins,rowNames = T)
+addWorksheet(wb,"lipidomics_moderated_FDR")
+writeData(wb,"lipidomics_moderated_FDR",results_lipids,rowNames = T)
+#addWorksheet(wb,"lipidomics_maxT")
+#writeData(wb,"lipidomics_maxT",resT_lipids,rowNames = T)
+#addWorksheet(wb,"lipidomics_minP")
+#writeData(wb,"lipidomics_minP",resP_lipids,rowNames = T)
+#saveWorkbook(wb,"AHA_omics_ttests_baseline_eIS.xlsx",overwrite = TRUE)
+
+saveWorkbook(wb,"~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant/AHA_omics_ttests_baseline_bmi.xlsx",overwrite = TRUE)
+
+```
+
+
+# Background
+
+The purpose of this analysis is to examine differences in targeted and untargeted metabolomics, global and glycated proteomics, and lipidomics in CACTI participants above and below the median of eIS at baseline.
+
+# Methods
+
+Data were log transformed prior to analysis with the exception of the lipid data, which had previously been log transformed.  Markers with >=80% missing data or near-zero variance were removed prior to analysis.
+
+Moderated t-tests were used to compare CAC progression groups with FDR correction for multiple testing.  In addition, the maxT and minP permutation methods were used to correct for multiple testing.  
+
+Linear models were used to test whether there was a significant interaction between CAC progression groups and sex.  The interpretation of the FC value for the interaction is the average additional FC for females with CAC progression.
+
+Sparse PLS-DA was used to identify markers that best discriminated between the CAC progression groups.  Each sPLS-DA model was tuned to identify the number of components and the number of proteins that resulted in the lowest error rate.  Permutation testing with 1000 permutations was used to evaluate the extent of overfitting.
+
+# Results
+
+For moderated t-tests, see separate files.
+
+## sPLS-DA of untargeted metabolites
+
+```{r splsda utm,echo=FALSE,cache=TRUE,warning=FALSE,message=FALSE, comment=""}
+# untargeted metabolites
+Y <- df$ins_median
+X <- df[,names(df) %in% untargeted_metabs]
+tune.splsda <- tune.splsda(X, Y, ncomp = 5) 
+choice.keepX <- tune.splsda$choice.keepX[1:2] 
+## sPLS-DA function
+splsda.utm <- splsda(X, Y, ncomp = 2, keepX = choice.keepX)
+plotIndiv(splsda.utm,title = "sPLS-DA of untargeted metabolites by CACp",
+          pch = 20,ind.names = F,ellipse = T,legend = T)
+
+top_1 <- selectVar(splsda.utm,comp=1)
+top_2 <- selectVar(splsda.utm,comp=2)
+top_1d <- data.frame(top_1$value)
+top_2d <- top_2$value
+top_1d
+top_2d
+
+set.seed(3654)
+plsda.perf = perf(splsda.utm,validation = "Mfold",folds = 5,auc = T)
+auc_true <- as.numeric(plsda.perf$auc$comp1[1])
+# Permutation testing - takes forever (even in parallel), make sure to cache
+n_perm <- 1000
+cl = makeForkCluster(detectCores()*0.5)
+aucs = parSapply(cl,1:n_perm, function(i){
+  Y <- sample(as.factor(df$CACp),replace = F)
+  plsda_res <- plsda(X,Y,ncomp = 2)
+  perf_plsda = perf(plsda_res,validation = "Mfold",folds = 5,auc = T)
+  return(as.numeric(perf_plsda$auc$comp1[1]))
+})
+stopCluster(cl)
+ggplot(as.data.frame(aucs),aes(x=aucs)) +
+  geom_histogram(bins = 10) +
+  geom_vline(aes(xintercept=auc_true),color="red") +
+  theme_bw() + xlab("AUC")
+```
+
+```{r splsda tm,echo=FALSE,cache=TRUE,warning=FALSE,message=FALSE, comment=""}
+# targeted metabolites
+Y <- df$ins_median
+X <- df[,colnames(df) %in% targeted_metabs]
+tune.splsda <- tune.splsda(X, Y, ncomp=5) 
+choice.keepX <- tune.splsda$choice.keepX[1:2]
+#choice.keepX <- 10
+## sPLS-DA function
+splsda.tm <- splsda(X, Y, ncomp = 2, keepX = choice.keepX)
+plotIndiv(splsda.tm,title = "sPLS-DA of targeted metabolites by CACp",
+          pch = 20,ind.names = F,ellipse = T,legend = T)
+
+top_1 <- selectVar(splsda.tm,comp=1)
+top_2 <- selectVar(splsda.tm,comp=2)
+top_1d <- top_1$value
+top_2d <- top_2$value
+top_1d
+top_2d
+
+set.seed(3654)
+plsda.perf = perf(splsda.tm,validation = "Mfold",folds = 5,auc = T)
+auc_true <- as.numeric(plsda.perf$auc$comp1[1])
+# Permutation testing - takes forever (even in parallel), make sure to cache
+n_perm <- 1000
+cl = makeForkCluster(detectCores()*0.5)
+aucs = parSapply(cl,1:n_perm, function(i){
+  Y <- sample(as.factor(df$CACp),replace = F)
+  plsda_res <- plsda(X,Y,ncomp = 2)
+  perf_plsda = perf(plsda_res,validation = "Mfold",folds = 5,auc = T)
+  return(as.numeric(perf_plsda$auc$comp1[1]))
+})
+stopCluster(cl)
+ggplot(as.data.frame(aucs),aes(x=aucs)) +
+  geom_histogram(bins = 10) +
+  geom_vline(aes(xintercept=auc_true),color="red") +
+  theme_bw() + xlab("AUC")
+```
+
+## sPLS-DA of global proteins
+
+```{r splsda gp,echo=FALSE,cache=TRUE,warning=FALSE,message=FALSE, comment=""}
+# global proteins
+Y <- df$ins_median
+X <- df[,names(df) %in% global_proteins]
+tune.splsda <- tune.splsda(X, Y, ncomp =  5) 
+choice.keepX <- tune.splsda$choice.keepX[1:2]
+#choice.keepX <- 10
+## sPLS-DA function
+splsda.globalp <- splsda(X, Y, ncomp = 2, keepX = choice.keepX)
+plotIndiv(splsda.globalp,title = "sPLS-DA of global proteins by CACp",
+          pch = 20,ind.names = F,ellipse = T,legend = T)
+
+top_1 <- selectVar(splsda.globalp,comp=1)
+top_2 <- selectVar(splsda.globalp,comp=2)
+top_1d <- top_1$value
+top_2d <- top_2$value
+top_1d
+top_2d
+
+set.seed(3654)
+plsda.perf = perf(splsda.globalp, validation = "loo",auc=TRUE)
+auc_save <- plsda.perf$auc$`comp1`[1]    
+auc_true <- as.numeric(plsda.perf$auc$comp1["AUC.mean"])
+
+# Permutation testing - takes forever, make sure to cache
+n_perm <- 1000
+cl = makeForkCluster(detectCores()*0.5)
+aucs = parSapply(cl,1:n_perm, function(i){
+  Y <- sample(as.factor(df$CACp),replace = F)
+  plsda_res <- plsda(X,Y,ncomp = 2)
+  perf_plsda = perf(plsda_res,validation = "Mfold",folds = 5,auc = T)
+  return(as.numeric(perf_plsda$auc$comp1[1]))
+})
+stopCluster(cl)
+ggplot(as.data.frame(aucs),aes(x=aucs)) +
+  geom_histogram(bins = 10) +
+  geom_vline(aes(xintercept=auc_true),color="red") +
+  theme_bw() + xlab("AUC")
+```
+
+## sPLS-DA of glycated proteins
+
+```{r splsda glyp,echo=FALSE,cache=TRUE,warning=FALSE,message=FALSE, comment=""}
+# glycated proteins
+Y <- df$ins_median
+X <- df[,names(df) %in% glycated_proteins]
+tune.splsda <- tune.splsda(X, Y, ncomp = 5) 
+choice.keepX <- tune.splsda$choice.keepX[1:2]
+## sPLS-DA function
+splsda.glycp <- splsda(X, Y, ncomp = 2, keepX = choice.keepX)
+plotIndiv(splsda.glycp,title = "sPLS-DA of glycated proteins by CACp",
+          pch = 20,ind.names = F,ellipse = T,legend = T)
+
+top_1 <- selectVar(splsda.glycp,comp=1)
+top_2 <- selectVar(splsda.glycp,comp=2)
+top_1d <- top_1$value
+top_2d <- top_2$value
+top_1d
+top_2d
+
+set.seed(3654)
+plsda.perf = perf(splsda.glycp, validation = "loo",auc=TRUE)
+auc_save <- plsda.perf$auc$`comp1`[1]    
+auc_true <- as.numeric(plsda.perf$auc$comp1["AUC.mean"])
+
+# Permutation testing - takes forever, make sure to cache
+n_perm <- 1000
+cl = makeForkCluster(detectCores()*0.5)
+aucs = parSapply(cl,1:n_perm, function(i){
+  Y <- sample(as.factor(df$CACp),replace = F)
+  plsda_res <- plsda(X,Y,ncomp = 2)
+  perf_plsda = perf(plsda_res,validation = "Mfold",folds = 5,auc = T)
+  return(as.numeric(perf_plsda$auc$comp1[1]))
+})
+stopCluster(cl)
+ggplot(as.data.frame(aucs),aes(x=aucs)) +
+  geom_histogram(bins = 10) +
+  geom_vline(aes(xintercept=auc_true),color="red") +
+  theme_bw() + xlab("AUC")
+```
+
+
+## sPLS-DA of lipids
+
+```{r splsda lipids,echo=FALSE,cache=TRUE,warning=FALSE,message=FALSE, comment=""}
+# lipids
+Y <- df$ins_median
+X <- df[,names(df) %in% lipids]
+tune.splsda <- tune.splsda(X, Y, ncomp = 5) 
+choice.keepX <- tune.splsda$choice.keepX[1:2]
+## sPLS-DA function
+splsda.lipids <- splsda(X, Y, ncomp = 2, keepX = choice.keepX)
+plotIndiv(splsda.lipids,title = "sPLS-DA of lipids by CACp",
+          pch = 20,ind.names = F,ellipse = T,legend = T)
+
+top_1 <- selectVar(splsda.lipids,comp=1)
+top_2 <- selectVar(splsda.lipids,comp=2)
+top_1d <- top_1$value
+top_2d <- top_2$value
+top_1d
+top_2d
+
+set.seed(3654)
+plsda.perf = perf(splsda.lipids, validation = "loo",auc=TRUE)
+auc_save <- plsda.perf$auc$`comp1`[1]    
+auc_true <- as.numeric(plsda.perf$auc$comp1["AUC.mean"])
+
+# Permutation testing - takes forever, make sure to cache
+n_perm <- 1000
+cl = makeForkCluster(detectCores()*0.5)
+aucs = parSapply(cl,1:n_perm, function(i){
+  Y <- sample(as.factor(df$CACp),replace = F)
+  plsda_res <- plsda(X,Y,ncomp = 2)
+  perf_plsda = perf(plsda_res,validation = "Mfold",folds = 5,auc = T)
+  return(as.numeric(perf_plsda$auc$comp1[1]))
+})
+stopCluster(cl)
+ggplot(as.data.frame(aucs),aes(x=aucs)) +
+  geom_histogram(bins = 10) +
+  geom_vline(aes(xintercept=auc_true),color="red") +
+  theme_bw() + xlab("AUC")
+```
+
+
+## sPLS-DA of all data combined
+
+```{r splsda all,echo=FALSE,cache=TRUE,warning=FALSE,message=FALSE, comment=""}
+# everything
+Y <- df$ins_median
+X <- df_z
+tune.splsda <- tune.splsda(X, Y, ncomp = 5) 
+choice.keepX <- tune.splsda$choice.keepX[1:2]
+#choice.keepX <- 10
+## sPLS-DA function
+splsda.all <- splsda(X, Y, ncomp = 2, keepX = choice.keepX)
+plotIndiv(splsda.all,title = "sPLS-DA of all markers by CACp",
+          pch = 20,ind.names = F,ellipse = T,legend = T)
+
+top_1 <- selectVar(splsda.all,comp=1)
+top_2 <- selectVar(splsda.all,comp=2)
+top_1d <- top_1$value
+top_2d <- top_2$value
+top_1d
+top_2d
+
+# set.seed(3654)
+plsda.perf = perf(splsda.all, validation = "loo",auc=TRUE)
+auc_save <- plsda.perf$auc$`comp1`[1]    
+auc_true <- as.numeric(plsda.perf$auc$comp1["AUC.mean"])
+
+# Permutation testing - takes forever, make sure to cache
+n_perm <- 1000
+cl = makeForkCluster(detectCores()*0.5)
+aucs = parSapply(cl,1:n_perm, function(i){
+  Y <- sample(as.factor(df$CACp),replace = F)
+  plsda_res <- plsda(X,Y,ncomp = 2)
+  perf_plsda = perf(plsda_res,validation = "Mfold",folds = 5,auc = T)
+  return(as.numeric(perf_plsda$auc$comp1[1]))
+})
+stopCluster(cl)
+ggplot(as.data.frame(aucs),aes(x=aucs)) +
+  geom_histogram(bins = 10) +
+  geom_vline(aes(xintercept=auc_true),color="red") +
+  theme_bw() + xlab("AUC")
+```
+
