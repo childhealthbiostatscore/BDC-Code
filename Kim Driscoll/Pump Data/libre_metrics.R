@@ -24,7 +24,13 @@ for (f in 1:length(files)) {
                                             sum(!is.na(table$sensorglucose)))*100
   summary["% really high 250+",f] = (sum(table$sensorglucose >= 250,na.rm = T)/
                                           sum(!is.na(table$sensorglucose)))*100
+  summary["% 181-250",f] = (sum(table$sensorglucose > 180 & table$sensorglucose <= 250,na.rm = T)/
+                              sum(!is.na(table$sensorglucose)))*100
+  summary["% 251-400",f] = (sum(table$sensorglucose > 250 & table$sensorglucose <= 400,na.rm = T)/
+                              sum(!is.na(table$sensorglucose)))*100
+  summary["% 400+",f] = (sum(table$sensorglucose > 400,na.rm = T)/
+                                       sum(!is.na(table$sensorglucose)))*100
 }
 summary = t(summary)
 summary = as.data.frame(apply(summary,2,function(c){round((as.numeric(c)),2)}))
-write.csv(summary,file = "/Users/timvigers/Documents/libre_summary.csv",row.names = F,na="")
+write.csv(summary,file = "/home/timvigers/Downloads/OneDrive_1_12-15-2022/libre_summary.csv",row.names = F,na="")
