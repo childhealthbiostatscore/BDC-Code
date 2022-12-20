@@ -54,8 +54,15 @@ df$linoleic.acid <- ifelse(df$linoleic.acid==0,0.001,df$linoleic.acid)
 df[,c(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins)] = 
   apply(df[,c(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins)], 2, log)
 
-# delete records with missing BMI
-df <- df[!is.na(df$bmiV1),]
+# create new var for renal complications
+# AER>20 or AC>30 if AER is missing
+df$renal_comp <- ifelse(!is.na(df$aerV1) & df$aerV1>20,1,
+                        ifelse(!is.na(df$aerV1) & df$aerV1<=20,0,
+                               ifelse(is.na(df$aerV1) & (!is.na(df$acV1) & df$acV1>30),1,
+                                      ifelse(is.na(df$aerV1) & (!is.na(df$acV1) & df$acV1<=30),0,NA))))
+
+# delete records with missing renal information
+df <- df[!is.na(df$renal_comp),]
 
 # remove low variance items
 # no_var = caret::nearZeroVar(df[,colnames(df) %in% c(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins,lipids)])
@@ -90,78 +97,70 @@ df <- df[!is.na(df$bmiV1),]
 df_z <- df[,colnames(df) %in% c(untargeted_metabs,targeted_metabs,global_proteins,glycated_proteins,lipids)]
 df_z <- scale(df_z)
 
-# variable for lean vs. obese
-df$obese <- ifelse(df$bmiV1>=3.4011973,1,0)
 ```
 
 ```{r moderated ttests,echo=FALSE, message=FALSE, results="hide"}
-# CAC progression
-#bmi_contrast <- ifelse(df$CACp=="Yes",1,0)
-#bmi_contrast <- cbind(rep(1,nrow(df)),bmi_contrast)
-
-# insulin tertiles
-# code the contrast so that high insulin sensitivity=1 and low=0
-bmi_contrast <- ifelse(df$obese==1,1,0)
-bmi_contrast <- cbind(rep(1,nrow(df)),bmi_contrast)
+renal_contrast <- ifelse(df$renal_comp==1,1,0)
+renal_contrast <- cbind(rep(1,nrow(df)),renal_contrast)
 
 # untargeted metabolites
 ymat <- df[,names(df) %in% untargeted_metabs]
 ymat <- t(ymat)
-fit <- lmFit(ymat,bmi_contrast)
+fit <- lmFit(ymat,renal_contrast)
 fit <- eBayes(fit)
 results_untargeted_metabs <- topTable(fit,coef = 2,number = nrow(ymat))
 results_untargeted_metabs <- results_untargeted_metabs[order(results_untargeted_metabs$P.Value),] 
 # trying permutation test based adjustment
-resT_untargeted_metabs<-mt.maxT(ymat,bmi_contrast[,2])
-resP_untargeted_metabs<-mt.minP(ymat,bmi_contrast[,2])
+resT_untargeted_metabs<-mt.maxT(ymat,renal_contrast[,2])
+resP_untargeted_metabs<-mt.minP(ymat,renal_contrast[,2])
 ymat <- NULL
 fit <- NULL
 
 # targeted metabolites
 ymat <- t(df[,names(df) %in% targeted_metabs])
-fit <- lmFit(ymat,bmi_contrast)
+fit <- lmFit(ymat,renal_contrast)
 fit <- eBayes(fit)
 results_targeted_metabs <- topTable(fit,coef = 2,number = nrow(ymat))
 results_targeted_metabs <- results_targeted_metabs[order(results_targeted_metabs$P.Value),] 
 # trying permutation test based adjustment
-#resT_targeted_metabs<-mt.maxT(ymat,bmi_contrast[,2])
-#resP_targeted_metabs<-mt.minP(ymat,bmi_contrast[,2])
+#resT_targeted_metabs<-mt.maxT(ymat,renal_contrast[,2])
+#resP_targeted_metabs<-mt.minP(ymat,renal_contrast[,2])
 ymat <- NULL
 fit <- NULL
 
 # global proteomics
 ymat <- t(df[,names(df) %in% global_proteins])
-fit <- lmFit(ymat,bmi_contrast)
+fit <- lmFit(ymat,renal_contrast)
 fit <- eBayes(fit)
 results_global_proteins <- topTable(fit,coef = 2,number = nrow(ymat))
 results_global_proteins <- results_global_proteins[order(results_global_proteins$P.Value),] 
 # trying permutation test based adjustment
-resT_global_proteins<-mt.maxT(ymat,bmi_contrast[,2])
-resP_global_proteins<-mt.minP(ymat,bmi_contrast[,2])
+resT_global_proteins<-mt.maxT(ymat,renal_contrast[,2])
+resP_global_proteins<-mt.minP(ymat,renal_contrast[,2])
 ymat <- NULL
 fit <- NULL
 
 # glycated proteomics
 ymat <- t(df[,names(df) %in% glycated_proteins])
-fit <- lmFit(ymat,bmi_contrast)
+fit <- lmFit(ymat,renal_contrast)
 fit <- eBayes(fit)
 results_glycated_proteins <- topTable(fit,coef = 2,number = nrow(ymat))
 results_glycated_proteins <- results_glycated_proteins[order(results_glycated_proteins$P.Value),] 
 # trying permutation test based adjustment
-resT_glycated_proteins<-mt.maxT(ymat,bmi_contrast[,2])
-resP_glycated_proteins<-mt.minP(ymat,bmi_contrast[,2])
+resT_glycated_proteins<-mt.maxT(ymat,renal_contrast[,2])
+resP_glycated_proteins<-mt.minP(ymat,renal_contrast[,2])
 ymat <- NULL
 fit <- NULL
 
 # lipidomics
 ymat <- t(df[,names(df) %in% lipids])
-fit <- lmFit(ymat,bmi_contrast)
+fit <- lmFit(ymat,renal_contrast)
 fit <- eBayes(fit)
 results_lipids <- topTable(fit,coef = 2,number = nrow(ymat))
 results_lipids <- results_lipids[order(results_lipids$P.Value),] 
 # trying permutation test based adjustment
-resT_lipids<-mt.maxT(ymat,bmi_contrast[,2])
-resP_lipids<-mt.minP(ymat,bmi_contrast[,2])
+resT_lipids<-mt.maxT(ymat,renal_contrast[,2])
+resP_lipids<-mt.minP(ymat,renal_contrast[,2])
 ymat <- NULL
 fit <- NULL
 
@@ -199,7 +198,7 @@ writeData(wb,"lipidomics_moderated_FDR",results_lipids,rowNames = T)
 #writeData(wb,"lipidomics_minP",resP_lipids,rowNames = T)
 #saveWorkbook(wb,"AHA_omics_ttests_baseline_eIS.xlsx",overwrite = TRUE)
 
-saveWorkbook(wb,"~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant/Reports/AHA_omics_ttests_baseline_bmi.xlsx",overwrite = TRUE)
+saveWorkbook(wb,"~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant/Reports/AHA_omics_ttests_baseline_renal.xlsx",overwrite = TRUE)
 
 ```
 
