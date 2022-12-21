@@ -55,7 +55,7 @@ analysis = a1c_tech %>%
                                 HCL == "No" & Pump_VisitDate == "Y" & CGM_VisitDate != "Y" ~ "Pump Alone",
                                 HCL == "No" & Pump_VisitDate != "Y" & CGM_VisitDate == "Y" ~ "CGM Alone",
                                 TRUE ~ "None")) %>% 
-  select(EPICMRN, VisitDate, Age_A1cResultDate, A1c_Value, tech_group, time_group, DiabetesDuration_A1cResultDate, Gender, Race_Ethn) 
+  select(EPICMRN, VisitDate, Age_A1cResultDate, A1c_Value, tech_group, time_group, DiabetesDuration_A1cResultDate, Gender, Race_Ethn, InsuranceCategory) 
 
 # factor tech type for order
 analysis$tech_group = factor(analysis$tech_group, levels = c("HCL", "CGM + Pump", "CGM Alone", "Pump Alone", "None"))
@@ -66,12 +66,12 @@ analysis$tech_group = factor(analysis$tech_group, levels = c("HCL", "CGM + Pump"
 
 ```{r analysis, include=FALSE}
 # table 1
-a1c_table1 = table1(~ Gender + Race_Ethn + A1c_Value + Age_A1cResultDate + DiabetesDuration_A1cResultDate  | tech_group*time_group,
+a1c_table1 = table1(~ Gender + Race_Ethn + A1c_Value + Age_A1cResultDate + DiabetesDuration_A1cResultDate + InsuranceCategory | tech_group*time_group,
                     render.continuous = c(.="Mean (SD)"),
                      data = analysis)
 
 # Fit random intercept model
-a1c_mod = lme(A1c_Value ~ Age_A1cResultDate + DiabetesDuration_A1cResultDate + Race_Ethn + tech_group + time_group + tech_group*time_group,
+a1c_mod = lme(A1c_Value ~ InsuranceCategory + Gender + Age_A1cResultDate + DiabetesDuration_A1cResultDate + Race_Ethn + tech_group + time_group + tech_group*time_group,
             random = ~1|EPICMRN,
             data = analysis,
             na.action = na.omit)
@@ -82,7 +82,7 @@ a1c_mod2 = lme(A1c_Value ~ Age_A1cResultDate + Race_Ethn +  tech_group + time_gr
             na.action = na.omit)
 
 # entire cohort, just a1c change between time grp
-a1c_mod_all = lme(A1c_Value ~ Age_A1cResultDate + DiabetesDuration_A1cResultDate + Race_Ethn +  time_group ,
+a1c_mod_all = lme(A1c_Value ~ Gender+ InsuranceCategory+Age_A1cResultDate + DiabetesDuration_A1cResultDate + Race_Ethn +  time_group ,
             random = ~1|EPICMRN,
             data = analysis,
             na.action = na.omit)
@@ -101,11 +101,10 @@ a1c_predict = a1c_predict %>% group_by(tech_group, time_group) %>% mutate(grpmea
 
 # Outstanding Data Questions/ Remarks
 
-* Not much demographics provided in dataset; let me know if you'd like anything added
 
 # Methods
 
-A1c values were modeled with a Linear Mixed Model with time groups(2016-2017, 2020-2021) and tech groups(CGM+Pump, CGM only, Pump Only, None) and an interaction term of time and tech, adjusting for age, diabetes duration, and race/ethnicity. A random intercept for subject was added to account for subjects with repeated measurements. Contrasts of estimated marginal means (least squares means) were used to determine the difference within tech groups at each time point.
+A1c values were modeled with a Linear Mixed Model with time groups(2016-2017, 2020-2021) and tech groups(CGM+Pump, CGM only, Pump Only, None) and an interaction term of time and tech, adjusting for age, diabetes duration,gender, insurance category, and race/ethnicity. A random intercept for subject was added to account for subjects with repeated measurements. Contrasts of estimated marginal means (least squares means) were used to determine the difference within tech groups at each time point.
 
 # Analysis
 
@@ -116,21 +115,21 @@ a1c_table1
 
 ## Model Fit and Contrasts
 
-Adjusting for age, diabetes duration, and race there is a significant difference in A1c across the 2016-2017 and 2020-2021 time periods (p < 0.0001). The average A1c decreased by 0.47 (95% CI: 0.39, 0.56). 
+Adjusting for sex, insurance status, age, diabetes duration, and race there is a significant difference in A1c across the 2016-2017 and 2020-2021 time periods (p < 0.0001). The average A1c decreased by 0.47 (95% CI: 0.39, 0.56). 
 
-When only including patients who had data in both time periods, the average A1c decreased by 0.39 (95% CI: 0.25, 0.53; p <0.0001). 
+When only including patients who had data in both time periods, the average A1c decreased by 0.40 (95% CI: 0.26, 0.54; p <0.0001). 
 
-Adjusting for age, diabetes duration, and race there is a significant difference in A1c within the different tech groups across the 2016-2017 and 2020-2021 time periods (p < 0.0001).
+Adjusting for gender, insurance, age, diabetes duration, and race there is a significant difference in A1c within the different tech groups across the 2016-2017 and 2020-2021 time periods (p < 0.0001).
 
-The average A1c Increased by 0.39 (95% CI: 0.17, 0.62) in the Pump Only groups (p = 0.003), and increased by 0.42 (95% CI: 0.23, 0.62) in the No Tech group (p < 0.0001). There was no significant difference in the time periods within the HCL group (p = 0.995), CGM + Pump group (p = 0.527), or CGM only group (p = 0.679) 
+The average A1c Increased by 0.36 (95% CI: 0.14, 0.58) in the Pump Only groups (p = 0.008), and increased by 0.42 (95% CI: 0.19, 0.57) in the No Tech group (p < 0.0001). There was no significant difference in the time periods within the HCL group (p = 0.997), CGM + Pump group (p = 0.421), or CGM only group (p = 0.419) 
 
 
 ```{r model}
 a = summary(a1c_mod_all)
 kable(a$tTable, digits = 3, caption = "Base A1c Model")
 
-kable(mod_anova,digits = 3,caption = "Test of Overall Effect")
 
+kable(mod_anova,digits = 3,caption = "Test of Overall Effect")
 kable(mod_means$contrasts[c(5,14,22,29, 35),],digits = 3,caption = "Timepoint Means")
 
 
@@ -178,14 +177,14 @@ a_combined = full_join(a_2017, a_2020) %>% mutate(tech_group_change = paste0(grp
 
 analysis2 = full_join(analysis2, a_combined) # only those with both time windows
 
-a1c_mod_all_2v = lme(A1c_Value ~ Age_A1cResultDate + DiabetesDuration_A1cResultDate + Race_Ethn +  time_group ,
+a1c_mod_all_2v = lme(A1c_Value ~ Gender + InsuranceCategory + Age_A1cResultDate + DiabetesDuration_A1cResultDate + Race_Ethn +  time_group ,
             random = ~1|EPICMRN,
             data = analysis2,
             na.action = na.omit)
 
 b = summary(a1c_mod_all_2v)
 kable(b$tTable)
-.39 + 1.96*c(-1, 1)*0.0704927
+.40 + 1.96*c(-1, 1)*0.070
 ```
 
 ```{r misc}
