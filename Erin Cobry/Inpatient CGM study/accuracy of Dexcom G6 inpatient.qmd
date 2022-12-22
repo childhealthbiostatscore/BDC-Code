@@ -22,11 +22,22 @@ library(arsenal)
 library(knitr)
 library(chron)
 library(M3)
+
+
+knitr::opts_chunk$set(echo = FALSE)
+if(Sys.info()["sysname"] == "Windows"){
+  home_dir = "T:/Erin Cobry/Inpatient CGM study/"
+} else if (Sys.info()["sysname"] == "Linux"){
+  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/Peds Endo/Petter Bjornstad/TODAY subaward/"
+} else if (Sys.info()["sysname"] == "Darwin"){
+  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/Inpatient CGM study/"
+}
+knitr::opts_knit$set(root.dir = home_dir)
 ```
 
 ```{r include=TRUE, warning=FALSE, message=F}
 # Import data
-source("BDC/Projects/Erin Cobry/Inpatient CGM study/Data raw/AccuracyOfTheDexcomG-Glucose_R_2022-12-05_1514.r")
+source("./Data raw/AccuracyOfTheDexcomG-Glucose_R_2022-12-05_1514.r")
 glucose <- data
 glucose <- glucose %>% filter(!is.na(bgvalue))
 glucose <- glucose %>% filter(!glucose$record_id %in% c("Test 1","Test 2"))
@@ -38,7 +49,7 @@ glucose$record_id <- str_pad(as.character(glucose$record_id),3,side="left",pad="
 glucose <- glucose %>% filter(bgtype==1)
 glucose_keep <- glucose %>% select(record_id,date_time,bgvalue,bgtype.factor)
 
-source("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/Inpatient CGM study/Data raw/AccuracyOfTheDexcomG-PatientInfoAndLocati_R_2022-12-08_1319.r")
+source("./Data raw/AccuracyOfTheDexcomG-PatientInfoAndLocati_R_2022-12-08_1319.r")
 patient <- data
 patient <- patient %>% filter(!record_id %in% c("Test 1","Test 2"))
 patient$record_id <- str_pad(as.character(patient$record_id),3,side="left",pad="0")
@@ -48,7 +59,7 @@ patient$a1c <- as.numeric(patient$a1c)
 patient_keep <- patient %>% select(record_id,locationfloor.factor)
 
 # looks like a new Clarity format for the new files, need to remove first line
-newclarityfiles <- base::list.files(path = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/Inpatient CGM study/Data raw/Dexcom CSVs",full.names = TRUE,recursive = T)
+newclarityfiles <- base::list.files(path = "./Data raw/Dexcom CSVs",full.names = TRUE,recursive = T)
 
 # for (f in 51:length(newclarityfiles)) {
 #   print(newclarityfiles[f])
@@ -65,9 +76,9 @@ newclarityfiles <- base::list.files(path = "/Volumes/PEDS/RI Biostatistics Core/
 # }
 
 # Read in csv files
-cleandata(inputdirectory = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/Inpatient CGM study/Data raw/Dexcom CSVs", outputdirectory = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/Inpatient CGM study/Data clean/Clean CSVs", verbose = F, id_filename = T, gapfill = F, removegaps = F)
+cleandata(inputdirectory = "./Data raw/Dexcom CSVs", outputdirectory = "./Data clean/Clean CSVs", verbose = F, id_filename = T, gapfill = F, removegaps = F)
 
-files <- base::list.files(path = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/Inpatient CGM study/Data clean/Clean CSVs",full.names = TRUE,recursive = T)
+files <- base::list.files(path = "./Data clean/Clean CSVs",full.names = TRUE,recursive = T)
 
 # need to modify this code so it extracts the ID prior to "_" and then pads with zeroes
 cgm <- NULL
@@ -179,11 +190,29 @@ kable(summary(mardt))
 ### By DKA
 
 ```{r include=TRUE, warning=FALSE, message=F}
+zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$DKA=="DKA",]$bgvalue, testVals = glucose_keep[glucose_keep$DKA=="DKA",]$cgm_glucose)
+table(zones)
+round (table (zones) / length (zones) * 100, digits=2)
+
+p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$DKA=="DKA",]$bgvalue, testVals = glucose_keep[glucose_keep$DKA=="DKA",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
+```
+
+```{r include=TRUE, warning=FALSE, message=F}
 mardt <- tableby(data=glucose_keep, DKA ~ relativediff,numeric.stats=c("meansd"))
 kable(summary(mardt))
 ```
 
 ### By AKI
+
+```{r include=TRUE, warning=FALSE, message=F}
+zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$AKI=="AKI",]$bgvalue, testVals = glucose_keep[glucose_keep$AKI=="AKI",]$cgm_glucose)
+table(zones)
+round (table (zones) / length (zones) * 100, digits=2)
+
+p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$AKI=="AKI",]$bgvalue, testVals = glucose_keep[glucose_keep$AKI=="AKI",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
+```
 
 ```{r include=TRUE, warning=FALSE, message=F}
 mardt <- tableby(data=glucose_keep, AKI ~ relativediff,numeric.stats=c("meansd"))
@@ -193,11 +222,29 @@ kable(summary(mardt))
 ### By ICU
 
 ```{r include=TRUE, warning=FALSE, message=F}
+zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$ICU=="ICU",]$bgvalue, testVals = glucose_keep[glucose_keep$ICU=="ICU",]$cgm_glucose)
+table(zones)
+round (table (zones) / length (zones) * 100, digits=2)
+
+p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$ICU=="ICU",]$bgvalue, testVals = glucose_keep[glucose_keep$ICU=="ICU",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
+```
+
+```{r include=TRUE, warning=FALSE, message=F}
 mardt <- tableby(data=glucose_keep, ICU ~ relativediff,numeric.stats=c("meansd"))
 kable(summary(mardt))
 ```
 
 ### By Tylenol
+
+```{r include=TRUE, warning=FALSE, message=F}
+zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$tylenol=="Tylenol",]$bgvalue, testVals = glucose_keep[glucose_keep$tylenol=="Tylenol",]$cgm_glucose)
+table(zones)
+round (table (zones) / length (zones) * 100, digits=2)
+
+p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$tylenol=="Tylenol",]$bgvalue, testVals = glucose_keep[glucose_keep$tylenol=="Tylenol",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
+```
 
 ```{r include=TRUE, warning=FALSE, message=F}
 mardt <- tableby(data=glucose_keep, tylenol ~ relativediff,numeric.stats=c("meansd"))
@@ -207,6 +254,15 @@ kable(summary(mardt))
 ### By Contrast
 
 ```{r include=TRUE, warning=FALSE, message=F}
+zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$contrast=="Contrast",]$bgvalue, testVals = glucose_keep[glucose_keep$contrast=="Contrast",]$cgm_glucose)
+table(zones)
+round (table (zones) / length (zones) * 100, digits=2)
+
+p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$contrast=="Contrast",]$bgvalue, testVals = glucose_keep[glucose_keep$contrast=="Contrast",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
+```
+
+```{r include=TRUE, warning=FALSE, message=F}
 mardt <- tableby(data=glucose_keep, contrast ~ relativediff,numeric.stats=c("meansd"))
 kable(summary(mardt))
 ```
@@ -214,11 +270,44 @@ kable(summary(mardt))
 ### By Vasoactive Meds
 
 ```{r include=TRUE, warning=FALSE, message=F}
+zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$vasoactive=="Vasoactive Meds",]$bgvalue, testVals = glucose_keep[glucose_keep$vasoactive=="Vasoactive Meds",]$cgm_glucose)
+table(zones)
+round (table (zones) / length (zones) * 100, digits=2)
+
+p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$vasoactive=="Vasoactive Meds",]$bgvalue, testVals = glucose_keep[glucose_keep$vasoactive=="Vasoactive Meds",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
+```
+
+```{r include=TRUE, warning=FALSE, message=F}
 mardt <- tableby(data=glucose_keep, vasoactive ~ relativediff,numeric.stats=c("meansd"))
 kable(summary(mardt))
 ```
 
 ### By DKA Severity
+
+Severe DKA
+
+```{r include=TRUE, warning=FALSE, message=F}
+zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$DKA_severity=="Severe DKA",]$bgvalue, testVals = glucose_keep[glucose_keep$DKA_severity=="Severe DKA",]$cgm_glucose)
+table(zones)
+round (table (zones) / length (zones) * 100, digits=2)
+
+p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$DKA_severity=="Severe DKA",]$bgvalue, testVals = glucose_keep[glucose_keep$DKA_severity=="Severe DKA",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
+```
+
+Non-severe DKA
+
+```{r include=TRUE, warning=FALSE, message=F}
+zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$DKA_severity=="Non-severe DKA",]$bgvalue, testVals = glucose_keep[glucose_keep$DKA_severity=="Non-severe DKA",]$cgm_glucose)
+table(zones)
+round (table (zones) / length (zones) * 100, digits=2)
+
+p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$DKA_severity=="Non-severe DKA",]$bgvalue, testVals = glucose_keep[glucose_keep$DKA_severity=="Non-severe DKA",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
+```
+
+MARD
 
 ```{r include=TRUE, warning=FALSE, message=F}
 mardt <- tableby(data=glucose_keep, DKA_severity ~ relativediff,numeric.stats=c("meansd"))
