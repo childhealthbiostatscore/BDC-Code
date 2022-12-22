@@ -42,24 +42,10 @@ FACS.design.file.box<-("FACS_designFile_baseline.csv")
 FACS.raw.file.box<-("CAVII_shorten_v2.csv")
 
 
-##### 2. mRNA
-#mRNA.design.file.box<-("designAtBaseline.csv")
-mRNA.design.file.box<-("designAtBaseline_JMK20190409.csv")
-
-#mRNA.data_filt.file.box<-"filteredAffymetrixData_RemovedDateSent.csv"
-mRNA.data_filt.file.box<-"filteredAffymetrixData_RemovedDateSent_JMK20190409.csv"
-
-
 
 ###  3. Pro.Insulin
 Pro.Insulin.all.file.box<-c("PIC_baseline_date removed_JMK20190605.csv")
 
-
-### 4. microRNA
-microRNA.NEW.Design.file.box<-c("designFile_baseline.csv")
-
-microRNA.NEW.norm.file.box<-c("normmiRNA_baseline.csv")
-### Join (Design+norm)
 
 
 ##### 5. RNAseq
@@ -104,16 +90,6 @@ RNAseq.Mod.Monocytes.file.box<-"CAV-Cohort-2-RNAseq_monocyte_WGCNAModules_201703
 
 # Wholeblood
 RNAseq.Mod.Wholeblood.file.box<-"CAV-Cohort-2-RNAseq_WholeBlood_WGCNAModules_20170516b.RData"  # 5/16/17
-
-
-# 8. Modules: mRNA
-## 8.1 eigen values
-B.Affy.eigen.file.box<-"Affy_WGCNAeigenGenes_noMod0.csv"  # revised, 8/11
-
-
-## 8.2 sets (ignore set 0)
-B.Affy.module.set.file.box<-"moduleAssignment.csv"
-
 
 
 
@@ -165,41 +141,6 @@ for(i in 1:ncol(FACS.join)){
 
 
 
-##### 2. mRNA
-## QC: for raw data processing at earlier step, see folder /GEO/mRNA/Affy_cohort2_030817.RMD
-
-
-
-## 2.1 
-mRNA.design<-read.csv(paste(Active.Box.folder, mRNA.design.file.box, sep=''))
-mRNA.design$barcode<-gsub('-', '.' ,mRNA.design$barcode)
-
-
-
-
-## keep only baseline measures (do same at raw data next)
-##  no longer need. Elizabeth updated the raw file. mRNA.design<-mRNA.design %>% filter(month==0) %>% filter(barcode!='921893.H06') # exception for ABATE_002008, keep.H05
-
-
-## 2.2
-mRNA.data_filt<-read.csv(paste(Active.Box.folder, mRNA.data_filt.file.box, sep=''))
-# mRNA.data_filt %<>% dplyr::rename(X911285.H02 = X911285H02)
-Probe.id<-mRNA.data_filt$X
-mRNA.data_filt.T<-as.data.frame(t(mRNA.data_filt[,-1]))
-colnames(mRNA.data_filt.T)<-Probe.id
-# dim(mRNA.data_filt)
-# mRNA.data_filt[1:3, 1:15]
-
-
-mRNA.data_filt.T$barcode<-substr(rownames(mRNA.data_filt.T),2, 100) # dim(mRNA.data_filt.T) # this include both baseline, AND day 1. will be filtered by the next inner_join
-
-### Join (design + raw(filt))
-mRNA.join<-inner_join(x=mRNA.design, y=mRNA.data_filt.T, by='barcode') %>% select(-participant_id)
-mRNA.join<-mRNA.join %>% dplyr::rename(participant_id=ITN_ID)
-rownames(mRNA.join)<-mRNA.join$participant_id
-mRNA.join<-mRNA.join[,(ncol(mRNA.design)+1):ncol(mRNA.join)]
-
-
 
 ###  3. Pro.Insulin
 Pro.Insulin.all<-read.csv(paste(Active.Box.folder, Pro.Insulin.all.file.box, sep=''))
@@ -212,30 +153,6 @@ for(i in 1:ncol(Pro.Insulin.all)){
   # i=1
   Pro.Insulin.all[is.na(Pro.Insulin.all[,i]), i] <- mean(Pro.Insulin.all[,i], na.rm = TRUE) # Pro.Insulin.all %>% summarise_all(funs(mean(., na.rm=TRUE)))
 }
-
-
-
-
-
-
-
-
-### 4. microRNA
-# Though did not end up used in down-selection analysis
-microRNA.NEW.Design<-read.csv(paste(Active.Box.folder, microRNA.NEW.Design.file.box, sep=''))[,1:9]
-
-microRNA.NEW.norm<-read.csv(paste(Active.Box.folder, microRNA.NEW.norm.file.box, sep=''))
-### Join (Design+norm)
-microRNA.NEW.join<-inner_join(x=microRNA.NEW.Design %>% dplyr::rename(Key1=barcode),
-                              y=microRNA.NEW.norm %>% dplyr::rename(Key1=X),
-                              by='Key1') %>% filter(visit_num==0)%>% select(-participant_id)
-
-microRNA.NEW.join<-microRNA.NEW.join %>% dplyr::rename(participant_id = ITN_ID)
-rownames(microRNA.NEW.join)<-microRNA.NEW.join$participant_id
-microRNA.NEW.join<-microRNA.NEW.join[,10:168]
-microRNA.NEW.join[is.na(microRNA.NEW.join)]<-37 ### imput to 0, until better solution is found
-# sum(is.na(microRNA.NEW.join))
-
 
 
 
@@ -349,36 +266,6 @@ RNAseq.Mod.member.list<-list(M.RNAseq.cell      =RNA.seq.Mod.pre.process.functio
 
 
 
-
-
-
-# 8. Modules: mRNA
-
-## 8.1 eigen values
-B.Affy.eigen<-read.csv(paste(Active.Box.folder, B.Affy.eigen.file.box, sep='')) %>%
-  dplyr::rename(barcode=X)
-B.Affy.eigen$barcode<-as.character(B.Affy.eigen$barcode) %>%
-  substr(2, 100) # get rid of X prefix
-B.Affy.eigen.join<-left_join(x=B.Affy.eigen , y=mRNA.design , by='barcode') %>%
-  column_to_rownames('ITN_ID') %>%
-  dplyr::select(names(B.Affy.eigen)[-1])
-
-
-
-## 8.2 sets (ignore set 0)
-B.Affy.module.set.long<-read.csv(paste(Active.Box.folder, B.Affy.module.set.file.box, sep=''))
-B.Affy.module.set.long<-B.Affy.module.set.long #%>% mutate(XaffyID=make.names(affyID)) ## add X, for later on, when feature names can't begin with number
-
-B.Affy.module.set<-B.Affy.module.set.long %>% filter(module!=0, symbol!='---') %>%
-  group_by(module) %>% tidyr::nest() %>%
-  mutate(all_affyID = data %>% map('affyID')) #, lgl=        map(all_affyID, duplicated))  # probe IDs are unique
-
-
-B.Affy.module.set.list<-B.Affy.module.set$all_affyID
-names(B.Affy.module.set.list)<-paste('M.mRNA_ME', B.Affy.module.set$module, sep='')
-B.Affy.module.set.list<-list(B.Affy.module.set.list)
-names(B.Affy.module.set.list)<-'B.affy'
-
 ###### merge all modules sets
 # MsigDB and BTM were imported from GMT file on Rhino, via M_camera.r that require Unix server (foreach multi cluster)
 ###################################################################################
@@ -386,10 +273,9 @@ load('~/Repositories/JDRFCAV/data/GSEA_gene_IDs_list_all.RData') # GSEA_gene_IDs
 ###################################################################################
 # GSEA_gene_IDs_list_all %>% names
 mod_MsigDB.tib  <-enframe(GSEA_gene_IDs_list_all, 'Gmt.name', 'GMT.list')
-mod_B.affy.tib  <-enframe(B.Affy.module.set.list, 'Gmt.name', 'GMT.list')
 mod_B.RNAseq.tib<-enframe(RNAseq.Mod.member.list, 'Gmt.name', 'GMT.list')
 
-mod_all.sets.tib<-rbind(mod_MsigDB.tib, mod_B.affy.tib, mod_B.RNAseq.tib)
+mod_all.sets.tib<-rbind(mod_MsigDB.tib,  mod_B.RNAseq.tib)
 
 Filter.out.meta.sets<-c('c5-GO', 'h-Hallmark') # from toggle: not is selected multi box
 mod_all.sets.tib.selected<-mod_all.sets.tib %>% filter(! Gmt.name %in% Filter.out.meta.sets) # Filter OUT meta-sets
@@ -408,8 +294,6 @@ Assay.raw.list<-list(
   Design.cohort.2      =Design.cohort2,   # 1
 
   FACS                 =FACS.join,        # 2
-  microRNA             =microRNA.NEW.join,# 3 microRNA.join            =microRNA.join,   # 2
-  mRNA                 =mRNA.join,        # 4
   Pro.Insulin          =Pro.Insulin.all,  # 5
   Treg                 =Treg.raw,         # 6
   RNAseq.Bcell         =B.5.a.gene[[1]],  # 7
@@ -419,7 +303,6 @@ Assay.raw.list<-list(
   RNAseq.Wholeblood    =B.5.e.gene[[1]],  # 11
 
   ### Assay-like Eigen modules
-  mRNA.Mods            =B.Affy.eigen.join,# 12
   RNAseqMods.Bcell     =B.7.a.mods[[1]],  # 13
   RNAseqMods.CD4       =B.7.b.mods[[1]],  # 14
   RNAseqMods.CD8       =B.7.c.mods[[1]],  # 15
@@ -434,7 +317,7 @@ Assay.raw.list<-list(
 # Assay.raw.list %>% enframe()
 
 # source('box_to_MAE_to_task_Functions.r')
-MultiAssay.cohort.2<-store_All_list_into_MAE(Assay.raw.list[2:17], Assay.raw.list[1][[1]])
+MultiAssay.cohort.2<-store_All_list_into_MAE(Assay.raw.list[2:15], Assay.raw.list[1][[1]])
 MultiAssay.cohort.2 %>% experiments %>% as.list %>% map(nrow) %>% unlist
 
 
@@ -444,17 +327,17 @@ MultiAssay.cohort.2 %>% experiments %>% as.list %>% map(nrow) %>% unlist
 param.cohort<-c('cohort2')
 param.rv144.mRNA.collapse.multiple.probes<-FALSE
 Assay.Analyte.sep<-'.ZZZ.'
-is.character(param.Selected.Meta.sets<-c("BMT", "c5-GO", "c7-immunologic", "h-Hallmark", "B.affy", "M.RNAseq.cell", "M.RNAseq.CD4", "M.RNAseq.CD8", "M.RNAseq.Monocyte", "M.RNAseq.Wholeblood")[1:10]) ## remove non-Symbol sets
+is.character(param.Selected.Meta.sets<-c("BMT", "c5-GO", "c7-immunologic", "h-Hallmark", "M.RNAseq.cell", "M.RNAseq.CD4", "M.RNAseq.CD8", "M.RNAseq.Monocyte", "M.RNAseq.Wholeblood")[1:10]) ## remove non-Symbol sets
 parame.gene.or.module<-'gene'
 
 MultiAssay.cohort.2 %>% names
-is.numeric(param.assays.vector<-c(1:16)[c(-2)]) # all assays withOUT microRNA
+is.numeric(param.assays.vector<-c(1:14)[c(-2)]) # all assays withOUT microRNA
 is.character(param.Y.name<-c('cpep_model_absdiff_2year','cpeptide_visit_number','cpep_model_decayrate')[3])   ## Yi.setting
 is.character(param.covariates<-c('sex','age_years','bmi','cpep_auc2hr_log_baseline','study')[1:5])
 is.character(param.subjects.study<-c('START','T1DAL','ABATE')[1:2])
 
 metadata.raw.table<-tibble(Assay=names(MultiAssay.cohort.2),
-                           Assay.type=rep('Long', 16)) ### run Long (limma) for all assays, to be comparible to mlr PreProc
+                           Assay.type=rep('Long', 14)) ### run Long (limma) for all assays, to be comparible to mlr PreProc
 
 ## wrangling + scaling:
 Setup.returned.list<-Setup.plue.MAE.to.vertical.function(MultiAssay.cohort.2, param.Y.name, param.assays.vector, param.subjects.study, param.cohort, param.covariates, param.rv144.mRNA.collapse.multiple.probes, parame.gene.or.module, param.Selected.Meta.sets, Assay.Analyte.sep)
@@ -500,7 +383,6 @@ task_box # scaled!!!
 # vign$cpep_model_decayrate
 # vign$Covariate_age_years
 # vign$mRNA.ZZZ.X1555196_at
-
 
 ```
 
