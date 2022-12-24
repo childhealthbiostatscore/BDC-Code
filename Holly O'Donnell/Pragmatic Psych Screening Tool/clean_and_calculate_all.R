@@ -5,7 +5,7 @@ library(parsedate)
 library(cgmanalysis)
 library(pdftools)
 source("~/GitHub/BDC-Code/Holly O'Donnell/Pragmatic Psych Screening Tool/pump_variables.R")
-setwd("~/Dropbox/Work/BDC/Holly O'Donnell/Pragmatic Psych Screening Tool")
+setwd("Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Holly O'Donnell/Pragmatic Psych Screening Tool")
 # Want data about 1 month prior to questionnaires
 dates = read_excel("./Data_Raw/Device Files/Device Information thru 405.xlsx")
 dates$`Date Questionnaires` = parse_date(dates$`Date Questionnaires`,approx = F)
@@ -51,6 +51,13 @@ for (f in files) {
   if(length(blank)>0){
     table = table[-blank,]
   }
+  # 3 days for Holly to check
+  rows = table$datetime > (as.Date(table$datetime[1])-3)
+  if(sum(rows,na.rm = T) > 0){
+    table = table[rows,]
+  } else {
+    table = table[-c(1:nrow(table)),]
+  }
   # Write file
   if(nrow(table)>0){
     filename <- paste0("./Data_Clean/Carelink Pump Files/",id,".csv")
@@ -89,6 +96,13 @@ for (f in files) {
   blank = which(rowSums(is.na(table))==ncol(table))
   if(length(blank)>0){
     table = table[-blank,]
+  }
+  # 3 days for Holly to check
+  rows = table$timestamp > (as.Date(table$timestamp[1])-3)
+  if(sum(rows,na.rm = T) > 10){
+    table = table[rows,]
+  }else {
+    table = table[-c(1:nrow(table)),]
   }
   if(sum(!is.na(table$sensorglucose))>0){
     # Write file
@@ -129,6 +143,13 @@ for (f in files) {
   if(length(blank)>0){
     table = table[-blank,]
   }
+  # 3 days for Holly to check
+  rows = table$timestamp > (as.Date(table$timestamp[1])-3)
+  if(sum(rows,na.rm = T) > 288){
+    table = table[rows,]
+  }else {
+    table = table[-c(1:nrow(table)),]
+  }
   if(sum(!is.na(table$sensorglucose))>0){
     # Write file
     filename <- paste0("./Data_Clean/Dexcom Files/",id,".csv")
@@ -166,6 +187,13 @@ for (f in files) {
   }else {
     table = table[-c(1:nrow(table)),]
   }
+  # 3 day for Holly
+  rows = table$datetime > (as.Date(table$datetime[1])-3)
+  if(sum(rows,na.rm = T) > 10){
+    table = table[rows,]
+  }else {
+    table = table[-c(1:nrow(table)),]
+  }
   # Write file
   if(nrow(table)>0){
     filename <- paste0("./Data_Clean/TConnect Pump Files/",id,".csv")
@@ -195,6 +223,13 @@ for (f in files) {
   blank = which(rowSums(is.na(table))==ncol(table))
   if(length(blank)>0){
     table = table[-blank,]
+  }
+  # 3 days for Holly to check
+  rows = table$timestamp > (as.Date(table$timestamp[1])-3)
+  if(sum(rows,na.rm = T) > 100){
+    table = table[rows,]
+  }else {
+    table = table[-c(1:nrow(table)),]
   }
   if(sum(!is.na(table$sensorglucose))>0){
     # Write file
@@ -287,6 +322,13 @@ for (f in files) {
   v1 = dates$`Date Questionnaires`[match(as.numeric(id),dates$`Participant ID`)]
   # Remove data > 1 month before date
   rows = t$datetime <= v1 & t$datetime > (as.Date(v1)-30)
+  if(sum(rows,na.rm = T) > 0){
+    t = t[rows,]
+  }else {
+    t = t[-c(1:nrow(t)),]
+  }
+  # 3 days for Holly to check
+  rows = t$datetime > (as.Date(t$datetime[1])-3)
   if(sum(rows,na.rm = T) > 0){
     t = t[rows,]
   }else {
