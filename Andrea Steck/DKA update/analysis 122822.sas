@@ -6,8 +6,8 @@ proc format;
   value age_cat 1='<6 years'
                 2='6- <13 years'
 				3='13+ years';
-  value $ gender "F"="Female"
-				 "M"="Male";
+  value $ gender "Female"="Female"
+				 "Male"="Male";
   value $ new_ins "Military Plans"="Military Plans"
 				  "None"="None"
 				  "Private"="Private"
@@ -22,6 +22,8 @@ data alldata;
 set data.alldata;
 run;
 proc contents; run;
+proc freq data=alldata; table Rural_or_non_rural; run;
+proc print; run;
 
 /* exclude one participant over 21 years old */
 data alldata;
@@ -118,13 +120,14 @@ proc freq data=alldata; table dka; run;
 data alldata;
 set alldata;
 if dka="YES" then dka="Yes";
+gender=sex;
 run;
 data alldata;
 set alldata;
 if dka="." or dka="" or dka=" " then dkaknown=0;
 else dkaknown=1;
 format gender $gender. new_eth $new_eth. new_ins $new_ins.;
-label ageatonset="Age at onset"
+label Age_AtOnset="Age at onset"
 	  gender="Sex"
 	  new_eth="Race/ethnicity"
 	  new_ins="Insurance";
@@ -144,8 +147,6 @@ set alldata;
 run;
 proc contents data=foranalysis; run;
 
-
-/* stopped here, table isn't working */
 
 %include 'H:\SAS tools\Amanda table 1\2 category macros with KW.sas';
 proc datasets;
@@ -170,43 +171,46 @@ ods rtf close;
 /* now delete unknown status for rest of analysis */
 data alldata;
 set alldata;
-if dkaatdx='UNKN' then delete;
+if dka='' or dka=" " then delete;
 run;
+proc freq data=alldata; table new_ins; run;
 
+/* stopped here....this next chunk should be good except I need to merge in the rural nonrural */
 
 /* predictors are age at onset, gender, race, insurance, language, onset year, rural/nonrural */
 /* with and without adjustment for quarter of the year */
 proc logistic data=alldata;
-model dkaatdx(event='DKA') = ageatonset ;
+model dka(event='Yes') = Age_AtOnset ;
 run;
 %macro cat(var);
 proc logistic data=alldata;
 class &var;
-model dkaatdx(event='DKA') = &var ;
+model dka(event='Yes') = &var ;
 run;
 %mend;
 %cat(gender);
 proc logistic data=alldata;
 class new_eth(ref='Non-Hispanic White');;
-model dkaatdx(event='DKA') = new_eth;
+model dka(event='Yes') = new_eth;
 run;
 proc logistic data=alldata;
-class new_ins(ref='Private/milita');
-model dkaatdx(event='DKA') = new_ins;
-where new_ins ne 'None';
+class new_ins(ref='Private');
+model dka(event='DKA') = new_ins;
 run;
 proc freq data=alldata; table new_ins; run;
 %cat(English);
-%cat(onsetYear);
-%cat(Rural_Non_Rural);
+%cat(year);
+%cat(Rural_or_non_rural);
 %cat(age_cat);
 proc logistic data=alldata;
-model dkaatdx(event='DKA') = onsetYear ;
+model dka(event='Yes') = year ;
 run;
 /* add HbA1c as a predictor */
 proc logistic data=alldata;
-model dkaatdx(event='DKA') = A1cAtDiagnosis ;
+model dka(event='Yes') = A1cValue ;
 run;
+
+/* not updated below */
 
 /* year of onset, by insurance category */
 proc sort data=alldata; by new_ins; run;
