@@ -147,7 +147,6 @@ set alldata;
 run;
 proc contents data=foranalysis; run;
 
-
 %include 'H:\SAS tools\Amanda table 1\2 category macros with KW.sas';
 proc datasets;
 delete OutTable ;
@@ -175,7 +174,8 @@ if dka='' or dka=" " then delete;
 run;
 proc freq data=alldata; table new_ins; run;
 
-/* stopped here....this next chunk should be good except I need to merge in the rural nonrural */
+/* merge in zip code information */
+pro
 
 /* predictors are age at onset, gender, race, insurance, language, onset year, rural/nonrural */
 /* with and without adjustment for quarter of the year */

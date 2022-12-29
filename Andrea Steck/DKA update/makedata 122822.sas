@@ -27,7 +27,7 @@ libname data 'B:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
        informat bicarb $3. ;
        informat DKA $3. ;
        informat Rural_or_non_rural $1. ;
-       informat ZipCode_DateOfDiagnosis best32. ;
+       informat ZipCode_DateOfDiagnosis $5. ;
        informat State_DateOfDiagnosis $8. ;
        informat PrimaryLanguage $10. ;
        informat NewOnset_DxThroughScreeningStudy $4. ;
@@ -51,7 +51,7 @@ libname data 'B:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
        format bicarb $3. ;
        format DKA $3. ;
        format Rural_or_non_rural $1. ;
-       format ZipCode_DateOfDiagnosis best12. ;
+       format ZipCode_DateOfDiagnosis $5. ;
        format State_DateOfDiagnosis $8. ;
        format PrimaryLanguage $10. ;
        format NewOnset_DxThroughScreeningStudy $4. ;
@@ -76,7 +76,7 @@ libname data 'B:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
                 bicarb  $
                 DKA  $
                 Rural_or_non_rural  $
-                ZipCode_DateOfDiagnosis
+                ZipCode_DateOfDiagnosis $
                 State_DateOfDiagnosis  $
                 PrimaryLanguage  $
                 NewOnset_DxThroughScreeningStudy  $
@@ -88,7 +88,60 @@ libname data 'B:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
     ;
     if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
     run;
+proc print; run;
 
+/* read in zip code data */
+ /**********************************************************************
+ *   PRODUCT:   SAS
+ *   VERSION:   9.4
+ *   CREATOR:   External File Interface
+ *   DATE:      29DEC22
+ *   DESC:      Generated SAS Datastep Code
+ *   TEMPLATE SOURCE:  (None Specified.)
+ ***********************************************************************/
+    data WORK.zips    ;
+    %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+    infile 'B:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DMERuralZIP.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+       informat STATE $2. ;
+       informat ZipCode_DateOfDiagnosis $5. ;
+       informat YEAR_QTR best32. ;
+       format STATE $2. ;
+       format ZipCode_DateOfDiagnosis $5. ;
+       format YEAR_QTR best12. ;
+    input
+                STATE  $
+                ZipCode_DateOfDiagnosis $
+                YEAR_QTR
+    ;
+    if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+    run;
+proc print; run;
+
+data zips;
+length Rural_Non_Rural $10;
+set zips;
+drop YEAR_QTR; 
+Rural_Non_Rural="Rural";
+run;
+
+proc sort data=zips; by ZipCode_DateOfDiagnosis; run;
+proc sort data=alldata; by ZipCode_DateOfDiagnosis; run;
+
+data alldata;
+merge alldata(in=ina) zips;
+by ZipCode_DateOfDiagnosis; 
+if ina;
+run;
+data alldata;
+set alldata;
+if ZipCode_DateOfDiagnosis="" or ZipCode_DateOfDiagnosis=" " then Rural_Non_Rural="";
+else if  Rural_Non_Rural="" or Rural_Non_Rural=" " then Rural_Non_Rural="Non-rural";
+run;
+proc print; run;
+
+proc freq data=alldata;
+table Rural_Non_Rural; 
+run;
 
 data data.alldata;
 set alldata;
