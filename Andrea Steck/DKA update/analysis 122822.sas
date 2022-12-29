@@ -1,5 +1,6 @@
 *libname data 'S:\Shared Projects\Laura\BDC\Projects\Todd Alonso\DKA\Data';
-libname data 'T:\Todd Alonso\DKA\Data';
+*libname data 'T:\Todd Alonso\DKA\Data';
+libname data 'B:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
 
 proc format;
   value age_cat 1='<6 years'
@@ -22,34 +23,28 @@ set data.alldata;
 run;
 proc contents; run;
 
-proc univariate data=alldata;
-var A1cAtDiagnosis;
-run;
-
 /* exclude one participant over 21 years old */
 data alldata;
 set alldata;
-if AgeAtOnset>=21 then delete;
-run;
-proc univariate data=alldata;
-var AgeAtOnset;
+if Age_AtOnset>=21 then delete;
 run;
 
 /* create variable for categorical age */
 data alldata;
 set alldata;
-if AgeAtOnset=. then age_cat=.;
-else if AgeAtOnset<6 then age_cat=1;
-else if AgeAtOnset>=6 and AgeAtOnset<13 then age_cat=2;
+if Age_AtOnset=. then age_cat=.;
+else if Age_AtOnset<6 then age_cat=1;
+else if Age_AtOnset>=6 and Age_AtOnset<13 then age_cat=2;
 else age_cat=3;
 format age_cat age_cat.;
-run;
-proc print data=alldata;
-var AgeAtOnset age_cat;
 run;
 proc freq data=alldata;
 tables age_cat;
 run;
+
+
+
+/* STOPPED HERE */
 
 proc freq data=alldata; table insurancetype ; run;
 /* recategorize some insurance types */
