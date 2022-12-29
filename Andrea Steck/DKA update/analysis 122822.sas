@@ -42,44 +42,42 @@ proc freq data=alldata;
 tables age_cat;
 run;
 
-
-
-/* STOPPED HERE */
-
-proc freq data=alldata; table insurancetype ; run;
+proc freq data=alldata; table insurance insurancegroup ; run;
 /* recategorize some insurance types */
-proc freq data=alldata; tables insurancetype; run;
+/*proc freq data=alldata; tables insurancetype; run;
 data alldata;
 length new_ins $30;
 set alldata;
-if insurancetype in ('TBD','Unknown') then new_ins='Unknown';
-else if insurancetype in ('Public','Medicaid') then new_ins='Public/Medicaid';
-else if insurancetype in ('Military Plans ','Private ') then new_ins='Private/military';
-else new_ins=insurancetype;
+if insurancegroup in ('TBD','Unknown') then new_ins='Unknown';
+else if insurancegroup in ('Public','Medicaid') then new_ins='Public/Medicaid';
+else if insurancegroup in ('Military Plans ','Private ') then new_ins='Private/military';
+else new_ins=insurancegroup;
 run;
 proc freq data=alldata;
-tables insurancetype*new_ins;
-run;
-/*data alldata;*/
-/*set alldata;*/
-/*new_ins=insurancetype;*/
-/*run;*/
-
-/* recode English cap and noncap */
+tables insurancegroup*new_ins;
+run;*/
 data alldata;
 set alldata;
-if PrimarySpokenLanguage='ENGLISH' then PrimarySpokenLanguage='English';
+new_ins=insurancegroup;
 run;
+
+/* recode English cap and noncap */
+proc freq data=alldata; table PrimaryLanguage; run;
+data alldata;
+set alldata;
+if PrimaryLanguage='ENGLISH' then PrimaryLanguage='English';
+run;
+proc freq data=alldata; table PrimaryLanguage; run;
 
 /* create variable for non-English speaking */
 data alldata;
 set alldata;
-if PrimarySpokenLanguage in (' ','.') then English=.;
-else if PrimarySpokenLanguage='English' then English=1;
+if PrimaryLanguage in (' ','.') then English=.;
+else if PrimaryLanguage='English' then English=1;
 else English=0;
 run;
 proc freq data=alldata;
-tables PrimarySpokenLanguage*English;
+tables PrimaryLanguage*English;
 run;
 
 /* create variable for quarter of the year */
@@ -101,28 +99,29 @@ data alldata;
 set alldata;
 year=year(onsetdate);
 run;
+proc freq data=alldata; table year; run;
 
 /* combine race ethnicity categories */
 /*	Let’s do race/ethnicity as NHW, H, NHB, and all the others/unknown. */
+proc freq data=alldata; table race; run;
 data alldata;
 set alldata;
-if RaceEthnicity in ('Non-Hispanic White','Non-Hispanic Black','Hispanic') then new_eth=RaceEthnicity;
+if race in ('White','Black/African American','Hispanic/Latino') then new_eth=race;
 else new_eth='Other/Unknown';
 run;
 proc freq data=alldata;
-tables raceEthnicity*new_eth;
+tables race*new_eth;
 run;
-
-*ods rtf file="C:\temp\output.rtf";
-proc freq data=alldata;
-tables Gender RaceEthnicity InsuranceType PrimarySpokenLanguage Rural_Non_Rural DKAAtDx year month; 
-run;
-*ods rtf close;
 
 /* compare DKA status known to unknown */
+proc freq data=alldata; table dka; run;
 data alldata;
 set alldata;
-if dkaatdx="UNKN" then dkaknown=0;
+if dka="YES" then dka="Yes";
+run;
+data alldata;
+set alldata;
+if dka="." or dka="" or dka=" " then dkaknown=0;
 else dkaknown=1;
 format gender $gender. new_eth $new_eth. new_ins $new_ins.;
 label ageatonset="Age at onset"
@@ -131,7 +130,7 @@ label ageatonset="Age at onset"
 	  new_ins="Insurance";
 run;
 proc freq data=alldata;
-tables dkaatdx*dkaknown;
+tables dka*dkaknown / missing;
 run;
 proc ttest data=alldata;
 var ageatonset;
@@ -143,12 +142,17 @@ run;
 data foranalysis;
 set alldata;
 run;
+proc contents data=foranalysis; run;
+
+
+/* stopped here, table isn't working */
+
 %include 'H:\SAS tools\Amanda table 1\2 category macros with KW.sas';
 proc datasets;
 delete OutTable ;
 run;
 quit;
-%CON(BV = ageatonset, OC=dkaknown);
+%CON(BV = Age_AtOnset, OC=dkaknown);
 %CAT(BV = gender, BVF = $gender, OC= dkaknown);
 %CAT(BV = new_eth, BVF = $new_eth, OC= dkaknown);
 %CAT(BV = new_ins, BVF = $new_ins, OC= dkaknown);
