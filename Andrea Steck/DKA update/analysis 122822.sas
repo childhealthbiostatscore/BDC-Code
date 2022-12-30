@@ -22,7 +22,7 @@ data alldata;
 set data.alldata;
 run;
 proc contents; run;
-proc freq data=alldata; table Rural_or_non_rural; run;
+proc freq data=alldata; table Rural_Non_Rural; run;
 proc print; run;
 
 /* exclude one participant over 21 years old */
@@ -174,8 +174,6 @@ if dka='' or dka=" " then delete;
 run;
 proc freq data=alldata; table new_ins; run;
 
-/* merge in zip code information */
-pro
 
 /* predictors are age at onset, gender, race, insurance, language, onset year, rural/nonrural */
 /* with and without adjustment for quarter of the year */
@@ -195,12 +193,12 @@ model dka(event='Yes') = new_eth;
 run;
 proc logistic data=alldata;
 class new_ins(ref='Private');
-model dka(event='DKA') = new_ins;
+model dka(event='Yes') = new_ins;
 run;
 proc freq data=alldata; table new_ins; run;
 %cat(English);
 %cat(year);
-%cat(Rural_or_non_rural);
+%cat(Rural_non_rural);
 %cat(age_cat);
 proc logistic data=alldata;
 model dka(event='Yes') = year ;
@@ -210,121 +208,72 @@ proc logistic data=alldata;
 model dka(event='Yes') = A1cValue ;
 run;
 
-/* not updated below */
-
 /* year of onset, by insurance category */
 proc sort data=alldata; by new_ins; run;
 proc logistic data=alldata;
-model dkaatdx(event='DKA') = onsetYear ;
+model dka(event='Yes') = year ;
 by new_ins;
 where new_ins not in (' ','.','None');
 run;
 
 proc freq data=alldata;
-tables onsetYear*dkaatdx;
+table new_ins;
 run;
 
 /* multivariate model with predictors that were significant on univariate */
 ods rtf file="C:\temp\output.rtf" style=journal;
 proc logistic data=alldata;
-class new_eth(ref='Non-Hispanic White')  new_ins(ref='Private/milita') Rural_Non_Rural;
-model dkaatdx(event='DKA') = new_eth new_ins onsetYear Rural_Non_Rural A1cAtDiagnosis;
-where new_ins ne 'None';
+class Rural_Non_Rural age_cat;
+model dka(event='Yes') = Rural_Non_Rural age_cat A1cValue;
 run;
-ods rtf close;
-/* multivariate model with predictors that were significant on univariate, without a1c */
-ods rtf file="C:\temp\output.rtf" style=journal;
-proc logistic data=alldata;
-class new_eth(ref='Non-Hispanic White')  new_ins(ref='Private/milita') Rural_Non_Rural;
-model dkaatdx(event='DKA') = new_eth new_ins onsetYear Rural_Non_Rural ;
-where new_ins ne 'None';
-run;
-ods rtf close;
-/* by insurance type */
-ods rtf file="C:\temp\output.rtf" style=journal;
-proc logistic data=alldata;
-class new_eth(ref='Non-Hispanic White')  Rural_Non_Rural;
-model dkaatdx(event='DKA') = new_eth  onsetYear Rural_Non_Rural A1cAtDiagnosis;
-by new_ins;
-where new_ins not in (' ','.','None');
-run;
-ods rtf close;
-
-/* multivariate model with predictors that were significant on univariate */
-/* add interaction between insurance type and year of onset */
-ods rtf file="C:\temp\output.rtf" style=journal;
-proc logistic data=alldata;
-class new_eth(ref='Non-Hispanic White')  new_ins(ref='Private/military') Rural_Non_Rural;
-model dkaatdx(event='DKA') = new_eth new_ins onsetYear Rural_Non_Rural A1cAtDiagnosis onsetYear*new_ins;
-where new_ins not in (' ','.','None');
-oddsratio onsetYear / at(new_ins="Private/military");
-oddsratio onsetYear / at(new_ins="Public/Medicaid");
-ods output OddsRatios=or;
-ods output OddsRatiosWald=orw;
-run;
-data orwp;
-         set orw;
-         alpha=.05;
-         stderr=abs(log(uppercl)-log(lowercl)) / (2*probit(1-alpha/2));
-         wald=(log(oddsratioest)/stderr)**2;
-         p=1-probchi(wald,1);
-         drop alpha;
-         run;
-        proc print data=orwp label noobs; 
-         format p pvalue6.;
-         label stderr="Standard Error" wald="Wald Chi-Square" p="Pr > ChiSq";
-         run;
 ods rtf close;
 
 /* now with adjustment per quarter */
-proc logistic data=alldata;
-class quarter;
-model dkaatdx(event='DKA') = ageatonset quarter;
-run;
 %macro catadj(var);
 proc logistic data=alldata;
 class &var quarter;
-model dkaatdx(event='DKA') = &var quarter;
+model dka(event='Yes')  = &var quarter;
 run;
 %mend;
 %catadj(gender);
+%catadj(age_cat);
 proc logistic data=alldata;
-class new_eth(ref='Non-Hispanic White') quarter;
-model dkaatdx(event='DKA') = new_eth quarter;
+class new_eth(ref='White') quarter;
+model dka(event='Yes')  = new_eth quarter;
 run;
 proc logistic data=alldata;
-class new_ins(ref='Private/military') quarter;
-model dkaatdx(event='DKA') = new_ins quarter;
+class new_ins(ref='Private') quarter;
+model dka(event='Yes')  = new_ins quarter;
 run;
 %catadj(English);
-%catadj(onsetYear);
+%catadj(year);
 %catadj(Rural_Non_Rural);
 
 /* examine rates of dka by age */
 data alldata;
 set alldata;
-age_floor=floor(ageatonset);
+age_floor=floor(Age_AtOnset);
 run;
 proc univariate data=alldata;
 var age_floor;
 run;
 proc freq data=alldata;
-tables dkaatdx*age_floor / outpct out=out;
+tables dka*age_floor / outpct out=out;
 run;
 proc print data=out; run;
 proc sgplot data=out;
-where DKAAtDx='DKA';
+where dka='Yes';
 vbar age_floor / response=PCT_COL;
 run;
 
 /* plot rates of dka by  year */
 proc freq data=alldata;
-tables dkaatdx*onsetYear / outpct out=out;
+tables dka*year / outpct out=out;
 run;
 proc print data=out; run;
 proc sgplot data=out;
-where DKAAtDx='DKA';
-vbar onsetYear / response=PCT_COL;
+where dka='Yes';
+vbar year / response=PCT_COL;
 run;
 
 /* separate analysis of HbA1c at diagnosis */
@@ -332,77 +281,68 @@ run;
 /* with and without adjustment for quarter of the year */
 %macro contglm(var);
 proc glm data=alldata;
-model A1cAtDiagnosis = &var / solution;
+model A1cValue = &var / solution;
 run;
 %mend;
 %macro catglm(var);
 proc glm data=alldata;
 class &var;
-model A1cAtDiagnosis = &var / solution;
+model A1cValue = &var / solution;
 lsmeans &var / stderr;
 run;
 %mend;
-%contglm(ageatonset);
+%contglm(Age_AtOnset);
 %catglm(age_cat);
 %catglm(gender);
 %catglm(new_eth);
 %catglm(new_ins);
 %catglm(English);
-%contglm(onsetYear);
+%contglm(year);
 %catglm(Rural_Non_Rural);
 proc glm data=alldata;
-class new_eth(ref='Non-Hispanic White');
-model A1cAtDiagnosis = new_eth / solution;
+class new_eth(ref='White');
+model A1cValue = new_eth / solution;
 lsmeans new_eth;
 run;
 proc glm data=alldata;
-class new_ins(ref='Private/military') ;
-model A1cAtDiagnosis = new_ins / solution;
+class new_ins(ref='Private') ;
+model A1cValue = new_ins / solution;
 lsmeans new_ins / stderr;
 run;
+quit;
 
 /* MULTIVARIATE FOR HBA1C */
 ods rtf file="C:\temp\output.rtf" style=journal;
 proc glm data=alldata;
-class new_ins gender new_eth English;
-model A1cAtDiagnosis = new_ins ageatonset gender new_eth English onsetYear / solution;
+class new_ins new_eth English;
+model A1cValue = new_ins Age_AtOnset new_eth English year / solution;
 lsmeans new_ins / stderr;
-lsmeans gender  / stderr;
 lsmeans new_eth  / stderr;
 lsmeans English  / stderr;
 run;
 ods rtf close;
-proc freq data=alldata;
-tables new_ins;
-run;
-
-/* plot of DKA rates by age groups */
-proc freq data=alldata;
-tables dkaatdx*age_cat;
-run;
 
 /* give Todd % DKA by insurance type and year with 95% CI */
-proc sort data=alldata; by new_ins onsetYear; run;
-
+proc sort data=alldata; by new_ins year; run;
 proc freq data=alldata;
-tables dkaatdx / binomial(wald) out=test ;
-by new_ins onsetYear;
+tables dka / binomial(wald) out=test ;
+by new_ins year;
 output out=test2 binomial;
 run;
 data test2;
 set test2;
-keep new_ins OnsetYear L_BIN U_BIN ;
+keep new_ins year L_BIN U_BIN ;
 label L_BIN='Lower bound 95% CI' U_BIN='Upper bound 95% CI';
 run;
-proc sort data=test; by new_ins OnsetYear ; run;
-proc sort data=test2; by new_ins OnsetYear ; run;
+proc sort data=test; by new_ins year ; run;
+proc sort data=test2; by new_ins year ; run;
 data newtest;
 merge test test2; 
-by new_ins OnsetYear ; 
+by new_ins year ; 
 run;
 data newtest;
 set newtest;
-where DKAAtDx='DKA';
+where dka='Yes';
 run;
 ods rtf file="C:\temp\output.rtf" style=journal;
 proc print data=newtest label noobs; run;

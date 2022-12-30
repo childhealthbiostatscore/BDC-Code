@@ -139,12 +139,26 @@ else if  Rural_Non_Rural="" or Rural_Non_Rural=" " then Rural_Non_Rural="Non-rur
 run;
 proc print; run;
 
-proc freq data=alldata;
-table Rural_Non_Rural; 
-run;
+/* now we have the dataset which contains study participants and non-participants */
+/* for study participants, need to limit to 70 subjects with at least 6 months of follow up */
+proc contents data=alldata; run;
+proc freq data=alldata; table NewOnset_DxThroughScreeningStudy; run;
+data nonstudy;
+set alldata;
+where NewOnset_DxThroughScreeningStudy="NULL" or NewOnset_DxThroughScreeningStudy="";
+run; 
+proc freq data=nonstudy; table NewOnset_DxThroughScreeningStudy; run;
 
+data study;
+set alldata; 
+where NewOnset_DxThroughScreeningStudy ne "NULL" and NewOnset_DxThroughScreeningStudy ne "";
+run; 
+proc freq data=study; table NewOnset_DxThroughScreeningStudy; run;
+
+
+
+
+/* write final dataset */
 data data.alldata;
 set alldata;
 run;
-
-
