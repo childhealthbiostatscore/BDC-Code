@@ -108,11 +108,7 @@ proc freq data=alldata; table year; run;
 proc freq data=alldata; table race; run;
 data alldata;
 set alldata;
-if race in ('White','Black/African American','Hispanic/Latino') then new_eth=race;
-else new_eth='Other/Unknown';
-run;
-proc freq data=alldata;
-tables race*new_eth;
+new_eth=race_eth;
 run;
 
 /* compare DKA status known to unknown */
@@ -174,7 +170,6 @@ if dka='' or dka=" " then delete;
 run;
 proc freq data=alldata; table new_ins; run;
 
-
 /* predictors are age at onset, gender, race, insurance, language, onset year, rural/nonrural */
 /* with and without adjustment for quarter of the year */
 proc logistic data=alldata;
@@ -207,7 +202,6 @@ run;
 proc logistic data=alldata;
 model dka(event='Yes') = A1cValue ;
 run;
-
 /* year of onset, by insurance category */
 proc sort data=alldata; by new_ins; run;
 proc logistic data=alldata;
@@ -216,15 +210,13 @@ by new_ins;
 where new_ins not in (' ','.','None');
 run;
 
-proc freq data=alldata;
-table new_ins;
-run;
 
 /* multivariate model with predictors that were significant on univariate */
 ods rtf file="C:\temp\output.rtf" style=journal;
 proc logistic data=alldata;
 class Rural_Non_Rural age_cat;
-model dka(event='Yes') = Rural_Non_Rural age_cat A1cValue;
+model dka(event='Yes') =  age_cat Rural_Non_Rural A1cValue;
+where new_ins ne 'None';
 run;
 ods rtf close;
 
@@ -238,7 +230,7 @@ run;
 %catadj(gender);
 %catadj(age_cat);
 proc logistic data=alldata;
-class new_eth(ref='White') quarter;
+class new_eth(ref='Non-Hispanic White') quarter;
 model dka(event='Yes')  = new_eth quarter;
 run;
 proc logistic data=alldata;
