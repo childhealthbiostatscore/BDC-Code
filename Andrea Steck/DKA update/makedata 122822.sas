@@ -139,6 +139,21 @@ else if  Rural_Non_Rural="" or Rural_Non_Rural=" " then Rural_Non_Rural="Non-rur
 run;
 proc print; run;
 
+/* create new race_eth variable as NHW, H, NHB, O */
+proc freq data=alldata;
+table race ethnicity;
+run;
+data alldata;
+set alldata;
+if race="White" and ethnicity="Not Hispanic or Latino" then race_eth="Non-Hispanic White";
+else if race="Black/African American" and ethnicity="Not Hispanic or Latino" then race_eth="Non-Hispanic Black";
+else if race="Hispanic/Latino" or ethnicity="Hispanic or Latino" then race_eth="Hispanic";
+else race_eth="Other";
+run;
+proc freq data=alldata;
+tables race_eth*race*ethnicity;
+run;
+
 /* now we have the dataset which contains study participants and non-participants */
 /* for study participants, need to limit to 70 subjects with at least 6 months of follow up */
 proc contents data=alldata; run;
