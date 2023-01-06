@@ -163,11 +163,13 @@ proc freq data=alldata; table NewOnset_DxThroughScreeningStudy; run;
 data nonstudy;
 set alldata;
 where NewOnset_DxThroughScreeningStudy="NULL" or NewOnset_DxThroughScreeningStudy="";
+instudy=0;
 run; 
 proc freq data=nonstudy; table NewOnset_DxThroughScreeningStudy; run;
 data study;
 set alldata; 
 where NewOnset_DxThroughScreeningStudy ne "NULL" and NewOnset_DxThroughScreeningStudy ne "";
+instudy=1;
 run; 
 proc freq data=study; table NewOnset_DxThroughScreeningStudy; run;
 

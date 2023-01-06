@@ -126,7 +126,8 @@ format gender $gender. new_eth $new_eth. new_ins $new_ins.;
 label Age_AtOnset="Age at onset"
 	  gender="Sex"
 	  new_eth="Race/ethnicity"
-	  new_ins="Insurance";
+	  new_ins="Insurance"
+	  A1cValue="HbA1c";
 run;
 proc freq data=alldata;
 tables dka*dkaknown / missing;
@@ -169,6 +170,7 @@ set alldata;
 if dka='' or dka=" " then delete;
 run;
 proc freq data=alldata; table new_ins; run;
+proc print data=alldata; run;
 
 /* predictors are age at onset, gender, race, insurance, language, onset year, rural/nonrural */
 /* with and without adjustment for quarter of the year */
@@ -210,13 +212,21 @@ by new_ins;
 where new_ins not in (' ','.','None');
 run;
 
-
+proc freq data=alldata;
+table year;
+run;
 /* multivariate model with predictors that were significant on univariate */
 ods rtf file="C:\temp\output.rtf" style=journal;
 proc logistic data=alldata;
 class Rural_Non_Rural age_cat;
 model dka(event='Yes') =  age_cat Rural_Non_Rural A1cValue;
-where new_ins ne 'None';
+run;
+ods rtf close;
+/* model without A1c */
+ods rtf file="C:\temp\output.rtf" style=journal;
+proc logistic data=alldata;
+class Rural_Non_Rural age_cat;
+model dka(event='Yes') =  age_cat Rural_Non_Rural ;
 run;
 ods rtf close;
 
@@ -338,4 +348,133 @@ where dka='Yes';
 run;
 ods rtf file="C:\temp\output.rtf" style=journal;
 proc print data=newtest label noobs; run;
+ods rtf close;
+
+/* comparison of study and clinic patients */
+proc contents data=foranalysis; run;
+proc datasets;
+delete OutTable ;
+run;
+quit;
+%CON(BV = Age_AtOnset, OC=instudy);
+%CON(BV = A1cValue, OC=instudy);
+%CAT(BV = gender, BVF = $gender, OC= instudy);
+%CAT(BV = new_eth, BVF = $new_eth, OC= instudy);
+%CAT(BV = new_ins, BVF = $new_ins, OC= instudy);
+ods rtf file='c:\temp\output.rtf' style=journal;
+proc print data=outtable noobs label;
+var _Label_ RowVarc C0 c1 xPC ;
+label 	_Label_ = '00'x
+		RowVarc = '00'x
+		C0 = 'Clinic patient'
+		C1 = 'Study patient'
+		xPC = 'P-value' ;
+run;
+ods rtf close;
+proc sort data=foranalysis; by instudy; run;
+proc means data=foranalysis;
+var A1cValue;
+by instudy;
+run;
+proc print; run;
+
+/******************/
+/* STUDY PATIENTS */
+/******************/
+data study;
+set alldata;
+where instudy=1;
+run;
+/* predictors are age at onset, gender, race, insurance, language, onset year, rural/nonrural */
+proc logistic data=study;
+model dka(event='Yes') = Age_AtOnset ;
+run;
+%macro cat(var);
+proc logistic data=study;
+class &var;
+model dka(event='Yes') = &var ;
+run;
+%mend;
+%cat(gender);
+proc logistic data=study;
+class new_eth(ref='Non-Hispanic White');;
+model dka(event='Yes') = new_eth;
+run;
+proc logistic data=study;
+class new_ins(ref='Private');
+model dka(event='Yes') = new_ins;
+run;
+%cat(English);
+%cat(year);
+%cat(Rural_non_rural);
+%cat(age_cat);
+proc logistic data=study;
+model dka(event='Yes') = year ;
+run;
+/* add HbA1c as a predictor */
+proc logistic data=study;
+model dka(event='Yes') = A1cValue ;
+run;
+
+/* multivariate model with predictors that were significant on univariate */
+ods rtf file="C:\temp\output.rtf" style=journal;
+proc logistic data=study;
+class English ;
+model dka(event='Yes') =  English A1cValue;
+run;
+ods rtf close;
+
+/******************/
+/* CLINIC PATIENTS */
+/******************/
+data clinic;
+set alldata;
+where instudy=0;
+run;
+/* predictors are age at onset, gender, race, insurance, language, onset year, rural/nonrural */
+proc logistic data=clinic;
+model dka(event='Yes') = Age_AtOnset ;
+run;
+%macro cat(var);
+proc logistic data=clinic;
+class &var;
+model dka(event='Yes') = &var ;
+run;
+%mend;
+%cat(gender);
+proc logistic data=clinic;
+class new_eth(ref='Non-Hispanic White');;
+model dka(event='Yes') = new_eth;
+run;
+proc logistic data=clinic;
+class new_ins(ref='Private');
+model dka(event='Yes') = new_ins;
+run;
+%cat(English);
+%cat(year);
+%cat(Rural_non_rural);
+%cat(age_cat);
+proc logistic data=clinic;
+model dka(event='Yes') = year ;
+run;
+/* add HbA1c as a predictor */
+proc logistic data=clinic;
+model dka(event='Yes') = A1cValue ;
+run;
+
+/* multivariate model with predictors that were significant on univariate */
+ods rtf file="C:\temp\output.rtf" style=journal;
+proc logistic data=clinic;
+class age_cat;
+model dka(event='Yes') =  age_cat A1cValue;
+where new_ins ne 'None';
+run;
+ods rtf close;
+/* model without A1c */
+ods rtf file="C:\temp\output.rtf" style=journal;
+proc logistic data=alldata;
+class Rural_Non_Rural age_cat;
+model dka(event='Yes') =  age_cat Rural_Non_Rural ;
+where new_ins ne 'None';
+run;
 ods rtf close;
