@@ -32,7 +32,7 @@ library(lubridate)
 
 ```{r data step, include=FALSE, echo=FALSE}
 # upload data
-sleep_disruptors = read.csv("S:/Laura/BDC/Projects/Erin Cobry/Sleep Disruptors in t1d Adolescents/Data/SleepDisruptorsInAdo_DATA_2022-11-29_1035.csv")
+sleep_disruptors = read.csv("S:/Laura/BDC/Projects/Erin Cobry/Sleep Disruptors in t1d Adolescents/Data/SleepDisruptorsInAdo_DATA_2023-01-09_1208.csv")
 sleep_disruptors = sleep_disruptors %>%
   mutate(group = case_when(as.numeric(substr(record_id, 3,4)) < 11 ~ "Summer",
                                                                  TRUE ~ "Spring/Fall"))
@@ -74,20 +74,14 @@ t1 = print(t1)
 
 ```
 
-# table 1
+# table 1 (all patients)
 ```{r table1, echo=FALSE}
 kable(t1)
 ```
 
 # Outstanding data remarks:
 
-Redcap season variable incomplete
-
-No diabetes duration/ diagnosis dates for most subj
-
-only 10 hba1c values (all summer)
-
-3 ages missing (subj 1036-38) -- also missing mostly everything
+Patients to exclude before matching: 17,18,25,28,32,34
 
 ```{r, include=FALSE}
 # Variables:
@@ -115,8 +109,11 @@ only 10 hba1c values (all summer)
 
 # sample 3 11-12 and 7 13-17 in the fall spring groups
 samplingdf = t1_df %>% filter(group != "Summer") %>% select(record_id, age_cat)
-samplingdf_12 = samplingdf %>% filter(age_cat == "11-12")
-samplingdf_17 = samplingdf %>% filter(age_cat == "13-17")
+
+# exclude from matcing: 17,18,28,32,34
+samplingdf = samplingdf %>% filter(!(record_id %in% c("1017OW", "1018KN", "1025LH", "1028SE", "1032AH", "1034SA")))
+samplingdf_12 = samplingdf %>% filter(age_cat == "11-12") %>% unique.data.frame()
+samplingdf_17 = samplingdf %>% filter(age_cat == "13-17") %>% unique.data.frame()
 
 # reproducible
 set.seed(512)
@@ -124,6 +121,9 @@ control_ids = c(sample(samplingdf_12$record_id, 3, replace = FALSE), sample(samp
 
 # t1_df for matched
 t1_df_matched = t1_df %>% filter(group == "Summer" | record_id %in% control_ids) 
+
+t1_df_matched = t1_df_matched %>% group_by(record_id) %>% fill(c(hba1c, diabetesduration), .direction = "downup") %>% ungroup()
+t1_df_matched = t1_df_matched %>% unique.data.frame()
 t1_m = CreateTableOne(vars = c("age", "age_cat", "gender", "race", "insulinmethod", "currenthcltech", "current_cgm_use","hba1c", "diabetesduration"), factorVars = c( "age_cat", "gender", "race", "insulinmethod", "currenthcltech", "current_cgm_use"), strata = "group", data = t1_df_matched)
 
 t1_m = print(t1_m)
@@ -133,11 +133,16 @@ t1_grps = t1_df_matched %>% select(record_id, group)
 sleep_disruptors = left_join(t1_grps, sleep_disruptors)
 
 # sleep measures
-sleep_meas = sleep_disruptors %>% select(record_id,group,redcap_event_name,totalsleep_avg, onsetlatency_avg, sleepefficency_avg, waso_avg ) %>% mutate(totalsleep_m = hour(hm(totalsleep_avg))*60 + minute(hm(totalsleep_avg)))
+sleep_meas = sleep_disruptors %>% select(record_id,group,redcap_event_name,totalsleep_avg, onsetlatency_avg,
+                                         sleepefficency_avg, waso_avg, avg_bedtime, getup_avg, timeinbed_avg, awake_avg ) %>%
+  mutate(totalsleep_m = hour(hm(totalsleep_avg))*60 + minute(hm(totalsleep_avg)),
+         totaltimeinbed_m = hour(hm(timeinbed_avg))*60 + minute(hm(timeinbed_avg)))%>% unique.data.frame()
 
-sleep_meas = sleep_meas %>%  filter(redcap_event_name == "surveys_arm_1") %>% select(group, onsetlatency_avg:totalsleep_m)
+sleep_meas = sleep_meas %>%  filter(redcap_event_name == "surveys_arm_1") %>% select(group, onsetlatency_avg:totaltimeinbed_m)
 
-sleep_t = print(CreateTableOne(vars = c("onsetlatency_avg", "sleepefficieny_avg","waso_avg","totalsleep_m"), strata = "group", data = sleep_meas))
+sleep_t = print(CreateTableOne(vars = c("onsetlatency_avg", "sleepefficency_avg","waso_avg","totalsleep_m",  "totaltimeinbed_m", "awake_avg"), strata = "group", data = sleep_meas))
+#,"avg_bedtime","getup_avg"
+
 
 # diabetes measures
 # Diabetes measures (RedCap Pump & CGM Glycemic Data OR Injection & BG Meter Glycemic Data Instruments [depending on the insulin method for each patient])
@@ -146,16 +151,17 @@ sleep_t = print(CreateTableOne(vars = c("onsetlatency_avg", "sleepefficieny_avg"
 # Time hyperglycemic (>180 – combine 181-250 and >250)
 # HCL use (for those on HCL, if RedCap value blank do not include)
 # Sensor use (for those on sensor, if RedCap value blank do not include)
-diab_meas = sleep_disruptors %>% filter(redcap_event_name == "surveys_arm_1") %>% select(record_id,group,redcap_event_name, sensor_u54, sensor_55_69, sensor_70_180, sensor_181_250, sensor_g251, sensor_wear, insulinmethod) %>% select(-redcap_event_name)
+diab_meas = sleep_disruptors %>% filter(redcap_event_name == "surveys_arm_1") %>% select(record_id,group,redcap_event_name, sensor_u54, sensor_55_69, sensor_70_180, sensor_181_250, sensor_g251, sensor_wear, insulinmethod, sensor_mean) %>% select(-redcap_event_name)
 
 diab_meas = diab_meas %>% mutate(sensor_hypo = sensor_u54 + sensor_55_69,
-                                 sensor_hyper = sensor_181_250 + sensor_g251)
+                                 sensor_hyper = sensor_181_250 + sensor_g251)%>% unique.data.frame()
 
-diab_t = print(CreateTableOne(vars = c("sensor_70_180", "sensor_hypo", "sensor_hyper"), strata = "group", data = diab_meas))
+diab_t = print(CreateTableOne(vars = c("sensor_70_180", "sensor_hypo", "sensor_hyper","sensor_mean"), strata = "group", data = diab_meas))
 ```
 
-# matched subjects t1
+# table 1(matched subjects)
 ```{r table 1 matched, echo=FALSE}
+print("control ids used")
 kable(control_ids)
 
 kable(t1_m)
@@ -163,14 +169,13 @@ kable(t1_m)
 
 
 # Sleep measures (RedCap wrist actigraphy variable)
-note: for 1035 no visit collected, 1029 all missing
-total sleep average measured in minutes
+
 ```{r Sleep Measures}
 kable(sleep_t)
 ```
 
 # diabetes measures
-note: for 1035 no visit collected, 1029, 26 all missing values
+
 ```{r diabetes}
 kable(diab_t)
 ```
