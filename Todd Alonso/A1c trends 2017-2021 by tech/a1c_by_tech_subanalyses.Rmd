@@ -44,6 +44,12 @@ a1c_tech = full_join(a1c_tech_2016, a1c_tech_2020)
 
 a1c_tech = a1c_tech %>% mutate(Race_Ethn = `Race/Ethnicity`) %>% select(-`Race/Ethnicity`)
 label(a1c_tech$Race_Ethn) = "Race/Ethnicity"
+
+
+a1c_tech_test = read_excel("S:/Laura/BDC/Projects/Todd Alonso/A1c trends 2017 to 2021 by tech/Data raw/Change in A1c 2017 to 2021_new.xlsx")
+a1c_tech = left_join(a1c_tech_test, a1c_tech)
+
+rm(a1c_tech_test, a1c_tech_2016, a1c_tech_2020)
 ```
 
 
@@ -89,6 +95,11 @@ analysis_switch_grp = analysis %>% filter(grp2016 != grp2020)
 
 ```{r 2 visits, include = FALSE}
 # Fit random intercept model
+a1c_mod_all = lme(A1c_Value ~ Gender + InsuranceCategory +Age_A1cResultDate + DiabetesDuration_A1cResultDate + Race_Ethn  +time_group,
+            random = ~1|EPICMRN,
+            data = analysis,
+            na.action = na.omit)
+
 a1c_mod = lme(A1c_Value ~ Gender + InsuranceCategory +Age_A1cResultDate + DiabetesDuration_A1cResultDate + Race_Ethn + tech_group + time_group + tech_group*time_group,
             random = ~1|EPICMRN,
             data = analysis,
@@ -179,6 +190,9 @@ Adjusting for gender, insurance, age, race, and diabetes duration, there is a si
 The average A1c increased by 0.37 (95% CI: 0.11, 0.63) in the Pump Only groups (p = 0.01), and increased by 0.78 (95% CI: 0.52, 1.04) in the No Tech group (p < 0.0001). There was no significant difference in the time periods within the HCL, CGM+Pump, or CGM only group (p = 0.96, 0.95, 1.00 respectively) 
 
 ```{r both windows}
+a = summary(a1c_mod_all)
+kable(a$tTable, digits = 3, caption = "Base A1c Model")
+
 a1c_table1 = table1(~ Gender + Race_Ethn + A1c_Value + Age_A1cResultDate + DiabetesDuration_A1cResultDate + InsuranceCategory | tech_group*time_group,
                     render.continuous = c(.="Mean (SD)"),
                      data = analysis)
@@ -244,12 +258,13 @@ ggplot(data = a1c_predict_switch_plot)+
   scale_linetype_manual(values = c("solid", "dotted", "dashed"))  + scale_color_manual(values = c(rep("black", 3)))
 ```
 
-
+# emmeans table
 ```{r misc}
 a1c_predict_switch %>%  filter(tech_group_change %in% c("CGM + Pump/HCL", "CGM + Pump/Pump Alone", "Pump Alone/HCL"))%>% group_by(tech_group_change, time_group) %>% summarise(n())
 
 # both visits
 # by group
+print("both visits")
 a1c_predict %>% group_by(tech_group, time_group) %>% summarise(pred_mean = mean(grpmean), ci_L = mean(grpmean - 1.96*grpsd), ci_U = mean(grpmean + 1.96*grpsd ))
 
 # overall
@@ -261,6 +276,8 @@ a1c_all_mod = lme(A1c_Value ~ time_group,
             na.action = na.omit)
 
 summary(a1c_all_mod)
+
+print("same groups")
 # same group
 # by grup
 a1c_predict_2 %>% group_by(tech_group, time_group) %>% summarise(pred_mean = mean(grpmean),  ci_L = mean(grpmean - 1.96*grpsd), ci_U = mean(grpmean + 1.96*grpsd ))
@@ -277,6 +294,8 @@ a1c_same_mod = lme(A1c_Value ~ time_group,
 summary(a1c_same_mod)
 
 # switch grp
+
+print("switch group")
 # by group
 a1c_predict_switch %>% filter(tech_group_change %in% c("CGM + Pump/HCL", "CGM + Pump/Pump Alone", "Pump Alone/HCL"))%>% group_by(tech_group_change, time_group) %>% summarise(pred_mean = mean(grpmean),  ci_L = mean(grpmean - 1.96*grpsd), ci_U = mean(grpmean + 1.96*grpsd ))
 # all
