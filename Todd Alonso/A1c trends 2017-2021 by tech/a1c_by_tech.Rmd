@@ -44,7 +44,13 @@ rm(home_dir)
 a1c_tech = read_excel("S:/Laura/BDC/Projects/Todd Alonso/A1c trends 2017 to 2021 by tech/Data raw/Change in A1c 2017 to 2021_v3.xlsx")
 
 a1c_tech = a1c_tech %>% mutate(Race_Ethn = `Race/Ethnicity`) %>% select(-`Race/Ethnicity`)
+a1c_tech = a1c_tech %>% mutate(race_ethn = case_when(Race_Ethn == "Hispanic" ~ "H",
+                                                     Race_Ethn == "Non-Hispanic White" ~ "NH White",
+                                                     Race_Ethn == "Non-Hispanic Black" ~ "NH Black",
+                                                     TRUE ~ "Other"))
 label(a1c_tech$Race_Ethn) = "Race/Ethnicity"
+
+a1c_tech = a1c_tech %>% filter(!(EPICMRN %in% c(1832433, 1479075) & year(VisitDate) < 2020 ))
 ```
 
 ```{r dataclean}
@@ -57,7 +63,7 @@ analysis = a1c_tech %>%
                                 HCL == "No" & Pump_VisitDate == "Y" & CGM_VisitDate != "Y" ~ "Pump Alone",
                                 HCL == "No" & Pump_VisitDate != "Y" & CGM_VisitDate == "Y" ~ "CGM Alone",
                                 TRUE ~ "None")) %>% 
-  select(EPICMRN, VisitDate, Age_A1cResultDate, A1c_Value, tech_group, time_group, DiabetesDuration_A1cResultDate, Gender, Race_Ethn, InsuranceCategory) 
+  select(EPICMRN, VisitDate, Age_A1cResultDate, A1c_Value, tech_group, time_group, DiabetesDuration_A1cResultDate, Gender, race_ethn, InsuranceCategory) 
 
 # factor tech type for order
 analysis$tech_group = factor(analysis$tech_group, levels = c("HCL", "CGM + Pump", "CGM Alone", "Pump Alone", "None"))
@@ -68,23 +74,23 @@ analysis$tech_group = factor(analysis$tech_group, levels = c("HCL", "CGM + Pump"
 
 ```{r analysis, include=FALSE}
 # table 1
-a1c_table1 = table1(~ Gender + Race_Ethn + A1c_Value + Age_A1cResultDate + DiabetesDuration_A1cResultDate + InsuranceCategory | tech_group*time_group,
+a1c_table1 = table1(~ Gender + race_ethn + A1c_Value + Age_A1cResultDate + DiabetesDuration_A1cResultDate + InsuranceCategory | tech_group*time_group,
                     render.continuous = c(.="Mean (SD)"),
                      data = analysis)
 
 # Fit random intercept model
-a1c_mod = lme(A1c_Value ~ InsuranceCategory + Gender + Age_A1cResultDate + DiabetesDuration_A1cResultDate + Race_Ethn + tech_group + time_group + tech_group*time_group,
+a1c_mod = lme(A1c_Value ~ InsuranceCategory + Gender + Age_A1cResultDate + DiabetesDuration_A1cResultDate + race_ethn + tech_group + time_group + tech_group*time_group,
             random = ~1|EPICMRN,
             data = analysis,
             na.action = na.omit)
 
-a1c_mod2 = lme(A1c_Value ~ Age_A1cResultDate + Race_Ethn +  tech_group + time_group + tech_group*time_group,
+a1c_mod2 = lme(A1c_Value ~ Age_A1cResultDate + race_ethn +  tech_group + time_group + tech_group*time_group,
             random = ~1|EPICMRN,
             data = analysis,
             na.action = na.omit)
 
 # entire cohort, just a1c change between time grp
-a1c_mod_all = lme(A1c_Value ~ Gender+ InsuranceCategory+Age_A1cResultDate + DiabetesDuration_A1cResultDate + Race_Ethn +  time_group ,
+a1c_mod_all = lme(A1c_Value ~ Gender+ InsuranceCategory+Age_A1cResultDate + DiabetesDuration_A1cResultDate + race_ethn +  time_group ,
             random = ~1|EPICMRN,
             data = analysis,
             na.action = na.omit)
@@ -123,7 +129,7 @@ When only including patients who had data in both time periods, the average A1c 
 
 Adjusting for gender, insurance, age, diabetes duration, and race there is a significant difference in A1c within the different tech groups across the 2016-2017 and 2020-2021 time periods (p < 0.0001).
 
-The average A1c Increased by 0.34 (95% CI: 0.12, 0.56) in the Pump Only groups (p = 0.01), and increased by 0.39 (95% CI: 0.20, 0.58) in the No Tech group (p < 0.0001). There was no significant difference in the time periods within the HCL group (p = 0.992), CGM + Pump group (p = 0.408), or CGM only group (p = 0.378) 
+The average A1c Increased by 0.34 (95% CI: 0.12, 0.56) in the Pump Only groups (p = 0.01), and increased by 0.38 (95% CI: 0.20, 0.58) in the No Tech group (p < 0.0001). There was no significant difference in the time periods within the HCL group (p = 0.992), CGM + Pump group (p = 0.408), or CGM only group (p = 0.378) 
 
 
 ```{r model}
@@ -184,14 +190,14 @@ a_combined = full_join(a_2017, a_2020) %>% mutate(tech_group_change = paste0(grp
 
 analysis2 = full_join(analysis2, a_combined) # only those with both time windows
 
-a1c_mod_all_2v = lme(A1c_Value ~ Gender + InsuranceCategory + Age_A1cResultDate + DiabetesDuration_A1cResultDate + Race_Ethn +  time_group ,
+a1c_mod_all_2v = lme(A1c_Value ~ Gender + InsuranceCategory + Age_A1cResultDate + DiabetesDuration_A1cResultDate + race_ethn +  time_group ,
             random = ~1|EPICMRN,
             data = analysis2,
             na.action = na.omit)
 
 b = summary(a1c_mod_all_2v)
 kable(b$tTable)
-.40 + 1.96*c(-1, 1)*0.070
+.476 + 1.96*c(-1, 1)*0.044
 ```
 
 # emmeans table
