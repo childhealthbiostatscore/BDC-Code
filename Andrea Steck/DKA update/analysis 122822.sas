@@ -16,6 +16,12 @@ proc format;
 				"Non-Hispanic Black"="Non-Hispanic Black"
 				"Non-Hispanic White"="Non-Hispanic White"
 				"Other/Unknown"="Other/Unknown";
+  value $ dka "Yes"="Yes"
+              "No"="No";
+  value $ rural "Non-rural"="Non-rural"
+                "Rural"="Rural";
+  value yn 0="No"
+  		   1="Yes";
 run;
 
 data alldata;
@@ -23,6 +29,7 @@ set data.alldata;
 run;
 proc contents; run;
 proc freq data=alldata; table Rural_Non_Rural; run;
+proc freq data=alldata; table english; run;
 proc print; run;
 
 /* exclude one participant over 21 years old */
@@ -110,6 +117,12 @@ data alldata;
 set alldata;
 new_eth=race_eth;
 run;
+data alldata;
+set alldata;
+if new_eth="Hispanic" then hispanic=1;
+else hispanic=0;
+run;
+proc freq data=alldata; table new_eth*hispanic; run;
 
 /* compare DKA status known to unknown */
 proc freq data=alldata; table dka; run;
@@ -122,12 +135,16 @@ data alldata;
 set alldata;
 if dka="." or dka="" or dka=" " then dkaknown=0;
 else dkaknown=1;
-format gender $gender. new_eth $new_eth. new_ins $new_ins.;
+format gender $gender. new_eth $new_eth. new_ins $new_ins. dka $dka. Rural_Non_Rural $rural. english yn. hispanic yn.;
 label Age_AtOnset="Age at onset"
 	  gender="Sex"
 	  new_eth="Race/ethnicity"
 	  new_ins="Insurance"
-	  A1cValue="HbA1c";
+	  A1cValue="HbA1c"
+	  dka="DKA"
+	  Rural_Non_Rural="Rural"
+	  English="English-speaking"
+      Hispanic="Hispanic";
 run;
 proc freq data=alldata;
 tables dka*dkaknown / missing;
@@ -211,6 +228,18 @@ model dka(event='Yes') = year ;
 by new_ins;
 where new_ins not in (' ','.','None');
 run;
+/* study participation */
+proc logistic data=alldata;
+class instudy(ref='0');
+model dka(event='Yes') = instudy ;
+run;
+
+/* 2x2 table of study by DKA */
+ods rtf file="C:\temp\output.rtf" style=journal;
+proc freq data=alldata;
+table instudy*dka / chisq;
+run;
+ods rtf close;
 
 proc freq data=alldata;
 table year;
@@ -218,15 +247,15 @@ run;
 /* multivariate model with predictors that were significant on univariate */
 ods rtf file="C:\temp\output.rtf" style=journal;
 proc logistic data=alldata;
-class Rural_Non_Rural age_cat;
-model dka(event='Yes') =  age_cat Rural_Non_Rural A1cValue;
+class Rural_Non_Rural age_cat instudy(ref='0');
+model dka(event='Yes') =  age_cat Rural_Non_Rural A1cValue instudy;
 run;
 ods rtf close;
 /* model without A1c */
 ods rtf file="C:\temp\output.rtf" style=journal;
 proc logistic data=alldata;
-class Rural_Non_Rural age_cat;
-model dka(event='Yes') =  age_cat Rural_Non_Rural ;
+class Rural_Non_Rural age_cat instudy(ref='0');
+model dka(event='Yes') =  age_cat Rural_Non_Rural instudy;
 run;
 ods rtf close;
 
@@ -360,7 +389,11 @@ quit;
 %CON(BV = A1cValue, OC=instudy);
 %CAT(BV = gender, BVF = $gender, OC= instudy);
 %CAT(BV = new_eth, BVF = $new_eth, OC= instudy);
+%CAT(BV = hispanic, BVF = yn, OC= instudy);
 %CAT(BV = new_ins, BVF = $new_ins, OC= instudy);
+%CAT(BV = dka, BVF = $new_ins, OC= instudy);
+%CAT(BV = Rural_Non_Rural, BVF = $rural, OC= instudy);
+%CAT(BV = english, BVF = yn, OC= instudy);
 ods rtf file='c:\temp\output.rtf' style=journal;
 proc print data=outtable noobs label;
 var _Label_ RowVarc C0 c1 xPC ;
@@ -377,6 +410,60 @@ var A1cValue;
 by instudy;
 run;
 proc print; run;
+
+/* rates of DKA by study participation and year */
+ods rtf file="B:\Projects\Andrea Steck\Morgan Sooy DKA update\Report\DKA rates for figures.rtf";
+proc freq data=alldata;
+table year / binomial(level="2017") alpha=0.05;
+where instudy=0;
+title "Rate of DKA in clinic patients by year";
+run;
+proc freq data=alldata;
+table year / binomial(level="2018") alpha=0.05;
+where instudy=0;
+run;
+proc freq data=alldata;
+table year / binomial(level="2019") alpha=0.05;
+where instudy=0;
+run;
+proc freq data=alldata;
+table year / binomial(level="2020") alpha=0.05;
+where instudy=0;
+run;
+proc freq data=alldata;
+table year / binomial(level="2021") alpha=0.05;
+where instudy=0;
+run;
+proc freq data=alldata;
+table year / binomial(level="2017") alpha=0.05;
+where instudy=1;
+title "Rate of DKA in study patients by year";
+run;
+proc freq data=alldata;
+table year / binomial(level="2018") alpha=0.05;
+where instudy=1;
+run;
+proc freq data=alldata;
+table year / binomial(level="2019") alpha=0.05;
+where instudy=1;
+run;
+proc freq data=alldata;
+table year / binomial(level="2020") alpha=0.05;
+where instudy=1;
+run;
+proc freq data=alldata;
+table year / binomial(level="2021") alpha=0.05;
+where instudy=1;
+run;
+
+
+/* DKA rates by age category and study participation */
+proc freq data=alldata;
+table instudy*age_cat*dka;
+title "Rate of DKA by study participation and age category";
+run;
+ods rtf close;
+title;
 
 /******************/
 /* STUDY PATIENTS */
@@ -399,6 +486,10 @@ run;
 proc logistic data=study;
 class new_eth(ref='Non-Hispanic White');;
 model dka(event='Yes') = new_eth;
+run;
+proc logistic data=study;
+class hispanic(ref='0');;
+model dka(event='Yes') = hispanic;
 run;
 proc logistic data=study;
 class new_ins(ref='Private');
@@ -445,6 +536,10 @@ run;
 proc logistic data=clinic;
 class new_eth(ref='Non-Hispanic White');;
 model dka(event='Yes') = new_eth;
+run;
+proc logistic data=clinic;
+class hispanic(ref='0');;
+model dka(event='Yes') = hispanic;
 run;
 proc logistic data=clinic;
 class new_ins(ref='Private');
