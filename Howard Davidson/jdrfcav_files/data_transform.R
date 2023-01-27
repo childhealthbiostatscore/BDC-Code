@@ -1,6 +1,7 @@
 library(recipes)
 library(caret)
-setwd("/Users/timvigers/Dropbox/Work/BDC/Howard Davidson/R01/Data_Raw")
+#setwd("/Users/timvigers/Dropbox/Work/BDC/Howard Davidson/R01/Data_Raw")
+setwd("S:/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw")
 load("JDRFCAV_preprocessed.Rdata")
 # Base recipe
 # Need to use role updating for large dimension datasets
