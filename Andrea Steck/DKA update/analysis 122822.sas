@@ -124,6 +124,26 @@ else hispanic=0;
 run;
 proc freq data=alldata; table new_eth*hispanic; run;
 
+/* correct DKA status */
+data alldata;
+set alldata;
+if mrn="1644153" then dka="No";
+else if mrn="1213967" then dka="No";
+else if mrn="1361724" then dka="No";
+else if mrn="1593479" then dka="No";
+run;
+
+/* create variable for DKA severity */
+data alldata;
+set alldata;
+if ph<7.1 or bicarb <5 then dka_sev="Severe DKA";
+else if (ph>=7.1 and ph<7.3) or (bicarb>=5 and bicarb<15) then dka_sev="Mild DKA";
+else dka_sev="No DKA";
+run;
+proc freq data=alldata;
+tables dka_sev;
+run;
+
 /* compare DKA status known to unknown */
 proc freq data=alldata; table dka; run;
 data alldata;
@@ -146,12 +166,20 @@ label Age_AtOnset="Age at onset"
 	  English="English-speaking"
       Hispanic="Hispanic";
 run;
+proc print data=alldata;
+var mrn instudy dka dkaknown;
+where instudy=1;
+run;
+proc freq data=alldata; table instudy*dkaknown;run;
 proc freq data=alldata;
 tables dka*dkaknown / missing;
 run;
 proc ttest data=alldata;
 var ageatonset;
 class dkaknown;
+run;
+proc freq data=alldata;
+table instudy*dkaknown;
 run;
 proc freq data=alldata;
 tables dkaknown*(gender new_eth new_ins) / chisquare exact;
@@ -250,9 +278,7 @@ proc logistic data=alldata;
 class Rural_Non_Rural age_cat instudy(ref='0');
 model dka(event='Yes') =  age_cat Rural_Non_Rural A1cValue instudy;
 run;
-ods rtf close;
 /* model without A1c */
-ods rtf file="C:\temp\output.rtf" style=journal;
 proc logistic data=alldata;
 class Rural_Non_Rural age_cat instudy(ref='0');
 model dka(event='Yes') =  age_cat Rural_Non_Rural instudy;
@@ -488,7 +514,7 @@ class new_eth(ref='Non-Hispanic White');;
 model dka(event='Yes') = new_eth;
 run;
 proc logistic data=study;
-class hispanic(ref='0');;
+class hispanic(ref='No');;
 model dka(event='Yes') = hispanic;
 run;
 proc logistic data=study;
@@ -506,12 +532,13 @@ run;
 proc logistic data=study;
 model dka(event='Yes') = A1cValue ;
 run;
+proc freq data=study; table hispanic; run;
 
 /* multivariate model with predictors that were significant on univariate */
 ods rtf file="C:\temp\output.rtf" style=journal;
 proc logistic data=study;
-class English ;
-model dka(event='Yes') =  English A1cValue;
+class  ;
+model dka(event='Yes') =   A1cValue;
 run;
 ods rtf close;
 
