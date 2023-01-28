@@ -22,6 +22,9 @@ proc format;
                 "Rural"="Rural";
   value yn 0="No"
   		   1="Yes";
+  value $ dka_sev "Mild DKA"="Mild DKA"
+                "Severe DKA"="Severe DKA"
+				"No DKA"="No DKA";
 run;
 
 data alldata;
@@ -155,13 +158,14 @@ data alldata;
 set alldata;
 if dka="." or dka="" or dka=" " then dkaknown=0;
 else dkaknown=1;
-format gender $gender. new_eth $new_eth. new_ins $new_ins. dka $dka. Rural_Non_Rural $rural. english yn. hispanic yn.;
+format gender $gender. new_eth $new_eth. new_ins $new_ins. dka $dka. Rural_Non_Rural $rural. english yn. hispanic yn. dka_sev $dka_sev.;
 label Age_AtOnset="Age at onset"
 	  gender="Sex"
 	  new_eth="Race/ethnicity"
 	  new_ins="Insurance"
 	  A1cValue="HbA1c"
 	  dka="DKA"
+	  dka_sev="DKA severity"
 	  Rural_Non_Rural="Rural"
 	  English="English-speaking"
       Hispanic="Hispanic";
@@ -418,6 +422,7 @@ quit;
 %CAT(BV = hispanic, BVF = yn, OC= instudy);
 %CAT(BV = new_ins, BVF = $new_ins, OC= instudy);
 %CAT(BV = dka, BVF = $new_ins, OC= instudy);
+%CAT(BV = dka_sev, BVF = $new_ins, OC= instudy);
 %CAT(BV = Rural_Non_Rural, BVF = $rural, OC= instudy);
 %CAT(BV = english, BVF = yn, OC= instudy);
 ods rtf file='c:\temp\output.rtf' style=journal;
