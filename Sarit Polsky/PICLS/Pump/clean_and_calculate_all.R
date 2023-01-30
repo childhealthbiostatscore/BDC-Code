@@ -5,8 +5,7 @@ library(parsedate)
 library(cgmanalysis)
 library(pdftools)
 
-#source("~/GitHub/BDC-Code/Holly O'Donnell/Pragmatic Psych Screening Tool/pump_variables.R")
-source("C:/temp/pump_variables_testing.R")
+source("C:/Users/pylell/Documents/GitHub/BDC-Code/Sarit Polsky/PICLS/Pump/pump_variables.R")
 setwd("B:/Projects/Sarit Polsky/PICLS")
 
 # Want data about 1 month prior to questionnaires
