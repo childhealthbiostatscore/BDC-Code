@@ -139,7 +139,7 @@ run;
 /* create variable for DKA severity */
 data alldata;
 set alldata;
-if ph<7.1 or bicarb <5 then dka_sev="Severe DKA";
+if (ph ne . and ph<7.1) or (bicarb ne . and bicarb <5) then dka_sev="Severe DKA";
 else if (ph>=7.1 and ph<7.3) or (bicarb>=5 and bicarb<15) then dka_sev="Mild DKA";
 else dka_sev="No DKA";
 run;
@@ -220,6 +220,25 @@ if dka='' or dka=" " then delete;
 run;
 proc freq data=alldata; table new_ins; run;
 proc print data=alldata; run;
+
+proc freq data=alldata;
+table dka*dka_sev;
+run;
+ods rtf file='c:\temp\output.rtf' style=journal;
+/* people without DKA who have mild or severe */
+proc print data=alldata;
+var mrn dka dka_sev ph bicarb;
+where dka="No" and (dka_sev="Mild DKA" or dka_sev="Severe DKA");
+title "No DKA but mild or severe DKA severity"; 
+run;
+/* people with DKA that are marked as none */
+proc print data=alldata;
+var mrn dka dka_sev ph bicarb;
+where dka="Yes" and dka_sev="No DKA";
+title "With DKA but DKA severity=none"; 
+run;
+title;
+ods rtf close;
 
 /* predictors are age at onset, gender, race, insurance, language, onset year, rural/nonrural */
 /* with and without adjustment for quarter of the year */
