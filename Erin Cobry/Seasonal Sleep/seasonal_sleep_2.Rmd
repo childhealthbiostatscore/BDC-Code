@@ -19,7 +19,7 @@ library(readxl)
 library(redcapAPI)
 # data and subj list upload
 HCL_Study_Subjects = read_excel("S:/Laura/BDC/Projects/Erin Cobry/Summer vs. School Sleep/Data_Clean/HCL_Study_Subjects1.xlsx") %>% filter(!is.na(DOB))
-
+include = HCL_Study_Subjects$Subject
 # hcl and sleep dataset
 token = read.table("S:/Laura/BDC/Projects/Erin Cobry/ADA 2022/HCL and Sleep/api_token.txt")[1,1]
 rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",token = token)
@@ -27,17 +27,36 @@ data = exportRecords(rcon,dates = F)
 ids = data$record_id
 times = data$redcap_event_name
 exclude = c(101,201,102,202,103,203,110,210,119,219,121,221,131,231,141,241)
-
-# exclude everyone in exclude from data
-# kids only
-data = data %>% filter(!(record_id %in% exclude)) %>% filter(record_id > 199) %>% filter(!is.na(timepoint_cs)) %>% select(-c(3:37, 51:141, 160:237, 260:379 )) %>% select(-c(hypoglycemia_fear_survey_parent_timestamp:hypoglycemia_fear_survey_parent_complete))
 ```
 
 
 
 
-```{r}
-test = data %>% filter(record_id %in% HCL_Study_Subjects$Subject)
+```{r data clean}
+
+# exclude everyone in exclude from data 
+# kids only
+data = data %>% filter((record_id %in% include)) %>% filter(record_id > 199) %>% filter(!is.na(timepoint_cs)) %>% select(-c(3:37, 51:141, 160:237, 260:379 )) %>% select(-c(hypoglycemia_fear_survey_parent_timestamp:hypoglycemia_fear_survey_parent_complete))
+
+# get the excel sheet in a position i can work with
+baseline = HCL_Study_Subjects %>%  mutate(visit = "Baseline (before HCL)",visit_date = Baseline, visit_type = `School/Summer...5`) %>% select(Subject, DOB, Age, visit, visit_type, visit_date) 
+m3 = HCL_Study_Subjects %>%  mutate(visit = "3 Months",visit_date = M3, visit_type = `School/Summer...7`) %>% select(Subject, DOB, Age, visit, visit_type, visit_date) 
+m6 = HCL_Study_Subjects %>%  mutate(visit = "6 Months",visit_date = M6, visit_type = `School/Summer...9`) %>% select(Subject, DOB, Age, visit, visit_type, visit_date) 
+
+# join
+study_subjects = full_join(baseline, m3)
+study_subjects = full_join(study_subjects, m6) 
+study_subjects$Subject = as.character(study_subjects$Subject)
+
+data$record_id = as.character(data$record_id)
+data$timepoint_cs = as.character(data$timepoint_cs)
+
+analysis = left_join(data, study_subjects, 
+                     by = c("record_id" = "Subject",
+                            "timepoint_cs" = "visit"
+                            ))
+
+table(analysis$record_id)
 ```
 Completed analysis:
 Summer vs school (those with both a summer and a school data point were included) 
