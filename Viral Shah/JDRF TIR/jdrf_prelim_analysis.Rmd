@@ -159,6 +159,10 @@ jdrf_a1c = jdrf_a1c %>% mutate(uacr = case_when(str_detect(uacr, "<") ~ (as.char
 jdrf_a1c$uacr = as.numeric(jdrf_a1c$uacr)
 jdrf_a1c = jdrf_a1c %>% mutate(totalcgmtime = sensor_readings*sensor_interval/(60*24))
 
+# total visits
+visit_count = jdrf_a1c %>% group_by(`Study ID`) %>%  count(`Study ID`, name = "total_visits")
+jdrf_a1c = full_join(jdrf_a1c, visit_count)
+
 # ANNUALLIZED
 jdrf_a1c_ann = jdrf_a1c %>% group_by(`Study ID`, YEAR) %>% summarise(mean_a1c = mean(a1c, na.rm = T),
                                                                       mean_tir = mean(tir, na.rm = T),
@@ -171,6 +175,7 @@ jdrf_a1c_ann = jdrf_a1c %>% group_by(`Study ID`, YEAR) %>% summarise(mean_a1c = 
                                                                       mean_hdl = mean(hdl, na.rm = T),
                                                                       mean_tc = mean(tc, na.rm = T),
                                                                       mean_uacr = mean(uacr, na.rm = T))
+
 other_vars = jdrf_a1c %>% select(`Study ID`, MRN, Age_DateOfEyeExam, Group, DiabetesDuration_DateOfEyeExam)
 jdrf_a1c_ann = left_join(jdrf_a1c_ann, other_vars) %>% distinct()
 jdrf_a1c_ann = jdrf_a1c_ann %>% filter(YEAR > 0)
@@ -194,9 +199,11 @@ cgm_table_df = jdrf_a1c %>% group_by(`Study ID`, Group) %>% summarise(mean_a1c =
 # all of the variables we are interested in here is collected at basaeline i believe
 # so i will filter out the mrn lab data and only include those with a study id
 lab_table_df = jdrf_a1c %>% 
-  select(`Study ID`,Group, totalcgmtime, Age_DateOfEyeExam, Sex, Race_Ethnicity, Htcm, Wtkg, BMI, InsuranceCategory_DateOfEyeExam, DiabetesDuration_DateOfEyeExam, HistoryOfCardiovascularDisease_YesNo,
-         Hyperthyroidism_YesNo, GravesDisease_YesNo, AddisonsDisease_YesNo, CeliacDisease_YesNo) %>% 
+  select(`Study ID`,Group, totalcgmtime, Age_DateOfEyeExam, Sex, Race_Ethnicity, Htcm, Wtkg, BMI, InsuranceCategory_DateOfEyeExam,
+         DiabetesDuration_DateOfEyeExam, HistoryOfCardiovascularDisease_YesNo, Hyperthyroidism_YesNo, GravesDisease_YesNo, AddisonsDisease_YesNo,
+         CeliacDisease_YesNo, total_visits, yrs_since_ret) %>% 
   group_by(`Study ID`, Group) %>%
+  mutate(followup_yrs = max(yrs_since_ret)) %>%
   filter(!is.na(`Study ID`)) %>% distinct()
 
 # remove dupe rows
@@ -208,14 +215,14 @@ lab_table_df = lab_table_df %>% mutate(autoimmunedisease_presence = case_when(Hy
                                                                               TRUE ~ "No"),
                                        mean_total_cgm_time = mean(totalcgmtime)) %>% 
   select(-c(Hyperthyroidism_YesNo, GravesDisease_YesNo, AddisonsDisease_YesNo, CeliacDisease_YesNo, totalcgmtime)) %>% fill(Htcm, Wtkg, BMI) %>% distinct()
-
+lab_table_df
   
 # combine the two for table 1
 table1_df = full_join(lab_table_df, cgm_table_df) %>% filter(!is.na(Group))
 table1_df = table1_df %>% ungroup 
 
 #table1_df = table1_df %>% select(-`Study ID`)
-
+lab_table_df = lab_table_df %>% ungroup() %>% select(-c(`Study ID`, yrs_since_ret))
 jdrf_table1 = table1( ~ .| Group,
                       data = lab_table_df,
                       topclass ="Rtable1-zebra",
@@ -253,9 +260,9 @@ group_ns$YEAR = factor(group_ns$YEAR, levels = c(1,2,3,4,5,6,7))
 
 
 # check how many have a year 1
-test = jdrf_a1c_ann %>% filter(YEAR=="1")
-
-subj_miss_list = lab_table_df %>% filter(!(`Study ID` %in% test$`Study ID`)) %>% select(`Study ID`)
+# test = jdrf_a1c_ann %>% filter(YEAR=="1")
+# 
+# subj_miss_list = lab_table_df %>% filter(!(`Study ID` %in% test$`Study ID`)) %>% select(`Study ID`)
 ```
 
 ```{r plots}
