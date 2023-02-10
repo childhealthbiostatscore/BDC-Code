@@ -20,6 +20,7 @@ library(table1)
 library(Hmisc)
 library(nlme)
 library(emmeans)
+library(car)
 
 knitr::opts_chunk$set(echo = FALSE)
 if(Sys.info()["sysname"] == "Windows"){
@@ -281,7 +282,7 @@ a1c_results = summary(a1c_means$emmeans)
 a1c_results = left_join(a1c_results, group_ns)
 
 # plot
-a1c_YEAR_p = ggplot(data = a1c_results, aes(x = as.numeric(YEAR), y = emmean, group = Group, color = Group)) + scale_x_reverse(breaks = seq(0,8,1))  + scale_y_continuous(breaks = seq(6,11,1))  + theme_classic()
+a1c_YEAR_p = ggplot(data = a1c_results, aes(x = as.numeric(YEAR), y = emmean, group = Group, color = Group)) + scale_x_reverse(breaks = seq(0,8,1))  + scale_y_continuous(breaks = seq(6,11,1))  + theme_classic() 
 
 # tir
 # model
@@ -335,7 +336,7 @@ a1c_YEAR_p + geom_line() +
                     ymax = emmean + SE), alpha = 0.25) +
   geom_text(aes(label =paste0("n = ",n_grp)),size = 3, nudge_y = 0.34, show.legend = F, nudge_x = -0.25) +
   geom_text(aes(label = round(emmean, 2)), nudge_y = .22, nudge_x = -0.25, show.legend = F) + 
-  labs(x ="Year", y = "A1c (%)")
+  labs(x ="Years to Retinopathy Diagnosis", y = "A1c (%)")+ xlim(5,1)
 
 kable(a1c_results[,c(1:4, 8)])
 
@@ -344,7 +345,7 @@ tir_YEAR_p + geom_line()+
                     ymax = emmean + SE), alpha = 0.25) +
   geom_text(aes(label =paste0("n = ",n_grp)),size = 3, nudge_y = 4, show.legend = F, nudge_x = -0.25) +
   geom_text(aes(label = round(emmean, 2)), nudge_y = 3, nudge_x = -0.25, show.legend = F)+ 
-  labs(x ="Year", y = "TIR (%)")
+  labs(x ="Years to Retinopathy Diagnosis", y = "TIR (%)")+ xlim(5,1)
 
 kable(tir_results[,c(1:4, 8)])
 ```
@@ -465,4 +466,30 @@ fit_mod_tir = function(outcome,df){
 
 fit_mod_a1c(outcome = "mean_a1c", df = jdrf_a1c_ann)
 fit_mod_tir(outcome = "mean_tir", df = jdrf_a1c_ann)
+```
+
+
+# multicollinearity
+
+The two variables seem pretty correlated using a basic pearson corr coef (-.76)
+
+vifs: 
+
+a1c as dependent : TIR GVIF = 1.13
+tir as dependent : a1c GVIF = 1.17
+
+This seems to indicate that A1c and TIR may be giving us the same information with relation to retinopathy status
+
+```{r collin}
+# fairly high corr
+cor(jdrf_a1c_ann$mean_a1c, jdrf_a1c_ann$mean_tir, use = "complete.obs")
+
+scatterplot(jdrf_a1c_ann$mean_a1c, jdrf_a1c_ann$mean_tir)
+# regress nth predictor on rest of predictors in the model
+colin_mod = lme(mean_a1c ~ mean_tir + Group + YEAR + Age_DateOfEyeExam + DiabetesDuration_DateOfEyeExam,
+                random = ~1|MRN,data = jdrf_a1c_ann,na.action = na.omit)
+
+summary(colin_mod)
+
+vif(colin_mod)
 ```
