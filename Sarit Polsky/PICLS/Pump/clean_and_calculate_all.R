@@ -129,25 +129,25 @@ cleaned_files <- list.files("./Data_Clean/Carelink Pump Files/",full.names = T)
 total_no_bolus <- 0
 total_one_bolus <- 0
 total_more_than_one_bolus <- 0
-for (f in cleaned_files) {
+for (f in cleaned_files[1:20]) {
+#for (f in cleaned_files) {
   # Pump
   id <- sub(".csv*","",basename(f))
   print(id)
   table = read.csv(f,na.strings = "", header=T)
   table <- table %>% filter(!is.na(datetime))
-  print(table$datetime)
   table$datetime <- as.POSIXct(table$datetime)
   times_target_bolus <- table %>% filter(Event.Marker=="Other")
   count_no_bolus_cumulative <- 0
   count_one_bolus_cumulative <- 0
   count_more_than_one_bolus_cumulative <- 0
   for (j in times_target_bolus) {
-    print(times_target_bolus$datetime)
     # this needs to be divided by some constant to make in terms of minutes
-    try(pull_data <- table %>% filter(abs(as.numeric(datetime-as.POSIXct(times_target_bolus$datetime))) <=120))
+    try(pull_data <- table %>% filter(abs(as.numeric(datetime-as.POSIXct(times_target_bolus$datetime[j]))) <=120))
     pull_data_bolus <- pull_data %>% filter(BWZ.Status=="Delivered")
     count_this_bolus <- nrow(pull_data_bolus)
     count_no_bolus <- ifelse(count_this_bolus==0,1,0)
+    ifelse(count_no_bolus==1){print(c("No bolus:",f,as.character(times_target_bolus$datetime[j])))}
     count_no_bolus_cumulative <- count_no_bolus_cumulative + count_no_bolus
     count_one_bolus <- ifelse(count_this_bolus==1,1,0)
     count_one_bolus_cumulative <- count_one_bolus_cumulative + count_one_bolus
@@ -157,4 +157,37 @@ for (f in cleaned_files) {
   total_no_bolus <- total_no_bolus + count_no_bolus_cumulative
   total_one_bolus <- total_one_bolus + count_one_bolus_cumulative
   total_more_than_one_bolus <- total_more_than_one_bolus + count_more_than_one_bolus_cumulative
+}
+
+
+# trying another approach
+
+# need to find all rows with "other" in field AH "event marker" 
+# then count the number of rows with field AD "BWZ status" set to delivered +/- 2 minutes of the other event marker
+cleaned_files <- list.files("./Data_Clean/Carelink Pump Files/",full.names = T)
+# 107A_1.11.20- 2.9.20, file 17, has boluses within 2 minutes
+# 100A_5.9.19- 6.7.19, file 6, has undelivered boluses
+# count variables are for the current file, total cumulative over all files
+data_no_bolus <- NA
+data_more_than_one_bolus <- 0
+cumulative_none <- NA
+cumulative_more_than_one <- NA
+for (f in cleaned_files[1:20]) {
+  #for (f in cleaned_files) {
+  # Pump
+  id <- sub(".csv*","",basename(f))
+  print(id)
+  table = read.csv(f,na.strings = "", header=T)
+  table <- table %>% filter(!is.na(datetime))
+  table$datetime <- as.POSIXct(table$datetime)
+  times_target_bolus <- table %>% filter(Event.Marker=="Other")
+  for (j in times_target_bolus) {
+    # this needs to be divided by some constant to make in terms of minutes
+    try(pull_data <- table %>% filter(abs(as.numeric(datetime-as.POSIXct(times_target_bolus$datetime[j]))) <=120))
+    pull_data_bolus <- pull_data %>% filter(BWZ.Status=="Delivered")
+    temp_none <- ifelse(nrow(pull_data_bolus)==0,as.data.frame(times_target_bolus),NA)
+    temp_more_than_one <- ifelse(nrow(pull_data_bolus)>1,pull_data_bolus,NA)
+    cumulative_none <- rbind(cumulative_none,temp_none)
+    cumulative_more_than_one <- rbind(cumulative_more_than_one,temp_more_than_one)
+   }
 }
