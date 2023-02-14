@@ -119,3 +119,21 @@ pump_variables(indir = "./Data_Clean/Carelink Pump Files",
                outdir = "./Data_Clean",outname = "carelink_pump_summary")
 cgmvariables("./Data_Clean/Carelink Sensor Files","./Data_Clean",
              outputname = "carelink_sensor_summary",id_filename = T)
+
+# need to find all rows with "other" in field AH "event marker" 
+# then count the number of rows with field AD "BWZ status" set to delivered +/- 2 minutes of the other event marker
+cleaned_files <- list.files("./Data_Clean/Carelink Pump Files/",full.names = T)
+# 100A_5.9.19- 6.7.19
+for (f in cleaned_files) {
+  # Pump
+  id <- sub(".csv*","",basename(f))
+  print(id)
+  table = read.csv(f,na.strings = "", header=T)
+  table$datetime <- as.POSIXct(table$datetime)
+  times_target_bolus <- table %>% filter(Event.Marker=="Other")
+  for (j in times_target_bolus) {
+    print(times_target_bolus$datetime)
+    # this needs to be divided by some constant to make in terms of minutes
+    pull_data <- table %>% filter(abs(as.numeric(datetime-as.POSIXct(times_target_bolus$datetime))) <=20)
+  }
+}
