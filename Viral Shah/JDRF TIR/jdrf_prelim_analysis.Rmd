@@ -21,7 +21,7 @@ library(Hmisc)
 library(nlme)
 library(emmeans)
 library(car)
-library(survival)
+library(pROC)
 
 knitr::opts_chunk$set(echo = FALSE)
 if(Sys.info()["sysname"] == "Windows"){
@@ -197,7 +197,8 @@ cgm_table_df = jdrf_a1c %>% group_by(`Study ID`, Group) %>% summarise(mean_a1c =
                                                                       mean_ldl = mean(ldl, na.rm = T),
                                                                       mean_hdl = mean(hdl, na.rm = T),
                                                                       mean_tc = mean(tc, na.rm = T),
-                                                                      mean_uacr = mean(uacr, na.rm = T))
+                                                                      mean_uacr = mean(uacr, na.rm = T),
+                                                                      total_cgm_time = sum())
 # all of the variables we are interested in here is collected at basaeline i believe
 # so i will filter out the mrn lab data and only include those with a study id
 lab_table_df = jdrf_a1c %>% 
@@ -224,7 +225,7 @@ table1_df = full_join(lab_table_df, cgm_table_df) %>% filter(!is.na(Group))
 table1_df = table1_df %>% ungroup 
 
 #table1_df = table1_df %>% select(-`Study ID`)
-lab_table_df = lab_table_df %>% ungroup() %>% select(-c(`Study ID`, yrs_since_ret))
+lab_table_df = lab_table_df %>% ungroup() %>% select(-c(`Study ID`, yrs_since_ret)) %>% unique()
 jdrf_table1 = table1( ~ .| Group,
                       data = lab_table_df,
                       topclass ="Rtable1-zebra",
@@ -307,6 +308,9 @@ tir_YEAR_p = ggplot(data = tir_results, aes(x = as.numeric(YEAR), y = emmean, gr
 ```
 
 # Outstanding Questions/Remarks
+
+Survival analysis may not be appropriate for this data. Associations were instead analyzed using a linear mixed model.
+
 ```{r}
 # I've attached a list of subjects that have data, but not within the first year of retinopathy. For example, subject 21 has dates starting at year 2, and has visits in year 2,3,4 (similar for 44, 54, 62, 74 etc). This is probably why the graphs are showing year 1 as 63 and 77 rather than 70 and 90.
 # kable(subj_miss_list)
@@ -337,7 +341,7 @@ a1c_YEAR_p + geom_line() +
                     ymax = emmean + SE), alpha = 0.25) +
   geom_text(aes(label =paste0("n = ",n_grp)),size = 3, nudge_y = 0.34, show.legend = F, nudge_x = -0.25) +
   geom_text(aes(label = round(emmean, 2)), nudge_y = .22, nudge_x = -0.25, show.legend = F) + 
-  labs(x ="Years to Retinopathy Diagnosis", y = "A1c (%)")+ xlim(5,1)
+  labs(x ="Years to Retinopathy Diagnosis", y = "A1c (%)")+ xlim(5.3,1)
 
 kable(a1c_results[,c(1:4, 8)])
 
@@ -346,7 +350,7 @@ tir_YEAR_p + geom_line()+
                     ymax = emmean + SE), alpha = 0.25) +
   geom_text(aes(label =paste0("n = ",n_grp)),size = 3, nudge_y = 4, show.legend = F, nudge_x = -0.25) +
   geom_text(aes(label = round(emmean, 2)), nudge_y = 3, nudge_x = -0.25, show.legend = F)+ 
-  labs(x ="Years to Retinopathy Diagnosis", y = "TIR (%)")+ xlim(5,1)
+  labs(x ="Years to Retinopathy Diagnosis", y = "TIR (%)")+ xlim(5.3,1)
 
 kable(tir_results[,c(1:4, 8)])
 ```
@@ -495,3 +499,28 @@ summary(colin_mod)
 vif(colin_mod)
 ```
 
+# ROC analysis
+
+```{r ROC tir}
+# predict TIR using our model
+jdrf_a1c_ann$tir_pred = predict(tir_mod1, type="response", data.frame=jdrf_a1c_ann)
+# perform the ROC analysis
+roc1 <- roc(data=jdrf_a1c_ann, response = Group, predictor=tir_pred)
+
+# find the cutoff that maximizes the Youden Index
+coords1 <- coords(roc1, "b", ret=c("t","specificity","sensitivity"), best.method="youden") # default
+```
+
+## ROC analysis for baseline 1 hour glucose.
+
+The AUC for the ROC was `r round(auc(roc1),4)`.
+
+```{r, echo=FALSE}
+plot.roc(roc1, legacy.axes=F, xlim=c(1,0), ylim=c(0,1))
+```
+
+The threshold of mean annualized TIR that maximized the Youden index, along with the corresponding sensitivity and specificity, are shown below.
+
+```{r, echo=FALSE}
+kable(coords1)
+```
