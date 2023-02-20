@@ -147,12 +147,58 @@ proc freq data=alldata;
 tables dka_sev;
 run;
 
+/* read in hardcoded corrections */
+ /**********************************************************************
+ *   PRODUCT:   SAS
+ *   VERSION:   9.4
+ *   CREATOR:   External File Interface
+ *   DATE:      19FEB23
+ *   DESC:      Generated SAS Datastep Code
+ *   TEMPLATE SOURCE:  (None Specified.)
+ ***********************************************************************/
+    data WORK.CORRECTIONS    ;
+    %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+    infile 'B:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+       informat MRN best32. ;
+       informat DKA $3. ;
+       informat dka_sev $10. ;
+       informat pH best32. ;
+       informat bicarb best32. ;
+       format MRN best12. ;
+       format DKA $3. ;
+       format dka_sev $10. ;
+       format pH best12. ;
+       format bicarb best12. ;
+    input
+                MRN
+                DKA  $
+                dka_sev  $
+                pH
+                bicarb
+    ;
+    if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+    run;
+proc sort data=corrections; by mrn; run;
+proc sort data=alldata; by mrn; run;
+data alldata;
+merge alldata corrections;
+by mrn;
+run;
+proc print data=alldata;
+var mrn dka dka_sev ph bicarb;
+run;
+
+
 /* compare DKA status known to unknown */
 proc freq data=alldata; table dka; run;
 data alldata;
 set alldata;
 if dka="YES" then dka="Yes";
 gender=sex;
+if strip(dka)="No" then dka="No";
+run;
+proc freq data=alldata;
+table dka dka_sev;
 run;
 data alldata;
 set alldata;
@@ -589,7 +635,7 @@ class new_eth(ref='Non-Hispanic White');;
 model dka(event='Yes') = new_eth;
 run;
 proc logistic data=clinic;
-class hispanic(ref='0');;
+class hispanic(ref='No');;
 model dka(event='Yes') = hispanic;
 run;
 proc logistic data=clinic;
@@ -615,9 +661,7 @@ class age_cat;
 model dka(event='Yes') =  age_cat A1cValue;
 where new_ins ne 'None';
 run;
-ods rtf close;
 /* model without A1c */
-ods rtf file="C:\temp\output.rtf" style=journal;
 proc logistic data=alldata;
 class Rural_Non_Rural age_cat;
 model dka(event='Yes') =  age_cat Rural_Non_Rural ;
