@@ -188,6 +188,12 @@ proc print data=alldata;
 var mrn dka dka_sev ph bicarb;
 run;
 
+proc print data=alldata;
+where Age_AtOnset>=18; 
+run;
+proc print data=alldata;
+where mrn=2170675;
+run;
 
 /* compare DKA status known to unknown */
 proc freq data=alldata; table dka; run;
@@ -234,11 +240,10 @@ run;
 proc freq data=alldata;
 tables dkaknown*(gender new_eth new_ins) / chisquare exact;
 run;
+
 data foranalysis;
 set alldata;
 run;
-proc contents data=foranalysis; run;
-
 %include 'H:\SAS tools\Amanda table 1\2 category macros with KW.sas';
 proc datasets;
 delete OutTable ;
@@ -266,6 +271,10 @@ if dka='' or dka=" " then delete;
 run;
 proc freq data=alldata; table new_ins; run;
 proc print data=alldata; run;
+data foranalysis;
+set alldata;
+run;
+proc contents data=foranalysis; run;
 
 proc freq data=alldata;
 table dka*dka_sev;
@@ -506,6 +515,10 @@ var A1cValue;
 by instudy;
 run;
 proc print; run;
+
+proc print data=alldata;
+where dka="Yes" and dka_sev="No DKA";
+run;
 
 /* rates of DKA by study participation and year */
 ods rtf file="B:\Projects\Andrea Steck\Morgan Sooy DKA update\Report\DKA rates for figures.rtf";
