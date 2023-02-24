@@ -43,9 +43,9 @@ load("S:/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/JDRFCAV_preprocessed_tr
 # these remove all subjects, so will just use the one
 #large_subset = transformed_df
 small_subset = transformed_df
-small_subset = small_subset %>% na.omit
-small_subset = small_subset %>% mutate(y = cpep_model_decayrate) %>% select(-cpep_model_decayrate)
 
+small_subset = small_subset %>% mutate(y = cpep_model_decayrate) %>% select(-cpep_model_decayrate)
+small_subset = small_subset %>% na.omit
 ```
 
 CAV_preprocessed_transforme
@@ -78,8 +78,6 @@ cpep_recipe <- recipe(df) %>%
 ## Pre-processing
 
 Data pre-processing steps were completed using the `caret` R package with default settings for all functions (unless otherwise specified). Pre-processing includes a near-zero variance filter, Yeo-Johnson transformation (an extension of the Box-Cox transformation that allows for 0 and/or negative values), centering, and scaling.
-
-Using a missingness cutoff of \< 50% results in `r nrow(small_subset)` observations of `r ncol(small_subset)-1` variables. Increasing this threshold to 80% results in `r nrow(large_subset)` observations of `r ncol(large_subset)-1` variables.
 
 ## ElasticNet
 
@@ -127,15 +125,16 @@ pca_small_subset =
 # pca_large_subset = 
 #   large_subset_recipe %>%
 #   step_pca(all_predictors(), num_comp = 2)
+cv <- trainControl(method = "cv", number = 5,allowParallel = T)
 ```
 
 ## Small subset
 
 ### ElasticNet
 
-```{r}
+```{r eval = FALSE}
 # Use caret to train the model
-cv <- trainControl(method = "cv", number = 5,allowParallel = T)
+
 # Parallel training
 cl <- makePSOCKcluster(detectCores()*0.5)
 registerDoParallel(cl)
@@ -145,18 +144,19 @@ elnet <- train(
   method = "glmnet",
   family = "binomial",
   trControl = cv,
-  tuneLength = 100,
+  tuneLength = 10,
   allowParallel = T
 )
 stopCluster(cl)
 # Get the best models
 res = elnet$results
 kable(head(res[order(res$Accuracy,decreasing = T),],5),row.names = F)
+
 ```
 
     Warning: There were missing values in resampled performance measures
 
-Unfortunately, ElasticNet does not seem to produce a particularly helpful model in this case.
+Unfortunately, ElasticNet fails to produce a particularly helpful model in this case. This may be due to small sample size combined with a high dimension data set.
 
 ### PCA
 
@@ -167,11 +167,11 @@ ggplot(pca_data,aes(x=PC1,y=PC2,color = y)) +
   geom_point() + theme_bw()
 ```
 
-When limiting PCA to the pre-processed variables, there is virtually no separation between the groups.
+Interpretation?
 
 ### sPLS-DA
 
-```{r}
+```{r eval = FALSE}
 # Get matrices
 small_predictors = prep(small_subset_recipe,small_subset)
 small_predictors = bake(small_predictors,all_predictors(),new_data = small_subset)
@@ -197,7 +197,7 @@ mixOmics::plotLoadings(splsda_res)
 mixOmics::plotLoadings(splsda_res,comp=2)
 ```
 
-sPLS-DA does a better job of distinguishing classes, with an AUC of approximately 0.71.
+sPLS-DA also fails to fit a model.
 
 ### Support Vector Machines
 
@@ -218,14 +218,16 @@ svmlc <- train(
 stopCluster(cl)
 # Get the best models
 res2 = svmlc$results
-kable(head(res2[order(res2$Accuracy,decreasing = T),],5),row.names = F)
+kable(head(res2[order(res2$Rsquared,decreasing = T),],5),row.names = F)
 ```
+
+This only fit one model?
 
 #### Radial Kernel Classifier with Class Weights
 
-i think it thinks y is a factor?
+error: wrong model type for regression
 
-```{r}
+```{r, eval = FALSE}
 # Parallel training
 cl <- makePSOCKcluster(detectCores()*0.5)
 registerDoParallel(cl)
@@ -234,7 +236,7 @@ svmrw <- train(
   data = small_subset,
   method = 'svmRadialWeights',
   trControl = cv,
-  tuneLength = 100,
+  tuneLength = 25,
   allowParallel = T
 )
 stopCluster(cl)
@@ -245,7 +247,8 @@ kable(head(res3[order(res3$Accuracy,decreasing = T),],5),row.names = F)
 
 #### Polynomial Kernel Classifier
 
-```{r}
+svmPoly fails to fit a model
+```{r eval=FALSE}
 # Parallel training
 cl <- makePSOCKcluster(detectCores()*0.5)
 registerDoParallel(cl)
@@ -254,7 +257,7 @@ svmp <- train(
   data = small_subset,
   method = "svmPoly",
   trControl = cv,
-  tuneLength = 100,
+  tuneLength = 25,
   allowParallel = T
 )
 stopCluster(cl)
@@ -278,13 +281,13 @@ rf <- train(
   data = small_subset,
   method = "ranger",
   trControl = cv,
-  tuneLength = 100,
+  tuneLength = 25,
   allowParallel = T
 )
 stopCluster(cl)
 # Get the best models
 res5 = rf$results
-kable(head(res5[order(res5$Accuracy,decreasing = T),],5),row.names = F)
+kable(head(res5[order(res5$Rsquared,decreasing = T),],5),row.names = F)
 ```
 
 # Questions
