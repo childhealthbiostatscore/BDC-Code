@@ -1,0 +1,121 @@
+---
+title: "jdrf_cgmanalysis"
+author: "Casey Sakamoto"
+date: "2023-02-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(cgmanalysis)
+library(lubridate)
+```
+
+
+READ CHUNK COMMENTS BEFORE RUNNING
+```{r remove non csv, eval=FALSE}
+############################################################################################
+#
+#ONLY RUN THIS ONCE AND WHEN READY, THIS WILL DELETE FILES FROM THE VAR tempwd SO BE CAREFUL
+#
+############################################################################################
+
+# remove all non csv files to prep folders for cgm analysis
+
+# CASES
+tempwd = "S:/Laura/BDC/Projects/Viral Shah/JDRF/CGM Analysis RERUN/Cases/"
+setwd(tempwd)
+subjfolders = list.files(tempwd)
+for (n in subjfolders){
+  setwd(tempwd)
+  file_location = paste0(tempwd, n)
+  temp_folder = list.files(file_location)
+  setwd(file_location)
+  for (i in temp_folder) {
+    if (grepl("csv", i)) {
+      if (file.size(i) < 10000) {
+        file.remove(i)
+      }
+    } else {file.remove(i)}
+  }
+}
+
+file.remove("S:/Laura/BDC/Projects/Viral Shah/JDRF/CGM Analysis RERUN/Cases/Case 006/~$006 Summary.xlsx")
+
+# CONTROLS
+tempwd = "S:/Laura/BDC/Projects/Viral Shah/JDRF/CGM Analysis RERUN/Control/"
+setwd(tempwd)
+subjfolders = list.files(tempwd)
+for (n in subjfolders){
+  setwd(tempwd)
+  file_location = paste0(tempwd, n)
+  temp_folder = list.files(file_location)
+  setwd(file_location)
+  for (i in temp_folder) {
+    if (grepl("csv", i)) {} else {file.remove(i)}
+  }
+}
+
+file.remove("S:/Laura/BDC/Projects/Viral Shah/JDRF/CGM Analysis RERUN/Control/Control 227/~$227 Summary.xlsx")
+file.remove("S:/Laura/BDC/Projects/Viral Shah/JDRF/CGM Analysis RERUN/Control/Control 299/~$299 Summary.xlsx")
+
+```
+
+```{r cgmanalysis}
+# now we have folders only with the visits
+# run cleandata on each folder, place in appropriate locations
+
+# cases
+tempwd = "S:/Laura/BDC/Projects/Viral Shah/JDRF/CGM Analysis RERUN/Cases/"
+setwd(tempwd)
+subjfolders = list.files(tempwd)
+for (i in subjfolders) {
+tryCatch({
+  print(i)
+  ipd = paste0(tempwd,i)
+  cleandata(inputdirectory = ipd,
+            outputdirectory = "S:/Laura/BDC/Projects/Viral Shah/JDRF/CGM Analysis RERUN/test_case", verbose = T)},
+   error=function(e){}
+)
+
+}
+
+# controls
+tempwd = "S:/Laura/BDC/Projects/Viral Shah/JDRF/CGM Analysis RERUN/Control/"
+setwd(tempwd)
+subjfolders = list.files(tempwd)
+for (i in subjfolders) {
+tryCatch({
+  print(i)
+  ipd = paste0(tempwd,i)
+  cleandata(inputdirectory = ipd,
+            outputdirectory = "S:/Laura/BDC/Projects/Viral Shah/JDRF/CGM Analysis RERUN/test_control", verbose = T)},
+  error=function(e){})
+}
+
+# cgmvariables
+cgmvariables(inputdirectory = "S:/Laura/BDC/Projects/Viral Shah/JDRF/CGM Analysis RERUN/test_case",
+             outputdirectory = "S:/Laura/BDC/Projects/Viral Shah/JDRF/CGM Analysis RERUN/",
+             outputname = "cases")
+
+cgmvariables(inputdirectory = "S:/Laura/BDC/Projects/Viral Shah/JDRF/CGM Analysis RERUN/test_control",
+             outputdirectory = "S:/Laura/BDC/Projects/Viral Shah/JDRF/CGM Analysis RERUN/",
+             outputname = "controls")
+```
+
+
+
+```{r data combine}
+# control merge 
+jdrf_data_clean <- read_csv("S:/Laura/BDC/Projects/Viral Shah/JDRF/Data_Cleaned/jdrf_data_clean.csv")
+
+controls = read.csv("S:/Laura/BDC/Projects/Viral Shah/JDRF/CGM Analysis RERUN/controls.csv")
+controls = controls %>% mutate(date = date(ymd_hms(date_cgm_placement)))
+
+cases = read.csv("S:/Laura/BDC/Projects/Viral Shah/JDRF/CGM Analysis RERUN/cases.csv")
+cases = cases %>% mutate(date = date(ymd_hms(date_cgm_placement)))
+
+jdrf_data_clean$Date = date(jdrf_data_clean$Date)
+
+test = left_join(jdrf_data_clean, controls, by=c('Date'='date')) %>% unique()
+```
