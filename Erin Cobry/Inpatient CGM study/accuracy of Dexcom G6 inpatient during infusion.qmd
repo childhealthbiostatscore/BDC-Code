@@ -37,7 +37,7 @@ knitr::opts_knit$set(root.dir = home_dir)
 
 ```
 
-```{r include=TRUE, warning=FALSE, message=F}
+```{r include=TRUE, warning=FALSE, message=F, output=F}
 # Import data
 setwd(home_dir)
 source("./Data raw/AccuracyOfTheDexcomG-Glucose_R_2022-12-05_1514.r")
@@ -112,15 +112,18 @@ cgm_keep <- merge(cgm_keep,iv_time,by="record_id",all.x=F,all.y=T)
 cgm_keep <- cgm_keep %>% filter(date_time>=gtt_start_daet)
 cgm_keep <- cgm_keep %>% filter(date_time<=insulin_drip_stop)
 
+glucose_keep <- merge(glucose_keep,iv_time,by="record_id",all.x=F,all.y=T)
+glucose_keep <- glucose_keep %>% filter(date_time>=gtt_start_daet)
+glucose_keep <- glucose_keep %>% filter(date_time<=insulin_drip_stop)
+
 # find CGM measure that is closest to each POC glucose by ID and date/time, with no more than 5 minutes difference
 glucose_keep$cgm_glucose <- unlist(apply(glucose_keep,1,function(r){
   dt = as.POSIXct(r["date_time"])
-  print(dt)
   i = as.character(r["record_id"])
-  print(i)
   dat = cgm_keep[cgm_keep$record_id==i,]
   x = dat$sensorglucose[which.min(abs(dat$date_time-dt))]
-  if(is.na(dt) | abs(difftime(dat$date_time[which.min(abs(dat$date_time-dt))],dt,units = "mins")) > 5 ){x = NA}
+  if(identical(x, integer(0))) {x = NA}
+  try(if(is.na(dt) | abs(difftime(dat$date_time[which.min(abs(dat$date_time-dt))],dt,units = "mins")) > 5 ){x = NA})
   return(x)
 }))
 
@@ -187,6 +190,8 @@ demo$admit_length_hours <- difftime(demo$discharge, demo$admit)
 # Background and Methods
 
 -   Hospital glucose values were imported from REDCap. For this analysis, only POC glucose values were included.
+
+-   For this analysis, only hospital glucose values during the insulin infusion were included.
 
 -   CGM data were processed using the cgmanalysis package.
 
@@ -418,98 +423,6 @@ kable(summary(t))
 
 ```{r include=TRUE, warning=FALSE, message=F}
 mardt <- tableby(data=glucose_keep, tylenol ~ relativediff,numeric.stats=c("meansd"))
-kable(summary(mardt))
-```
-
-## By Contrast
-
-### Contrast
-
-```{r include=TRUE, warning=FALSE, message=F}
-zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$contrast=="Contrast",]$bgvalue, testVals = glucose_keep[glucose_keep$contrast=="Contrast",]$cgm_glucose)
-table(zones)
-round (table (zones) / length (zones) * 100, digits=2)
-
-p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$contrast=="Contrast",]$bgvalue, testVals = glucose_keep[glucose_keep$contrast=="Contrast",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
-p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
-```
-
-#### 15/15, 20/20, 30/30
-
-```{r include=TRUE, warning=FALSE, message=F}
-t <- tableby(data=glucose_keep[glucose_keep$contrast=="Contrast",],  ~ in_15_15 + in_20_20 + in_30_30)
-kable(summary(t))
-```
-
-### No Contrast
-
-```{r include=TRUE, warning=FALSE, message=F}
-zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$contrast=="No Contrast",]$bgvalue, testVals = glucose_keep[glucose_keep$contrast=="No Contrast",]$cgm_glucose)
-table(zones)
-round (table (zones) / length (zones) * 100, digits=2)
-
-p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$contrast=="No Contrast",]$bgvalue, testVals = glucose_keep[glucose_keep$contrast=="No Contrast",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
-p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
-
-```
-
-#### 15/15, 20/20, 30/30
-
-```{r include=TRUE, warning=FALSE, message=F}
-t <- tableby(data=glucose_keep[glucose_keep$contrast=="No Contrast",],  ~ in_15_15 + in_20_20 + in_30_30)
-kable(summary(t))
-```
-
-### MARD by contrast
-
-```{r include=TRUE, warning=FALSE, message=F}
-mardt <- tableby(data=glucose_keep, contrast ~ relativediff,numeric.stats=c("meansd"))
-kable(summary(mardt))
-```
-
-## By Vasoactive Meds
-
-### Vasoactive Meds
-
-```{r include=TRUE, warning=FALSE, message=F}
-zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$vasoactive=="Vasoactive Meds",]$bgvalue, testVals = glucose_keep[glucose_keep$vasoactive=="Vasoactive Meds",]$cgm_glucose)
-table(zones)
-round (table (zones) / length (zones) * 100, digits=2)
-
-p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$vasoactive=="Vasoactive Meds",]$bgvalue, testVals = glucose_keep[glucose_keep$vasoactive=="Vasoactive Meds",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
-p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
-```
-
-#### 15/15, 20/20, 30/30
-
-```{r include=TRUE, warning=FALSE, message=F}
-t <- tableby(data=glucose_keep[glucose_keep$vasoactive=="Vasoactive Meds",],  ~ in_15_15 + in_20_20 + in_30_30)
-kable(summary(t))
-```
-
-### No Vasoactive Meds
-
-```{r include=TRUE, warning=FALSE, message=F}
-zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$vasoactive=="No Vasoactive Meds",]$bgvalue, testVals = glucose_keep[glucose_keep$vasoactive=="No Vasoactive Meds",]$cgm_glucose)
-table(zones)
-round (table (zones) / length (zones) * 100, digits=2)
-
-p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$vasoactive=="No Vasoactive Meds",]$bgvalue, testVals = glucose_keep[glucose_keep$vasoactive=="No Vasoactive Meds",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
-p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
-
-```
-
-#### 15/15, 20/20, 30/30
-
-```{r include=TRUE, warning=FALSE, message=F}
-t <- tableby(data=glucose_keep[glucose_keep$vasoactive=="No Vasoactive Meds",],  ~ in_15_15 + in_20_20 + in_30_30)
-kable(summary(t))
-```
-
-### MARD by Vasoactive Meds
-
-```{r include=TRUE, warning=FALSE, message=F}
-mardt <- tableby(data=glucose_keep, vasoactive ~ relativediff,numeric.stats=c("meansd"))
 kable(summary(mardt))
 ```
 
