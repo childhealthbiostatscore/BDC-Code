@@ -19,9 +19,9 @@ library(readr)
 library(table1)
 library(Hmisc)
 library(nlme)
-library(emmeans)
+library(emmeans) # mm and contrasts
 library(car)
-library(pROC)
+library(pROC) # roc analysis
 
 knitr::opts_chunk$set(echo = FALSE)
 if(Sys.info()["sysname"] == "Windows"){
@@ -36,6 +36,14 @@ knitr::opts_knit$set(root.dir = home_dir)
 # cleaned data upload
 # jdrf_data_clean <- read_csv("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Viral Shah/JDRF/Data_Cleaned/jdrf_data_clean.csv")
 jdrf_data_clean <- read_csv("S:/Laura/BDC/Projects/Viral Shah/JDRF/Data_Cleaned/jdrf_data_clean.csv")
+
+# add in cgmanalysis stuff
+cgm_cases <- read_csv("S:/Laura/BDC/Projects/Viral Shah/JDRF/Data_Cleaned/cases.csv")
+cgm_controls <- read_csv("S:/Laura/BDC/Projects/Viral Shah/JDRF/Data_Cleaned/controls.csv")
+cgm = rbind(cgm_cases, cgm_controls); rm(cgm_cases, cgm_controls)
+cgm = cgm %>% mutate(Date = date(ymd_hms(date_cgm_placement)),
+                     tbr54 = 100*percent_time_under_54,
+                     tar250 = 100*percent_time_over_250) %>% select(Date, standard_deviation, cv, tbr54, tar250, excursions_under_54, estimated_a1c)
 ```
 
 ```{r functions, include=FALSE}
@@ -139,6 +147,9 @@ jdrf_a1c = jdrf_a1c %>% group_by(`Study ID`) %>% filter(!is.na(Date)) %>% mutate
                                                                                  YEAR = floor(yrs_since_ret) + 1)
 
 jdrf_a1c = jdrf_a1c %>% select(-c(`First name`, `Last name`, X))
+
+# add in extra cgm stuff
+test = full_join(jdrf_a1c, cgm, by=c('Date'='Date')) %>% unique()
 ```
 
 ```{r var summarizing only those visits with a1c, include=FALSE} 
@@ -161,6 +172,9 @@ jdrf_a1c = jdrf_a1c %>% mutate(uacr = case_when(str_detect(uacr, "<") ~ (as.char
 jdrf_a1c$uacr = as.numeric(jdrf_a1c$uacr)
 jdrf_a1c = jdrf_a1c %>% mutate(totalcgmtime = sensor_readings*sensor_interval/(60*24))
 
+# 
+testcgm = cgm %>% filter(cgm$Date %in% jdrf_a1c$Date)
+sum(test)
 # total visits
 visit_count = jdrf_a1c %>% group_by(`Study ID`) %>%  count(`Study ID`, name = "total_visits")
 jdrf_a1c = full_join(jdrf_a1c, visit_count)
