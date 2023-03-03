@@ -1,59 +1,68 @@
 # Setup
-import itertools
 from glob import iglob
 from os.path import basename
+from os import listdir
 import pandas as pd
 import numpy as np
 wd = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/"
 # Time range
-time_range = "2 min"
+bwz_time_range = "5 min"
+bolus_time_range = "15 min"
 # Dict for results
-res = {"file": [], "num_other_events": [], "one_bolus": [], "zero_bolus": [],
-       "more_than_one_bolus": [], "more_than_one_carb": []}
+res = {"Filename": [], "Number of 'Other' Events": [],
+       "Number of 'Other' Events With Bolus": [],
+       "Total Bolus Volume Associated With 'Other' Event": [],
+       "Total Bolus Volume Associated With Fake Carbs": []}
 # Iterate through all files
-for file in iglob(wd + "Data_Raw/CGM Downloads/" + "**/*.csv", recursive=True):
+files = listdir(wd + "Data_Clean/Carelink Pump Files")
+files.sort()
+for file in files:
     # File name
-    res["file"].append(basename(file))
+    res["Filename"].append(file.replace(".csv", ""))
     # Read in
-    df = pd.read_csv(file, low_memory=False)
-    # Rename columns from pump row
-    df.columns = df.iloc[np.where(df.iloc[:, 2] == "Pump")[0][0] + 1, :]
+    df = pd.read_csv(wd + "Data_Clean/Carelink Pump Files/" +
+                     file, low_memory=False)
     # Combine date and time
     df["timestamp"] = pd.to_datetime(
         df.iloc[:, 1] + " " + df.iloc[:, 2], errors="coerce")
     # Remove auto boluses
     df = df.iloc[list(np.where(df["Bolus Source"] !=
-                      "CLOSED_LOOP_MICRO_BOLUS")[0]), :]
-    # Convert 0 to missing
-    df.loc[df["BWZ Carb Input (grams)"] == "0",
-           "BWZ Carb Input (grams)"] = np.nan
+                               "CLOSED_LOOP_MICRO_BOLUS")[0]), :]
     # Get all bolus timestamps
     bolus_times = list(df["timestamp"].iloc[list(
         np.where(pd.notna(df["Bolus Volume Delivered (U)"]))[0])].dropna())
-    # Get all carb timestamps
-    carb_times = list(df["timestamp"].iloc[list(
-        np.where(pd.notna(df["BWZ Carb Input (grams)"]))[0])].dropna())
+    # Get all correction estimate timestamps
+    correction_times = list(df["timestamp"].iloc[list(
+        np.where(pd.notna(df["BWZ Correction Estimate (U)"]))[0])].dropna())
     # 'Other' event timestamps
     other_times = list(df["timestamp"].iloc[list(
         np.where(df["Event Marker"] == "Other")[0])].dropna())
-    # Count the number of carbs and boluses associated with each 'Other' event
-    num_bolus = []
-    num_carbs = []
-    for t in other_times:
-        num_bolus.append(len([b for b in bolus_times if b < t + pd.to_timedelta(
-            time_range) and b > t - pd.to_timedelta(time_range)]))
-        num_carbs.append([c for c in carb_times if c < t +
-                         pd.to_timedelta(time_range) and c > t - pd.to_timedelta(time_range)])
-    # Convert any multiple carbs timestamps into a single string ()
-    multiple_carbs = [l for l in num_carbs if len(l) > 1]
-    multiple_carbs = ", ".join([str(i) for i in list(
-        itertools.chain.from_iterable(multiple_carbs))])
+    # For each "other" event, calculate the bolus delivered due to fake carbs
+    total_bolus = 0
+    total_bolus_fake_carbs = 0
+    fake_carb_bolus = 0
+    if len(other_times) > 0:
+        for t in other_times:
+            # Check for BWZ within 2 minutes (before or after)
+            corrections = [c for c in correction_times if c < t +
+                           pd.to_timedelta(bwz_time_range) and c > t - pd.to_timedelta(bwz_time_range)]
+            corrections = pd.to_numeric(df.loc[df["timestamp"].isin(
+                corrections), "BWZ Correction Estimate (U)"])
+            # Check for boluses with 15 minutes after
+            boluses = [b for b in bolus_times if b < t +
+                       pd.to_timedelta(bolus_time_range) and b > t]
+            boluses = pd.to_numeric(df.loc[df["timestamp"].isin(
+                boluses), "Bolus Volume Delivered (U)"])
+            if len(boluses) > 0:
+                total_bolus += boluses.sum()
+                total_bolus_fake_carbs += boluses.sum() - corrections.sum()
+                fake_carb_bolus += 1
     # Store results
-    res["num_other_events"].append(len(other_times))
-    res["one_bolus"].append(len([b for b in num_bolus if b == 1]))
-    res["zero_bolus"].append(len([b for b in num_bolus if b == 0]))
-    res["more_than_one_bolus"].append(len([b for b in num_bolus if b > 1]))
-    res["more_than_one_carb"].append(multiple_carbs)
+    res["Number of 'Other' Events"].append(len(other_times))
+    res["Number of 'Other' Events With Bolus"].append(fake_carb_bolus)
+    res["Total Bolus Volume Associated With 'Other' Event"].append(total_bolus)
+    res["Total Bolus Volume Associated With Fake Carbs"].append(
+        total_bolus_fake_carbs)
 df = pd.DataFrame(res)
-df.sort_values("file", inplace=True)
-df.to_csv(wd + "Data_Clean/fake_carbs.csv", index=False)
+df.sort_values("Filename", inplace=True)
+df.to_csv(wd + "Data_Clean/fake_carb_boluses.csv", index=False)
