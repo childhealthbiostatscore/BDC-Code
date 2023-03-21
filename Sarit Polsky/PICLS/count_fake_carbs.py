@@ -2,11 +2,12 @@
 from os import listdir
 import pandas as pd
 import numpy as np
-wd = "/Users/timvigers/Library/CloudStorage/Dropbox/Work/BDC/Sarit Polsky/PICLS/"
+wd = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/"
 # Combine all files into a large dataframe
 files = listdir(wd + "Data_Clean/Carelink Pump Files")
 files.sort()
-files.remove(".DS_Store")
+if ".DS_Store" in files:
+    files.remove(".DS_Store")
 all_df = []
 for file in files:
     # Get ID
@@ -14,7 +15,7 @@ for file in files:
     # Read in - only necessary columns
     df = pd.read_csv(wd + "Data_Clean/Carelink Pump Files/" + file,
                      usecols=["datetime", "Event Marker", "Bolus Source",
-                              "BWZ Correction Estimate (U)",
+                              "BWZ Food Estimate (U)",
                               "Bolus Volume Delivered (U)"])
     df.rename({"datetime": "Timestamp"}, inplace=True, axis=1)
     # Remove auto boluses
@@ -77,7 +78,7 @@ for df in all_df:
         df["Bolus Volume Delivered (U)"], errors="coerce")
     # Get all correction estimate timestamps
     correction_times = list(df["Timestamp"].iloc[list(
-        np.where(pd.notna(df["BWZ Correction Estimate (U)"]))[0])].dropna())
+        np.where(pd.notna(df["BWZ Food Estimate (U)"]))[0])].dropna())
     # 'Other' event timestamps
     other_times = list(df["Timestamp"].iloc[list(
         np.where(df["Event Marker"] == "Other")[0])].dropna())
@@ -91,7 +92,7 @@ for df in all_df:
             corrections = [c for c in correction_times if c < t +
                            pd.to_timedelta(bwz_time_range) and c > t - pd.to_timedelta(bwz_time_range)]
             corrections = pd.to_numeric(df.loc[df["Timestamp"].isin(
-                corrections), "BWZ Correction Estimate (U)"])
+                corrections), "BWZ Food Estimate (U)"])
             # Check for boluses with 15 minutes after
             boluses = [b for b in bolus_times if b < t +
                        pd.to_timedelta(bolus_time_range) and b > t]
@@ -99,8 +100,9 @@ for df in all_df:
                              "Bolus Volume Delivered (U)"]
             if len(boluses) > 0:
                 total_bolus += boluses.sum()
-                total_bolus_fake_carbs += boluses.sum() - corrections.sum()
                 fake_carb_bolus += 1
+                if boluses.sum() >= corrections.sum():
+                    total_bolus_fake_carbs += corrections.sum()
     # Store results
     res["Number of 'Other' Events"].append(len(other_times))
     res["Number of 'Other' Events With Bolus"].append(fake_carb_bolus)
