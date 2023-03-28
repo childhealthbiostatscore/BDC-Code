@@ -103,6 +103,8 @@ for df in all_df:
                 fake_carb_bolus += 1
                 if boluses.sum() >= corrections.sum():
                     total_bolus_fake_carbs += corrections.sum()
+                elif corrections.sum() > boluses.sum():
+                    total_bolus_fake_carbs += boluses.sum()
     # Store results
     res["Number of 'Other' Events"].append(len(other_times))
     res["Number of 'Other' Events With Bolus"].append(fake_carb_bolus)
