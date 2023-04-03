@@ -46,6 +46,16 @@ small_subset = transformed_df
 
 small_subset = small_subset %>% mutate(y = cpep_model_decayrate) %>% select(-cpep_model_decayrate)
 small_subset = small_subset %>% na.omit
+
+# no formula in recipe
+small_subset_recipe = recipe(small_subset)%>%  update_role(everything()) %>% update_role(y, new_role = "outcome")
+small_subset_recipe = small_subset_recipe %>% step_nzv(all_predictors())
+## PCA
+
+# pca_large_subset = 
+#   large_subset_recipe %>%
+#   step_pca(all_predictors(), num_comp = 2)
+cv <- trainControl(method = "cv", number = 5,allowParallel = T)
 ```
 
 CAV_preprocessed_transforme
@@ -91,40 +101,6 @@ The number of selected variables used in sPLS-DA was determined based on 5-fold 
 
 All other machine learning methods were also fit using `caret` defaults and 5-fold CV.
 
-# Time 0
-
-```{r}
-# Recipes for future steps
-## Pre-processing
-# small_subset_recipe <- 
-#   recipe(y ~ ., data = small_subset) %>%
-#   step_nzv(all_predictors()) %>%
-#   step_YeoJohnson(all_predictors()) %>%
-#   step_normalize(all_predictors())
-# large_subset_recipe <-
-#   recipe(y ~ ., data = large_subset) %>%
-#   step_nzv(all_predictors()) %>%
-#   step_YeoJohnson(all_predictors()) %>%
-#   step_normalize(all_predictors())
-# recipe
-# small_subset = small_subset %>% select(y, c(1:16600)) %>% drop_na()
-
-
-# options(expressions = 5e5)
-# small_subset_recipe = recipe(y~.,data = small_subset)%>%
-#   update_role(everything())
-
-# no formula in recipe
-small_subset_recipe = recipe(small_subset)%>%  update_role(everything()) %>% update_role(y, new_role = "outcome")
-## PCA
-
-# pca_large_subset = 
-#   large_subset_recipe %>%
-#   step_pca(all_predictors(), num_comp = 2)
-cv <- trainControl(method = "cv", number = 5,allowParallel = T)
-```
-
-## Small subset
 
 ### ElasticNet
 
@@ -150,30 +126,53 @@ kable(head(res[order(res$Accuracy,decreasing = T),],5),row.names = F)
 
 ```
 
-    Warning: There were missing values in resampled performance measures
+```         
+Warning: There were missing values in resampled performance measures
+```
 
 Unfortunately, ElasticNet fails to produce a particularly helpful model in this case. This may be due to small sample size combined with a high dimension data set.
 
 ### PCA
 
-```{r}
+```{r pca}
+# pca_small_subset = 
+#   small_subset_recipe %>%
+#   step_pca(all_predictors(), num_comp = 2) 
+# 
+# pca_estimates <- prep(pca_small_subset,small_subset, verbose = T) 
+# 
+# pca_data <- bake(pca_estimates,small_subset)
 
-pca_small_subset = 
-  small_subset_recipe %>%
-  step_pca(all_predictors(), num_comp = 2) 
+# couldnt figure it out so lets try a different method
 
-pca_estimates <- prep(pca_small_subset,small_subset) 
+trans<-preProcess(small_subset%>%select(-y),method="pca",preProcOptions = list(thresh = 0.8), pcaComp = 2)
+subsetpca = predict(trans, small_subset%>% select(-y))
+subsetpca =cbind(small_subset$y,subsetpca)
 
-pca_data <- bake(pca_estimates,small_subset)
-
-ggplot(pca_data,aes(x=PC1,y=PC2,color = y)) + 
+# note these results arent exactly the same as tims method output, but are very similar, and near identical in the plot
+ggplot(subsetpca,aes(x=PC1,y=PC2)) + 
   geom_point() + theme_bw()
 
 
-stepobj = pca_small_subset$steps[1]
+cor(subsetpca$`small_subset$y`, subsetpca$PC1)
+cor(subsetpca$`small_subset$y`, subsetpca$PC2)
+
+head(sort(trans$rotation[,1]))
 ```
 
-Interpretation?
+contributing variables to PCA1
+
+```{r pca1}
+kable(head(sort(trans$rotation[,1])))
+kable(tail(sort(trans$rotation[,1])))
+```
+
+contributing variables to PCA2
+
+```{r pca2}
+kable(head(sort(trans$rotation[,2])))
+kable(tail(sort(trans$rotation[,2])))
+```
 
 ### sPLS-DA
 
@@ -209,7 +208,8 @@ sPLS-DA also fails to fit a model.
 
 #### Linear Classifier
 
-```{r}
+```{r svmlc}
+set.seed(1017)
 # Parallel training
 cl <- makePSOCKcluster(detectCores()*0.5)
 registerDoParallel(cl)
@@ -219,6 +219,7 @@ svmlc <- train(
   method = "svmLinear",
   trControl = cv,
   tuneLength = 100,
+  tuneGrid = expand.grid(C = seq(0, 2, length = 20)),
   allowParallel = T
 )
 stopCluster(cl)
@@ -226,8 +227,6 @@ stopCluster(cl)
 res2 = svmlc$results
 kable(head(res2[order(res2$Rsquared,decreasing = T),],5),row.names = F)
 ```
-
-This only fit one model?
 
 #### Radial Kernel Classifier with Class Weights
 
@@ -275,11 +274,11 @@ kable(head(res4[order(res4$Accuracy,decreasing = T),],5),row.names = F)
 
 ### Random Forest
 
-what
+```         
+note: only 92 unique complexity parameters in default grid. Truncating the grid to 92
+```
 
-    note: only 92 unique complexity parameters in default grid. Truncating the grid to 92
-
-```{r}
+```{r rf}
 # Parallel training
 cl <- makePSOCKcluster(detectCores()*0.5)
 registerDoParallel(cl)

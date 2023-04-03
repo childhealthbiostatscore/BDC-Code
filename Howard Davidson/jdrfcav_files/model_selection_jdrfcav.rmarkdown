@@ -1,0 +1,321 @@
+---
+title: "JDRFCAV Model Selection"
+author: "Tim Vigers, Casey Sakamoto & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+format:
+  html:
+    toc: true
+    toc-depth: 5
+    toc-float: true
+    code-fold: true
+    self-contained: true
+editor: visual
+---
+
+```{r include=FALSE}
+library(caret)
+#library(unix)
+library(tidyverse)
+library(tidymodels)
+library(doParallel)
+library(DataExplorer)
+library(knitr)
+set.seed(1017)
+# Import data 
+# load("~/Documents/Work/BDC/Howard Davidson/R01/Data_Raw/JDRFCAV_preprocessed.Rdata")
+#load("S:/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/JDRFCAV_preprocessed_transformed.Rdata")
+#load("/run/user/1011/gvfs/smb-share:server=ucdenver.pvt,share=som/peds/ri biostatistics core/shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/JDRFCAV_preprocessed_transformed2.Rdata")
+
+load("S:/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/JDRFCAV_preprocessed_transformed2.Rdata")
+ 
+#  # Remove those with >= 75% missingness
+# X = df
+# missing <- as.numeric(which(lapply(X, function(c) {
+#   sum(is.na(c)) / length(c)
+# }) >= 0.5))
+# small_subset = na.omit(X[,-missing])
+# # Also look at a >= 80% cutoff
+# missing <- as.numeric(which(lapply(X, function(c) {
+#   sum(is.na(c)) / length(c)
+# }) >= 0.8))
+# large_subset = na.omit(X[,-missing])
+
+# these remove all subjects, so will just use the one
+#large_subset = transformed_df
+small_subset = transformed_df
+
+small_subset = small_subset %>% mutate(y = cpep_model_decayrate) %>% select(-cpep_model_decayrate)
+small_subset = small_subset %>% na.omit
+
+# no formula in recipe
+small_subset_recipe = recipe(small_subset)%>%  update_role(everything()) %>% update_role(y, new_role = "outcome")
+small_subset_recipe = small_subset_recipe %>% step_nzv(all_predictors())
+## PCA
+
+# pca_large_subset = 
+#   large_subset_recipe %>%
+#   step_pca(all_predictors(), num_comp = 2)
+cv <- trainControl(method = "cv", number = 5,allowParallel = T)
+```
+
+
+CAV_preprocessed_transforme
+
+
+```{r include = F, eval=FALSE}
+# Base recipe
+# Need to use role updating for large dimension datasets
+cpep_recipe <- recipe(df) %>%
+  update_role(cpep_model_decayrate,new_role = "outcome") %>%
+  update_role(-one_of("cpep_model_decayrate"),new_role = "predictor") %>%
+  step_nzv(all_predictors())
+```
+
+```{r echo=FALSE,eval=FALSE}
+# running this crashes r because of so many variables
+
+# EDA
+# eda = prep(cpep_recipe)
+# eda = bake(eda,new_data = NULL)
+# eda %>%
+#     create_report(
+#         output_file = "EDA.html",
+#         output_dir = "/run/user/1011/gvfs/smb-share:server=ucdenver.pvt,share=som/peds/ri biostatistics core/shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/R01/Reports",
+#         y = "cpep_model_decayrate"
+#     )
+```
+
+
+# Methods
+
+## Pre-processing
+
+Data pre-processing steps were completed using the `caret` R package with default settings for all functions (unless otherwise specified). Pre-processing includes a near-zero variance filter, Yeo-Johnson transformation (an extension of the Box-Cox transformation that allows for 0 and/or negative values), centering, and scaling.
+
+## ElasticNet
+
+We used the `caret` R package to find optimal $\lambda$ and $\alpha$ values for an ElasticNet model (these are tuning parameters that are altered to produce a parsimonious model with high accuracy) based on 5-fold cross-validation (CV).
+
+## sPLS-DA
+
+The number of selected variables used in sPLS-DA was determined based on 5-fold CV.
+
+## Other Machine Learning Methods
+
+All other machine learning methods were also fit using `caret` defaults and 5-fold CV.
+
+
+### ElasticNet
+
+
+```{r eval = FALSE}
+# Use caret to train the model
+
+# Parallel training
+cl <- makePSOCKcluster(detectCores()*0.5)
+registerDoParallel(cl)
+elnet <- train(
+  small_subset_recipe,
+  data = na.omit(small_subset),
+  method = "glmnet",
+  family = "binomial",
+  trControl = cv,
+  tuneLength = 10,
+  allowParallel = T
+)
+stopCluster(cl)
+# Get the best models
+res = elnet$results
+kable(head(res[order(res$Accuracy,decreasing = T),],5),row.names = F)
+
+```
+
+
+```         
+Warning: There were missing values in resampled performance measures
+```
+
+Unfortunately, ElasticNet fails to produce a particularly helpful model in this case. This may be due to small sample size combined with a high dimension data set.
+
+### PCA
+
+
+```{r pca}
+# pca_small_subset = 
+#   small_subset_recipe %>%
+#   step_pca(all_predictors(), num_comp = 2) 
+# 
+# pca_estimates <- prep(pca_small_subset,small_subset, verbose = T) 
+# 
+# pca_data <- bake(pca_estimates,small_subset)
+
+# couldnt figure it out so lets try a different method
+
+trans<-preProcess(small_subset%>%select(-y),method="pca",preProcOptions = list(thresh = 0.8), pcaComp = 2)
+subsetpca = predict(trans, small_subset%>% select(-y))
+subsetpca =cbind(small_subset$y,subsetpca)
+
+# note these results arent exactly the same as tims method output, but are very similar, and near identical in the plot
+ggplot(subsetpca,aes(x=PC1,y=PC2)) + 
+  geom_point() + theme_bw()
+
+
+cor(subsetpca$`small_subset$y`, subsetpca$PC1)
+cor(subsetpca$`small_subset$y`, subsetpca$PC2)
+
+head(sort(trans$rotation[,1]))
+```
+
+
+contributing variables to PCA1
+
+
+```{r pca1}
+kable(head(sort(trans$rotation[,1])))
+kable(tail(sort(trans$rotation[,1])))
+```
+
+
+contributing variables to PCA2
+
+
+```{r pca2}
+kable(head(sort(trans$rotation[,2])))
+kable(tail(sort(trans$rotation[,2])))
+```
+
+
+### sPLS-DA
+
+
+```{r eval = FALSE}
+# Get matrices
+small_predictors = prep(small_subset_recipe,small_subset)
+small_predictors = bake(small_predictors,all_predictors(),new_data = small_subset)
+small_outcome = prep(small_subset_recipe,small_subset)
+small_outcome = bake(small_outcome,all_outcomes(),new_data = small_subset)
+# Tune sPLS-DA
+tune_splsda = mixOmics::tune.splsda(X = small_predictors,Y = small_outcome$y,
+                                    ncomp = 2,validation = "Mfold",folds = 5, measure = "AUC")
+# Fit
+splsda_res = mixOmics::splsda(X = small_predictors,Y = small_outcome$y,
+                              keepX = tune_splsda$choice.keepX,
+                              ncomp = 2,scale = F)
+# Background
+background_mahal <- mixOmics::background.predict(splsda_res,comp.predicted = 2,
+                                        dist = 'mahalanobis.dist')
+# Performance
+perf_splsda = mixOmics::perf(splsda_res)
+# Plots
+mixOmics::plotIndiv(splsda_res,pch=20,background = background_mahal,
+                    style = 'ggplot2')
+mixOmics::auroc(splsda_res,print=F)
+mixOmics::plotLoadings(splsda_res)
+mixOmics::plotLoadings(splsda_res,comp=2)
+```
+
+
+sPLS-DA also fails to fit a model.
+
+### Support Vector Machines
+
+#### Linear Classifier
+
+
+```{r svmlc}
+set.seed(1017)
+# Parallel training
+cl <- makePSOCKcluster(detectCores()*0.5)
+registerDoParallel(cl)
+svmlc <- train(
+  small_subset_recipe,
+  data = small_subset,
+  method = "svmLinear",
+  trControl = cv,
+  tuneLength = 100,
+  tuneGrid = expand.grid(C = seq(0, 2, length = 20)),
+  allowParallel = T
+)
+stopCluster(cl)
+# Get the best models
+res2 = svmlc$results
+kable(head(res2[order(res2$Rsquared,decreasing = T),],5),row.names = F)
+```
+
+
+#### Radial Kernel Classifier with Class Weights
+
+error: wrong model type for regression
+
+
+```{r, eval = FALSE}
+# Parallel training
+cl <- makePSOCKcluster(detectCores()*0.5)
+registerDoParallel(cl)
+svmrw <- train(
+  small_subset_recipe,
+  data = small_subset,
+  method = 'svmRadialWeights',
+  trControl = cv,
+  tuneLength = 25,
+  allowParallel = T
+)
+stopCluster(cl)
+# Get the best models
+res3 = svmrw$results
+kable(head(res3[order(res3$Accuracy,decreasing = T),],5),row.names = F)
+```
+
+
+#### Polynomial Kernel Classifier
+
+svmPoly fails to fit a model
+
+
+```{r eval=FALSE}
+# Parallel training
+cl <- makePSOCKcluster(detectCores()*0.5)
+registerDoParallel(cl)
+svmp <- train(
+  small_subset_recipe,
+  data = small_subset,
+  method = "svmPoly",
+  trControl = cv,
+  tuneLength = 25,
+  allowParallel = T
+)
+stopCluster(cl)
+# Get the best models
+res4 = svmp$results
+kable(head(res4[order(res4$Accuracy,decreasing = T),],5),row.names = F)
+```
+
+
+### Random Forest
+
+```         
+note: only 92 unique complexity parameters in default grid. Truncating the grid to 92
+```
+
+
+```{r rf}
+# Parallel training
+cl <- makePSOCKcluster(detectCores()*0.5)
+registerDoParallel(cl)
+rf <- train(
+  small_subset_recipe,
+  data = small_subset,
+  method = "ranger",
+  trControl = cv,
+  tuneLength = 25,
+  allowParallel = T
+)
+stopCluster(cl)
+# Get the best models
+res5 = rf$results
+kable(head(res5[order(res5$Rsquared,decreasing = T),],5),row.names = F)
+```
+
+
+# Questions
+
