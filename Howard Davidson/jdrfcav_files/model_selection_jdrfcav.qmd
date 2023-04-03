@@ -20,6 +20,7 @@ library(tidymodels)
 library(doParallel)
 library(DataExplorer)
 library(knitr)
+library(ranger)
 set.seed(1017)
 # Import data 
 # load("~/Documents/Work/BDC/Howard Davidson/R01/Data_Raw/JDRFCAV_preprocessed.Rdata")
@@ -58,8 +59,6 @@ small_subset_recipe = small_subset_recipe %>% step_nzv(all_predictors())
 cv <- trainControl(method = "cv", number = 5,allowParallel = T)
 ```
 
-CAV_preprocessed_transforme
-
 ```{r include = F, eval=FALSE}
 # Base recipe
 # Need to use role updating for large dimension datasets
@@ -69,7 +68,7 @@ cpep_recipe <- recipe(df) %>%
   step_nzv(all_predictors())
 ```
 
-```{r echo=FALSE,eval=FALSE}
+```{r include = FALSE, echo=FALSE,eval=FALSE}
 # running this crashes r because of so many variables
 
 # EDA
@@ -84,6 +83,8 @@ cpep_recipe <- recipe(df) %>%
 ```
 
 # Methods
+
+Note: We have a Sample Size of 17 and around 55000 features; not ideal in a lot of the methods tried. As a result, the majority of the models did not converge.
 
 ## Pre-processing
 
@@ -100,7 +101,6 @@ The number of selected variables used in sPLS-DA was determined based on 5-fold 
 ## Other Machine Learning Methods
 
 All other machine learning methods were also fit using `caret` defaults and 5-fold CV.
-
 
 ### ElasticNet
 
@@ -134,6 +134,13 @@ Unfortunately, ElasticNet fails to produce a particularly helpful model in this 
 
 ### PCA
 
+PCA with 2 components yielded a model with a reasonable fit.
+
+Each component accounted for about 20% of the explained variance.
+
+CD4, CD8 and monocyte variables contribute the most to the first component.
+CD8, CD4 and Bcell contribute the most to the second component.
+
 ```{r pca}
 # pca_small_subset = 
 #   small_subset_recipe %>%
@@ -154,10 +161,8 @@ ggplot(subsetpca,aes(x=PC1,y=PC2)) +
   geom_point() + theme_bw()
 
 
-cor(subsetpca$`small_subset$y`, subsetpca$PC1)
-cor(subsetpca$`small_subset$y`, subsetpca$PC2)
-
-head(sort(trans$rotation[,1]))
+# cor(subsetpca$`small_subset$y`, subsetpca$PC1)
+# cor(subsetpca$`small_subset$y`, subsetpca$PC2)
 ```
 
 contributing variables to PCA1
@@ -208,6 +213,8 @@ sPLS-DA also fails to fit a model.
 
 #### Linear Classifier
 
+Hesitant to interpret this output due to overfit, we get identical model fit output across a range of tuning parameters; 17 Support vectors are used, which means every single data point is considered representative of the hyperplane fit. I have a feeling this is due to the high dimensionality of the data and the likely inappropriate linear classifier assumption.
+
 ```{r svmlc}
 set.seed(1017)
 # Parallel training
@@ -226,11 +233,16 @@ stopCluster(cl)
 # Get the best models
 res2 = svmlc$results
 kable(head(res2[order(res2$Rsquared,decreasing = T),],5),row.names = F)
+
+svmlc
+
+varImp(svmlc)
 ```
+
 
 #### Radial Kernel Classifier with Class Weights
 
-error: wrong model type for regression
+rkc fails to fit a model
 
 ```{r, eval = FALSE}
 # Parallel training
@@ -274,11 +286,9 @@ kable(head(res4[order(res4$Accuracy,decreasing = T),],5),row.names = F)
 
 ### Random Forest
 
-```         
-note: only 92 unique complexity parameters in default grid. Truncating the grid to 92
-```
+The random forest fit, but couldn't extract the important features from the model. However, the model fit results seem to be in line with that of the SVM.
 
-```{r rf}
+```{r rf, cache=TRUE}
 # Parallel training
 cl <- makePSOCKcluster(detectCores()*0.5)
 registerDoParallel(cl)
@@ -294,6 +304,11 @@ stopCluster(cl)
 # Get the best models
 res5 = rf$results
 kable(head(res5[order(res5$Rsquared,decreasing = T),],5),row.names = F)
+```
+
+```{r rf res, echo = FALSE}
+rf_fin = rf$finalModel
+rf_fin
 ```
 
 # Questions
