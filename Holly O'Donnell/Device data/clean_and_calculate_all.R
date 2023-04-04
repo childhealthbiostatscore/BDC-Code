@@ -114,8 +114,8 @@ for (f in files) {
 # Analyze
 pump_variables(indir = "./Data_Clean/Carelink Pump Files",
                outdir = "./Data_Clean",outname = "carelink_pump_summary")
-cgmvariables("./Data_Clean/Carelink Sensor Files","./Data_Clean",
-             outputname = "carelink_sensor_summary",id_filename = T)
+#cgmvariables("./Data_Clean/Carelink Sensor Files","./Data_Clean",
+#             outputname = "carelink_sensor_summary",id_filename = T)
 # Dexcom
 dir.create("./Data_Clean/Dexcom Files",showWarnings = F)
 files = list.files("./Data_Raw/Device Files/Dexcom Files",full.names = T)
@@ -158,8 +158,8 @@ for (f in files) {
   }
 }
 # Analyze
-cgmvariables("./Data_Clean/Dexcom Files","./Data_Clean",
-             outputname = "dexcom_sensor_summary",id_filename = T)
+#cgmvariables("./Data_Clean/Dexcom Files","./Data_Clean",
+#             outputname = "dexcom_sensor_summary",id_filename = T)
 # TConnect
 dir.create("./Data_Clean/TConnect Pump Files",showWarnings = F)
 dir.create("./Data_Clean/TConnect Sensor Files",showWarnings = F)
@@ -241,8 +241,8 @@ for (f in files) {
 # Analyze
 pump_variables(indir = "./Data_Clean/TConnect Pump Files",
                outdir = "./Data_Clean",outname = "tconnect_pump_summary")
-cgmvariables("./Data_Clean/TConnect Sensor Files","./Data_Clean",
-             outputname = "tconnect_sensor_summary",id_filename = T)
+#cgmvariables("./Data_Clean/TConnect Sensor Files","./Data_Clean",
+#             outputname = "tconnect_sensor_summary",id_filename = T)
 # Tidepool
 dir.create("./Data_Clean/Tidepool Files",showWarnings = F)
 files = list.files("./Data_Raw/Device Files/Tidepool",full.names = T)
