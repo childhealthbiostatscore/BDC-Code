@@ -38,12 +38,7 @@ knitr::opts_knit$set(root.dir = home_dir)
 jdrf_data_clean <- read_csv("S:/Laura/BDC/Projects/Viral Shah/JDRF/Data_Cleaned/jdrf_data_clean.csv")
 
 # add in cgmanalysis stuff
-cgm_cases <- read_csv("S:/Laura/BDC/Projects/Viral Shah/JDRF/Data_Cleaned/cases.csv")
-cgm_controls <- read_csv("S:/Laura/BDC/Projects/Viral Shah/JDRF/Data_Cleaned/controls.csv")
-cgm = rbind(cgm_cases, cgm_controls); rm(cgm_cases, cgm_controls)
-cgm = cgm %>% mutate(Date = date(ymd_hms(date_cgm_placement)),
-                     tbr54 = 100*percent_time_under_54,
-                     tar250 = 100*percent_time_over_250) %>% select(Date, standard_deviation, cv, tbr54, tar250, excursions_under_54, estimated_a1c)
+cgm  = read_csv("S:/Laura/BDC/Projects/Viral Shah/JDRF/Data_Cleaned/cgm_cleaned_abr.csv")
 ```
 
 ```{r functions, include=FALSE}
@@ -172,9 +167,9 @@ jdrf_a1c = jdrf_a1c %>% mutate(uacr = case_when(str_detect(uacr, "<") ~ (as.char
 jdrf_a1c$uacr = as.numeric(jdrf_a1c$uacr)
 jdrf_a1c = jdrf_a1c %>% mutate(totalcgmtime = sensor_readings*sensor_interval/(60*24))
 
-# 
-testcgm = cgm %>% filter(cgm$Date %in% jdrf_a1c$Date)
-sum(test)
+# cgm merge
+jdrf_a1c = jdrf_a1c %>% mutate(subject_id = `Study ID`) %>% unique()
+jdrf_a1c = left_join(jdrf_a1c, cgm)
 # total visits
 visit_count = jdrf_a1c %>% group_by(`Study ID`) %>%  count(`Study ID`, name = "total_visits")
 jdrf_a1c = full_join(jdrf_a1c, visit_count)
@@ -183,14 +178,19 @@ jdrf_a1c = full_join(jdrf_a1c, visit_count)
 jdrf_a1c_ann = jdrf_a1c %>% group_by(`Study ID`, YEAR) %>% summarise(mean_a1c = mean(a1c, na.rm = T),
                                                                       mean_tir = mean(tir, na.rm = T),
                                                                       mean_tbr = mean(tbr, na.rm = T),
+                                                                     mean_tbr54 = mean(percent_time_under_54, na.rm = T),
                                                                       mean_tar = mean(tar, na.rm = T),
+                                                                     mean_tar250 = mean(percent_time_over_250, na.rm = T),
                                                                       mean_ttir = mean(ttir, na.rm = T),
                                                                       mean_glucose = mean(mean_glucose, na.rm = T),
+                                                                     mean_cv = mean(cv, na.rm = T),
+                                                                      mean_sd = mean(standard_deviation, na.rm=T),
                                                                       mean_egfr = mean(egfr, na.rm = T),
                                                                       mean_ldl = mean(ldl, na.rm = T),
                                                                       mean_hdl = mean(hdl, na.rm = T),
                                                                       mean_tc = mean(tc, na.rm = T),
-                                                                      mean_uacr = mean(uacr, na.rm = T))
+                                                                      mean_uacr = mean(uacr, na.rm = T),
+                                                                     sh_events = sum(excursions_under_70))
 
 other_vars = jdrf_a1c %>% select(`Study ID`, MRN, Age_DateOfEyeExam, Group, DiabetesDuration_DateOfEyeExam)
 jdrf_a1c_ann = left_join(jdrf_a1c_ann, other_vars) %>% distinct()
@@ -204,15 +204,19 @@ jdrf_a1c_ann$Group = factor(jdrf_a1c_ann$Group, levels = c("Control", "Case"))
 cgm_table_df = jdrf_a1c %>% group_by(`Study ID`, Group) %>% summarise(mean_a1c = mean(a1c, na.rm = T),
                                                                       mean_tir = mean(tir, na.rm = T),
                                                                       mean_tbr = mean(tbr, na.rm = T),
+                                                                      mean_tbr54 = mean(percent_time_under_54, na.rm = T),
                                                                       mean_tar = mean(tar, na.rm = T),
+                                                                      mean_tar250 = mean(percent_time_over_250, na.rm = T),
                                                                       mean_ttir = mean(ttir, na.rm = T),
                                                                       mean_glucose = mean(mean_glucose, na.rm = T),
+                                                                      mean_cv = mean(cv, na.rm = T),
+                                                                      mean_sd = mean(standard_deviation, na.rm=T),
                                                                       mean_egfr = mean(egfr, na.rm = T),
                                                                       mean_ldl = mean(ldl, na.rm = T),
                                                                       mean_hdl = mean(hdl, na.rm = T),
                                                                       mean_tc = mean(tc, na.rm = T),
                                                                       mean_uacr = mean(uacr, na.rm = T),
-                                                                      total_cgm_time = sum())
+                                                                      total_cgm_time_days = sum(sensor_readings*sensor_interval/1440, na.rm = T)) # days
 # all of the variables we are interested in here is collected at basaeline i believe
 # so i will filter out the mrn lab data and only include those with a study id
 lab_table_df = jdrf_a1c %>% 
@@ -274,12 +278,9 @@ a1c_tir_by_YEAR = a1c_tir_by_YEAR %>% filter(YEAR > 0)
 group_ns = a1c_tir_by_YEAR %>% select(Group, YEAR, n_grp)
 group_ns$YEAR = factor(group_ns$YEAR, levels = c(1,2,3,4,5,6,7))
 
-
-
-# check how many have a year 1
-# test = jdrf_a1c_ann %>% filter(YEAR=="1")
-# 
-# subj_miss_list = lab_table_df %>% filter(!(`Study ID` %in% test$`Study ID`)) %>% select(`Study ID`)
+# severe hypo glycemia
+hg_table_ct = jdrf_a1c_ann %>% group_by(Group) %>% summarise(total_SH_events = sum(sh_events, na.rm = T))
+hg_mod_70 = lme(sh_events ~ Group + YEAR + Age_DateOfEyeExam + DiabetesDuration_DateOfEyeExam, random = ~1|MRN, data = jdrf_a1c_ann, na.action = na.omit ) # add in + tbr70/54??
 ```
 
 ```{r plots}
@@ -412,12 +413,33 @@ fit_mod_nointeract(outcome = "mean_tar", df = jdrf_a1c_ann)
 # tar_YEAR_p + geom_line()
 ```
 
+# tar250
+
+Retinopathy status is associated with tar250 (p = 0.02)
+
+```{r tar250}
+fit_mod_nointeract(outcome = "mean_tar250", df = jdrf_a1c_ann)
+
+#fit_mod(outcome = "mean_tar", df = jdrf_a1c_ann)
+# tar_YEAR_p + geom_line()
+```
+
 # tbr
 
-Retinopathy status is not associated with tbr (p = 0.01)
+Retinopathy status is associated with tbr (p = 0.01)
 
 ```{r tbr}
 fit_mod_nointeract(outcome = "mean_tbr", df = jdrf_a1c_ann)
+#fit_mod(outcome = "mean_tbr", df = jdrf_a1c_ann)
+# tbr_YEAR_p + geom_line()
+```
+
+# tbr54
+
+Retinopathy status is associated with tbr54 (p = 0.03)
+
+```{r tb54r}
+fit_mod_nointeract(outcome = "mean_tbr54", df = jdrf_a1c_ann)
 #fit_mod(outcome = "mean_tbr", df = jdrf_a1c_ann)
 # tbr_YEAR_p + geom_line()
 ```
@@ -442,6 +464,33 @@ fit_mod_nointeract(outcome = "mean_glucose", df = jdrf_a1c_ann)
 #fit_mod(outcome = "mean_glucose", df = jdrf_a1c_ann)
 
 # mg_YEAR_p + geom_line()
+```
+
+# cv
+
+Retinopathy status is not associated with mean CV (p = 0.21)
+```{r cv}
+fit_mod_nointeract(outcome = "mean_cv", df = jdrf_a1c_ann)
+
+#fit_mod(outcome = "mean_glucose", df = jdrf_a1c_ann)
+
+# mg_YEAR_p + geom_line()
+```
+
+# sd
+
+Retinopathy status is not associated with mean SD (p = 0.21)
+```{r sd}
+fit_mod_nointeract(outcome = "mean_sd", df = jdrf_a1c_ann)
+
+#fit_mod(outcome = "mean_glucose", df = jdrf_a1c_ann)
+
+# mg_YEAR_p + geom_line()
+```
+# severe hypoglycemia
+
+```{r sev hy}
+kable(hg_table_ct)
 ```
 
 # sensitivity analysis
