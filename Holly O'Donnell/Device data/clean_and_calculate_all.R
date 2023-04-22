@@ -53,7 +53,7 @@ for (f in files) {
     table = table[-blank,]
   }
   # 2 days for Holly to check
-  rows = table$datetime > (as.Date(table$datetime[1])-1)
+  rows = table$datetime > (as.Date(table$datetime[1])-2)
   if(sum(rows,na.rm = T) > 0){
     table = table[rows,]
   } else {
@@ -99,7 +99,7 @@ for (f in files) {
     table = table[-blank,]
   }
   # 2 days for Holly to check
-  rows = table$timestamp > (as.Date(table$timestamp[1])-1)
+  rows = table$timestamp > (as.Date(table$timestamp[1])-2)
   if(sum(rows,na.rm = T) > 10){
     table = table[rows,]
   }else {
@@ -145,7 +145,7 @@ for (f in files) {
     table = table[-blank,]
   }
   # 2 days for Holly to check
-  rows = table$timestamp > (as.Date(table$timestamp[1])-1)
+  rows = table$timestamp > (as.Date(table$timestamp[1])-2)
   if(sum(rows,na.rm = T) > 288){
     table = table[rows,]
   }else {
@@ -188,8 +188,8 @@ for (f in files) {
   }else {
     table = table[-c(1:nrow(table)),]
   }
-  # 3 day for Holly
-  rows = table$datetime > (as.Date(table$datetime[1])-1)
+  # 2 days for Holly
+  rows = table$datetime > (as.Date(table$datetime[1])-2)
   if(sum(rows,na.rm = T) > 10){
     table = table[rows,]
   }else {
@@ -226,7 +226,7 @@ for (f in files) {
     table = table[-blank,]
   }
   # 2 days for Holly to check
-  rows = table$timestamp > (as.Date(table$timestamp[1])-1)
+  rows = table$timestamp > (as.Date(table$timestamp[1])-2)
   if(sum(rows,na.rm = T) > 100){
     table = table[rows,]
   }else {
@@ -329,7 +329,7 @@ for (f in files) {
     t = t[-c(1:nrow(t)),]
   }
   # 2 days for Holly to check
-  rows = t$datetime > (as.Date(t$datetime[1])-1)
+  rows = t$datetime > (as.Date(t$datetime[1])-2)
   if(sum(rows,na.rm = T) > 0){
     t = t[rows,]
   }else {
