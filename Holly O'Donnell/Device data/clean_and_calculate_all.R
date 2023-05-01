@@ -4,12 +4,19 @@ library(tools)
 library(parsedate)
 library(cgmanalysis)
 library(pdftools)
+library(stringr)
 source("~/Documents/GitHub/BDC-Code/Holly O'Donnell/Pragmatic Psych Screening Tool/pump_variables.R")
 setwd("/Volumes/BDC/Projects/Holly O'Donnell/Device data/March 2023")
 
 # Want data about 1 month prior to questionnaires
 dates = read_excel("./Data_Raw/dates.xlsx")
-dates$`Date Questionnaires` = parse_date(dates$`Date Questionnaires`,approx = F)
+dates$yr <- str_sub(dates$`Date Questionnaires`,1,4)
+dates$mo <- str_sub(dates$`Date Questionnaires`,6,7)
+dates$day <- str_sub(dates$`Date Questionnaires`,9,10)
+dates$mo <- str_remove(dates$mo,"0")
+dates$day <- ifelse(dates$day<10,str_remove(dates$day,"0"),dates$day)
+dates$`Date Questionnaires` <- paste0(dates$mo,"/",dates$day,"/",dates$yr)
+#dates$`Date Questionnaires` = parse_date(dates$`Date Questionnaires`,approx = F)
 # Carelink
 dir.create("./Data_Clean/Carelink Pump Files",showWarnings = F)
 dir.create("./Data_Clean/Carelink Sensor Files",showWarnings = F)
@@ -182,12 +189,12 @@ for (f in files) {
   table$BWZ.Estimate..U. = NA
   table$Bolus.Type = NA
   # Remove data > 1 month before date
-  rows = table$datetime <= date & table$datetime > (as.Date(date)-30)
-  if(sum(rows,na.rm = T) > 10){
-    table = table[rows,]
-  }else {
-    table = table[-c(1:nrow(table)),]
-  }
+  #rows = table$datetime <= date & table$datetime > (as.Date(date)-30)
+  #if(sum(rows,na.rm = T) > 10){
+  #  table = table[rows,]
+  #}else {
+  #  table = table[-c(1:nrow(table)),]
+  #}
   # 2 days for Holly
   rows = table$datetime > (as.Date(table$datetime[1])-2)
   if(sum(rows,na.rm = T) > 10){
