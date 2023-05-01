@@ -16,7 +16,9 @@ dates$day <- str_sub(dates$`Date Questionnaires`,9,10)
 dates$mo <- str_remove(dates$mo,"0")
 dates$day <- ifelse(dates$day<10,str_remove(dates$day,"0"),dates$day)
 dates$`Date Questionnaires` <- paste0(dates$mo,"/",dates$day,"/",dates$yr)
+dates$`Date Questionnaires` <- as.Date(dates$`Date Questionnaires`,format="%m/%d/%Y")
 #dates$`Date Questionnaires` = parse_date(dates$`Date Questionnaires`,approx = F)
+
 # Carelink
 dir.create("./Data_Clean/Carelink Pump Files",showWarnings = F)
 dir.create("./Data_Clean/Carelink Sensor Files",showWarnings = F)
@@ -48,19 +50,26 @@ for (f in files) {
   table$datetime <- paste(table$Date,table$Time)
   table$datetime <- parse_date(table$datetime,approx = F)
   # Remove data > 1 month before date
-  rows = table$datetime <= date & table$datetime > (as.Date(date)-30)
-  if(sum(rows,na.rm = T) > 0){
-    table = table[rows,]
-  } else {
-    table = table[-c(1:nrow(table)),]
-  }
+  #rows = table$datetime <= date & table$datetime > (as.Date(date)-30)
+  #if(sum(rows,na.rm = T) > 0){
+  #  table = table[rows,]
+  #} else {
+  #  table = table[-c(1:nrow(table)),]
+  #}
   # Remove blank rows
   blank = which(rowSums(is.na(table))==ncol(table))
   if(length(blank)>0){
     table = table[-blank,]
   }
   # 2 days for Holly to check
-  rows = table$datetime > (as.Date(table$datetime[1])-2)
+# rows = table$datetime > (as.Date(table$datetime[1])-2)
+  rows = table$datetime <= (as.Date(dates[dates$`Participant ID`==id,]$`Date Questionnaires`))
+  if(sum(rows,na.rm = T) > 0){
+    table = table[rows,]
+  } else {
+    table = table[-c(1:nrow(table)),]
+  }
+  rows = table$datetime >= (as.Date(dates[dates$`Participant ID`==id,]$`Date Questionnaires`)-1)
   if(sum(rows,na.rm = T) > 0){
     table = table[rows,]
   } else {
@@ -94,22 +103,28 @@ for (f in files) {
   table$subjectid = NA
   table = table[,c("subjectid","timestamp","sensorglucose")]
   # Remove data > 1 month before date
-  rows = table$timestamp <= date & table$timestamp > (as.Date(date)-30)
-  if(sum(rows,na.rm = T) > 100){
-    table = table[rows,]
-  }else {
-    table = table[-c(1:nrow(table)),]
-  }
+  #rows = table$timestamp <= date & table$timestamp > (as.Date(date)-30)
+  #if(sum(rows,na.rm = T) > 100){
+  #  table = table[rows,]
+  #}else {
+  #  table = table[-c(1:nrow(table)),]
+  #}
   # Remove blank rows
   blank = which(rowSums(is.na(table))==ncol(table))
   if(length(blank)>0){
     table = table[-blank,]
   }
   # 2 days for Holly to check
-  rows = table$timestamp > (as.Date(table$timestamp[1])-2)
-  if(sum(rows,na.rm = T) > 10){
+  rows = table$timestamp <= (as.Date(dates[dates$`Participant ID`==id,]$`Date Questionnaires`))
+  if(sum(rows,na.rm = T) > 0){
     table = table[rows,]
-  }else {
+  } else {
+    table = table[-c(1:nrow(table)),]
+  }
+  rows = table$timestamp >= (as.Date(dates[dates$`Participant ID`==id,]$`Date Questionnaires`)-1)
+  if(sum(rows,na.rm = T) > 0){
+    table = table[rows,]
+  } else {
     table = table[-c(1:nrow(table)),]
   }
   if(sum(!is.na(table$sensorglucose))>0){
@@ -123,6 +138,8 @@ pump_variables(indir = "./Data_Clean/Carelink Pump Files",
                outdir = "./Data_Clean",outname = "carelink_pump_summary")
 #cgmvariables("./Data_Clean/Carelink Sensor Files","./Data_Clean",
 #             outputname = "carelink_sensor_summary",id_filename = T)
+
+
 # Dexcom
 dir.create("./Data_Clean/Dexcom Files",showWarnings = F)
 files = list.files("./Data_Raw/Device Files/Dexcom Files",full.names = T)
@@ -140,22 +157,29 @@ for (f in files) {
   table$timestamp = parse_date(sub("T"," ",table$timestamp),approx = F)
   table$sensorglucose = suppressWarnings(as.numeric(table$sensorglucose))
   # Remove data > 1 month before date
-  rows = table$timestamp <= date & table$timestamp > (as.Date(date)-30)
-  if(sum(rows,na.rm = T) > 288){
-    table = table[rows,]
-  }else {
-    table = table[-c(1:nrow(table)),]
-  }
+  #rows = table$timestamp <= date & table$timestamp > (as.Date(date)-30)
+  #if(sum(rows,na.rm = T) > 288){
+  #  table = table[rows,]
+  #}else {
+  #  table = table[-c(1:nrow(table)),]
+  #}
   # Remove blank rows
   blank = which(rowSums(is.na(table))==ncol(table))
   if(length(blank)>0){
     table = table[-blank,]
   }
   # 2 days for Holly to check
-  rows = table$timestamp > (as.Date(table$timestamp[1])-2)
-  if(sum(rows,na.rm = T) > 288){
+  # rows = table$datetime > (as.Date(table$datetime[1])-2)
+  rows = table$datetime <= (as.Date(dates[dates$`Participant ID`==id,]$`Date Questionnaires`))
+  if(sum(rows,na.rm = T) > 0){
     table = table[rows,]
-  }else {
+  } else {
+    table = table[-c(1:nrow(table)),]
+  }
+  rows = table$datetime >= (as.Date(dates[dates$`Participant ID`==id,]$`Date Questionnaires`)-1)
+  if(sum(rows,na.rm = T) > 0){
+    table = table[rows,]
+  } else {
     table = table[-c(1:nrow(table)),]
   }
   if(sum(!is.na(table$sensorglucose))>0){
@@ -167,6 +191,8 @@ for (f in files) {
 # Analyze
 #cgmvariables("./Data_Clean/Dexcom Files","./Data_Clean",
 #             outputname = "dexcom_sensor_summary",id_filename = T)
+
+
 # TConnect
 dir.create("./Data_Clean/TConnect Pump Files",showWarnings = F)
 dir.create("./Data_Clean/TConnect Sensor Files",showWarnings = F)
@@ -195,11 +221,18 @@ for (f in files) {
   #}else {
   #  table = table[-c(1:nrow(table)),]
   #}
-  # 2 days for Holly
-  rows = table$datetime > (as.Date(table$datetime[1])-2)
-  if(sum(rows,na.rm = T) > 10){
+  # 2 days for Holly to check
+  # rows = table$datetime > (as.Date(table$datetime[1])-2)
+  rows = table$datetime <= (as.Date(dates[dates$`Participant ID`==id,]$`Date Questionnaires`))
+  if(sum(rows,na.rm = T) > 0){
     table = table[rows,]
-  }else {
+  } else {
+    table = table[-c(1:nrow(table)),]
+  }
+  rows = table$datetime >= (as.Date(dates[dates$`Participant ID`==id,]$`Date Questionnaires`)-1)
+  if(sum(rows,na.rm = T) > 0){
+    table = table[rows,]
+  } else {
     table = table[-c(1:nrow(table)),]
   }
   # Write file
@@ -221,22 +254,29 @@ for (f in files) {
   table$timestamp = parse_date(sub("T"," ",table$timestamp),approx = F)
   table$sensorglucose = suppressWarnings(as.numeric(table$sensorglucose))
   # Remove data > 1 month before date
-  rows = table$timestamp <= date & table$timestamp > (as.Date(date)-30)
-  if(sum(rows,na.rm = T) > 100){
-    table = table[rows,]
-  }else {
-    table = table[-c(1:nrow(table)),]
-  }
+  #rows = table$timestamp <= date & table$timestamp > (as.Date(date)-30)
+  #if(sum(rows,na.rm = T) > 100){
+  #  table = table[rows,]
+  #}else {
+  #  table = table[-c(1:nrow(table)),]
+  #}
   # Remove blank rows
   blank = which(rowSums(is.na(table))==ncol(table))
   if(length(blank)>0){
     table = table[-blank,]
   }
   # 2 days for Holly to check
-  rows = table$timestamp > (as.Date(table$timestamp[1])-2)
-  if(sum(rows,na.rm = T) > 100){
+  # rows = table$datetime > (as.Date(table$datetime[1])-2)
+  rows = table$timestamp <= (as.Date(dates[dates$`Participant ID`==id,]$`Date Questionnaires`))
+  if(sum(rows,na.rm = T) > 0){
     table = table[rows,]
-  }else {
+  } else {
+    table = table[-c(1:nrow(table)),]
+  }
+  rows = table$timestamp >= (as.Date(dates[dates$`Participant ID`==id,]$`Date Questionnaires`)-1)
+  if(sum(rows,na.rm = T) > 0){
+    table = table[rows,]
+  } else {
     table = table[-c(1:nrow(table)),]
   }
   if(sum(!is.na(table$sensorglucose))>0){
@@ -250,6 +290,8 @@ pump_variables(indir = "./Data_Clean/TConnect Pump Files",
                outdir = "./Data_Clean",outname = "tconnect_pump_summary")
 #cgmvariables("./Data_Clean/TConnect Sensor Files","./Data_Clean",
 #             outputname = "tconnect_sensor_summary",id_filename = T)
+
+
 # Tidepool
 dir.create("./Data_Clean/Tidepool Files",showWarnings = F)
 files = list.files("./Data_Raw/Device Files/Tidepool",full.names = T)
@@ -329,17 +371,24 @@ for (f in files) {
   # Get dates
   v1 = dates$`Date Questionnaires`[match(as.numeric(id),dates$`Participant ID`)]
   # Remove data > 1 month before date
-  rows = t$datetime <= v1 & t$datetime > (as.Date(v1)-30)
+  #rows = t$datetime <= v1 & t$datetime > (as.Date(v1)-30)
+  #if(sum(rows,na.rm = T) > 0){
+  #  t = t[rows,]
+  #}else {
+  #  t = t[-c(1:nrow(t)),]
+  #}
+  # 2 days for Holly to check
+  # rows = table$datetime > (as.Date(table$datetime[1])-2)
+  rows = t$datetime <= (as.Date(dates[dates$`Participant ID`==id,]$`Date Questionnaires`))
   if(sum(rows,na.rm = T) > 0){
     t = t[rows,]
-  }else {
+  } else {
     t = t[-c(1:nrow(t)),]
   }
-  # 2 days for Holly to check
-  rows = t$datetime > (as.Date(t$datetime[1])-2)
+  rows = t$datetime >= (as.Date(dates[dates$`Participant ID`==id,]$`Date Questionnaires`)-1)
   if(sum(rows,na.rm = T) > 0){
     t = t[rows,]
-  }else {
+  } else {
     t = t[-c(1:nrow(t)),]
   }
   # Write file
@@ -351,6 +400,8 @@ for (f in files) {
 # Analyze
 pump_variables(indir = "./Data_Clean/Tidepool Files",
                outdir = "./Data_Clean",outname = "tidepool_pump_summary")
+
+
 # Glooko
 dir.create("./Data_Clean/Glooko Files",showWarnings = F)
 files = list.files("./Data_Raw/Device Files/Glooko (PDFs)",full.names = T)
