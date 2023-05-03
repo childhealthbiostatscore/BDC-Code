@@ -31,6 +31,12 @@ data0516$`Date of Diagnosis` <- NULL
 data0516$`Dual?` <- NULL
 data0516$instudy <- 1
 # code race_eth
+data0516[(!is.na(data0516$Race) & data0516$Race=="White") & (!is.na(data0516$Ethnicity) & data0516$Ethnicity=="No"),]$race_eth <- "Non-Hispanic White"
+data0516[data0516$Race=="Black or African American" & data0516$Ethnicity=="No",]$race_eth <- "Non-Hispanic Black"
+data0516[data0516$Ethnicity=="Spanish/Hispanic" | data0516$Ethnicity=="Yes",]$race_eth <- "Hispanic"
+data0516[is.na(data0516$race_eth) & !(is.na(data0516$Race) | is.na(data0516$Ethnicity)),] <- "Other"
+data0516[is.na(data0516$Race) & is.na(data0516$Ethnicity),] <- NA
+
 # code fup_prior_dx
 # code fup_prior_dx_mo
 # code ge6moprior
@@ -38,7 +44,4 @@ data0516$instudy <- 1
 # code seen_12mo_prior
 
 # read in Marian's access database
-ch <- odbcConnect("/Volumes/BDC/Projects/Andrea Steck/Morgan Sooy DKA update/Data_raw/DKA 2005-2012.accdb")
-dta <- odbcConnectAccess2007("/Volumes/BDC/Projects/Andrea Steck/Morgan Sooy DKA update/Data_raw/DKA 2005-2012.accdb") 
-sqlTables(ch)
-close(ch)
+marian_data <- read.csv("/Volumes/BDC/Projects/Andrea Steck/Morgan Sooy DKA update/Data_raw/JAMA 2005-2012 T1D and DKA known.txt")

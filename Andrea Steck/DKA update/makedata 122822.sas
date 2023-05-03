@@ -216,6 +216,68 @@ data alldata;
 set study nonstudy;
 run;
 
+/* read in new file of research participants diagnosed 2005-2016 seen at the BDC for followup */
+    data WORK.data0516    ;
+    %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\Combined_TN_TDA_2005-2016_without names.csv' delimiter = ',' MISSOVER DSD lrecl=13106 firstobs=2 ;
+       informat MRN $7. ;
+       informat PP3_Patnum $5. ;
+       informat Study_ID $30. ;
+       informat Study $14. ;
+       informat DOB mmddyy10. ;
+       informat Initial_research_study_visit_dat mmddyy10. ;
+       informat Last_research_study_visit_date mmddyy10. ;
+       informat OnsetDate mmddyy10. ;
+       informat Sex $6. ;
+       informat Ethnicity $16. ;
+       informat Race $18. ;
+       informat DKA $3. ;
+       informat Dual_ $3. ;
+       format MRN $7. ;
+       format PP3_Patnum $5. ;
+       format Study_ID $30. ;
+       format Study $14. ;
+       format DOB mmddyy10. ;
+       format Initial_research_study_visit_dat mmddyy10. ;
+       format Last_research_study_visit_date mmddyy10. ;
+       format OnsetDate mmddyy10. ;
+       format Sex $6. ;
+       format Ethnicity $16. ;
+       format Race $18. ;
+       format DKA $3. ;
+       format Dual_ $3. ;
+      input
+                MRN  $
+                PP3_Patnum  $
+                Study_ID  $
+                Study  $
+                DOB
+                Initial_research_study_visit_dat
+                Last_research_study_visit_date
+                OnsetDate
+                Sex  $
+                Ethnicity  $
+                Race  $
+                DKA  $
+                Dual_  $
+    ;
+    if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+    run;
+
+data data0516;
+set data0516;
+instudy=1;
+if race in (".","") and ethnicity in (".","") then race_eth="";
+else if race="White" and ethnicity="No" then race_eth="Non-Hispanic White";
+else if race="Black or African American" and ethnicity="No" then race_eth="Non-Hispanic Black";
+else if ethnicity="Spanish/Hispanic" or ethnicity="Yes" then race_eth="Hispanic";
+else race_eth="Other";
+run;
+proc freq data=data0516;
+table race*race_eth ethnicity*race_eth / missing;
+run;
+
+
 /* write final dataset */
 data data.alldata;
 set alldata;
