@@ -1,5 +1,6 @@
 library(sas7bdat)
 library(readxl)
+library(RODBC)
 
 # read in data file that I created in SAS
 data1 <- read.sas7bdat("/Volumes/BDC/Projects/Andrea Steck/Morgan Sooy DKA update/Data_raw/alldata.sas7bdat")
@@ -37,3 +38,7 @@ data0516$instudy <- 1
 # code seen_12mo_prior
 
 # read in Marian's access database
+ch <- odbcConnect("/Volumes/BDC/Projects/Andrea Steck/Morgan Sooy DKA update/Data_raw/DKA 2005-2012.accdb")
+dta <- odbcConnectAccess2007("/Volumes/BDC/Projects/Andrea Steck/Morgan Sooy DKA update/Data_raw/DKA 2005-2012.accdb") 
+sqlTables(ch)
+close(ch)
