@@ -47,33 +47,57 @@ read_excel_allsheets <- function(filename, tibble = FALSE) {
     x
 }
 
-# function to match dates to gest week/day
-match_dates = function(id_list, gest_dates, match_data){
-  dat = match_data
-  # we have like 20 subj so well go subj by subj
-  # get dates then match to 
-  for (id in id_list) {
-    # pull subj data, then the ref dates sheet
-    # sometimes weird notes/cols only pull date and gest week/day (1st 3 col)
-    test = id
-    x = match_data %>% filter(ID == id)
-    
-    y = gest_dates[[test]]
-    # join and merge to original, dates are called visit_date, and LMP
-    z = left_join(x, y, by = c("visit_date" = "LMP"))
-    dat = full_join(dat, z) %>% unique()
-  }
-  return(dat)
+# clean the gest dates data (we want the "rightmost column of dates" per sarit)
+# currently the sheets have unnamed columns due to clinic notes or some other magic
+clean_gd = function(df){
+  df = df %>% select(-where(is.character)) %>% select(-where(is.logical))
+  df
 }
+
+
+# function to get a date dataset and merge by dates
+gest_df_clean = function(df){
+  # x = subj_data %>% filter(ID == df)
+  # select only gest week, day, and rightmost date col
+  y = df %>% select(1,2,length(df))
+  # get the last date column and rename it to "visit_date"
+  y = y %>% mutate(visit_date = .[[3]]) %>% select(1,2,visit_date)
+  return(y)
+}
+
 
 ```
 
 ```{r data clean, include = FALSE}
-# find visit date
+# derive visit date from week and rand date
 fakecarbs = fakecarbs %>% mutate(visit_date = mdy(Randomization.Date) + (7*Week.Num.))
+
 # create reference lists
-id_list = fakecarbs %>% select(ID) %>% unique()
+id_list = fakecarbs %>% select(ID) %>% unique() 
 gest_dates = read_excel_allsheets("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/CURRENT_Gestational Age Calculator_v6 .xlsx")
+#remove weird columns from gest dates
+gest_dates = lapply(gest_dates, clean_gd)
+gest_dates = keep(gest_dates, names(gest_dates) %in% id_list$ID)
+
+# select "rightmost" column and gest week/day -> all subj down to 3 col
+gest_dates = lapply(gest_dates, gest_df_clean)
+
+# add id column to gestdates to combine later
+gest_dates = lapply(seq(gest_dates), function(x) "[[<-"(gest_dates[[x]], paste0("ID"), value = names(gest_dates)[x]))
+
+# combine into one reference df
+gest_dates = Reduce(full_join,gest_dates)
+
 # create analysis dataset
-analysis = match_dates(id_list = id_list, gest_dates = gest_dates, match_data = fakecarbs)
+analysis = left_join(fakecarbs, gest_dates) # joining on id and date -- perfectomundo
+```
+
+
+```{r analysis, include = FALSE}
+# want % insulin from fake carbs (total bolus fake carbs/total bolus vol), avg per timepoint (trimesters)
+# # bolus per week and avg per timepoint
+# how many did/didnt put in fake carbs in each timepoint?
+
+
+
 ```
