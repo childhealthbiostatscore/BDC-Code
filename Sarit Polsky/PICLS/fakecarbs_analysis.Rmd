@@ -1,0 +1,79 @@
+---
+title: ""
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 5
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(arsenal)
+library(tidyverse)
+library(performance)
+library(knitr)
+library(readxl)
+library(lubridate)
+
+knitr::opts_chunk$set(echo = FALSE)
+if(Sys.info()["sysname"] == "Windows"){
+  home_dir = "S:/Shared/Shared Projects/Laura/BDC/Projects"
+} else if (Sys.info()["sysname"] == "Linux"){
+  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+} else if (Sys.info()["sysname"] == "Darwin"){
+  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+}
+knitr::opts_knit$set(root.dir = home_dir)
+rm(home_dir)
+
+
+# data upload
+fakecarbs = read.csv("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/fake_carb_boluses.csv")
+```
+
+```{r functions, include = FALSE}
+#  function to read sheet by sheet; from stack exchange
+read_excel_allsheets <- function(filename, tibble = FALSE) {
+    # I prefer straight data.frames
+    # but if you like tidyverse tibbles (the default with read_excel)
+    # then just pass tibble = TRUE
+    sheets <- readxl::excel_sheets(filename)
+    x <- lapply(sheets, function(X) readxl::read_excel(filename, sheet = X))
+    if(!tibble) x <- lapply(x, as.data.frame)
+    names(x) <- sheets
+    x
+}
+
+# function to match dates to gest week/day
+match_dates = function(id_list, gest_dates, match_data){
+  dat = match_data
+  # we have like 20 subj so well go subj by subj
+  # get dates then match to 
+  for (id in id_list) {
+    # pull subj data, then the ref dates sheet
+    # sometimes weird notes/cols only pull date and gest week/day (1st 3 col)
+    test = id
+    x = match_data %>% filter(ID == id)
+    
+    y = gest_dates[[test]]
+    # join and merge to original, dates are called visit_date, and LMP
+    z = left_join(x, y, by = c("visit_date" = "LMP"))
+    dat = full_join(dat, z) %>% unique()
+  }
+  return(dat)
+}
+
+```
+
+```{r data clean, include = FALSE}
+# find visit date
+fakecarbs = fakecarbs %>% mutate(visit_date = mdy(Randomization.Date) + (7*Week.Num.))
+# create reference lists
+id_list = fakecarbs %>% select(ID) %>% unique()
+gest_dates = read_excel_allsheets("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/CURRENT_Gestational Age Calculator_v6 .xlsx")
+# create analysis dataset
+analysis = match_dates(id_list = id_list, gest_dates = gest_dates, match_data = fakecarbs)
+```
