@@ -17,17 +17,7 @@ library(performance)
 library(knitr)
 library(readxl)
 library(lubridate)
-
-knitr::opts_chunk$set(echo = FALSE)
-if(Sys.info()["sysname"] == "Windows"){
-  home_dir = "S:/Shared/Shared Projects/Laura/BDC/Projects"
-} else if (Sys.info()["sysname"] == "Linux"){
-  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
-} else if (Sys.info()["sysname"] == "Darwin"){
-  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
-}
-knitr::opts_knit$set(root.dir = home_dir)
-rm(home_dir)
+library(table1)
 
 
 # data upload
@@ -88,16 +78,60 @@ gest_dates = lapply(seq(gest_dates), function(x) "[[<-"(gest_dates[[x]], paste0(
 # combine into one reference df
 gest_dates = Reduce(full_join,gest_dates)
 
-# create analysis dataset
+# labor/delivery dates
+d_dates = read.csv("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data cleaning/CGM Data Check.csv") %>% mutate(ID = pid, deliverydate = mdy(Delivery.Date)) %>% select(ID, deliverydate)
+
+# create analysis dataset and trimester var
 analysis = left_join(fakecarbs, gest_dates) # joining on id and date -- perfectomundo
+analysis = left_join(analysis, d_dates)
+analysis = analysis %>% mutate(trimester = case_when(`Gestational Week` < 14 ~ "T1",
+                                                    `Gestational Week` < 28 & `Gestational Week` >= 14 ~ "T2",
+                                                    `Gestational Week`>= 28 & visit_date < deliverydate ~ "T3",
+                                                    visit_date > deliverydate ~ "PP"))
+
+analysis$trimester = factor(analysis$trimester, levels = c("T1", "T2", "T3", "PP"))
+# 1st tri end: 13w6d, 2nd tri: 14w to 27w6d, 3rd tri: 28w until delivery
+
+# metrics we interested in
+analysis = analysis %>% mutate(ins_from_fc_percent = Total.Bolus.Volume.Associated.With.Fake.Carbs/Total.Bolus.Volume*100,
+                               any_fc = ifelse(Total.Bolus.Volume.Associated.With.Fake.Carbs > 0, 1, 0))
+
+# want % insulin from fake carbs (total bolus fake carbs/total bolus vol), avg per timepoint (trimesters)
+# # bolus per week and avg per timepoint
+# how many did/didnt put in fake carbs in each timepoint?
+analysis_tri = analysis %>% group_by(ID, trimester) %>% summarise(mean_ins_from_fc_perc = mean(ins_from_fc_percent),
+                                                   mean_weekly_bolus = mean(Number.of..Other..Events.With.Bolus),
+                                                   visits_with_any_fc = sum(any_fc),
+                                                   visits = length(ID)) %>% ungroup
+
 ```
 
 
 ```{r analysis, include = FALSE}
-# want % insulin from fake carbs (total bolus fake carbs/total bolus vol), avg per timepoint (trimesters)
-# # bolus per week and avg per timepoint
-# how many did/didnt put in fake carbs in each timepoint?
+# table
+analysis_tri_test = analysis_tri %>% filter(!is.na(trimester))
+fct1 = table1(~ mean_ins_from_fc_perc + mean_weekly_bolus + visits_with_any_fc + visits | trimester, 
+       data = analysis_tri_test)
+
+# any fc
+# check for subjects with no fake carbs whatsoever
+no_fc_ids = analysis_tri_test %>% group_by(ID) %>% filter(sum(visits_with_any_fc) == 0) %>% summarise(ID, trimester) %>% unique()
+# no fake carb put in by trimester
+no_fc_tri = analysis_tri_test %>% filter(visits_with_any_fc == 0) %>% group_by(trimester) %>% summarise(no_inputted_fake_carbs=n())
+```
+# Data Remarks/Questions
+
+# Methods
+Subject visits were classified into Trimester. Variables were averaged within Subject-Trimester before aggregating into Trimester table.
+
+# Analysis
+## Fake Carbs by Trimester
+```{r table1, echo=FALSE}
+fct1
+```
 
 
-
+```{r did/nt fake carbs, echo = F}
+print("No Fake Carbs inputted by Timepoint")
+kable(no_fc_tri)
 ```
