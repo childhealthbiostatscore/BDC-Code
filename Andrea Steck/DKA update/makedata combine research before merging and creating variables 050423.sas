@@ -1,11 +1,11 @@
 *libname data 'S:\Shared Projects\Laura\BDC\Projects\Todd Alonso\DKA\Data';
-libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
+libname data 'X:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
 
 /* this is the original file containing patients and participants after 2016 */
     data WORK.ALLDATA    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\10.26.22_Sooy_FinalThesis_Dataset LP imputed.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
-       informat MRN best32. ;
+    infile 'X:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\10.26.22_Sooy_FinalThesis_Dataset LP imputed.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+       informat MRN $40. ;
        informat Sample_ID $30. ;
        informat DOB mmddyy10. ;
        informat OnsetDate mmddyy10. ;
@@ -29,7 +29,7 @@ libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
        informat A1cValue best32. ;
        informat LastVisitDate mmddyy10. ;
        informat Initial_research_study_visit_dat mmddyy10. ;
-       format MRN best12. ;
+       format MRN $40. ;
        format Sample_ID $30. ;
        format DOB mmddyy10. ;
        format OnsetDate mmddyy10. ;
@@ -54,7 +54,7 @@ libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
        format LastVisitDate mmddyy10. ;
        format Initial_research_study_visit_dat mmddyy10. ;
     input
-                MRN
+                MRN $
                 Sample_ID $
                 DOB
                 OnsetDate
@@ -86,8 +86,8 @@ proc print; run;
 /* add in new file of research participants 2005-2016 */
  data WORK.data0516    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\Combined_TN_TDA_2005-2016_without names.csv' delimiter = ',' MISSOVER DSD lrecl=13106 firstobs=2 ;
-       informat MRN best32. ;
+    infile 'X:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\Combined_TN_TDA_2005-2016_without names.csv' delimiter = ',' MISSOVER DSD lrecl=13106 firstobs=2 ;
+       informat MRN $40. ;
        informat PP3_Patnum $5. ;
        informat Sample_ID $30. ;
        informat Study $14. ;
@@ -100,7 +100,7 @@ proc print; run;
        informat Race $18. ;
        informat DKA $3. ;
        informat Dual_ $3. ;
-       format MRN best12. ;
+       format MRN $40. ;
        format PP3_Patnum $5. ;
        format Sample_ID $30. ;
        format Study $14. ;
@@ -114,7 +114,7 @@ proc print; run;
        format DKA $3. ;
        format Dual_ $3. ;
       input
-                MRN  
+                MRN  $
                 PP3_Patnum  $
                 Sample_ID  $
                 Study  $
@@ -138,6 +138,10 @@ proc print; run;
 data alldata;
 set alldata data0516;
 run;
+proc export data=alldata
+outfile=""
+;
+run;
 
 /* read in Marian's file and merge to fill in data for participants diagnosed between 2005-2009 */
  /**********************************************************************
@@ -150,7 +154,7 @@ run;
  ***********************************************************************/
     data WORK.MARIAN    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\JAMA 2005-2012 T1D and DKA known.txt' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'X:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\JAMA 2005-2012 T1D and DKA known.txt' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat ID best32. ;
        informat PinkPanther_patnum best32. ;
        informat CHCO_MRN $9. ;
