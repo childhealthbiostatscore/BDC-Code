@@ -1,6 +1,6 @@
 ---
-title: ""
-author: "Tim Vigers & Laura Pyle"
+title: "PICLS Fake Carbs Analysis"
+author: "Casey Sakamoto"
 date: "`r format(Sys.time(), '%d %B %Y')`"
 output:
   html_document:
@@ -79,17 +79,25 @@ gest_dates = lapply(seq(gest_dates), function(x) "[[<-"(gest_dates[[x]], paste0(
 gest_dates = Reduce(full_join,gest_dates)
 
 # labor/delivery dates
-d_dates = read.csv("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data cleaning/CGM Data Check.csv") %>% mutate(ID = pid, deliverydate = mdy(Delivery.Date)) %>% select(ID, deliverydate)
+d_dates = read.csv("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data cleaning/CGM Data Check.csv") %>% mutate(ID = pid, edd = mdy(EDD_Final)) %>% select(ID, edd)
 
 # create analysis dataset and trimester var
 analysis = left_join(fakecarbs, gest_dates) # joining on id and date -- perfectomundo
 analysis = left_join(analysis, d_dates)
 analysis = analysis %>% mutate(trimester = case_when(`Gestational Week` < 14 ~ "T1",
                                                     `Gestational Week` < 28 & `Gestational Week` >= 14 ~ "T2",
-                                                    `Gestational Week`>= 28 & visit_date < deliverydate ~ "T3",
-                                                    visit_date > deliverydate ~ "PP"))
+                                                    `Gestational Week`>= 28 & visit_date < edd ~ "T3",
+                                                    visit_date > edd ~ "PP"),
+                               days_dd = 280-difftime(edd, visit_date, units = "days")
+                               ,trimester_dd = case_when(days_dd < 98 ~ "T1",
+                                                         days_dd >= 98 & days_dd < 196 ~ "T2",
+                                                         days_dd >= 196 & visit_date < edd ~ "T3",
+                                                         visit_date > edd ~ "PP")
+                               )
 
 analysis$trimester = factor(analysis$trimester, levels = c("T1", "T2", "T3", "PP"))
+analysis$trimester_dd = factor(analysis$trimester_dd, levels = c("T1", "T2", "T3", "PP"))
+
 # 1st tri end: 13w6d, 2nd tri: 14w to 27w6d, 3rd tri: 28w until delivery
 
 # metrics we interested in
@@ -99,7 +107,7 @@ analysis = analysis %>% mutate(ins_from_fc_percent = Total.Bolus.Volume.Associat
 # want % insulin from fake carbs (total bolus fake carbs/total bolus vol), avg per timepoint (trimesters)
 # # bolus per week and avg per timepoint
 # how many did/didnt put in fake carbs in each timepoint?
-analysis_tri = analysis %>% group_by(ID, trimester) %>% summarise(mean_ins_from_fc_perc = mean(ins_from_fc_percent),
+analysis_tri = analysis %>% group_by(ID, trimester_dd) %>% summarise(mean_ins_from_fc_perc = mean(ins_from_fc_percent),
                                                    mean_weekly_bolus = mean(Number.of..Other..Events.With.Bolus),
                                                    visits_with_any_fc = sum(any_fc),
                                                    visits = length(ID)) %>% ungroup
@@ -109,15 +117,15 @@ analysis_tri = analysis %>% group_by(ID, trimester) %>% summarise(mean_ins_from_
 
 ```{r analysis, include = FALSE}
 # table
-analysis_tri_test = analysis_tri %>% filter(!is.na(trimester))
-fct1 = table1(~ mean_ins_from_fc_perc + mean_weekly_bolus + visits_with_any_fc + visits | trimester, 
-       data = analysis_tri_test)
+#analysis_tri_test = analysis_tri %>% filter(!is.na(trimester))
+fct1 = table1(~ mean_ins_from_fc_perc + mean_weekly_bolus + visits_with_any_fc + visits | trimester_dd, 
+       data = analysis_tri, overall = FALSE)
 
 # any fc
 # check for subjects with no fake carbs whatsoever
-no_fc_ids = analysis_tri_test %>% group_by(ID) %>% filter(sum(visits_with_any_fc) == 0) %>% summarise(ID, trimester) %>% unique()
+no_fc_ids = analysis_tri %>% group_by(ID) %>% filter(sum(visits_with_any_fc) == 0) %>% summarise(ID, trimester_dd) %>% unique()
 # no fake carb put in by trimester
-no_fc_tri = analysis_tri_test %>% filter(visits_with_any_fc == 0) %>% group_by(trimester) %>% summarise(no_inputted_fake_carbs=n())
+no_fc_tri = analysis_tri %>% filter(visits_with_any_fc == 0) %>% group_by(trimester_dd) %>% summarise(no_inputted_fake_carbs=n())
 ```
 # Data Remarks/Questions
 
@@ -126,6 +134,21 @@ Subject visits were classified into Trimester. Variables were averaged within Su
 
 # Analysis
 ## Fake Carbs by Trimester
+
+### Variable Dictionary:
+- mean_ins_from_fc_perc: Mean insulin% from fake carbs
+- mean_weekly_bolus: Mean number of boluses/week
+- visits_with_any_fc: Mean number of visits with nonzero fake carbs
+- visits: mean number of visits
+
+example: For trimester 1:
+The average % insulin from FC was 0.448%;
+Subjects had .38 bolus/week on average;
+Subjects had .435 visits with any fake carbs reported on average;
+Subjects had 5.5 visits on average within Tri 1
+
+18/23 subjects did not report ANY fake carbs in Tri 1
+
 ```{r table1, echo=FALSE}
 fct1
 ```
@@ -134,4 +157,16 @@ fct1
 ```{r did/nt fake carbs, echo = F}
 print("No Fake Carbs inputted by Timepoint")
 kable(no_fc_tri)
+```
+
+```{r output dates, eval = FALSE, echo = FALSE}
+# create dataframe for weeks
+id_2 = data.frame(ID = rep(id_list$ID, 40), week = rep(1:40, length(id_list$ID)))
+id_2 = id_2 %>% arrange(ID, week)
+# combine with EDD dates
+id_2 = left_join(id_2, d_dates)
+PICLS_date_check = id_2 %>% mutate(edd_derived_date = edd - (280 - 7*week)) %>% select(ID, edd, week, edd_derived_date)
+
+
+write.csv(PICLS_date_check, file = "S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/picls_date_check.csv")
 ```
