@@ -7,19 +7,19 @@ library(stringr)
 library(lubridate)
 
 # setup
-setwd("B:/Projects/Sarit Polsky/PICLS/Data_Raw/Final raw CGM files for analysis")
-outdir <- "B:/Projects/Sarit Polsky/PICLS/Data_Clean/Cleaned CGM data"
+setwd("/Volumes/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Final raw CGM files for analysis")
+outdir <- "/Volumes/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/Cleaned CGM data"
 
 # read in file with trimester dates, admission dates, discharge dates
 # trimester 3 will end at admission, PP will start at discharge
-tri_dates <- read.csv("B:/Projects/Sarit Polsky/PICLS/Data cleaning/CGM Data Check.csv")
+tri_dates <- read.csv("/Volumes/BDC/Projects/Sarit Polsky/PICLS/Data cleaning/CGM Data Check.csv")
 tri_dates$FirstTri <- as.Date(tri_dates$FirstTri,format = "%m/%d/%Y")
 tri_dates$SecondTri <- as.Date(tri_dates$SecondTri,format = "%m/%d/%Y")
 tri_dates$ThirdTri <- as.Date(tri_dates$ThirdTri,format = "%m/%d/%Y")
 tri_dates$Delivery.Date <- as.Date(tri_dates$Delivery.Date,format = "%m/%d/%Y")
 
 # read in labor admission dates
-labor_dates <- read_xlsx("B:/Projects/Sarit Polsky/PICLS/Data cleaning/L&D Admission Dates for PICLS.xlsx")
+labor_dates <- read_xlsx("/Volumes/BDC/Projects/Sarit Polsky/PICLS/Data cleaning/L&D Admission Dates for PICLS.xlsx")
 labor_dates$pid <- labor_dates$`Study ID`
 labor_dates$`Study ID` <- NULL
 labor_dates <- labor_dates %>% filter(!is.na(pid))
@@ -28,7 +28,7 @@ dates$subjectid <- dates$pid
 dates$pid <- NULL
 
 # get date of visit 15 for restarting PP data
-ppdates <- read.csv("B:/Projects/Sarit Polsky/PICLS/Data cleaning/Data files/PICLSStudyHCLVsSAPTI-V15Dates_DATA_2022-11-07_2228.csv")
+ppdates <- read.csv("/Volumes/BDC/Projects/Sarit Polsky/PICLS/Data cleaning/Data files/PICLSStudyHCLVsSAPTI-V15Dates_DATA_2022-11-07_2228.csv")
 ppdates <- ppdates %>% filter(redcap_repeat_instrument=="pregnancy_visits")
 ppdates$subjectid <- ppdates$pid
 ppdates$pid <- NULL
@@ -78,7 +78,7 @@ for (df in split1) {
   df <- as.data.frame(df)
   df <- df[,c("subjectid","timestamp","sensorglucose")]
   df <- df[order(df$timestamp),]
-  filename <- paste0("B:/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/",df$subjectid[1],"_T1.csv")
+  filename <- paste0("/Volumes/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/",df$subjectid[1],"_T1.csv")
   write.csv(df,file = filename,row.names = F)
 }
 
@@ -87,7 +87,7 @@ for (df in split2) {
   df <- as.data.frame(df)
   df <- df[,c("subjectid","timestamp","sensorglucose")]
   df <- df[order(df$timestamp),]
-  filename <- paste0("B:/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/",df$subjectid[1],"_T2.csv")
+  filename <- paste0("/Volumes/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/",df$subjectid[1],"_T2.csv")
   write.csv(df,file = filename,row.names = F)
 }
 
@@ -96,7 +96,7 @@ for (df in split3) {
   df <- as.data.frame(df)
   df <- df[,c("subjectid","timestamp","sensorglucose")]
   df <- df[order(df$timestamp),]
-  filename <- paste0("B:/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/",df$subjectid[3],"_T3.csv")
+  filename <- paste0("/Volumes/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/",df$subjectid[3],"_T3.csv")
   write.csv(df,file = filename,row.names = F)
 }
 
@@ -105,13 +105,13 @@ for (df in splitpp) {
   df <- as.data.frame(df)
   df <- df[,c("subjectid","timestamp","sensorglucose")]
   df <- df[order(df$timestamp),]
-  filename <- paste0("B:/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/",df$subjectid[1],"_PP.csv")
+  filename <- paste0("/Volumes/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/",df$subjectid[1],"_PP.csv")
   write.csv(df,file = filename,row.names = F)
 }
 
 # then run cgmvariables()
-cgmvariables(inputdirectory = "B:/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/", 
-             outputdirectory = "B:/Projects/Sarit Polsky/PICLS/Data_Clean/Cleaned CGM data", 
+cgmvariables(inputdirectory = "/Volumes/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/", 
+             outputdirectory = "/Volumes/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/Cleaned CGM data", 
              id_filename = T, printname = T,
              customintervals = list(c(0,54),c(0,63),c(63,140),c(140,600),c(0,69)))
 
