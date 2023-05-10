@@ -1,0 +1,207 @@
+---
+title: ''
+output:
+  pdf_document: default
+header-includes:
+  - \usepackage{caption}
+  - \pagenumbering{gobble}
+---
+\captionsetup[table]{labelformat=empty}
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(readxl)
+library(kableExtra)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE, include=FALSE}
+#read
+A1Cs <- read_excel('S:/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Venus and POC A1Cs.xlsx')
+```
+
+```{r, include=FALSE}
+#cleaning
+A1Cs=A1Cs[,-6] %>%
+rename('A1C'='A1C Venousalue') %>% 
+  mutate(Source = recode(Source, Venous = 'Venous', Venousenous = 'Venous', POC =  'POC' ))
+```
+
+```{r venous dataframes, include=FALSE}
+#venous dfs (POC entries not accounted for here)
+#baseline considered to be the first date in Trimester 1
+#method:create indicator variables s.t. 1 denotes subject has venous A1C data
+venous_long=A1Cs %>%
+  filter(Source != 'POC') %>% 
+  group_by(`Study ID`) %>% 
+  arrange(`Study ID`, Trimester,`Date Taken`) %>% 
+  mutate(Trimester=replace(Trimester, 1, 'Base')) %>% 
+  ungroup() %>% 
+  group_by(`Study ID`) %>%
+  mutate(BaseVenous_Indicator=case_when(Trimester=='Base'~1, .default=0),
+         Tr1Venous_Indicator=case_when(Trimester=='1'~1, .default=0),
+         Tr2Venous_Indicator=case_when(Trimester=='2'~1, .default=0),
+         Tr3Venous_Indicator=case_when(Trimester=='3'~1, .default=0),
+         PPVenous_Indicator=case_when(Trimester=='PP'~1, .default=0))%>%
+  ungroup() %>% 
+  group_by(`Study ID`) %>% 
+  mutate(BaseVenous_Indicator=sum(BaseVenous_Indicator),
+         Tr1Venous_Indicator=sum(Tr1Venous_Indicator), 
+         Tr2Venous_Indicator=sum(Tr2Venous_Indicator),
+         Tr3Venous_Indicator=sum(Tr3Venous_Indicator),
+         PPVenous_Indicator=sum(PPVenous_Indicator)) %>% 
+  ungroup()
+
+#wide format
+venous_wide=venous_long %>%
+  pivot_wider(names_from=Trimester, values_from=A1C, names_prefix='Tr', 
+              id_cols=c(`Study ID`, BaseVenous_Indicator, Tr1Venous_Indicator, Tr2Venous_Indicator,
+                        Tr3Venous_Indicator,PPVenous_Indicator)) %>% 
+  #recode to account for multiple entries in a trimester
+  #baseline not included since know only 1 entry per subject
+  mutate(Tr1Venous_Indicator = case_when(Tr1Venous_Indicator==0~0, TRUE~1),
+         Tr2Venous_Indicator = case_when(Tr2Venous_Indicator==0~0, TRUE~1),
+         Tr3Venous_Indicator = case_when(Tr3Venous_Indicator==0~0, TRUE~1),
+         PPVenous_Indicator = case_when(PPVenous_Indicator==0~0, TRUE~1))
+
+#gives warning: Values from `A1C` are not uniquely identified (not addressed since not interested in specific A1Cs at this time)
+```
+
+```{r venous totals table, echo=FALSE}
+#venous totals table
+venous_totals <- t(data.frame(Base=sum(venous_wide$BaseVenous_Indicator),
+                              Trimester_1=sum(venous_wide$Tr1Venous_Indicator),
+                              Trimester_2=sum(venous_wide$Tr2Venous_Indicator),
+                              Trimester_3=sum(venous_wide$Tr3Venous_Indicator),
+                              PP=sum(venous_wide$PPVenous_Indicator)))
+
+rownames(venous_totals)=c('Baseline','Trimester 1','Trimester 2','Trimester 3','PP')
+
+kable(venous_totals, booktabs=T, escape=F, linesep='',
+      caption='Total Subjects with Venous A1C\\\\Counts at Each Timepoint:') %>% 
+  kable_styling(latex_options='HOLD_position')
+```
+
+```{r venous scenarios table, echo=FALSE}
+#different scenarios for data entry
+venous_wide=venous_wide %>%
+  mutate(Data_Scenario=paste(BaseVenous_Indicator, Tr1Venous_Indicator, Tr2Venous_Indicator,
+                             Tr3Venous_Indicator,PPVenous_Indicator))
+venous_scenarios=venous_wide %>% 
+  group_by(Data_Scenario) %>%
+  count() %>%
+  ungroup() %>%
+  arrange(factor(Data_Scenario, levels=c('1 0 0 0 0','1 0 1 1 0','1 0 1 0 1','1 0 0 1 1','1 0 1 1 1','1 1 1 1 1'))) %>% 
+  mutate(Data_Scenario=recode(Data_Scenario, '1 0 0 0 0'='Baseline Only',
+                              '1 0 0 1 1'='Baseline, Trimester 3, PP',
+                              '1 0 1 0 1'='Baseline, Trimester 2, PP',
+                              '1 0 1 1 0'='Baseline, Trimester 2, 3',
+                              '1 0 1 1 1'='Baseline, Trimester 2, 3, PP',
+                              '1 1 1 1 1'='All Time Points'))
+
+kable(venous_scenarios, booktabs=T, escape=F, linesep='',
+      col.names=c('','n'),
+      caption='Count of Subjects with Venous A1C\\\\Values by Scenario:') %>% 
+  kable_styling(latex_options='HOLD_position')
+```
+
+$$\\[0.1in]$$
+
+```{r venous and POC dataframes, echo=FALSE, message=FALSE, warning=FALSE}
+#venous and POC dfs
+#baseline considered to be the first date in Trimester 1
+#if date is same for venous and POC, both called baseline
+#method: create indicator variable s.t. 1 denotes subject has venous and/or POC A1C data
+POCvenous_long=A1Cs %>%
+  group_by(`Study ID`) %>% 
+  arrange(`Study ID`, Trimester,`Date Taken`) %>% 
+  mutate(Trimester=replace(Trimester, `Date Taken`==min(`Date Taken`), 'Base')) %>% 
+  ungroup() %>% 
+  group_by(`Study ID`) %>%
+  mutate(Base_Indicator=case_when(Trimester=='Base'~1, .default=0),
+         Tr1_Indicator=case_when(Trimester=='1'~1, .default=0),
+         Tr2_Indicator=case_when(Trimester=='2'~1, .default=0),
+         Tr3_Indicator=case_when(Trimester=='3'~1, .default=0),
+         PP_Indicator=case_when(Trimester=='PP'~1, .default=0))%>%
+  ungroup() %>% 
+  group_by(`Study ID`) %>% 
+  mutate(Base_Indicator=sum(Base_Indicator),
+         Tr1_Indicator=sum(Tr1_Indicator), 
+         Tr2_Indicator=sum(Tr2_Indicator),
+         Tr3_Indicator=sum(Tr3_Indicator),
+         PP_Indicator=sum(PP_Indicator)) %>%
+  ungroup()
+
+#wide format
+POCvenous_wide=POCvenous_long %>%
+  pivot_wider(names_from=Trimester, values_from=A1C, names_prefix='Tr', 
+              id_cols=c(`Study ID`, Base_Indicator, Tr1_Indicator, Tr2_Indicator,
+                        Tr3_Indicator,PP_Indicator)) %>% 
+  #recode indicator to account for multiple entries in a trimester
+  mutate(Base_Indicator = case_when(Base_Indicator==0~0, TRUE~1),
+         Tr1_Indicator = case_when(Tr1_Indicator==0~0, TRUE~1),
+         Tr2_Indicator = case_when(Tr2_Indicator==0~0, TRUE~1),
+         Tr3_Indicator = case_when(Tr3_Indicator==0~0, TRUE~1),
+         PP_Indicator = case_when(PP_Indicator==0~0, TRUE~1))
+```
+
+```{r POCvenous totals table, echo=FALSE}
+#POC and venous totals table
+POCvenous_totals <- t(data.frame(Base=sum(POCvenous_wide$Base_Indicator),
+                              Trimester_1=sum(POCvenous_wide$Tr1_Indicator),
+                              Trimester_2=sum(POCvenous_wide$Tr2_Indicator),
+                              Trimester_3=sum(POCvenous_wide$Tr3_Indicator),
+                              PP=sum(POCvenous_wide$PP_Indicator)))
+
+rownames(POCvenous_totals)=c('Baseline','Trimester 1','Trimester 2','Trimester 3','PP')
+
+kable(POCvenous_totals, booktabs=T, escape=F, linesep='',
+      caption='Total Subjects with Venous/POC A1C\\\\Counts at Each Timepoint:') %>% 
+  kable_styling(latex_options='HOLD_position')
+```
+
+```{r POCvenous scenarios table, echo=FALSE}
+#different scenarios for data entry
+POCvenous_wide=POCvenous_wide %>%
+  mutate(Data_Scenario=paste(Base_Indicator, Tr1_Indicator, Tr2_Indicator,
+                             Tr3_Indicator,PP_Indicator))
+POCvenous_scenarios=POCvenous_wide %>% 
+  group_by(Data_Scenario) %>%
+  count() %>%
+  ungroup() %>%
+  arrange(factor(Data_Scenario, levels=c('1 0 0 0 0','1 1 0 0 0','1 1 1 1 0','1 0 1 1 1','1 1 1 1 1'))) %>% 
+  mutate(Data_Scenario=recode(Data_Scenario, '1 0 0 0 0'='Baseline Only',
+                              '1 1 0 0 0'='Baseline, Trimester 1',
+                              '1 1 1 1 0'='Baseline, Trimester 1, 2, 3',
+                              '1 0 1 1 1'='Baseline, Trimester 2, 3, PP',
+                              '1 1 1 1 1'='All Time Points'))
+
+kable(POCvenous_scenarios, booktabs=T, escape=F, linesep='',
+      col.names=c('','n'),
+      caption='Count of Subjects with Venous/POC A1C\\\\Values by Scenario:') %>% 
+  kable_styling(latex_options='HOLD_position')
+```
+
+```{r venous/POC date overlap, include=FALSE}
+#count of venous and POC date overlap within subjects
+#overlap considered dates that are similar by +/- 1 week
+#method: split venous and POC into separate datasets, merge based on +/-7 day window
+venous_dates=A1Cs[,c(1,3,4)] %>% 
+  filter(Source != 'POC')
+POC_dates=A1Cs[,c(1,3,4)] %>% 
+  filter(Source != 'Venous')
+
+overlap_range <- function(x,y){abs(as.numeric(x-y, units='days')) <= 7}
+
+A1Cs_overlapping_dates= fuzzyjoin::fuzzy_left_join(venous_dates, POC_dates, 
+                                               by=c('Study ID', 'Date Taken'),
+                                               match_fun=list(`==`,`overlap_range`)) %>% 
+  drop_na(`Date Taken.y`)
+
+#total number of overlapping venous and POC dates within subjects
+nrow(A1Cs_overlapping_dates)
+
+#total number of subjects with overlapping dates
+length(unique(A1Cs_overlapping_dates$`Study ID.x`))
+```
+
