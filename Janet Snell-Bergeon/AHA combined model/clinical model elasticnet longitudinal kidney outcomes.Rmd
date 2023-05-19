@@ -1,0 +1,183 @@
+---
+title: "AHA clinical model - all variables - addtional analyses for ADA"
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(broom)
+library(survival)
+library(performance)
+library(knitr)
+library(pROC)
+library(naniar)
+library(readxl)
+library(psych)
+library(pheatmap)
+library(tableone)
+library(sjPlot)
+library(sjlabelled)
+library(sjmisc)
+library(ggplot2)
+library(reshape2)
+knitr::opts_chunk$set(echo = FALSE,fig.height = 10,fig.width = 10)
+if(Sys.info()["sysname"] == "Windows"){
+  home_dir = "B:/Projects"
+} else if (Sys.info()["sysname"] == "Linux"){
+  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+} else if (Sys.info()["sysname"] == "Darwin"){
+  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
+}
+
+knitr::opts_knit$set(root.dir = home_dir)
+#rm(home_dir)
+```
+
+```{r}
+# Function and master data
+source("~/Documents/Github/shared-resources/Machine Learning/Tim - ElasticNet CV/easy_elasticnet.R")
+load("~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant/aha_master_data_no_snps.Rdata")
+# omics selected by moderated t-test and PLSDA
+omics = unique(c("gly_P02671.7","gly_P02671.5","gly_P02671.4","gly_P02671.3",
+          "AAA01201000179.0807263.4","gly_P02679","HMDB00510161.0696402.9",
+          "AAA01201000179.0809235.7","gly_P02675.4","gly_P02675","gly_P02647",
+          "P02655","gly_P02647.1","HMDB00510161.0694436","gly_P02652",
+          "gly_P01009","gly_P01834.11","P01817","AcCa 10:3",
+          "HMDB0028822260.1378628.6","AAA01201000179.0807263.4",
+          "gly_P02671.3","gly_P02671.7"))
+limited_omics = c("AAA01201000179.0807263.4","gly.P02671.7","gly.P02671.3",
+          "gly.P02671.5","gly.P02671.4")
+# Take out people without diabetes, remove diabetes status from predictors
+df = df[df$diabetic == 1,]
+clinical_predictors = clinical_predictors[-which(clinical_predictors == "dia")]
+# Log transform 
+df[,omics] = log(df[,omics])
+# Fix names
+colnames(df)[which(colnames(df) %in% omics)] = make.names(omics,unique = T,allow_ = F)
+omics = make.names(omics,unique = T,allow_ = F)
+# Variables for null model
+null_vars <- c("age","sex","durcatV1")
+
+# add in post-baseline A1c values
+sample_info <- read_csv("~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant/Combined predictive model/QAllVisits_Long_V1_V4_Glycemic_Vars.csv")
+# calculate within person variability
+sample_info <- sample_info[,c("StudyID","hba1c","glu","egdr","eis_nf")]
+sample_info$StudyID <- as.factor(as.character(sample_info$StudyID))
+sample_info_var <- sample_info %>% group_by(StudyID) %>% summarise(across(.cols = where(is.numeric),.fns = list(SD=sd, MEAN=mean), na.rm=T, .names="{col}_{fn}"))
+# merge in omics data
+corr_df <- merge(sample_info_var,df_labelled[,c("StudyID",limited_omics)],by="StudyID",all.x = F, all.y = T)
+
+# exploratory correlations
+explor <- corr_df
+explor <- merge(explor, df[,c("StudyID",clinical_predictors)], by="StudyID", all.x=T, all.y=F)
+```
+
+# Descriptive statistics - participants included in the clinical model
+
+```{r include=FALSE}
+t1data <- df[complete.cases(df[,clinical_predictors]),]
+t1data[,c("CACprogV3","CAD","CVD")] <- apply(t1data[,c("CACprogV3","CAD","CVD")],2,as.factor)
+t1 <- CreateTableOne(data=t1data,vars=c("CACprogV3","CAD","CVD","age","sex","durationV1"))
+t1 <- print(t1)
+```
+
+```{r}
+kable(t1)
+```
+
+# Descriptive statistics - participants included in the omics model
+
+```{r include=FALSE}
+t2data <- df[complete.cases(df[,c(clinical_predictors,limited_omics)]),]
+t2data[,c("CACprogV3","CAD","CVD")] <- apply(t2data[,c("CACprogV3","CAD","CVD")],2,as.factor)
+t2 <- CreateTableOne(data=t2data,vars=c("CACprogV3","CAD","CVD","age","sex","durationV1"))
+t2 <- print(t2)
+```
+
+```{r}
+kable(t2)
+```
+
+
+# ElasticNet on clinical variables only
+
+```{r}
+df_labelled <- df
+df_labelled$acV1 <- set_label(df_labelled$acV1,"Albumin:creatinine*")
+df_labelled$age <- set_label(df_labelled$age,"Age (yrs)")
+df_labelled$avesystbpV1 <- set_label(df_labelled$avesystbpV1,"SBP (mmHg)*")
+df_labelled$bmiV1 <- set_label(df_labelled$bmiV1,"BMI (kg/m2)")
+df_labelled$cholV1 <- set_label(df_labelled$cholV1,"Total cholesterol (mg/dL)")
+df_labelled$durcatV1 <- set_labels(df_labelled$durcatV1,labels=c("T1D duration <20 yrs", "T1D duration 20-39 yrs","T1D duration 40+ yrs"))
+df_labelled$hba1cV1 <- set_label(df_labelled$hba1cV1,"HbA1c (%)*")
+df_labelled$hdlcV1 <- set_label(df_labelled$hdlcV1,"HDL (mg/dL)*")
+df_labelled$homoV1 <- set_label(df_labelled$homoV1,"Homocysteine (umol/L)*")
+df_labelled$insdoseperkgV1 <- set_label(df_labelled$insdoseperkgV1,"Insulin dose (units/kg)*")
+df_labelled$l45sqfV1 <- set_label(df_labelled$l45sqfV1,"Subq fat L4-L5 (mm3)*")
+df_labelled$onhypermedsV1 <- set_labels(df_labelled$onhypermedsV1,labels=c("No anti-hypertensives","Anti-hypertensives"))
+df_labelled$onlipidmedsV1 <- set_labels(df_labelled$onlipidmedsV1,labels=c("No lipid medications","Lipid medications"))
+df_labelled$PAT_V1 <- set_label(df_labelled$PAT_V1,"Pericardial fat (cm3)*")
+df_labelled$sex <- set_labels(df_labelled$sex,labels=c("Male","Female"))
+df_labelled$smknum <- set_labels(df_labelled$smknum,labels=c("Non-smoker","Current smoker"))
+df_labelled$triV1 <- set_label(df_labelled$triV1,"Triglycerides (mg/dL)*")
+df_labelled$UA_V1 <- set_label(df_labelled$UA_V1,"Serum uric acid (mg/dL)*")
+df_labelled$AAA01201000179.0807263.4 <- set_label(df_labelled$AAA01201000179.0807263.4,"D-Glucosamine/D-Galactosamine*")
+df_labelled$gly.P02671.3 <- set_label(df_labelled$gly.P02671.3,"Glycated fibrinogen 3*")
+df_labelled$gly.P02671.7 <- set_label(df_labelled$gly.P02671.7,"Glycated fibrinogen 7*")
+df_labelled$gly.P02671.5 <- set_label(df_labelled$gly.P02671.5,"Glycated fibrinogen 5*")
+df_labelled$gly.P02671.4 <- set_label(df_labelled$gly.P02671.4,"Glycated fibrinogen 4*")
+clin_mod_labelled = glm(formula = f_cac_prog,data = df_labelled,family = "binomial")
+plot_model(clin_mod_labelled, title="Clinical model of CAC progression", auto.label = TRUE)
+```
+
+## Change in CAC per year
+
+```{r include=FALSE}
+# Sometimes using too many alpha/lambda values results in duplicate values for the 
+# error metric. This doesn't seem to be a problem but throws a lot of warnings
+cac_change_select = easy_elasticnet(data = df,outcome = "cac_change_per_yr",
+                           predictors = clinical_predictors,
+                           model_type = "gaussian")
+```
+
+### Null model (age, sex, T1D duration only)
+
+```{r}
+n_cac_change  = as.formula(paste0("cac_change_per_yr~",paste0(null_vars,collapse = "+")))
+null_mod = lm(formula = n_cac_change,data = df)
+kable(tidy(null_mod),digits = 3)
+```
+
+### Clinical model results
+
+```{r}
+f_cac_change = as.formula(paste0("cac_change_per_yr~",
+                                 paste0(cac_change_select,collapse = "+")))
+clin_mod = lm(formula = f_cac_change,data = df)
+kable(tidy(clin_mod),digits = 3)
+```
+
+### Omics model results (no imputation)
+
+```{r}
+omics_mod = lm(formula = update(f_cac_change,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
+         data = df)
+kable(tidy(omics_mod),digits = 3)
+```
+
+### Model comparison
+
+```{r}
+mc = as.data.frame(compare_performance(clin_mod,omics_mod,null_mod,
+                                       metrics = c("R2","R2_adj"),verbose = F))
+mc$Name = c("Clinical Model","Omics Model","Null model")
+kable(mc,digits = 3)
+```
+
