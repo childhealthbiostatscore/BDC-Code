@@ -1,0 +1,90 @@
+---
+title: ''
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE, include=FALSE}
+#read
+A1Cs <- readxl::read_excel('S:/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Venus and POC A1Cs_corrections Updated 5-10-23.xlsx')
+dates <- readr::read_csv('S:/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/picls_date_check.csv')
+```
+
+```{r data cleaning}
+#drop comment columns, clean few names, date formatting
+A1Cs=A1Cs[,-c(6,7)] %>%
+rename('A1C'='A1C Venousalue') %>% 
+  mutate(Source=recode(Source, Venous = 'Venous', Venousenous = 'Venous', POC =  'POC' ),
+         `Date Taken`=as.Date(`Date Taken`, format='%Y-%m-%d'))
+```
+
+```{r regression setup}
+#create df of venous and POC A1Cs with +/- 1 week overlap
+venous_A1Cs=A1Cs %>% 
+  filter(Source == 'Venous')
+
+POC_A1Cs=A1Cs %>% 
+  filter(Source == 'POC')
+
+overlap_range <- function(x,y){abs(as.numeric(x-y, units='days')) <= 7}
+
+venous_POC_overlap=fuzzyjoin::fuzzy_inner_join(venous_A1Cs, POC_A1Cs,
+                              by=c('Study ID', 'Date Taken'),
+                                               match_fun=list(`==`,`overlap_range`))
+#fit linear regression to overlap df
+#outcome=venous A1C, predictor=POC A1C
+lr_mod <- lm(A1C.x~A1C.y, data=venous_POC_overlap)
+
+#extract beta coefs
+beta0=summary(lr_mod)$coefficients[1,1]
+beta1=summary(lr_mod)$coefficients[2,1]
+```
+
+```{r incorporate regression into full Venous and POC A1Cs dataset}
+#define correction equation based on regression output 
+correction_eqn <- function(df, beta0, beta1){
+  #create new col of venous A1Cs and corrected POC A1Cs
+  df$corrected_A1C <- ifelse(df$Source == 'POC', beta0 + beta1*df$A1C, df$A1C)
+  df$corrected_A1C <- round(df$corrected_A1C,1)
+  return(df)
+}
+
+#generate updated version of A1Cs df that includes corrected POC A1Cs
+updated_A1Cs <- correction_eqn(df=A1Cs, beta0=beta0, beta1=beta1)
+
+#add gest week in (some NAs since not all data falls within visit windows)
+dates=dates %>% 
+  mutate(edd=as.Date(edd, format='%m/%d/%Y'),
+         edd_derived_date=as.Date(edd_derived_date,format='%m/%d/%Y')) %>%
+  mutate(edd_derived_date_D6=edd_derived_date+6) %>% 
+  rename('edd_derived_date_D0'='edd_derived_date')
+
+updated_A1Cs=updated_A1Cs %>% 
+  left_join(dates, by= join_by('Study ID'=='ID', between(`Date Taken`,
+                                                        edd_derived_date_D0,
+                                                        edd_derived_date_D6))) %>% 
+  select(-c('edd','edd_derived_date_D0','edd_derived_date_D6')) %>% 
+  relocate('week', .after='Trimester') %>% 
+  rename('original_A1C'='A1C')
+```
+
+```{r save}
+readr::write_csv(updated_A1Cs, 'S:/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/Venous and POC A1Cs_corrected POC.csv')
+```
+
+Notes:
+* With the corrections in 'Venus and POC A1Cs_corrections Updated 5-10-23.xlsx', there are 40 venous and POC A1Cs from 16 subjects within +/- 1 wk of each other
+* There are some matches for Trimester=PP and gest week-left as is, but maybe d/t birth before wk 40? Function below if want to correct this (defined based on assumption that if Trimester=PP then shouldn't have gest week value).
+
+```{r}
+#function for dropping gest week value in instances where there is a gest wk match for Trimester=PP
+PP_week_correction <- function(df){
+  df$week <- ifelse(df$Trimester == 'PP', NA, df$week)
+  return(df)
+}
+```
+
