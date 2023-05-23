@@ -113,6 +113,45 @@ a1cdata_sum <- a1cdata_sum %>% filter(!(pid=="114A" & Lab.Collection.Trimester==
 a1cdata_sum <- a1cdata_sum %>% filter(!(pid=="117A" & Lab.Collection.Trimester=="2nd"))
 a1cdata_sum <- a1cdata_sum %>% filter(!(pid=="117A" & Lab.Collection.Trimester=="3rd"))
 
+###################
+# create second dataset of HbA1c data using corrected POC values
+a1ccorrected <- read.csv("/Volumes/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/Venous and POC A1cs_corrected POC.csv")
+a1ccorrected$pid <- a1ccorrected$Study.ID
+a1ccorrected$Labvalue <- a1ccorrected$corrected_A1C
+a1ccorrected$Lab.Collection.Trimester <- ifelse(a1ccorrected$Trimester=="1","1st",
+                                             ifelse(a1ccorrected$Trimester=="2","2nd",
+                                                    ifelse(a1ccorrected$Trimester=="3","3rd","Postpartum")))
+a1ccorrected$Lab.Collection.Trimester <- as.factor(a1ccorrected$Lab.Collection.Trimester)
+a1ccorrected <- a1ccorrected %>% select(pid,Lab.Collection.Trimester,Labvalue)
+# read in preg visit A1c
+a1credcap <- read.csv("/Volumes/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/QPregnancyVisits_DATA_2022-12-04_1234.csv")
+a1credcap <- a1credcap %>% select(pid,Trimester,a1c_preg)
+a1credcap$Lab.Collection.Trimester <- ifelse(a1credcap$Trimester==1,"1st",
+                                             ifelse(a1credcap$Trimester==2,"2nd",
+                                                    ifelse(a1credcap$Trimester==3,"3rd","Postpartum")))
+a1credcap$Labvalue <- a1credcap$a1c_preg
+a1credcap <- a1credcap %>% select(pid,Lab.Collection.Trimester,Labvalue)
+a1ccorrected <- rbind(a1ccorrected,a1credcap)
+# now take the average of any multiple A1c values within the same trimester
+a1ccorrected_sum <- a1ccorrected %>% group_by(pid,Lab.Collection.Trimester) %>% summarise(mean_a1c = mean(Labvalue, na.rm=TRUE))
+a1ccorrected_sum <- merge(a1ccorrected_sum, rand_keep, by="pid", all.x = F, all.y = T)
+a1ccorrected_sum <- a1ccorrected_sum %>% select(pid, randomization_group,  Lab.Collection.Trimester, mean_a1c)
+# get baseline values
+base_a1ccorrected <- a1ccorrected_sum %>% filter(Lab.Collection.Trimester=="1st")
+base_a1ccorrected$a1c_t1 <- base_a1ccorrected$mean_a1c
+base_a1ccorrected <- base_a1ccorrected %>% select(pid, a1c_t1)
+a1ccorrected_sum <- merge(a1ccorrected_sum, base_a1ccorrected, by="pid", all.x = T, all.y = T)
+a1ccorrected_sum <- merge(a1ccorrected_sum, basebmi, by="pid", all.x = T, all.y = F)
+a1ccorrected_sum$clinic <- as.factor(ifelse(str_sub(a1ccorrected_sum$pid,1,1)=="1","BDC","OSU"))
+a1ccorrected_sum <- a1ccorrected_sum %>% filter(!(pid=="111A" & Lab.Collection.Trimester=="2nd"))
+a1ccorrected_sum <- a1ccorrected_sum %>% filter(!(pid=="111A" & Lab.Collection.Trimester=="3rd"))
+a1ccorrected_sum <- a1ccorrected_sum %>% filter(!(pid=="114A" & Lab.Collection.Trimester=="2nd"))
+a1ccorrected_sum <- a1ccorrected_sum %>% filter(!(pid=="114A" & Lab.Collection.Trimester=="3rd"))
+a1ccorrected_sum <- a1ccorrected_sum %>% filter(!(pid=="117A" & Lab.Collection.Trimester=="2nd"))
+a1ccorrected_sum <- a1ccorrected_sum %>% filter(!(pid=="117A" & Lab.Collection.Trimester=="3rd"))
+
+###################
+
 # HFS data
 hfs <- read.csv("/Volumes/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/PICLSStudyHCLVsSAPTI-HFS_DATA_2022-11-28_1622.csv",
                 na.strings = c("NA",""," "))
@@ -502,12 +541,43 @@ mod_pairs
 plot_model(mod, type="pred", terms=c("time","randomization_group"))
 ```
 
-## HbA1c
+## HbA1c - no correction
 
 ### ANOVA table
 
 ```{r, echo=FALSE, message=FALSE}
 mod <- lme(mean_a1c ~ Lab.Collection.Trimester*randomization_group + clinic ,random=~1|pid,data = a1cdata_sum,na.action = na.omit)
+mod_anova <- anova.lme(mod, type="marginal")
+mod_means <- emmeans(mod,c("Lab.Collection.Trimester","randomization_group"))
+mod_pairs <-  pairs(mod_means,adjust="tukey", simple="each")
+
+kable(mod_anova)
+```
+
+### Model means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_means
+```
+
+### Pairwise comparison of means
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+mod_pairs
+```
+
+### Plot
+
+```{r, echo=FALSE, message=FALSE}
+plot_model(mod, type="pred", terms=c("Lab.Collection.Trimester","randomization_group"))
+```
+
+## HbA1c - using correction factor for POC HbA1c
+
+### ANOVA table
+
+```{r, echo=FALSE, message=FALSE}
+mod <- lme(mean_a1c ~ Lab.Collection.Trimester*randomization_group + clinic ,random=~1|pid,data = a1ccorrected_sum,na.action = na.omit)
 mod_anova <- anova.lme(mod, type="marginal")
 mod_means <- emmeans(mod,c("Lab.Collection.Trimester","randomization_group"))
 mod_pairs <-  pairs(mod_means,adjust="tukey", simple="each")
