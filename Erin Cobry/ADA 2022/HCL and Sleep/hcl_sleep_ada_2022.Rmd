@@ -22,6 +22,7 @@ library(performance)
 library(knitr)
 library(DT)
 library(GLMMadaptive)
+library(table1)
 
 # knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
 # if(Sys.info()["sysname"] == "Windows"){
@@ -98,29 +99,8 @@ t1a = tableby(f,data = child_demographics)
 summary(t1a,digits = 3,labelTranslations = list(t1d_duration = "T1D Duration (years)"))
 ```
 
-# Glycemic Data
 
-```{r results='asis'}
-# Get data
-glyc = exportRecords(rcon,forms = "glycemic_data")
-glyc$record_id = ids
-glyc = glyc %>% filter(!(record_id %in% exclude)) %>% select(record_id, gyl_timepoint, sensor_g251:sensor_sd, night_sensor_low,night_sensor_below, night_sensor_target, night_sensor_above, night_sensor_high, night_sensor_mean, night_sensor_sd, time_am,sensor_wear) %>% filter(record_id > 199) %>% filter(!is.na(gyl_timepoint))
 
-# Table
-f_2 = as.formula(paste("gyl_timepoint ~",paste0(colnames(glyc)[-(1:2)],collapse = "+")))
-t_glyc = tableby(f_2,data = glyc)
-summary(t_glyc,digits = 3, labelTranslations = list(night_sensor_low = "Night < 54",
-                                                    night_sensor_below = "Night 55-69",
-                                                    night_sensor_target = "Night 70-180",
-                                                    night_sensor_above = "Night 181-250",
-                                                    night_sensor_high = "Night >251",
-                                                    night_sensor_mean = "Night Sensor Mean",
-                                                    night_sensor_sd = "Night Sensor SD"))
-```
-
-```{r mbg plot day night}
-# x is the 
-```
 
 ```{r model functions,include=FALSE}
 fit_mod = function(outcome,df,plot = T,diagnostics = F){
@@ -162,11 +142,121 @@ fit_mod = function(outcome,df,plot = T,diagnostics = F){
     print(check_model(mod))
   }
 }
+
+
+fitmod_glyc = function(outcome,df,diagnostics = F){
+
+  # Fit random intercept model
+  f = as.formula(paste0(outcome,"~gyl_timepoint+(1|record_id)"))
+  mod = lmer(f,data = df)
+
+  # Type 3
+  type3 = data.frame(car::Anova(mod,type = 3))
+  colnames(type3)[3] = "p.value"
+  print(kable(type3,digits = 3,caption = "Test of Overall Effect"))
+  # Model results
+  res = tidy(mod,"fixed")
+  res$term = sub("timepoint","",res$term)
+  res$effect = NULL
+  print(kable(res,digits = 3,caption = "Comparison to Baseline"))
+  # Means
+  means = data.frame(emmeans(mod,~gyl_timepoint))
+  print(kable(means,digits = 3,caption = "Model Means"))
+  # Number of obs
+  cat("\n")
+  cat(paste("This model was fit using",nobs(mod),"observations."))
+  cat("\n")
+  # Check model
+  if(diagnostics){
+    print(check_model(mod))
+  }
+}
+
 ```
 
 # Methods
 
 Each outcome was modeled using a linear mixed effects model with random intercept for participant to account for within-subject correlation. Random slope models would not converge for several outcomes, including average sleep time.
+
+# Glycemic Data
+
+```{r results='asis'}
+# Get data
+glyc = exportRecords(rcon,forms = "glycemic_data")
+glyc$record_id = ids
+glyc = glyc %>% filter(!(record_id %in% exclude)) %>% select(record_id, gyl_timepoint, sensor_g251:sensor_sd, night_sensor_low,night_sensor_below, night_sensor_target, night_sensor_above, night_sensor_high, night_sensor_mean, night_sensor_sd, time_am,sensor_wear) %>% filter(record_id > 199) %>% filter(!is.na(gyl_timepoint))
+
+# Table
+f_2 = as.formula(paste("gyl_timepoint ~",paste0(colnames(glyc)[-(1:2)],collapse = "+")))
+t_glyc = tableby(f_2,data = glyc)
+summary(t_glyc,digits = 3, labelTranslations = list(night_sensor_low = "Night < 54",
+                                                    night_sensor_below = "Night 55-69",
+                                                    night_sensor_target = "Night 70-180",
+                                                    night_sensor_above = "Night 181-250",
+                                                    night_sensor_high = "Night >251",
+                                                    night_sensor_mean = "Night Sensor Mean",
+                                                    night_sensor_sd = "Night Sensor SD"))
+```
+
+# appended may 2023
+
+added in analysis to make the glycemic data match the other segments
+
+```{r results='asis'}
+print("sensor > 251")
+fitmod_glyc(outcome = "sensor_g251", df = glyc)
+
+print("sensor 181-250")
+fitmod_glyc(outcome = "sensor_181_250", df = glyc)
+
+print("sensor 70 -180")
+fitmod_glyc(outcome = "sensor_70_180", df = glyc)
+
+print("sensor55-69")
+fitmod_glyc(outcome = "sensor_55_69", df = glyc)
+
+print("sensor < 54")
+fitmod_glyc(outcome = "sensor_u54", df = glyc)
+
+print("avg sensor glucose")
+fitmod_glyc(outcome = "sensor_mean", df = glyc)
+
+print("sensor sd")
+fitmod_glyc(outcome = "sensor_sd", df = glyc)
+
+
+
+
+print("night sensor > 251")
+fitmod_glyc(outcome = "night_sensor_high", df = glyc)
+
+print("night sensor 181-250")
+fitmod_glyc(outcome = "night_sensor_above", df = glyc)
+
+print("night sensor 70 -180")
+fitmod_glyc(outcome = "night_sensor_target", df = glyc)
+
+print("night sensor55-69")
+fitmod_glyc(outcome = "night_sensor_below", df = glyc)
+
+print("night sensor < 54")
+fitmod_glyc(outcome = "night_sensor_low", df = glyc)
+
+print("night avg sensor glucose")
+fitmod_glyc(outcome = "night_sensor_mean", df = glyc)
+
+print("night sensor sd")
+fitmod_glyc(outcome = "night_sensor_sd", df = glyc)
+
+
+
+print("%time in close loop")
+fitmod_glyc(outcome = "time_am", df = glyc)
+
+print("%time sensor wear")
+fitmod_glyc(outcome = "sensor_wear", df = glyc)
+
+```
 
 # Actigraphy
 
@@ -216,7 +306,52 @@ parent_activity = activity %>%
          totalsleep_avg = as.numeric(lubridate::hms(totalsleep_avg))/60,
          sufficient = ifelse(totalsleep_avg >= 7*60,"Yes","No"))
 parent_activity$sufficient = as.factor(parent_activity$sufficient)
+
+
+# get n's for table
+print("age group 3-5")
+child_activity_35 %>% group_by(timepoint) %>% summarise(n())
+
+print("age group 6-12")
+child_activity_612 %>% group_by(timepoint) %>% summarise(n())
+
+print("age group 13-17")
+child_activity_1317 %>% group_by(timepoint) %>% summarise(n())
+
+# parent actigraphy by age grp
+parentgrps = child_activity %>% select(record_id, age_grp) %>% mutate(record_id2 = as.character(as.numeric(record_id)-100))
+parent_activity$record_id = as.character(parent_activity$record_id)
+parent_activity = full_join(parent_activity, parentgrps, by = c("record_id" = "record_id2")) %>% unique()
+parent_activity$age_grp = factor(parent_activity$age_grp, levels = c("3-5", "6-12", "13-17"))
+
+
 ```
+# appended as of may 2023
+## parent actigraphy by age group
+```{r results='asis'}
+print("age group 3-5")
+fit_mod(outcome = "sleepefficency_avg",df = parent_activity %>% filter(age_grp == "3-5"), plot = F)
+fit_mod(outcome = "onsetlatency_avg",df = parent_activity %>% filter(age_grp == "3-5"), plot = F)
+fit_mod(outcome = "totalsleep_avg",df = parent_activity %>% filter(age_grp == "3-5"), plot = F)
+fit_mod(outcome = "waso_avg",df = parent_activity %>% filter(age_grp == "3-5"), plot = F)
+
+print("age group 6-12")
+fit_mod(outcome = "sleepefficency_avg",df = parent_activity %>% filter(age_grp == "6-12"), plot = F)
+fit_mod(outcome = "onsetlatency_avg",df = parent_activity %>% filter(age_grp == "6-12"), plot = F)
+fit_mod(outcome = "totalsleep_avg",df = parent_activity %>% filter(age_grp == "6-12"), plot = F)
+fit_mod(outcome = "waso_avg",df = parent_activity %>% filter(age_grp == "6-12"), plot = F)
+
+
+print("age group 13-17")
+fit_mod(outcome = "sleepefficency_avg",df = parent_activity %>% filter(age_grp == "13-17"), plot = F)
+fit_mod(outcome = "onsetlatency_avg",df = parent_activity %>% filter(age_grp == "13-17"), plot = F)
+fit_mod(outcome = "totalsleep_avg",df = parent_activity %>% filter(age_grp == "13-17"), plot = F)
+fit_mod(outcome = "waso_avg",df = parent_activity %>% filter(age_grp == "13-17"), plot = F)
+
+# different results :( table1(~ sleepefficency_avg + onsetlatency_avg + totalsleep_avg + waso_avg | timepoint*age_grp.y , data = parent_activity)
+```
+
+
 ## Average sleep latency
 
 ### Children
