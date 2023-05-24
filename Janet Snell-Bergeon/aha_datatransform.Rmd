@@ -11,22 +11,23 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-library(readxl)
-library(arsenal)
 library(tidyverse)
+library(broom)
+library(survival)
 library(performance)
 library(knitr)
+library(pROC)
+library(naniar)
+library(readxl)
+library(psych)
+library(pheatmap)
+library(tableone)
+library(sjPlot)
+library(sjlabelled)
+library(sjmisc)
+library(ggplot2)
+library(reshape2)
 library(lubridate)
-knitr::opts_chunk$set(echo = FALSE)
-if(Sys.info()["sysname"] == "Windows"){
-  home_dir = "S:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon"
-} else if (Sys.info()["sysname"] == "Linux"){
-  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
-} else if (Sys.info()["sysname"] == "Darwin"){
-  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
-}
-knitr::opts_knit$set(root.dir = home_dir)
-rm
 
 
 # load in metab data
@@ -35,9 +36,14 @@ QAHA_Biomarkers_IDs = read_excel("S:/Laura/BDC/Projects/Janet Snell-Bergeon/AHA 
 
 ```{r data clean, include = FALSE}
 # the goal is to transform each of these metrics into a slope (visit max - visit1)/(datemax - date 1) - dates in years
-test = QAHA_Biomarkers_IDs %>% select(StudyID, Date_V1:Date_V4, ACV1, acv2, acv3, acv4)
+test = QAHA_Biomarkers_IDs %>% select(StudyID, Date_V1:Date_V4, ACV1, acv2, acv3, acv4, CKDepiV1:CKDEpiV4, age, gender, durcatv1)
 test$acv2 = as.numeric(test$acv2)
 test$acv3 = as.numeric(test$acv3)
+
+test$CKDepiV1 = as.numeric(test$CKDepiV1)
+test$ckdepiv2 = as.numeric(test$ckdepiv2)
+test$ckdepiv3 = as.numeric(test$ckdepiv3)
+
 # All subjects have a visit 1 date but 14 have no acv1 -- drop these or use a 2 if they have it?
 # All subjects with no visit 2 or 3 dates also dont have a acv value
 
@@ -49,17 +55,132 @@ options(scipen = 20)
 test2 = test %>% mutate(slope_acv = case_when(!is.na(Date_V4) & !is.na(acv4) ~ (acv4 - ACV1)/(as.double(difftime(Date_V4, Date_V1, units = "days"))/365),
                                               !is.na(Date_V3) & !is.na(acv3) ~ (acv3 - ACV1)/(as.double(difftime(Date_V3, Date_V1, units = "days"))/365),
                                               !is.na(Date_V2) & !is.na(acv2) ~ (acv2 - ACV1)/(as.double(difftime(Date_V2, Date_V1, units = "days"))/365)
-                                              ))
+                                              ),
+                        slope_egfr = case_when(!is.na(Date_V4) & !is.na(CKDEpiV4) ~ (CKDEpiV4 - CKDepiV1)/(as.double(difftime(Date_V4, Date_V1, units = "days"))/365),
+                                              !is.na(Date_V3) & !is.na(ckdepiv3) ~ (ckdepiv3 - CKDepiV1)/(as.double(difftime(Date_V3, Date_V1, units = "days"))/365),
+                                              !is.na(Date_V2) & !is.na(ckdepiv2) ~ (ckdepiv2 - CKDepiV1)/(as.double(difftime(Date_V2, Date_V1, units = "days"))/365)))
 
 # 22 subj missing; 8 with only acv1, 14 without, of the 14, 9 have at least 2 dates -- exclude
 
+# Function and master data
+source("D:/Repositories/shared-resources/Machine Learning/Tim - ElasticNet CV/easy_elasticnet.R")
+load("S:/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant/aha_master_data_no_snps.Rdata")
+analysis = test2; rm(test, test2)
+
+# omics selected by moderated t-test and PLSDA
+omics = unique(c("gly_P02671.7","gly_P02671.5","gly_P02671.4","gly_P02671.3",
+          "AAA01201000179.0807263.4","gly_P02679","HMDB00510161.0696402.9",
+          "AAA01201000179.0809235.7","gly_P02675.4","gly_P02675","gly_P02647",
+          "P02655","gly_P02647.1","HMDB00510161.0694436","gly_P02652",
+          "gly_P01009","gly_P01834.11","P01817","AcCa 10:3",
+          "HMDB0028822260.1378628.6","AAA01201000179.0807263.4",
+          "gly_P02671.3","gly_P02671.7"))
+limited_omics = c("AAA01201000179.0807263.4","gly.P02671.7","gly.P02671.3",
+          "gly.P02671.5","gly.P02671.4")
+# Take out people without diabetes, remove diabetes status from predictors
+df = df[df$diabetic == 1,]
+clinical_predictors = clinical_predictors[-which(clinical_predictors == "dia")]
+# Log transform 
+df[,omics] = log(df[,omics])
+# Fix names
+colnames(df)[which(colnames(df) %in% omics)] = make.names(omics,unique = T,allow_ = F)
+omics = make.names(omics,unique = T,allow_ = F)
+# Variables for null model
+null_vars <- c("age","gender","durcatv1")
+
+analysis$StudyID = as.numeric(analysis$StudyID)
+
+test = analysis %>% select(StudyID, slope_acv, slope_egfr)
+analysis2 = left_join( df, test)
+```
 
 
-# what is the normal range for acv? a few values in the thousands
-# should we try and include those with 2 visits or do we need v1
-# couldnt find egfr234
-# list of other outcomes?
+# Change in ACV
 
+## Null Model (Age, Sex, DiaDur)
+```{r}
+n_acv_change  = as.formula(paste0("slope_acv~",paste0(null_vars,collapse = "+")))
+null_acv_mod = lm(formula = n_acv_change,data = analysis)
+kable(tidy(null_acv_mod),digits = 3)
+```
 
+## Change in acv per year
 
+```{r include=FALSE}
+# Sometimes using too many alpha/lambda values results in duplicate values for the 
+# error metric. This doesn't seem to be a problem but throws a lot of warnings
+acv_change_select = easy_elasticnet(data = analysis2,outcome = "slope_acv",
+                           predictors = clinical_predictors,
+                           model_type = "gaussian")
+```
+
+## Clinical model results
+
+```{r}
+f_acv_change = as.formula(paste0("slope_acv ~",
+                                 paste0(acv_change_select,collapse = "+")))
+clin_acv_mod = lm(formula = f_acv_change,data = analysis2)
+kable(tidy(clin_acv_mod),digits = 3)
+```
+
+## Omics model results (no imputation)
+
+```{r}
+omics_acv_mod = lm(formula = update(f_acv_change,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
+         data = analysis2)
+kable(tidy(omics_acv_mod),digits = 3)
+```
+
+## Model comparison
+
+```{r}
+mc_acv = as.data.frame(compare_performance(clin_acv_mod,omics_acv_mod,null_acv_mod,
+                                       metrics = c("R2","R2_adj"),verbose = F))
+mc_acv$Name = c("Clinical Model","Omics Model","Null model")
+kable(mc_acv,digits = 3)
+```
+
+# Change in EGFR
+
+## Null Model (Age, Sex, DiaDur)
+```{r}
+n_egfr_change  = as.formula(paste0("slope_egfr~",paste0(null_vars,collapse = "+")))
+null_egfr_mod = lm(formula = n_egfr_change,data = analysis)
+kable(tidy(null_egfr_mod),digits = 3)
+```
+
+## Change in egfr per year
+
+```{r include=FALSE}
+# Sometimes using too many alpha/lambda values results in duplicate values for the 
+# error metric. This doesn't seem to be a problem but throws a lot of warnings
+egfr_change_select = easy_elasticnet(data = analysis2,outcome = "slope_egfr",
+                           predictors = clinical_predictors,
+                           model_type = "gaussian")
+```
+
+## Clinical model results
+
+```{r}
+f_egfr_change = as.formula(paste0("slope_egfr ~",
+                                 paste0(egfr_change_select,collapse = "+")))
+clin_egfr_mod = lm(formula = f_egfr_change,data = analysis2)
+kable(tidy(clin_egfr_mod),digits = 3)
+```
+
+## Omics model results (no imputation)
+
+```{r}
+omics_egfr_mod = lm(formula = update(f_egfr_change,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
+         data = analysis2)
+kable(tidy(omics_egfr_mod),digits = 3)
+```
+
+## Model comparison
+
+```{r}
+mc_egfr = as.data.frame(compare_performance(clin_egfr_mod,omics_egfr_mod,null_egfr_mod,
+                                       metrics = c("R2","R2_adj"),verbose = F))
+mc_egfr$Name = c("Clinical Model","Omics Model","Null model")
+kable(mc_egfr,digits = 3)
 ```
