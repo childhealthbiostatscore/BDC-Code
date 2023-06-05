@@ -63,28 +63,61 @@ test2 = test %>% mutate(slope_acv = case_when(!is.na(Date_V4) & !is.na(acv4) ~ (
 # 22 subj missing; 8 with only acv1, 14 without, of the 14, 9 have at least 2 dates -- exclude
 
 # Function and master data
-source("D:/Repositories/shared-resources/Machine Learning/Tim - ElasticNet CV/easy_elasticnet.R")
+#source("D:/Repositories/shared-resources/Machine Learning/Tim - ElasticNet CV/easy_elasticnet.R")
+source("C:/Repositories/shared-resources/Machine Learning/Tim - ElasticNet CV/easy_elasticnet.R")
 load("S:/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant/aha_master_data_no_snps.Rdata")
 analysis = test2; rm(test, test2)
 
+# get omics stuff from each sheet
+omics_umm_fdr <- read_excel("S:/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant/Reports/AHA_omics_ttests_baseline_renal.xlsx", 
+    sheet = "untargeted_metab_moderated_FDR") %>% filter(adj.P.Val < 0.05) %>% mutate(name = `...1`) %>% select(name)
+omics_tmm_fdr <- read_excel("S:/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant/Reports/AHA_omics_ttests_baseline_renal.xlsx", 
+    sheet = "targeted_metab_moderated_FDR")%>% filter(adj.P.Val < 0.05)%>% mutate(name = `...1`) %>% select(name)
+omics_gpr_fdr <- read_excel("S:/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant/Reports/AHA_omics_ttests_baseline_renal.xlsx", 
+    sheet = "global_prot_moderated_FDR")%>% filter(adj.P.Val < 0.05)%>% mutate(name = `...1`) %>% select(name)
+omics_glpr_fdr <- read_excel("S:/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant/Reports/AHA_omics_ttests_baseline_renal.xlsx", 
+    sheet = "glycated_prot_moderated_FDR")%>% filter(adj.P.Val < 0.05)%>% mutate(name = `...1`) %>% select(name)
+omics_lm_fdr <- read_excel("S:/Laura/BDC/Projects/Janet Snell-Bergeon/AHA collaborative grant/Reports/AHA_omics_ttests_baseline_renal.xlsx", 
+    sheet = "lipidomics_moderated_FDR")%>% filter(adj.P.Val < 0.05)%>% mutate(name = `...1`) %>% select(name)
+
+omics = full_join(omics_umm_fdr, omics_tmm_fdr)
+omics = full_join(omics, omics_glpr_fdr)
+omics = full_join(omics, omics_lm_fdr)
+omics = full_join(omics, omics_gpr_fdr)
+
+omics = unique(c(omics$name))
+limited_omics = omics
+
+# vars not in the original dataset
+names = colnames(df)
+nothere = setdiff(omics, names)
+omics = setdiff(omics, nothere)
+limited_omics = omics
 # omics selected by moderated t-test and PLSDA
-omics = unique(c("gly_P02671.7","gly_P02671.5","gly_P02671.4","gly_P02671.3",
-          "AAA01201000179.0807263.4","gly_P02679","HMDB00510161.0696402.9",
-          "AAA01201000179.0809235.7","gly_P02675.4","gly_P02675","gly_P02647",
-          "P02655","gly_P02647.1","HMDB00510161.0694436","gly_P02652",
-          "gly_P01009","gly_P01834.11","P01817","AcCa 10:3",
-          "HMDB0028822260.1378628.6","AAA01201000179.0807263.4",
-          "gly_P02671.3","gly_P02671.7"))
-limited_omics = c("AAA01201000179.0807263.4","gly.P02671.7","gly.P02671.3",
-          "gly.P02671.5","gly.P02671.4")
+
+# this was from prior code
+# omics = unique(c("gly_P02671.7","gly_P02671.5","gly_P02671.4","gly_P02671.3",
+#           "AAA01201000179.0807263.4","gly_P02679","HMDB00510161.0696402.9",
+#           "AAA01201000179.0809235.7","gly_P02675.4","gly_P02675","gly_P02647",
+#           "P02655","gly_P02647.1","HMDB00510161.0694436","gly_P02652",
+#           "gly_P01009","gly_P01834.11","P01817","AcCa 10:3",
+#           "HMDB0028822260.1378628.6","AAA01201000179.0807263.4",
+#           "gly_P02671.3","gly_P02671.7"))
+# limited_omics = c("AAA01201000179.0807263.4","gly.P02671.7","gly.P02671.3",
+#           "gly.P02671.5","gly.P02671.4")
+
+
 # Take out people without diabetes, remove diabetes status from predictors
 df = df[df$diabetic == 1,]
 clinical_predictors = clinical_predictors[-which(clinical_predictors == "dia")]
+
 # Log transform 
 df[,omics] = log(df[,omics])
 # Fix names
 colnames(df)[which(colnames(df) %in% omics)] = make.names(omics,unique = T,allow_ = F)
 omics = make.names(omics,unique = T,allow_ = F)
+
+limited_omics = omics
 # Variables for null model
 null_vars <- c("age","gender","durcatv1")
 
@@ -93,6 +126,15 @@ analysis$StudyID = as.numeric(analysis$StudyID)
 test = analysis %>% select(StudyID, slope_acv, slope_egfr)
 analysis2 = left_join( df, test)
 ```
+
+# appended 6/5/2023
+
+Some significant omics variables from the spreadsheets were not in the original dataset. These were:
+
+```{r}
+print(nothere)
+```
+
 
 
 # Change in ACV
