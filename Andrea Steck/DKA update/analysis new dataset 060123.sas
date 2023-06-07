@@ -40,7 +40,7 @@ data x;
 set alldata;
 where dka="Yes" and dka_sev="No DKA";
 run;
-proc export data=x dbms=csv replace outfile="X:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\dka_yes_sev_none.csv";
+proc export data=x dbms=csv replace outfile="V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\dka_yes_sev_none.csv";
 run;
 
 proc print; 
@@ -171,7 +171,7 @@ run;
  *   DESC:      Generated SAS Datastep Code
  *   TEMPLATE SOURCE:  (None Specified.)
  ***********************************************************************/
-  /*  data WORK.CORRECTIONS    ;
+   data WORK.CORRECTIONS    ;
     %let _EFIERR_ = 0; \
     infile 'B:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
@@ -202,7 +202,7 @@ run;
 proc print data=alldata;
 var mrn dka dka_sev ph bicarb;
 run; 
-*/
+
 
 proc print data=alldata;
 where Age_AtOnset>=18; 
