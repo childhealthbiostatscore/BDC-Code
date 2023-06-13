@@ -170,7 +170,13 @@ hfs <- merge(hfs, rand_keep, by="pid", all.x = F, all.y = T)
 
 # Results
 
-This analysis is of the ITT data set.
+This analysis is of the ITT data set. Changes to this version from the previous version of the report:
+
+1) Added number of days of CGM data (variable num_days) to the table of CGM descriptive statistics (section 1.2). See also the histograms in section 1.1.
+
+2) Added method description for the two versions of the HbA1c models (sections 1.13 and 1.14).
+
+3) Added correlation between HbA1c and mean sensor glucose by trimester (section 1.15)
 
 ## Histogram of number of days of CGM wear per trimester
 
@@ -210,7 +216,7 @@ hist(cgmdata[cgmdata$time=="PP",]$num_days)
 
 ```{r results='asis'}
 t1_form = as.formula("time ~ percent_time_under_54 + percent_time_63_140 + percent_time_under_63 + percent_time_over_140 +
-                     percent_time_over_180 + mean_sensor + percent_time_0_69 + percent_time_70_180 + percent_time_over_250")
+                     percent_time_over_180 + mean_sensor + percent_time_0_69 + percent_time_70_180 + percent_time_over_250 + num_days")
 t1 = tableby(t1_form,cgmdata)
 summary(t1)
 ```
@@ -219,7 +225,7 @@ summary(t1)
 
 ```{r results='asis'}
 t2_form = as.formula("clinic ~ percent_time_under_54 + percent_time_63_140 + percent_time_under_63 + percent_time_over_140 +
-                     percent_time_over_180 + mean_sensor + percent_time_0_69 + percent_time_70_180 + percent_time_over_250")
+                     percent_time_over_180 + mean_sensor + percent_time_0_69 + percent_time_70_180 + percent_time_over_250 + num_days")
 t2 = tableby(t2_form,cgmdata)
 summary(t2)
 ```
@@ -524,6 +530,8 @@ plot_model(mod, type="pred", terms=c("time","randomization_group"))
 
 ## HbA1c - no correction
 
+In this version of the model, POC and venous A1c values were used without making any type of adjustment for the method of measurement.
+
 ### ANOVA table
 
 ```{r, echo=FALSE, message=FALSE}
@@ -555,6 +563,8 @@ plot_model(mod, type="pred", terms=c("Lab.Collection.Trimester","randomization_g
 
 ## HbA1c - using correction factor for POC HbA1c
 
+There were 38 venous and POC A1cs from 15 participants that were within a week of each other. These values were used to develop a "correction factor" for POC A1c by regressing venous A1c on POC A1c. The parameters from this linear regression model were used to estimate the venous A1c that would have been observed based on the POC A1c. These corrected values were used in the analysis model instead of the original POC A1c.
+
 ### ANOVA table
 
 ```{r, echo=FALSE, message=FALSE}
@@ -584,8 +594,44 @@ mod_pairs
 plot_model(mod, type="pred", terms=c("Lab.Collection.Trimester","randomization_group"))
 ```
 
+## Correlation between HbA1c and mean glucose by trimester
 
+### T1
 
+```{r, echo=FALSE, message=FALSE, comment=""}
+cgmdata$Lab.Collection.Trimester <- cgmdata$time
+x <- cgmdata %>% select(pid, Lab.Collection.Trimester, mean_sensor)
+y <- a1ccorrected_sum %>% select(pid, Lab.Collection.Trimester, mean_a1c)
+y$Lab.Collection.Trimester <- ifelse(y$Lab.Collection.Trimester=="1st","T1",
+                                     ifelse(y$Lab.Collection.Trimester=="2nd","T2",
+                                            ifelse(y$Lab.Collection.Trimester=="3rd","T3","PP")))
+combined_cgm_a1c <- merge(x, y, by=c("pid","Lab.Collection.Trimester"), all.x = TRUE, all.y = TRUE)
+combined_cgm_a1c <- combined_cgm_a1c %>% select(mean_sensor, Lab.Collection.Trimester, mean_a1c)
+combined_cgm_a1c_t1 <- combined_cgm_a1c %>% filter(Lab.Collection.Trimester=="T1")
+combined_cgm_a1c_t2 <- combined_cgm_a1c %>% filter(Lab.Collection.Trimester=="T2")
+combined_cgm_a1c_t3 <- combined_cgm_a1c %>% filter(Lab.Collection.Trimester=="T3")
+combined_cgm_a1c_PP <- combined_cgm_a1c %>% filter(Lab.Collection.Trimester=="PP")
+
+cor(combined_cgm_a1c_t1$mean_sensor,combined_cgm_a1c_t1$mean_a1c, use="pairwise.complete.obs")
+```
+
+### T2
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+cor(combined_cgm_a1c_t2$mean_sensor,combined_cgm_a1c_t2$mean_a1c, use="pairwise.complete.obs")
+```
+
+### T3
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+cor(combined_cgm_a1c_t3$mean_sensor,combined_cgm_a1c_t3$mean_a1c, use="pairwise.complete.obs")
+```
+
+### PP
+
+```{r, echo=FALSE, message=FALSE, comment=""}
+cor(combined_cgm_a1c_PP$mean_sensor,combined_cgm_a1c_PP$mean_a1c, use="pairwise.complete.obs")
+```
 
 ## HFS total score
 
