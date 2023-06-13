@@ -80,10 +80,13 @@ gest_dates = Reduce(full_join,gest_dates)
 
 # labor/delivery dates
 d_dates = read.csv("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data cleaning/CGM Data Check.csv") %>% mutate(ID = pid, edd = mdy(EDD_Final)) %>% select(ID, edd)
+groups = read.csv("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/PICLSStudyHCLVsSAPTI-RandomizedPatients_DATA_2022-11-14_1616.csv") %>% mutate(ID = pid,
+                                                                                                                                                     group = ifelse(randomization_group == 1, "HCL", "SAPT")) %>% select(ID, group)
 
 # create analysis dataset and trimester var
 analysis = left_join(fakecarbs, gest_dates) # joining on id and date -- perfectomundo
 analysis = left_join(analysis, d_dates)
+analysis = left_join(analysis, groups)
 analysis = analysis %>% mutate(trimester = case_when(`Gestational Week` < 14 ~ "T1",
                                                     `Gestational Week` < 28 & `Gestational Week` >= 14 ~ "T2",
                                                     `Gestational Week`>= 28 & visit_date < edd ~ "T3",
@@ -111,7 +114,7 @@ analysis_tri = analysis %>% group_by(ID, trimester_dd) %>% summarise(mean_ins_fr
                                                    mean_weekly_bolus = mean(Number.of..Other..Events.With.Bolus),
                                                    visits_with_any_fc = sum(any_fc),
                                                    visits = length(ID)) %>% ungroup
-
+analysis_tri = left_join(analysis_tri, groups)
 ```
 
 
@@ -121,11 +124,17 @@ analysis_tri = analysis %>% group_by(ID, trimester_dd) %>% summarise(mean_ins_fr
 fct1 = table1(~ mean_ins_from_fc_perc + mean_weekly_bolus + visits_with_any_fc + visits | trimester_dd, 
        data = analysis_tri, overall = FALSE)
 
+fct1_grp = table1(~ mean_ins_from_fc_perc + mean_weekly_bolus + visits_with_any_fc + visits | trimester_dd*group, 
+       data = analysis_tri, overall = FALSE)
+
 # any fc
 # check for subjects with no fake carbs whatsoever
 no_fc_ids = analysis_tri %>% group_by(ID) %>% filter(sum(visits_with_any_fc) == 0) %>% summarise(ID, trimester_dd) %>% unique()
 # no fake carb put in by trimester
 no_fc_tri = analysis_tri %>% filter(visits_with_any_fc == 0) %>% group_by(trimester_dd) %>% summarise(no_inputted_fake_carbs=n())
+
+no_fc_tri_group = analysis_tri %>% filter(visits_with_any_fc == 0) %>% group_by(trimester_dd,group) %>% summarise(no_inputted_fake_carbs=n())
+
 ```
 # Data Remarks/Questions
 
@@ -136,10 +145,10 @@ Subject visits were classified into Trimester. Variables were averaged within Su
 ## Fake Carbs by Trimester
 
 ### Variable Dictionary:
-- mean_ins_from_fc_perc: Mean insulin% from fake carbs
-- mean_weekly_bolus: Mean number of boluses/week
-- visits_with_any_fc: Mean number of visits with nonzero fake carbs
-- visits: mean number of visits
+- mean_ins_from_fc_perc: Mean weekly insulin% from fake carbs
+- mean_weekly_bolus: Mean number of "other events" boluses/week
+- visits_with_any_fc: Mean number of visits/trimester with nonzero bolus volume associated with fake carbs
+- visits: mean number of visits 
 
 example: For trimester 1:
 The average % insulin from FC was 0.448%;
@@ -151,12 +160,16 @@ Subjects had 5.5 visits on average within Tri 1
 
 ```{r table1, echo=FALSE}
 fct1
+
+fct1_grp
 ```
 
 
 ```{r did/nt fake carbs, echo = F}
 print("No Fake Carbs inputted by Timepoint")
 kable(no_fc_tri)
+
+kable(no_fc_tri_group)
 ```
 
 ```{r output dates, eval = FALSE, echo = FALSE}
