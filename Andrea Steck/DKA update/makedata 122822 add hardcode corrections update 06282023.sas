@@ -1,70 +1,88 @@
 *libname data 'S:\Shared Projects\Laura\BDC\Projects\Todd Alonso\DKA\Data';
-libname data 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
+libname data 'U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
 
  /**********************************************************************
  *   PRODUCT:   SAS
  *   VERSION:   9.4
  *   CREATOR:   External File Interface
- *   DATE:      02JAN23
+ *   DATE:      28JUN23
  *   DESC:      Generated SAS Datastep Code
  *   TEMPLATE SOURCE:  (None Specified.)
  ***********************************************************************/
     data WORK.ALLDATA    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\MASTER_06.15.23_WithoutMRNPP3.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
-       informat MRN best32. ;
+    infile 'U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\MASTER_06.15.23_WithoutMRNPP3 edited.csv' delimiter = ',' MISSOVER DSD lrecl=13106 firstobs=2 ;
        informat Sample_ID best32. ;
        informat DOB mmddyy10. ;
        informat OnsetDate mmddyy10. ;
+       informat OnsetYear best32. ;
        informat Age_AtOnset best32. ;
        informat Sex $6. ;
-       informat Race $23. ;
+       informat Race $5. ;
        informat Ethnicity $22. ;
-       informat Insurance $22. ;
+       informat Insurance $28. ;
        informat InsuranceGroup $7. ;
        informat InitalA1c best32. ;
-       informat pH best32. ;
-       informat bicarb best32. ;
+       informat pH $1. ;
+       informat bicarb $1. ;
+       informat pH_MarianJama best32. ;
+       informat BiCarb_MarianJama best32. ;
        informat DKA $3. ;
-       informat Rural_or_non_rural $1. ;
-       informat ZipCode_DateOfDiagnosis $5. ;
-       informat State_DateOfDiagnosis $8. ;
-       informat PrimaryLanguage $10. ;
-       informat NewOnset_DxThroughScreeningStudy $4. ;
+       informat DKA_sev $10. ;
+       informat Rural_or_non_rural $9. ;
+       informat ZipCode_DateOfDiagnosis $1. ;
+       informat State_DateOfDiagnosis $1. ;
+       informat PrimaryLanguage $1. ;
+       informat NewOnset_DxThroughScreeningStudy $9. ;
        informat Last_research_study_visit_date mmddyy10. ;
-       informat LastA1C_Date mmddyy10. ;
-       informat A1cValue best32. ;
-       informat LastVisitDate mmddyy10. ;
        informat Initial_research_study_visit_dat mmddyy10. ;
-       format MRN best12. ;
+       informat STATE $1. ;
+       informat race_eth $1. ;
+       informat instudy best32. ;
+       informat fup_prior_dx $1. ;
+       informat fup_prior_dx_mo $1. ;
+       informat ge6moprior $1. ;
+       informat last_visit_to_dx $1. ;
+       informat seen_12mo_prior $1. ;
+       informat SOURCE $10. ;
        format Sample_ID best12. ;
        format DOB mmddyy10. ;
        format OnsetDate mmddyy10. ;
+       format OnsetYear best12. ;
        format Age_AtOnset best12. ;
        format Sex $6. ;
-       format Race $23. ;
+       format Race $5. ;
        format Ethnicity $22. ;
-       format Insurance $22. ;
+       format Insurance $28. ;
        format InsuranceGroup $7. ;
        format InitalA1c best12. ;
-       format pH best12. ;
-       format bicarb best12. ;
+       format pH $1. ;
+       format bicarb $1. ;
+       format pH_MarianJama best12. ;
+       format BiCarb_MarianJama best12. ;
        format DKA $3. ;
-       format Rural_or_non_rural $1. ;
-       format ZipCode_DateOfDiagnosis $5. ;
-       format State_DateOfDiagnosis $8. ;
-       format PrimaryLanguage $10. ;
-       format NewOnset_DxThroughScreeningStudy $4. ;
+       format DKA_sev $10. ;
+       format Rural_or_non_rural $9. ;
+       format ZipCode_DateOfDiagnosis $1. ;
+       format State_DateOfDiagnosis $1. ;
+       format PrimaryLanguage $1. ;
+       format NewOnset_DxThroughScreeningStudy $9. ;
        format Last_research_study_visit_date mmddyy10. ;
-       format LastA1C_Date mmddyy10. ;
-       format A1cValue best12. ;
-       format LastVisitDate mmddyy10. ;
        format Initial_research_study_visit_dat mmddyy10. ;
+       format STATE $1. ;
+       format race_eth $1. ;
+       format instudy best12. ;
+       format fup_prior_dx $1. ;
+       format fup_prior_dx_mo $1. ;
+       format ge6moprior $1. ;
+       format last_visit_to_dx $1. ;
+       format seen_12mo_prior $1. ;
+       format SOURCE $10. ;
     input
-                MRN
                 Sample_ID
                 DOB
                 OnsetDate
+                OnsetYear
                 Age_AtOnset
                 Sex  $
                 Race  $
@@ -72,19 +90,28 @@ libname data 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
                 Insurance  $
                 InsuranceGroup  $
                 InitalA1c
-                pH
-                bicarb
+                pH  $
+                bicarb  $
+                pH_MarianJama
+                BiCarb_MarianJama
                 DKA  $
+                DKA_sev  $
                 Rural_or_non_rural  $
-                ZipCode_DateOfDiagnosis $
+                ZipCode_DateOfDiagnosis  $
                 State_DateOfDiagnosis  $
                 PrimaryLanguage  $
                 NewOnset_DxThroughScreeningStudy  $
                 Last_research_study_visit_date
-                LastA1C_Date
-                A1cValue
-                LastVisitDate
                 Initial_research_study_visit_dat
+                STATE  $
+                race_eth  $
+                instudy
+                fup_prior_dx  $
+                fup_prior_dx_mo  $
+                ge6moprior  $
+                last_visit_to_dx  $
+                seen_12mo_prior  $
+                SOURCE  $
     ;
     if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
     run;
@@ -101,7 +128,7 @@ libname data 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
  ***********************************************************************/
     data WORK.zips    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DMERuralZIP.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DMERuralZIP.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat STATE $2. ;
        informat ZipCode_DateOfDiagnosis $5. ;
        informat YEAR_QTR best32. ;
@@ -167,7 +194,7 @@ run;
  ***********************************************************************/
    data WORK.CORRECTIONS    ;
     %let _EFIERR_ = 0; 
-    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat DKA $3. ;
        informat dka_sev $10. ;
@@ -265,7 +292,7 @@ run;
 
 /* export csv file */
 proc export data=alldata
-outfile="V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\morgan cleaned final dataset.csv"
+outfile="U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\morgan cleaned final dataset.csv"
 replace
 dbms="csv";
 run;
