@@ -15,25 +15,68 @@ library(arsenal)
 library(tidyverse)
 library(performance)
 library(knitr)
+library(table1)
+library(nlme)
+library(lme4)
+library(emmeans)
 
 # data upload
 analysis_raw <- read_csv("S:/Laura/BDC/Projects/Cari Berget/a1c_hcl_omnipod/DATA/HCLClinicalObservati_DATA_2023-06-14_1345.csv")
-test = analysis_raw %>% filter(redcap_event_name == "child_bl_arm_1")
+
+# analysis_grps = analysis_raw %>% select(record_id, redcap_event_name, demo_c_hcl)
+```
+
+```{r functions, include = FALSE}
+# fit model fun
+fit_mod = function(outcome,df){
+
+    # Fit model
+  f = as.formula(paste0(outcome,"~","redcap_event_name"))
+  mod = lme(f,
+            random = ~1|record_id,
+            data = df,
+            na.action = na.omit)
+ 
+  print(outcome)
+  
+    # Anova
+  mod_anova = anova.lme(mod, type="marginal")
+  print(kable(mod_anova,digits = 3,caption = "Test of Overall Effect"))
+
+ 
+   # Means
+  mod_means = emmeans(mod,specs=pairwise ~ redcap_event_name, adjust="none")
+  mod_means2 = emmeans(mod,specs=~ redcap_event_name, adjust="none")
+
+  print(kable(mod_means$contrasts[1:3,],digits = 3,caption = "Timepoint Contrasts"))
+  print(kable(mod_means2,digits = 3,caption = "Timepoint Means"))
+ #print(kable(mod_means$contrasts[c(3,8,12),],caption="Time point means.",format.args = list(scientific = FALSE)))
+
+   # Number of obs
+  cat("\n")
+  cat(paste("This model was fit using",nobs(mod),"observations."))
+  cat("\n")
+}
+
 ```
 
 ```{r dc and scoring, include = FALSE}
-# system use/glycemic vars of interest
+# timepoints
+tps = c("child_bl_arm_1", "child_m1_arm_1", "child_m3_arm_1", "child_m6_arm_1")
+
+# SYSTEM USE/GLYCEMIC VARS of interest
 analysis_gly_t1 = analysis_raw %>% select(record_id, redcap_event_name,demo_c_age, gly_time_am, gly_time_am_ltd, gly_time_am_act,
                                       gly_time_mm, gly_sensorwear, gly_tdd, gly_tdd_bolus, gly_tdd_basal, gly_dailymealbolus, gly_dailybolus,
                                       gly_overrides, gly_a1c, gly_gmi, gly_sensor_mean, gly_sensor_sd, gly_sensor_u54, gly_sensor_54_69,
-                                      gly_sensor_70_180, gly_sensor_181_250, gly_sensor_g250)
+                                      gly_sensor_70_180, gly_sensor_181_250, gly_sensor_g250) %>% filter(redcap_event_name %in% tps)
+# fill in ages
+analysis_gly_t1 = analysis_gly_t1 %>% group_by(record_id) %>% fill(demo_c_age) %>% ungroup()
 
+# CHILD BASELINE
 psy_soc_child_bl = analysis_raw %>% select(record_id, demo_c_age,redcap_event_name, c_b_header_timepoint:c_b_inspire17,
                                            ya_b_header_timepoint:ya_b_inspire17, seeds_b1:seeds_b20) %>% filter(redcap_event_name == "child_bl_arm_1")
 # score surveys
-# Inspire: sum then mean then mult by 25
-#psy_soc_child_bl
-test = psy_soc_child_bl %>% mutate(cb_inspire_total = select(., c_b_inspire1:c_b_inspire17) %>% rowMeans()*25, 
+psy_soc_child_bl = psy_soc_child_bl %>% mutate(cb_inspire_total = select(., c_b_inspire1:c_b_inspire17) %>% rowMeans()*25, 
                                                ya_b_inspire_total = select(., ya_b_inspire1:ya_b_inspire17) %>% rowMeans()*25,
                                                inspire_score = ifelse(demo_c_age < 13, cb_inspire_total, ya_b_inspire_total), # INSPIRE TOTAL
                                                
@@ -56,22 +99,323 @@ test = psy_soc_child_bl %>% mutate(cb_inspire_total = select(., c_b_inspire1:c_b
                                                cb_paid_score = (80 - cb_paid)*25/20,
                                                ya_paid =  select(., ya_b_paid1:ya_b_paid20) %>% rowSums(),
                                                ya_paid_score = (80 - ya_paid)*25/20,
-                                               paid_score = ifelse(demo_c_age < 13, cb_paid_score, ya_paid_score)
+                                               paid_score = ifelse(demo_c_age < 13, cb_paid_score, ya_paid_score) # PAID
                                    )  %>% select(record_id, redcap_event_name, demo_c_age, inspire_score, hfs_maintain:hfs_worry_soc,paid_score)
+
+# CHILD FU
+psy_soc_child_fu = analysis_raw %>% select(record_id,redcap_event_name, c_f_timepoint:c_f_inspire17,
+                                           ya_f_header_timepoint:ya_f_inspire17, seeds_fu1:seeds_fu20) %>% filter(redcap_event_name %in% c("child_m1_arm_1","child_m3_arm_1","child_m6_arm_1"))
+psy_soc_child_fu = left_join(psy_soc_child_fu, psy_soc_child_bl %>% select(record_id, demo_c_age) %>% unique())
+
+psy_soc_child_fu = psy_soc_child_fu %>% mutate(cb_inspire_total = select(., c_f_inspire1:c_f_inspire17) %>% rowMeans()*25, 
+                                               ya_f_inspire_total = select(., ya_f_inspire1:ya_f_inspire17) %>% rowMeans()*25,
+                                               inspire_score = ifelse(demo_c_age < 13, cb_inspire_total, ya_f_inspire_total), # INSPIRE TOTAL
+                                               
+                                               c_hfs_maintain = select(., c_f_hfs_behave3, c_f_hfs_behave4, c_f_hfs_behave7) %>% rowSums(),
+                                               c_hfs_worry_bg = select(., c_f_hfs_worry11:c_f_hfs_worry14, c_f_hfs_worry16, c_f_hfs_worry18,
+                                                                       c_f_hfs_worry19, c_f_hfs_worry22:c_f_hfs_worry23) %>% rowSums(),
+                                               c_hfs_worry_soc = select(., c_f_hfs_worry15,c_f_hfs_worry17,
+                                                                        c_f_hfs_worry20, c_f_hfs_worry21, c_f_hfs_worry25) %>% rowSums(),
+                                               
+                                               ya_hfs_maintain = select(., ya_f_hfs_behave3, ya_f_hfs_behave4, ya_f_hfs_behave7) %>% rowSums(),
+                                               ya_hfs_worry_bg = select(., ya_f_hfs_worry11:ya_f_hfs_worry14, ya_f_hfs_worry16, ya_f_hfs_worry18,
+                                                                       ya_f_hfs_worry19, ya_f_hfs_worry22:ya_f_hfs_worry23) %>% rowSums(),
+                                               ya_hfs_worry_soc = select(., ya_f_hfs_worry15,ya_f_hfs_worry17,
+                                                                        ya_f_hfs_worry20, ya_f_hfs_worry21, ya_f_hfs_worry25) %>% rowSums(),
+                                               hfs_maintain = ifelse(demo_c_age < 13, c_hfs_maintain, ya_hfs_maintain),
+                                               hfs_worry_bg = ifelse(demo_c_age < 13, c_hfs_worry_bg, ya_hfs_worry_bg),
+                                               hfs_worry_soc = ifelse(demo_c_age < 13, c_hfs_worry_soc, ya_hfs_worry_soc), # HFS
+                                               
+                                               cb_paid =  select(., c_f_paid1:c_f_paid20) %>% rowSums(),
+                                               cb_paid_score = (80 - cb_paid)*25/20,
+                                               ya_paid =  select(., ya_f_paid1:ya_f_paid20) %>% rowSums(),
+                                               ya_paid_score = (80 - ya_paid)*25/20,
+                                               paid_score = ifelse(demo_c_age < 13, cb_paid_score, ya_paid_score) # PAID
+                                   )  %>% select(record_id, redcap_event_name, demo_c_age, inspire_score, hfs_maintain:hfs_worry_soc,paid_score)
+
+
+# PARENT BL
+psy_soc_p_bl = analysis_raw %>% select(record_id,redcap_event_name, p_b_inspire1:p_b_inspire21, p_b_hfs_behave1:p_b_hfs_worry26,
+                                       p_b_paid1:p_b_paid18) %>% filter(redcap_event_name == "parent_bl_arm_1")
+
+psy_soc_p_bl = psy_soc_p_bl %>% mutate(inspire_score_p = select(., p_b_inspire1:p_b_inspire21) %>% rowMeans()*25, # inspire
+                                               
+                                               hfs_maintain_p = select(., p_b_hfs_behave3, p_b_hfs_behave4, p_b_hfs_behave7) %>% rowSums(),
+                                               hfs_worry_bg_p = select(., p_b_hfs_worry12:p_b_hfs_worry15, p_b_hfs_worry16, p_b_hfs_worry17,
+                                                                       p_b_hfs_worry20, p_b_hfs_worry23:p_b_hfs_worry26) %>% rowSums(),
+                                               hfs_worry_soc_p = select(., p_b_hfs_worry16,p_b_hfs_worry18,
+                                                                        p_b_hfs_worry19, p_b_hfs_worry21, p_b_hfs_worry22) %>% rowSums(), # HFS
+                                               
+                                               paid_p =  select(., p_b_paid1:p_b_paid18) %>% rowSums(),
+                                               paid_score_p = (72-paid_p)*25/18 
+                                   )  %>% select(record_id, redcap_event_name, inspire_score_p, hfs_maintain_p:hfs_worry_soc_p,paid_score_p)
+
+# PARENT FU
+psy_soc_p_fu = analysis_raw %>% select(record_id,redcap_event_name, p_f_inspire1:p_f_inspire21, p_f_hfs_behave1:p_f_hfs_worry26,
+                                       p_f_paid1:p_f_paid18) %>% filter(redcap_event_name %in% c("parent_m1_arm_1","parent_m3_arm_1","parent_m6_arm_1"))
+
+psy_soc_p_fu = psy_soc_p_fu %>% mutate(inspire_score_p = select(., p_f_inspire1:p_f_inspire21) %>% rowMeans()*25, 
+                                       hfs_maintain_p = select(., p_f_hfs_behave3, p_f_hfs_behave4, p_f_hfs_behave7) %>% rowSums(),
+                                               hfs_worry_bg_p = select(., p_f_hfs_worry12:p_f_hfs_worry15, p_f_hfs_worry16, p_f_hfs_worry17,
+                                                                       p_f_hfs_worry20, p_f_hfs_worry23:p_f_hfs_worry26) %>% rowSums(),
+                                               hfs_worry_soc_p = select(., p_f_hfs_worry16,p_f_hfs_worry18,
+                                                                        p_f_hfs_worry19, p_f_hfs_worry21, p_f_hfs_worry22) %>% rowSums(), # HFS
+                                               
+                                               paid_p =  select(., p_f_paid1:p_f_paid18) %>% rowSums(),
+                                               paid_score_p = (72-paid_p)*25/18 
+                                   )  %>% select(record_id, redcap_event_name, inspire_score_p, hfs_maintain_p:hfs_worry_soc_p,paid_score_p)
+
+# merge datasets
+psy_soc_child = full_join(psy_soc_child_bl, psy_soc_child_fu) %>% unique()
+psy_soc_p= full_join(psy_soc_p_bl, psy_soc_p_fu) %>% mutate(redcap_event_name = gsub("parent_","child_",redcap_event_name)) %>% unique()
+
+psy_soc = full_join(psy_soc_child, psy_soc_p)%>% unique()
+psy_soc = psy_soc%>% group_by(record_id) %>% fill(demo_c_age) %>% ungroup() %>% filter(record_id != 125)
+# child outcomes
+analysis = full_join(analysis_gly_t1, psy_soc)
+
+analysis$redcap_event_name = factor(analysis$redcap_event_name, levels = c("child_bl_arm_1","child_m1_arm_1","child_m3_arm_1","child_m6_arm_1"),
+                                    labels = c("Baseline", "Month 1", "Month 3", "Month 6"))
+# discontinuation
+analysis = analysis %>% mutate(discontinuation = ifelse(gly_time_am < 10, 1, 0)) 
 
 ```
 
+```{r t1setup, include = FALSE}
+my.render.cont <- function(x) {
+    with(stats.apply.rounding(stats.default(x), digits=2), c("",
+        "Mean (SD)"=sprintf("%s (&plusmn; %s)", MEAN, SD)))}
+
+child_t1 = table1(~.|redcap_event_name, data = analysis %>% select(-record_id), render.continuous= my.render.cont)
+```
+# Background
+
 Objectives: 
 1.	To describe use of the Omnipod 5 AID system and glycemic outcomes in a clinical sample of youth starting the Omnipod 5 system for their clinical care. 
-2. Describe psychosocial impacts of the Omnipod 5 system in a clinical sample of youth starting Omnipod 5 for their clinical care
+2.  Describe psychosocial impacts of the Omnipod 5 system in a clinical sample of youth starting Omnipod 5 for their clinical care
 
+-	Describe change over time in System Use and glycemic variables in Linear mixed model
+-	% Meeting ADA goals of:HbA1c ≤ 7.0%,TIR (70-180) ≥ 70% 	TBR (<70) < 4%,	HbA1c ≤ 7.0%, TIR≥ 70%, TBR< 4% 
+- Report #s of Automated Mode discontinuers over time as well as CGM use (% Sensor Wear) for discontinuers over time
 
-1.	Describe change over time in System Use and glycemic variables in Linear mixed model with the following time points: 
-•	Baseline (up to 14 days prior to starting HCL)
-•	1 month post HCL start
-•	3 month post HCL start
-•	6 month post HCL start
-•	*would like p-values for difference between baseline and each time point
+# Outstanding data questions/remarks
+
+- seems like a lot of missing data for the survey outcomes
+- no month 1 visits for parents
+- very few month 1 visits for psy/soc outcomes for children
+- I don't think I have the seeds survey scoring, I may have misplaced this if you sent this already.
+- list of subjects to exclude? , i have subj 136, 64 with no age
+- is discontinuation considered at baseline? only 2 non baseline below 10% in AM (id34 m3, id131 m1)
+- 15 subj dont have a gly time am for baseline visit
+
+# Methods
+
+Discontinuation defined as <10% Automated Mode use at any time point.  All patients with >10% Automated Mode use included in model at each time point
+
+Change in outcomes over time was modeled with a linear mixed model with random intercept for subject and contrasts comparing each timepoint to baseline.  
+
+# Analysis 
+
+## Discontinuation
+
+- 119/141 subjects had < 10% at baseline, 1 subject each for months 1 and 3
+- subject 34 missing the sensorwear variable
+
+```{r,echo = FALSE}
+kable(analysis %>% filter(discontinuation==1) %>% group_by(redcap_event_name) %>%  summarise(n(), mean_sensorwear = mean(gly_sensorwear, na.rm = T)),digits = 3 )
+```
+
+```{r, include=FALSE}
+analysis = analysis %>% filter((discontinuation == 0 | redcap_event_name == "Baseline"))
+```
+
+## Table 1
+
+```{r t1, echo = FALSE}
+child_t1
+```
+
+## Full Cohort
+
+## % Meeting ADA Goals
+ex: At Baseline, 35% of subjects had an a1c at or below 7%, and 12% of subjects met ADA goals for A1c, TIR and TBR  together.
+
+```{r,echo = FALSE}
+kable(analysis %>% mutate(a1c_lt7 = ifelse(gly_a1c <= 7,1,0),
+                    tir_gt70 = ifelse(gly_sensor_70_180 >= 70,1,0),
+                    tbr_lt4 = ifelse(gly_sensor_u54 + gly_sensor_54_69 < 4, 1,0),
+                    all_ada = ifelse(a1c_lt7 + tir_gt70 + tbr_lt4 < 3, 0, 1)) %>% 
+  group_by(redcap_event_name) %>%  summarise(p_a1c = mean(a1c_lt7, na.rm = T),
+                                             p_tir = mean(tir_gt70, na.rm = T),
+                                             p_tbr=  mean(tbr_lt4, na.rm = T),
+                                             p_all_ada= mean(all_ada, na.rm = T)), 
+  digits = 3,caption = "% meeting ADA Goals")
+```
+
+### SU/Glycemic Outcomes
+
+####	% time in Automated Mode
+```{r, echo=FALSE, results='asis'}
+fit_mod("gly_time_am", analysis)
+```
+
+####	% time in Automated: Limited
+```{r, echo=FALSE, results='asis'}
+fit_mod("gly_time_am_ltd", analysis)
+```
+
+####	% time in Automated: Activity
+```{r, echo=FALSE, results='asis'}
+fit_mod("gly_time_am_act", analysis)
+```
+
+####	% time in Manual Mode
+```{r, echo=FALSE, results='asis'}
+fit_mod("gly_time_mm", analysis)
+```
+
+####	% Sensor wear
+```{r, echo=FALSE, results='asis'}
+fit_mod("gly_sensorwear", analysis)
+```
+
+####	Total Daily Dose (TDD)
+```{r, echo=FALSE, results='asis'}
+fit_mod("gly_tdd", analysis)
+```
+
+####	% TDD as bolus
+```{r, echo=FALSE, results='asis'}
+fit_mod("gly_tdd_bolus", analysis)
+```
+
+####	% TDD as basal
+```{r, echo=FALSE, results='asis'}
+fit_mod("gly_tdd_basal", analysis)
+```
+
+#### meal boluses per day 
+```{r, echo=FALSE, results='asis'}
+fit_mod("gly_dailymealbolus", analysis)
+```
+
+#### boluses/day
+```{r, echo=FALSE, results='asis'}
+fit_mod("gly_dailybolus", analysis)
+```
+
+####	% overrides
+```{r, echo=FALSE, results='asis'}
+fit_mod("gly_overrides", analysis)
+```
+
+####	HbA1c (%)
+```{r, echo=FALSE, results='asis'}
+fit_mod("gly_a1c", analysis)
+```
+
+####	GMI (%)
+```{r, echo=FALSE, results='asis'}
+fit_mod("gly_gmi", analysis)
+```
+
+####	Average sensor glucose value
+```{r, echo=FALSE, results='asis'}
+fit_mod("gly_sensor_mean", analysis)
+```
+
+####	Standard Deviation of Sensor Glucose Values
+```{r, echo=FALSE, results='asis'}
+fit_mod("gly_sensor_sd", analysis)
+```
+
+####	% under 54 mg/dL
+```{r, echo=FALSE, results='asis'}
+fit_mod("gly_sensor_u54", analysis)
+```
+
+####	% time sensor values 54-69 mg/dL
+```{r, echo=FALSE, results='asis'}
+fit_mod("gly_sensor_54_69", analysis)
+```
+
+####	% time sensor values <70 mg/dL
+```{r, echo=FALSE, results='asis'}
+fit_mod("gly_sensor_u70", analysis %>% mutate(gly_sensor_u70 = gly_sensor_u54+ gly_sensor_54_69))
+```
+
+####	% time sensor values 70-180 mgdL
+```{r, echo=FALSE, results='asis'}
+fit_mod("gly_sensor_70_180", analysis)
+```
+
+####	% time sensor values >180 mg/dL
+```{r, echo=FALSE, results='asis'}
+fit_mod("gly_sensor_g180", analysis %>% mutate(gly_sensor_g180 = gly_sensor_181_250+ gly_sensor_g250))
+```
+
+####	% time sensor values 181-250 mg/dL
+```{r, echo=FALSE, results='asis'}
+fit_mod("gly_sensor_181_250", analysis)
+```
+
+####	% time sensor values > 250 mg/dL
+```{r, echo=FALSE, results='asis'}
+fit_mod("gly_sensor_g250", analysis)
+```
+
+### Psychosocial Outcomes: 
+
+####	Inspire Parents
+```{r, echo=FALSE, results='asis'}
+fit_mod("inspire_score_p", analysis)
+```
+
+####	hfs maintain Parents
+```{r, echo=FALSE, results='asis'}
+fit_mod("hfs_maintain_p", analysis)
+```
+
+####	hfs worry bg Parents
+```{r, echo=FALSE, results='asis'}
+fit_mod("hfs_worry_bg_p", analysis)
+```
+
+####	hfs worry social Parents
+```{r, echo=FALSE, results='asis'}
+fit_mod("hfs_worry_soc_p", analysis)
+```
+
+####	PAID Parents
+```{r, echo=FALSE, results='asis'}
+fit_mod("paid_score_p", analysis)
+```
+
+####	Inspire child
+```{r, echo=FALSE, results='asis'}
+fit_mod("inspire_score", analysis)
+```
+
+####	hfs maintain child
+```{r, echo=FALSE, results='asis'}
+fit_mod("hfs_maintain", analysis)
+```
+
+####	hfs worry bg child
+```{r, echo=FALSE, results='asis'}
+fit_mod("hfs_worry_bg", analysis)
+```
+
+####	hfs worry social child
+```{r, echo=FALSE, results='asis'}
+fit_mod("hfs_worry_soc", analysis)
+```
+
+####	PAID child
+```{r, echo=FALSE, results='asis'}
+fit_mod("paid_score", analysis)
+```
+
 
 o	Groups: 
 o	Full cohort
@@ -84,48 +428,3 @@ o	Age groups
 	Child= 6-13.9
 	Adolescent= 14.0-17.9
 	Young adult= 18+
-
-o	 discontinuation defined as <10% Automated Mode use at any time point.  All patients with >10% Automated Mode use included in model at each time point. Report #s of Automated Mode discontinuers over time as well as CGM use (% Sensor Wear) for discontinuers over time
-Variables:
-System use variables
-•	% time in Automated Mode
-•	% time in Automated: Limited
-•	% time in Automated: Activity
-•	% time in Manual Mode
-•	% Sensor wear
-•	Total Daily Dose (TDD)
-•	% TDD as bolus
-•	% TDD as basal
-•	# meal boluses per day 
-•	# boluses/day
-•	% overrides
-Glycemic Variables:
-•	HbA1c (%)
-•	GMI (%)
-•	Average sensor glucose value
-•	Standard Deviation of Sensor Glucose Values
-•	% under 54 mg/dL
-•	% time sensor values 54-69 mg/dL
-•	% time sensor values 70-180 mgdL
-•	% time sensor values 181-250 mg/dL
-•	% time sensor values > 250 mg/dL
-•	Analysis for % time in ranges
-o	70-180, >180, >250, <70, <54
-•	NOTE: to calculate the time > 180 will need to combine the ’181-250’ data point + ‘>250’ data point
-•	NOTE: to calculate the time <70, will need to combine the ‘<54’ and ’54-69’ data point
-•	% Meeting ADA goals of
-o	HbA1c ≤ 7.0%
-o	TIR (70-180) ≥ 70% 
-o	TBR (<70) < 4%
-o	HbA1c ≤ 7.0%, TIR≥ 70%, TBR< 4% 
-
-2. Psychosocial analysis: 
-o	Survey data for parents 
-o	INSPIRE
-o	Hypoglycemia Fear Survey (HFS)
-o	Problem Areas in Diabetes (PAID-PR)
-o	Survey for youth
-o	Hypoglycemia Fear survey (HFS)
-o	Problem Areas in Diabetes (PAID)- Pediatric 
-o	INSPIRE
-o	SEEDS Survey (only for ages 13+)
