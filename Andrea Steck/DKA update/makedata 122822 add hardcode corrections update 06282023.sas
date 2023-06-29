@@ -1,17 +1,19 @@
 *libname data 'S:\Shared Projects\Laura\BDC\Projects\Todd Alonso\DKA\Data';
-libname data 'U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
+libname data 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
 
  /**********************************************************************
  *   PRODUCT:   SAS
  *   VERSION:   9.4
  *   CREATOR:   External File Interface
- *   DATE:      28JUN23
+ *   DATE:      29JUN23
  *   DESC:      Generated SAS Datastep Code
  *   TEMPLATE SOURCE:  (None Specified.)
  ***********************************************************************/
     data WORK.ALLDATA    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\MASTER_06.15.23_WithoutMRNPP3 edited.csv' delimiter = ',' MISSOVER DSD lrecl=13106 firstobs=2 ;
+    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\MASTER_06.15.23_WithMRNPP3 edited.csv' delimiter = ',' MISSOVER DSD lrecl=13106 firstobs=2 ;
+       informat MRN best32. ;
+       informat PP3 best32. ;
        informat Sample_ID best32. ;
        informat DOB mmddyy10. ;
        informat OnsetDate mmddyy10. ;
@@ -23,8 +25,8 @@ libname data 'U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
        informat Insurance $28. ;
        informat InsuranceGroup $7. ;
        informat InitalA1c best32. ;
-       informat pH $1. ;
-       informat bicarb $1. ;
+       informat pH 8. ;
+       informat bicarb 8. ;
        informat pH_MarianJama best32. ;
        informat BiCarb_MarianJama best32. ;
        informat DKA $3. ;
@@ -45,6 +47,8 @@ libname data 'U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
        informat last_visit_to_dx $1. ;
        informat seen_12mo_prior $1. ;
        informat SOURCE $10. ;
+       format MRN best12. ;
+       format PP3 best12. ;
        format Sample_ID best12. ;
        format DOB mmddyy10. ;
        format OnsetDate mmddyy10. ;
@@ -56,8 +60,8 @@ libname data 'U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
        format Insurance $28. ;
        format InsuranceGroup $7. ;
        format InitalA1c best12. ;
-       format pH $1. ;
-       format bicarb $1. ;
+       format pH 8. ;
+       format bicarb 8. ;
        format pH_MarianJama best12. ;
        format BiCarb_MarianJama best12. ;
        format DKA $3. ;
@@ -79,6 +83,8 @@ libname data 'U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
        format seen_12mo_prior $1. ;
        format SOURCE $10. ;
     input
+                MRN
+                PP3
                 Sample_ID
                 DOB
                 OnsetDate
@@ -90,8 +96,8 @@ libname data 'U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
                 Insurance  $
                 InsuranceGroup  $
                 InitalA1c
-                pH  $
-                bicarb  $
+                pH 
+                bicarb  
                 pH_MarianJama
                 BiCarb_MarianJama
                 DKA  $
@@ -115,7 +121,8 @@ libname data 'U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
     ;
     if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
     run;
-
+proc contents data=alldata; run;
+proc print; var fup_prior_dx; run;
 
 /* read in zip code data */
  /**********************************************************************
@@ -128,7 +135,7 @@ libname data 'U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
  ***********************************************************************/
     data WORK.zips    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DMERuralZIP.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DMERuralZIP.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat STATE $2. ;
        informat ZipCode_DateOfDiagnosis $5. ;
        informat YEAR_QTR best32. ;
@@ -159,6 +166,7 @@ merge alldata(in=ina) zips;
 by ZipCode_DateOfDiagnosis; 
 if ina;
 run;
+proc print; var fup_prior_dx; run;
 proc freq data=alldata; table Rural_Non_Rural / missing; run;
 data alldata;
 set alldata;
@@ -182,6 +190,7 @@ run;
 proc freq data=alldata;
 tables race_eth*race*ethnicity;
 run;
+proc print; var fup_prior_dx; run;
 
 /* read in hardcoded corrections */
  /**********************************************************************
@@ -194,17 +203,17 @@ run;
  ***********************************************************************/
    data WORK.CORRECTIONS    ;
     %let _EFIERR_ = 0; 
-    infile 'U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat DKA $3. ;
        informat dka_sev $10. ;
-       informat pH best32. ;
-       informat bicarb best32. ;
+       informat pH 8. ;
+       informat bicarb 8. ;
        format MRN best12. ;
        format DKA $3. ;
        format dka_sev $10. ;
-       format pH best12. ;
-       format bicarb best12. ;
+       format pH 8. ;
+       format bicarb 8. ;
     input
                 MRN
                 DKA  $
@@ -223,10 +232,13 @@ run;
 proc print data=alldata;
 var mrn dka dka_sev ph bicarb;
 run; 
-
+proc contents data=alldata; run;
+proc contents data=corrections; run;
+proc print; var fup_prior_dx; run;
 
 /* now we have the dataset which contains study participants and non-participants */
 /* for study participants, need to limit to 70 subjects with at least 6 months of follow up */
+/* SOMEWHERE JUST AFTER HERE THE VARIABLE fup_prior_dx='*' */
 proc contents data=alldata; run;
 proc freq data=alldata; table NewOnset_DxThroughScreeningStudy; run;
 data nonstudy;
@@ -234,12 +246,14 @@ set alldata;
 where NewOnset_DxThroughScreeningStudy="NULL" or NewOnset_DxThroughScreeningStudy="";
 instudy=0;
 run; 
+proc print; var fup_prior_dx; run;
 proc freq data=nonstudy; table NewOnset_DxThroughScreeningStudy; run;
 data study;
 set alldata; 
 where NewOnset_DxThroughScreeningStudy ne "NULL" and NewOnset_DxThroughScreeningStudy ne "";
 instudy=1;
 run; 
+proc print data=alldata; var fup_prior_dx; run;
 proc freq data=study; table NewOnset_DxThroughScreeningStudy; run;
 
 /* create variable ge6moprior */
@@ -248,6 +262,7 @@ set study;
 fup_prior_dx = onsetdate - Initial_research_study_visit_dat;
 fup_prior_dx_mo = fup_prior_dx/30.44;
 run;
+proc print; var onsetdate onsetdatefup_prior_dx Initial_research_study_visit_dat ; run;
 data study;
 set study;
 if fup_prior_dx_mo>=6 then ge6moprior=1;
