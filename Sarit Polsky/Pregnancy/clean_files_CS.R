@@ -2,19 +2,19 @@ library(parsedate)
 library(cgmanalysis)
 library(readxl)
 library(dplyr)
-setwd("/Volumes/som/BDC/SHARED/POLSKY/Triple C/Tim/Rerun")
+setwd("S:/Laura/BDC/Projects/Janet Snell-Bergeon/Triple C/Data Rerun")
 # Output location
-outdir <- paste0(getwd(), "/", "Data_Cleaned/")
+outdir <- paste0("S:/Laura/BDC/Projects/Janet Snell-Bergeon/Triple C/Data Rerun/Data_Cleaned/")
 # Import dates - remove spaces and characters from names
-dates <- read_excel("./Data_Raw/Trimesters_Corrected_Final.xlsx")
+dates <- read_excel("Trimesters_Corrected_Final_2-15-23.xlsx")
 dates$`Last name` <- tolower(gsub(" ", "", dates$`Last name`))
 dates$`Last name` <- tolower(gsub("[[:punct:]]", "", dates$`Last name`))
 dates$`First name` <- tolower(gsub(" ", "", dates$`First name`))
 dates$`First name` <- tolower(gsub("[[:punct:]]", "", dates$`First name`))
 # List all the directories
-dirs <- list.dirs("Data_Raw")
+dirs <- list.dirs("CGM Files")
 # Loop through directories
-for (d in dirs[2:length(dirs)]) {
+for (d in dirs) {
   # Get name - lowercase and remove special characters
   name <- tolower(sub("_.*", "", basename(d)))
   name <- gsub(" ", "", name)
@@ -30,7 +30,7 @@ for (d in dirs[2:length(dirs)]) {
   # List files
   files <- list.files(d, full.names = T)
   # Loop through files, combine into 1
-  l <- lapply(files, function(f) {
+  l <- lapply(files, function(f) { 
     print(f)
     df <- read.csv(f, na.strings = "", header = F)
     # Check file type by number of columns
@@ -63,7 +63,8 @@ for (d in dirs[2:length(dirs)]) {
       df$timestamp <- parse_date(df$timestamp, approx = F)
     }
     return(df)
-  })
+  }
+    )}
   # Bind
   df <- do.call(rbind, l)
   # remove duplicates
@@ -107,6 +108,8 @@ for (d in dirs[2:length(dirs)]) {
   wk28 <- NA
   dd <- NA
 }
+
+
 # Variables
 out <- paste0("polsky_triple_c_cgm_", Sys.Date())
 cgmvariables(outdir, "./Reports", id_filename = T, outputname = out)
@@ -138,3 +141,8 @@ cgm <- cgm %>% select(
   -any_of(c("percent_cgm_wear", "num_days"))
 )
 write.csv(cgm, paste0("./Reports/", out, ".csv"), row.names = F)
+
+
+#####
+
+
