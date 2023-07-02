@@ -1,6 +1,7 @@
+
 *libname data 'S:\Shared Projects\Laura\BDC\Projects\Todd Alonso\DKA\Data';
 *libname data 'T:\Todd Alonso\DKA\Data';
-libname data 'B:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
+libname data 'T:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
 
 proc format;
   value age_cat 1='<6 years'
@@ -34,7 +35,8 @@ proc contents; run;
 proc freq data=alldata; table Rural_Non_Rural; run;
 proc freq data=alldata; table english; run;
 proc freq data=alldata; table race_eth combinedethnicityrace_todd; run;
-proc freq data=alldata; table rural_non_rural rural_or_non_rural; run;
+proc freq data=alldata; table rural_non_rural rural_or_non_rural SOURCE; run;
+proc print data=alldata(obs=100); where source="MORGAN"; run;
 
 data x;
 set alldata;
@@ -172,7 +174,7 @@ run;
  *   TEMPLATE SOURCE:  (None Specified.)
  ***********************************************************************/
    data WORK.CORRECTIONS    ;
-    %let _EFIERR_ = 0; \
+    %let _EFIERR_ = 0; 
     infile 'B:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat DKA $3. ;

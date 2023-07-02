@@ -32,7 +32,7 @@ libname data 'T:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
        informat DKA $3. ;
        informat DKA_sev $10. ;
        informat Rural_or_non_rural $9. ;
-       informat ZipCode_DateOfDiagnosis $1. ;
+       informat ZipCode_DateOfDiagnosis $5. ;
        informat State_DateOfDiagnosis $1. ;
        informat PrimaryLanguage $1. ;
        informat NewOnset_DxThroughScreeningStudy $9. ;
@@ -67,7 +67,7 @@ libname data 'T:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
        format DKA $3. ;
        format DKA_sev $10. ;
        format Rural_or_non_rural $9. ;
-       format ZipCode_DateOfDiagnosis $1. ;
+       format ZipCode_DateOfDiagnosis $5. ;
        format State_DateOfDiagnosis $1. ;
        format PrimaryLanguage $1. ;
        format NewOnset_DxThroughScreeningStudy $9. ;
@@ -122,7 +122,7 @@ libname data 'T:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
     if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
     run;
 proc contents data=alldata; run;
-proc print; var fup_prior_dx; run;
+proc freq data=alldata; table Rural_or_non_rural ZipCode_DateOfDiagnosis; run;
 
 /* read in zip code data */
  /**********************************************************************
@@ -286,7 +286,11 @@ table ge6moprior*seen_12mo_prior;
 run;
 data study;
 set study;
-where ge6moprior and seen_12mo_prior;
+if ge6moprior=1; 
+run;
+data study;
+set study;
+if seen_12mo_prior=1; 
 run;
 proc freq data=study;
 table ge6moprior*seen_12mo_prior;
@@ -294,6 +298,9 @@ run;
 
 data alldata;
 set study nonstudy;
+run;
+proc freq data=alldata;
+table ge6moprior*seen_12mo_prior;
 run;
 
 /* write final dataset */
