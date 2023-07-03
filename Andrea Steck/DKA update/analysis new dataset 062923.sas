@@ -1,7 +1,7 @@
 
 *libname data 'S:\Shared Projects\Laura\BDC\Projects\Todd Alonso\DKA\Data';
 *libname data 'T:\Todd Alonso\DKA\Data';
-libname data 'T:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
+libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
 
 proc format;
   value age_cat 1='<6 years'
@@ -13,7 +13,7 @@ proc format;
 				  "None"="None"
 				  "Private"="Private"
 				  "Public"="Public";
-  value $ new_eth "Hispanic"="Hispanic"
+  value $ race_eth "Hispanic"="Hispanic"
 				"Non-Hispanic Black"="Non-Hispanic Black"
 				"Non-Hispanic White"="Non-Hispanic White"
 				"Other/Unknown"="Other/Unknown";
@@ -31,12 +31,16 @@ run;
 data alldata;
 set data.alldata;
 run;
-proc contents; run;
-proc freq data=alldata; table Rural_Non_Rural; run;
-proc freq data=alldata; table english; run;
-proc freq data=alldata; table race_eth combinedethnicityrace_todd; run;
-proc freq data=alldata; table rural_non_rural rural_or_non_rural SOURCE; run;
-proc print data=alldata(obs=100); where source="MORGAN"; run;
+proc freq data=alldata; table race_eth*source ; run;
+proc freq data=alldata;
+where source="MarianJama"; 
+table race ethnicity;
+run;
+proc freq data=alldata;
+where source="MarianJama"; 
+table dka*dka_sev;
+run;
+
 
 data x;
 set alldata;
@@ -175,7 +179,7 @@ run;
  ***********************************************************************/
    data WORK.CORRECTIONS    ;
     %let _EFIERR_ = 0; 
-    infile 'B:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat DKA $3. ;
        informat dka_sev $10. ;
@@ -226,7 +230,8 @@ data alldata;
 set alldata;
 if dka="." or dka="" or dka=" " then dkaknown=0;
 else dkaknown=1;
-format gender $gender. new_eth $new_eth. new_ins $new_ins. dka $dka. Rural_Non_Rural $rural. english yn. hispanic yn. dka_sev $dka_sev.;
+format gender $gender. new_eth $new_eth. new_ins $new_ins. dka $dka. Rural_Non_Rural $rural. 
+		english yn. hispanic yn. dka_sev $dka_sev. race_eth $race_eth.;
 label Age_AtOnset="Age at onset"
 	  gender="Sex"
 	  new_eth="Race/ethnicity"
@@ -236,7 +241,8 @@ label Age_AtOnset="Age at onset"
 	  dka_sev="DKA severity"
 	  Rural_Non_Rural="Rural"
 	  English="English-speaking"
-      Hispanic="Hispanic";
+      Hispanic="Hispanic"
+	  race_eth="Race/ethnicity";
 run;
 proc print data=alldata;
 var  instudy dka dkaknown;
@@ -261,14 +267,14 @@ run;
 data foranalysis;
 set alldata;
 run;
-%include 'H:\SAS tools\Amanda table 1\2 category macros with KW.sas';
+%include 'W:\SAS tools\Amanda table 1\2 category macros with KW.sas';
 proc datasets;
 delete OutTable ;
 run;
 quit;
 %CON(BV = Age_AtOnset, OC=dkaknown);
 %CAT(BV = gender, BVF = $gender, OC= dkaknown);
-%CAT(BV = new_eth, BVF = $new_eth, OC= dkaknown);
+%CAT(BV = race_eth, BVF = $race_eth, OC= dkaknown);
 %CAT(BV = new_ins, BVF = $new_ins, OC= dkaknown);
 ods rtf file='c:\temp\output.rtf' style=journal;
 proc print data=outtable noobs label;
@@ -280,6 +286,7 @@ label 	_Label_ = '00'x
 		xPC = 'P-value' ;
 run;
 ods rtf close;
+proc freq data=foranalysis; table race_eth; run;
 
 /* now delete unknown status for rest of analysis */
 data alldata;
