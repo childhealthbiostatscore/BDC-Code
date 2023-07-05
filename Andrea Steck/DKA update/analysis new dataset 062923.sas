@@ -31,34 +31,14 @@ run;
 data alldata;
 set data.alldata;
 run;
-proc freq data=alldata; table race_eth*source ; run;
-proc freq data=alldata;
-where source="MarianJama"; 
-table race ethnicity;
-run;
-proc freq data=alldata;
-where source="MarianJama"; 
-table dka*dka_sev;
-run;
-
-
 data x;
 set alldata;
-where dka="Yes" and dka_sev="No DKA";
+where (dka="No" and dka_sev="Mild DKA") or (dka="Yes" and dka_sev="No DKA") or
+  dka in (""," ") or dka_sev in ("", " ");
+keep mrn pp3 source ph bicarb dka dka_sev;
 run;
-proc export data=x dbms=csv replace outfile="V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\dka_yes_sev_none.csv";
-run;
-
-proc print; 
-var BiCarb_MarianJama pH_MarianJama;
-where BiCarb_MarianJama ne "" and pH_MarianJama ne "";
-run;
-
-/* exclude one participant over 21 years old */
-data alldata;
-set alldata;
-if Age_AtOnset>=21 then delete;
-run;
+proc sort data=x; by source; run;
+proc print data=x; run;
 
 /* create variable for categorical age */
 data alldata;
@@ -69,24 +49,7 @@ else if Age_AtOnset>=6 and Age_AtOnset<13 then age_cat=2;
 else age_cat=3;
 format age_cat age_cat.;
 run;
-proc freq data=alldata;
-tables age_cat;
-run;
 
-proc freq data=alldata; table insurance insurancegroup ; run;
-/* recategorize some insurance types */
-/*proc freq data=alldata; tables insurancetype; run;
-data alldata;
-length new_ins $30;
-set alldata;
-if insurancegroup in ('TBD','Unknown') then new_ins='Unknown';
-else if insurancegroup in ('Public','Medicaid') then new_ins='Public/Medicaid';
-else if insurancegroup in ('Military Plans ','Private ') then new_ins='Private/military';
-else new_ins=insurancegroup;
-run;
-proc freq data=alldata;
-tables insurancegroup*new_ins;
-run;*/
 data alldata;
 set alldata;
 new_ins=insurancegroup;
@@ -98,7 +61,6 @@ data alldata;
 set alldata;
 if PrimaryLanguage='ENGLISH' then PrimaryLanguage='English';
 run;
-proc freq data=alldata; table PrimaryLanguage; run;
 
 /* create variable for non-English speaking */
 data alldata;
@@ -106,9 +68,6 @@ set alldata;
 if PrimaryLanguage in (' ','.') then English=.;
 else if PrimaryLanguage='English' then English=1;
 else English=0;
-run;
-proc freq data=alldata;
-tables PrimaryLanguage*English;
 run;
 
 /* create variable for quarter of the year */
@@ -121,20 +80,16 @@ else if month in (4,5,6) then quarter=2;
 else if month in (7,8,9) then quarter=3;
 else quarter=4;
 run;
-proc freq data=alldata;
-tables month*quarter / missing;
-run;
 
 /* year of onset */
 data alldata;
 set alldata;
 year=year(onsetdate);
 run;
-proc freq data=alldata; table year / missing; run;
 
 /* combine race ethnicity categories */
 /*	Let’s do race/ethnicity as NHW, H, NHB, and all the others/unknown. */
-proc freq data=alldata; table race; run;
+/* not using variable new_eth anymore */
 data alldata;
 set alldata;
 new_eth=race_eth;
@@ -144,28 +99,33 @@ set alldata;
 if new_eth="Hispanic" then hispanic=1;
 else hispanic=0;
 run;
-proc freq data=alldata; table new_eth*hispanic; run;
-proc freq data=alldata; table race_eth; run;
-
-/* correct DKA status */
-/*data alldata;
+/* code race_eth for Marian's data */
+data alldata;
 set alldata;
-if mrn="1644153" then dka="No";
-else if mrn="1213967" then dka="No";
-else if mrn="1361724" then dka="No";
-else if mrn="1593479" then dka="No";
-run;*/
-proc freq data=alldata; table dka ; run;
+if source="MarianJama" and (ethnicity="Hispanic or Latino" or race="Hispanic") then race_eth="Hispanic";
+else if source="MarianJama" and (ethnicity ne "Hispanic or Latino" and race ne "Hispanic") and 
+		race="White" then race_eth="Non-Hispanic White";
+else if source="MarianJama" and (ethnicity ne "Hispanic or Latino" and race ne "Hispanic") and race="Black or African Ame" 
+		then race_eth="Non-Hispanic Black";
+else if source="MarianJama" and race_eth in ("",".") then race_eth="Other";
+run;
 
 /* create variable for DKA severity */
 data alldata;
 set alldata;
-if (ph ne . and ph<7.1) or (bicarb ne . and bicarb <5) then dka_sev="Severe DKA";
-else if (ph>=7.1 and ph<7.3) or (bicarb>=5 and bicarb<15) then dka_sev="Mild DKA";
-else dka_sev="No DKA";
+if DKA="YES" then dka="Yes";
 run;
-proc freq data=alldata;
-tables dka_sev;
+
+/* for Todd's and Morgan's data, if someone has pH and/or bicarb and has DKA="Yes" fill in dka severity */
+data alldata;
+set alldata;
+if source="TODD" and dka="Yes" and (ph ne . and ph<7.1) or (bicarb ne . and bicarb <5) then dka_sev="Severe DKA";
+else if source="TODD" and dka="Yes" and (ph>=7.1 and ph<7.3) or (bicarb>=5 and bicarb<15) then dka_sev="Mild DKA";
+run;
+data alldata;
+set alldata;
+if source="MORGAN" and dka="Yes" and (ph ne . and ph<7.1) or (bicarb ne . and bicarb <5) then dka_sev="Severe DKA";
+else if source="MORGAN" and dka="Yes" and (ph>=7.1 and ph<7.3) or (bicarb>=5 and bicarb<15) then dka_sev="Mild DKA";
 run;
 
 /* read in hardcoded corrections */
@@ -205,15 +165,33 @@ data alldata;
 merge alldata corrections;
 by mrn;
 run;
-proc print data=alldata;
-var mrn dka dka_sev ph bicarb;
-run; 
-
-
-proc print data=alldata;
-where Age_AtOnset>=18; 
+ods rtf file="W:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_crosstab.rtf"; 
+proc freq data=alldata;
+where source="TODD"; 
+table dka*dka_sev / missing;
+title "Source=TODD";
 run;
-
+proc freq data=alldata;
+where source="MORGAN"; 
+table dka*dka_sev / missing;
+title "source=MORGAN";
+run;
+proc freq data=alldata;
+where source="MarianJama" ; 
+table dka*dka_sev / missing;
+title "source=MarianJama";
+run;
+ods rtf close;
+data dka_prob;
+set alldata;
+where (dka="No" and dka_sev="Mild DKA") or (dka="Yes" and dka_sev="No DKA") or
+  dka in (""," ") or dka_sev in ("", " ");
+keep mrn pp3 source ph bicarb dka dka_sev;
+run;
+proc sort data=dka_prob; by source; run;
+proc export data=dka_prob
+  outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_issues.csv" dbms=csv replace;
+run;
 
 /* compare DKA status known to unknown */
 proc freq data=alldata; table dka; run;
@@ -223,18 +201,14 @@ if dka="YES" then dka="Yes";
 gender=sex;
 if strip(dka)="No" then dka="No";
 run;
-proc freq data=alldata;
-table dka dka_sev;
-run;
 data alldata;
 set alldata;
-if dka="." or dka="" or dka=" " then dkaknown=0;
+if dka="." or dka="" or dka=" " or dka="Unk" then dkaknown=0;
 else dkaknown=1;
-format gender $gender. new_eth $new_eth. new_ins $new_ins. dka $dka. Rural_Non_Rural $rural. 
+format gender $gender. new_ins $new_ins. dka $dka. Rural_Non_Rural $rural. 
 		english yn. hispanic yn. dka_sev $dka_sev. race_eth $race_eth.;
 label Age_AtOnset="Age at onset"
 	  gender="Sex"
-	  new_eth="Race/ethnicity"
 	  new_ins="Insurance"
 	  InitalA1c="HbA1c"
 	  dka="DKA"
@@ -261,7 +235,7 @@ proc freq data=alldata;
 table instudy*dkaknown;
 run;
 proc freq data=alldata;
-tables dkaknown*(gender new_eth new_ins) / chisquare exact;
+tables dkaknown*(gender race_eth new_ins) / chisquare exact;
 run;
 
 data foranalysis;
@@ -332,8 +306,8 @@ run;
 %mend;
 %cat(gender);
 proc logistic data=alldata;
-class new_eth(ref='Non-Hispanic White');;
-model dka(event='Yes') = new_eth;
+class race_eth(ref='Non-Hispanic White');;
+model dka(event='Yes') = race_eth;
 run;
 proc logistic data=alldata;
 class new_ins(ref='Private');
@@ -397,8 +371,8 @@ run;
 %catadj(gender);
 %catadj(age_cat);
 proc logistic data=alldata;
-class new_eth(ref='Non-Hispanic White') quarter;
-model dka(event='Yes')  = new_eth quarter;
+class race_eth(ref='Non-Hispanic White') quarter;
+model dka(event='Yes')  = race_eth quarter;
 run;
 proc logistic data=alldata;
 class new_ins(ref='Private') quarter;
@@ -453,15 +427,15 @@ run;
 %contglm(Age_AtOnset);
 %catglm(age_cat);
 %catglm(gender);
-%catglm(new_eth);
+%catglm(race_eth);
 %catglm(new_ins);
 %catglm(English);
 %contglm(year);
 %catglm(Rural_Non_Rural);
 proc glm data=alldata;
-class new_eth(ref='White');
-model InitalA1c = new_eth / solution;
-lsmeans new_eth;
+class race_eth(ref='White');
+model InitalA1c = race_eth / solution;
+lsmeans race_eth;
 run;
 proc glm data=alldata;
 class new_ins(ref='Private') ;
@@ -473,10 +447,10 @@ quit;
 /* MULTIVARIATE FOR HBA1C */
 ods rtf file="C:\temp\output.rtf" style=journal;
 proc glm data=alldata;
-class new_ins new_eth English;
+class new_ins race_eth English;
 model InitalA1c = new_ins Age_AtOnset new_eth English year / solution;
 lsmeans new_ins / stderr;
-lsmeans new_eth  / stderr;
+lsmeans race_eth  / stderr;
 lsmeans English  / stderr;
 run;
 ods rtf close;
@@ -516,7 +490,7 @@ quit;
 %CON(BV = Age_AtOnset, OC=instudy);
 %CON(BV = InitalA1c, OC=instudy);
 %CAT(BV = gender, BVF = $gender, OC= instudy);
-%CAT(BV = new_eth, BVF = $new_eth, OC= instudy);
+%CAT(BV = race_eth, BVF = $race_eth, OC= instudy);
 %CAT(BV = hispanic, BVF = yn, OC= instudy);
 %CAT(BV = new_ins, BVF = $new_ins, OC= instudy);
 %CAT(BV = dka, BVF = $new_ins, OC= instudy);
@@ -617,8 +591,8 @@ run;
 %mend;
 %cat(gender);
 proc logistic data=study;
-class new_eth(ref='Non-Hispanic White');;
-model dka(event='Yes') = new_eth;
+class race_eth(ref='Non-Hispanic White');;
+model dka(event='Yes') = race_eth;
 run;
 proc logistic data=study;
 class hispanic(ref='No');;
@@ -668,8 +642,8 @@ run;
 %mend;
 %cat(gender);
 proc logistic data=clinic;
-class new_eth(ref='Non-Hispanic White');;
-model dka(event='Yes') = new_eth;
+class race_eth(ref='Non-Hispanic White');;
+model dka(event='Yes') = race_eth;
 run;
 proc logistic data=clinic;
 class hispanic(ref='No');;
