@@ -39,6 +39,9 @@ keep mrn pp3 source ph bicarb dka dka_sev;
 run;
 proc sort data=x; by source; run;
 proc print data=x; run;
+proc freq data=alldata;
+table ph;
+run;
 
 /* create variable for categorical age */
 data alldata;
