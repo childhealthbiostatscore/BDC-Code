@@ -25,7 +25,7 @@ libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
        informat Insurance $28. ;
        informat InsuranceGroup $7. ;
        informat InitalA1c best32. ;
-       informat pH 8. ;
+       informat pH 8.2 ;
        informat bicarb 8. ;
        informat pH_MarianJama best32. ;
        informat BiCarb_MarianJama best32. ;
@@ -60,7 +60,7 @@ libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
        format Insurance $28. ;
        format InsuranceGroup $7. ;
        format InitalA1c best12. ;
-       format pH 8. ;
+       format pH 8.2 ;
        format bicarb 8. ;
        format pH_MarianJama best12. ;
        format BiCarb_MarianJama best12. ;
@@ -121,8 +121,8 @@ libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
     ;
     if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
     run;
-proc contents data=alldata; run;
-proc freq data=alldata; table race_eth; run;
+proc freq data=alldata; table ph; run;
+proc contents; run;
 
 /* read in zip code data */
  /**********************************************************************
