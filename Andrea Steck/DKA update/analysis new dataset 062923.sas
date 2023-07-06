@@ -168,6 +168,53 @@ data alldata;
 merge alldata corrections;
 by mrn;
 run;
+/* merge in another set of corrections */
+ /**********************************************************************
+ *   PRODUCT:   SAS
+ *   VERSION:   9.4
+ *   CREATOR:   External File Interface
+ *   DATE:      03JUL23
+ *   DESC:      Generated SAS Datastep Code
+ *   TEMPLATE SOURCE:  (None Specified.)
+ ***********************************************************************/
+    data WORK.NEW_corrections    ;
+    %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
+    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DKA Severity Issues - fixed_07.05.23.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+       informat MRN best32. ;
+       informat PP3 best32. ;
+       informat pH 8.2 ;
+       informat bicarb 8. ;
+       informat DKA $3. ;
+       informat DKA_sev $10. ;
+       informat SOURCE $6. ;
+       format MRN best12. ;
+       format PP3 best12. ;
+       format pH best12. ;
+       format bicarb best12. ;
+       format DKA $3. ;
+       format DKA_sev $10. ;
+       format SOURCE $6. ;
+    input
+                MRN
+                PP3  
+                pH
+                bicarb
+                DKA  $
+                DKA_sev  $
+                SOURCE  $
+    ;
+    if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
+    run;
+proc sort data=new_corrections; by MRN; run;
+proc sort data=alldata; by MRN; run;
+data alldata;
+merge alldata new_corrections;
+by MRN;
+run;
+data alldata;
+set alldata;
+if source="MarianJama" and DKA="No" and DKA_sev in (""," ") then DKA_sev="No DKA";
+run;
 ods rtf file="W:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_crosstab.rtf"; 
 proc freq data=alldata;
 where source="TODD"; 
@@ -244,7 +291,7 @@ run;
 data foranalysis;
 set alldata;
 run;
-%include 'W:\SAS tools\Amanda table 1\2 category macros with KW.sas';
+%include 'U:\SAS tools\Amanda table 1\2 category macros with KW.sas';
 proc datasets;
 delete OutTable ;
 run;
@@ -268,7 +315,7 @@ proc freq data=foranalysis; table race_eth; run;
 /* now delete unknown status for rest of analysis */
 data alldata;
 set alldata;
-if dka='' or dka=" " then delete;
+if dka='' or dka=" " or dka="Unk" then delete;
 run;
 proc freq data=alldata; table new_ins; run;
 proc print data=alldata; run;
@@ -298,6 +345,7 @@ ods rtf close;
 
 /* predictors are age at onset, gender, race, insurance, language, onset year, rural/nonrural */
 /* with and without adjustment for quarter of the year */
+ods rtf file="C:\temp\output.rtf style=journal";
 proc logistic data=alldata;
 model dka(event='Yes') = Age_AtOnset ;
 run;
@@ -340,6 +388,8 @@ proc logistic data=alldata;
 class instudy(ref='0');
 model dka(event='Yes') = instudy ;
 run;
+ods rtf close;
+proc freq; table english; run;
 
 /* 2x2 table of study by DKA */
 ods rtf file="C:\temp\output.rtf" style=journal;
@@ -354,13 +404,13 @@ run;
 /* multivariate model with predictors that were significant on univariate */
 ods rtf file="C:\temp\output.rtf" style=journal;
 proc logistic data=alldata;
-class Rural_Non_Rural age_cat instudy(ref='0');
-model dka(event='Yes') =  age_cat Rural_Non_Rural InitalA1c instudy;
+class race_eth new_ins year Rural_Non_Rural instudy(ref='0');
+model dka(event='Yes') =  race_eth new_ins year Rural_Non_Rural hba1c instudy;
 run;
 /* model without A1c */
 proc logistic data=alldata;
-class Rural_Non_Rural age_cat instudy(ref='0');
-model dka(event='Yes') =  age_cat Rural_Non_Rural instudy;
+class race_eth new_ins year Rural_Non_Rural instudy(ref='0');
+model dka(event='Yes') =  race_eth new_ins year Rural_Non_Rural instudy;
 run;
 ods rtf close;
 
