@@ -89,6 +89,9 @@ data alldata;
 set alldata;
 year=year(onsetdate);
 run;
+proc print data=alldata;
+var source onsetdate year;
+run;
 
 /* combine race ethnicity categories */
 /*	Let’s do race/ethnicity as NHW, H, NHB, and all the others/unknown. */
@@ -232,6 +235,7 @@ table dka*dka_sev / missing;
 title "source=MarianJama";
 run;
 ods rtf close;
+title;
 data dka_prob;
 set alldata;
 where (dka="No" and dka_sev="Mild DKA") or (dka="Yes" and dka_sev="No DKA") or
@@ -255,7 +259,7 @@ data alldata;
 set alldata;
 if dka="." or dka="" or dka=" " or dka="Unk" then dkaknown=0;
 else dkaknown=1;
-format gender $gender. new_ins $new_ins. dka $dka. Rural_Non_Rural $rural. 
+format gender $gender. new_ins $new_ins. dka $dka. Rural_or_non_rural $rural. 
 		english yn. hispanic yn. dka_sev $dka_sev. race_eth $race_eth.;
 label Age_AtOnset="Age at onset"
 	  gender="Sex"
@@ -263,7 +267,7 @@ label Age_AtOnset="Age at onset"
 	  InitalA1c="HbA1c"
 	  dka="DKA"
 	  dka_sev="DKA severity"
-	  Rural_Non_Rural="Rural"
+	  Rural_or_non_rural="Rural"
 	  English="English-speaking"
       Hispanic="Hispanic"
 	  race_eth="Race/ethnicity";
@@ -291,7 +295,7 @@ run;
 data foranalysis;
 set alldata;
 run;
-%include 'U:\SAS tools\Amanda table 1\2 category macros with KW.sas';
+%include 'V:\SAS tools\Amanda table 1\2 category macros with KW.sas';
 proc datasets;
 delete OutTable ;
 run;
@@ -367,7 +371,7 @@ run;
 proc freq data=alldata; table new_ins; run;
 %cat(English);
 %cat(year);
-%cat(Rural_non_rural);
+%cat(Rural_or_non_rural);
 %cat(age_cat);
 proc logistic data=alldata;
 model dka(event='Yes') = year ;
@@ -401,16 +405,30 @@ ods rtf close;
 proc freq data=alldata;
 table year;
 run;
+proc print data=alldata;
+var source race_eth new_ins year Rural_Non_Rural instudy;
+run;
+proc contents; run;
+proc freq data=alldata;
+table Rural_or_non_rural*Rural_Non_Rural / missing; 
+run;
+proc freq data=alldata;
+table  new_ins Insurance InsuranceGroup;
+run;
+proc print data=alldata;
+var source new_ins Insurance InsuranceGroup;
+where new_ins in (""," ");
+run;
 /* multivariate model with predictors that were significant on univariate */
 ods rtf file="C:\temp\output.rtf" style=journal;
 proc logistic data=alldata;
-class race_eth new_ins year Rural_Non_Rural instudy(ref='0');
-model dka(event='Yes') =  race_eth new_ins year Rural_Non_Rural hba1c instudy;
+class race_eth new_ins year Rural_or_non_rural instudy(ref='0');
+model dka(event='Yes') =  race_eth new_ins year Rural_or_non_rural InitalA1c instudy;
 run;
 /* model without A1c */
 proc logistic data=alldata;
-class race_eth new_ins year Rural_Non_Rural instudy(ref='0');
-model dka(event='Yes') =  race_eth new_ins year Rural_Non_Rural instudy;
+class race_eth new_ins year Rural_or_non_rural instudy(ref='0');
+model dka(event='Yes') =  race_eth new_ins year Rural_or_non_rural instudy;
 run;
 ods rtf close;
 
@@ -433,7 +451,7 @@ model dka(event='Yes')  = new_ins quarter;
 run;
 %catadj(English);
 %catadj(year);
-%catadj(Rural_Non_Rural);
+%catadj(Rural_or_non_rural);
 
 /* examine rates of dka by age */
 data alldata;
@@ -484,7 +502,7 @@ run;
 %catglm(new_ins);
 %catglm(English);
 %contglm(year);
-%catglm(Rural_Non_Rural);
+%catglm(Rural_or_non_rural);
 proc glm data=alldata;
 class race_eth(ref='White');
 model InitalA1c = race_eth / solution;
@@ -548,7 +566,7 @@ quit;
 %CAT(BV = new_ins, BVF = $new_ins, OC= instudy);
 %CAT(BV = dka, BVF = $new_ins, OC= instudy);
 %CAT(BV = dka_sev, BVF = $new_ins, OC= instudy);
-%CAT(BV = Rural_Non_Rural, BVF = $rural, OC= instudy);
+%CAT(BV = Rural_or_non_rural, BVF = $rural, OC= instudy);
 %CAT(BV = english, BVF = yn, OC= instudy);
 ods rtf file='c:\temp\output.rtf' style=journal;
 proc print data=outtable noobs label;
@@ -632,6 +650,7 @@ data study;
 set alldata;
 where instudy=1;
 run;
+ods rtf file="C:\temp\output.rtf";
 /* predictors are age at onset, gender, race, insurance, language, onset year, rural/nonrural */
 proc logistic data=study;
 model dka(event='Yes') = Age_AtOnset ;
@@ -657,7 +676,7 @@ model dka(event='Yes') = new_ins;
 run;
 %cat(English);
 %cat(year);
-%cat(Rural_non_rural);
+%cat(Rural_or_non_rural);
 %cat(age_cat);
 proc logistic data=study;
 model dka(event='Yes') = year ;
@@ -667,12 +686,13 @@ proc logistic data=study;
 model dka(event='Yes') = InitalA1c ;
 run;
 proc freq data=study; table hispanic; run;
+ods rtf close;
 
 /* multivariate model with predictors that were significant on univariate */
 ods rtf file="C:\temp\output.rtf" style=journal;
 proc logistic data=study;
-class  ;
-model dka(event='Yes') =   InitalA1c;
+class Hispanic ;
+model dka(event='Yes') = Hispanic  InitalA1c;
 run;
 ods rtf close;
 
@@ -683,6 +703,7 @@ data clinic;
 set alldata;
 where instudy=0;
 run;
+ods rtf file="C:\temp\output.rtf";
 /* predictors are age at onset, gender, race, insurance, language, onset year, rural/nonrural */
 proc logistic data=clinic;
 model dka(event='Yes') = Age_AtOnset ;
@@ -708,7 +729,7 @@ model dka(event='Yes') = new_ins;
 run;
 %cat(English);
 %cat(year);
-%cat(Rural_non_rural);
+%cat(Rural_or_non_rural);
 %cat(age_cat);
 proc logistic data=clinic;
 model dka(event='Yes') = year ;
@@ -717,18 +738,19 @@ run;
 proc logistic data=clinic;
 model dka(event='Yes') = InitalA1c ;
 run;
+ods rtf close;
 
 /* multivariate model with predictors that were significant on univariate */
 ods rtf file="C:\temp\output.rtf" style=journal;
 proc logistic data=clinic;
-class age_cat;
-model dka(event='Yes') =  age_cat InitalA1c;
+class race_eth new_ins year Rural_or_non_rural;
+model dka(event='Yes') =  race_eth new_ins year Rural_or_non_rural InitalA1c;
 where new_ins ne 'None';
 run;
 /* model without A1c */
 proc logistic data=alldata;
-class Rural_Non_Rural age_cat;
-model dka(event='Yes') =  age_cat Rural_Non_Rural ;
+class race_eth new_ins year Rural_or_non_rural;
+model dka(event='Yes') =  race_eth new_ins year Rural_or_non_rural ;
 where new_ins ne 'None';
 run;
 ods rtf close;
