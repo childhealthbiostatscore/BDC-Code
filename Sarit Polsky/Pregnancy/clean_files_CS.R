@@ -2,6 +2,27 @@ library(parsedate)
 library(cgmanalysis)
 library(readxl)
 library(dplyr)
+##### FUNCTIONS FOR LIST FIXING
+
+quikfix = function(x){
+  a = tail(x, nrow(x) - 1)
+  a = a %>% select(2:3)
+  colnames(a) = c("timestamp", "sensorglucose")
+  a$sensorglucose = as.numeric(a$sensorglucose)
+  a$timestamp = parse_date(a$timestamp)
+  return(a)
+}
+
+listfix = function(x){
+  if(ncol(x) == 3){
+    return(quikfix(x))
+  }
+  else{
+    return(x)
+  }
+}
+
+#####
 setwd("S:/Laura/BDC/Projects/Janet Snell-Bergeon/Triple C/Data Rerun")
 # Output location
 outdir <- paste0("S:/Laura/BDC/Projects/Janet Snell-Bergeon/Triple C/Data Rerun/Data_Cleaned/")
@@ -14,7 +35,7 @@ dates$`First name` <- tolower(gsub("[[:punct:]]", "", dates$`First name`))
 # List all the directories
 dirs <- list.dirs("CGM Files")
 # Loop through directories
-for (d in dirs) {
+for (d in dirs[2:length(dirs)]) {
   # Get name - lowercase and remove special characters
   name <- tolower(sub("_.*", "", basename(d)))
   name <- gsub(" ", "", name)
@@ -64,8 +85,9 @@ for (d in dirs) {
     }
     return(df)
   }
-    )}
+    )
   # Bind
+  l = lapply(l,listfix)
   df <- do.call(rbind, l)
   # remove duplicates
   df <- df[!duplicated(df), ]
@@ -143,6 +165,8 @@ cgm <- cgm %>% select(
 write.csv(cgm, paste0("./Reports/", out, ".csv"), row.names = F)
 
 
-#####
 
 
+#test = Filter(function(x) length(x) > 2,l)
+test2 = 
+test = do.call(rbind, test2)
