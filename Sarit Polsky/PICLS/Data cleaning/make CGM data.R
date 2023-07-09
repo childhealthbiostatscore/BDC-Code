@@ -65,6 +65,16 @@ for (f in 1:length(files)) {
 alldata2 <- merge(alldata,dates,by="subjectid",all.x = T, all.y = F)
 alldata2 <- merge(alldata2,ppdates,by="subjectid",all.x = T, all.y = F)
 alldata2$sensorglucose <- as.numeric(alldata2$sensorglucose)
+
+# merge in acetaminophen data and delete any data within X hours of acetaminophen
+acetaminophen <- read.csv("/Volumes/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Acetaminophen/PICLSStudyHCLVsSAPTI-Acetaminophen_DATA_2023-07-09_1639.csv")
+acetaminophen$subjectid <- acetaminophen$pid
+acetaminophen <- acetaminophen %>% select(subjectid,acet_date,acet_time)
+# not sure the most efficient way to delete the data during acetaminophen use
+# make a wide dataset of acetaminophen and merge into alldata, then delete if between start and stop?
+# some people have up to 75 instances
+
+# divide by trimester/time period
 t1data <- alldata2 %>% filter(as.Date(timestamp)>=Run.in.End & as.Date(timestamp)<SecondTri)
 t1data$trimester <- "T1"
 t2data <- alldata2 %>% filter(as.Date(timestamp)>=SecondTri & as.Date(timestamp)<ThirdTri)
