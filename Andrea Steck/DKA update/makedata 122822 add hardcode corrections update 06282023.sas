@@ -1,5 +1,5 @@
 *libname data 'S:\Shared Projects\Laura\BDC\Projects\Todd Alonso\DKA\Data';
-libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
+libname data 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
 
  /**********************************************************************
  *   PRODUCT:   SAS
@@ -11,7 +11,7 @@ libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
  ***********************************************************************/
     data WORK.ALLDATA    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\MASTER_06.15.23_WithMRNPP3 edited.csv' delimiter = ',' MISSOVER DSD lrecl=13106 firstobs=2 ;
+    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\MASTER_06.15.23_WithMRNPP3 edited.csv' delimiter = ',' MISSOVER DSD lrecl=13106 firstobs=2 ;
        informat MRN best32. ;
        informat PP3 best32. ;
        informat Sample_ID best32. ;
@@ -121,7 +121,7 @@ libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
     ;
     if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
     run;
-proc freq data=alldata; table ph; run;
+proc freq data=alldata; table instudy; run;
 proc contents; run;
 
 /* read in zip code data */
@@ -135,7 +135,7 @@ proc contents; run;
  ***********************************************************************/
     data WORK.zips    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DMERuralZIP.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DMERuralZIP.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat STATE $2. ;
        informat ZipCode_DateOfDiagnosis $5. ;
        informat YEAR_QTR best32. ;
@@ -171,7 +171,7 @@ set alldata;
 if ZipCode_DateOfDiagnosis="" or ZipCode_DateOfDiagnosis=" " then Rural_Non_Rural="";
 else if  Rural_Non_Rural="" or Rural_Non_Rural=" " then Rural_Non_Rural="Non-rural";
 run;
-
+proc freq data=alldata; table instudy; run;
 
 /* read in hardcoded corrections */
  /**********************************************************************
@@ -184,7 +184,7 @@ run;
  ***********************************************************************/
    data WORK.CORRECTIONS    ;
     %let _EFIERR_ = 0; 
-    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat DKA $3. ;
        informat dka_sev $10. ;
@@ -216,26 +216,19 @@ run;
 proc contents data=alldata; run;
 proc contents data=corrections; run;
 proc print; var fup_prior_dx; run;
+proc freq data=alldata; table instudy; run;
 
 /* now we have the dataset which contains study participants and non-participants */
 /* for study participants, need to limit to 70 subjects with at least 6 months of follow up */
 /* SOMEWHERE JUST AFTER HERE THE VARIABLE fup_prior_dx='*' */
-proc contents data=alldata; run;
-proc freq data=alldata; table NewOnset_DxThroughScreeningStudy; run;
 data nonstudy;
 set alldata;
-where NewOnset_DxThroughScreeningStudy="NULL" or NewOnset_DxThroughScreeningStudy="";
-instudy=0;
+where instudy=0;
 run; 
-proc print; var fup_prior_dx; run;
-proc freq data=nonstudy; table NewOnset_DxThroughScreeningStudy; run;
 data study;
 set alldata; 
-where NewOnset_DxThroughScreeningStudy ne "NULL" and NewOnset_DxThroughScreeningStudy ne "";
-instudy=1;
+where instudy=1;
 run; 
-proc print data=study; var fup_prior_dx; run;
-proc freq data=study; table NewOnset_DxThroughScreeningStudy; run;
 
 /* create variable ge6moprior */
 data study;
@@ -243,7 +236,6 @@ set study;
 fup_prior_dx = onsetdate - Initial_research_study_visit_dat;
 fup_prior_dx_mo = fup_prior_dx/30.44;
 run;
-proc print; var onsetdate onsetdate fup_prior_dx Initial_research_study_visit_dat ; run;
 data study;
 set study;
 if fup_prior_dx_mo>=6 then ge6moprior=1;
@@ -269,14 +261,14 @@ run;
 proc freq data=study;
 table ge6moprior*seen_12mo_prior;
 run;
-data study;
+/*data study;
 set study;
 if ge6moprior=1; 
 run;
 data study;
 set study;
 if seen_12mo_prior=1; 
-run;
+run; */
 proc freq data=study;
 table ge6moprior*seen_12mo_prior;
 run;
@@ -292,11 +284,11 @@ run;
 data data.alldata;
 set alldata;
 run;
-proc freq data=alldata; table race_eth; run;
+proc freq data=alldata; table instudy; run;
 
 /* export csv file */
 proc export data=alldata
-outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\morgan cleaned final dataset.csv"
+outfile="V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\morgan cleaned final dataset.csv"
 replace
 dbms="csv";
 run;

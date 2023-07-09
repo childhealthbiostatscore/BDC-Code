@@ -31,6 +31,7 @@ run;
 data alldata;
 set data.alldata;
 run;
+proc freq; table instudy; run;
 data x;
 set alldata;
 where (dka="No" and dka_sev="Mild DKA") or (dka="Yes" and dka_sev="No DKA") or
@@ -243,6 +244,7 @@ where (dka="No" and dka_sev="Mild DKA") or (dka="Yes" and dka_sev="No DKA") or
 keep mrn pp3 source ph bicarb dka dka_sev;
 run;
 proc sort data=dka_prob; by source; run;
+proc print data=dka_prob; run;
 proc export data=dka_prob
   outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_issues.csv" dbms=csv replace;
 run;
@@ -329,7 +331,7 @@ run;
 proc contents data=foranalysis; run;
 
 proc freq data=alldata;
-table dka*dka_sev;
+table instudy*dka*dka_sev;
 run;
 ods rtf file='c:\temp\output.rtf' style=journal;
 /* people without DKA who have mild or severe */
@@ -398,7 +400,10 @@ proc freq; table english; run;
 /* 2x2 table of study by DKA */
 ods rtf file="C:\temp\output.rtf" style=journal;
 proc freq data=alldata;
-table instudy*dka / chisq;
+table instudy*dka;
+run;
+proc freq data=alldata;
+table instudy*dka_sev;
 run;
 ods rtf close;
 
