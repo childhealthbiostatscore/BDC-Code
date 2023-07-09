@@ -12,11 +12,13 @@ outdir <- "/Volumes/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/Cleaned CGM data"
 
 # read in file with trimester dates, admission dates, discharge dates
 # trimester 3 will end at admission, PP will start at discharge
-tri_dates <- read.csv("/Volumes/BDC/Projects/Sarit Polsky/PICLS/Data cleaning/CGM Data Check.csv")
+tri_dates <- read.csv("/Volumes/BDC/Projects/Sarit Polsky/PICLS/Data cleaning/CGM Data Check_6.8.23.csv")
 tri_dates$FirstTri <- as.Date(tri_dates$FirstTri,format = "%m/%d/%Y")
 tri_dates$SecondTri <- as.Date(tri_dates$SecondTri,format = "%m/%d/%Y")
 tri_dates$ThirdTri <- as.Date(tri_dates$ThirdTri,format = "%m/%d/%Y")
 tri_dates$Delivery.Date <- as.Date(tri_dates$Delivery.Date,format = "%m/%d/%Y")
+tri_dates$Run.in.Start <- as.Date(tri_dates$Run.in.Start, format = "%m/%d/%Y")
+tri_dates$Run.in.End <- as.Date(tri_dates$Run.in.End, format = "%m/%d/%Y")
 
 # read in labor admission dates
 labor_dates <- read_xlsx("/Volumes/BDC/Projects/Sarit Polsky/PICLS/Data cleaning/L&D Admission Dates for PICLS.xlsx")
@@ -63,7 +65,7 @@ for (f in 1:length(files)) {
 alldata2 <- merge(alldata,dates,by="subjectid",all.x = T, all.y = F)
 alldata2 <- merge(alldata2,ppdates,by="subjectid",all.x = T, all.y = F)
 alldata2$sensorglucose <- as.numeric(alldata2$sensorglucose)
-t1data <- alldata2 %>% filter(as.Date(timestamp)>=FirstTri & as.Date(timestamp)<SecondTri)
+t1data <- alldata2 %>% filter(as.Date(timestamp)>=Run.in.End & as.Date(timestamp)<SecondTri)
 t1data$trimester <- "T1"
 t2data <- alldata2 %>% filter(as.Date(timestamp)>=SecondTri & as.Date(timestamp)<ThirdTri)
 t2data$trimester <- "T2"
@@ -71,6 +73,8 @@ t3data <- alldata2 %>% filter(as.Date(timestamp)>=ThirdTri & as.Date(timestamp)<
 t3data$trimester <- "T3"
 ppdata <- alldata2 %>% filter(as.Date(timestamp)>=v15date)
 ppdata$trimester <- "Post-partum"
+runindata <- alldata2 %>% filter(as.Date(timestamp)>=Run.in.Start & as.Date(timestamp)<Run.in.End)
+runindata$trimester <- "Run-in"
 
 # now I just need to split the trimester files by ID
 split1 <- split(t1data,t1data$subjectid)
@@ -106,6 +110,15 @@ for (df in splitpp) {
   df <- df[,c("subjectid","timestamp","sensorglucose")]
   df <- df[order(df$timestamp),]
   filename <- paste0("/Volumes/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/",df$subjectid[1],"_PP.csv")
+  write.csv(df,file = filename,row.names = F)
+}
+
+splitrunin <- split(runindata,runindata$subjectid)
+for (df in splitrunin) {
+  df <- as.data.frame(df)
+  df <- df[,c("subjectid","timestamp","sensorglucose")]
+  df <- df[order(df$timestamp),]
+  filename <- paste0("/Volumes/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/",df$subjectid[1],"_Runin.csv")
   write.csv(df,file = filename,row.names = F)
 }
 
