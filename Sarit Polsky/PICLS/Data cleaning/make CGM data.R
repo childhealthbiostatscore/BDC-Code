@@ -67,12 +67,19 @@ alldata2 <- merge(alldata2,ppdates,by="subjectid",all.x = T, all.y = F)
 alldata2$sensorglucose <- as.numeric(alldata2$sensorglucose)
 
 # merge in acetaminophen data and delete any data within X hours of acetaminophen
-acetaminophen <- read.csv("/Volumes/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Acetaminophen/PICLSStudyHCLVsSAPTI-Acetaminophen_DATA_2023-07-09_1639.csv")
+acetaminophen <- read.csv("/Volumes/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Acetaminophen/PICLSStudyHCLVsSAPTI-Acetaminophen_DATA_2023-07-09_1639.csv",
+                          na.strings = c("NA",""," "))
 acetaminophen$subjectid <- acetaminophen$pid
 acetaminophen <- acetaminophen %>% select(subjectid,acet_date,acet_time)
 # not sure the most efficient way to delete the data during acetaminophen use
 # make a wide dataset of acetaminophen and merge into alldata, then delete if between start and stop?
 # some people have up to 75 instances
+# also need to treat people with missing times different than those who listed specific times - if no time, delete the whole day
+acetaminophen_notime <- acetaminophen %>% filter(is.na(acet_time))
+acetaminophen_notime$delete <- 1
+alldata2$acet_date <- as.Date(alldata2$timestamp)
+alldata2 <- merge(alldata2,acetaminophen_notime,by=c("subjectid","acet_date"),all.x = T, all.y = T)
+alldata2 <- alldata2 %>% filter(is.na(delete))
 
 # divide by trimester/time period
 t1data <- alldata2 %>% filter(as.Date(timestamp)>=Run.in.End & as.Date(timestamp)<SecondTri)
