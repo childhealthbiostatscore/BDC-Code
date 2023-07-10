@@ -5,6 +5,7 @@ library(readxl)
 library(dplyr)
 library(stringr)
 library(lubridate)
+library(chron)
 
 # setup
 setwd("/Volumes/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Final raw CGM files for analysis")
@@ -80,6 +81,17 @@ acetaminophen_notime$delete <- 1
 alldata2$acet_date <- as.Date(alldata2$timestamp)
 alldata2 <- merge(alldata2,acetaminophen_notime,by=c("subjectid","acet_date"),all.x = T, all.y = T)
 alldata2 <- alldata2 %>% filter(is.na(delete))
+alldata2$acet_date <- NULL
+alldata2$acet_time <- NULL
+alldata2$delete <- NULL
+# now acetaminophen records with time
+acetaminophen_time <- acetaminophen %>% filter(!is.na(acet_time))
+acetaminophen_time$acet_date <- as.Date(acetaminophen_time$acet_date)
+# reformat start time of acetaminophen
+# THIS IS NOT PASTING PROPERLY
+acetaminophen_time$acet_date_time <- as.POSIXct(paste(acetaminophen_time$acet_date,acetaminophen_time$acet_time), format="%Y-%m-%d %H:%M:%S")
+# add stop time 8 hours later
+acetaminophen_time$stop_time <- acetaminophen_time$acet_time
 
 # divide by trimester/time period
 t1data <- alldata2 %>% filter(as.Date(timestamp)>=Run.in.End & as.Date(timestamp)<SecondTri)
