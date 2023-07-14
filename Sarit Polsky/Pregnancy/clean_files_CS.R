@@ -9,7 +9,7 @@ quikfix = function(x){
   a = a %>% select(2:3)
   colnames(a) = c("timestamp", "sensorglucose")
   a$sensorglucose = as.numeric(a$sensorglucose)
-  a$timestamp = parse_date(a$timestamp)
+  a$timestamp = parsedate::parse_date(a$timestamp)
   return(a)
 }
 
@@ -34,6 +34,9 @@ dates$`First name` <- tolower(gsub(" ", "", dates$`First name`))
 dates$`First name` <- tolower(gsub("[[:punct:]]", "", dates$`First name`))
 # List all the directories
 dirs <- list.dirs("CGM Files")
+
+problemdirs = c("CGM Files/Craig, Jessica","CGM Files/Datteri-Saboski, Erin","CGM Files/Ferguson, Brittany","CGM Files/Hemenover, Kelsey","CGM Files/Jarvies, Kortney","CGM Files/Perry, Laura",
+                "CGM Files/Pool, Jessica")
 # Loop through directories
 for (d in dirs[2:length(dirs)]) {
   # Get name - lowercase and remove special characters
@@ -55,34 +58,57 @@ for (d in dirs[2:length(dirs)]) {
     print(f)
     df <- read.csv(f, na.strings = "", header = F)
     # Check file type by number of columns
-    if (ncol(df) == 14) {
+    if(ncol(df) == 14){
       colnames(df) <- df[1, ]
       df <- df[-1, ]
       df <- df[, grep("timestamp|glucose value", tolower(colnames(df)))]
       colnames(df) <- c("timestamp", "sensorglucose")
       df$timestamp <- sub("T", " ", df$timestamp)
-      df$timestamp <- parse_date(df$timestamp, approx = F)
-    } else if (ncol(df) >= 48) {
-      sensor <- which(df$V3 == "Sensor")
-      colnames(df) <- df[sensor[1] + 1, ]
-      df <- df[(sensor[1] + 2):nrow(df), ]
-      df$timestamp <- parse_date(paste(df$Date, df$Time), approx = F)
-      df <- df[, grep("timestamp|sensor glucose", tolower(colnames(df)))]
-      colnames(df)[1] <- "sensorglucose"
-    } else if (ncol(df) == 19) {
-      colnames(df) <- df[3, ]
-      df <- df[4:nrow(df), ]
-      df <- df[, grep("timestamp|historic glucose", tolower(colnames(df)))]
-      colnames(df) <- c("timestamp", "sensorglucose")
-      df$timestamp <- parse_date(df$timestamp, approx = F)
-    } else if (ncol(df) == 13) {
+      df$timestamp <- parsedate::parse_date(df$timestamp, approx = F)
+      }     
+    else if (ncol(df) == 13) {
       colnames(df) <- df[1, ]
       df <- df[2:nrow(df), ]
       df <- df[, grep("datetime|glucoseinternaltime|glucosevalue", tolower(colnames(df)))]
       colnames(df) <- c("timestamp", "sensorglucose")
       df$timestamp <- sub("T", " ", df$timestamp)
-      df$timestamp <- parse_date(df$timestamp, approx = F)
+      df$timestamp <- parsedate::parse_date(df$timestamp, approx = F)
     }
+    else if(ncol(df) == 19){
+      colnames(df) <- df[3, ]
+      df <- df[4:nrow(df), ]
+      df <- df[, grep("timestamp|historic glucose", tolower(colnames(df)))]
+      colnames(df) <- c("timestamp", "sensorglucose")
+      df$timestamp <- parsedate::parse_date(df$timestamp, approx = F)
+    }
+    else if(ncol(df)>= 48 & d %in% problemdirs &  grepl("CONTOUR", df[3,2])) {
+        df = as.data.frame(df[5:nrow(df),]) %>% select(c(2:3,5))
+        df$timestamp = parsedate::parse_date(paste(df$Date, df$Time))
+        df = df %>% select(timestamp, sensorglucose)
+        print("in the right place")
+      } 
+    else if(d %in% problemdirs &  grepl("OneTouch", df[3,2])  ){
+      # df = as.data.frame(df[5:nrow(df),]) %>% mutate(Date = `First Name`,Time =  `Patient ID`,sensorglucose = `Start Date`)
+      # df$timestamp = parsedate::parse_date(paste(df$Date, df$Time))
+      # df = df %>% select(timestamp, sensorglucose)
+      # 
+      df = as.data.frame(df[5:nrow(df),]) %>% select(c(2:3,5))
+      df$timestamp = parsedate::parse_date(paste(df$Date, df$Time))
+      df = df %>% select(timestamp, sensorglucose)
+    } 
+      
+    else if(ncol(df)>= 48 & !(d %in% problemdirs)){
+      sensor <- which(df$V3 == "Sensor")
+      colnames(df) <- df[sensor[1] + 1, ]
+      df <- df[(sensor[1] + 2):nrow(df), ]
+      df$timestamp <- parsedate::parse_date(paste(df$Date, df$Time), approx = F)
+      df <- df[, grep("timestamp|sensor glucose", tolower(colnames(df)))]
+      colnames(df)[1] <- "sensorglucose"}
+    
+    print(" not in the right place")
+
+    
+
     return(df)
   }
     )
@@ -167,6 +193,9 @@ write.csv(cgm, paste0("./Reports/", out, ".csv"), row.names = F)
 
 
 
-#test = Filter(function(x) length(x) > 2,l)
-test2 = 
-test = do.call(rbind, test2)
+#test on the data
+test <- read_csv("S:/Laura/BDC/Projects/Janet Snell-Bergeon/Triple C/Data Rerun/problem files/Craig, Jessica_10.28.14- 11.7.14.csv")
+grepl("CONTOUR", test3[3,2])
+test3 = as.data.frame(test3[5:nrow(test3),]) %>% mutate(Date = `First Name`,Time =  `Patient ID`,sensorglucose = `Start Date`)
+test2$timestamp = parsedate::parse_date(paste(test2$Date, test2$Time))
+test2 = test2 %>% select(timestamp, sensorglucose)
