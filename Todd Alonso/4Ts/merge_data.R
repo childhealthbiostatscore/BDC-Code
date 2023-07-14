@@ -1,5 +1,6 @@
 library(readxl)
 library(dplyr)
+library(stringr)
 
 patient_data <-  read_xlsx("/Volumes/BDC/Projects/Todd Alonso/4Ts analysis/Data_raw/Todd_NewOnset_A1C_Comparison_06192023.xlsx",
                            sheet = "PatientLevel", na = "NULL")
@@ -7,6 +8,13 @@ patient_data <- patient_data %>% select(-c("studyday","hba1c"))
 patient_data$hba1c_onset <- ifelse(patient_data$hba1c_onset %in% c(">14",">14%"),14,
                                    ifelse(patient_data$hba1c_onset==">15.5", 15.5,
                                           ifelse(patient_data$hba1c_onset==".",NA,patient_data$hba1c_onset)))
+patient_data$record_id <- str_sub(patient_data$record_id, 7, length(patient_data$record_id))
+patient_data$cgm_initiated_30d <- NA
+patient_data$pump_hybrid_cl <- NA
+patient_data$pump_adv_hybrid_cl <- NA
+patient_data$pump_open_loop <- NA
+patient_data$days_to_cgm <- ifelse(patient_data$days_to_cgm=="NA",NA,patient_data$days_to_cgm)
+patient_data$days_to_pump <- ifelse(patient_data$days_to_pump=="NA",NA,patient_data$days_to_pump)
 
 a1c_data <-  read_xlsx("/Volumes/BDC/Projects/Todd Alonso/4Ts analysis/Data_raw/Todd_NewOnset_A1C_Comparison_06192023.xlsx",
                            sheet = "HbA1c")
