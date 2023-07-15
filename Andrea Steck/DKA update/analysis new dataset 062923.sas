@@ -1,7 +1,7 @@
 
 *libname data 'S:\Shared Projects\Laura\BDC\Projects\Todd Alonso\DKA\Data';
 *libname data 'T:\Todd Alonso\DKA\Data';
-libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
+libname data 'U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
 
 proc format;
   value age_cat 1='<6 years'
@@ -146,7 +146,7 @@ run;
  ***********************************************************************/
    data WORK.CORRECTIONS    ;
     %let _EFIERR_ = 0; 
-    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat DKA $3. ;
        informat dka_sev $10. ;
@@ -183,7 +183,7 @@ run;
  ***********************************************************************/
     data WORK.NEW_corrections    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DKA Severity Issues - fixed_07.05.23.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DKA Severity Issues - fixed_07.05.23.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat PP3 best32. ;
        informat pH 8.2 ;
@@ -219,7 +219,7 @@ data alldata;
 set alldata;
 if source="MarianJama" and DKA="No" and DKA_sev in (""," ") then DKA_sev="No DKA";
 run;
-ods rtf file="W:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_crosstab.rtf"; 
+ods rtf file="U:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_crosstab.rtf"; 
 proc freq data=alldata;
 where source="TODD"; 
 table dka*dka_sev / missing;
@@ -235,6 +235,9 @@ where source="MarianJama" ;
 table dka*dka_sev / missing;
 title "source=MarianJama";
 run;
+proc freq data=alldata;
+table instudy*dka*dka_sev;
+run;
 ods rtf close;
 title;
 data dka_prob;
@@ -246,8 +249,19 @@ run;
 proc sort data=dka_prob; by source; run;
 proc print data=dka_prob; run;
 proc export data=dka_prob
-  outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_issues.csv" dbms=csv replace;
+  outfile="U:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_issues.csv" dbms=csv replace;
 run;
+
+/* create a dataset of DKA related variables for study patients because numbers aren't matching Morgan's */
+data checkstudy;
+set alldata;
+where instudy;
+keep mrn pp3 source ph bicarb dka dka_sev;
+run;
+proc export data=checkstudy
+  outfile="U:\Projects\Andrea Steck\Morgan Sooy DKA update\instudy_dka_check.csv" dbms=csv replace;
+run;
+
 
 /* compare DKA status known to unknown */
 proc freq data=alldata; table dka; run;
