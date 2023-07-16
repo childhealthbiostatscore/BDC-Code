@@ -1,7 +1,7 @@
 
 *libname data 'S:\Shared Projects\Laura\BDC\Projects\Todd Alonso\DKA\Data';
 *libname data 'T:\Todd Alonso\DKA\Data';
-libname data 'U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
+libname data 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
 
 proc format;
   value age_cat 1='<6 years'
@@ -135,6 +135,13 @@ if source="MORGAN" and dka="Yes" and (ph ne . and ph<7.1) or (bicarb ne . and bi
 else if source="MORGAN" and dka="Yes" and (ph>=7.1 and ph<7.3) or (bicarb>=5 and bicarb<15) then dka_sev="Mild DKA";
 run;
 
+proc print data=alldata;
+where pp3=40830;
+run;
+
+/* HERE IS THE START OF THE ERROR PART */
+/* I THINK THE PROBLEM MIGHT BE THAT I AM MERGING IN THE CORRECTION FILES BY MRN AND SOME PPTS DON'T HAVE MRN? */
+
 /* read in hardcoded corrections */
  /**********************************************************************
  *   PRODUCT:   SAS
@@ -146,7 +153,7 @@ run;
  ***********************************************************************/
    data WORK.CORRECTIONS    ;
     %let _EFIERR_ = 0; 
-    infile 'U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat DKA $3. ;
        informat dka_sev $10. ;
@@ -183,7 +190,7 @@ run;
  ***********************************************************************/
     data WORK.NEW_corrections    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DKA Severity Issues - fixed_07.05.23.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DKA Severity Issues - fixed_07.05.23.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat PP3 best32. ;
        informat pH 8.2 ;
@@ -249,8 +256,13 @@ run;
 proc sort data=dka_prob; by source; run;
 proc print data=dka_prob; run;
 proc export data=dka_prob
-  outfile="U:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_issues.csv" dbms=csv replace;
+  outfile="V:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_issues.csv" dbms=csv replace;
 run;
+proc print data=alldata;
+where pp3=40830;
+run;
+/* HERE THIS PERSON IS MARKED AS IN STUDY, IN TEDDY */
+/* PROBLEM OCCURRED BETWEEN HERE AND PREVIOUS PRINT STATEMENT *?
 
 /* create a dataset of DKA related variables for study patients because numbers aren't matching Morgan's */
 data checkstudy;
@@ -259,7 +271,7 @@ where instudy;
 keep mrn pp3 source ph bicarb dka dka_sev;
 run;
 proc export data=checkstudy
-  outfile="U:\Projects\Andrea Steck\Morgan Sooy DKA update\instudy_dka_check.csv" dbms=csv replace;
+  outfile="V:\Projects\Andrea Steck\Morgan Sooy DKA update\instudy_dka_check.csv" dbms=csv replace;
 run;
 
 
