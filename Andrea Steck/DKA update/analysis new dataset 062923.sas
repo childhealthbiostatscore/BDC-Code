@@ -1,7 +1,7 @@
 
 *libname data 'S:\Shared Projects\Laura\BDC\Projects\Todd Alonso\DKA\Data';
 *libname data 'T:\Todd Alonso\DKA\Data';
-libname data 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
+libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
 
 proc format;
   value age_cat 1='<6 years'
@@ -153,7 +153,7 @@ run;
  ***********************************************************************/
    data WORK.CORRECTIONS    ;
     %let _EFIERR_ = 0; 
-    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat DKA $3. ;
        informat dka_sev $10. ;
@@ -179,7 +179,11 @@ data alldata;
 merge alldata corrections;
 by mrn;
 run;
+proc print data=alldata;
+where pp3=40830;
+run;
 /* merge in another set of corrections */
+/* THIS IS THE STEP WHERE INSTUDY IS GETTING MESSED UP */
  /**********************************************************************
  *   PRODUCT:   SAS
  *   VERSION:   9.4
@@ -190,7 +194,7 @@ run;
  ***********************************************************************/
     data WORK.NEW_corrections    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DKA Severity Issues - fixed_07.05.23.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DKA Severity Issues - fixed_07.05.23.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat PP3 best32. ;
        informat pH 8.2 ;
@@ -216,12 +220,41 @@ run;
     ;
     if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
     run;
+/* divide correction dataset into two datasets - one with MRN and one with PP3 to be merged separately */
+data new_corrections_mrn;
+set new_corrections;
+where mrn ne . and pp3=.;
+run;
+data new_corrections_pp3;
+set new_corrections;
+where mrn=. and pp3  ne .;
+run;
+/* there are some that are not getting put in either dataset */
+
+data new_corrections new_corrections_mrn new_corrections_pp3 prob;
+set new_corrections ;
+if mrn ne . and pp3=. then output new_corrections_mrn;
+else if mrn=. and pp3 ne . then output new_corrections_pp3;
+else output prob;
+run;
+
+proc print data=prob;
+var mrn pp3;
+run;
+/* the issue is that some people have both mrn and pp3 - how should they be merged? */
+/* does it matter? */
+
 proc sort data=new_corrections; by MRN; run;
 proc sort data=alldata; by MRN; run;
 data alldata;
 merge alldata new_corrections;
 by MRN;
 run;
+proc print data=alldata;
+where pp3=40830;
+run;
+
+
 data alldata;
 set alldata;
 if source="MarianJama" and DKA="No" and DKA_sev in (""," ") then DKA_sev="No DKA";
@@ -271,7 +304,7 @@ where instudy;
 keep mrn pp3 source ph bicarb dka dka_sev;
 run;
 proc export data=checkstudy
-  outfile="V:\Projects\Andrea Steck\Morgan Sooy DKA update\instudy_dka_check.csv" dbms=csv replace;
+  outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\instudy_dka_check.csv" dbms=csv replace;
 run;
 
 
