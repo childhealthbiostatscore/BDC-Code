@@ -2,7 +2,7 @@ library(readxl)
 library(dplyr)
 library(stringr)
 
-patient_data <-  read_xlsx("/Volumes/BDC/Projects/Todd Alonso/4Ts analysis/Data_raw/Todd_NewOnset_A1C_Comparison_06192023.xlsx",
+patient_data <-  read_xlsx("/Volumes/BDC/Projects/Todd Alonso/4Ts analysis/Data_raw/Todd_NewOnset_A1C_Comparison_V2_07172023.xlsx",
                            sheet = "PatientLevel", na = "NULL")
 patient_data <- patient_data %>% select(-c("studyday","hba1c"))
 patient_data$hba1c_onset <- ifelse(patient_data$hba1c_onset %in% c(">14",">14%"),14,
