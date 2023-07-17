@@ -16,7 +16,7 @@ patient_data$pump_open_loop <- NA
 patient_data$days_to_cgm <- ifelse(patient_data$days_to_cgm=="NA",NA,patient_data$days_to_cgm)
 patient_data$days_to_pump <- ifelse(patient_data$days_to_pump=="NA",NA,patient_data$days_to_pump)
 
-a1c_data <-  read_xlsx("/Volumes/BDC/Projects/Todd Alonso/4Ts analysis/Data_raw/Todd_NewOnset_A1C_Comparison_06192023.xlsx",
+a1c_data <-  read_xlsx("/Volumes/BDC/Projects/Todd Alonso/4Ts analysis/Data_raw/Todd_NewOnset_A1C_Comparison_V2_07172023.xlsx",
                            sheet = "HbA1c")
 a1c_data <- a1c_data %>% select("MRN","studyday","A1C_ResultDate","hba1c")
 
