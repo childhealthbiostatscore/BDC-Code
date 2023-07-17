@@ -1,5 +1,5 @@
 *libname data 'S:\Shared Projects\Laura\BDC\Projects\Todd Alonso\DKA\Data';
-libname data 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
+libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
 
  /**********************************************************************
  *   PRODUCT:   SAS
@@ -11,7 +11,7 @@ libname data 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
  ***********************************************************************/
     data WORK.ALLDATA    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\MASTER_06.15.23_WithMRNPP3 edited.csv' delimiter = ',' MISSOVER DSD lrecl=13106 firstobs=2 ;
+    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\MASTER_06.15.23_WithMRNPP3 edited.csv' delimiter = ',' MISSOVER DSD lrecl=13106 firstobs=2 ;
        informat MRN best32. ;
        informat PP3 best32. ;
        informat Sample_ID best32. ;
@@ -121,11 +121,7 @@ libname data 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
     ;
     if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
     run;
-proc freq data=alldata; table instudy; run;
-proc print data=alldata;
-where pp3=40830;
-run;
-proc contents; run;
+proc freq data=alldata; table instudy*dka; run;
 
 /* read in zip code data */
  /**********************************************************************
@@ -138,7 +134,7 @@ proc contents; run;
  ***********************************************************************/
     data WORK.zips    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DMERuralZIP.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DMERuralZIP.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat STATE $2. ;
        informat ZipCode_DateOfDiagnosis $5. ;
        informat YEAR_QTR best32. ;
@@ -187,7 +183,7 @@ proc freq data=alldata; table instudy; run;
  ***********************************************************************/
    data WORK.CORRECTIONS    ;
     %let _EFIERR_ = 0; 
-    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat DKA $3. ;
        informat dka_sev $10. ;
@@ -289,8 +285,8 @@ set alldata;
 if PP3="41815" then delete;
 run;
 
-proc print data=alldata;
-where pp3=40830;
+proc freq data=alldata;
+table instudy*dka;
 run;
 
 /* write final dataset */
@@ -301,7 +297,7 @@ proc freq data=alldata; table instudy; run;
 
 /* export csv file */
 proc export data=alldata
-outfile="V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\morgan cleaned final dataset.csv"
+outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\morgan cleaned final dataset.csv"
 replace
 dbms="csv";
 run;

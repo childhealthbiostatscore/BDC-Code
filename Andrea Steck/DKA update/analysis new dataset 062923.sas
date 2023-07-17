@@ -31,7 +31,7 @@ run;
 data alldata;
 set data.alldata;
 run;
-proc freq; table instudy; run;
+proc freq; table instudy*dka; run;
 data x;
 set alldata;
 where (dka="No" and dka_sev="Mild DKA") or (dka="Yes" and dka_sev="No DKA") or
@@ -123,24 +123,21 @@ set alldata;
 if DKA="YES" then dka="Yes";
 run;
 
+/* this person is being coded as mild DKA but should be severe */
+proc print data=alldata;
+where MRN=1021709;
+run;
 /* for Todd's and Morgan's data, if someone has pH and/or bicarb and has DKA="Yes" fill in dka severity */
 data alldata;
 set alldata;
-if source="TODD" and dka="Yes" and (ph ne . and ph<7.1) or (bicarb ne . and bicarb <5) then dka_sev="Severe DKA";
-else if source="TODD" and dka="Yes" and (ph>=7.1 and ph<7.3) or (bicarb>=5 and bicarb<15) then dka_sev="Mild DKA";
+if source="TODD" and dka="Yes" and ((ph ne . and ph<7.1) or (bicarb ne . and bicarb <5)) then dka_sev="Severe DKA";
+else if source="TODD" and dka="Yes" and ((ph>=7.1 and ph<7.3) or (bicarb>=5 and bicarb<15)) then dka_sev="Mild DKA";
+else if source="MORGAN" and dka="Yes" and ((ph ne . and ph<7.1) or (bicarb ne . and bicarb <5)) then dka_sev="Severe DKA";
+else if source="MORGAN" and dka="Yes" and ((ph>=7.1 and ph<7.3) or (bicarb>=5 and bicarb<15)) then dka_sev="Mild DKA";
 run;
-data alldata;
-set alldata;
-if source="MORGAN" and dka="Yes" and (ph ne . and ph<7.1) or (bicarb ne . and bicarb <5) then dka_sev="Severe DKA";
-else if source="MORGAN" and dka="Yes" and (ph>=7.1 and ph<7.3) or (bicarb>=5 and bicarb<15) then dka_sev="Mild DKA";
-run;
-
 proc print data=alldata;
-where pp3=40830;
+where MRN=1021709;
 run;
-
-/* HERE IS THE START OF THE ERROR PART */
-/* I THINK THE PROBLEM MIGHT BE THAT I AM MERGING IN THE CORRECTION FILES BY MRN AND SOME PPTS DON'T HAVE MRN? */
 
 /* read in hardcoded corrections */
  /**********************************************************************
@@ -179,11 +176,8 @@ data alldata;
 merge alldata corrections;
 by mrn;
 run;
-proc print data=alldata;
-where pp3=40830;
-run;
+
 /* merge in another set of corrections */
-/* THIS IS THE STEP WHERE INSTUDY IS GETTING MESSED UP */
  /**********************************************************************
  *   PRODUCT:   SAS
  *   VERSION:   9.4
@@ -223,43 +217,29 @@ run;
 /* divide correction dataset into two datasets - one with MRN and one with PP3 to be merged separately */
 data new_corrections_mrn;
 set new_corrections;
-where mrn ne . and pp3=.;
+where mrn ne .;
 run;
 data new_corrections_pp3;
 set new_corrections;
 where mrn=. and pp3  ne .;
 run;
-/* there are some that are not getting put in either dataset */
-
-data new_corrections new_corrections_mrn new_corrections_pp3 prob;
-set new_corrections ;
-if mrn ne . and pp3=. then output new_corrections_mrn;
-else if mrn=. and pp3 ne . then output new_corrections_pp3;
-else output prob;
-run;
-
-proc print data=prob;
-var mrn pp3;
-run;
-/* the issue is that some people have both mrn and pp3 - how should they be merged? */
-/* does it matter? */
-
-proc sort data=new_corrections; by MRN; run;
+proc sort data=new_corrections_mrn; by MRN; run;
 proc sort data=alldata; by MRN; run;
 data alldata;
-merge alldata new_corrections;
+merge alldata new_corrections_mrn;
 by MRN;
 run;
-proc print data=alldata;
-where pp3=40830;
+proc sort data=new_corrections_pp3; by pp3; run;
+proc sort data=alldata; by pp3; run;
+data alldata;
+merge alldata new_corrections_pp3;
+by pp3;
 run;
-
-
 data alldata;
 set alldata;
 if source="MarianJama" and DKA="No" and DKA_sev in (""," ") then DKA_sev="No DKA";
 run;
-ods rtf file="U:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_crosstab.rtf"; 
+ods rtf file="W:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_crosstab.rtf"; 
 proc freq data=alldata;
 where source="TODD"; 
 table dka*dka_sev / missing;
@@ -289,13 +269,8 @@ run;
 proc sort data=dka_prob; by source; run;
 proc print data=dka_prob; run;
 proc export data=dka_prob
-  outfile="V:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_issues.csv" dbms=csv replace;
+  outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_issues.csv" dbms=csv replace;
 run;
-proc print data=alldata;
-where pp3=40830;
-run;
-/* HERE THIS PERSON IS MARKED AS IN STUDY, IN TEDDY */
-/* PROBLEM OCCURRED BETWEEN HERE AND PREVIOUS PRINT STATEMENT *?
 
 /* create a dataset of DKA related variables for study patients because numbers aren't matching Morgan's */
 data checkstudy;
@@ -306,7 +281,6 @@ run;
 proc export data=checkstudy
   outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\instudy_dka_check.csv" dbms=csv replace;
 run;
-
 
 /* compare DKA status known to unknown */
 proc freq data=alldata; table dka; run;
