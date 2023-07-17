@@ -181,7 +181,7 @@ proc freq data=alldata; table instudy; run;
  *   DESC:      Generated SAS Datastep Code
  *   TEMPLATE SOURCE:  (None Specified.)
  ***********************************************************************/
-   data WORK.CORRECTIONS    ;
+ /*  data WORK.CORRECTIONS    ;
     %let _EFIERR_ = 0; 
     infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
@@ -215,11 +215,10 @@ run;
 proc contents data=alldata; run;
 proc contents data=corrections; run;
 proc print; var fup_prior_dx; run;
-proc freq data=alldata; table instudy; run;
+proc freq data=alldata; table instudy; run;*/
 
 /* now we have the dataset which contains study participants and non-participants */
 /* for study participants, need to limit to 70 subjects with at least 6 months of follow up */
-/* SOMEWHERE JUST AFTER HERE THE VARIABLE fup_prior_dx='*' */
 data nonstudy;
 set alldata;
 where instudy=0;
@@ -293,7 +292,7 @@ run;
 data data.alldata;
 set alldata;
 run;
-proc freq data=alldata; table instudy; run;
+proc freq data=alldata; table instudy source; run;
 
 /* export csv file */
 proc export data=alldata

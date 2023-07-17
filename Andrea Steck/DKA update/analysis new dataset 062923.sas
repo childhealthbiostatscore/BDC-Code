@@ -32,6 +32,8 @@ data alldata;
 set data.alldata;
 run;
 proc freq; table instudy*dka; run;
+proc freq; table source*dka; run;
+
 data x;
 set alldata;
 where (dka="No" and dka_sev="Mild DKA") or (dka="Yes" and dka_sev="No DKA") or
@@ -138,6 +140,7 @@ run;
 proc print data=alldata;
 where MRN=1021709;
 run;
+proc freq data=alldata; table source*dka; run;
 
 /* read in hardcoded corrections */
  /**********************************************************************
@@ -176,6 +179,8 @@ data alldata;
 merge alldata corrections;
 by mrn;
 run;
+proc freq data=alldata; table source*dka; run;
+/* Marian's dataset looks good to here */
 
 /* merge in another set of corrections */
  /**********************************************************************
@@ -229,6 +234,7 @@ data alldata;
 merge alldata new_corrections_mrn;
 by MRN;
 run;
+proc freq data=alldata; table source*dka; run;
 proc sort data=new_corrections_pp3; by pp3; run;
 proc sort data=alldata; by pp3; run;
 data alldata;
@@ -237,8 +243,15 @@ by pp3;
 run;
 data alldata;
 set alldata;
+if source="Marian" then source="MarianJama";
+run;
+data alldata;
+set alldata;
 if source="MarianJama" and DKA="No" and DKA_sev in (""," ") then DKA_sev="No DKA";
 run;
+proc freq data=alldata; table source*dka / missing; run;proc freq data=alldata; table source*dka / missing; run;
+
+proc freq data=alldata; table source*dka; run;
 ods rtf file="W:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_crosstab.rtf"; 
 proc freq data=alldata;
 where source="TODD"; 
@@ -361,26 +374,6 @@ proc print data=alldata; run;
 data foranalysis;
 set alldata;
 run;
-proc contents data=foranalysis; run;
-
-proc freq data=alldata;
-table instudy*dka*dka_sev;
-run;
-ods rtf file='c:\temp\output.rtf' style=journal;
-/* people without DKA who have mild or severe */
-*proc print data=alldata;
-*var Sample_ID dka dka_sev ph bicarb;
-*where dka="No" and (dka_sev="Mild DKA" or dka_sev="Severe DKA");
-*title "No DKA but mild or severe DKA severity"; 
-*run;
-/* people with DKA that are marked as none */
-proc print data=alldata;
-var source mrn dka dka_sev ph bicarb;
-where dka="Yes" and dka_sev="No DKA";
-title "With DKA but DKA severity=none"; 
-run;
-title;
-ods rtf close;
 
 /* predictors are age at onset, gender, race, insurance, language, onset year, rural/nonrural */
 /* with and without adjustment for quarter of the year */
@@ -433,7 +426,7 @@ proc freq; table english; run;
 /* 2x2 table of study by DKA */
 ods rtf file="C:\temp\output.rtf" style=journal;
 proc freq data=alldata;
-table instudy*dka;
+table instudy*dka / chisq;
 run;
 proc freq data=alldata;
 table instudy*dka_sev;
@@ -461,12 +454,12 @@ run;
 ods rtf file="C:\temp\output.rtf" style=journal;
 proc logistic data=alldata;
 class race_eth new_ins year Rural_or_non_rural instudy(ref='0');
-model dka(event='Yes') =  race_eth new_ins year Rural_or_non_rural InitalA1c instudy;
+model dka(event='Yes') = Age_AtOnset race_eth new_ins year Rural_or_non_rural InitalA1c instudy;
 run;
 /* model without A1c */
 proc logistic data=alldata;
 class race_eth new_ins year Rural_or_non_rural instudy(ref='0');
-model dka(event='Yes') =  race_eth new_ins year Rural_or_non_rural instudy;
+model dka(event='Yes') = Age_AtOnset race_eth new_ins year Rural_or_non_rural instudy;
 run;
 ods rtf close;
 
@@ -729,8 +722,8 @@ ods rtf close;
 /* multivariate model with predictors that were significant on univariate */
 ods rtf file="C:\temp\output.rtf" style=journal;
 proc logistic data=study;
-class Hispanic ;
-model dka(event='Yes') = Hispanic  InitalA1c;
+class Hispanic Rural_or_non_rural;
+model dka(event='Yes') = Hispanic Rural_or_non_rural InitalA1c;
 run;
 ods rtf close;
 
@@ -782,13 +775,13 @@ ods rtf close;
 ods rtf file="C:\temp\output.rtf" style=journal;
 proc logistic data=clinic;
 class race_eth new_ins year Rural_or_non_rural;
-model dka(event='Yes') =  race_eth new_ins year Rural_or_non_rural InitalA1c;
+model dka(event='Yes') = Age_AtOnset race_eth new_ins year Rural_or_non_rural InitalA1c;
 where new_ins ne 'None';
 run;
 /* model without A1c */
 proc logistic data=alldata;
 class race_eth new_ins year Rural_or_non_rural;
-model dka(event='Yes') =  race_eth new_ins year Rural_or_non_rural ;
+model dka(event='Yes') = Age_AtOnset race_eth new_ins year Rural_or_non_rural ;
 where new_ins ne 'None';
 run;
 ods rtf close;
