@@ -1,7 +1,7 @@
 
 *libname data 'S:\Shared Projects\Laura\BDC\Projects\Todd Alonso\DKA\Data';
 *libname data 'T:\Todd Alonso\DKA\Data';
-libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
+libname data 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
 
 proc format;
   value age_cat 1='<6 years'
@@ -33,6 +33,28 @@ set data.alldata;
 run;
 proc freq; table instudy*dka; run;
 proc freq; table source*dka; run;
+proc freq; table ge6moprior*seen_12mo_prior; run;
+
+/* create new variable for active/inactive study participants */
+data alldata;
+set alldata;
+if instudy=0 then instudy_active=.;
+else if instudy=1 and ge6moprior=1 and seen_12mo_prior=1 then instudy_active=1;
+else if instudy=1 and (ge6moprior=0 or seen_12mo_prior=0) then instudy_active=0;
+run;
+proc freq data=alldata;
+table instudy_active*ge6moprior*seen_12mo_prior;
+run;
+data alldata;
+set alldata;
+length active_inactive_clinic $ 25;
+if instudy=0 then active_inactive_clinic=0;
+else if instudy=1 and ge6moprior=1 and seen_12mo_prior=1 then active_inactive_clinic=1;
+else if instudy=1 and (ge6moprior=0 or seen_12mo_prior=0) then active_inactive_clinic=2;
+run;
+proc freq data=alldata;
+table active_inactive_clinic*instudy;
+run;
 
 data x;
 set alldata;
@@ -153,7 +175,7 @@ proc freq data=alldata; table source*dka; run;
  ***********************************************************************/
    data WORK.CORRECTIONS    ;
     %let _EFIERR_ = 0; 
-    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat DKA $3. ;
        informat dka_sev $10. ;
@@ -193,7 +215,7 @@ proc freq data=alldata; table source*dka; run;
  ***********************************************************************/
     data WORK.NEW_corrections    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DKA Severity Issues - fixed_07.05.23.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DKA Severity Issues - fixed_07.05.23.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat PP3 best32. ;
        informat pH 8.2 ;
@@ -282,7 +304,7 @@ run;
 proc sort data=dka_prob; by source; run;
 proc print data=dka_prob; run;
 proc export data=dka_prob
-  outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_issues.csv" dbms=csv replace;
+  outfile="V:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_issues.csv" dbms=csv replace;
 run;
 
 /* create a dataset of DKA related variables for study patients because numbers aren't matching Morgan's */
@@ -292,7 +314,7 @@ where instudy;
 keep mrn pp3 source ph bicarb dka dka_sev;
 run;
 proc export data=checkstudy
-  outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\instudy_dka_check.csv" dbms=csv replace;
+  outfile="V:\Projects\Andrea Steck\Morgan Sooy DKA update\instudy_dka_check.csv" dbms=csv replace;
 run;
 
 /* compare DKA status known to unknown */
@@ -343,7 +365,7 @@ run;
 data foranalysis;
 set alldata;
 run;
-%include 'V:\SAS tools\Amanda table 1\2 category macros with KW.sas';
+%include 'U:\SAS tools\Amanda table 1\2 category macros with KW.sas';
 proc datasets;
 delete OutTable ;
 run;
@@ -429,7 +451,14 @@ proc freq data=alldata;
 table instudy*dka / chisq;
 run;
 proc freq data=alldata;
-table instudy*dka_sev;
+table instudy*dka_sev / chisq;
+run;
+proc freq data=alldata;
+table instudy_active*dka / exact;
+run;
+proc freq data=alldata;
+table instudy*dka / exact;
+where instudy_active ne 1;
 run;
 ods rtf close;
 
@@ -585,20 +614,21 @@ ods rtf close;
 
 /* comparison of study and clinic patients */
 proc contents data=foranalysis; run;
+%include 'U:\SAS tools\Amanda table 1\3 or more category Macros with KW.sas';
 proc datasets;
 delete OutTable ;
 run;
 quit;
-%CON(BV = Age_AtOnset, OC=instudy);
-%CON(BV = InitalA1c, OC=instudy);
-%CAT(BV = gender, BVF = $gender, OC= instudy);
-%CAT(BV = race_eth, BVF = $race_eth, OC= instudy);
-%CAT(BV = hispanic, BVF = yn, OC= instudy);
-%CAT(BV = new_ins, BVF = $new_ins, OC= instudy);
-%CAT(BV = dka, BVF = $new_ins, OC= instudy);
-%CAT(BV = dka_sev, BVF = $new_ins, OC= instudy);
-%CAT(BV = Rural_or_non_rural, BVF = $rural, OC= instudy);
-%CAT(BV = english, BVF = yn, OC= instudy);
+%CON(BV = Age_AtOnset, OC=active_inactive_clinic);
+%CON(BV = InitalA1c, OC=active_inactive_clinic);
+%CAT(BV = gender, BVF = $gender, OC= active_inactive_clinic);
+%CAT(BV = race_eth, BVF = $race_eth, OC= active_inactive_clinic);
+%CAT(BV = hispanic, BVF = yn, OC= active_inactive_clinic);
+%CAT(BV = new_ins, BVF = $new_ins, OC= active_inactive_clinic);
+%CAT(BV = dka, BVF = $new_ins, OC= active_inactive_clinic);
+%CAT(BV = dka_sev, BVF = $new_ins, OC= active_inactive_clinic);
+%CAT(BV = Rural_or_non_rural, BVF = $rural, OC= active_inactive_clinic);
+%CAT(BV = english, BVF = yn, OC= active_inactive_clinic);
 ods rtf file='c:\temp\output.rtf' style=journal;
 proc print data=outtable noobs label;
 var _Label_ RowVarc C0 c1 xPC ;
