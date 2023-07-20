@@ -1,7 +1,7 @@
 
 *libname data 'S:\Shared Projects\Laura\BDC\Projects\Todd Alonso\DKA\Data';
 *libname data 'T:\Todd Alonso\DKA\Data';
-libname data 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
+libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
 
 proc format;
   value age_cat 1='<6 years'
@@ -175,7 +175,7 @@ proc freq data=alldata; table source*dka; run;
  ***********************************************************************/
    data WORK.CORRECTIONS    ;
     %let _EFIERR_ = 0; 
-    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat DKA $3. ;
        informat dka_sev $10. ;
@@ -205,7 +205,8 @@ proc freq data=alldata; table source*dka; run;
 /* Marian's dataset looks good to here */
 
 /* merge in another set of corrections */
- /**********************************************************************
+
+/**********************************************************************
  *   PRODUCT:   SAS
  *   VERSION:   9.4
  *   CREATOR:   External File Interface
@@ -215,7 +216,7 @@ proc freq data=alldata; table source*dka; run;
  ***********************************************************************/
     data WORK.NEW_corrections    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DKA Severity Issues - fixed_07.05.23.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DKA Severity Issues - fixed_07.05.23.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat PP3 best32. ;
        informat pH 8.2 ;
@@ -711,6 +712,11 @@ data study;
 set alldata;
 where instudy=1;
 run;
+ods rtf file="C:\temp\output.rtf";
+proc freq data=alldata;
+table active_inactive_clinic*dka;
+run;
+ods rtf close;
 ods rtf file="C:\temp\output.rtf";
 /* predictors are age at onset, gender, race, insurance, language, onset year, rural/nonrural */
 proc logistic data=study;
