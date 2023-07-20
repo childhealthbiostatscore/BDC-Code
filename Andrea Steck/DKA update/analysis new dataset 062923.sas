@@ -366,7 +366,7 @@ run;
 data foranalysis;
 set alldata;
 run;
-%include 'U:\SAS tools\Amanda table 1\2 category macros with KW.sas';
+%include 'S:\SAS tools\Amanda table 1\2 category macros with KW.sas';
 proc datasets;
 delete OutTable ;
 run;
@@ -615,21 +615,22 @@ ods rtf close;
 
 /* comparison of study and clinic patients */
 proc contents data=foranalysis; run;
-%include 'U:\SAS tools\Amanda table 1\3 or more category Macros with KW.sas';
+%include 'S:\SAS tools\Amanda table 1\3 or more category Macros with KW.sas';
 proc datasets;
 delete OutTable ;
 run;
 quit;
-%CON(BV = Age_AtOnset, OC=active_inactive_clinic);
-%CON(BV = InitalA1c, OC=active_inactive_clinic);
-%CAT(BV = gender, BVF = $gender, OC= active_inactive_clinic);
-%CAT(BV = race_eth, BVF = $race_eth, OC= active_inactive_clinic);
-%CAT(BV = hispanic, BVF = yn, OC= active_inactive_clinic);
-%CAT(BV = new_ins, BVF = $new_ins, OC= active_inactive_clinic);
-%CAT(BV = dka, BVF = $new_ins, OC= active_inactive_clinic);
-%CAT(BV = dka_sev, BVF = $new_ins, OC= active_inactive_clinic);
-%CAT(BV = Rural_or_non_rural, BVF = $rural, OC= active_inactive_clinic);
-%CAT(BV = english, BVF = yn, OC= active_inactive_clinic);
+options verbose;
+%MultiCAT(BV = gender, BVF = $gender, OC= active_inactive_clinic);
+%MultiCAT(BV = race_eth, BVF = $race_eth, OC= active_inactive_clinic);
+%MultiCAT(BV = hispanic, BVF = yn, OC= active_inactive_clinic);
+%MultiCAT(BV = new_ins, BVF = $new_ins, OC= active_inactive_clinic);
+%MultiCAT(BV = dka, BVF = $new_ins, OC= active_inactive_clinic);
+%MultiCAT(BV = dka_sev, BVF = $new_ins, OC= active_inactive_clinic);
+%MultiCAT(BV = Rural_or_non_rural, BVF = $rural, OC= active_inactive_clinic);
+%MultiCAT(BV = english, BVF = yn, OC= active_inactive_clinic);
+%CON3ormore(BV = Age_AtOnset, OC=active_inactive_clinic);
+%CON3ormore(BV = InitalA1c, OC=active_inactive_clinic);
 ods rtf file='c:\temp\output.rtf' style=journal;
 proc print data=outtable noobs label;
 var _Label_ RowVarc C0 c1 xPC ;
@@ -640,15 +641,33 @@ label 	_Label_ = '00'x
 		xPC = 'P-value' ;
 run;
 ods rtf close;
-proc sort data=foranalysis; by instudy; run;
-proc means data=foranalysis;
-var InitalA1c;
-by instudy;
-run;
-proc print; run;
 
-proc print data=alldata;
-where dka="Yes" and dka_sev="No DKA";
+proc sort data=foranalysis; by active_inactive_clinic; run;
+proc means data=foranalysis;
+var InitalA1c Age_AtOnset;
+class active_inactive_clinic;
+run;
+proc glm data=foranalysis;
+class active_inactive_clinic;
+model InitalA1c = active_inactive_clinic;
+run;
+proc glm data=foranalysis;
+class active_inactive_clinic;
+model Age_AtOnset = active_inactive_clinic;
+run;
+proc freq data=alldata; tables gender*active_inactive_clinic / chisq; run;
+proc freq data=alldata; tables race_eth*active_inactive_clinic / chisq; run;
+proc freq data=alldata; tables hispanic*active_inactive_clinic / chisq; run;
+proc freq data=alldata; tables new_ins*active_inactive_clinic / chisq; run;
+proc freq data=alldata; tables dka*active_inactive_clinic / chisq; run;
+proc freq data=alldata; tables dka_sev*active_inactive_clinic / chisq; run;
+proc freq data=alldata; tables english*active_inactive_clinic / chisq; run;
+
+proc freq data=foranalysis; tables Rural_or_non_rural*active_inactive_clinic / chisq; run;
+proc freq data=alldata; tables Rural_or_non_rural*active_inactive_clinic / chisq; run;
+* for some reason this code isn't working....will export to R;
+proc export data=alldata
+  outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\table1.csv" dbms=csv replace;
 run;
 
 /* rates of DKA by study participation and year */
