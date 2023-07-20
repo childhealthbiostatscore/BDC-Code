@@ -75,7 +75,7 @@ acetaminophen$subjectid <- acetaminophen$pid
 acetaminophen <- acetaminophen %>% select(subjectid,acet_date,acet_time)
 
 ###################################
-# workspace
+# casey workspace
 ############################
 
 # not sure the most efficient way to delete the data during acetaminophen use
@@ -114,36 +114,42 @@ acet_check = function(x){
 alldata2 = cbind(alldata2, include = include)
 sum(include) # 15606 
 
-write.csv(alldata2, file = "S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/acetincludedata.csv")
+# write.csv(alldata2, file = "S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/acetincludedata.csv")
+# ill be using thtis file, as it took ages to run
+# alldata2 <- read.csv("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/acetincludedata.csv", sep=";")
 #####################################
 
-acetaminophen_notime <- acetaminophen %>% filter(is.na(acet_time))
-acetaminophen_notime$delete <- 1
-alldata2$acet_date <- as.Date(alldata2$timestamp)
-alldata2 <- merge(alldata2,acetaminophen_notime,by=c("subjectid","acet_date"),all.x = T, all.y = T)
-alldata2 <- alldata2 %>% filter(is.na(delete))
-alldata2$acet_date <- NULL
-alldata2$acet_time <- NULL
-alldata2$delete <- NULL
-# now acetaminophen records with time
-acetaminophen_time <- acetaminophen %>% filter(!is.na(acet_time))
-acetaminophen_time$acet_date <- as.Date(acetaminophen_time$acet_date)
-# reformat start time of acetaminophen
-# THIS IS NOT PASTING PROPERLY
-acetaminophen_time$acet_date_time <- as.POSIXct(paste(acetaminophen_time$acet_date,acetaminophen_time$acet_time), format="%Y-%m-%d %H:%M:%S")
-# add stop time 8 hours later
-acetaminophen_time$stop_time <- acetaminophen_time$acet_time
+# acetaminophen_notime <- acetaminophen %>% filter(is.na(acet_time))
+# acetaminophen_notime$delete <- 1
+# alldata2$acet_date <- as.Date(alldata2$timestamp)
+# alldata2 <- merge(alldata2,acetaminophen_notime,by=c("subjectid","acet_date"),all.x = T, all.y = T)
+# alldata2 <- alldata2 %>% filter(is.na(delete))
+# alldata2$acet_date <- NULL
+# alldata2$acet_time <- NULL
+# alldata2$delete <- NULL
+# # now acetaminophen records with time
+# acetaminophen_time <- acetaminophen %>% filter(!is.na(acet_time))
+# acetaminophen_time$acet_date <- as.Date(acetaminophen_time$acet_date)
+# # reformat start time of acetaminophen
+# # THIS IS NOT PASTING PROPERLY
+# acetaminophen_time$acet_date_time <- as.POSIXct(paste(acetaminophen_time$acet_date,acetaminophen_time$acet_time), format="%Y-%m-%d %H:%M:%S")
+# # add stop time 8 hours later
+# acetaminophen_time$stop_time <- acetaminophen_time$acet_time
+
+#filter out the acet include == 1
+alldata3 = alldata2 %>% filter(include == 0)
+alldata3$L.D.Admission.Date
 
 # divide by trimester/time period
-t1data <- alldata2 %>% filter(as.Date(timestamp)>=Run.in.End & as.Date(timestamp)<SecondTri)
+t1data <- alldata3 %>% filter(as.Date(timestamp)>=Run.in.End & as.Date(timestamp)<SecondTri)
 t1data$trimester <- "T1"
-t2data <- alldata2 %>% filter(as.Date(timestamp)>=SecondTri & as.Date(timestamp)<ThirdTri)
+t2data <- alldata3 %>% filter(as.Date(timestamp)>=SecondTri & as.Date(timestamp)<ThirdTri)
 t2data$trimester <- "T2"
-t3data <- alldata2 %>% filter(as.Date(timestamp)>=ThirdTri & as.Date(timestamp)<as.Date(`L&D Admission Date`))
+t3data <- alldata3 %>% filter(as.Date(timestamp)>=ThirdTri & as.Date(timestamp)<as.Date(L.D.Admission.Date))
 t3data$trimester <- "T3"
 ppdata <- alldata2 %>% filter(as.Date(timestamp)>=v15date)
 ppdata$trimester <- "Post-partum"
-runindata <- alldata2 %>% filter(as.Date(timestamp)>=Run.in.Start & as.Date(timestamp)<Run.in.End)
+runindata <- alldata3 %>% filter(as.Date(timestamp)>=Run.in.Start & as.Date(timestamp)<Run.in.End)
 runindata$trimester <- "Run-in"
 
 # now I just need to split the trimester files by ID
@@ -152,7 +158,7 @@ for (df in split1) {
   df <- as.data.frame(df)
   df <- df[,c("subjectid","timestamp","sensorglucose")]
   df <- df[order(df$timestamp),]
-  filename <- paste0("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/",df$subjectid[1],"_T1.csv")
+  filename <- paste0("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files CS/",df$subjectid[1],"_T1.csv")
   write.csv(df,file = filename,row.names = F)
 }
 
@@ -161,7 +167,7 @@ for (df in split2) {
   df <- as.data.frame(df)
   df <- df[,c("subjectid","timestamp","sensorglucose")]
   df <- df[order(df$timestamp),]
-  filename <- paste0("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/",df$subjectid[1],"_T2.csv")
+  filename <- paste0("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files CS/",df$subjectid[1],"_T2.csv")
   write.csv(df,file = filename,row.names = F)
 }
 
@@ -170,7 +176,7 @@ for (df in split3) {
   df <- as.data.frame(df)
   df <- df[,c("subjectid","timestamp","sensorglucose")]
   df <- df[order(df$timestamp),]
-  filename <- paste0("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/",df$subjectid[3],"_T3.csv")
+  filename <- paste0("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files CS/",df$subjectid[3],"_T3.csv")
   write.csv(df,file = filename,row.names = F)
 }
 
@@ -179,7 +185,7 @@ for (df in splitpp) {
   df <- as.data.frame(df)
   df <- df[,c("subjectid","timestamp","sensorglucose")]
   df <- df[order(df$timestamp),]
-  filename <- paste0("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/",df$subjectid[1],"_PP.csv")
+  filename <- paste0("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files CS/",df$subjectid[1],"_PP.csv")
   write.csv(df,file = filename,row.names = F)
 }
 
@@ -188,13 +194,14 @@ for (df in splitrunin) {
   df <- as.data.frame(df)
   df <- df[,c("subjectid","timestamp","sensorglucose")]
   df <- df[order(df$timestamp),]
-  filename <- paste0("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/",df$subjectid[1],"_Runin.csv")
+  filename <- paste0("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files CS/",df$subjectid[1],"_Runin.csv")
   write.csv(df,file = filename,row.names = F)
 }
 
 # then run cgmvariables()
-cgmvariables(inputdirectory = "S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files/", 
-             outputdirectory = "S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/Cleaned CGM data", 
+cgmvariables(inputdirectory = "S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files CS/", 
+             outputdirectory = "S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/", 
+             outputname = "cleanedcgm_noacet",
              id_filename = T, printname = T,
              customintervals = list(c(0,54),c(0,63),c(63,140),c(140,600),c(0,69)))
 
