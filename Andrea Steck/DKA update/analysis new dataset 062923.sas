@@ -2,6 +2,7 @@
 *libname data 'S:\Shared Projects\Laura\BDC\Projects\Todd Alonso\DKA\Data';
 *libname data 'T:\Todd Alonso\DKA\Data';
 libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
+libname save 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\';
 
 proc format;
   value age_cat 1='<6 years'
@@ -366,7 +367,7 @@ run;
 data foranalysis;
 set alldata;
 run;
-%include 'U:\SAS tools\Amanda table 1\2 category macros with KW.sas';
+%include 'S:\SAS tools\Amanda table 1\2 category macros with KW.sas';
 proc datasets;
 delete OutTable ;
 run;
@@ -615,21 +616,22 @@ ods rtf close;
 
 /* comparison of study and clinic patients */
 proc contents data=foranalysis; run;
-%include 'U:\SAS tools\Amanda table 1\3 or more category Macros with KW.sas';
+%include 'S:\SAS tools\Amanda table 1\3 or more category Macros with KW.sas';
 proc datasets;
 delete OutTable ;
 run;
 quit;
-%CON(BV = Age_AtOnset, OC=active_inactive_clinic);
-%CON(BV = InitalA1c, OC=active_inactive_clinic);
-%CAT(BV = gender, BVF = $gender, OC= active_inactive_clinic);
-%CAT(BV = race_eth, BVF = $race_eth, OC= active_inactive_clinic);
-%CAT(BV = hispanic, BVF = yn, OC= active_inactive_clinic);
-%CAT(BV = new_ins, BVF = $new_ins, OC= active_inactive_clinic);
-%CAT(BV = dka, BVF = $new_ins, OC= active_inactive_clinic);
-%CAT(BV = dka_sev, BVF = $new_ins, OC= active_inactive_clinic);
-%CAT(BV = Rural_or_non_rural, BVF = $rural, OC= active_inactive_clinic);
-%CAT(BV = english, BVF = yn, OC= active_inactive_clinic);
+options verbose;
+%MultiCAT(BV = gender, BVF = $gender, OC= active_inactive_clinic);
+%MultiCAT(BV = race_eth, BVF = $race_eth, OC= active_inactive_clinic);
+%MultiCAT(BV = hispanic, BVF = yn, OC= active_inactive_clinic);
+%MultiCAT(BV = new_ins, BVF = $new_ins, OC= active_inactive_clinic);
+%MultiCAT(BV = dka, BVF = $new_ins, OC= active_inactive_clinic);
+%MultiCAT(BV = dka_sev, BVF = $new_ins, OC= active_inactive_clinic);
+%MultiCAT(BV = Rural_or_non_rural, BVF = $rural, OC= active_inactive_clinic);
+%MultiCAT(BV = english, BVF = yn, OC= active_inactive_clinic);
+%CON3ormore(BV = Age_AtOnset, OC=active_inactive_clinic);
+%CON3ormore(BV = InitalA1c, OC=active_inactive_clinic);
 ods rtf file='c:\temp\output.rtf' style=journal;
 proc print data=outtable noobs label;
 var _Label_ RowVarc C0 c1 xPC ;
@@ -640,15 +642,56 @@ label 	_Label_ = '00'x
 		xPC = 'P-value' ;
 run;
 ods rtf close;
-proc sort data=foranalysis; by instudy; run;
-proc means data=foranalysis;
-var InitalA1c;
-by instudy;
-run;
-proc print; run;
 
-proc print data=alldata;
-where dka="Yes" and dka_sev="No DKA";
+proc sort data=foranalysis; by active_inactive_clinic; run;
+proc means data=foranalysis;
+var InitalA1c Age_AtOnset;
+class active_inactive_clinic;
+run;
+proc glm data=foranalysis;
+class active_inactive_clinic;
+model InitalA1c = active_inactive_clinic;
+run;
+proc glm data=foranalysis;
+class active_inactive_clinic;
+model Age_AtOnset = active_inactive_clinic;
+run;
+proc freq data=alldata; tables gender*active_inactive_clinic / chisq; run;
+proc freq data=alldata; tables race_eth*active_inactive_clinic / chisq; run;
+proc freq data=alldata; tables hispanic*active_inactive_clinic / chisq; run;
+proc freq data=alldata; tables new_ins*active_inactive_clinic / chisq; run;
+proc freq data=alldata; tables dka*active_inactive_clinic / chisq; run;
+proc freq data=alldata; tables dka_sev*active_inactive_clinic / chisq; run;
+proc freq data=alldata; tables english*active_inactive_clinic / chisq; run;
+
+data alldata;
+set alldata;
+if Age_AtOnset ne . and Age_AtOnset<2 then age_new_cat="<2 years old     ";
+else if Age_AtOnset>=2 and Age_AtOnset<6 then age_new_cat="2 - <6 years old";
+else if Age_AtOnset>=6 and Age_AtOnset<=12 then age_new_cat="6 - <12 years old";
+else if Age_AtOnset>=12 and Age_AtOnset<=18 then age_new_cat="12 - 18 years old";
+run;
+proc freq data=alldata; table age_new_cat; run;
+
+ods rtf file='W:\Projects\Andrea Steck\Morgan Sooy DKA update\numbers_for_figures.rtf' style=journal;
+proc freq data=alldata;
+table active_inactive_clinic*year*dka;
+title "Numbers for figures: 0 = clinic, 1 = active, 2 = inactive";
+run;
+proc freq data=alldata;
+table active_inactive_clinic*age_new_cat*dka;
+run;
+ods rtf close;
+title;
+
+proc freq data=foranalysis; tables Rural_or_non_rural*active_inactive_clinic / chisq; run;
+proc freq data=alldata; tables Rural_or_non_rural*active_inactive_clinic / chisq; run;
+* for some reason this code isn't working....will export to R;
+proc export data=alldata
+  outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\table1.csv" dbms=csv replace;
+run;
+data save.table1;
+set alldata;
 run;
 
 /* rates of DKA by study participation and year */
@@ -708,36 +751,32 @@ title;
 /******************/
 /* STUDY PATIENTS */
 /******************/
-data study;
+proc contents data=alldata; run;
+data activestudy;
 set alldata;
-where instudy=1;
+where instudy_active;
 run;
-ods rtf file="C:\temp\output.rtf";
-proc freq data=alldata;
-table active_inactive_clinic*dka;
-run;
-ods rtf close;
-ods rtf file="C:\temp\output.rtf";
+ods rtf file="C:\temp\output.rtf" style=journal;
 /* predictors are age at onset, gender, race, insurance, language, onset year, rural/nonrural */
-proc logistic data=study;
+proc logistic data=activestudy;
 model dka(event='Yes') = Age_AtOnset ;
 run;
 %macro cat(var);
-proc logistic data=study;
+proc logistic data=activestudy;
 class &var;
 model dka(event='Yes') = &var ;
 run;
 %mend;
 %cat(gender);
-proc logistic data=study;
+proc logistic data=activestudy;
 class race_eth(ref='Non-Hispanic White');;
 model dka(event='Yes') = race_eth;
 run;
-proc logistic data=study;
+proc logistic data=activestudy;
 class hispanic(ref='No');;
 model dka(event='Yes') = hispanic;
 run;
-proc logistic data=study;
+proc logistic data=activestudy;
 class new_ins(ref='Private');
 model dka(event='Yes') = new_ins;
 run;
@@ -745,21 +784,21 @@ run;
 %cat(year);
 %cat(Rural_or_non_rural);
 %cat(age_cat);
-proc logistic data=study;
+proc logistic data=activestudy;
 model dka(event='Yes') = year ;
 run;
 /* add HbA1c as a predictor */
-proc logistic data=study;
+proc logistic data=activestudy;
 model dka(event='Yes') = InitalA1c ;
 run;
-proc freq data=study; table hispanic; run;
+proc freq data=activestudy; table hispanic; run;
 ods rtf close;
 
 /* multivariate model with predictors that were significant on univariate */
 ods rtf file="C:\temp\output.rtf" style=journal;
-proc logistic data=study;
-class Hispanic Rural_or_non_rural;
-model dka(event='Yes') = Hispanic Rural_or_non_rural InitalA1c;
+proc logistic data=activestudy;
+class Hispanic ;
+model dka(event='Yes') = Hispanic  InitalA1c;
 run;
 ods rtf close;
 
