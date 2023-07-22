@@ -101,22 +101,28 @@ acetaminophen2 = acetaminophen %>% select(subjectid, acet_dt1, acet_dt2)
 
 # row wise function solution
 acet_check = function(x){
-  id = x[1] # subject id first col
-  dt = x[2] # timestamp second col
-  b = acetaminophen2
-  if(id %in% acetaminophen2$subjectid){
-    b = acetaminophen2 %>% filter(subjectid == id) %>% mutate(check = ifelse(dt > acet_dt1 & dt <= acet_dt2, 1,0))
+  if(x[1] %in% acetaminophen2$subjectid){
+    b = acetaminophen2 %>% filter(subjectid == x[1]) %>% mutate(check = case_when(((ymd_hms(x[2]) >= acet_dt1) & (ymd_hms(x[2]) < acet_dt2)) ~ 1,
+                                                                                TRUE ~ 0))
     if(sum(b$check) > 0){return(1)}else{return(0)}
   }else{return(0)}
 }
 
-#include = apply(alldata2,1,acet_check)
+# SANITY CHECKER
+# test = alldata2 %>% filter(subjectid == "114A") %>% select(-X)
+# test_include = apply(test, 1, acet_check)
+# test = cbind(test,ti = test_include)
+# test = test %>% select(timestamp, ti, include)
+# test = test %>% filter(ti != include)
+
+include = apply(alldata2,1,acet_check)
 alldata2 = cbind(alldata2, include = include)
 sum(include) # 15606 
 
 # write.csv(alldata2, file = "S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/acetincludedata.csv")
 # ill be using thtis file, as it took ages to run
 # alldata2 <- read.csv("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/acetincludedata.csv", sep=";")
+# alldata2 = alldata2 %>% filter(subjectid == "114A") %>% select(-X)
 #####################################
 
 # acetaminophen_notime <- acetaminophen %>% filter(is.na(acet_time))
@@ -138,14 +144,13 @@ sum(include) # 15606
 
 #filter out the acet include == 1
 alldata3 = alldata2 %>% filter(include == 0)
-alldata3$L.D.Admission.Date
 
 # divide by trimester/time period
 t1data <- alldata3 %>% filter(as.Date(timestamp)>=Run.in.End & as.Date(timestamp)<SecondTri)
 t1data$trimester <- "T1"
 t2data <- alldata3 %>% filter(as.Date(timestamp)>=SecondTri & as.Date(timestamp)<ThirdTri)
 t2data$trimester <- "T2"
-t3data <- alldata3 %>% filter(as.Date(timestamp)>=ThirdTri & as.Date(timestamp)<as.Date(L.D.Admission.Date))
+t3data <- alldata3 %>% filter(as.Date(timestamp)>=ThirdTri & as.Date(timestamp)<as.Date(`L&D Admission Date`))
 t3data$trimester <- "T3"
 ppdata <- alldata2 %>% filter(as.Date(timestamp)>=v15date)
 ppdata$trimester <- "Post-partum"
