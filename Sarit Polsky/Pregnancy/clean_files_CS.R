@@ -1,7 +1,7 @@
 library(parsedate)
 library(cgmanalysis)
 library(readxl)
-library(dplyr)
+library(tidyverse)
 ##### FUNCTIONS FOR LIST FIXING
 
 quikfix = function(x){
@@ -81,31 +81,32 @@ for (d in dirs[2:length(dirs)]) {
       colnames(df) <- c("timestamp", "sensorglucose")
       df$timestamp <- parsedate::parse_date(df$timestamp, approx = F)
     }
-    else if(ncol(df)>= 48 & d %in% problemdirs &  grepl("CONTOUR", df[3,2])) {
-        df = as.data.frame(df[5:nrow(df),]) %>% select(c(2:3,5))
+    else if(ncol(df)>= 48) {
+        df = df[5:nrow(df),] %>% select(c(2:3,5)) 
+        colnames(df) = c("Date", "Time", "sensorglucose")
         df$timestamp = parsedate::parse_date(paste(df$Date, df$Time))
         df = df %>% select(timestamp, sensorglucose)
-        print("in the right place")
+
       } 
-    else if(d %in% problemdirs &  grepl("OneTouch", df[3,2])  ){
-      # df = as.data.frame(df[5:nrow(df),]) %>% mutate(Date = `First Name`,Time =  `Patient ID`,sensorglucose = `Start Date`)
-      # df$timestamp = parsedate::parse_date(paste(df$Date, df$Time))
-      # df = df %>% select(timestamp, sensorglucose)
-      # 
-      df = as.data.frame(df[5:nrow(df),]) %>% select(c(2:3,5))
-      df$timestamp = parsedate::parse_date(paste(df$Date, df$Time))
-      df = df %>% select(timestamp, sensorglucose)
-    } 
+    # else if(d %in% problemdirs &  grepl("OneTouch", df[3,2])  ){
+    #   # df = as.data.frame(df[5:nrow(df),]) %>% mutate(Date = `First Name`,Time =  `Patient ID`,sensorglucose = `Start Date`)
+    #   # df$timestamp = parsedate::parse_date(paste(df$Date, df$Time))
+    #   # df = df %>% select(timestamp, sensorglucose)
+    #   # 
+    #   df = as.data.frame(df[5:nrow(df),]) %>% select(c(2:3,5))
+    #   df$timestamp = parsedate::parse_date(paste(df$Date, df$Time))
+    #   df = df %>% select(timestamp, sensorglucose)
+    # } 
       
-    else if(ncol(df)>= 48 & !(d %in% problemdirs)){
-      sensor <- which(df$V3 == "Sensor")
-      colnames(df) <- df[sensor[1] + 1, ]
-      df <- df[(sensor[1] + 2):nrow(df), ]
-      df$timestamp <- parsedate::parse_date(paste(df$Date, df$Time), approx = F)
-      df <- df[, grep("timestamp|sensor glucose", tolower(colnames(df)))]
-      colnames(df)[1] <- "sensorglucose"}
-    
-    print(" not in the right place")
+    # else if(ncol(df)>= 48 & !(d %in% problemdirs)){
+    #   sensor <- which(df$V3 == "Sensor")
+    #   colnames(df) <- df[sensor[1] + 1, ]
+    #   df <- df[(sensor[1] + 2):nrow(df), ]
+    #   df$timestamp <- parsedate::parse_date(paste(df$Date, df$Time), approx = F)
+    #   df <- df[, grep("timestamp|sensor glucose", tolower(colnames(df)))]
+    #   colnames(df)[1] <- "sensorglucose"}
+    # 
+    # print(d," not in the right place")
 
     
 
@@ -158,44 +159,34 @@ for (d in dirs[2:length(dirs)]) {
 }
 
 
-# Variables
-out <- paste0("polsky_triple_c_cgm_", Sys.Date())
-cgmvariables(outdir, "./Reports", id_filename = T, outputname = out)
-# Split id column for Janet
-cgm <- read.csv(paste0("./Reports/", out, ".csv"))
-cgm$timepoint <- sub("\\d*_", "", cgm$subject_id)
-cgm$subject_id <- sub("_.*", "", cgm$subject_id)
-cgm <- cgm %>% select(
-  subject_id, timepoint, everything(),
-  -any_of(c("percent_cgm_wear", "num_days"))
-)
-write.csv(cgm, paste0("./Reports/", out, ".csv"), row.names = F)
+# # Variables
+# out <- paste0("polsky_triple_c_cgm_", Sys.Date())
+# cgmvariables(outdir, "./Reports", id_filename = T, outputname = out)
+# # Split id column for Janet
+# cgm <- read.csv(paste0("./Reports/", out, ".csv"))
+# cgm$timepoint <- sub("\\d*_", "", cgm$subject_id)
+# cgm$subject_id <- sub("_.*", "", cgm$subject_id)
+# cgm <- cgm %>% select(
+#   subject_id, timepoint, everything(),
+#   -any_of(c("percent_cgm_wear", "num_days"))
+# )
+# write.csv(cgm, paste0("./Reports/", out, ".csv"), row.names = F)
 
 
 ### added in so i just run on the original glucose values
 
-setwd("S:/Laura/BDC/Projects/Janet Snell-Bergeon/Triple C")
 # Output location
-outdir <- paste0(getwd(), "/", "Data_Cleaned/")
+outdir <- paste0("S:/Laura/BDC/Projects/Janet Snell-Bergeon/Triple C/Data Rerun", "/", "Data_Cleaned/")
 # Variables
 out <- paste0("polsky_triple_c_cgm_", Sys.Date())
-cgmvariables(outdir, "./Reports", id_filename = T, outputname = out, customintervals = list(c(54,63), c(63,140), c(140,180)))
+cgmvariables(outdir, "S:/Laura/BDC/Projects/Janet Snell-Bergeon/Triple C/Data Rerun", id_filename = T, outputname = out, customintervals = list(c(54,63), c(63,140), c(140,180)))
 # Split id column for Janet
-cgm <- read.csv(paste0("./Reports/", out, ".csv"))
+cgm <- read.csv(paste0("S:/Laura/BDC/Projects/Janet Snell-Bergeon/Triple C/Data Rerun/polsky_triple_c_cgm_2023-07-24.csv"))
 cgm$timepoint <- sub("\\d*_", "", cgm$subject_id)
 cgm$subject_id <- sub("_.*", "", cgm$subject_id)
 cgm <- cgm %>% select(
   subject_id, timepoint, everything(),
   -any_of(c("percent_cgm_wear", "num_days"))
 )
-write.csv(cgm, paste0("./Reports/", out, ".csv"), row.names = F)
+write.csv(cgm, paste0("S:/Laura/BDC/Projects/Janet Snell-Bergeon/Triple C/Data Rerun", out, ".csv"), row.names = F)
 
-
-
-
-#test on the data
-test <- read_csv("S:/Laura/BDC/Projects/Janet Snell-Bergeon/Triple C/Data Rerun/problem files/Craig, Jessica_10.28.14- 11.7.14.csv")
-grepl("CONTOUR", test3[3,2])
-test3 = as.data.frame(test3[5:nrow(test3),]) %>% mutate(Date = `First Name`,Time =  `Patient ID`,sensorglucose = `Start Date`)
-test2$timestamp = parsedate::parse_date(paste(test2$Date, test2$Time))
-test2 = test2 %>% select(timestamp, sensorglucose)
