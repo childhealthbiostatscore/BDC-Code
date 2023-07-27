@@ -19,7 +19,7 @@ library(table1)
 library(nlme)
 library(lme4)
 library(emmeans)
-
+library(lubridate)
 # data upload
 analysis_raw <- read_csv("S:/Laura/BDC/Projects/Cari Berget/a1c_hcl_omnipod/DATA/HCLClinicalObservati_DATA_2023-06-14_1345.csv")
 
@@ -64,6 +64,36 @@ fit_mod = function(outcome,df){
 # timepoints
 tps = c("child_bl_arm_1", "child_m1_arm_1", "child_m3_arm_1", "child_m6_arm_1")
 
+# which pump brand did you use prior to omnipodt5
+demogs_c = analysis_raw %>% select(record_id, redcap_event_name, demo_c_ethnicity,demo_c_race,demo_c_gender,demo_c_insurance,demo_p_baseline6, demo_p_baseline9, demo_c_t1d_duration, demo_training) %>%  filter(redcap_event_name =="child_bl_arm_1") %>%
+  mutate(ethnicity = factor(demo_c_ethnicity, levels = c("0","1","2"),labels = c("Hispanic/Latino", "Not Hispanic/Latino", "Unknown/Not Reported")),
+         race = factor(demo_c_race, levels=c("0", "1", "2","3","4","5","6"),
+                       labels = c("American Indian/Alaska Native", "Asian", "Native Hawaiian/Pacific Islander", "Black/African American", "White", "More Than One", "Unknown/Not Reported")),
+         gender = factor(demo_c_gender,levels = c("0","1","2"),labels = c("Female", "Male", "Other")),
+         insurance = factor(demo_p_baseline6, levels=c("0", "1", "2","3"), labels = c("Public", "Private", "Other", "Uninsured")),
+         prior_cgm = factor(demo_p_baseline9, levels=c("0", "1", "2","3"), labels = c("Medtronic", "Dexcom", "Freestyle Libre", "Other")),
+         prior_pump = factor(demo_p_baseline6, levels=c("0", "1", "2","3","4"), labels = c("Animas", "Medtronic", "Tandem", "Insulet Omnipod", "Other")),
+         t1d_duration = demo_c_t1d_duration,
+         training = factor(demo_training, levels = c("0","1"), labels = c("Self-Start", "In-Person/Zoom Educator"))
+         ) %>% select(record_id, ethnicity:training)
+
+demogs_p = analysis_raw   %>% filter(redcap_event_name == "parent_bl_arm_1") %>% select(record_id, p_baseline4,p_baseline6, p_baseline7,  p_baseline9) %>%
+  mutate(current_pump_use = factor(p_baseline4, levels = c("0","1"), labels = c("No", "Yes")),
+         current_pump = factor(p_baseline6, levels=c("0", "1", "2","3","4"), labels = c("Animas", "Medtronic", "Tandem", "Insulet Omnipod", "Other")),
+         current_cgm_use = factor(p_baseline7, levels = c("0","1"), labels = c("No", "Yes")),
+         current_cgm = factor(p_baseline9, levels=c("0", "1", "2","3"), labels = c("Medtronic", "Dexcom", "Freestyle Libre", "Other"))) %>% select(record_id, current_pump_use:current_cgm)
+# 
+# demogs_ya =  analysis_raw   %>% filter(redcap_event_name == "child_bl_arm_1") %>% select(record_id, ya_baseline4,ya_baseline6, ya_baseline7,  ya_baseline9) %>%
+#   mutate(current_pump_use = factor(ya_baseline4, levels = c("0","1"), labels = c("No", "Yes")),
+#          current_pump = factor(ya_baseline6, levels=c("0", "1", "2","3","4"), labels = c("Animas", "Medtronic", "Tandem", "Insulet Omnipod", "Other")),
+#          current_cgm_use = factor(ya_baseline7, levels = c("0","1"), labels = c("No", "Yes")),
+#          current_cgm = factor(ya_baseline9, levels=c("0", "1", "2","3"), labels = c("Medtronic", "Dexcom", "Freestyle Libre", "Other"))) %>% select(record_id, current_pump_use:current_cgm)
+
+# dates look like a hassle to wrangle for date diff
+# test = analysis_raw %>% select(record_id,redcap_event_name ,demo_c_cl_start,c_b_header_date, c_b_header_timepoint, c_f_date, c_f_timepoint)
+demogs = full_join(demogs_c, demogs_p) %>% unique() %>% filter(record_id != 125)
+
+rm(demogs_c, demogs_p)
 # SYSTEM USE/GLYCEMIC VARS of interest
 analysis_gly_t1 = analysis_raw %>% select(record_id, redcap_event_name,demo_c_age, gly_time_am, gly_time_am_ltd, gly_time_am_act,
                                       gly_time_mm, gly_sensorwear, gly_tdd, gly_tdd_bolus, gly_tdd_basal, gly_dailymealbolus, gly_dailybolus,
@@ -99,8 +129,10 @@ psy_soc_child_bl = psy_soc_child_bl %>% mutate(cb_inspire_total = select(., c_b_
                                                cb_paid_score = (80 - cb_paid)*25/20,
                                                ya_paid =  select(., ya_b_paid1:ya_b_paid20) %>% rowSums(),
                                                ya_paid_score = (80 - ya_paid)*25/20,
-                                               paid_score = ifelse(demo_c_age < 13, cb_paid_score, ya_paid_score) # PAID
-                                   )  %>% select(record_id, redcap_event_name, demo_c_age, inspire_score, hfs_maintain:hfs_worry_soc,paid_score)
+                                               paid_score = ifelse(demo_c_age < 13, cb_paid_score, ya_paid_score), # PAID
+                                               
+                                               seeds_score = select(.,seeds_b1:seeds_b20) %>% rowSums()
+                                   )  %>% select(record_id, redcap_event_name, demo_c_age, inspire_score, hfs_maintain:hfs_worry_soc,paid_score,seeds_score)
 
 # CHILD FU
 psy_soc_child_fu = analysis_raw %>% select(record_id,redcap_event_name, c_f_timepoint:c_f_inspire17,
@@ -130,8 +162,10 @@ psy_soc_child_fu = psy_soc_child_fu %>% mutate(cb_inspire_total = select(., c_f_
                                                cb_paid_score = (80 - cb_paid)*25/20,
                                                ya_paid =  select(., ya_f_paid1:ya_f_paid20) %>% rowSums(),
                                                ya_paid_score = (80 - ya_paid)*25/20,
-                                               paid_score = ifelse(demo_c_age < 13, cb_paid_score, ya_paid_score) # PAID
-                                   )  %>% select(record_id, redcap_event_name, demo_c_age, inspire_score, hfs_maintain:hfs_worry_soc,paid_score)
+                                               paid_score = ifelse(demo_c_age < 13, cb_paid_score, ya_paid_score), # PAID
+                                               
+                                               seeds_score = select(.,seeds_fu1:seeds_fu20) %>% rowSums()
+                                   )  %>% select(record_id, redcap_event_name, demo_c_age, inspire_score, hfs_maintain:hfs_worry_soc,paid_score, seeds_score)
 
 
 # PARENT BL
@@ -179,14 +213,29 @@ analysis$redcap_event_name = factor(analysis$redcap_event_name, levels = c("chil
 # discontinuation
 analysis = analysis %>% mutate(discontinuation = ifelse(gly_time_am < 10, 1, 0)) 
 
+
+# replace subj 3 survey m3 with m1 and remove m1
+# row 10, 11 are m1 m3 for subj 3
+m1_3 = analysis %>% filter(record_id == 3 & redcap_event_name == "Month 1") %>% select(inspire_score:seeds_score)
+m3_3 = analysis %>% filter(record_id == 3 & redcap_event_name == "Month 3") %>% select(inspire_score:seeds_score)
+# switch the two
+analysis[10,24] = NA;analysis[10,25] = NA;analysis[10,26] = NA;analysis[10,27] =  NA;analysis[10,28] = NA;analysis[10,29] =  NA;
+analysis[11,24] = m1_3[,1];analysis[11,25] = m1_3[,2];analysis[11,26] = m1_3[,3];analysis[11,27] = m1_3[,4];analysis[11,28] = m1_3[,5];analysis[11,29] = m1_3[,6];
+
+# rm m1 survey stuff for 102, 103
+analysis[396,24] = NA;analysis[396,25] = NA;analysis[396,26] = NA;analysis[396,27] =  NA;analysis[396,28] = NA;analysis[396,29] =  NA;
+analysis[400,24] = NA;analysis[400,25] = NA;analysis[400,26] = NA;analysis[400,27] =  NA;analysis[400,28] = NA;analysis[400,29] =  NA;
+
 ```
 
 ```{r t1setup, include = FALSE}
 my.render.cont <- function(x) {
     with(stats.apply.rounding(stats.default(x), digits=2), c("",
         "Mean (SD)"=sprintf("%s (&plusmn; %s)", MEAN, SD)))}
-
+label(analysis$seeds_score) = "seeds_score*"
 child_t1 = table1(~.|redcap_event_name, data = analysis %>% select(-record_id), render.continuous= my.render.cont)
+
+demog_t1 = table1(~., data = demogs)
 ```
 # Background
 
@@ -233,8 +282,10 @@ analysis = analysis %>% filter((discontinuation == 0 | redcap_event_name == "Bas
 
 ```{r t1, echo = FALSE}
 child_t1
-```
 
+demog_t1
+```
+*: seeds survey scored for ages 13+ only 
 ## Full Cohort
 
 ## % Meeting ADA Goals
@@ -417,10 +468,13 @@ fit_mod("paid_score", analysis)
 ```
 
 ```{r test}
+a = analysis
+b = analysis %>% filter(record_id == 3 & redcap_event_name == "Month 1") %>% select(inspire_score:seeds_score)
 
-analysis_bl = analysis %>% filter(redcap_event_name == "Baseline") %>% select(record_id, gly_time_am)
+analysis_m3[3,24:29] = b
+analysis_bl = analysis %>% filter(redcap_event_name == "Baseline") %>% select(record_id, gly_time_am) 
 
-analysis_m1 = analysis %>% filter(redcap_event_name == "Month 1")
+analysis_m3 = analysis %>% filter(redcap_event_name == "Month 3")
 
 analysis_missing = analysis %>% filter(record_id %in% c(3,102,103))
 ```
