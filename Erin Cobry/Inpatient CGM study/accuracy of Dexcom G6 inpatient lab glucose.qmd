@@ -22,9 +22,7 @@ library(arsenal)
 library(knitr)
 library(chron)
 library(M3)
-library(lubridate)
 library(ggplot2)
-
 
 knitr::opts_chunk$set(echo = FALSE)
 if(Sys.info()["sysname"] == "Windows"){
@@ -32,15 +30,14 @@ if(Sys.info()["sysname"] == "Windows"){
 } else if (Sys.info()["sysname"] == "Linux"){
   home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/Peds Endo/Petter Bjornstad/TODAY subaward/"
 } else if (Sys.info()["sysname"] == "Darwin"){
-  home_dir = "/Volumes/BDC/Projects/Erin Cobry/Inpatient CGM study"
+  home_dir = "/Volumes/BDC/Projects/Erin Cobry/Inpatient CGM study/"
 }
 knitr::opts_knit$set(root.dir = home_dir)
-
+setwd(home_dir)
 ```
 
-```{r include=TRUE, warning=FALSE, message=F, output=F}
+```{r include=TRUE, warning=FALSE, message=F}
 # Import data
-setwd(home_dir)
 source("./Data raw/AccuracyOfTheDexcomG-Glucose_R_2022-12-05_1514.r")
 glucose <- data
 glucose <- glucose %>% filter(!is.na(bgvalue))
@@ -50,8 +47,8 @@ glucose$date <- as.Date(glucose$date)
 glucose$time <- as.ITime(glucose$time)
 glucose$date_time <- as.POSIXct(paste(glucose$date, glucose$time), format="%Y-%m-%d %H:%M:%S")
 glucose$record_id <- str_pad(as.character(glucose$record_id),3,side="left",pad="0")
-# per Erin, keep only the POC/fingerstick values for now
-glucose <- glucose %>% filter(bgtype==1)
+# per Erin, keep only the lab values for now
+glucose <- glucose %>% filter(bgtype==3)
 glucose_keep <- glucose %>% select(record_id,date_time,bgvalue,bgtype.factor)
 
 source("./Data raw/AccuracyOfTheDexcomG-PatientInfoAndLocati_R_2022-12-08_1319.r")
@@ -103,28 +100,13 @@ cgm$time <- as.ITime(cgm$date_time)
 cgm$record_id <- cgm$subjectid
 cgm_keep <- cgm %>% select(record_id,date_time,sensorglucose)
 
-# read in start and stop date/time of insulin administration and exclude times outside this window
-iv_time <- read.csv("./Data raw/AccuracyOfTheDexcomG-IVInsulin_DATA_2023-02-24_2222.csv")
-iv_time <- iv_time %>% select(record_id,gtt_start_daet,insulin_drip_stop)
-iv_time$record_id <- str_pad(iv_time$record_id,3,pad="0")
-iv_time$gtt_start_daet <- mdy_hm(iv_time$gtt_start_daet)
-iv_time$insulin_drip_stop <- mdy_hm(iv_time$insulin_drip_stop)
-cgm_keep <- merge(cgm_keep,iv_time,by="record_id",all.x=F,all.y=T)
-cgm_keep <- cgm_keep %>% filter(date_time>=gtt_start_daet)
-cgm_keep <- cgm_keep %>% filter(date_time<=insulin_drip_stop)
-
-glucose_keep <- merge(glucose_keep,iv_time,by="record_id",all.x=F,all.y=T)
-glucose_keep <- glucose_keep %>% filter(date_time>=gtt_start_daet)
-glucose_keep <- glucose_keep %>% filter(date_time<=insulin_drip_stop)
-
 # find CGM measure that is closest to each POC glucose by ID and date/time, with no more than 5 minutes difference
 glucose_keep$cgm_glucose <- unlist(apply(glucose_keep,1,function(r){
   dt = as.POSIXct(r["date_time"])
   i = as.character(r["record_id"])
   dat = cgm_keep[cgm_keep$record_id==i,]
   x = dat$sensorglucose[which.min(abs(dat$date_time-dt))]
-  if(identical(x, integer(0))) {x = NA}
-  try(if(is.na(dt) | abs(difftime(dat$date_time[which.min(abs(dat$date_time-dt))],dt,units = "mins")) > 5 ){x = NA})
+  if(is.na(dt) | abs(difftime(dat$date_time[which.min(abs(dat$date_time-dt))],dt,units = "mins")) > 5 ){x = NA}
   return(x)
 }))
 
@@ -170,16 +152,16 @@ glucose_keep$in_15_15 <- as.factor(glucose_keep$in_15_15)
 glucose_keep$in_20_20 <- as.factor(glucose_keep$in_20_20)
 glucose_keep$in_30_30 <- as.factor(glucose_keep$in_30_30)
 
-# keep only patients admitted for DKA
-glucose_keep <- glucose_keep %>% filter(DKA=="DKA")
-
 # separate df for ICU and medical floor/ED
 icu <- glucose_keep %>% filter(locationfloor.factor=="ICU")
 med_ed <- glucose_keep %>% filter(locationfloor.factor=="Medical Floor/ED")
 
+# separate df for glucose <70 and >250
+glucose_lt70 <- glucose_keep %>% filter(bgvalue<70)
+glucose_gt250 <- glucose_keep %>% filter(bgvalue>250)
+
 # for demographics, remove duplicate MRNs
-demo <- patient %>% group_by(record_id) %>% slice(1)
-demo <- demo %>% filter(record_id %in% glucose_keep$record_id)
+demo <- patient %>% group_by(mrn) %>% slice(1)
 demo$admissiondate <- as.Date(demo$admissiondate, format="%Y-%m-%d")
 demo$admissiontime <- as.ITime(demo$admissiontime)
 demo$diagnosis_date <- as.Date(demo$diagnosis_date, format="%Y-%m-%d")
@@ -197,14 +179,9 @@ filter(bgtype.factor=="POC (Fingerstick) blood glucose meter") %>%
 demo <- merge(demo, numpoc, by="record_id", all.x = T, all.y = F)
 ```
 
-
 # Background and Methods
 
--   Hospital glucose values were imported from REDCap. For this analysis, only POC glucose values were included.
-
--   For this analysis, only hospital glucose values during the insulin infusion were included.
-
--   For this analysis, only patients admitted for DKA were included.
+-   Hospital glucose values were imported from REDCap. For this analysis, only lab glucose values were included.
 
 -   CGM data were processed using the cgmanalysis package.
 
@@ -216,19 +193,16 @@ demo <- merge(demo, numpoc, by="record_id", all.x = T, all.y = F)
 
 # Descriptive statistics
 
-
 ```{r include=TRUE, warning=FALSE, message=F}
 t1 <- tableby(data=demo,  ~ age + gender.factor + race + ethnicity + 
-                pumpuser.factor + automatedyn.factor + a1c + duration_years + admit_length_hours + POC_n , numeric.stats=c("Nmiss2","median","q1q3"))
+                pumpuser.factor + automatedyn.factor + a1c + duration_years + admit_length_hours + POC_n, numeric.stats=c("Nmiss2","median","q1q3"))
 kable(summary(t1))
 
 ```
 
-
 # All locations combined
 
 ## Clarke error grid
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 zones <- getClarkeZones(referenceVals = glucose_keep$bgvalue, testVals = glucose_keep$cgm_glucose)
@@ -241,9 +215,7 @@ p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
 
 ```
 
-
 ## MARD
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 mardt <- tableby(data=glucose_keep,  ~ relativediff,numeric.stats=c("meansd"))
@@ -251,9 +223,7 @@ kable(summary(mardt))
 
 ```
 
-
 ## 15/15, 20/20, 30/30
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 t <- tableby(data=glucose_keep,  ~ in_15_15 + in_20_20 + in_30_30)
@@ -261,11 +231,9 @@ kable(summary(t))
 
 ```
 
-
 ## By DKA
 
 ### DKA
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$DKA=="DKA",]$bgvalue, testVals = glucose_keep[glucose_keep$DKA=="DKA",]$cgm_glucose)
@@ -277,9 +245,7 @@ p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
   coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
 ```
 
-
 #### 15/15, 20/20, 30/30
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 t <- tableby(data=glucose_keep[glucose_keep$DKA=="DKA",],  ~ in_15_15 + in_20_20 + in_30_30)
@@ -287,11 +253,36 @@ kable(summary(t))
 
 ```
 
+### No DKA
+
+```{r include=TRUE, warning=FALSE, message=F}
+zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$DKA=="No DKA",]$bgvalue, testVals = glucose_keep[glucose_keep$DKA=="No DKA",]$cgm_glucose)
+table(zones)
+round (table (zones) / length (zones) * 100, digits=2)
+
+p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$DKA=="No DKA",]$bgvalue, testVals = glucose_keep[glucose_keep$DKA=="No DKA",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
+  coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
+```
+
+#### 15/15, 20/20, 30/30
+
+```{r include=TRUE, warning=FALSE, message=F}
+t <- tableby(data=glucose_keep[glucose_keep$DKA=="No DKA",],  ~ in_15_15 + in_20_20 + in_30_30)
+kable(summary(t))
+
+```
+
+### MARD by DKA
+
+```{r include=TRUE, warning=FALSE, message=F}
+mardt <- tableby(data=glucose_keep, DKA ~ relativediff,numeric.stats=c("meansd"))
+kable(summary(mardt))
+```
 
 ## By AKI
 
 ### AKI
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$AKI=="AKI",]$bgvalue, testVals = glucose_keep[glucose_keep$AKI=="AKI",]$cgm_glucose)
@@ -303,9 +294,7 @@ p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
   coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
 ```
 
-
 #### 15/15, 20/20, 30/30
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 t <- tableby(data=glucose_keep[glucose_keep$AKI=="AKI",],  ~ in_15_15 + in_20_20 + in_30_30)
@@ -313,9 +302,7 @@ kable(summary(t))
 
 ```
 
-
 ### No AKI
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$AKI=="No AKI",]$bgvalue, testVals = glucose_keep[glucose_keep$AKI=="No AKI",]$cgm_glucose)
@@ -328,9 +315,7 @@ p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
 
 ```
 
-
 #### 15/15, 20/20, 30/30
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 t <- tableby(data=glucose_keep[glucose_keep$AKI=="No AKI",],  ~ in_15_15 + in_20_20 + in_30_30)
@@ -338,20 +323,16 @@ kable(summary(t))
 
 ```
 
-
 ### MARD by AKI
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 mardt <- tableby(data=glucose_keep, AKI ~ relativediff,numeric.stats=c("meansd"))
 kable(summary(mardt))
 ```
 
-
 ## By ICU
 
 ### ICU
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$ICU=="ICU",]$bgvalue, testVals = glucose_keep[glucose_keep$ICU=="ICU",]$cgm_glucose)
@@ -363,18 +344,14 @@ p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
   coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
 ```
 
-
 #### 15/15, 20/20, 30/30
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 t <- tableby(data=glucose_keep[glucose_keep$AKI=="No AKI",],  ~ in_15_15 + in_20_20 + in_30_30)
 kable(summary(t))
 ```
 
-
 ### No ICU
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$ICU=="No ICU",]$bgvalue, testVals = glucose_keep[glucose_keep$ICU=="No ICU",]$cgm_glucose)
@@ -386,29 +363,23 @@ p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
   coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
 ```
 
-
 #### 15/15, 20/20, 30/30
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 t <- tableby(data=glucose_keep[glucose_keep$ICU=="No ICU",],  ~ in_15_15 + in_20_20 + in_30_30)
 kable(summary(t))
 ```
 
-
 ### MARD by ICU
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 mardt <- tableby(data=glucose_keep, ICU ~ relativediff,numeric.stats=c("meansd"))
 kable(summary(mardt))
 ```
 
-
 ## By Tylenol
 
 ### Tylenol
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$tylenol=="Tylenol",]$bgvalue, testVals = glucose_keep[glucose_keep$tylenol=="Tylenol",]$cgm_glucose)
@@ -420,18 +391,14 @@ p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
   coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
 ```
 
-
 #### 15/15, 20/20, 30/30
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 t <- tableby(data=glucose_keep[glucose_keep$tylenol=="Tylenol",],  ~ in_15_15 + in_20_20 + in_30_30)
 kable(summary(t))
 ```
 
-
 ### No Tylenol
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$tylenol=="No Tylenol",]$bgvalue, testVals = glucose_keep[glucose_keep$tylenol=="No Tylenol",]$cgm_glucose)
@@ -444,29 +411,119 @@ p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
 
 ```
 
-
 #### 15/15, 20/20, 30/30
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 t <- tableby(data=glucose_keep[glucose_keep$tylenol=="No Tylenol",],  ~ in_15_15 + in_20_20 + in_30_30)
 kable(summary(t))
 ```
 
-
 ### MARD by Tylenol
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 mardt <- tableby(data=glucose_keep, tylenol ~ relativediff,numeric.stats=c("meansd"))
 kable(summary(mardt))
 ```
 
+## By Contrast
+
+### Contrast
+
+```{r include=TRUE, warning=FALSE, message=F}
+zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$contrast=="Contrast",]$bgvalue, testVals = glucose_keep[glucose_keep$contrast=="Contrast",]$cgm_glucose)
+table(zones)
+round (table (zones) / length (zones) * 100, digits=2)
+
+p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$contrast=="Contrast",]$bgvalue, testVals = glucose_keep[glucose_keep$contrast=="Contrast",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
+  coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
+```
+
+#### 15/15, 20/20, 30/30
+
+```{r include=TRUE, warning=FALSE, message=F}
+t <- tableby(data=glucose_keep[glucose_keep$contrast=="Contrast",],  ~ in_15_15 + in_20_20 + in_30_30)
+kable(summary(t))
+```
+
+### No Contrast
+
+```{r include=TRUE, warning=FALSE, message=F}
+zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$contrast=="No Contrast",]$bgvalue, testVals = glucose_keep[glucose_keep$contrast=="No Contrast",]$cgm_glucose)
+table(zones)
+round (table (zones) / length (zones) * 100, digits=2)
+
+p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$contrast=="No Contrast",]$bgvalue, testVals = glucose_keep[glucose_keep$contrast=="No Contrast",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
+  coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
+
+```
+
+#### 15/15, 20/20, 30/30
+
+```{r include=TRUE, warning=FALSE, message=F}
+t <- tableby(data=glucose_keep[glucose_keep$contrast=="No Contrast",],  ~ in_15_15 + in_20_20 + in_30_30)
+kable(summary(t))
+```
+
+### MARD by contrast
+
+```{r include=TRUE, warning=FALSE, message=F}
+mardt <- tableby(data=glucose_keep, contrast ~ relativediff,numeric.stats=c("meansd"))
+kable(summary(mardt))
+```
+
+## By Vasoactive Meds
+
+### Vasoactive Meds
+
+```{r include=TRUE, warning=FALSE, message=F}
+zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$vasoactive=="Vasoactive Meds",]$bgvalue, testVals = glucose_keep[glucose_keep$vasoactive=="Vasoactive Meds",]$cgm_glucose)
+table(zones)
+round (table (zones) / length (zones) * 100, digits=2)
+
+p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$vasoactive=="Vasoactive Meds",]$bgvalue, testVals = glucose_keep[glucose_keep$vasoactive=="Vasoactive Meds",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
+  coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
+```
+
+#### 15/15, 20/20, 30/30
+
+```{r include=TRUE, warning=FALSE, message=F}
+t <- tableby(data=glucose_keep[glucose_keep$vasoactive=="Vasoactive Meds",],  ~ in_15_15 + in_20_20 + in_30_30)
+kable(summary(t))
+```
+
+### No Vasoactive Meds
+
+```{r include=TRUE, warning=FALSE, message=F}
+zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$vasoactive=="No Vasoactive Meds",]$bgvalue, testVals = glucose_keep[glucose_keep$vasoactive=="No Vasoactive Meds",]$cgm_glucose)
+table(zones)
+round (table (zones) / length (zones) * 100, digits=2)
+
+p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$vasoactive=="No Vasoactive Meds",]$bgvalue, testVals = glucose_keep[glucose_keep$vasoactive=="No Vasoactive Meds",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
+  coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
+
+```
+
+#### 15/15, 20/20, 30/30
+
+```{r include=TRUE, warning=FALSE, message=F}
+t <- tableby(data=glucose_keep[glucose_keep$vasoactive=="No Vasoactive Meds",],  ~ in_15_15 + in_20_20 + in_30_30)
+kable(summary(t))
+```
+
+### MARD by Vasoactive Meds
+
+```{r include=TRUE, warning=FALSE, message=F}
+mardt <- tableby(data=glucose_keep, vasoactive ~ relativediff,numeric.stats=c("meansd"))
+kable(summary(mardt))
+```
 
 ## By DKA Severity
 
 ### Severe DKA
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$DKA_severity=="Severe DKA",]$bgvalue, testVals = glucose_keep[glucose_keep$DKA_severity=="Severe DKA",]$cgm_glucose)
@@ -478,18 +535,14 @@ p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
   coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
 ```
 
-
 #### 15/15, 20/20, 30/30
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 t <- tableby(data=glucose_keep[glucose_keep$DKA_severity=="Severe DKA",],  ~ in_15_15 + in_20_20 + in_30_30)
 kable(summary(t))
 ```
 
-
 ### Non-severe DKA
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$DKA_severity=="Non-severe DKA",]$bgvalue, testVals = glucose_keep[glucose_keep$DKA_severity=="Non-severe DKA",]$cgm_glucose)
@@ -501,29 +554,23 @@ p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
   coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
 ```
 
-
 #### 15/15, 20/20, 30/30
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 t <- tableby(data=glucose_keep[glucose_keep$DKA_severity=="Non-severe DKA",],  ~ in_15_15 + in_20_20 + in_30_30)
 kable(summary(t))
 ```
 
-
 ### MARD
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 mardt <- tableby(data=glucose_keep, DKA_severity ~ relativediff,numeric.stats=c("meansd"))
 kable(summary(mardt))
 ```
 
-
 # Medical Floor/ED
 
 ## Clarke error grid
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 zones <- getClarkeZones(referenceVals = med_ed$bgvalue, testVals = med_ed$cgm_glucose)
@@ -536,9 +583,7 @@ p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
   coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
 ```
 
-
 ## MARD
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 mardt <- tableby(data=med_ed,  ~ relativediff,numeric.stats=c("meansd"))
@@ -546,20 +591,16 @@ kable(summary(mardt))
 
 ```
 
-
 ## 15/15, 20/20, 30/30
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 t <- tableby(data=med_ed,  ~ in_15_15 + in_20_20 + in_30_30)
 kable(summary(t))
 ```
 
-
 # ICU
 
 ## Clarke error grid
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 zones <- getClarkeZones(referenceVals = icu$bgvalue, testVals = icu$cgm_glucose)
@@ -572,9 +613,7 @@ p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
   coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
 ```
 
-
 ## MARD
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 mardt <- tableby(data=icu,  ~ relativediff,numeric.stats=c("meansd"))
@@ -582,9 +621,7 @@ kable(summary(mardt))
 
 ```
 
-
 ## 15/15, 20/20, 30/30
-
 
 ```{r include=TRUE, warning=FALSE, message=F}
 t <- tableby(data=icu,  ~ in_15_15 + in_20_20 + in_30_30)
@@ -592,3 +629,64 @@ kable(summary(t))
 
 ```
 
+# Glucose \< 70
+
+## Clarke error grid
+
+```{r include=TRUE, warning=FALSE, message=F}
+zones <- getClarkeZones(referenceVals = glucose_lt70$bgvalue, testVals = glucose_lt70$cgm_glucose)
+table(zones)
+round (table (zones) / length (zones) * 100, digits=2)
+
+p <- plotClarkeGrid(referenceVals = glucose_lt70$bgvalue, testVals = glucose_lt70$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
+
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
+  coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
+```
+
+## MARD
+
+```{r include=TRUE, warning=FALSE, message=F}
+mardt <- tableby(data=glucose_lt70,  ~ relativediff,numeric.stats=c("meansd"))
+kable(summary(mardt))
+
+```
+
+## 15/15, 20/20, 30/30
+
+```{r include=TRUE, warning=FALSE, message=F}
+t <- tableby(data=glucose_lt70,  ~ in_15_15 + in_20_20 + in_30_30)
+kable(summary(t))
+
+```
+
+# Glucose \> 250
+
+## Clarke error grid
+
+```{r include=TRUE, warning=FALSE, message=F}
+zones <- getClarkeZones(referenceVals = glucose_gt250$bgvalue, testVals = glucose_gt250$cgm_glucose)
+table(zones)
+round (table (zones) / length (zones) * 100, digits=2)
+
+p <- plotClarkeGrid(referenceVals = glucose_gt250$bgvalue, testVals = glucose_gt250$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
+
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
+  coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
+```
+
+## MARD
+
+```{r include=TRUE, warning=FALSE, message=F}
+mardt <- tableby(data=glucose_gt250,  ~ relativediff,numeric.stats=c("meansd"))
+kable(summary(mardt))
+
+```
+
+## 15/15, 20/20, 30/30
+
+```{r include=TRUE, warning=FALSE, message=F}
+t <- tableby(data=glucose_gt250,  ~ in_15_15 + in_20_20 + in_30_30)
+kable(summary(t))
+
+```
