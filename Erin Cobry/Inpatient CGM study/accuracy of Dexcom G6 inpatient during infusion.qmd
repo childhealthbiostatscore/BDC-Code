@@ -23,6 +23,7 @@ library(knitr)
 library(chron)
 library(M3)
 library(lubridate)
+library(ggplot2)
 
 
 knitr::opts_chunk$set(echo = FALSE)
@@ -169,6 +170,9 @@ glucose_keep$in_15_15 <- as.factor(glucose_keep$in_15_15)
 glucose_keep$in_20_20 <- as.factor(glucose_keep$in_20_20)
 glucose_keep$in_30_30 <- as.factor(glucose_keep$in_30_30)
 
+# keep only patients admitted for DKA
+glucose_keep <- glucose_keep %>% filter(DKA=="DKA")
+
 # separate df for ICU and medical floor/ED
 icu <- glucose_keep %>% filter(locationfloor.factor=="ICU")
 med_ed <- glucose_keep %>% filter(locationfloor.factor=="Medical Floor/ED")
@@ -186,6 +190,11 @@ demo$duration_years <- difftime(demo$diagnosis_date, demo$dob)/365.25
 demo$admit <- combine.date.and.time(demo$admissiondate,demo$admissiontime)
 demo$discharge <- combine.date.and.time(demo$dischargedate,demo$dischargetime)
 demo$admit_length_hours <- difftime(demo$discharge, demo$admit)
+# add number of POC glucoses per patient
+numpoc <- glucose_keep %>% group_by(record_id) %>% 
+filter(bgtype.factor=="POC (Fingerstick) blood glucose meter") %>% 
+  summarise(POC_n = n())
+demo <- merge(demo, numpoc, by="record_id", all.x = T, all.y = F)
 ```
 
 # Background and Methods
@@ -193,6 +202,8 @@ demo$admit_length_hours <- difftime(demo$discharge, demo$admit)
 -   Hospital glucose values were imported from REDCap. For this analysis, only POC glucose values were included.
 
 -   For this analysis, only hospital glucose values during the insulin infusion were included.
+
+-   For this analysis, only patients admitted for DKA were included.
 
 -   CGM data were processed using the cgmanalysis package.
 
@@ -206,7 +217,7 @@ demo$admit_length_hours <- difftime(demo$discharge, demo$admit)
 
 ```{r include=TRUE, warning=FALSE, message=F}
 t1 <- tableby(data=demo,  ~ age + gender.factor + race + ethnicity + 
-                pumpuser.factor + automatedyn.factor + a1c + duration_years + admit_length_hours, numeric.stats=c("Nmiss2","median","q1q3"))
+                pumpuser.factor + automatedyn.factor + a1c + duration_years + admit_length_hours + POC_n , numeric.stats=c("Nmiss2","median","q1q3"))
 kable(summary(t1))
 
 ```
@@ -221,7 +232,8 @@ table(zones)
 round (table (zones) / length (zones) * 100, digits=2)
 
 p <- plotClarkeGrid(referenceVals = glucose_keep$bgvalue, testVals = glucose_keep$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
-p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
+  coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
 
 ```
 
@@ -251,7 +263,8 @@ table(zones)
 round (table (zones) / length (zones) * 100, digits=2)
 
 p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$DKA=="DKA",]$bgvalue, testVals = glucose_keep[glucose_keep$DKA=="DKA",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
-p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
+  coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
 ```
 
 #### 15/15, 20/20, 30/30
@@ -260,32 +273,6 @@ p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
 t <- tableby(data=glucose_keep[glucose_keep$DKA=="DKA",],  ~ in_15_15 + in_20_20 + in_30_30)
 kable(summary(t))
 
-```
-
-### No DKA
-
-```{r include=TRUE, warning=FALSE, message=F}
-zones <- getClarkeZones(referenceVals = glucose_keep[glucose_keep$DKA=="No DKA",]$bgvalue, testVals = glucose_keep[glucose_keep$DKA=="No DKA",]$cgm_glucose)
-table(zones)
-round (table (zones) / length (zones) * 100, digits=2)
-
-p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$DKA=="No DKA",]$bgvalue, testVals = glucose_keep[glucose_keep$DKA=="No DKA",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
-p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
-```
-
-#### 15/15, 20/20, 30/30
-
-```{r include=TRUE, warning=FALSE, message=F}
-t <- tableby(data=glucose_keep[glucose_keep$DKA=="No DKA",],  ~ in_15_15 + in_20_20 + in_30_30)
-kable(summary(t))
-
-```
-
-### MARD by DKA
-
-```{r include=TRUE, warning=FALSE, message=F}
-mardt <- tableby(data=glucose_keep, DKA ~ relativediff,numeric.stats=c("meansd"))
-kable(summary(mardt))
 ```
 
 ## By AKI
@@ -298,7 +285,8 @@ table(zones)
 round (table (zones) / length (zones) * 100, digits=2)
 
 p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$AKI=="AKI",]$bgvalue, testVals = glucose_keep[glucose_keep$AKI=="AKI",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
-p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
+  coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
 ```
 
 #### 15/15, 20/20, 30/30
@@ -317,7 +305,8 @@ table(zones)
 round (table (zones) / length (zones) * 100, digits=2)
 
 p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$AKI=="No AKI",]$bgvalue, testVals = glucose_keep[glucose_keep$AKI=="No AKI",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
-p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
+  coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
 
 ```
 
@@ -346,7 +335,8 @@ table(zones)
 round (table (zones) / length (zones) * 100, digits=2)
 
 p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$ICU=="ICU",]$bgvalue, testVals = glucose_keep[glucose_keep$ICU=="ICU",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
-p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
+  coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
 ```
 
 #### 15/15, 20/20, 30/30
@@ -364,7 +354,8 @@ table(zones)
 round (table (zones) / length (zones) * 100, digits=2)
 
 p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$ICU=="No ICU",]$bgvalue, testVals = glucose_keep[glucose_keep$ICU=="No ICU",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
-p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
+  coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
 ```
 
 #### 15/15, 20/20, 30/30
@@ -391,7 +382,8 @@ table(zones)
 round (table (zones) / length (zones) * 100, digits=2)
 
 p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$tylenol=="Tylenol",]$bgvalue, testVals = glucose_keep[glucose_keep$tylenol=="Tylenol",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
-p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
+  coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
 ```
 
 #### 15/15, 20/20, 30/30
@@ -409,7 +401,8 @@ table(zones)
 round (table (zones) / length (zones) * 100, digits=2)
 
 p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$tylenol=="No Tylenol",]$bgvalue, testVals = glucose_keep[glucose_keep$tylenol=="No Tylenol",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
-p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
+  coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
 
 ```
 
@@ -437,7 +430,8 @@ table(zones)
 round (table (zones) / length (zones) * 100, digits=2)
 
 p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$DKA_severity=="Severe DKA",]$bgvalue, testVals = glucose_keep[glucose_keep$DKA_severity=="Severe DKA",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
-p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
+  coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
 ```
 
 #### 15/15, 20/20, 30/30
@@ -455,7 +449,8 @@ table(zones)
 round (table (zones) / length (zones) * 100, digits=2)
 
 p <- plotClarkeGrid(referenceVals = glucose_keep[glucose_keep$DKA_severity=="Non-severe DKA",]$bgvalue, testVals = glucose_keep[glucose_keep$DKA_severity=="Non-severe DKA",]$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
-p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
+  coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
 ```
 
 #### 15/15, 20/20, 30/30
@@ -483,7 +478,8 @@ round (table (zones) / length (zones) * 100, digits=2)
 
 p <- plotClarkeGrid(referenceVals = med_ed$bgvalue, testVals = med_ed$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
 
-p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
+  coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
 ```
 
 ## MARD
@@ -512,7 +508,8 @@ round (table (zones) / length (zones) * 100, digits=2)
 
 p <- plotClarkeGrid(referenceVals = icu$bgvalue, testVals = icu$cgm_glucose,xlab="POC glucose (mg/dL)",ylab = "CGM glucose (mg/dL)" )
 
-p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black"))
+p + scale_color_manual(values=c("chartreuse3","yellow2","red","blue","black")) +
+  coord_cartesian(ylim = c(0, 405), xlim = c(0, 405)) 
 ```
 
 ## MARD
