@@ -88,35 +88,34 @@ for (d in dirs[2:length(dirs)]) {
   df <- df[, c("subjectid", "timestamp", "sensorglucose")]
   # Sort by date
   df <- df[order(df$timestamp), ]
-  print("we got here")
+
   # Split and write CSVs
   t0_wk14 <- df[df$timestamp >= t0 & df$timestamp < wk14, ]
-  if (nrow(t0_wk14) > 0 & sum(is.na(t0_wk14$sensorglucose)) < nrow(t0_wk14)) {
+  
     
     t0_wk14$subjectid[1] <- id
-    write.csv(t0_wk14,
+    write.csv2(t0_wk14,
       file = paste0(outdir, id, "_t0_wk14.csv"),
-      row.names = F, na = ""
+      row.names = F, na = "",
     )
-  }
+
 
   wk14_wk28 <- df[df$timestamp >= wk14 & df$timestamp < wk28, ]
-  if (nrow(wk14_wk28) > 0 & sum(is.na(wk14_wk28$sensorglucose)) < nrow(wk14_wk28)) {
+
     wk14_wk28$subjectid[1] <- id
-    write.csv(wk14_wk28,
+    write.csv2(wk14_wk28,
       file = paste0(outdir, id, "_wk14_wk28.csv"),
       row.names = F, na = ""
     )
-  }
+
 
   wk28_dd <- df[df$timestamp >= wk28 & df$timestamp < dd, ]
-  if (nrow(wk28_dd) > 0 & sum(is.na(wk28_dd$sensorglucose)) < nrow(wk28_dd)) {
     wk28_dd$subjectid[1] <- id
-    write.csv(wk28_dd,
+    write.csv2(wk28_dd,
       file = paste0(outdir, id, "_wk28_dd.csv"),
       row.names = F, na = ""
     )
-  }
+  
   # Set to missing for next loop
   # t0 <- NA
   # wk14 <- NA
@@ -124,30 +123,32 @@ for (d in dirs[2:length(dirs)]) {
   # dd <- NA
 }
 
-# test #
-test <- read.csv("S:/Laura/BDC/Projects/Janet Snell-Bergeon/Triple C/Data Rerun/problem files/Pelayo, Caitlyn/Pelayo, Caitlin_6.9.16- 9.6.16.csv", na.strings = "", header = F)
-colnames(test) <- test[1, ]
-test <- test[13:nrow(test), ]
-test <- test[, grep("timestamp|glucose value", tolower(colnames(test)))]
-colnames(test) <- c("timestamp", "sensorglucose")
-test$timestamp <- sub("T", " ", test$timestamp)
-test$timestamp <- parsedate::parse_date(test$timestamp, approx = F)
-test$sensorglucose = as.numeric(test$sensorglucose)
-########
+write.csv(t0_wk14,
+           file = "S:/Laura/BDC/Projects/Janet Snell-Bergeon/Triple C/Data Rerun/466786_t0_wk14.csv",
+           row.names = F, na = "",
+)
 
+write.csv(wk14_wk28,
+           file = "S:/Laura/BDC/Projects/Janet Snell-Bergeon/Triple C/Data Rerun/466786_wk14_wk28.csv",
+           row.names = F, na = "",
+)
 
+write.csv(wk28_dd,
+           file = "S:/Laura/BDC/Projects/Janet Snell-Bergeon/Triple C/Data Rerun/466786_wk28_dd.csv",
+           row.names = F, na = "",
+)
 # Output location
 outdir <- paste0("S:/Laura/BDC/Projects/Janet Snell-Bergeon/Triple C/Data Rerun", "/", "Data_Cleaned/")
 # Variables
 out <- paste0("polsky_triple_c_cgm_", Sys.Date())
-cgmvariables(outdir, "S:/Laura/BDC/Projects/Janet Snell-Bergeon/Triple C/Data Rerun", id_filename = T, outputname = out, customintervals = list(c(54,63), c(63,140), c(140,180)))
+cgmvariables(inputdirectory = outdir,outputdirectory =  "S:/Laura/BDC/Projects/Janet Snell-Bergeon/Triple C/Data Rerun", id_filename = T, outputname = out, customintervals = list(c(54,63), c(63,140), c(140,180)))
 # Split id column for Janet
-cgm <- read.csv(paste0("S:/Laura/BDC/Projects/Janet Snell-Bergeon/Triple C/Data Rerun/polsky_triple_c_cgm_2023-07-24.csv"))
+cgm <- read.csv(paste0("S:/Laura/BDC/Projects/Janet Snell-Bergeon/Triple C/Data Rerun/polsky_triple_c_cgm_2023-08-02.csv"))
 cgm$timepoint <- sub("\\d*_", "", cgm$subject_id)
 cgm$subject_id <- sub("_.*", "", cgm$subject_id)
 cgm <- cgm %>% select(
   subject_id, timepoint, everything(),
   -any_of(c("percent_cgm_wear", "num_days"))
 )
-write.csv(cgm, paste0("S:/Laura/BDC/Projects/Janet Snell-Bergeon/Triple C/Data Rerun", out, ".csv"), row.names = F)
+write.csv(cgm, paste0("S:/Laura/BDC/Projects/Janet Snell-Bergeon/Triple C/Data Rerun/", out, ".csv"), row.names = F)
 
