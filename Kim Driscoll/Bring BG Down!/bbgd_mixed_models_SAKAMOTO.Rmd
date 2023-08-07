@@ -1,0 +1,249 @@
+---
+title: "BBGD! Mixed Models Sub-Sample Analysis"
+author: "Tim Vigers, Casey Sakamoto & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(tidyverse)
+library(Hmisc)
+library(lme4)
+library(lmerTest)
+library(emmeans)
+library(readr)
+
+knitr::opts_chunk$set(echo = FALSE, dpi = 1200, fig.height = 12, fig.width = 12)
+if (Sys.info()["sysname"] == "Windows") {
+  home_dir <- "S:/Laura/BDC/Projects/Kim Driscoll/Bring BG Down"
+} else if (Sys.info()["sysname"] == "Linux") {
+  home_dir <- "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Bring BG Down"
+} else if (Sys.info()["sysname"] == "Darwin") {
+  home_dir <- "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Kim Driscoll/Bring BG Down"
+}
+knitr::opts_knit$set(root.dir = home_dir)
+rm(home_dir)
+```
+
+```{r data, include= FALSE}
+df <- read_csv("S:/Laura/BDC/Projects/Kim Driscoll/Bring BG Down/Data_Cleaned/bbgd_master_Sakamoto.csv")
+analysis = df %>% select(participant_id, studyvisit, treatment_group,`Total Household Income`,c_gender,
+                         `Parent Maintain High BG of HFS`, `Parent Worry/Helplessness Subscale of HFS`,
+                         `Parent Social Consequences Subscale of HFS`)
+```
+
+# Model results
+
+```{r}
+fit_mod <- function(outcome, pred = predictors, dat = df, fam = "gaussian") {
+  form <- as.formula(paste0(
+    outcome, "~", "factor(studyvisit)*treatment_group+",
+    paste0(pred, collapse = "+"), "+(1|participant_id)"
+  ))
+  zi_form <- as.formula(paste0(
+    outcome, "~", "studyvisit*treatment_group+",
+    paste0(pred, collapse = "+")
+  ))
+  fixed <- as.formula(paste0("~", paste0(pred, collapse = "+")))
+  if (fam == "gaussian") {
+    mod <- lmer(form, data = dat)
+  } else if (fam == "zi.poisson") {
+    # Complete cases
+    dat <- dat[, c("participant_id", "studyvisit", "treatment_group", outcome, pred)]
+    dat <- dat[complete.cases(dat), ]
+    mod <-
+      mixed_model(update(form, . ~ . - (1 | participant_id)),
+        random = ~ 1 | participant_id, zi_fixed = ~treatment_group,
+        data = dat, family = zi.poisson()
+      )
+  } else {
+    mod <- glmer(form, data = dat, family = fam)
+  }
+  return(mod)
+}
+# Selected predictors
+predictors <-
+  c("age", "c_gender", "Total.Household.Income")
+form <- as.formula(paste0(
+  "~", "studyvisit*treatment_group+",
+  paste0(predictors, collapse = "+")
+))
+# Fill down
+df <- df %>%
+  group_by(participant_id) %>%
+  fill(all_of(predictors))
+# Get those with high values
+high_maintain = df %>% group_by(participant_id) %>%
+  mutate(high_maintain = max(Parent.Maintain.High.BG.of.HFS,na.rm = T)) %>% 
+  filter(high_maintain >= 7) %>% select(-high_maintain)
+
+high_worry = df %>% group_by(participant_id) %>%
+  mutate(high_worry = max(Parent.Worry.Helplessness.Subscale.of.HFS,na.rm = T)) %>% 
+  filter(high_worry >= 24) %>% select(-high_worry)
+
+high_social = df %>% group_by(participant_id) %>%
+  mutate(high_social = max(Parent.Social.Consequences.Subscale.of.HFS,na.rm = T)) %>% 
+  filter(high_social >= 9) %>% select(-high_social)
+```
+
+## Parent Maintain High BG of HFS
+
+```{r}
+mod <- lmer(update(form, Parent.Maintain.High.BG.of.HFS ~ . + (1 | participant_id)), data = high_maintain)
+kable(summary(mod)$coefficients, caption = "Mixed Model Coefficients",digits = 3)
+```
+
+Detailed model information:
+
+```{r}
+summary(mod)
+```
+
+```{r}
+# Holly! Here below is how to get model means
+# Model visit as categorical for easier plotting
+plot_form <- as.formula(paste0(
+  "~", "factor(studyvisit)*treatment_group+",
+  paste0(predictors, collapse = "+")
+))
+mod <- lmer(update(plot_form, Parent.Maintain.High.BG.of.HFS ~ . + (1 | participant_id)), data = df)
+means <- data.frame(emmeans(mod, ~ studyvisit + factor(treatment_group)))
+# Plot
+fig1a <- ggplot(means, aes(x = studyvisit, y = emmean, linetype = factor(treatment_group))) +
+  geom_point() +
+  geom_line() +
+  geom_errorbar(aes(
+    x = studyvisit, y = emmean,
+    ymin = emmean - SE, ymax = emmean + SE
+  ), width = 0.1, inherit.aes = F) +
+  scale_linetype_manual(
+    values = c("dashed", "solid"), name = "Group",
+    labels = c("Control", "Treatment")
+  ) +
+  ggtitle("Caregiver Maintain High BG") +
+  theme_bw() +
+  theme(
+    axis.title.y = element_blank(), axis.title.x = element_blank(),
+    plot.title = element_text(hjust = 0.5)
+  )
+fig1a
+```
+
+## Parent Worry/Helplessness Subscale of HFS
+
+```{r}
+mod <- lmer(update(form, Parent.Worry.Helplessness.Subscale.of.HFS ~ . + (1 | participant_id)),
+  data = df
+)
+kable(summary(mod)$coefficients, caption = "Mixed Model Coefficients",digits = 3)
+```
+
+Detailed model information:
+
+```{r}
+summary(mod)
+```
+
+```{r}
+# Holly! Here below is how to get model means
+# Model visit as categorical for easier plotting
+plot_form <- as.formula(paste0(
+  "~", "factor(studyvisit)*treatment_group+",
+  paste0(predictors, collapse = "+")
+))
+mod <- lmer(update(plot_form, Parent.Worry.Helplessness.Subscale.of.HFS ~ . + (1 | participant_id)),
+  data = df
+)
+means <- data.frame(emmeans(mod, ~ studyvisit + factor(treatment_group)))
+# Plot
+fig1b <- ggplot(means, aes(x = studyvisit, y = emmean, linetype = factor(treatment_group))) +
+  geom_point() +
+  geom_line() +
+  geom_errorbar(aes(
+    x = studyvisit, y = emmean,
+    ymin = emmean - SE, ymax = emmean + SE
+  ), width = 0.1, inherit.aes = F) +
+  scale_linetype_manual(
+    values = c("dashed", "solid"), name = "Group",
+    labels = c("Control", "Treatment")
+  ) +
+  ggtitle("Caregiver Worry/Helplessness About Low BG") +
+  theme_bw() +
+  theme(
+    axis.title.y = element_blank(), axis.title.x = element_blank(),
+    plot.title = element_text(hjust = 0.5)
+  )
+fig1b
+```
+
+## Parent Social Consequences Subscale of HFS
+
+This outcome was analyzed using a zero-inflated Poisson model with random intercept for participant. Coefficients are interpreted on the log count scale. 
+
+```{r}
+mod <- mixed_model(update(form, Parent.Social.Consequences.Subscale.of.HFS ~ .),
+  random = ~ 1 | participant_id, zi_fixed = ~1,
+  data = df, family = zi.poisson()
+)
+kable(summary(mod)$coef_table, caption = "Mixed Model Coefficients",digits = 3)
+```
+
+Detailed model information:
+
+```{r}
+summary(mod)
+```
+
+```{r}
+# Holly! Here below is how to get model means
+# Model visit as categorical for easier plotting
+plot_form <- as.formula(paste0(
+  "Parent.Social.Consequences.Subscale.of.HFS~",
+  "factor(studyvisit)*treatment_group+",
+  paste0(predictors, collapse = "+")
+))
+mod <- mixed_model(plot_form,
+  random = ~ 1 | participant_id, zi_fixed = ~1,
+  data = df, family = zi.poisson()
+)
+means <- data.frame(emmeans(mod, ~ studyvisit + factor(treatment_group)))
+fig1c <- ggplot(means, aes(x = studyvisit, y = emmean, linetype = factor(treatment_group))) +
+  geom_point() +
+  geom_line() +
+  geom_errorbar(aes(
+    x = studyvisit, y = emmean,
+    ymin = emmean - SE, ymax = emmean + SE
+  ), width = 0.1, inherit.aes = F) +
+  scale_linetype_manual(
+    values = c("dashed", "solid"), name = "Group",
+    labels = c("Control", "Treatment")
+  ) +
+  ggtitle("Caregiver Worry About Social Consequences") +
+  theme_bw() +
+  theme(
+    axis.title.y = element_blank(), axis.title.x = element_blank(),
+    plot.title = element_text(hjust = 0.5)
+  )
+fig1c
+```
+
+# Combined Figure
+
+```{r}
+grid.arrange(
+  arrangeGrob(fig1a + theme(legend.position = "none"),
+    fig1b + theme(legend.position = "none"),
+    fig1c + theme(legend.position = "none"),
+    nrow = 2,
+    left = textGrob("Mean Score",
+      rot = 90, vjust = 1,
+      gp = gpar(fontface = "bold", cex = 1.5)
+    )
+  ),
+  bottom = textGrob("Visit",
+    hjust = 1,
+    gp = gpar(fontface = "bold", cex = 1.5)
+  )
+)
+```
