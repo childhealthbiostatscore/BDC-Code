@@ -2,7 +2,9 @@
 title: "BBGD! Mixed Models Sub-Sample Analysis"
 author: "Tim Vigers, Casey Sakamoto & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
-output: word_document
+output:
+  html_document:
+    df_print: paged
 ---
 
 ```{r setup, include=FALSE}
@@ -13,6 +15,7 @@ library(lme4)
 library(lmerTest)
 library(emmeans)
 library(readr)
+library(table1)
 
 knitr::opts_chunk$set(echo = FALSE, dpi = 1200, fig.height = 12, fig.width = 12)
 if (Sys.info()["sysname"] == "Windows") {
@@ -27,223 +30,353 @@ rm(home_dir)
 ```
 
 ```{r data, include= FALSE}
+# get data and covariates
 df <- read_csv("S:/Laura/BDC/Projects/Kim Driscoll/Bring BG Down/Data_Cleaned/bbgd_master_Sakamoto.csv")
 analysis = df %>% select(participant_id, studyvisit, treatment_group,`Total Household Income`,c_gender,
                          `Parent Maintain High BG of HFS`, `Parent Worry/Helplessness Subscale of HFS`,
                          `Parent Social Consequences Subscale of HFS`)
+
+# Fill down
+analysis <- analysis %>%
+  group_by(participant_id) %>%
+  fill(`Total Household Income`)
+
+# predictors for 1-6
+# assess time, trt,, sex, income, time*trt
+predictors16 = c("factor(studyvisit)","factor(treatment_group)", "factor(c_gender)", "`Total Household Income`","factor(studyvisit)*factor(treatment_group)")
+
+# predictors 89
+predictors89 = c("factor(studyvisit)", "factor(treatment_group)", "factor(c_gender)", "factor(studyvisit)*factor(treatment_group)")
+
+#predictos10
+predictors10 = c("factor(studyvisit)", "factor(treatment_group)", "factor(studyvisit)*factor(treatment_group)")
+# table 1 
+# mean(sd), range for times 1,678 for each score by sex
+table_df = analysis %>% select(studyvisit, c_gender, 
+                         `Parent Maintain High BG of HFS`, `Parent Worry/Helplessness Subscale of HFS`,
+                         `Parent Social Consequences Subscale of HFS`) %>%
+                        filter(studyvisit %in% c(1,6,7,8))
+table_df$participant_id = factor(table_df$participant_id)
+# wide to long
+table_df = gather(table_df, subscale, score,`Parent Maintain High BG of HFS`:`Parent Social Consequences Subscale of HFS`)
+#table1
+
+testt1 = table_df %>% group_by(studyvisit, subscale,c_gender) %>% summarise(mean = mean(score, na.rm = T), sd = sd(score, na.rm = T), min = min(score, na.rm = T), max = max(score, na.rm = T))
 ```
+
+```{r, include = FALSE}
+fit_mod <- function(outcome, pred = predictors, dat = df) {
+  
+  form <- as.formula(paste0(
+    outcome, "~", paste0(pred, collapse = "+"), "+(1|participant_id)"
+  ))
+
+    mod <- lmer(form, data = dat)
+   
+  return(mod)
+}
+```
+# Methods
 
 # Model results
 
-```{r}
-fit_mod <- function(outcome, pred = predictors, dat = df, fam = "gaussian") {
-  form <- as.formula(paste0(
-    outcome, "~", "factor(studyvisit)*treatment_group+",
-    paste0(pred, collapse = "+"), "+(1|participant_id)"
-  ))
-  zi_form <- as.formula(paste0(
-    outcome, "~", "studyvisit*treatment_group+",
-    paste0(pred, collapse = "+")
-  ))
-  fixed <- as.formula(paste0("~", paste0(pred, collapse = "+")))
-  if (fam == "gaussian") {
-    mod <- lmer(form, data = dat)
-  } else if (fam == "zi.poisson") {
-    # Complete cases
-    dat <- dat[, c("participant_id", "studyvisit", "treatment_group", outcome, pred)]
-    dat <- dat[complete.cases(dat), ]
-    mod <-
-      mixed_model(update(form, . ~ . - (1 | participant_id)),
-        random = ~ 1 | participant_id, zi_fixed = ~treatment_group,
-        data = dat, family = zi.poisson()
-      )
-  } else {
-    mod <- glmer(form, data = dat, family = fam)
-  }
-  return(mod)
-}
-# Selected predictors
-predictors <-
-  c("age", "c_gender", "Total.Household.Income")
-form <- as.formula(paste0(
-  "~", "studyvisit*treatment_group+",
-  paste0(predictors, collapse = "+")
-))
-# Fill down
-df <- df %>%
-  group_by(participant_id) %>%
-  fill(all_of(predictors))
-# Get those with high values
-high_maintain = df %>% group_by(participant_id) %>%
-  mutate(high_maintain = max(Parent.Maintain.High.BG.of.HFS,na.rm = T)) %>% 
-  filter(high_maintain >= 7) %>% select(-high_maintain)
+```{r, include = F}
+# 1
+mod1_mh = fit_mod(outcome = "`Parent Maintain High BG of HFS`", pred = predictors16, dat = analysis %>% filter(studyvisit<7))
+mod1_wl = fit_mod(outcome = "`Parent Worry/Helplessness Subscale of HFS`", pred = predictors16, dat = analysis %>% filter(studyvisit<7))
+mod1_ws = fit_mod(outcome = "`Parent Social Consequences Subscale of HFS`", pred = predictors16, dat = analysis %>% filter(studyvisit<7))
 
-high_worry = df %>% group_by(participant_id) %>%
-  mutate(high_worry = max(Parent.Worry.Helplessness.Subscale.of.HFS,na.rm = T)) %>% 
-  filter(high_worry >= 24) %>% select(-high_worry)
+a1 = kable(summary(mod1_mh)$coefficients, digits = 3)
+b1 = kable(summary(mod1_wl)$coefficients, digits = 3)
+c1 = kable(summary(mod1_ws)$coefficients, digits = 3)
 
-high_social = df %>% group_by(participant_id) %>%
-  mutate(high_social = max(Parent.Social.Consequences.Subscale.of.HFS,na.rm = T)) %>% 
-  filter(high_social >= 9) %>% select(-high_social)
+# 2
+mod2_mh = fit_mod(outcome = "`Parent Maintain High BG of HFS`", pred = predictors16, dat = analysis)
+mod2_wl = fit_mod(outcome = "`Parent Worry/Helplessness Subscale of HFS`", pred = predictors16, dat = analysis)
+mod2_ws = fit_mod(outcome = "`Parent Social Consequences Subscale of HFS`", pred = predictors16, dat = analysis)
+
+a2 = kable(summary(mod2_mh)$coefficients, digits = 3)
+b2 = kable(summary(mod2_wl)$coefficients, digits = 3)
+c2 = kable(summary(mod2_ws)$coefficients, digits = 3)
+
+# 3
+mod3_mh = fit_mod(outcome = "`Parent Maintain High BG of HFS`", pred = predictors16, dat = analysis %>% filter(studyvisit<7 & `Parent Maintain High BG of HFS` >= 7))
+mod3_wl = fit_mod(outcome = "`Parent Worry/Helplessness Subscale of HFS`", pred = predictors16, dat = analysis%>% filter(studyvisit<7 & `Parent Worry/Helplessness Subscale of HFS` >= 24))
+mod3_ws = fit_mod(outcome = "`Parent Social Consequences Subscale of HFS`", pred = predictors16, dat = analysis%>% filter(studyvisit<7 & `Parent Social Consequences Subscale of HFS` >= 9))
+
+a3 = kable(summary(mod3_mh)$coefficients, digits = 3)
+b3 = kable(summary(mod3_wl)$coefficients, digits = 3)
+c3 = kable(summary(mod3_ws)$coefficients, digits = 3)
+
+# 4
+mod4_mh = fit_mod(outcome = "`Parent Maintain High BG of HFS`", pred = predictors16, dat = analysis %>% filter(`Parent Maintain High BG of HFS` >= 7))
+mod4_wl = fit_mod(outcome = "`Parent Worry/Helplessness Subscale of HFS`", pred = predictors16, dat = analysis%>% filter(`Parent Worry/Helplessness Subscale of HFS` >= 24))
+mod4_ws = fit_mod(outcome = "`Parent Social Consequences Subscale of HFS`", pred = predictors16, dat = analysis%>% filter(`Parent Social Consequences Subscale of HFS` >= 9))
+
+a4 = kable(summary(mod4_mh)$coefficients, digits = 3)
+b4 = kable(summary(mod4_wl)$coefficients, digits = 3)
+c4 = kable(summary(mod4_ws)$coefficients, digits = 3)
+
+# 5
+mod5_mh = fit_mod(outcome = "`Parent Maintain High BG of HFS`", pred = predictors16, dat = analysis %>% filter(studyvisit<7 &`Parent Maintain High BG of HFS` < 7))
+mod5_wl = fit_mod(outcome = "`Parent Worry/Helplessness Subscale of HFS`", pred = predictors16, dat = analysis%>% filter(studyvisit<7 &`Parent Worry/Helplessness Subscale of HFS` < 24))
+mod5_ws = fit_mod(outcome = "`Parent Social Consequences Subscale of HFS`", pred = predictors16, dat = analysis%>% filter(studyvisit<7 &`Parent Social Consequences Subscale of HFS` < 9))
+
+a5 = kable(summary(mod5_mh)$coefficients, digits = 3)
+b5 = kable(summary(mod5_wl)$coefficients, digits = 3)
+c5 = kable(summary(mod5_ws)$coefficients, digits = 3)
+
+# 6
+mod6_mh = fit_mod(outcome = "`Parent Maintain High BG of HFS`", pred = predictors16, dat = analysis %>% filter(`Parent Maintain High BG of HFS` < 7))
+mod6_wl = fit_mod(outcome = "`Parent Worry/Helplessness Subscale of HFS`", pred = predictors16, dat = analysis%>% filter(`Parent Worry/Helplessness Subscale of HFS` < 24))
+mod6_ws = fit_mod(outcome = "`Parent Social Consequences Subscale of HFS`", pred = predictors16, dat = analysis%>% filter(`Parent Social Consequences Subscale of HFS` < 9))
+
+a6 = kable(summary(mod6_mh)$coefficients, digits = 3)
+b6 = kable(summary(mod6_wl)$coefficients, digits = 3)
+c6 = kable(summary(mod6_ws)$coefficients, digits = 3)
+
+# 8
+mod8_mh = fit_mod(outcome = "`Parent Maintain High BG of HFS`", pred = predictors89, dat = analysis %>% filter(studyvisit<7))
+mod8_wl = fit_mod(outcome = "`Parent Worry/Helplessness Subscale of HFS`", pred = predictors89, dat = analysis %>% filter(studyvisit<7))
+mod8_ws = fit_mod(outcome = "`Parent Social Consequences Subscale of HFS`", pred = predictors89, dat = analysis %>% filter(studyvisit<7))
+
+a8 = kable(summary(mod8_mh)$coefficients, digits = 3)
+b8 = kable(summary(mod8_wl)$coefficients, digits = 3)
+c8 = kable(summary(mod8_ws)$coefficients, digits = 3)
+
+# 9
+mod9_mh = fit_mod(outcome = "`Parent Maintain High BG of HFS`", pred = predictors89, dat = analysis)
+mod9_wl = fit_mod(outcome = "`Parent Worry/Helplessness Subscale of HFS`", pred = predictors89, dat = analysis)
+mod9_ws = fit_mod(outcome = "`Parent Social Consequences Subscale of HFS`", pred = predictors89, dat = analysis)
+
+a9 = kable(summary(mod9_mh)$coefficients, digits = 3)
+b9 = kable(summary(mod9_wl)$coefficients, digits = 3)
+c9 = kable(summary(mod9_ws)$coefficients, digits = 3)
+
+# 10 1
+mod10_mh = fit_mod(outcome = "`Parent Maintain High BG of HFS`", pred = predictors10, dat = analysis%>% filter(studyvisit<7 & c_gender == 1))
+mod10_wl = fit_mod(outcome = "`Parent Worry/Helplessness Subscale of HFS`", pred = predictors10, dat = analysis%>% filter(studyvisit<7  & c_gender == 1))
+mod10_ws = fit_mod(outcome = "`Parent Social Consequences Subscale of HFS`", pred = predictors10, dat = analysis%>% filter(studyvisit<7  & c_gender == 1))
+
+a10 = kable(summary(mod10_mh)$coefficients, digits = 3)
+b10 = kable(summary(mod10_wl)$coefficients, digits = 3)
+c10 = kable(summary(mod10_ws)$coefficients, digits = 3)
+
+# 10 2
+mod10_mh2 = fit_mod(outcome = "`Parent Maintain High BG of HFS`", pred = predictors10, dat = analysis%>% filter(studyvisit<7 & c_gender == 2))
+mod10_wl2 = fit_mod(outcome = "`Parent Worry/Helplessness Subscale of HFS`", pred = predictors10, dat = analysis%>% filter(studyvisit<7  & c_gender == 2))
+mod10_ws2 = fit_mod(outcome = "`Parent Social Consequences Subscale of HFS`", pred = predictors10, dat = analysis%>% filter(studyvisit<7  & c_gender == 2))
+
+a102 = kable(summary(mod10_mh2)$coefficients, digits = 3)
+b102 = kable(summary(mod10_wl2)$coefficients, digits = 3)
+c102 = kable(summary(mod10_ws2)$coefficients, digits = 3)
 ```
 
-## Parent Maintain High BG of HFS
+## 1. LMM with times 1-6
+
+### Maintain High
 
 ```{r}
-mod <- lmer(update(form, Parent.Maintain.High.BG.of.HFS ~ . + (1 | participant_id)), data = high_maintain)
-kable(summary(mod)$coefficients, caption = "Mixed Model Coefficients",digits = 3)
+a1
 ```
 
-Detailed model information:
+### Worry Low
 
 ```{r}
-summary(mod)
+b1
 ```
 
+### Worry Social
+
 ```{r}
-# Holly! Here below is how to get model means
-# Model visit as categorical for easier plotting
-plot_form <- as.formula(paste0(
-  "~", "factor(studyvisit)*treatment_group+",
-  paste0(predictors, collapse = "+")
-))
-mod <- lmer(update(plot_form, Parent.Maintain.High.BG.of.HFS ~ . + (1 | participant_id)), data = df)
-means <- data.frame(emmeans(mod, ~ studyvisit + factor(treatment_group)))
-# Plot
-fig1a <- ggplot(means, aes(x = studyvisit, y = emmean, linetype = factor(treatment_group))) +
-  geom_point() +
-  geom_line() +
-  geom_errorbar(aes(
-    x = studyvisit, y = emmean,
-    ymin = emmean - SE, ymax = emmean + SE
-  ), width = 0.1, inherit.aes = F) +
-  scale_linetype_manual(
-    values = c("dashed", "solid"), name = "Group",
-    labels = c("Control", "Treatment")
-  ) +
-  ggtitle("Caregiver Maintain High BG") +
-  theme_bw() +
-  theme(
-    axis.title.y = element_blank(), axis.title.x = element_blank(),
-    plot.title = element_text(hjust = 0.5)
-  )
-fig1a
+c1
 ```
 
-## Parent Worry/Helplessness Subscale of HFS
+## 2. LMM with times 1-8
+
+### Maintain High
 
 ```{r}
-mod <- lmer(update(form, Parent.Worry.Helplessness.Subscale.of.HFS ~ . + (1 | participant_id)),
-  data = df
-)
-kable(summary(mod)$coefficients, caption = "Mixed Model Coefficients",digits = 3)
+a2
 ```
 
-Detailed model information:
+### Worry Low
 
 ```{r}
-summary(mod)
+b2
 ```
 
+### Worry Social
+
 ```{r}
-# Holly! Here below is how to get model means
-# Model visit as categorical for easier plotting
-plot_form <- as.formula(paste0(
-  "~", "factor(studyvisit)*treatment_group+",
-  paste0(predictors, collapse = "+")
-))
-mod <- lmer(update(plot_form, Parent.Worry.Helplessness.Subscale.of.HFS ~ . + (1 | participant_id)),
-  data = df
-)
-means <- data.frame(emmeans(mod, ~ studyvisit + factor(treatment_group)))
-# Plot
-fig1b <- ggplot(means, aes(x = studyvisit, y = emmean, linetype = factor(treatment_group))) +
-  geom_point() +
-  geom_line() +
-  geom_errorbar(aes(
-    x = studyvisit, y = emmean,
-    ymin = emmean - SE, ymax = emmean + SE
-  ), width = 0.1, inherit.aes = F) +
-  scale_linetype_manual(
-    values = c("dashed", "solid"), name = "Group",
-    labels = c("Control", "Treatment")
-  ) +
-  ggtitle("Caregiver Worry/Helplessness About Low BG") +
-  theme_bw() +
-  theme(
-    axis.title.y = element_blank(), axis.title.x = element_blank(),
-    plot.title = element_text(hjust = 0.5)
-  )
-fig1b
+c2
 ```
 
-## Parent Social Consequences Subscale of HFS
+## 3. LMM with times 1-6 and exceeding clinical cutpoints
 
-This outcome was analyzed using a zero-inflated Poisson model with random intercept for participant. Coefficients are interpreted on the log count scale. 
+### Maintain High
 
 ```{r}
-mod <- mixed_model(update(form, Parent.Social.Consequences.Subscale.of.HFS ~ .),
-  random = ~ 1 | participant_id, zi_fixed = ~1,
-  data = df, family = zi.poisson()
-)
-kable(summary(mod)$coef_table, caption = "Mixed Model Coefficients",digits = 3)
+a3
 ```
 
-Detailed model information:
+### Worry Low
 
 ```{r}
-summary(mod)
+b3
 ```
 
+### Worry Social
+
 ```{r}
-# Holly! Here below is how to get model means
-# Model visit as categorical for easier plotting
-plot_form <- as.formula(paste0(
-  "Parent.Social.Consequences.Subscale.of.HFS~",
-  "factor(studyvisit)*treatment_group+",
-  paste0(predictors, collapse = "+")
-))
-mod <- mixed_model(plot_form,
-  random = ~ 1 | participant_id, zi_fixed = ~1,
-  data = df, family = zi.poisson()
-)
-means <- data.frame(emmeans(mod, ~ studyvisit + factor(treatment_group)))
-fig1c <- ggplot(means, aes(x = studyvisit, y = emmean, linetype = factor(treatment_group))) +
-  geom_point() +
-  geom_line() +
-  geom_errorbar(aes(
-    x = studyvisit, y = emmean,
-    ymin = emmean - SE, ymax = emmean + SE
-  ), width = 0.1, inherit.aes = F) +
-  scale_linetype_manual(
-    values = c("dashed", "solid"), name = "Group",
-    labels = c("Control", "Treatment")
-  ) +
-  ggtitle("Caregiver Worry About Social Consequences") +
-  theme_bw() +
-  theme(
-    axis.title.y = element_blank(), axis.title.x = element_blank(),
-    plot.title = element_text(hjust = 0.5)
-  )
-fig1c
+c3
 ```
 
-# Combined Figure
+## 4. LMM with times 1-8 and exceeding clinical cutpoints
+
+### Maintain High
 
 ```{r}
-grid.arrange(
-  arrangeGrob(fig1a + theme(legend.position = "none"),
-    fig1b + theme(legend.position = "none"),
-    fig1c + theme(legend.position = "none"),
-    nrow = 2,
-    left = textGrob("Mean Score",
-      rot = 90, vjust = 1,
-      gp = gpar(fontface = "bold", cex = 1.5)
-    )
-  ),
-  bottom = textGrob("Visit",
-    hjust = 1,
-    gp = gpar(fontface = "bold", cex = 1.5)
-  )
-)
+a4
+```
+
+### Worry Low
+
+```{r}
+b4
+```
+
+### Worry Social
+
+```{r}
+c4
+```
+
+## 5. LMM with times 1-6 and NOT exceeding clinical cutpoints
+
+### Maintain High
+
+```{r}
+a5
+```
+
+### Worry Low
+
+```{r}
+b5
+```
+
+### Worry Social
+
+```{r}
+c5
+```
+
+## 6. LMM with times 1-8 and NOT exceeding clinical cutpoints
+
+### Maintain High
+
+```{r}
+a6
+```
+
+### Worry Low
+
+```{r}
+b6
+```
+
+### Worry Social
+
+```{r}
+c6
+```
+
+## 7.
+
+```{r}
+testt1
+```
+
+## 8. LMM with times 1-6 no income adjust
+
+### Maintain High
+
+```{r}
+a8
+```
+
+### Worry Low
+
+```{r}
+b8
+```
+
+### Worry Social
+
+```{r}
+c8
+```
+
+## 9. LMM with times 1-8 no income adjust
+
+### Maintain High
+
+```{r}
+a9
+```
+
+### Worry Low
+
+```{r}
+b9
+```
+
+### Worry Social
+
+```{r}
+c9
+```
+
+## 10. LMM with times 1-6 no income adjust split up by sex
+
+NOTE: couldnt find a data dictionary anywhere so I left the treatment and sex variables in original format
+
+### sex == 1
+
+#### Maintain High
+
+```{r}
+a10
+```
+
+#### Worry Low
+
+```{r}
+b10
+```
+
+#### Worry Social
+
+```{r}
+c10
+```
+
+### sex == 2
+#### Maintain High
+
+```{r}
+a102
+```
+
+#### Worry Low
+
+```{r}
+b102
+```
+
+#### Worry Social
+
+```{r}
+c102
 ```
