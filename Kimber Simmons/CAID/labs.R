@@ -1,5 +1,5 @@
 #########LABS##########
-source("C:/Users/campbkri/Documents/GitHub/BDC-Code/Kimber Simmons/CAID/data_prep.R")
+source("C:/Users/millekr7/Documents/GitHub/BDC-Code/Kimber Simmons/CAID/data_prep.R")
 #1. Eisenbarth labs:
 
 #located in the patient level report, only measured once per pt
