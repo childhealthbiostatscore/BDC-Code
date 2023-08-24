@@ -420,6 +420,10 @@ proc logistic data=alldata;
 class new_ins(ref='Private');
 model dka(event='Yes') = new_ins;
 run;
+proc logistic data=alldata;
+class Rural_or_non_rural(ref='Rural');
+model dka(event='Yes') = Rural_or_non_rural;
+run;
 proc freq data=alldata; table new_ins; run;
 %cat(English);
 %cat(year);
@@ -484,7 +488,7 @@ run;
 /* multivariate model with predictors that were significant on univariate */
 ods rtf file="C:\temp\output.rtf" style=journal;
 proc logistic data=alldata;
-class race_eth new_ins year Rural_or_non_rural instudy(ref='0');
+class race_eth new_ins(ref="Private") year Rural_or_non_rural instudy(ref='0');
 model dka(event='Yes') = Age_AtOnset race_eth new_ins year Rural_or_non_rural InitalA1c instudy;
 run;
 /* model without A1c */
@@ -580,13 +584,16 @@ quit;
 /* MULTIVARIATE FOR HBA1C */
 ods rtf file="C:\temp\output.rtf" style=journal;
 proc glm data=alldata;
-class new_ins race_eth English;
-model InitalA1c = new_ins Age_AtOnset new_eth English year / solution;
+class new_ins(ref="Private") race_eth English;
+model InitalA1c = new_ins Age_AtOnset race_eth English year / solution;
 lsmeans new_ins / stderr;
 lsmeans race_eth  / stderr;
 lsmeans English  / stderr;
 run;
 ods rtf close;
+proc freq data=alldata;
+table new_ins;
+run;
 
 /* give Todd % DKA by insurance type and year with 95% CI */
 proc sort data=alldata; by new_ins year; run;
@@ -642,6 +649,14 @@ label 	_Label_ = '00'x
 		xPC = 'P-value' ;
 run;
 ods rtf close;
+
+proc logistic data=alldata;
+class gender active_inactive_clinic;
+model gender(ref="Female") = active_inactive_clinic ;
+run;
+proc freq data=alldata;
+table gender*active_inactive_clinic;
+run;
 
 proc sort data=foranalysis; by active_inactive_clinic; run;
 proc means data=foranalysis;
@@ -780,6 +795,10 @@ proc logistic data=activestudy;
 class new_ins(ref='Private');
 model dka(event='Yes') = new_ins;
 run;
+proc logistic data=activestudy;
+class Rural_or_non_rural(ref='Rural');
+model dka(event='Yes') = Rural_or_non_rural;
+run;
 %cat(English);
 %cat(year);
 %cat(Rural_or_non_rural);
@@ -849,7 +868,7 @@ ods rtf close;
 /* multivariate model with predictors that were significant on univariate */
 ods rtf file="C:\temp\output.rtf" style=journal;
 proc logistic data=clinic;
-class race_eth new_ins year Rural_or_non_rural;
+class race_eth new_ins(ref="Private") year Rural_or_non_rural;
 model dka(event='Yes') = Age_AtOnset race_eth new_ins year Rural_or_non_rural InitalA1c;
 where new_ins ne 'None';
 run;
