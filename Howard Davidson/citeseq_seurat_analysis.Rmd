@@ -55,15 +55,36 @@ a1c_df <- Reduce(function(x, y) merge(x, y, all = TRUE), a1ccpep)
 a1c_df = a1c_df %>% filter(!is.na(`HWD ID`)) %>% mutate(a1c = as.numeric( case_when(A1c_Value == "NULL" ~ NA,
                                                                         TRUE ~ A1c_Value)))
 
-avg_a1c = a1c_df %>% group_by(`HWD ID`) %>% summarise(meana1c = mean(a1c, na.rm = T))
+avg_a1c = a1c_df %>% group_by(`HWD ID`) %>% summarise(meana1c = mean(a1c, na.rm = T)) %>% mutate(id = `HWD ID`)
+avg_a1c = avg_a1c %>% mutate(a1c_g7 = ifelse(meana1c > 7, "G7", " L7"))
+
+
+df2@meta.data = left_join(df2@meta.data, avg_a1c,  by=c('donor_number'='id'))
+# View(df2@meta.data)
 ```
 
 ```{r}
-# seurat
-levels(df2)
-test_de_markers = FindMarkers(df2, ident.1 = "CD4T_Naive", verbose = T, min.pct = .3)
-head(test_de_markers)
+####
 
-# scran
-scranex = findMarkers(df2, groups = df2@meta.data$RNA_clustifyr_celltype_individual)
+# FINDING MARKERS EXPRESSED DIFFERENTLY BETWEEN A1C GROUPS WITHIN CELL TYPES
+
+####
+# row.names(df2@meta.data) <- df2@meta.data$Row.names
+# this was for some weirdness in the rownames
+
+# Find markers in cell types for A1c Groups (> 7 and <= 7)
+# make marker based on a1c AND celltype
+df2$celltype_a1cgrp = paste0(df2$RNA_clustifyr_celltype_individual,"_",df2$a1c_g7)
+# set this as the ident
+Idents(df2) = df2$celltype_a1cgrp
+# CD4T_Naive CD4T_Mem NK CD8T_Naive + _L7 or _G7 are the new groups
+
+# Find markers on the CD8T_Naive
+cd8_a1cmarkers = FindMarkers(df2, ident.1 = 'CD8T_Naive_ L7', ident.2 = 'CD8T_Naive_G7')
+
+head(cd8_a1cmarkers)
+
+# plotting
+
+FeaturePlot(df2, features = c('RPS10','SCGB3A1'), split.by = 'a1c_g7')
 ```
