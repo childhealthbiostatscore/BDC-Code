@@ -12,6 +12,7 @@ output:
 ```{r, include =FALSE}
 library(knitr)
 library(tidyverse)
+library(nlme)
 library(lme4)
 library(lmerTest)
 library(readr)
@@ -26,20 +27,31 @@ df = read_csv("S:/Laura/BDC/Projects/Kim Driscoll/Bring BG Down/Data_Cleaned/bbg
 
 analysis = df %>% select(participant_id, studyvisit, treatment_group,`Total Household Income`,c_gender,
                          `Parent Maintain High BG of HFS`, `Parent Worry/Helplessness Subscale of HFS`,
-                         `Parent Social Consequences Subscale of HFS`)
-
+                         `Parent Social Consequences Subscale of HFS`) 
+rm(df)
 # Fill down
 analysis = analysis %>%  group_by(participant_id) %>%  fill(`Total Household Income`)
 
+# change names for function
+analysis = analysis %>% mutate(maintain_high = `Parent Maintain High BG of HFS`,
+                               worry_helpless = `Parent Worry/Helplessness Subscale of HFS`,
+                               worry_social = `Parent Social Consequences Subscale of HFS`,
+                               treatment_group = factor(treatment_group),
+                               c_gender = factor(c_gender),
+                               income = `Total Household Income`)
+
+# datasets
+#visits 1-6
+analysis16 = analysis %>% filter(studyvisit < 7)
 # predictors for 1-6
 # assess time, trt,, sex, income, time*trt
-predictors16 = c("factor(studyvisit)","factor(treatment_group)", "factor(c_gender)", "`Total Household Income`","factor(studyvisit)*factor(treatment_group)")
+predictors16 = c("factor(studyvisit)","treatment_group", "c_gender", "income","factor(studyvisit)*treatment_group")
 
 # predictors 89
-predictors89 = c("factor(studyvisit)", "factor(treatment_group)", "factor(c_gender)", "factor(studyvisit)*factor(treatment_group)")
+predictors89 = c("factor(studyvisit)", "treatment_group", "c_gender", "studyvisit*treatment_group")
 
 #predictos10
-predictors10 = c("factor(studyvisit)", "factor(treatment_group)", "factor(studyvisit)*factor(treatment_group)")
+predictors10 = c("factor(studyvisit)", "treatment_group", "studyvisit*treatment_group")
 # table 1 
 # mean(sd), range for times 1,678 for each score by sex
 table_df = analysis %>% select(studyvisit, c_gender, 
@@ -55,15 +67,31 @@ testt1 = table_df %>% group_by(studyvisit, subscale,c_gender) %>% summarise(mean
 ```
 
 ```{r, include = FALSE}
-fit_mod <- function(outcome, pred = predictors, dat = df) {
+fit_mod <- function(outcome, pred, df) {
   
-  form <- as.formula(paste0(
-    outcome, "~", paste0(pred, collapse = "+"), "+(1|participant_id)"
-  ))
+  # form <- as.formula(paste0(
+  #   outcome, "~", paste0(pred, collapse = "+"), "+(1|participant_id)"
+  # ))
+    preds = paste0(pred, collapse = " + ")
+    form = as.formula(paste0(outcome, "~", preds))
 
-    mod <- lmer(form, data = dat)
-   
-  return(mod)
+    #mod <- lmer(form, data = dat)
+
+  mod = lme(form,
+            random = ~1|participant_id,
+            data = df,
+            na.action = na.omit)
+    
+    # Anova
+  #mod_anova = anova.lme(mod, type="marginal")
+  #print(kable(mod_anova,digits = 3,caption = "Test of Overall Effect"))
+
+  # Means
+  mod_means = emmeans(mod,specs=pairwise ~ treatment_group:factor(studyvisit), adjust="none")
+
+  a = print(kable(mod_means$contrasts[c(6,18,28,37,45,52),],digits = 3,caption = "Timepoint Contrasts"))
+  b = print(kable(mod_means$emmeans,digits = 3,caption = "Timepoint Means"))
+  return(list(a,b))
 }
 
 # code for the plots workspace
@@ -106,7 +134,10 @@ Linear Mixed Models with a random intercept for participant were fit. Models adj
 
 ```{r, include = FALSE}
 # 1
-mod1_mh = fit_mod(outcome = "`Parent Maintain High BG of HFS`", pred = predictors16, dat = analysis %>% filter(studyvisit<7))
+test1 = analysis %>% filter(studyvisit<7)
+
+mod1_mh = fit_mod(outcome = "maintain_high", pred = predictors16, df = analysis16)
+mod1_mh[[1]]
 mod1_wl = fit_mod(outcome = "`Parent Worry/Helplessness Subscale of HFS`", pred = predictors16, dat = analysis %>% filter(studyvisit<7))
 mod1_ws = fit_mod(outcome = "`Parent Social Consequences Subscale of HFS`", pred = predictors16, dat = analysis %>% filter(studyvisit<7))
 

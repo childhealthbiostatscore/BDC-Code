@@ -1,0 +1,645 @@
+---
+title: "BBGD! Mixed Models Sub-Sample Analysis"
+author: "Tim Vigers, Casey Sakamoto & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    toc_depth: 4
+---
+
+```{r, include =FALSE}
+library(knitr)
+library(tidyverse)
+library(nlme)
+library(lme4)
+library(lmerTest)
+library(readr)
+library(emmeans)
+library(grid)
+library(gridExtra)
+```
+
+```{r, include = FALSE}
+# get data and covariates
+df = read_csv("S:/Laura/BDC/Projects/Kim Driscoll/Bring BG Down/Data_Cleaned/bbgd_master_Sakamoto.csv")
+
+analysis = df %>% select(participant_id, studyvisit, treatment_group,`Total Household Income`,c_gender,
+                         `Parent Maintain High BG of HFS`, `Parent Worry/Helplessness Subscale of HFS`,
+                         `Parent Social Consequences Subscale of HFS`) 
+rm(df)
+# Fill down
+analysis = analysis %>%  group_by(participant_id) %>%  fill(`Total Household Income`)
+
+# change names for function
+analysis = analysis %>% mutate(maintain_high = `Parent Maintain High BG of HFS`,
+                               worry_helpless = `Parent Worry/Helplessness Subscale of HFS`,
+                               worry_social = `Parent Social Consequences Subscale of HFS`,
+                               treatment_group = factor(treatment_group),
+                               c_gender = factor(c_gender),
+                               income = `Total Household Income`)
+
+# datasets
+#visits 1-6
+analysis16 = analysis %>% filter(studyvisit < 7)
+
+# extremes `Parent Maintain High BG of HFS` >= 7) Parent Worry/Helplessness Subscale of HFS` >= 24 `Parent Social Consequences Subscale of HFS` >= 9
+analysis16mh = analysis16 %>% filter(maintain_high >= 7)
+analysis16wl = analysis16 %>% filter(worry_helpless >= 24)
+analysis16ws = analysis16 %>% filter(worry_social >= 9)
+
+# visits 7,8
+analysis_mh = analysis %>% filter(maintain_high >= 7)
+analysis_wl = analysis %>% filter(worry_helpless >= 24)
+analysis_ws = analysis %>% filter(worry_social >= 9)
+
+# extremes `Parent Maintain High BG of HFS` >= 7) Parent Worry/Helplessness Subscale of HFS` >= 24 `Parent Social Consequences Subscale of HFS` >= 9
+analysis16mh2 = analysis16 %>% filter(maintain_high < 7)
+analysis16wl2 = analysis16 %>% filter(worry_helpless < 24)
+analysis16ws2 = analysis16 %>% filter(worry_social < 9)
+
+# visits 7,8
+analysis_mh2 = analysis %>% filter(maintain_high < 7)
+analysis_wl2 = analysis %>% filter(worry_helpless < 24)
+analysis_ws2 = analysis %>% filter(worry_social < 9)
+
+# gender 1 gender 2
+analysis10_g1 = analysis16 %>% filter(c_gender==1)
+analysis10_g2 = analysis16 %>% filter(c_gender==2)
+# predictors for 1-6
+# assess time, trt,, sex, income, time*trt
+predictors16 = c("factor(studyvisit)","treatment_group", "c_gender", "income","factor(studyvisit)*treatment_group")
+
+# predictors 89
+predictors89 = c("factor(studyvisit)", "treatment_group", "c_gender", "studyvisit*treatment_group")
+
+#predictos10
+predictors10 = c("factor(studyvisit)", "treatment_group", "studyvisit*treatment_group")
+# table 1 
+# mean(sd), range for times 1,678 for each score by sex
+table_df = analysis %>% select(studyvisit, c_gender, 
+                         `Parent Maintain High BG of HFS`, `Parent Worry/Helplessness Subscale of HFS`,
+                         `Parent Social Consequences Subscale of HFS`) %>%
+                        filter(studyvisit %in% c(1,6,7,8))
+table_df$participant_id = factor(table_df$participant_id)
+# wide to long
+table_df = gather(table_df, subscale, score,`Parent Maintain High BG of HFS`:`Parent Social Consequences Subscale of HFS`)
+#table1
+
+testt1 = table_df %>% group_by(studyvisit, subscale,c_gender) %>% summarise(mean = mean(score, na.rm = T), sd = sd(score, na.rm = T), min = min(score, na.rm = T), max = max(score, na.rm = T))
+```
+
+```{r, include = FALSE}
+# model for trt contrast at time 1-6
+fit_mod <- function(outcome, pred, df) {
+  
+  # form <- as.formula(paste0(
+  #   outcome, "~", paste0(pred, collapse = "+"), "+(1|participant_id)"
+  # ))
+    preds = paste0(pred, collapse = " + ")
+    form = as.formula(paste0(outcome, "~", preds))
+
+    #mod <- lmer(form, data = dat)
+
+  mod = lme(form,
+            random = ~1|participant_id,
+            data = df,
+            na.action = na.omit)
+    
+    # Anova
+  #mod_anova = anova.lme(mod, type="marginal")
+  #print(kable(mod_anova,digits = 3,caption = "Test of Overall Effect"))
+
+  # Means
+  mod_means = emmeans(mod,specs=pairwise ~ treatment_group:factor(studyvisit), adjust="none")
+  a= emmeans(mod,specs=pairwise ~ treatment_group:factor(studyvisit), adjust="none")
+   # a = print(kable(mod_means$contrasts[c(1,22,39,52,61,66),],digits = 2,caption = "Treatment Contrasts at Timepoints 1-6"))
+   # b = print(kable(mod_means$emmeans,digits = 2 ,caption = "Timepoint Means"))
+  ### plot
+means <- data.frame(emmeans(mod, ~ studyvisit + factor(treatment_group)))
+  # Plot
+c <- ggplot(means, aes(x = studyvisit, y = emmean, linetype = factor(treatment_group))) +
+  geom_point() +
+  geom_line() +
+  geom_errorbar(aes(
+    x = studyvisit, y = emmean,
+    ymin = emmean - SE, ymax = emmean + SE
+  ), width = 0.1, inherit.aes = F) +
+  scale_linetype_manual(
+    values = c("dashed", "solid"), name = "Group",
+    labels = c("Control", "Treatment")
+  ) +
+  ggtitle(outcome) +
+  theme_bw() +
+  theme(
+    axis.title.y = element_blank(), axis.title.x = element_blank(),
+    plot.title = element_text(hjust = 0.5)
+  )
+  
+  return(list(a,c))
+}
+
+# model for time contrast by trt comparing 6 to 7 and 8
+fit_mod678 <- function(outcome, pred, df) {
+  
+  # form <- as.formula(paste0(
+  #   outcome, "~", paste0(pred, collapse = "+"), "+(1|participant_id)"
+  # ))
+    preds = paste0(pred, collapse = " + ")
+    form = as.formula(paste0(outcome, "~", preds))
+
+    #mod <- lmer(form, data = dat)
+
+  mod = lme(form,
+            random = ~1|participant_id,
+            data = df,
+            na.action = na.omit)
+    
+    # Anova
+  #mod_anova = anova.lme(mod, type="marginal")
+  #print(kable(mod_anova,digits = 3,caption = "Test of Overall Effect"))
+
+  # Means
+  a = emmeans(mod,specs=pairwise ~ treatment_group:factor(studyvisit), adjust="none")
+
+  # a = print(kable(mod_means$contrasts[c(107,109,112,114),],digits = 2,caption = "Treatment Contrasts at Timepoints 1-6"))
+  # b = print(kable(mod_means$emmeans[c(11:16),],digits = 2,caption = "Timepoint Means"))
+  ### plot
+means <- data.frame(emmeans(mod, ~ studyvisit + factor(treatment_group)))
+  # Plot
+c <- ggplot(means, aes(x = studyvisit, y = emmean, linetype = factor(treatment_group))) +
+  geom_point() +
+  geom_line() +
+  geom_errorbar(aes(
+    x = studyvisit, y = emmean,
+    ymin = emmean - SE, ymax = emmean + SE
+  ), width = 0.1, inherit.aes = F) +
+  scale_linetype_manual(
+    values = c("dashed", "solid"), name = "Group",
+    labels = c("Control", "Treatment")
+  ) +
+  ggtitle(outcome) +
+  theme_bw() +
+  theme(
+    axis.title.y = element_blank(), axis.title.x = element_blank(),
+    plot.title = element_text(hjust = 0.5)
+  )
+  
+  return(list(a,c))
+}
+
+# weird level issues
+fit_mod2 <- function(outcome, pred, df) {
+  
+  # form <- as.formula(paste0(
+  #   outcome, "~", paste0(pred, collapse = "+"), "+(1|participant_id)"
+  # ))
+    preds = paste0(pred, collapse = " + ")
+    form = as.formula(paste0(outcome, "~", preds, "+ (1|participant_id)"))
+
+    #mod <- lmer(form, data = dat)
+
+  mod = lmer(form,
+            data = df,
+            na.action = na.omit)
+    
+    # Anova
+  #mod_anova = anova.lme(mod, type="marginal")
+  #print(kable(mod_anova,digits = 3,caption = "Test of Overall Effect"))
+
+  # Means
+  a = emmeans(mod,specs=pairwise ~ treatment_group:factor(studyvisit), adjust="none")
+
+  # a = print(kable(mod_means$contrasts[c(1,22,39,52,61,66),],digits = 2,caption = "Treatment Contrasts at Timepoints 1-6"))
+  # b = print(kable(mod_means$emmeans,digits = 2 ,caption = "Timepoint Means"))
+  
+    ### plot
+means <- data.frame(emmeans(mod, ~ studyvisit + factor(treatment_group)))
+  # Plot
+c <- ggplot(means, aes(x = studyvisit, y = emmean, linetype = factor(treatment_group))) +
+  geom_point() +
+  geom_line() +
+  geom_errorbar(aes(
+    x = studyvisit, y = emmean,
+    ymin = emmean - SE, ymax = emmean + SE
+  ), width = 0.1, inherit.aes = F) +
+  scale_linetype_manual(
+    values = c("dashed", "solid"), name = "Group",
+    labels = c("Control", "Treatment")
+  ) +
+  ggtitle(outcome) +
+  theme_bw() +
+  theme(
+    axis.title.y = element_blank(), axis.title.x = element_blank(),
+    plot.title = element_text(hjust = 0.5)
+  )
+  
+  return(list(a,c))
+}
+
+fit_mod6782 <- function(outcome, pred, df) {
+  
+  # form <- as.formula(paste0(
+  #   outcome, "~", paste0(pred, collapse = "+"), "+(1|participant_id)"
+  # ))
+    preds = paste0(pred, collapse = " + ")
+    form = as.formula(paste0(outcome, "~", preds, "+ (1|participant_id)"))
+
+    #mod <- lmer(form, data = dat)
+
+  mod = lmer(form,
+            data = df,
+            na.action = na.omit)
+    
+    # Anova
+  #mod_anova = anova.lme(mod, type="marginal")
+  #print(kable(mod_anova,digits = 3,caption = "Test of Overall Effect"))
+
+  # Means
+  a = emmeans(mod,specs=pairwise ~ treatment_group:factor(studyvisit), adjust="none")
+
+  # a = print(kable(mod_means$contrasts[c(107,109,112,114),],digits = 2,caption = "Treatment Contrasts at Timepoints 1-6"))
+  # b = print(kable(mod_means$emmeans[c(11:16),],digits = 2,caption = "Timepoint Means"))
+  ### plot
+means <- data.frame(emmeans(mod, ~ studyvisit + factor(treatment_group)))
+  # Plot
+c <- ggplot(means, aes(x = studyvisit, y = emmean, linetype = factor(treatment_group))) +
+  geom_point() +
+  geom_line() +
+  geom_errorbar(aes(
+    x = studyvisit, y = emmean,
+    ymin = emmean - SE, ymax = emmean + SE
+  ), width = 0.1, inherit.aes = F) +
+  scale_linetype_manual(
+    values = c("dashed", "solid"), name = "Group",
+    labels = c("Control", "Treatment")
+  ) +
+  ggtitle(outcome) +
+  theme_bw() +
+  theme(
+    axis.title.y = element_blank(), axis.title.x = element_blank(),
+    plot.title = element_text(hjust = 0.5)
+  )
+  
+  return(list(a,c))
+}
+```
+# Methods
+
+NOTE: I couldn't find a data dictionary anywhere so I left the sex and treatment variables in their original format.
+
+Linear Mixed Models with a random intercept for participant were fit. Models adjusted for Sex, Study visit, Treatment group, household income, and an interaction term between visit and treatment group for models in 1-6. For Models 8-9 household income was dropped. for models in 10, sex was dropped as that was the condition of stratification. Contrasts and marginal means were produced for treatment by study visit. For visits 1-6, treatment group contrasts were compared. Visits 7 and 8 were compared to Visit 6 within treatment groups.
+
+# Model results
+
+```{r, include = FALSE}
+# 1
+mod1_mh = fit_mod(outcome = "maintain_high", pred = predictors16, df = analysis16)
+mod1_wl = fit_mod(outcome = "worry_helpless", pred = predictors16, df = analysis16)
+mod1_ws = fit_mod(outcome = "worry_social", pred = predictors16, df = analysis16)
+
+# 2
+mod2_mh = fit_mod678(outcome = "maintain_high", pred = predictors16, df = analysis)
+mod2_wl = fit_mod678(outcome = "worry_helpless", pred = predictors16, df = analysis)
+mod2_ws = fit_mod678(outcome = "worry_social", pred = predictors16, df = analysis)
+
+# 3
+mod3_mh = fit_mod(outcome = "maintain_high", pred = predictors16, df = analysis16mh)
+mod3_wl = fit_mod(outcome = "worry_helpless", pred = predictors16, df = analysis16wl)
+# mod3_ws = fit_mod(outcome = "worry_social", pred = predictors16, df = analysis16ws) not enough data in 0 trt to compare
+
+# 4
+mod4_mh = fit_mod678(outcome = "maintain_high", pred = predictors16, df = analysis_mh)
+mod4_wl = fit_mod678(outcome = "worry_helpless", pred = predictors16, df = analysis_wl)
+#mod4_ws = fit_mod678(outcome = "worry_social", pred = predictors16, df = analysis_ws)
+
+# 5
+mod5_mh = fit_mod(outcome = "maintain_high", pred = predictors16, df = analysis16mh2)
+mod5_wl = fit_mod(outcome = "worry_helpless", pred = predictors16, df = analysis16wl2)
+mod5_ws = fit_mod(outcome = "worry_social", pred = predictors16, df = analysis16ws2) 
+
+# 6
+mod6_mh = fit_mod678(outcome = "maintain_high", pred = predictors16, df = analysis_mh2)
+mod6_wl = fit_mod678(outcome = "worry_helpless", pred = predictors16, df = analysis_wl2)
+mod6_ws = fit_mod678(outcome = "worry_social", pred = predictors16, df = analysis_ws2)
+
+# 8
+mod8_mh = fit_mod2(outcome = "maintain_high", pred = predictors89, df = analysis16)
+mod8_wl = fit_mod2(outcome = "worry_helpless", pred = predictors89, df = analysis16)
+mod8_ws = fit_mod2(outcome = "worry_social", pred = predictors89, df = analysis16)
+
+# 9
+mod9_mh = fit_mod6782(outcome = "maintain_high", pred = predictors89, df = analysis)
+mod9_wl = fit_mod6782(outcome = "worry_helpless", pred = predictors89, df = analysis)
+mod9_ws = fit_mod6782(outcome = "worry_social", pred = predictors89, df = analysis)
+
+# 10 1
+mod10_mh = fit_mod2(outcome = "maintain_high", pred = predictors10, df = analysis10_g1)
+mod10_wl = fit_mod2(outcome = "worry_helpless", pred = predictors10, df = analysis10_g1)
+mod10_ws = fit_mod2(outcome = "worry_social", pred = predictors10, df = analysis10_g1)
+
+# 10 2
+mod10_mh2 = fit_mod2(outcome = "maintain_high", pred = predictors10, df = analysis10_g2)
+mod10_wl2 = fit_mod2(outcome = "worry_helpless", pred = predictors10, df = analysis10_g2)
+mod10_ws2 = fit_mod2(outcome = "worry_social", pred = predictors10, df = analysis10_g2)
+```
+
+## 1. LMM Comparing treatment at times 1-6
+
+### Maintain High
+
+```{r}
+print(kable(mod1_mh[[1]]$contrasts[c(1,22,39,52,61,66),],digits = 2,caption = "Treatment Contrasts at Timepoints 1-6"))
+print(kable(mod1_mh[[1]]$emmeans,digits = 2 ,caption = "Timepoint Means"))
+
+mod1_mh[[2]]
+```
+
+### Worry Low
+
+```{r}
+kable(mod1_wl[[1]]$contrasts[c(1,22,39,52,61,66),],digits = 2,caption = "Treatment Contrasts at Timepoints 1-6")
+kable(mod1_wl[[1]]$emmeans,digits = 2 ,caption = "Timepoint Means")
+
+mod1_wl[[2]]
+```
+
+### Worry Social
+
+```{r}
+kable(mod1_ws[[1]]$contrasts[c(1,22,39,52,61,66),],digits = 2,caption = "Treatment Contrasts at Timepoints 1-6")
+kable(mod1_ws[[1]]$emmeans,digits = 2 ,caption = "Timepoint Means")
+
+mod1_ws[[2]]
+```
+
+## 2. LMM Comparings times 7-8 with time 6 at each trt group
+
+### Maintain High
+
+```{r}
+kable(mod2_mh[[1]]$contrasts[c(107,109,112,114),],digits = 2,caption = "Treatment Contrasts at Timepoints 6-8")
+kable(mod2_mh[[1]]$emmeans[c(11:16),],digits = 2,caption = "Timepoint Means")
+
+mod2_mh[[2]]
+
+```
+
+### Worry Low
+
+Significant difference between Trt group 0 between visits 6 and 8
+
+```{r}
+kable(mod2_wl[[1]]$contrasts[c(107,109,112,114),],digits = 2,caption = "Treatment Contrasts at Timepoints 6-8")
+kable(mod2_wl[[1]]$emmeans[c(11:16),],digits = 2,caption = "Timepoint Means")
+
+mod2_wl[[2]]
+```
+
+### Worry Social
+
+```{r}
+kable(mod2_ws[[1]]$contrasts[c(107,109,112,114),],digits = 2,caption = "Treatment Contrasts at Timepoints 6-8")
+kable(mod2_ws[[1]]$emmeans[c(11:16),],digits = 2,caption = "Timepoint Means")
+
+mod2_ws[[2]]
+```
+
+## 3. LMM with times 1-6 and exceeding clinical cutpoints
+
+### Maintain High
+
+significant difference between treatment groups at timepoint 3
+
+```{r}
+kable(mod3_mh[[1]]$contrasts[c(1,22,39,52,61,66),],digits = 2,caption = "Treatment Contrasts at Timepoints 1-6")
+kable(mod3_mh[[1]]$emmeans,digits = 2 ,caption = "Timepoint Means")
+
+mod3_mh[[2]]
+```
+
+### Worry Low
+
+```{r}
+kable(mod3_wl[[1]]$contrasts[c(1,22,39,52,61,66),],digits = 2,caption = "Treatment Contrasts at Timepoints 1-6")
+kable(mod3_wl[[1]]$emmeans,digits = 2 ,caption = "Timepoint Means")
+
+mod3_wl[[2]]
+```
+
+### Worry Social
+Not enough data to compare trt by timepoints
+
+## 4. LMM with times 1-8 and exceeding clinical cutpoints
+
+### Maintain High
+
+```{r}
+kable(mod4_mh[[1]]$contrasts[c(107,109,112,114),],digits = 2,caption = "Treatment Contrasts at Timepoints 6-8")
+kable(mod4_mh[[1]]$emmeans[c(11:16),],digits = 2,caption = "Timepoint Means")
+
+mod4_mh[[2]]
+```
+
+### Worry Low
+
+```{r}
+kable(mod4_wl[[1]]$contrasts[c(107,109,112,114),],digits = 2,caption = "Treatment Contrasts at Timepoints 6-8")
+kable(mod4_wl[[1]]$emmeans[c(11:16),],digits = 2,caption = "Timepoint Means")
+
+mod4_wl[[2]]
+```
+
+### Worry Social
+
+Not enough data to compare trt by timepoints
+
+## 5. LMM with times 1-6 and NOT exceeding clinical cutpoints
+
+### Maintain High
+
+```{r}
+kable(mod5_mh[[1]]$contrasts[c(1,22,39,52,61,66),],digits = 2,caption = "Treatment Contrasts at Timepoints 1-6")
+kable(mod5_mh[[1]]$emmeans,digits = 2 ,caption = "Timepoint Means")
+
+mod5_mh[[2]]
+```
+
+### Worry Low
+
+Significant difference between trt groups at time point 5
+
+```{r}
+kable(mod5_wl[[1]]$contrasts[c(1,22,39,52,61,66),],digits = 2,caption = "Treatment Contrasts at Timepoints 1-6")
+kable(mod5_wl[[1]]$emmeans,digits = 2 ,caption = "Timepoint Means")
+
+mod5_wl[[2]]
+```
+
+### Worry Social
+
+```{r}
+kable(mod5_ws[[1]]$contrasts[c(1,22,39,52,61,66),],digits = 2,caption = "Treatment Contrasts at Timepoints 1-6")
+kable(mod5_ws[[1]]$emmeans,digits = 2 ,caption = "Timepoint Means")
+
+mod5_ws[[2]]
+```
+
+## 6. LMM with times 1-8 and NOT exceeding clinical cutpoints
+
+### Maintain High
+
+significant difference in trt group 0 from time 0 to time 8
+
+```{r}
+kable(mod6_mh[[1]]$contrasts[c(107,109,112,114),],digits = 2,caption = "Treatment Contrasts at Timepoints 6-8")
+kable(mod6_mh[[1]]$emmeans[c(11:16),],digits = 2,caption = "Timepoint Means")
+
+mod6_mh[[2]]
+```
+
+### Worry Low
+
+```{r}
+kable(mod6_wl[[1]]$contrasts[c(107,109,112,114),],digits = 2,caption = "Treatment Contrasts at Timepoints 6-8")
+kable(mod6_wl[[1]]$emmeans[c(11:16),],digits = 2,caption = "Timepoint Means")
+
+mod6_wl[[2]]
+```
+
+### Worry Social
+
+```{r}
+kable(mod6_ws[[1]]$contrasts[c(107,109,112,114),],digits = 2,caption = "Treatment Contrasts at Timepoints 6-8")
+kable(mod6_ws[[1]]$emmeans[c(11:16),],digits = 2,caption = "Timepoint Means")
+
+mod6_ws[[2]]
+```
+
+## 7.
+
+```{r, results='asis'}
+kable(testt1, digits = 3)
+```
+
+## 8. LMM with times 1-6 no income adjust
+
+### Maintain High
+
+```{r}
+kable(mod8_mh[[1]]$contrasts[c(1,22,39,52,61,66),],digits = 2,caption = "Treatment Contrasts at Timepoints 1-6")
+kable(mod8_mh[[1]]$emmeans,digits = 2 ,caption = "Timepoint Means")
+
+mod8_mh[[2]]
+```
+
+### Worry Low
+
+```{r}
+kable(mod8_wl[[1]]$contrasts[c(1,22,39,52,61,66),],digits = 2,caption = "Treatment Contrasts at Timepoints 1-6")
+kable(mod8_wl[[1]]$emmeans,digits = 2 ,caption = "Timepoint Means")
+
+mod8_wl[[2]]
+```
+
+### Worry Social
+
+```{r}
+kable(mod8_ws[[1]]$contrasts[c(1,22,39,52,61,66),],digits = 2,caption = "Treatment Contrasts at Timepoints 1-6")
+kable(mod8_ws[[1]]$emmeans,digits = 2 ,caption = "Timepoint Means")
+
+mod8_ws[[2]]
+```
+
+## 9. LMM with times 1-8 no income adjust
+
+### Maintain High
+
+```{r}
+kable(mod9_mh[[1]]$contrasts[c(107,109,112,114),],digits = 2,caption = "Treatment Contrasts at Timepoints 6-8")
+kable(mod9_mh[[1]]$emmeans[c(11:16),],digits = 2,caption = "Timepoint Means")
+
+mod9_mh[[2]]
+```
+
+### Worry Low
+
+significant difference between trt group 0 visits 6 and 8
+
+```{r}
+kable(mod9_wl[[1]]$contrasts[c(107,109,112,114),],digits = 2,caption = "Treatment Contrasts at Timepoints 6-8")
+kable(mod9_wl[[1]]$emmeans[c(11:16),],digits = 2,caption = "Timepoint Means")
+
+mod9_wl[[2]]
+```
+
+### Worry Social
+
+```{r}
+kable(mod9_ws[[1]]$contrasts[c(107,109,112,114),],digits = 2,caption = "Treatment Contrasts at Timepoints 6-8")
+kable(mod9_ws[[1]]$emmeans[c(11:16),],digits = 2,caption = "Timepoint Means")
+
+mod9_ws[[2]]
+```
+
+## 10. LMM with times 1-6 no income adjust split up by sex
+
+NOTE: couldnt find a data dictionary anywhere so I left the treatment and sex variables in original format
+
+### sex == 1
+
+#### Maintain High
+
+```{r}
+kable(mod10_mh[[1]]$contrasts[c(1,22,39,52,61,66),],digits = 2,caption = "Treatment Contrasts at Timepoints 1-6")
+kable(mod10_mh[[1]]$emmeans,digits = 2 ,caption = "Timepoint Means")
+
+mod10_mh[[2]]
+```
+
+#### Worry Low
+
+```{r}
+kable(mod10_wl[[1]]$contrasts[c(1,22,39,52,61,66),],digits = 2,caption = "Treatment Contrasts at Timepoints 1-6")
+kable(mod10_wl[[1]]$emmeans,digits = 2 ,caption = "Timepoint Means")
+
+mod10_wl[[2]]
+```
+
+#### Worry Social
+
+```{r}
+kable(mod10_ws[[1]]$contrasts[c(1,22,39,52,61,66),],digits = 2,caption = "Treatment Contrasts at Timepoints 1-6")
+kable(mod10_ws[[1]]$emmeans,digits = 2 ,caption = "Timepoint Means")
+
+mod10_ws[[2]]
+```
+
+### sex == 2
+#### Maintain High
+
+```{r}
+kable(mod10_mh2[[1]]$contrasts[c(1,22,39,52,61,66),],digits = 2,caption = "Treatment Contrasts at Timepoints 1-6")
+kable(mod10_mh2[[1]]$emmeans,digits = 2 ,caption = "Timepoint Means")
+
+mod10_mh2[[2]]
+```
+
+#### Worry Low
+
+```{r}
+kable(mod10_wl2[[1]]$contrasts[c(1,22,39,52,61,66),],digits = 2,caption = "Treatment Contrasts at Timepoints 1-6")
+kable(mod10_wl2[[1]]$emmeans,digits = 2 ,caption = "Timepoint Means")
+
+mod10_wl2[[2]]
+```
+
+#### Worry Social
+
+```{r}
+kable(mod10_ws2[[1]]$contrasts[c(1,22,39,52,61,66),],digits = 2,caption = "Treatment Contrasts at Timepoints 1-6")
+kable(mod10_ws2[[1]]$emmeans,digits = 2 ,caption = "Timepoint Means")
+
+mod10_ws2[[2]]
+```
