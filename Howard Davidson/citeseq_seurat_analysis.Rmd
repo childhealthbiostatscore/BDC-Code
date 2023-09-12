@@ -16,6 +16,10 @@ library(tidyverse)
 library(readxl)
 library(performance)
 library(knitr) 
+library(data.table)
+library(broom)
+library(pROC)
+library(caTools)
 
 # analysis pckgs
 library(Seurat) # need these for Differential expression testing
@@ -32,10 +36,11 @@ knitr::opts_knit$set(root.dir = home_dir)
 # cd8_processed = readRDS(paste0(home_dir, "OneDrive_1_6-28-2023/cd8_cells_processed.rds"))
 df = readRDS(paste0(home_dir, "OneDrive_1_6-28-2023/normalized.rds"))
 df2 = SetIdent(df, value= df@meta.data$RNA_clustifyr_celltype_individual)
+rm(df)
 ```
 
 ```{r, include = FALSE}
-# a1c data
+# outcomes data
 read_excel_allsheets <- function(filename, tibble = FALSE) {
     # I prefer straight data.frames
     # but if you like tidyverse tibbles (the default with read_excel)
@@ -47,16 +52,48 @@ read_excel_allsheets <- function(filename, tibble = FALSE) {
     x
 }
 
+
 a1ccpep = read_excel_allsheets("S:/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/IDDA1C_Cpep.xlsx")
 # remove all df as it looks incomplete
 a1ccpep = a1ccpep[-1]
 
+# change to numeric
 a1c_df <- Reduce(function(x, y) merge(x, y, all = TRUE), a1ccpep)
 a1c_df = a1c_df %>% filter(!is.na(`HWD ID`)) %>% mutate(a1c = as.numeric( case_when(A1c_Value == "NULL" ~ NA,
-                                                                        TRUE ~ A1c_Value)))
+                                                                        TRUE ~ A1c_Value))) ; rm(a1ccpep)
+# add in outcome vars
+a1c_df = a1c_df %>% arrange(`HWD ID`, as.Date(VisitDate)) %>% group_by(`HWD ID`) %>% mutate(visit = row_number(),
+                                                                                            a1c_g7 = ifelse(a1c > 7, "G7","L7")) # visit num
+a1c_df = data.table(a1c_df, key = '`HWD ID`')
+a1c_df = a1c_df[, days_from_v1 :=  cumsum(c(0, diff(as.Date(VisitDate)))), by=`HWD ID`]# days from baseline
+a1c_df = a1c_df %>% mutate(y1_elig = ifelse(abs(days_from_v1- 365) < 90, 1, 0),
+                           abs_y1_days = ifelse(abs(days_from_v1- 365) < 90, abs(days_from_v1- 365), NA))
 
-avg_a1c = a1c_df %>% group_by(`HWD ID`) %>% summarise(meana1c = mean(a1c, na.rm = T)) %>% mutate(id = `HWD ID`)
-avg_a1c = avg_a1c %>% mutate(a1c_g7 = ifelse(meana1c > 7, "G7", " L7"))
+a1c_y1 = a1c_df %>% group_by(`HWD ID`) %>% summarise(min_y1_days = min(abs_y1_days, na.rm = T))
+a1c_y1 = a1c_df %>% group_by(`HWD ID`) %>% summarise(min_y1_days = min(abs_y1_days, na.rm = T))
+a1c_y1$min_y1_days[is.infinite(a1c_y1$min_y1_days)] = NA
+a1c_df = full_join(a1c_df, a1c_y1); rm(a1c_y1)
+a1c_df = a1c_df %>% mutate(yr1a1c = ifelse(abs_y1_days == min_y1_days, a1c, NA))
+a1c_df = a1c_df %>% group_by(`HWD ID`) %>% fill(yr1a1c)
+
+
+avg_a1c = a1c_df %>% group_by(`HWD ID`) %>% summarise(meana1c = mean(a1c, na.rm = T),
+                                                      firsta1c = first(a1c, na_rm = T),
+                                                      maxa1c = max(a1c, na.rm=T),
+                                                      yr1a1c = mean(yr1a1c, na.rm = T)) %>% mutate(id = `HWD ID`)
+# add in slopes and auc
+a1c_slopes = a1c_df %>% group_by(`HWD ID`) %>% do(tidy(lm(a1c ~ days_from_v1, data = .))) %>% filter(term == "days_from_v1") %>% select(`HWD ID`, estimate) %>% rename(a1c_slope = estimate)
+avg_a1c = left_join(avg_a1c, a1c_slopes) ; rm(a1c_slopes)
+
+avg_a1c$a1c_auc = sapply(split(a1c_df,a1c_df$`HWD ID`),function(df) trapz(df$days_from_v1,df$a1c))
+
+# dichotomize
+avg_a1c = avg_a1c %>% mutate(avg_a1c_g_med = ifelse(meana1c > median(meana1c,na.rm = T), "G_med", " L_med"),
+                             first_a1c_g_med = ifelse(firsta1c > median(firsta1c,na.rm = T), "G_med", " L_med"),
+                             y1_a1c_g_med = ifelse(yr1a1c > median(yr1a1c,na.rm = T), "G_med", " L_med"),
+                             max_a1c_g_med = ifelse(maxa1c > median(maxa1c,na.rm = T), "G_med", " L_med"),
+                             slope_a1c_g_med = ifelse(a1c_slope > median(a1c_slope,na.rm = T), "G_med", " L_med"),
+                             auc_a1c_g_med = ifelse(a1c_auc > median(a1c_auc,na.rm = T), "G_med", " L_med"))
 
 
 df2@meta.data = left_join(df2@meta.data, avg_a1c,  by=c('donor_number'='id'))
@@ -65,13 +102,67 @@ df2@meta.data = left_join(df2@meta.data, avg_a1c,  by=c('donor_number'='id'))
 
 # Main Questions
 
-- What are our outcomes and how to proceed in dichotomizing?
+- AUC Calculations
 
-- Which markers are being discriminated between groups/ What is the role of cell type for analysis?
+# A1c
 
-- Are UMAPS helpful in visualizing vs lists of differentially expressed variables via hypothesis testing?
+## cutoff values used
 
-```{r}
+-   mean a1c: `r median(avg_a1c$meana1c, na.rm = T)`
+-   first a1c: `r median(avg_a1c$firsta1c, na.rm = T)`
+-   y1 a1c: `r median(avg_a1c$yr1a1c, na.rm = T)`
+-   max a1c: `r median(avg_a1c$maxa1c, na.rm = T)`
+-   slope: `r median(avg_a1c$a1c_slope, na.rm = T)`
+-   auc: `r median(avg_a1c$a1c_auc, na.rm = T)`
+
+
+```{r a1c Findmarkers}
+#view(df2@meta.data)
+# set a1c groups as the ident
+
+# avg a1c
+Idents(df2) = df2$avg_a1c_g_med.x
+a1c_avg_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
+
+# first a1c
+Idents(df2) = df2$first_a1c_g_med
+a1c_first_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
+
+# y1 a1c
+Idents(df2) = df2$y1_a1c_g_med
+a1c_y1_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
+
+# max a1c
+Idents(df2) = df2$max_a1c_g_med
+a1c_max_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
+
+# slope a1c
+Idents(df2) = df2$slope_a1c_g_med
+a1c_slope_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
+
+# auc a1c
+Idents(df2) = df2$auc_a1c_g_med
+a1c_auc_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
+
+
+# look at intersection between these
+
+Reduce(intersect, list(
+  rownames(a1c_slope_markers),
+  rownames(a1c_avg_markers)
+))
+
+,  rownames(a1c_auc_markers)
+
+
+  rownames(a1c_y1_markers),
+  rownames(a1c_first_markers),
+  rownames(a1c_max_markers)
+
+
+```
+
+```{r, include=FALSE, eval = FALSE}
 ####
 
 # FINDING MARKERS EXPRESSED DIFFERENTLY BETWEEN A1C GROUPS WITHIN CELL TYPES
