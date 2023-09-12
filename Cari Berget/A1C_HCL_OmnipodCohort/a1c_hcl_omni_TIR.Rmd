@@ -1,0 +1,332 @@
+---
+title: "A1c Analysis"
+author: "Casey Sakamoto"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 5
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(arsenal)
+library(tidyverse)
+library(performance)
+library(knitr)
+library(table1)
+library(nlme)
+library(lme4)
+library(emmeans)
+library(lubridate)
+# data upload
+analysis_raw <- read_csv("S:/Laura/BDC/Projects/Cari Berget/a1c_hcl_omnipod/DATA/HCLClinicalObservati_DATA_2023-06-14_1345.csv")
+
+# analysis_grps = analysis_raw %>% select(record_id, redcap_event_name, demo_c_hcl)
+```
+
+```{r functions, include = FALSE}
+# fit model fun
+fit_mod = function(outcome, df){
+
+    # Fit model
+  f = as.formula(paste0(outcome,"~","redcap_event_name + gly_overrides + demo_c_age + gly_dailybolus + gly_time_am"))
+  mod = lme(f,
+            random = ~1|record_id,
+            data = df,
+            na.action = na.omit)
+ 
+
+  
+  # scatter with corr coef
+  cor_coef = cor(df[[outcome]], df[["gly_overrides"]], use = "complete.obs")
+  cor_text = data.frame(
+        xpos = c(Inf),
+        ypos =  c(Inf),
+        annotateText = c(paste0("Corr = ", cor_coef)),
+        hjustvar = c(1) ,
+        vjustvar = c(1))
+  
+  
+  p = ggplot(data = df, aes(y = df[[outcome]], x = gly_overrides)) + geom_point() + xlab("Overrides") + ylab(outcome) +
+    geom_text(data=cor_text,aes(x=xpos,y=ypos,hjust=hjustvar,vjust=vjustvar,label=annotateText)) + theme_classic()
+  
+  
+  # print outputs
+  print(outcome)
+  print(summary(mod)$tTable)
+  print(p)
+
+  # Number of obs
+  cat("\n")
+  cat(paste("This model was fit using",nobs(mod),"observations."))
+  cat("\n")
+}
+
+```
+
+```{r dc and scoring, include = FALSE}
+# timepoints
+tps = c("child_bl_arm_1", "child_m1_arm_1", "child_m3_arm_1", "child_m6_arm_1")
+
+# which pump brand did you use prior to omnipodt5
+demogs_c = analysis_raw %>% select(record_id, redcap_event_name, demo_c_ethnicity,demo_c_race,demo_c_gender,demo_c_insurance,demo_p_baseline6, demo_p_baseline9, demo_c_t1d_duration, demo_training) %>%  filter(redcap_event_name =="child_bl_arm_1") %>%
+  mutate(ethnicity = factor(demo_c_ethnicity, levels = c("0","1","2"),labels = c("Hispanic/Latino", "Not Hispanic/Latino", "Unknown/Not Reported")),
+         race = factor(demo_c_race, levels=c("0", "1", "2","3","4","5","6"),
+                       labels = c("American Indian/Alaska Native", "Asian", "Native Hawaiian/Pacific Islander", "Black/African American", "White", "More Than One", "Unknown/Not Reported")),
+         gender = factor(demo_c_gender,levels = c("0","1","2"),labels = c("Female", "Male", "Other")),
+         insurance = factor(demo_p_baseline6, levels=c("0", "1", "2","3"), labels = c("Public", "Private", "Other", "Uninsured")),
+         prior_cgm = factor(demo_p_baseline9, levels=c("0", "1", "2","3"), labels = c("Medtronic", "Dexcom", "Freestyle Libre", "Other")),
+         prior_pump = factor(demo_p_baseline6, levels=c("0", "1", "2","3","4"), labels = c("Animas", "Medtronic", "Tandem", "Insulet Omnipod", "Other")),
+         t1d_duration = demo_c_t1d_duration,
+         training = factor(demo_training, levels = c("0","1"), labels = c("Self-Start", "In-Person/Zoom Educator"))
+         ) %>% select(record_id, ethnicity:training)
+
+demogs_p = analysis_raw   %>% filter(redcap_event_name == "parent_bl_arm_1") %>% select(record_id, p_baseline4,p_baseline6, p_baseline7,  p_baseline9) %>%
+  mutate(current_pump_use = factor(p_baseline4, levels = c("0","1"), labels = c("No", "Yes")),
+         current_pump = factor(p_baseline6, levels=c("0", "1", "2","3","4"), labels = c("Animas", "Medtronic", "Tandem", "Insulet Omnipod", "Other")),
+         current_cgm_use = factor(p_baseline7, levels = c("0","1"), labels = c("No", "Yes")),
+         current_cgm = factor(p_baseline9, levels=c("0", "1", "2","3"), labels = c("Medtronic", "Dexcom", "Freestyle Libre", "Other"))) %>% select(record_id, current_pump_use:current_cgm)
+# 
+# demogs_ya =  analysis_raw   %>% filter(redcap_event_name == "child_bl_arm_1") %>% select(record_id, ya_baseline4,ya_baseline6, ya_baseline7,  ya_baseline9) %>%
+#   mutate(current_pump_use = factor(ya_baseline4, levels = c("0","1"), labels = c("No", "Yes")),
+#          current_pump = factor(ya_baseline6, levels=c("0", "1", "2","3","4"), labels = c("Animas", "Medtronic", "Tandem", "Insulet Omnipod", "Other")),
+#          current_cgm_use = factor(ya_baseline7, levels = c("0","1"), labels = c("No", "Yes")),
+#          current_cgm = factor(ya_baseline9, levels=c("0", "1", "2","3"), labels = c("Medtronic", "Dexcom", "Freestyle Libre", "Other"))) %>% select(record_id, current_pump_use:current_cgm)
+
+# dates look like a hassle to wrangle for date diff
+# test = analysis_raw %>% select(record_id,redcap_event_name ,demo_c_cl_start,c_b_header_date, c_b_header_timepoint, c_f_date, c_f_timepoint)
+demogs = full_join(demogs_c, demogs_p) %>% unique() %>% filter(record_id != 125)
+
+rm(demogs_c, demogs_p)
+# SYSTEM USE/GLYCEMIC VARS of interest
+analysis_gly_t1 = analysis_raw %>% select(record_id, redcap_event_name,demo_c_age, gly_time_am, gly_time_am_ltd, gly_time_am_act,
+                                      gly_time_mm, gly_sensorwear, gly_tdd, gly_tdd_bolus, gly_tdd_basal, gly_dailymealbolus, gly_dailybolus,
+                                      gly_overrides, gly_a1c, gly_gmi, gly_sensor_mean, gly_sensor_sd, gly_sensor_u54, gly_sensor_54_69,
+                                      gly_sensor_70_180, gly_sensor_181_250, gly_sensor_g250) %>% filter(redcap_event_name %in% tps)
+# fill in ages
+analysis_gly_t1 = analysis_gly_t1 %>% group_by(record_id) %>% fill(demo_c_age) %>% ungroup()
+
+# CHILD BASELINE
+psy_soc_child_bl = analysis_raw %>% select(record_id, demo_c_age,redcap_event_name, c_b_header_timepoint:c_b_inspire17,
+                                           ya_b_header_timepoint:ya_b_inspire17, seeds_b1:seeds_b20) %>% filter(redcap_event_name == "child_bl_arm_1")
+# score surveys
+psy_soc_child_bl = psy_soc_child_bl %>% mutate(cb_inspire_total = select(., c_b_inspire1:c_b_inspire17) %>% rowMeans()*25, 
+                                               ya_b_inspire_total = select(., ya_b_inspire1:ya_b_inspire17) %>% rowMeans()*25,
+                                               inspire_score = ifelse(demo_c_age < 13, cb_inspire_total, ya_b_inspire_total), # INSPIRE TOTAL
+                                               
+                                               c_hfs_maintain = select(., c_b_hfs_behave3, c_b_hfs_behave4, c_b_hfs_behave7) %>% rowSums(),
+                                               c_hfs_worry_bg = select(., c_b_hfs_worry11:c_b_hfs_worry14, c_b_hfs_worry16, c_b_hfs_worry18,
+                                                                       c_b_hfs_worry19, c_b_hfs_worry22:c_b_hfs_worry23) %>% rowSums(),
+                                               c_hfs_worry_soc = select(., c_b_hfs_worry15,c_b_hfs_worry17,
+                                                                        c_b_hfs_worry20, c_b_hfs_worry21, c_b_hfs_worry25) %>% rowSums(),
+                                               
+                                               ya_hfs_maintain = select(., ya_b_hfs_behave3, ya_b_hfs_behave4, ya_b_hfs_behave7) %>% rowSums(),
+                                               ya_hfs_worry_bg = select(., ya_hfs_worry_b11:ya_hfs_worry_b14, ya_hfs_worry_b16, ya_hfs_worry_b18,
+                                                                       ya_hfs_worry_b19, ya_hfs_worry_b22:ya_hfs_worry_b23) %>% rowSums(),
+                                               ya_hfs_worry_soc = select(., ya_hfs_worry_b15,ya_hfs_worry_b17,
+                                                                        ya_hfs_worry_b20, ya_hfs_worry_b21, ya_hfs_worry_b25) %>% rowSums(),
+                                               hfs_maintain = ifelse(demo_c_age < 13, c_hfs_maintain, ya_hfs_maintain),
+                                               hfs_worry_bg = ifelse(demo_c_age < 13, c_hfs_worry_bg, ya_hfs_worry_bg),
+                                               hfs_worry_soc = ifelse(demo_c_age < 13, c_hfs_worry_soc, ya_hfs_worry_soc), # HFS
+                                               
+                                               cb_paid =  select(., c_b_paid1:c_b_paid20) %>% rowSums(),
+                                               cb_paid_score = (80 - cb_paid)*25/20,
+                                               ya_paid =  select(., ya_b_paid1:ya_b_paid20) %>% rowSums(),
+                                               ya_paid_score = (80 - ya_paid)*25/20,
+                                               paid_score = ifelse(demo_c_age < 13, cb_paid_score, ya_paid_score), # PAID
+                                               
+                                               seeds_score = select(.,seeds_b1:seeds_b20) %>% rowSums()
+                                   )  %>% select(record_id, redcap_event_name, demo_c_age, inspire_score, hfs_maintain:hfs_worry_soc,paid_score,seeds_score)
+
+# CHILD FU
+psy_soc_child_fu = analysis_raw %>% select(record_id,redcap_event_name, c_f_timepoint:c_f_inspire17,
+                                           ya_f_header_timepoint:ya_f_inspire17, seeds_fu1:seeds_fu20) %>% filter(redcap_event_name %in% c("child_m1_arm_1","child_m3_arm_1","child_m6_arm_1"))
+psy_soc_child_fu = left_join(psy_soc_child_fu, psy_soc_child_bl %>% select(record_id, demo_c_age) %>% unique())
+
+psy_soc_child_fu = psy_soc_child_fu %>% mutate(cb_inspire_total = select(., c_f_inspire1:c_f_inspire17) %>% rowMeans()*25, 
+                                               ya_f_inspire_total = select(., ya_f_inspire1:ya_f_inspire17) %>% rowMeans()*25,
+                                               inspire_score = ifelse(demo_c_age < 13, cb_inspire_total, ya_f_inspire_total), # INSPIRE TOTAL
+                                               
+                                               c_hfs_maintain = select(., c_f_hfs_behave3, c_f_hfs_behave4, c_f_hfs_behave7) %>% rowSums(),
+                                               c_hfs_worry_bg = select(., c_f_hfs_worry11:c_f_hfs_worry14, c_f_hfs_worry16, c_f_hfs_worry18,
+                                                                       c_f_hfs_worry19, c_f_hfs_worry22:c_f_hfs_worry23) %>% rowSums(),
+                                               c_hfs_worry_soc = select(., c_f_hfs_worry15,c_f_hfs_worry17,
+                                                                        c_f_hfs_worry20, c_f_hfs_worry21, c_f_hfs_worry25) %>% rowSums(),
+                                               
+                                               ya_hfs_maintain = select(., ya_f_hfs_behave3, ya_f_hfs_behave4, ya_f_hfs_behave7) %>% rowSums(),
+                                               ya_hfs_worry_bg = select(., ya_f_hfs_worry11:ya_f_hfs_worry14, ya_f_hfs_worry16, ya_f_hfs_worry18,
+                                                                       ya_f_hfs_worry19, ya_f_hfs_worry22:ya_f_hfs_worry23) %>% rowSums(),
+                                               ya_hfs_worry_soc = select(., ya_f_hfs_worry15,ya_f_hfs_worry17,
+                                                                        ya_f_hfs_worry20, ya_f_hfs_worry21, ya_f_hfs_worry25) %>% rowSums(),
+                                               hfs_maintain = ifelse(demo_c_age < 13, c_hfs_maintain, ya_hfs_maintain),
+                                               hfs_worry_bg = ifelse(demo_c_age < 13, c_hfs_worry_bg, ya_hfs_worry_bg),
+                                               hfs_worry_soc = ifelse(demo_c_age < 13, c_hfs_worry_soc, ya_hfs_worry_soc), # HFS
+                                               
+                                               cb_paid =  select(., c_f_paid1:c_f_paid20) %>% rowSums(),
+                                               cb_paid_score = (80 - cb_paid)*25/20,
+                                               ya_paid =  select(., ya_f_paid1:ya_f_paid20) %>% rowSums(),
+                                               ya_paid_score = (80 - ya_paid)*25/20,
+                                               paid_score = ifelse(demo_c_age < 13, cb_paid_score, ya_paid_score), # PAID
+                                               
+                                               seeds_score = select(.,seeds_fu1:seeds_fu20) %>% rowSums()
+                                   )  %>% select(record_id, redcap_event_name, demo_c_age, inspire_score, hfs_maintain:hfs_worry_soc,paid_score, seeds_score)
+
+
+# PARENT BL
+psy_soc_p_bl = analysis_raw %>% select(record_id,redcap_event_name, p_b_inspire1:p_b_inspire21, p_b_hfs_behave1:p_b_hfs_worry26,
+                                       p_b_paid1:p_b_paid18) %>% filter(redcap_event_name == "parent_bl_arm_1")
+
+psy_soc_p_bl = psy_soc_p_bl %>% mutate(inspire_score_p = select(., p_b_inspire1:p_b_inspire21) %>% rowMeans()*25, # inspire
+                                               
+                                               hfs_maintain_p = select(., p_b_hfs_behave3, p_b_hfs_behave4, p_b_hfs_behave7) %>% rowSums(),
+                                               hfs_worry_bg_p = select(., p_b_hfs_worry12:p_b_hfs_worry15, p_b_hfs_worry16, p_b_hfs_worry17,
+                                                                       p_b_hfs_worry20, p_b_hfs_worry23:p_b_hfs_worry26) %>% rowSums(),
+                                               hfs_worry_soc_p = select(., p_b_hfs_worry16,p_b_hfs_worry18,
+                                                                        p_b_hfs_worry19, p_b_hfs_worry21, p_b_hfs_worry22) %>% rowSums(), # HFS
+                                               
+                                               paid_p =  select(., p_b_paid1:p_b_paid18) %>% rowSums(),
+                                               paid_score_p = (72-paid_p)*25/18 
+                                   )  %>% select(record_id, redcap_event_name, inspire_score_p, hfs_maintain_p:hfs_worry_soc_p,paid_score_p)
+
+# PARENT FU
+psy_soc_p_fu = analysis_raw %>% select(record_id,redcap_event_name, p_f_inspire1:p_f_inspire21, p_f_hfs_behave1:p_f_hfs_worry26,
+                                       p_f_paid1:p_f_paid18) %>% filter(redcap_event_name %in% c("parent_m1_arm_1","parent_m3_arm_1","parent_m6_arm_1"))
+
+psy_soc_p_fu = psy_soc_p_fu %>% mutate(inspire_score_p = select(., p_f_inspire1:p_f_inspire21) %>% rowMeans()*25, 
+                                       hfs_maintain_p = select(., p_f_hfs_behave3, p_f_hfs_behave4, p_f_hfs_behave7) %>% rowSums(),
+                                               hfs_worry_bg_p = select(., p_f_hfs_worry12:p_f_hfs_worry15, p_f_hfs_worry16, p_f_hfs_worry17,
+                                                                       p_f_hfs_worry20, p_f_hfs_worry23:p_f_hfs_worry26) %>% rowSums(),
+                                               hfs_worry_soc_p = select(., p_f_hfs_worry16,p_f_hfs_worry18,
+                                                                        p_f_hfs_worry19, p_f_hfs_worry21, p_f_hfs_worry22) %>% rowSums(), # HFS
+                                               
+                                               paid_p =  select(., p_f_paid1:p_f_paid18) %>% rowSums(),
+                                               paid_score_p = (72-paid_p)*25/18 
+                                   )  %>% select(record_id, redcap_event_name, inspire_score_p, hfs_maintain_p:hfs_worry_soc_p,paid_score_p)
+
+# merge datasets
+psy_soc_child = full_join(psy_soc_child_bl, psy_soc_child_fu) %>% unique()
+psy_soc_p= full_join(psy_soc_p_bl, psy_soc_p_fu) %>% mutate(redcap_event_name = gsub("parent_","child_",redcap_event_name)) %>% unique()
+
+psy_soc = full_join(psy_soc_child, psy_soc_p)%>% unique()
+psy_soc = psy_soc%>% group_by(record_id) %>% fill(demo_c_age) %>% ungroup() %>% filter(record_id != 125)
+# child outcomes
+analysis = full_join(analysis_gly_t1, psy_soc)
+
+analysis$redcap_event_name = factor(analysis$redcap_event_name, levels = c("child_bl_arm_1","child_m1_arm_1","child_m3_arm_1","child_m6_arm_1"),
+                                    labels = c("Baseline", "Month 1", "Month 3", "Month 6"))
+# discontinuation
+analysis = analysis %>% mutate(discontinuation = ifelse(gly_time_am < 10, 1, 0)) 
+
+
+# replace subj 3 survey m3 with m1 and remove m1
+# row 10, 11 are m1 m3 for subj 3
+m1_3 = analysis %>% filter(record_id == 3 & redcap_event_name == "Month 1") %>% select(inspire_score:seeds_score)
+m3_3 = analysis %>% filter(record_id == 3 & redcap_event_name == "Month 3") %>% select(inspire_score:seeds_score)
+# switch the two
+analysis[10,24] = NA;analysis[10,25] = NA;analysis[10,26] = NA;analysis[10,27] =  NA;analysis[10,28] = NA;analysis[10,29] =  NA;
+analysis[11,24] = m1_3[,1];analysis[11,25] = m1_3[,2];analysis[11,26] = m1_3[,3];analysis[11,27] = m1_3[,4];analysis[11,28] = m1_3[,5];analysis[11,29] = m1_3[,6];
+
+# rm m1 survey stuff for 102, 103
+analysis[396,24] = NA;analysis[396,25] = NA;analysis[396,26] = NA;analysis[396,27] =  NA;analysis[396,28] = NA;analysis[396,29] =  NA;
+analysis[400,24] = NA;analysis[400,25] = NA;analysis[400,26] = NA;analysis[400,27] =  NA;analysis[400,28] = NA;analysis[400,29] =  NA;
+
+```
+
+```{r analysis set, include = FALSE}
+# set up analysis dataset for lindseys questions
+# TIR variables: tbr70 tbr54 tir70-180 tar181 tar250, sensor mean, SD, GMI
+# covariates: age, gly dailybolus, gly time am
+
+df = analysis %>% select(record_id, redcap_event_name, demo_c_age, gly_dailybolus, gly_time_am, gly_a1c, gly_sensor_u54, gly_sensor_54_69, gly_sensor_70_180, gly_sensor_181_250, gly_sensor_g250, gly_sensor_mean, gly_sensor_sd, gly_gmi, gly_overrides)
+
+df = df %>% mutate(gly_sensor_u70 = gly_sensor_u54 + gly_sensor_54_69,
+                   gly_sensor_g180 = gly_sensor_181_250 + gly_sensor_g250)
+
+
+fit_mod("gly_sensor_70_180", df)
+```
+
+# Background
+
+## Objectives 
+
+1.	Does overriding boluses increase time in range?
+2.	Correlational analysis
+3.	Association between overrides and TIR metrics
+
+
+# Methods
+
+- Association between Bolus override % and TIR metrics was tested by fitting a linear mixed model controlling for age, number of daily boluses, and % time in automode.
+- scatterplots and pearson correlation coefficients  were produced to analyze the linear correlation between Bolus Override and TIR metrics. A rough guideline for correlation coefficients: 0.2-0.4 is considered weakly associated with 04.-06 considered moderate and 0.6-1 to be strong
+
+
+Here we will be interpreting the overrides coefficient and hypothesis test that the coefficient is 0: for example: bolus overrides is significantly associated with --- (p = 0.-). there is a ---- linear correlation between the two (r = .--)
+
+# Analysis 
+
+## Time Under 70
+
+Overrides are not significantly associated with TIR under 70 (p = 0.21). There appears to be no linear relationship between the two (r = -0.03)
+
+```{r, echo = F}
+fit_mod("gly_sensor_u70", df)
+```
+
+## Time Under 54
+
+Overrides are not significantly associated with TIR under 54 (p = 0.17). There appears to be no linear relationship between the two (r = -0.07)
+
+```{r, echo = F}
+fit_mod("gly_sensor_u54", df)
+```
+
+## TIR 70-180
+
+Overrides are not significantly associated with TIR (p = 0.42). There appears to be a weak linear relationship between the two (r = 0.15)
+
+```{r, echo = F}
+fit_mod("gly_sensor_70_180", df)
+```
+
+## Time Above 180
+
+Overrides are not significantly associated with TIR above 180 (p = 0.29). There appears to be a weak linear relationship between the two (r = -0.14)
+
+```{r, echo = F}
+fit_mod("gly_sensor_g180", df)
+```
+
+## Time Above 250
+
+Overrides are not significantly associated with TIR above 250 (p = 0.36). There appears to be a weak linear relationship between the two (r = -0.14)
+
+```{r, echo = F}
+fit_mod("gly_sensor_g250", df)
+```
+
+## Sensor Mean Glucose
+
+Overrides are not significantly associated with sensor mean glucose (p = 0.44). There appears to be a weak linear relationship between the two (r = -0.15)
+
+```{r, echo = F}
+fit_mod("gly_sensor_mean", df)
+```
+
+## Sensor Glucose SD
+
+Overrides are not significantly associated with sensor glucose SD (p = 0.31). There appears to be a weak linear relationship between the two (r = -0.13)
+
+```{r, echo = F}
+fit_mod("gly_sensor_sd", df)
+```
+
+## GMI
+
+Overrides are not significantly associated with sensor glucose SD (p = 0.31). There appears to be a weak linear relationship between the two (r = -0.13)
+
+```{r, echo = F}
+fit_mod("gly_gmi", df)
+```
