@@ -1,0 +1,441 @@
+---
+title: ""
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 5
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(arsenal)
+library(tidyverse)
+library(readxl)
+library(performance)
+library(knitr) 
+library(data.table)
+library(broom)
+library(pROC)
+library(caTools)
+
+# analysis pckgs
+library(Seurat) # need these for Differential expression testing
+library(SeuratObject)
+# library(DESeq2)
+#library(scran)
+library(pzfx)
+
+# data
+home_dir = "S:/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/"
+knitr::opts_knit$set(root.dir = home_dir)
+#setwd("S:/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/")
+# cd4_processed = readRDS(paste0(home_dir, "OneDrive_1_6-28-2023/cd4_cells_processed.rds"))
+# cd8_processed = readRDS(paste0(home_dir, "OneDrive_1_6-28-2023/cd8_cells_processed.rds"))
+df = readRDS(paste0(home_dir, "OneDrive_1_6-28-2023/normalized.rds"))
+df2 = SetIdent(df, value= df@meta.data$RNA_clustifyr_celltype_individual)
+rm(df)
+```
+
+```{r, include = FALSE}
+# outcomes data
+read_excel_allsheets <- function(filename, tibble = FALSE) {
+    # I prefer straight data.frames
+    # but if you like tidyverse tibbles (the default with read_excel)
+    # then just pass tibble = TRUE
+    sheets <- readxl::excel_sheets(filename)
+    x <- lapply(sheets, function(X) readxl::read_excel(filename, sheet = X))
+    if(!tibble) x <- lapply(x, as.data.frame)
+    names(x) <- sheets
+    x
+}
+
+
+a1ccpep = read_excel_allsheets("S:/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/IDDA1C_Cpep.xlsx")
+# remove all df as it looks incomplete
+a1ccpep = a1ccpep[-1]
+
+# change to numeric
+a1c_df <- Reduce(function(x, y) merge(x, y, all = TRUE), a1ccpep)
+a1c_df = a1c_df %>% filter(!is.na(`HWD ID`)) %>% mutate(a1c = as.numeric( case_when(A1c_Value == "NULL" ~ NA,
+                                                                        TRUE ~ A1c_Value))) ; rm(a1ccpep)
+# add in outcome vars
+a1c_df = a1c_df %>% arrange(`HWD ID`, as.Date(VisitDate)) %>% group_by(`HWD ID`) %>% mutate(visit = row_number(),
+                                                                                            a1c_g7 = ifelse(a1c > 7, "G7","L7")) # visit num
+a1c_df = data.table(a1c_df, key = '`HWD ID`')
+a1c_df = a1c_df[, days_from_v1 :=  cumsum(c(0, diff(as.Date(VisitDate)))), by=`HWD ID`]# days from baseline
+a1c_df = a1c_df %>% mutate(y1_elig = ifelse(abs(days_from_v1- 365) < 90, 1, 0),
+                           abs_y1_days = ifelse(abs(days_from_v1- 365) < 90, abs(days_from_v1- 365), NA))
+
+a1c_y1 = a1c_df %>% group_by(`HWD ID`) %>% summarise(min_y1_days = min(abs_y1_days, na.rm = T))
+a1c_y1 = a1c_df %>% group_by(`HWD ID`) %>% summarise(min_y1_days = min(abs_y1_days, na.rm = T))
+a1c_y1$min_y1_days[is.infinite(a1c_y1$min_y1_days)] = NA
+a1c_df = full_join(a1c_df, a1c_y1); rm(a1c_y1)
+a1c_df = a1c_df %>% mutate(yr1a1c = ifelse(abs_y1_days == min_y1_days, a1c, NA))
+a1c_df = a1c_df %>% group_by(`HWD ID`) %>% fill(yr1a1c)
+
+
+avg_a1c = a1c_df %>% group_by(`HWD ID`) %>% summarise(meana1c = mean(a1c, na.rm = T),
+                                                      firsta1c = first(a1c, na_rm = T),
+                                                      maxa1c = max(a1c, na.rm=T),
+                                                      yr1a1c = mean(yr1a1c, na.rm = T)) %>% mutate(id = `HWD ID`)
+# add in slopes and auc
+a1c_slopes = a1c_df %>% group_by(`HWD ID`) %>% do(tidy(lm(a1c ~ days_from_v1, data = .))) %>% filter(term == "days_from_v1") %>% select(`HWD ID`, estimate) %>% rename(a1c_slope = estimate)
+avg_a1c = left_join(avg_a1c, a1c_slopes) ; rm(a1c_slopes)
+
+avg_a1c$a1c_auc = sapply(split(a1c_df,a1c_df$`HWD ID`),function(df) trapz(df$days_from_v1,df$a1c))
+
+# dichotomize
+avg_a1c = avg_a1c %>% mutate(avg_a1c_g_med = ifelse(meana1c > median(meana1c,na.rm = T), "G_med", " L_med"),
+                             first_a1c_g_med = ifelse(firsta1c > median(firsta1c,na.rm = T), "G_med", " L_med"),
+                             y1_a1c_g_med = ifelse(yr1a1c > median(yr1a1c,na.rm = T), "G_med", " L_med"),
+                             max_a1c_g_med = ifelse(maxa1c > median(maxa1c,na.rm = T), "G_med", " L_med"),
+                             slope_a1c_g_med = ifelse(a1c_slope > median(a1c_slope,na.rm = T), "G_med", " L_med"),
+                             auc_a1c_g_med = ifelse(a1c_auc > median(a1c_auc,na.rm = T), "G_med", " L_med"))
+
+
+df2@meta.data = left_join(df2@meta.data, avg_a1c,  by=c('donor_number'='id'))
+# View(df2@meta.data)
+
+# add in other outcomes
+# IDDA1c
+avg_idda1c = a1c_df %>% group_by(`HWD ID`) %>% summarise(mean_idda1c = mean(IDDA1C, na.rm = T)) %>% mutate(id = `HWD ID`)
+# add in slopes and auc
+idda1c_slopes = a1c_df %>% group_by(`HWD ID`) %>% do(tidy(lm(IDDA1C ~ days_from_v1, data = .))) %>% filter(term == "days_from_v1") %>% 
+  select(`HWD ID`, estimate) %>% rename(idda1c_slope = estimate)
+avg_idda1c = left_join(avg_idda1c, idda1c_slopes) ; rm(idda1c_slopes)
+
+avg_idda1c$idda1c_auc = sapply(split(a1c_df,a1c_df$`HWD ID`),function(df) trapz(df$days_from_v1,df$IDDA1C))
+
+# dichotomize
+avg_idda1c = avg_idda1c %>% mutate(avg_idda1c_g_med = ifelse(mean_idda1c > median(mean_idda1c,na.rm = T), "G_med", " L_med"),
+                             slope_idda1c_g_med = ifelse(idda1c_slope > median(idda1c_slope,na.rm = T), "G_med", " L_med"),
+                             auc_idda1c_g_med = ifelse(idda1c_auc > median(idda1c_auc,na.rm = T), "G_med", " L_med"))
+
+df2@meta.data = left_join(df2@meta.data, avg_idda1c,  by=c('donor_number'='id'))
+
+
+# total daily insulin dose
+a1c_df$dose_udk = a1c_df$`U/day/kg`
+avg_dose_udk = a1c_df %>% group_by(`HWD ID`) %>% summarise(mean_dose_udk = mean(dose_udk, na.rm = T)) %>% mutate(id = `HWD ID`)
+# add in slopes and auc
+dose_udk_slopes = a1c_df %>% group_by(`HWD ID`) %>% do(tidy(lm(dose_udk ~ days_from_v1, data = .))) %>% filter(term == "days_from_v1") %>% 
+  select(`HWD ID`, estimate) %>% rename(dose_udk_slope = estimate)
+avg_dose_udk = left_join(avg_dose_udk, dose_udk_slopes) ; rm(dose_udk_slopes)
+
+avg_dose_udk$dose_udk_auc = sapply(split(a1c_df,a1c_df$`HWD ID`),function(df) trapz(df$days_from_v1,df$dose_udk))
+
+# dichotomize
+avg_dose_udk = avg_dose_udk %>% mutate(avg_dose_udk_g_med = ifelse(mean_dose_udk > median(mean_dose_udk,na.rm = T), "G_med", " L_med"),
+                             slope_dose_udk_g_med = ifelse(dose_udk_slope > median(dose_udk_slope,na.rm = T), "G_med", " L_med"),
+                             auc_dose_udk_g_med = ifelse(dose_udk_auc > median(dose_udk_auc,na.rm = T), "G_med", " L_med"))
+
+df2@meta.data = left_join(df2@meta.data, avg_dose_udk,  by=c('donor_number'='id'))
+
+# cpep
+a1c_df = a1c_df %>% mutate(est_cpep = ifelse(`Est C-pep` > 0, `Est C-pep`, 0))
+avg_est_cpep = a1c_df %>% group_by(`HWD ID`) %>% summarise(mean_est_cpep = mean(est_cpep, na.rm = T)) %>% mutate(id = `HWD ID`)
+# add in slopes and auc
+est_cpep_slopes = a1c_df %>% group_by(`HWD ID`) %>% do(tidy(lm(est_cpep ~ days_from_v1, data = .))) %>% filter(term == "days_from_v1") %>% 
+  select(`HWD ID`, estimate) %>% rename(est_cpep_slope = estimate)
+avg_est_cpep = left_join(avg_est_cpep, est_cpep_slopes) ; rm(est_cpep_slopes)
+
+avg_est_cpep$est_cpep_auc = sapply(split(a1c_df,a1c_df$`HWD ID`),function(df) trapz(df$days_from_v1,df$est_cpep))
+
+# dichotomize
+avg_est_cpep = avg_est_cpep %>% mutate(avg_est_cpep_g_med = ifelse(mean_est_cpep > median(mean_est_cpep,na.rm = T), "G_med", " L_med"),
+                             slope_est_cpep_g_med = ifelse(est_cpep_slope > median(est_cpep_slope,na.rm = T), "G_med", " L_med"),
+                             auc_est_cpep_g_med = ifelse(est_cpep_auc > median(est_cpep_auc,na.rm = T), "G_med", " L_med"))
+
+df2@meta.data = left_join(df2@meta.data, avg_est_cpep,  by=c('donor_number'='id'))
+```
+
+
+
+```{r Findmarkers, include = FALSE}
+#view(df2@meta.data)
+############ A1C ##############
+# set a1c groups as the ident
+# avg a1c
+Idents(df2) = df2$avg_a1c_g_med
+a1c_avg_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
+
+# slope a1c
+Idents(df2) = df2$slope_a1c_g_med
+a1c_slope_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
+
+# auc a1c
+Idents(df2) = df2$auc_a1c_g_med
+a1c_auc_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
+###############################
+
+############ IDDA1C ##############
+# set a1c groups as the ident
+# avg idda1c
+Idents(df2) = df2$avg_idda1c_g_med
+idda1c_avg_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
+
+# slope idda1c
+Idents(df2) = df2$slope_idda1c_g_med
+idda1c_slope_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
+
+# auc idda1c
+Idents(df2) = df2$auc_idda1c_g_med
+idda1c_auc_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
+###############################
+
+############ Daily Dose ##############
+# set a1c groups as the ident
+# avg dose_udk
+Idents(df2) = df2$avg_dose_udk_g_med
+dose_udk_avg_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
+
+# slope dose_udk
+Idents(df2) = df2$slope_dose_udk_g_med
+dose_udk_slope_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
+
+# auc dose_udk
+Idents(df2) = df2$auc_dose_udk_g_med
+dose_udk_auc_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
+###############################
+
+############ cpep ##############
+# set a1c groups as the ident
+# avg est_cpep
+Idents(df2) = df2$avg_est_cpep_g_med
+est_cpep_avg_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
+
+# slope est_cpep
+Idents(df2) = df2$slope_est_cpep_g_med
+est_cpep_slope_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
+
+# auc est_cpep
+Idents(df2) = df2$auc_est_cpep_g_med
+est_cpep_auc_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
+###############################
+```
+
+# Main Questions
+
+# A1c
+
+## cutoff values used
+
+-   mean a1c: `r median(avg_a1c$meana1c, na.rm = T)`
+-   slope: `r median(avg_a1c$a1c_slope, na.rm = T)`
+-   auc: `r median(avg_a1c$a1c_auc, na.rm = T)`
+
+### Mean
+
+```{r}
+kable(a1c_avg_markers)
+```
+
+### Slope
+
+```{r}
+kable(a1c_slope_markers)
+```
+
+### AUC
+
+```{r}
+kable(a1c_auc_markers)
+```
+
+### Intersection
+
+```{r}
+# All 3
+print("All 3 Groups")
+Reduce(intersect, list(
+  rownames(a1c_slope_markers),
+  rownames(a1c_avg_markers),  rownames(a1c_auc_markers)
+))
+
+print("Slope and Avg")
+Reduce(intersect, list(
+  rownames(a1c_slope_markers),
+  rownames(a1c_avg_markers)
+))
+
+
+print("Slope and AUC")
+Reduce(intersect, list(
+  rownames(a1c_slope_markers), rownames(a1c_auc_markers)
+))
+
+
+print("Avg and AUC")
+Reduce(intersect, list(
+  rownames(a1c_avg_markers), rownames(a1c_auc_markers)
+))
+```
+
+
+# IDDA1C
+
+## cutoff values used
+
+-   mean a1c: `r median(avg_idda1c$mean_idda1c, na.rm = T)`
+-   slope: `r median(avg_idda1c$idda1c_slope, na.rm = T)`
+-   auc: `r median(avg_idda1c$idda1c_auc, na.rm = T)`
+
+### Mean
+
+```{r}
+kable(idda1c_avg_markers)
+```
+
+### Slope
+
+```{r}
+kable(idda1c_slope_markers)
+```
+
+### AUC
+
+```{r}
+kable(idda1c_auc_markers)
+```
+
+### Intersection
+
+```{r}
+# All 3
+print("All 3 Groups")
+Reduce(intersect, list(
+  rownames(idda1c_slope_markers),
+  rownames(idda1c_avg_markers),  rownames(idda1c_auc_markers)
+))
+
+print("Slope and Avg")
+Reduce(intersect, list(
+  rownames(idda1c_slope_markers),
+  rownames(idda1c_avg_markers)
+))
+
+
+print("Slope and AUC")
+Reduce(intersect, list(
+  rownames(idda1c_slope_markers), rownames(idda1c_auc_markers)
+))
+
+
+print("Avg and AUC")
+Reduce(intersect, list(
+  rownames(idda1c_avg_markers), rownames(idda1c_auc_markers)
+))
+```
+
+# dose_udk
+
+## cutoff values used
+
+-   mean a1c: `r median(avg_dose_udk$mean_dose_udk, na.rm = T)`
+-   slope: `r median(avg_dose_udk$dose_udk_slope, na.rm = T)`
+-   auc: `r median(avg_dose_udk$dose_udk_auc, na.rm = T)`
+
+### Mean
+
+```{r}
+kable(dose_udk_avg_markers)
+```
+
+### Slope
+
+```{r}
+kable(dose_udk_slope_markers)
+```
+
+### AUC
+
+```{r}
+kable(dose_udk_auc_markers)
+```
+
+### Intersection
+
+```{r}
+# All 3
+print("All 3 Groups")
+Reduce(intersect, list(
+  rownames(dose_udk_slope_markers),
+  rownames(dose_udk_avg_markers),  rownames(dose_udk_auc_markers)
+))
+
+print("Slope and Avg")
+Reduce(intersect, list(
+  rownames(dose_udk_slope_markers),
+  rownames(dose_udk_avg_markers)
+))
+
+
+print("Slope and AUC")
+Reduce(intersect, list(
+  rownames(dose_udk_slope_markers), rownames(dose_udk_auc_markers)
+))
+
+
+print("Avg and AUC")
+Reduce(intersect, list(
+  rownames(dose_udk_avg_markers), rownames(dose_udk_auc_markers)
+))
+```
+
+# est_cpep
+
+## cutoff values used
+
+-   mean a1c: `r median(avg_est_cpep$mean_est_cpep, na.rm = T)`
+-   slope: `r median(avg_est_cpep$est_cpep_slope, na.rm = T)`
+-   auc: `r median(avg_est_cpep$est_cpep_auc, na.rm = T)`
+
+### Mean
+
+```{r}
+kable(est_cpep_avg_markers)
+```
+
+### Slope
+
+```{r}
+kable(est_cpep_slope_markers)
+```
+
+### AUC
+
+```{r}
+kable(est_cpep_auc_markers)
+```
+
+### Intersection
+
+```{r}
+# All 3
+print("All 3 Groups")
+Reduce(intersect, list(
+  rownames(est_cpep_slope_markers),
+  rownames(est_cpep_avg_markers),  rownames(est_cpep_auc_markers)
+))
+
+print("Slope and Avg")
+Reduce(intersect, list(
+  rownames(est_cpep_slope_markers),
+  rownames(est_cpep_avg_markers)
+))
+
+
+print("Slope and AUC")
+Reduce(intersect, list(
+  rownames(est_cpep_slope_markers), rownames(est_cpep_auc_markers)
+))
+
+
+print("Avg and AUC")
+Reduce(intersect, list(
+  rownames(est_cpep_avg_markers), rownames(est_cpep_auc_markers)
+))
+```
