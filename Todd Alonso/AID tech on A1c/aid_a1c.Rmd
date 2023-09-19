@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 ---
 title: "A1C by Tech Trends 2016 vs 2020"
 author: "Casey Sakamoto"
@@ -308,4 +309,418 @@ kable(mod_25_means$emmeans, digits = 2, caption = "Timepoint Means")
 kable(mod_30_anova,digits = 3,caption = "Test of Overall Effect")
 kable(mod_30_means$contrasts[c(1:5),],digits = 3,caption = "Timepoint Contrasts")
 kable(mod_30_means$emmeans, digits = 2, caption = "Timepoint Means")
+=======
+---
+title: "A1C by Tech Trends 2016 vs 2020"
+author: "Casey Sakamoto"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(knitr)
+library(readxl)
+library(lubridate)
+library(table1)
+library(nlme) # mixed models
+library(emmeans)
+library(ggrepel)
+
+# import data
+patientlevel <- read_excel("S:/Laura/BDC/Projects/Todd Alonso/AID tech and A1c/Data/AID A1c all master.xlsx", 
+    sheet = "PatientLevel")
+visitlevel <- read_excel("S:/Laura/BDC/Projects/Todd Alonso/AID tech and A1c/Data/AID A1c all master.xlsx", 
+    sheet = "VisitLevel")
+```
+
+```{r dataclean, include=FALSE}
+# insurance category: remove NULL
+# levels(factor(patientlevel$InsuranceCategory_IndexVisitDate))
+patientlevel = patientlevel %>% filter(InsuranceCategory_IndexVisitDate != "NULL")
+patientlevel = patientlevel %>% mutate(insurance_category = InsuranceCategory_IndexVisitDate)
+label(patientlevel$insurance_category) = "Insurance Category"
+# code the demog changes
+# ethnic/race: NHW NHB H Other
+patientlevel = patientlevel %>% mutate(race_ethn = case_when(Race_Ethnicity == "Hispanic" ~ "H",
+                                                     Race_Ethnicity == "Non-Hispanic White" ~ "NH White",
+                                                     Race_Ethnicity == "Non-Hispanic Black" ~ "NH Black",
+                                                     TRUE ~ "Other"))
+label(patientlevel$race_ethn) = "Race/Ethnicity"
+
+# remove pregnant = Y visits
+visitlevel = visitlevel %>% filter(`Pregnant?` == "N")
+
+# 617 unique ids in patient level, 602 in visit level
+#length(intersect(visitlevel$MRN, patientlevel$MRN)) 597
+# 
+# length(unique(patientlevel$MRN))
+# length(unique(visitlevel$MRN))
+
+analysis = left_join( visitlevel,patientlevel, by = "MRN")
+
+
+# create days group
+analysis = analysis %>% mutate(time_cat = case_when(DaysFromIndexVisitDate < 0  ~ "Baseline",
+                                                    DaysFromIndexVisitDate >=0 & DaysFromIndexVisitDate < 90 ~ "0-89",
+                                                    DaysFromIndexVisitDate >=90 & DaysFromIndexVisitDate < 180 ~ "90-179",
+                                                    DaysFromIndexVisitDate >=180 & DaysFromIndexVisitDate < 270 ~ "180-269",
+                                                    DaysFromIndexVisitDate >= 270 & DaysFromIndexVisitDate < 360 ~ "270-359",
+                                                    DaysFromIndexVisitDate >= 360  ~ "> 360"))
+analysis$time_cat = factor(analysis$time_cat, levels = c("Baseline", "0-89", "90-179", "180-269", "270-359", "> 360"))
+# within each subj time group take the closest days to the end of the category (least neg baseline, closest to 90, 179, etc)
+analysis = analysis %>% group_by(MRN, time_cat) %>% filter(DaysFromIndexVisitDate == max(DaysFromIndexVisitDate)) %>% ungroup()
+
+# create age vars
+analysis = analysis %>% mutate(Age = as.numeric(difftime(VisitDate, DOB))/365.25,
+                               Age_cat = case_when(Age < 19 ~ "14-18",
+                                                   Age < 23 & Age >= 19 ~ "19-22",
+                                                   Age < 26 & Age >= 23 ~ "23-25",
+                                                   Age >= 26 ~ "26-30"),
+                               a1c = `A1cValue_+/-7daysFromVisit`)
+# excl over 30
+analysis = analysis %>% filter(Age <= 30)
+
+# ins regimen to mdi null other
+analysis = analysis %>% mutate(insulin_regimen = case_when(InsulinRegimen == "MDI/Ratio" ~ "MDI",
+                                                           InsulinRegimen == "NULL" ~ "Null",
+                                                           TRUE ~ "Other"))
+
+
+```
+
+```{r t1, include=FALSE}
+# gather baseline and 2nd visit for insulin regimen changed
+baseline = analysis %>% filter(time_cat == "Baseline")
+
+baseline_a1c = baseline %>% mutate(baseline_a1c = case_when(`A1cValue_+/-7daysFromVisit` < 7 ~ "< 7",
+                                                            `A1cValue_+/-7daysFromVisit` < 9 & `A1cValue_+/-7daysFromVisit` >= 7 ~ "7-9",
+                                                            `A1cValue_+/-7daysFromVisit` > 9 ~ "> 9"),
+                                   baseline_ins = insulin_regimen) %>% select(MRN, baseline_a1c, baseline_ins)
+
+analysis = left_join(analysis, baseline_a1c)
+
+# create table 1
+# table 1 includes: diabetes duration at time of aid initiation (days = 0), age at day = 0, prior insulin use (non aid pump or mdi, system switched to, race/ethn, insurance cat)
+table1_df = baseline %>% select(Age, DiabetesDuration, insulin_regimen, CGM, race_ethn, Gender, insurance_category)
+
+
+t1 = table1(~., data = table1_df, render.continuous = c(. = "Mean (SD)"))
+```
+
+```{r models, include = FALSE}
+####### ALL SUBJ ###############
+# Fit random intercept model
+mod_aa = lme(a1c ~ insulin_regimen + baseline_a1c + Age + DiabetesDuration + race_ethn + Gender + insurance_category + time_cat, 
+            random = ~1|MRN,
+            data = analysis,
+            na.action = na.omit)
+
+# Anova
+mod_aa_anova = anova.lme(mod_aa, type="marginal")
+
+# Means
+mod_aa_means = emmeans(mod_aa,specs=pairwise ~ time_cat, adjust="none")
+mod_aa_means2 = emmeans(mod_aa,specs=pairwise ~ time_cat*insulin_regimen, adjust="none")
+
+# Plot
+# a1c_predict = cbind(analysis, a1cpred = predict(a1c_mod))
+# a1c_predict = a1c_predict %>% group_by(tech_group, time_group) %>% mutate(grpmean = mean(a1cpred),
+#                                                                           grpsd = sd(a1cpred),
+#                                                                           ss = n())
+
+#################################
+
+######### AGE GRPS ##############
+
+# Age 19-22
+analysis22 = analysis %>% filter(Age_cat == "19-22")
+# Fit random intercept model
+mod_22= lme(a1c ~ insulin_regimen + baseline_a1c + Age + DiabetesDuration + race_ethn + Gender + insurance_category + time_cat, 
+            random = ~1|MRN,
+            data = analysis22,
+            na.action = na.omit)
+
+# Anova
+mod_22_anova = anova.lme(mod_22, type="marginal")
+
+# Means
+mod_22_means = emmeans(mod_22, specs=pairwise ~ time_cat, adjust="none")
+mod_22_means2 = emmeans(mod_22,specs=pairwise ~ time_cat*insulin_regimen, adjust="none")
+
+# Age 14-18
+analysis18 = analysis %>% filter(Age_cat == "14-18")
+# Fit random intercept model
+mod_18 = lme(a1c ~ insulin_regimen + baseline_a1c + Age + DiabetesDuration + race_ethn + Gender + insurance_category + time_cat, 
+            random = ~1|MRN,
+            data = analysis18,
+            na.action = na.omit)
+
+# Anova
+mod_18_anova = anova.lme(mod_18, type="marginal")
+
+# Means
+mod_18_means = emmeans(mod_18, specs=pairwise ~ time_cat, adjust="none")
+mod_18_means2 = emmeans(mod_18,specs=pairwise ~ time_cat*insulin_regimen, adjust="none")
+
+# Age 123-25
+analysis25 = analysis %>% filter(Age_cat == "23-25")
+# Fit random intercept model
+mod_25 = lme(a1c ~ insulin_regimen + baseline_a1c + Age + DiabetesDuration + race_ethn + Gender + insurance_category + time_cat, 
+            random = ~1|MRN,
+            data = analysis25,
+            na.action = na.omit)
+
+# Anova
+mod_25_anova = anova.lme(mod_25, type="marginal")
+
+# Means
+mod_25_means = emmeans(mod_25, specs=pairwise ~ time_cat, adjust="none")
+mod_25_means2 = emmeans(mod_25,specs=pairwise ~ time_cat*insulin_regimen, adjust="none")
+
+# Age 26-30
+analysis30 = analysis %>% filter(Age_cat == "26-30")
+# Fit random intercept model
+mod_30 = lme(a1c ~ insulin_regimen + baseline_a1c + Age + DiabetesDuration + race_ethn + Gender + insurance_category + time_cat, 
+            random = ~1|MRN,
+            data = analysis30,
+            na.action = na.omit)
+
+# Anova
+mod_30_anova = anova.lme(mod_30, type="marginal")
+
+# Means
+mod_30_means = emmeans(mod_30, specs=pairwise ~ time_cat, adjust="none")
+mod_30_means2 = emmeans(mod_30,specs=pairwise ~ time_cat*insulin_regimen, adjust="none")
+
+################################
+
+# plots 
+# all 
+plot_aa_df = analysis %>% group_by(time_cat) %>% summarise(MeanA1c = mean(a1c, na.rm = T), SD_A1c = sd(a1c, na.rm = T))
+plot_aa = ggplot(data = plot_aa_df, aes(x = time_cat, y = MeanA1c)) +
+  geom_ribbon(aes(y = MeanA1c,
+                  ymax = MeanA1c + SD_A1c,
+                  ymin =  MeanA1c - SD_A1c, fill = "grey70", group = 1), alpha = 0.2) + 
+  geom_line(aes(group = 1)) +
+  theme_classic()
+
+# a1c group
+plot_a1c_df = analysis %>% group_by(time_cat, baseline_a1c) %>% summarise(MeanA1c = mean(a1c, na.rm = T), SD_A1c = sd(a1c, na.rm = T)) %>% filter(!is.na(baseline_a1c)) %>% ungroup()
+
+plot_a1c = ggplot(data = plot_a1c_df, aes(x = time_cat,
+                                         y = MeanA1c)) +
+                    geom_ribbon(aes( fill = "gray50", group = baseline_a1c,
+                                         ymax = MeanA1c + SD_A1c,
+                                         ymin =  MeanA1c - SD_A1c),alpha = 0.2) + 
+                    geom_line(aes(group = baseline_a1c,linetype = baseline_a1c)) +
+                    theme_classic()
+# baseline ins reg
+plot_ins_df = analysis %>% group_by(time_cat, baseline_ins) %>% summarise(MeanA1c = mean(a1c, na.rm = T), SD_A1c = sd(a1c, na.rm = T)) %>% filter(!is.na(baseline_ins))  %>%  ungroup()
+
+plot_ins = ggplot(data = plot_ins_df, aes(x = time_cat,
+                                         y = MeanA1c)) +
+                    geom_ribbon(aes( fill = "gray50", group = baseline_ins,
+                                         ymax = MeanA1c + SD_A1c,
+                                         ymin =  MeanA1c - SD_A1c),alpha = 0.2) + 
+                    geom_line(aes(group = baseline_ins,linetype = baseline_ins)) +
+                    theme_classic()
+
+# baseline switch to
+v2df = analysis %>% filter(time_cat == "0-89") %>% mutate(aid_switch = case_when(InsulinPumpType == "Medtronic 770G" ~ "Medtronic 770",
+                                                                                 InsulinPumpType %in% c("OP5") ~ "OP5",
+                                                                                 InsulinPumpType %in% c("T Slim X2 Control IQ","T:Slim X2, Control IQ")~ "Control IQ",
+                                                                                 TRUE ~ NA)) %>% select(MRN, aid_switch)
+analysis = left_join(analysis, v2df)
+
+plot_aid_df = analysis %>% group_by(time_cat, aid_switch) %>% summarise(MeanA1c = mean(a1c, na.rm = T), SD_A1c = sd(a1c, na.rm = T))%>% filter(!is.na(aid_switch))  %>% ungroup()
+
+plot_aid = ggplot(data = plot_aid_df, aes(x = time_cat,
+                                         y = MeanA1c)) +
+                    geom_ribbon(aes( fill = "gray50", group = aid_switch,
+                                         ymax = MeanA1c + SD_A1c,
+                                         ymin =  MeanA1c - SD_A1c),alpha = 0.2) + 
+                    geom_line(aes(group = aid_switch,linetype = aid_switch)) +
+                    theme_classic()
+
+```
+
+# Background/Objectives
+
+1.	Patients that are initiated on AID will have sustained improvements in A1c, regardless of whether they had previously been on MDI or non-automated insulin pump systems
+
+2.	Is there a larger impact on A1c when switching from MDI to automated system
+
+3.	Is there a larger impact on A1c with higher baseline A1c levels
+
+
+# Outstanding Data Questions/ Remarks
+
+ APPENDED 9/15: Removing the 18 subj above age 30 got rid of the 5 subj with no patient level data; the 9 subj without a baseline visit are still included new ns are 578 and 569
+- Insulin Regimen consolidated into MDI/NULL/Other 
+
+
+- 617 unique subject mrn at the patientlevel and 602 unique subject mrn at visit level; note the n for the intersection of these subjects was n = 597, are 5 subj missing patient level?
+
+- 117 pregnant visits: removed
+
+- MRN 719995,1320386,1994606,1756877,1255626,1410180 Null insurance:  removed
+
+- MRN 733010,1055590,1021197,1115351,979457,1956723,1620972 all have a visit past 450 days: placed in a 360+ group rather than 360-450 (range of days was 452-517)
+
+- 18 subjects above 30y.o. at baseline(range 30.02-32.6): removed
+
+- 752689,860577,1288788,1303484,1412140,1427484,1774500,1792191,2198160 don't have a visit for Baseline ( days < 0 ): not included in desc stats table for now
+(this n for desc table will be 593 (602-9))
+
+
+
+# Methods
+
+- A descriptive table for baseline measurements was produced
+
+- A mixed model with random intercept was fit for A1c values and time, adjusting for age, sex, diabetes duration, race, insurance, baseline a1c, and insulin regimen. Contrasts were generated to compare A1cs at each time and produce marginal estimates.
+
+- plots of these marginal means and sd errorbars were produced
+
+# Analysis
+
+## Descriptive Stats
+
+```{r t1a, echo = F}
+t1
+```
+
+## Figures
+
+### overall mean a1c with sd bars
+```{r plot1}
+plot_aa
+```
+
+### by a1c group
+
+```{r plot2}
+plot_a1c
+```
+
+### baseline ins regimen
+
+```{r plot3}
+plot_ins
+```
+
+### aid system switched to
+
+note: only one OP5 visit for 360-450, so no SD calculated
+
+```{r plot4}
+plot_aid
+```
+
+## Baseline A1c vs post-AID A1c 
+
+### Entire Cohort
+
+- Insulin Regimen (p <0.0001) and Baseline A1c (p < 0.0001) are both associated with A1c.
+
+- There was a significant difference between Post-AID and Baseline A1cs (see contrasts below)
+
+- Pump was significantly less than MDI at baseline (p = 0.07). Pump was not significantly less than NULL at baseline (p < 0.0001)
+
+- Marginal Means provided in timepoint means below
+
+```{r mod aa}
+kable(mod_aa_anova,digits = 3,caption = "Test of Overall Effect")
+kable(mod_aa_means$contrasts[c(1:5),],digits = 3,caption = "Timepoint Contrasts")
+kable(mod_aa_means$emmeans, digits = 2, caption = "Timepoint Means")
+
+kable(mod_aa_means2$contrasts[c(6,12,93),],digits = 3,caption = "Timepoint Contrasts")
+kable(mod_aa_means2$emmeans,digits = 3,caption = "Timepoint means")
+```
+
+
+### Age 14-18 
+
+- Insulin Regimen (p <0.0001) and Baseline A1c (p < 0.0001) are both associated with A1c.
+
+- There was a significant difference between Post-AID and Baseline A1cs (see contrasts below)
+
+- Marginal Means provided in timepoint means below
+
+- A1c in pump group was significantly different from both null and mdi groups at baseline
+```{r mod 18}
+kable(mod_18_anova,digits = 3,caption = "Test of Overall Effect")
+kable(mod_18_means$contrasts[c(1:5),],digits = 3,caption = "Timepoint Contrasts")
+kable(mod_18_means$emmeans, digits = 2, caption = "Timepoint Means")
+
+kable(mod_18_means2$contrasts[c(6,12,93),],digits = 3,caption = "Timepoint Contrasts")
+kable(mod_18_means2$emmeans,digits = 3,caption = "Timepoint means")
+```
+
+
+### Age 19-22
+
+- Insulin Regimen (p = 0.008) and Baseline A1c (p < 0.0001) are both associated with A1c.
+
+- There was a significant difference between Post-AID and Baseline A1cs (see contrasts below)
+
+- Marginal Means provided in timepoint means below
+
+- A1c in pump group was significantly different from the mdi group at baseline
+
+```{r mod 22}
+kable(mod_22_anova,digits = 3,caption = "Test of Overall Effect")
+kable(mod_22_means$contrasts[c(1:5),],digits = 3,caption = "Timepoint Contrasts")
+kable(mod_22_means$emmeans, digits = 2, caption = "Timepoint Means")
+
+kable(mod_22_means2$contrasts[c(6,12,93),],digits = 3,caption = "Timepoint Contrasts")
+kable(mod_22_means2$emmeans,digits = 3,caption = "Timepoint means")
+```
+
+
+### Age 23-25
+
+- Insulin Regimen (p = 0.004) and Baseline A1c (p < 0.0001) are both associated with A1c.
+
+- There was a significant difference between Post-AID and Baseline A1cs (see contrasts below)
+
+- Marginal Means provided in timepoint means below
+
+- A1c in pump group was significantly different from the mdi group at baseline
+
+```{r mod 25}
+kable(mod_25_anova,digits = 3,caption = "Test of Overall Effect")
+kable(mod_25_means$contrasts[c(1:5),],digits = 3,caption = "Timepoint Contrasts")
+kable(mod_25_means$emmeans, digits = 2, caption = "Timepoint Means")
+
+kable(mod_25_means2$contrasts[c(6,12,93),],digits = 3,caption = "Timepoint Contrasts")
+kable(mod_25_means2$emmeans,digits = 3,caption = "Timepoint means")
+```
+
+
+### Age 26 + 
+
+- Insulin Regimen was not associated witht A1c (p 0.925) . Baseline A1c is associated with A1c (p < 0.0001).
+
+- There was a significant difference between Post-AID and Baseline A1cs (see contrasts below)
+
+- Marginal Means provided in timepoint means below
+
+- no significant difference between pump and MDI groups at baseline
+
+```{r mod 30}
+kable(mod_30_anova,digits = 3,caption = "Test of Overall Effect")
+kable(mod_30_means$contrasts[c(1:5),],digits = 3,caption = "Timepoint Contrasts")
+kable(mod_30_means$emmeans, digits = 2, caption = "Timepoint Means")
+
+
+kable(mod_30_means2$contrasts[c(6,12,93),],digits = 3,caption = "Timepoint Contrasts")
+kable(mod_30_means2$emmeans,digits = 3,caption = "Timepoint means")
+>>>>>>> Stashed changes
 ```
