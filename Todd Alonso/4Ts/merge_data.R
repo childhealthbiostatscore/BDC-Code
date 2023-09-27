@@ -68,7 +68,7 @@ dat_excl <- subset(alldata, !(cohort %in% c("hist", "pres")) |
                      !(pump_adv_hybrid_cl %in% 0:1) |
                      (days_to_pump < 0 | days_to_pump > 360)) # unavailable at BDC
 
-data_exl_cohort <- data_exl_cohort %>% filter(!(cohort %in% c("hist", "pres")))
+data_exl_cohort <- alldata %>% filter(!(cohort %in% c("hist", "pres")))
 data_exl_age <- subset(alldata, (age_at_onset < 0.5 | age_at_onset >= 21) )
 data_exl_sex <- subset(alldata, !(sex %in% c(NA, "Female", "Male")))
 data_exl_race <- subset(alldata, !(race_ethnicity %in% c("Non-Hispanic White", "Non-Hispanic Black",
