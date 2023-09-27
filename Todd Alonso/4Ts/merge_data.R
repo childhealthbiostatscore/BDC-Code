@@ -8,6 +8,7 @@ patient_data <- patient_data %>% select(-c("studyday","hba1c"))
 patient_data$hba1c_onset <- ifelse(patient_data$hba1c_onset %in% c(">14",">14%"),14,
                                    ifelse(patient_data$hba1c_onset==">15.5", 15.5,
                                           ifelse(patient_data$hba1c_onset==".",NA,patient_data$hba1c_onset)))
+
 patient_data$record_id <- str_sub(patient_data$record_id, 7, length(patient_data$record_id))
 patient_data$cgm_initiated_30d <- NA
 patient_data$pump_hybrid_cl <- NA
@@ -34,6 +35,9 @@ alldata <- alldata %>% select(-c("MRN","DOB","Gender","Language_EPIC","OnsetDate
                                  "Race_EPIC","Ethnicity_EPIC","Race_Ethnicity_BDC","InsuranceName_EPIC","InsuranceType_BDC","FirstVisit_CGM_Date","FirstVisit_CGM_CGMType",
                                  "FirstVisit_InsulinRegimen_InsulinPump_Date", "FirstVisit_InsulinRegimen_InsulinPumpBrand", "FirstVisit_PLGS_Date","FirstVisit_PLGS_PumpBrand",
                                  "FirstVisit_PLGS_CGMType","CC_InsulinPumpStart_VisitDate","CC_SalinePumpStart_VisitDate","A1C_ResultDate"))
+
+# set one A1c value at onset to missing
+alldata$hba1c_onset <- ifelse(alldata$hba1c_onset==618,NA,alldata$hba1c_onset)
 
 # write file
 write.csv(alldata,"/Volumes/BDC/Projects/Todd Alonso/4Ts analysis/Data_clean/merged_data.csv", row.names = F)
