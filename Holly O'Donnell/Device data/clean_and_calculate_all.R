@@ -5,8 +5,8 @@ library(parsedate)
 library(cgmanalysis)
 library(pdftools)
 library(stringr)
-source("~/Documents/GitHub/BDC-Code/Holly O'Donnell/Pragmatic Psych Screening Tool/pump_variables.R")
-setwd("/Volumes/BDC/Projects/Holly O'Donnell/Device data/March 2023")
+source("~/GitHub/BDC-Code/Holly O'Donnell/Pragmatic Psych Screening Tool/pump_variables.R")
+setwd("/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Holly O'Donnell/Device data/March 2023")
 
 # Want data about 1 month prior to questionnaires
 dates = read_excel("./Data_Raw/dates.xlsx")
@@ -49,21 +49,13 @@ for (f in files) {
   # Date time column
   table$datetime <- paste(table$Date,table$Time)
   table$datetime <- parse_date(table$datetime,approx = F)
-  # Remove data > 1 month before date
-  #rows = table$datetime <= date & table$datetime > (as.Date(date)-30)
-  #if(sum(rows,na.rm = T) > 0){
-  #  table = table[rows,]
-  #} else {
-  #  table = table[-c(1:nrow(table)),]
-  #}
   # Remove blank rows
   blank = which(rowSums(is.na(table))==ncol(table))
   if(length(blank)>0){
     table = table[-blank,]
   }
   # 2 days for Holly to check
-# rows = table$datetime > (as.Date(table$datetime[1])-2)
-  rows = table$datetime <= (as.Date(dates[dates$`Participant ID`==id,]$`Date Questionnaires`))
+  rows = table$datetime < (as.Date(dates[dates$`Participant ID`==id,]$`Date Questionnaires`)+1)
   if(sum(rows,na.rm = T) > 0){
     table = table[rows,]
   } else {
@@ -102,20 +94,13 @@ for (f in files) {
   table$timestamp = parse_date(paste(table[,date_col],table[,time_col]),approx = F)
   table$subjectid = NA
   table = table[,c("subjectid","timestamp","sensorglucose")]
-  # Remove data > 1 month before date
-  #rows = table$timestamp <= date & table$timestamp > (as.Date(date)-30)
-  #if(sum(rows,na.rm = T) > 100){
-  #  table = table[rows,]
-  #}else {
-  #  table = table[-c(1:nrow(table)),]
-  #}
   # Remove blank rows
   blank = which(rowSums(is.na(table))==ncol(table))
   if(length(blank)>0){
     table = table[-blank,]
   }
   # 2 days for Holly to check
-  rows = table$timestamp <= (as.Date(dates[dates$`Participant ID`==id,]$`Date Questionnaires`))
+  rows = table$timestamp <= (as.Date(dates[dates$`Participant ID`==id,]$`Date Questionnaires`)+1)
   if(sum(rows,na.rm = T) > 0){
     table = table[rows,]
   } else {
@@ -139,60 +124,6 @@ pump_variables(indir = "./Data_Clean/Carelink Pump Files",
 #cgmvariables("./Data_Clean/Carelink Sensor Files","./Data_Clean",
 #             outputname = "carelink_sensor_summary",id_filename = T)
 
-
-# Dexcom
-dir.create("./Data_Clean/Dexcom Files",showWarnings = F)
-files = list.files("./Data_Raw/Device Files/Dexcom Files",full.names = T)
-for (f in files) {
-  id <- sub("_.*","",basename(f))
-  date = dates$`Date Questionnaires`[match(as.numeric(id),dates$`Participant ID`)]
-  # Read in
-  table = read.csv(f,na.strings = "")
-  # Format
-  colnames(table)[grep("timestamp",tolower(colnames(table)))] = "timestamp"
-  colnames(table)[grep("glucose.value",tolower(colnames(table)))] = "sensorglucose"
-  table$subjectid = NA
-  table$subjectid[1] = id
-  table = table[,c("subjectid","timestamp","sensorglucose")]
-  table$timestamp = parse_date(sub("T"," ",table$timestamp),approx = F)
-  table$sensorglucose = suppressWarnings(as.numeric(table$sensorglucose))
-  # Remove data > 1 month before date
-  #rows = table$timestamp <= date & table$timestamp > (as.Date(date)-30)
-  #if(sum(rows,na.rm = T) > 288){
-  #  table = table[rows,]
-  #}else {
-  #  table = table[-c(1:nrow(table)),]
-  #}
-  # Remove blank rows
-  blank = which(rowSums(is.na(table))==ncol(table))
-  if(length(blank)>0){
-    table = table[-blank,]
-  }
-  # 2 days for Holly to check
-  # rows = table$datetime > (as.Date(table$datetime[1])-2)
-  rows = table$datetime <= (as.Date(dates[dates$`Participant ID`==id,]$`Date Questionnaires`))
-  if(sum(rows,na.rm = T) > 0){
-    table = table[rows,]
-  } else {
-    table = table[-c(1:nrow(table)),]
-  }
-  rows = table$datetime >= (as.Date(dates[dates$`Participant ID`==id,]$`Date Questionnaires`)-1)
-  if(sum(rows,na.rm = T) > 0){
-    table = table[rows,]
-  } else {
-    table = table[-c(1:nrow(table)),]
-  }
-  if(sum(!is.na(table$sensorglucose))>0){
-    # Write file
-    filename <- paste0("./Data_Clean/Dexcom Files/",id,".csv")
-    write.csv(table,file = filename,row.names = F,na = "")
-  }
-}
-# Analyze
-#cgmvariables("./Data_Clean/Dexcom Files","./Data_Clean",
-#             outputname = "dexcom_sensor_summary",id_filename = T)
-
-
 # TConnect
 dir.create("./Data_Clean/TConnect Pump Files",showWarnings = F)
 dir.create("./Data_Clean/TConnect Sensor Files",showWarnings = F)
@@ -212,15 +143,8 @@ for (f in files) {
   colnames(table)[colnames(table)=="EventDateTime"] = "datetime"
   colnames(table)[colnames(table)=="CarbSize"] = "BWZ.Carb.Input..grams."
   colnames(table)[colnames(table)=="InsulinDelivered"] = "Bolus.Volume.Delivered..U."
-  table$BWZ.Estimate..U. = NA
+  table$BWZ.Estimate..U. = as.numeric(table$FoodDelivered) + as.numeric(table$CorrectionDelivered)
   table$Bolus.Type = NA
-  # Remove data > 1 month before date
-  #rows = table$datetime <= date & table$datetime > (as.Date(date)-30)
-  #if(sum(rows,na.rm = T) > 10){
-  #  table = table[rows,]
-  #}else {
-  #  table = table[-c(1:nrow(table)),]
-  #}
   # 2 days for Holly to check
   # rows = table$datetime > (as.Date(table$datetime[1])-2)
   rows = table$datetime <= (as.Date(dates[dates$`Participant ID`==id,]$`Date Questionnaires`))
@@ -253,13 +177,6 @@ for (f in files) {
   table = table[,c("subjectid","timestamp","sensorglucose")]
   table$timestamp = parse_date(sub("T"," ",table$timestamp),approx = F)
   table$sensorglucose = suppressWarnings(as.numeric(table$sensorglucose))
-  # Remove data > 1 month before date
-  #rows = table$timestamp <= date & table$timestamp > (as.Date(date)-30)
-  #if(sum(rows,na.rm = T) > 100){
-  #  table = table[rows,]
-  #}else {
-  #  table = table[-c(1:nrow(table)),]
-  #}
   # Remove blank rows
   blank = which(rowSums(is.na(table))==ncol(table))
   if(length(blank)>0){
@@ -290,7 +207,6 @@ pump_variables(indir = "./Data_Clean/TConnect Pump Files",
                outdir = "./Data_Clean",outname = "tconnect_pump_summary")
 #cgmvariables("./Data_Clean/TConnect Sensor Files","./Data_Clean",
 #             outputname = "tconnect_sensor_summary",id_filename = T)
-
 
 # Tidepool
 dir.create("./Data_Clean/Tidepool Files",showWarnings = F)
@@ -331,10 +247,12 @@ for (f in files) {
     # Boluses
     if (any(grepl("bolus",tolower(tabs)))){
       bolus = suppressWarnings(read_excel(f,"Bolus"))
+      if("Sub Type" %in% colnames(bolus)){
+        bolus = bolus[bolus$`Sub Type` == "normal",]
+      }
       if ("Extended" %in% colnames(bolus)){
         bolus = bolus %>% select(`Local Time`,`Sub Type`,Extended,Normal)
-        bolus$Normal[!is.na(bolus$Extended)] = bolus$Normal[!is.na(bolus$Extended)] +
-          bolus$Extended[!is.na(bolus$Extended)]
+        bolus$Normal = rowSums(bolus[,c("Normal","Extended")],na.rm = T)
         bolus$Extended = NULL
       } else {
         bolus = bolus %>% select(`Local Time`,`Sub Type`,Normal)
@@ -369,16 +287,8 @@ for (f in files) {
   # Remove dates with year 2009
   t = t[lubridate::year(t$Date)!=2009,]
   # Get dates
-  v1 = dates$`Date Questionnaires`[match(as.numeric(id),dates$`Participant ID`)]
-  # Remove data > 1 month before date
-  #rows = t$datetime <= v1 & t$datetime > (as.Date(v1)-30)
-  #if(sum(rows,na.rm = T) > 0){
-  #  t = t[rows,]
-  #}else {
-  #  t = t[-c(1:nrow(t)),]
-  #}
+  v1 = dates$`Date Questionnaires`[match(id,dates$`Participant ID`)]
   # 2 days for Holly to check
-  # rows = table$datetime > (as.Date(table$datetime[1])-2)
   rows = t$datetime <= (as.Date(dates[dates$`Participant ID`==id,]$`Date Questionnaires`))
   if(sum(rows,na.rm = T) > 0){
     t = t[rows,]
@@ -400,55 +310,3 @@ for (f in files) {
 # Analyze
 pump_variables(indir = "./Data_Clean/Tidepool Files",
                outdir = "./Data_Clean",outname = "tidepool_pump_summary")
-
-
-# Glooko
-dir.create("./Data_Clean/Glooko Files",showWarnings = F)
-files = list.files("./Data_Raw/Device Files/Glooko (PDFs)",full.names = T)
-# Summary data frame
-pdf_summary = data.frame()
-# Iterate through files
-for (f in 1:length(files)) {
-  id <- sub("_.*","",basename(files[f]))
-  # Read PDF into list
-  pdf = pdf_data(files[f])
-  # First page
-  # Page as a dataframe, sort by x and y values
-  df = as.data.frame(pdf[[1]])
-  df = df %>% arrange(x,y)
-  # Average and readings
-  avg_sg = as.numeric(df$text[which(df$x == 107 & df$y == 186)])
-  sd_sg = as.numeric(df$text[which(df$x == 107 & df$y == 196)])
-  readings = as.numeric(df$text[which(df$x == 107 & df$y == 206)])
-  # Insulin and diet
-  basal = as.numeric(df$text[which(df$x %in% c(374,383,380,389) & df$y == 116)])
-  bolus = as.numeric(df$text[which(df$x == 469 & df$y == 116)])
-  overrides = df$text[which(df$x == 466 & df$y == 161)]
-  bolus_day = as.numeric(df$text[which(df$x == 466 & df$y == 171)])
-  carbs_day = as.numeric(df$text[which(df$x == 467 & (df$y == 227 | df$y == 228))])
-  entries_day = as.numeric(df$text[which(df$x == 467 & df$y == 238)])
-  # TIR
-  # CGM data
-  very_high = sub("%","",df$text[which(df$x == 109 & df$y == 118)])
-  high = sub("%","",df$text[which(df$x == 109 & df$y == 129)])
-  target = sub("%","",df$text[which(df$x == 109 & df$y == 142)])
-  low = sub("%","",df$text[which(df$x == 109 & df$y == 155)])
-  very_low = sub("%","",df$text[which(df$x == 109 & (df$y == 165 | df$y == 166))])
-  # Add to summary df
-  pdf_summary[f,"id"] = id
-  pdf_summary[f,"readings_per_day"] = readings
-  pdf_summary[f,"basal_units"] = basal
-  pdf_summary[f,"bolus_units"] = bolus
-  pdf_summary[f,"overrides"] = overrides
-  pdf_summary[f,"bolus_per_day"] = bolus_day
-  pdf_summary[f,"carbs_per_day"] = carbs_day
-  pdf_summary[f,"carb_entries_per_day"] = entries_day
-  pdf_summary[f,"very_high"] = very_high
-  pdf_summary[f,"high"] = high
-  pdf_summary[f,"tir"] = target
-  pdf_summary[f,"low"] = low
-  pdf_summary[f,"very_low"] = very_low
-  pdf_summary[f,"avg_sg"] = avg_sg
-  pdf_summary[f,"sd_sg"] = sd_sg
-}
-write.csv(pdf_summary,file = paste0("./Data_Clean/glooko_summary.csv"),row.names = F,na = "")
