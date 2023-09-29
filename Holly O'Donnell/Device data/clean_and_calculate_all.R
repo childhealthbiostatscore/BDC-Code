@@ -247,9 +247,7 @@ for (f in files) {
     # Boluses
     if (any(grepl("bolus",tolower(tabs)))){
       bolus = suppressWarnings(read_excel(f,"Bolus"))
-      if("Sub Type" %in% colnames(bolus)){
-        bolus = bolus[bolus$`Sub Type` == "normal",]
-      }
+      bolus = bolus[bolus$`Sub Type` != "automated",]
       if ("Extended" %in% colnames(bolus)){
         bolus = bolus %>% select(`Local Time`,`Sub Type`,Extended,Normal)
         bolus$Normal = rowSums(bolus[,c("Normal","Extended")],na.rm = T)
