@@ -1,5 +1,5 @@
 *libname data 'S:\Shared Projects\Laura\BDC\Projects\Todd Alonso\DKA\Data';
-libname data 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
+libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
 
  /**********************************************************************
  *   PRODUCT:   SAS
@@ -11,7 +11,7 @@ libname data 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
  ***********************************************************************/
     data WORK.ALLDATA    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\MASTER_06.15.23_WithMRNPP3 edited.csv' delimiter = ',' MISSOVER DSD lrecl=13106 firstobs=2 ;
+    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\MASTER_06.15.23_WithMRNPP3 edited.csv' delimiter = ',' MISSOVER DSD lrecl=13106 firstobs=2 ;
        informat MRN best32. ;
        informat PP3 best32. ;
        informat Sample_ID best32. ;
@@ -33,12 +33,12 @@ libname data 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
        informat DKA_sev $10. ;
        informat Rural_or_non_rural $9. ;
        informat ZipCode_DateOfDiagnosis $8. ;
-       informat State_DateOfDiagnosis $1. ;
+       informat State_DateOfDiagnosis $2. ;
        informat PrimaryLanguage $30. ;
        informat NewOnset_DxThroughScreeningStudy $9. ;
        informat Last_research_study_visit_date mmddyy10. ;
        informat Initial_research_study_visit_dat mmddyy10. ;
-       informat STATE $1. ;
+       informat STATE $2. ;
        informat race_eth $20. ;
        informat instudy best32. ;
        informat fup_prior_dx 8. ;
@@ -68,12 +68,12 @@ libname data 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
        format DKA_sev $10. ;
        format Rural_or_non_rural $9. ;
        format ZipCode_DateOfDiagnosis $8. ;
-       format State_DateOfDiagnosis $1. ;
+       format State_DateOfDiagnosis $2. ;
        format PrimaryLanguage $30. ;
        format NewOnset_DxThroughScreeningStudy $9. ;
        format Last_research_study_visit_date mmddyy10. ;
        format Initial_research_study_visit_dat mmddyy10. ;
-       format STATE $1. ;
+       format STATE $2. ;
        format race_eth $20. ;
        format instudy best12. ;
        format fup_prior_dx 8. ;
@@ -121,7 +121,10 @@ libname data 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
     ;
     if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
     run;
-proc freq data=alldata; table instudy*dka; run;
+proc freq data=alldata; table Rural_or_non_rural / missing; run;
+proc print data=alldata; var ZipCode_DateOfDiagnosis; where Rural_or_non_rural in (""," "); run;
+/* 150 observations missing ZipCode_DateOfDiagnosis and Rural_or_non_rural */
+
 proc contents; run;
 
 /* read in file with updated covariates */
@@ -135,7 +138,7 @@ proc contents; run;
  ***********************************************************************/
     data WORK.missing_covariates    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\active_study_participants_missing_covariates updated.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\active_study_participants_missing_covariates updated.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat PP3 best32. ;
        informat Age_AtOnset best32. ;
@@ -207,6 +210,9 @@ data alldata;
 merge alldata missing_covariates_pp;
 by pp3;
 run;
+proc freq data=alldata; table Rural_or_non_rural / missing; run;
+proc print data=alldata; var ZipCode_DateOfDiagnosis; where Rural_or_non_rural in (""," "); run;
+/* 148 observations missing ZipCode_DateOfDiagnosis and Rural_or_non_rural */
 
 /* read in file of missing ppts and add to the dataset*/
 /**********************************************************************
@@ -219,7 +225,7 @@ run;
  ***********************************************************************/
     data WORK.prev_excl    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\10.11.23 2017-2021 Previously excluded people to add to master.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\10.11.23 2017-2021 Previously excluded people to add to master.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat PP3 best32. ;
        informat Sample_ID best32. ;
@@ -332,6 +338,9 @@ run;
 data alldata;
 set alldata prev_excl;
 run;
+proc freq data=alldata; table Rural_or_non_rural / missing; run;
+proc print data=alldata; var ZipCode_DateOfDiagnosis Rural_or_non_rural; where Rural_or_non_rural in (""," "); run;
+/* 179 observations missing ZipCode_DateOfDiagnosis and Rural_or_non_rural */
 
 /* need to make sure rural/nonrural and race/eth get updated */
 
@@ -346,7 +355,7 @@ run;
  ***********************************************************************/
     data WORK.zips    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DMERuralZIP.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DMERuralZIP.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat STATE $2. ;
        informat ZipCode_DateOfDiagnosis $5. ;
        informat YEAR_QTR best32. ;
@@ -367,7 +376,7 @@ set zips;
 drop YEAR_QTR; 
 Rural_Non_Rural="Rural";
 run;
-proc freq data=zips; table rural_non_rural; run;
+proc freq data=zips; table Rural_Non_Rural; run;
 proc sort data=zips; by ZipCode_DateOfDiagnosis; run;
 proc sort data=alldata; by ZipCode_DateOfDiagnosis; run;
 
@@ -376,13 +385,19 @@ merge alldata(in=ina) zips;
 by ZipCode_DateOfDiagnosis; 
 if ina;
 run;
-proc freq data=alldata; table Rural_Non_Rural / missing; run;
 data alldata;
 set alldata;
 if ZipCode_DateOfDiagnosis="" or ZipCode_DateOfDiagnosis=" " then Rural_Non_Rural="";
 else if  Rural_Non_Rural="" or Rural_Non_Rural=" " then Rural_Non_Rural="Non-rural";
 run;
-proc freq data=alldata; table instudy; run;
+data alldata;
+set alldata;
+if Rural_or_non_rural in (""," ") then Rural_or_non_rural=Rural_or_non_rural;
+run;
+proc freq data=alldata; table Rural_or_non_rural / missing; run;
+proc print data=alldata; var ZipCode_DateOfDiagnosis Rural_or_non_rural; where Rural_or_non_rural in (""," "); run;
+/* still 179 observations missing ZipCode_DateOfDiagnosis and Rural_or_non_rural */
+
 
 /* read in hardcoded corrections */
  /**********************************************************************
@@ -512,7 +527,15 @@ proc freq data=alldata; table instudy source; run;
 
 /* export csv file */
 proc export data=alldata
-outfile="V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\morgan cleaned final dataset.csv"
+outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\morgan cleaned final dataset.csv"
 replace
 dbms="csv";
+run;
+
+proc freq data=alldata; table Rural_or_non_rural / missing; run;
+proc print data=alldata; var ZipCode_DateOfDiagnosis Rural_or_non_rural; where Rural_or_non_rural in (""," "); run;
+/* 148 observations missing ZipCode_DateOfDiagnosis and Rural_or_non_rural */
+
+proc freq data=alldata;
+table state State_DateOfDiagnosis;
 run;
