@@ -11,7 +11,7 @@ libname data 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
  ***********************************************************************/
     data WORK.ALLDATA    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\MASTER_06.15.23_WithMRNPP3 edited.csv' delimiter = ',' MISSOVER DSD lrecl=13106 firstobs=2 ;
+    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\MASTER_06.15.23_WithMRNPP3 edited.csv' delimiter = ',' MISSOVER DSD lrecl=13106 firstobs=2 ;
        informat MRN best32. ;
        informat PP3 best32. ;
        informat Sample_ID best32. ;
@@ -32,7 +32,7 @@ libname data 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
        informat DKA $3. ;
        informat DKA_sev $10. ;
        informat Rural_or_non_rural $9. ;
-       informat ZipCode_DateOfDiagnosis best32. ;
+       informat ZipCode_DateOfDiagnosis $8. ;
        informat State_DateOfDiagnosis $1. ;
        informat PrimaryLanguage $30. ;
        informat NewOnset_DxThroughScreeningStudy $9. ;
@@ -67,7 +67,7 @@ libname data 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
        format DKA $3. ;
        format DKA_sev $10. ;
        format Rural_or_non_rural $9. ;
-       format ZipCode_DateOfDiagnosis best32. ;
+       format ZipCode_DateOfDiagnosis $8. ;
        format State_DateOfDiagnosis $1. ;
        format PrimaryLanguage $30. ;
        format NewOnset_DxThroughScreeningStudy $9. ;
@@ -103,7 +103,7 @@ libname data 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
                 DKA  $
                 DKA_sev  $
                 Rural_or_non_rural  $
-                ZipCode_DateOfDiagnosis  
+                ZipCode_DateOfDiagnosis  $
                 State_DateOfDiagnosis  $
                 PrimaryLanguage  $
                 NewOnset_DxThroughScreeningStudy  $
@@ -135,7 +135,7 @@ proc contents; run;
  ***********************************************************************/
     data WORK.missing_covariates    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\active_study_participants_missing_covariates updated.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\active_study_participants_missing_covariates updated.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat PP3 best32. ;
        informat Age_AtOnset best32. ;
@@ -219,10 +219,10 @@ run;
  ***********************************************************************/
     data WORK.prev_excl    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\10.11.23 2017-2021 Previously excluded people to add to master.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\10.11.23 2017-2021 Previously excluded people to add to master.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
-       informat PP3 $1. ;
-       informat Sample_ID $1. ;
+       informat PP3 best32. ;
+       informat Sample_ID best32. ;
        informat DOB mmddyy10. ;
        informat OnsetDate mmddyy10. ;
        informat OnsetYear best32. ;
@@ -240,7 +240,7 @@ run;
        informat DKA $3. ;
        informat DKA_sev $6. ;
        informat Rural_or_non_rural $1. ;
-       informat ZipCode_DateOfDiagnosis best32. ;
+       informat ZipCode_DateOfDiagnosis $8. ;
        informat State_DateOfDiagnosis $8. ;
        informat PrimaryLanguage $7. ;
        informat NewOnset_DxThroughScreeningStudy $8. ;
@@ -250,9 +250,9 @@ run;
        informat race_eth $1. ;
        informat In_study best32. ;
        informat fup_prior_dx best32. ;
-       informat fup_prior_dx_mo $1. ;
-       informat ge6moprior $1. ;
-       informat last_visit_to_dx $1. ;
+       informat fup_prior_dx_mo best32. ;
+       informat ge6moprior best32. ;
+       informat last_visit_to_dx best32. ;
        informat seen_12mo_prior $1. ;
        informat SOURCE $6. ;
        format MRN best12. ;
@@ -275,7 +275,7 @@ run;
        format DKA $3. ;
        format DKA_sev $6. ;
        format Rural_or_non_rural $1. ;
-       format ZipCode_DateOfDiagnosis best12. ;
+       format ZipCode_DateOfDiagnosis $8. ;
        format State_DateOfDiagnosis $8. ;
        format PrimaryLanguage $7. ;
        format NewOnset_DxThroughScreeningStudy $8. ;
@@ -284,10 +284,10 @@ run;
        format STATE $2. ;
        format race_eth $1. ;
        format In_study best12. ;
-       format fup_prior_dx  best12;
-       format fup_prior_dx_mo $1. ;
+       format fup_prior_dx  best12.;
+       format fup_prior_dx_mo best12. ;
        format ge6moprior best32. ;
-       format last_visit_to_dx $1. ;
+       format last_visit_to_dx best32. ;
        format seen_12mo_prior $1. ;
        format SOURCE $6. ;
     input
@@ -311,7 +311,7 @@ run;
                 DKA  $
                 DKA_sev  $
                 Rural_or_non_rural  $
-                ZipCode_DateOfDiagnosis
+                ZipCode_DateOfDiagnosis $
                 State_DateOfDiagnosis  $
                 PrimaryLanguage  $
                 NewOnset_DxThroughScreeningStudy  $
@@ -321,9 +321,9 @@ run;
                 race_eth  $
                 In_study
                 fup_prior_dx  
-                fup_prior_dx_mo  $
+                fup_prior_dx_mo  
                 ge6moprior  
-                last_visit_to_dx  $
+                last_visit_to_dx  
                 seen_12mo_prior  $
                 SOURCE  $
     ;
@@ -346,7 +346,7 @@ run;
  ***********************************************************************/
     data WORK.zips    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DMERuralZIP.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DMERuralZIP.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat STATE $2. ;
        informat ZipCode_DateOfDiagnosis $5. ;
        informat YEAR_QTR best32. ;
@@ -500,6 +500,9 @@ run;
 proc freq data=alldata;
 table instudy*dka;
 run;
+proc freq data=alldata;
+table Rural_Non_Rural rural_non_rural / missing;
+run;
 
 /* write final dataset */
 data data.alldata;
@@ -509,7 +512,7 @@ proc freq data=alldata; table instudy source; run;
 
 /* export csv file */
 proc export data=alldata
-outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\morgan cleaned final dataset.csv"
+outfile="V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\morgan cleaned final dataset.csv"
 replace
 dbms="csv";
 run;
