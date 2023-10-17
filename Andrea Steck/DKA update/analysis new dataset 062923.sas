@@ -1,8 +1,8 @@
 
 *libname data 'S:\Shared Projects\Laura\BDC\Projects\Todd Alonso\DKA\Data';
 *libname data 'T:\Todd Alonso\DKA\Data';
-libname data 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
-libname save 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\';
+libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
+libname save 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\';
 
 proc format;
   value age_cat 1='<6 years'
@@ -32,9 +32,10 @@ run;
 data alldata;
 set data.alldata;
 run;
-proc freq; table instudy*dka; run;
-proc freq; table source*dka; run;
-proc freq; table ge6moprior*seen_12mo_prior; run;
+proc freq data=alldata; table Rural_or_non_rural / missing; run;
+proc print data=alldata; var ZipCode_DateOfDiagnosis; where Rural_or_non_rural in (""," "); run;
+proc contents; run;
+/* start out with 148 missing Rural_or_non_rural */
 
 /* create new variable for active/inactive study participants */
 data alldata;
@@ -176,7 +177,7 @@ proc freq data=alldata; table source*dka; run;
  ***********************************************************************/
    data WORK.CORRECTIONS    ;
     %let _EFIERR_ = 0; 
-    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat DKA $3. ;
        informat dka_sev $10. ;
@@ -217,7 +218,7 @@ proc freq data=alldata; table source*dka; run;
  ***********************************************************************/
     data WORK.NEW_corrections    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'V:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DKA Severity Issues - fixed_07.05.23.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DKA Severity Issues - fixed_07.05.23.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat PP3 best32. ;
        informat pH 8.2 ;
@@ -275,8 +276,12 @@ if source="MarianJama" and DKA="No" and DKA_sev in (""," ") then DKA_sev="No DKA
 run;
 proc freq data=alldata; table source*dka / missing; run;proc freq data=alldata; table source*dka / missing; run;
 
+proc freq data=alldata; table Rural_or_non_rural / missing; run;
+proc print data=alldata; var ZipCode_DateOfDiagnosis; where Rural_or_non_rural in (""," "); run;
+/* still 148 missing Rural_or_non_rural */
+
 proc freq data=alldata; table source*dka; run;
-ods rtf file="V:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_crosstab.rtf"; 
+ods rtf file="W:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_crosstab.rtf"; 
 proc freq data=alldata;
 where source="TODD"; 
 table dka*dka_sev / missing;
@@ -306,8 +311,18 @@ run;
 proc sort data=dka_prob; by source; run;
 proc print data=dka_prob; run;
 proc export data=dka_prob
-  outfile="V:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_issues.csv" dbms=csv replace;
+  outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_issues.csv" dbms=csv replace;
 run;
+
+/* Morgan says to delete ppts not living in CO in her dataset between 2017-2021 */
+proc print data=alldata;
+where source="MORGAN" and State_DateOfDiagnosis ne "Co";
+var source year State_DateOfDiagnosis;
+run;
+data alldata;
+set alldata;
+if source="MORGAN" and State_DateOfDiagnosis ne "Co" then delete;
+run; 
 
 /* create a dataset of DKA related variables for study patients because numbers aren't matching Morgan's */
 data checkstudy;
@@ -316,7 +331,7 @@ where instudy;
 keep mrn pp3 source ph bicarb dka dka_sev;
 run;
 proc export data=checkstudy
-  outfile="V:\Projects\Andrea Steck\Morgan Sooy DKA update\instudy_dka_check.csv" dbms=csv replace;
+  outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\instudy_dka_check.csv" dbms=csv replace;
 run;
 
 /* compare DKA status known to unknown */
@@ -398,6 +413,12 @@ proc print data=alldata; run;
 data foranalysis;
 set alldata;
 run;
+
+proc freq data=alldata; table Rural_or_non_rural / missing; run;
+ods rtf file="C:\temp\output.rtf";
+proc print data=alldata; var MRN PP3 source instudy ZipCode_DateOfDiagnosis; where Rural_or_non_rural in (""," "); run;
+/* now 118 missing Rural_or_non_rural */
+ods rtf close;
 
 /* predictors are age at onset, gender, race, insurance, language, onset year, rural/nonrural */
 /* with and without adjustment for quarter of the year */
@@ -688,7 +709,7 @@ else if Age_AtOnset>=12 and Age_AtOnset<=18 then age_new_cat="12 - 18 years old"
 run;
 proc freq data=alldata; table age_new_cat; run;
 
-ods rtf file='V:\Projects\Andrea Steck\Morgan Sooy DKA update\numbers_for_figures.rtf' style=journal;
+ods rtf file='W:\Projects\Andrea Steck\Morgan Sooy DKA update\numbers_for_figures.rtf' style=journal;
 proc freq data=alldata;
 table active_inactive_clinic*year*dka;
 title "Numbers for figures: 0 = clinic, 1 = active, 2 = inactive";
@@ -703,7 +724,7 @@ proc freq data=foranalysis; tables Rural_or_non_rural*active_inactive_clinic / c
 proc freq data=alldata; tables Rural_or_non_rural*active_inactive_clinic / chisq; run;
 * for some reason this code isn't working....will export to R;
 proc export data=alldata
-  outfile="V:\Projects\Andrea Steck\Morgan Sooy DKA update\table1.csv" dbms=csv replace;
+  outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\table1.csv" dbms=csv replace;
 run;
 data save.table1;
 set alldata;
@@ -897,7 +918,7 @@ run;
 proc print data=active_missing; 
 run;
 proc export data=active_missing
-  outfile="V:\Projects\Andrea Steck\Morgan Sooy DKA update\active_study_participants_missing_covariates.csv" dbms=csv replace;
+  outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\active_study_participants_missing_covariates.csv" dbms=csv replace;
 run;
 
 /* checking all participants with DKA=yes and DKA severity=unknown */
@@ -906,5 +927,5 @@ set alldata;
 where dka='Yes' and dka_sev="Unknown";
 run;
 proc export data=dka_severity_unknown
-  outfile="V:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_severity_unknown.csv" dbms=csv replace;
+  outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_severity_unknown.csv" dbms=csv replace;
 run;
