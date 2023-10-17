@@ -43,8 +43,11 @@ exclude = c(101,201,102,202,103,203,110,210,119,219,121,221,131,231,141,241)
 ## subject list from nikita
 visitdates <- read_excel("S:/Laura/BDC/Projects/Erin Cobry/Summer vs. School Sleep/Sleep Diabetes Data 9.10.23.xlsx")
 include = unique(visitdates$record_id)
-#no m6:200,202,205,206,207,208,243,244,245,246 --- for paired stuff
 
+m3_visit = visitdates %>% select(record_id, M3, season) %>% filter(!is.na(M3))
+m6_visit = visitdates %>% select(record_id, M6, season) %>% filter(!is.na(M6))
+
+#no m6:200,202,205,206,207,208,243,244,245,246 --- for paired stuff
 # exclude everyone in exclude from data 
 # kids only
 data = data %>% filter((record_id %in% include),record_id > 199) %>% 
@@ -55,6 +58,12 @@ data = data %>% filter((record_id %in% include),record_id > 199) %>%
                                   redcap_event_name == "hcl_month_3_day_1_arm_2" ~ "3 Months",
                                   redcap_event_name == "hcl_month_6_day_1_arm_2" ~ "6 Months")) %>%
   filter(!is.na(timepoint_cs))
+
+baseline_visits = data %>% filter(timepoint_cs == "Baseline (before HCL)")
+m3_visits = data %>% filter(timepoint_cs == "3 Months" & record_id %in% m3_visit$record_id)
+m6_visits = data %>% filter(timepoint_cs == "6 Months" & record_id %in% m6_visit$record_id)
+all_visits = full_join(m3_visits, m6_visits)
+data = full_join(baseline_visits, all_visits)
 
 # get the excel sheet in a position i can work with
 baseline = HCL_Study_Subjects %>%  mutate(visit = "Baseline (before HCL)",visit_date = Baseline, visit_type = `School/Summer...5`) %>% select(Subject, DOB, Age, visit, visit_type, visit_date) 
@@ -122,14 +131,15 @@ fit_mod = function(outcome,df){
 
 # 1: Table for sleep duration by age group and summer/school
 ```{r table, include = FALSE}
-m6_list = c(200,202,205,206,207,208,243,244,245,246)
-analysis_table = analysis %>% mutate(age_grp = case_when(Age > 6 & Age < 13 ~ "6-12", Age > 13 & Age < 18 ~ "13-18")) %>% 
-  filter(!(record_id %in% m6_list & timepoint_cs == "6 Months"))
+#m6_list = c(200,202,205,206,207,208,243,244,245,246)
+analysis_table = analysis %>% mutate(age_grp = case_when(Age > 6 & Age < 13 ~ "6-12", Age > 13 & Age < 18 ~ "13-18")) #%>% filter(!(record_id %in% m6_list & timepoint_cs == "6 Months"))
+analysis_table$age_grp = factor(analysis_table$age_grp, levels = c("6-12", "13-18"))
+
 
 sleep_table = table1( ~ totalsleep_avg_min|visit_type*age_grp,
                       data = analysis_table,
                       topclass ="Rtable1-zebra",
-                      render.continuous=c( "Mean (SD)"="Mean (SD)"))
+                      render.continuous=c( "Mean (SD)"="Mean (SD)"), overall = F)
 ```
 
 ```{r t1}
@@ -170,7 +180,7 @@ The "Summer" term indicates the difference between school and summer, with schoo
 
 ## All Awakenings
 
-There is not a significant difference in awakenings between the school and summer groups (p = 0.831)
+There is not a significant difference in awakenings between the school and summer groups (p = 0.703)
 
 ```{r summer/school awa}
 kable(res[,2:ncol(res)],digits = 3)
@@ -178,7 +188,7 @@ kable(res[,2:ncol(res)],digits = 3)
 
 ## Diabetes Related Awakenings
 
-There is not a significant difference in awakenings between the school and summer groups (p = 0.829)
+There is not a significant difference in awakenings between the school and summer groups (p = 0.844)
 
 ```{r summer/school d awa}
 kable(res_dra[,2:ncol(res_dra)],digits = 3)
@@ -186,7 +196,7 @@ kable(res_dra[,2:ncol(res_dra)],digits = 3)
 
 ## Total Sleep Time
 
-There is an association between total sleep time and school/summer groups (p = 0.031). On average, the summer group gets 40.32 (95%ci: 4.46, 76.18) more total sleep minutes than the School group.
+There is not an association between total sleep time and school/summer groups (p = 0.058).
 
 
 
@@ -196,7 +206,7 @@ kable(res_ts[,2:ncol(res_ts)],digits = 3)
 
 ## Sleep Efficiency
 
-There is not a significant difference in sleep efficiency between the school and summer groups (p = 0.439)
+There is not a significant difference in sleep efficiency between the school and summer groups (p = 0.475)
 
 
 ```{r ss se}
@@ -206,7 +216,7 @@ kable(res_se[,2:ncol(res_se)],digits = 3)
 
 ## WASO
 
-There is not a significant difference in average WASO scores between the school and summer groups (p = 0.224)
+There is not a significant difference in average WASO scores between the school and summer groups (p = 0.222)
 
 
 ```{r ss waso}
@@ -224,14 +234,14 @@ analysis_summer = analysis %>% filter(visit_type == "Summer")
 
 ## avg total sleep time (min)
 
-There is not a significant difference in avg total sleep time from Baseline to Month 3 (p = 0.942), or from Baseline to Month 6 (p= 0.522)
+There is not a significant difference in avg total sleep time from Baseline to Month 3 (p = 0.925), or from Baseline to Month 6 (p= 0.575)
 ```{r total sleep sum}
 fit_mod("totalsleep_avg_min", df = analysis_summer)
 ```
 
 ## avg sleep efficiency
 
-There is not a significant difference in avg sleep efficiency from Baseline to Month 3 (p = 0.332), or from Baseline to Month 6 (p= 0.509)
+There is not a significant difference in avg sleep efficiency from Baseline to Month 3 (p = 0.427), or from Baseline to Month 6 (p= 0.600)
 
 ```{r sleep eff sum}
 fit_mod("sleepefficency_avg", df = analysis_summer)
@@ -239,7 +249,7 @@ fit_mod("sleepefficency_avg", df = analysis_summer)
 
 ## waso avg
 
-There is not a significant difference in avg waso from Baseline to Month 3 (p = 0.692), or from Baseline to Month 6 (p= 0.359)
+There is not a significant difference in avg waso from Baseline to Month 3 (p = 0.590), or from Baseline to Month 6 (p= 0.585)
 
 
 ```{r waso sum}
@@ -248,7 +258,7 @@ fit_mod("waso_avg", df = analysis_summer)
 
 ## time in bed (min) avg
 
-There is not a significant difference in avg minutes spent in bed from Baseline to Month 3 (p = 0.321), or from Baseline to Month 6 (p= 0.321)
+There is not a significant difference in avg minutes spent in bed from Baseline to Month 3 (p = 0.349), or from Baseline to Month 6 (p= 0.354)
 
 ```{r timeinbed sum}
 fit_mod("timeinbed_avg_min", df = analysis_summer)
@@ -257,14 +267,14 @@ fit_mod("timeinbed_avg_min", df = analysis_summer)
 ## tir 70-180
 
 There is a significant difference in TIR between
-Baseline and Month 3: Increase by 44.7 (21.759, 67.681) (p = 0.001)
-and Baseline and Month 6:increase by 36.8 (14.64288, 59.02512) (p = 0.003)
+Baseline and Month 3: Increase by 32.8 (6.7806 58.7794) (p = 0.021)
+There is not a significant difference in TIR from Baseline to Month 6 (p = 0.067)
 ```{r tir70180 sum}
 fit_mod("sensor_70_180", df = analysis_summer)
 ```
 
 ## tbr 70
-There is not a significant difference in TBR 70 from Baseline to Month 3 (p = 0.64), or from Baseline to Month 6 (p= 0.45)
+There is not a significant difference in TBR 70 from Baseline to Month 3 (p = 0.89), or from Baseline to Month 6 (p= 0.71)
 
 ```{r tbr70 sum}
 fit_mod("sensor_u70", df = analysis_summer)
@@ -272,9 +282,8 @@ fit_mod("sensor_u70", df = analysis_summer)
 
 ## tar 180
 
-There is a significant difference in TAR between
-Baseline and Month 3: Decrease by 44.97 (21.89, 68.05) (p = 0.001)
-and Baseline and Month 6: Decrease by 37.60 (15.30, 59.90) (p = 0.003)
+There is a significant difference in TAR between Baseline and Month 3: Decrease by 32.8 (6.72632 58.89368) (p = 0.022)
+There is not a significant difference in TAR from Baseline to Month 6 (p = 0.062)
 
 ```{r tar180 sum}
 fit_mod("sensor_g180", df = analysis_summer)
@@ -282,9 +291,8 @@ fit_mod("sensor_g180", df = analysis_summer)
 
 ## sensor mean glucose
 
-There is a significant difference in smg between
-Baseline and Month 3: Decrease by 73.42 (38.03, 108.77) (p < 0.0001)
-and Baseline and Month 6: Decrease by 37.60 (26.38, 94.74) (p = 0.002)
+There is a significant difference in smg between Baseline and Month 3: Decrease by 50.63 (11.95616 89.29384) (p = 0.0017)
+There is not a significant difference in smg from Baseline to Month 6 (p = 0.062)
 ```{r smg sum}
 fit_mod("sensor_mean", df = analysis_summer)
 ```
@@ -300,8 +308,8 @@ analysis_school = analysis %>% filter(visit_type == "School")
 
 ## avg total sleep time (min)
 
-There is not a significant difference in avg total sleep time (min) from BL to M3 (p = 0.172)
-There is a significant difference in avg total sleep time (min) between Baseline and Month 6: Decrease by 23.5 (5.90 41.16) (p = 0.013)
+There is not a significant difference in avg total sleep time (min) from BL to M3 (p = 0.731)
+There is a significant difference in avg total sleep time (min) between Baseline and Month 6: Decrease by 27.3 (7.12876 47.48124) (p = 0.015)
 
 
 ```{r total sleepschool}
@@ -310,7 +318,7 @@ fit_mod("totalsleep_avg_min", df = analysis_school)
 
 ## avg sleep efficiency
 
-There is not a significant difference in avg sleep efficiency from Baseline to Month 3 (p = 0.828), or from Baseline to Month 6 (p= 0.881)
+There is not a significant difference in avg sleep efficiency from Baseline to Month 3 (p = 0.788), or from Baseline to Month 6 (p= 0.971)
 
 ```{r total sleep _school}
 fit_mod("sleepefficency_avg", df = analysis_school)
@@ -318,7 +326,7 @@ fit_mod("sleepefficency_avg", df = analysis_school)
 
 ## waso avg
 
-There is not a significant difference in avg waso from Baseline to Month 3 (p = 0.697), or from Baseline to Month 6 (p= 0.109)
+There is not a significant difference in avg waso from Baseline to Month 3 (p = 0.616), or from Baseline to Month 6 (p= 0.160)
 
 
 ```{r waso _school}
@@ -327,7 +335,7 @@ fit_mod("waso_avg", df = analysis_school)
 
 ## time in bed avg
 
-There is not a significant difference in avg time in bed from Baseline to Month 3 (p = 0.070), or from Baseline to Month 6 (p= 0.073)
+There is not a significant difference in avg time in bed from Baseline to Month 3 (p = 0.222), or from Baseline to Month 6 (p= 0.085)
 
 ```{r timeinbed _school}
 fit_mod("timeinbed_avg_min", df = analysis_school)
@@ -335,7 +343,7 @@ fit_mod("timeinbed_avg_min", df = analysis_school)
 
 ## tir 70-180
 
-There is not a significant difference in TIR from Baseline to Month 3 (p = 0.403), or from Baseline to Month 6 (p= 0.827)
+There is not a significant difference in TIR from Baseline to Month 3 (p = 0.651), or from Baseline to Month 6 (p= 0.778)
 
 
 ```{r tir70180 _school}
@@ -344,7 +352,7 @@ fit_mod("sensor_70_180", df = analysis_school)
 
 ## tbr 70
 
-There is not a significant difference in tbr70 from Baseline to Month 3 (p = 0.383), or from Baseline to Month 6 (p= 0.724)
+There is not a significant difference in tbr70 from Baseline to Month 3 (p = 0.427), or from Baseline to Month 6 (p= 0.482)
 
 
 ```{r tbr70 _school}
@@ -353,7 +361,7 @@ fit_mod("sensor_u70", df = analysis_school)
 
 ## tar 180
 
-There is not a significant difference in TAR180 from Baseline to Month 3 (p = 0.552), or from Baseline to Month 6 (p= 0.654)
+There is not a significant difference in TAR180 from Baseline to Month 3 (p = 0.720), or from Baseline to Month 6 (p= 0.632)
 
 
 ```{r tar180 _school}
@@ -362,7 +370,7 @@ fit_mod("sensor_g180", df = analysis_school)
 
 ## sensor mean glucose
 
-There is not a significant difference in smg from Baseline to Month 3 (p = 0.656), or from Baseline to Month 6 (p= 0.897)
+There is not a significant difference in smg from Baseline to Month 3 (p = 0.660), or from Baseline to Month 6 (p= 0.879)
 
 ```{r smg _school}
 fit_mod("sensor_mean", df = analysis_school)
