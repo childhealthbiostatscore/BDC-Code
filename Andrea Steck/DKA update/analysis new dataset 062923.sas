@@ -36,6 +36,9 @@ proc freq data=alldata; table Rural_or_non_rural / missing; run;
 proc print data=alldata; var ZipCode_DateOfDiagnosis; where Rural_or_non_rural in (""," "); run;
 proc contents; run;
 /* start out with 148 missing Rural_or_non_rural */
+proc print data=alldata;
+where MRN=1516406;
+run;
 
 /* create new variable for active/inactive study participants */
 data alldata;
@@ -324,15 +327,14 @@ set alldata;
 if source="MORGAN" and State_DateOfDiagnosis ne "Co" then delete;
 run; 
 
-/* create a dataset of DKA related variables for study patients because numbers aren't matching Morgan's */
-data checkstudy;
+proc freq data=alldata; table instudy; run;
+
+proc freq data=alldata; table Rural_or_non_rural; run;
+data alldata;
 set alldata;
-where instudy;
-keep mrn pp3 source ph bicarb dka dka_sev;
+if Rural_or_non_rural="*Zipcode:" then Rural_or_non_rural="";
 run;
-proc export data=checkstudy
-  outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\instudy_dka_check.csv" dbms=csv replace;
-run;
+proc freq data=alldata; table Rural_or_non_rural; run;
 
 /* compare DKA status known to unknown */
 proc freq data=alldata; table dka; run;
@@ -359,6 +361,7 @@ label Age_AtOnset="Age at onset"
       Hispanic="Hispanic"
 	  race_eth="Race/ethnicity";
 run;
+proc freq data=alldata; table Hispanic English; run;
 proc print data=alldata;
 var  instudy dka dkaknown;
 where instudy=1;
@@ -382,7 +385,7 @@ run;
 data foranalysis;
 set alldata;
 run;
-%include 'S:\SAS tools\Amanda table 1\2 category macros with KW.sas';
+%include 'V:\SAS tools\Amanda table 1\2 category macros with KW.sas';
 proc datasets;
 delete OutTable ;
 run;
@@ -410,8 +413,16 @@ if dka='' or dka=" " or dka="Unk" then delete;
 run;
 proc freq data=alldata; table new_ins; run;
 proc print data=alldata; run;
+proc freq data=alldata; table instudy; run;
 data foranalysis;
 set alldata;
+run;
+
+/* export csv file */
+proc export data=alldata
+outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\morgan cleaned final dataset no unknown all CO.csv"
+replace
+dbms="csv";
 run;
 
 proc freq data=alldata; table Rural_or_non_rural / missing; run;
@@ -471,6 +482,10 @@ model dka(event='Yes') = instudy ;
 run;
 ods rtf close;
 proc freq; table english; run;
+
+proc print data=alldata;
+where MRN=1516406;
+run;
 
 /* 2x2 table of study by DKA */
 ods rtf file="C:\temp\output.rtf" style=journal;

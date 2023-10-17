@@ -148,9 +148,9 @@ proc contents; run;
        informat SOURCE $10. ;
        informat age_cat $12. ;
        informat new_ins $7. ;
-       informat English $3. ;
+       informat English 8. ;
        informat year best32. ;
-       informat hispanic $2. ;
+       informat hispanic 8. ;
        informat gender $6. ;
        format MRN best12. ;
        format PP3 best12. ;
@@ -161,9 +161,9 @@ proc contents; run;
        format SOURCE $10. ;
        format age_cat $12. ;
        format new_ins $7. ;
-       format English $3. ;
+       format English 8. ;
        format year best12. ;
-       format hispanic $2. ;
+       format hispanic 8. ;
        format gender $6. ;
     input
                 MRN
@@ -175,9 +175,9 @@ proc contents; run;
                 SOURCE  $
                 age_cat  $
                 new_ins  $
-                English  $
+                English  
                 year
-                hispanic  $
+                hispanic  
                 gender  $
     ;
     if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
@@ -254,7 +254,7 @@ proc print data=alldata; var ZipCode_DateOfDiagnosis; where Rural_or_non_rural i
        informat Initial_research_study_visit_dat mmddyy10. ;
        informat STATE $2. ;
        informat race_eth $1. ;
-       informat In_study best32. ;
+       informat instudy best32. ;
        informat fup_prior_dx best32. ;
        informat fup_prior_dx_mo best32. ;
        informat ge6moprior best32. ;
@@ -289,7 +289,7 @@ proc print data=alldata; var ZipCode_DateOfDiagnosis; where Rural_or_non_rural i
        format Initial_research_study_visit_dat mmddyy10. ;
        format STATE $2. ;
        format race_eth $1. ;
-       format In_study best12. ;
+       format instudy best12. ;
        format fup_prior_dx  best12.;
        format fup_prior_dx_mo best12. ;
        format ge6moprior best32. ;
@@ -325,7 +325,7 @@ proc print data=alldata; var ZipCode_DateOfDiagnosis; where Rural_or_non_rural i
                 Initial_research_study_visit_dat
                 STATE  $
                 race_eth  $
-                In_study
+                instudy
                 fup_prior_dx  
                 fup_prior_dx_mo  
                 ge6moprior  
@@ -335,12 +335,19 @@ proc print data=alldata; var ZipCode_DateOfDiagnosis; where Rural_or_non_rural i
     ;
     if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
     run;
+proc freq data=prev_excl; table instudy; run;
+proc print data=prev_excl;
+where MRN=1516406;
+run;
 data alldata;
 set alldata prev_excl;
 run;
 proc freq data=alldata; table Rural_or_non_rural / missing; run;
 proc print data=alldata; var ZipCode_DateOfDiagnosis Rural_or_non_rural; where Rural_or_non_rural in (""," "); run;
 /* 179 observations missing ZipCode_DateOfDiagnosis and Rural_or_non_rural */
+proc print data=alldata;
+where MRN=1516406;
+run;
 
 /* need to make sure rural/nonrural and race/eth get updated */
 
@@ -397,7 +404,9 @@ run;
 proc freq data=alldata; table Rural_or_non_rural / missing; run;
 proc print data=alldata; var ZipCode_DateOfDiagnosis Rural_or_non_rural; where Rural_or_non_rural in (""," "); run;
 /* still 179 observations missing ZipCode_DateOfDiagnosis and Rural_or_non_rural */
-
+proc print data=alldata;
+where MRN=1516406;
+run;
 
 /* read in hardcoded corrections */
  /**********************************************************************
@@ -447,6 +456,7 @@ proc freq data=alldata; table instudy; run;*/
 /* now we have the dataset which contains study participants and non-participants */
 /* MAKE SURE THE N IS RIGHT */
 /* for study participants, need to limit to 70 subjects with at least 6 months of follow up */
+proc freq data=alldata; table instudy; run;
 data nonstudy;
 set alldata;
 where instudy=0;
@@ -455,6 +465,9 @@ data study;
 set alldata; 
 where instudy=1;
 run; 
+proc print data=study;
+where MRN=1516406;
+run;
 
 /* create variable ge6moprior */
 data study;
@@ -462,14 +475,24 @@ set study;
 fup_prior_dx = onsetdate - Initial_research_study_visit_dat;
 fup_prior_dx_mo = fup_prior_dx/30.44;
 run;
+proc print data=study;
+where MRN=1516406;
+run;
 data study;
 set study;
 if fup_prior_dx_mo>=6 then ge6moprior=1;
 else ge6moprior=0;
 run;
 proc print data=study;
+where MRN=1516406;
+run;
+proc print data=study;
 var onsetdate Initial_research_study_visit_dat fup_prior_dx fup_prior_dx_mo ge6moprior;
 run;
+proc print data=study;
+where MRN=1516406;
+run;
+
 
 /* create variable seen_12mo_prior */
 data study;
@@ -504,6 +527,9 @@ set study nonstudy;
 run;
 proc freq data=alldata;
 table ge6moprior*seen_12mo_prior;
+run;
+proc print data=alldata;
+where MRN=1516406;
 run;
 
 /* per Morgan, delete PP3 ID 41815 */
