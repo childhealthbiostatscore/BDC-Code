@@ -1,5 +1,6 @@
 *libname data 'S:\Shared Projects\Laura\BDC\Projects\Todd Alonso\DKA\Data';
 libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
+libname data "C:\temp\Morgan Sooy DKA update\Data_raw";
 
  /**********************************************************************
  *   PRODUCT:   SAS
@@ -11,7 +12,7 @@ libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
  ***********************************************************************/
     data WORK.ALLDATA    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\MASTER_06.15.23_WithMRNPP3 edited.csv' delimiter = ',' MISSOVER DSD lrecl=13106 firstobs=2 ;
+    infile 'C:\temp\Morgan Sooy DKA update\Data_raw\MASTER_06.15.23_WithMRNPP3 edited.csv' delimiter = ',' MISSOVER DSD lrecl=13106 firstobs=2 ;
        informat MRN best32. ;
        informat PP3 best32. ;
        informat Sample_ID best32. ;
@@ -138,7 +139,7 @@ proc contents; run;
  ***********************************************************************/
     data WORK.missing_covariates    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\active_study_participants_missing_covariates updated.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'C:\temp\Morgan Sooy DKA update\Data_raw\active_study_participants_missing_covariates updated.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat PP3 best32. ;
        informat Age_AtOnset best32. ;
@@ -225,7 +226,7 @@ proc print data=alldata; var ZipCode_DateOfDiagnosis; where Rural_or_non_rural i
  ***********************************************************************/
     data WORK.prev_excl    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\10.11.23 2017-2021 Previously excluded people to add to master.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'C:\temp\Morgan Sooy DKA update\Data_raw\10.11.23 2017-2021 Previously excluded people to add to master.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat PP3 best32. ;
        informat Sample_ID best32. ;
@@ -243,7 +244,7 @@ proc print data=alldata; var ZipCode_DateOfDiagnosis; where Rural_or_non_rural i
        informat bicarb best32. ;
        informat pH_MarianJama best32. ;
        informat BiCarb_MarianJama best32. ;
-       informat DKA $3. ;
+       informat dka $3. ;
        informat DKA_sev $6. ;
        informat Rural_or_non_rural $1. ;
        informat ZipCode_DateOfDiagnosis $8. ;
@@ -278,7 +279,7 @@ proc print data=alldata; var ZipCode_DateOfDiagnosis; where Rural_or_non_rural i
        format bicarb best12. ;
        format pH_MarianJama best12.;
        format BiCarb_MarianJama best12. ;
-       format DKA $3. ;
+       format dka $3. ;
        format DKA_sev $6. ;
        format Rural_or_non_rural $1. ;
        format ZipCode_DateOfDiagnosis $8. ;
@@ -314,7 +315,7 @@ proc print data=alldata; var ZipCode_DateOfDiagnosis; where Rural_or_non_rural i
                 bicarb
                 pH_MarianJama  $
                 BiCarb_MarianJama  
-                DKA  $
+                dka  $
                 DKA_sev  $
                 Rural_or_non_rural  $
                 ZipCode_DateOfDiagnosis $
@@ -362,7 +363,7 @@ run;
  ***********************************************************************/
     data WORK.zips    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DMERuralZIP.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'C:\temp\Morgan Sooy DKA update\Data_raw\DMERuralZIP.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat STATE $2. ;
        informat ZipCode_DateOfDiagnosis $5. ;
        informat YEAR_QTR best32. ;
@@ -553,7 +554,7 @@ proc freq data=alldata; table instudy source; run;
 
 /* export csv file */
 proc export data=alldata
-outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\morgan cleaned final dataset.csv"
+outfile="C:\temp\Morgan Sooy DKA update\Data_raw\morgan cleaned final dataset.csv"
 replace
 dbms="csv";
 run;

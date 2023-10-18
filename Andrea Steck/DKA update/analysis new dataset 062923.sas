@@ -1,7 +1,8 @@
 
 *libname data 'S:\Shared Projects\Laura\BDC\Projects\Todd Alonso\DKA\Data';
 *libname data 'T:\Todd Alonso\DKA\Data';
-libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
+*libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
+libname data "C:\temp\Morgan Sooy DKA update\Data_raw";
 libname save 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\';
 
 proc format;
@@ -333,8 +334,10 @@ proc freq data=alldata; table Rural_or_non_rural; run;
 data alldata;
 set alldata;
 if Rural_or_non_rural="*Zipcode:" then Rural_or_non_rural="";
+*if dka in (""," ") then dka=DKA;
 run;
-proc freq data=alldata; table Rural_or_non_rural; run;
+proc freq data=alldata; table dka*DKA / missing; run;
+
 
 /* compare DKA status known to unknown */
 proc freq data=alldata; table dka; run;
