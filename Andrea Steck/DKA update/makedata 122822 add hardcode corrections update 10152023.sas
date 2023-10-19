@@ -12,7 +12,7 @@ libname data "C:\temp\Morgan Sooy DKA update\Data_raw";
  ***********************************************************************/
     data WORK.ALLDATA    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'C:\temp\Morgan Sooy DKA update\Data_raw\MASTER_06.15.23_WithMRNPP3 edited.csv' delimiter = ',' MISSOVER DSD lrecl=13106 firstobs=2 ;
+    infile 'C:\temp\Morgan Sooy DKA update\Data_raw\MASTER 10.18.23 MS.csv' delimiter = ',' MISSOVER DSD lrecl=13106 firstobs=2 ;
        informat MRN best32. ;
        informat PP3 best32. ;
        informat Sample_ID best32. ;

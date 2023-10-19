@@ -38,7 +38,8 @@ proc print data=alldata; var ZipCode_DateOfDiagnosis; where Rural_or_non_rural i
 proc contents; run;
 /* start out with 148 missing Rural_or_non_rural */
 proc print data=alldata;
-where MRN=1516406;
+var MRN source instudy dka DKA pH bicarb;
+where dka in (""," ");
 run;
 
 /* create new variable for active/inactive study participants */
@@ -153,23 +154,6 @@ set alldata;
 if DKA="YES" then dka="Yes";
 run;
 
-/* this person is being coded as mild DKA but should be severe */
-proc print data=alldata;
-where MRN=1021709;
-run;
-/* for Todd's and Morgan's data, if someone has pH and/or bicarb and has DKA="Yes" fill in dka severity */
-data alldata;
-set alldata;
-if source="TODD" and dka="Yes" and ((ph ne . and ph<7.1) or (bicarb ne . and bicarb <5)) then dka_sev="Severe DKA";
-else if source="TODD" and dka="Yes" and ((ph>=7.1 and ph<7.3) or (bicarb>=5 and bicarb<15)) then dka_sev="Mild DKA";
-else if source="MORGAN" and dka="Yes" and ((ph ne . and ph<7.1) or (bicarb ne . and bicarb <5)) then dka_sev="Severe DKA";
-else if source="MORGAN" and dka="Yes" and ((ph>=7.1 and ph<7.3) or (bicarb>=5 and bicarb<15)) then dka_sev="Mild DKA";
-run;
-proc print data=alldata;
-where MRN=1021709;
-run;
-proc freq data=alldata; table source*dka; run;
-
 /* read in hardcoded corrections */
  /**********************************************************************
  *   PRODUCT:   SAS
@@ -263,6 +247,28 @@ data alldata;
 merge alldata new_corrections_mrn;
 by MRN;
 run;
+
+
+proc print data=alldata;
+where source="MORGAN" and dka in (""," ");
+var MRN instudy pH bicarb dka;
+run;
+data alldata;
+set alldata;
+if source="MORGAN" and dka in (""," ") and ((ph ne . and ph<7.1) or (bicarb ne . and bicarb <5)) then dka="Yes";
+else if source="MORGAN" and dka in (""," ") and ((ph>=7.1 and ph<7.3) or (bicarb>=5 and bicarb<15)) then dka="Yes";
+run;
+/* for Todd's and Morgan's data, if someone has pH and/or bicarb and has DKA="Yes" fill in dka severity */
+data alldata;
+set alldata;
+if source="TODD" and dka="Yes" and ((ph ne . and ph<7.1) or (bicarb ne . and bicarb <5)) then dka_sev="Severe DKA";
+else if source="TODD" and dka="Yes" and ((ph>=7.1 and ph<7.3) or (bicarb>=5 and bicarb<15)) then dka_sev="Mild DKA";
+else if source="MORGAN" and dka="Yes" and ((ph ne . and ph<7.1) or (bicarb ne . and bicarb <5)) then dka_sev="Severe DKA";
+else if source="MORGAN" and dka="Yes" and ((ph>=7.1 and ph<7.3) or (bicarb>=5 and bicarb<15)) then dka_sev="Mild DKA";
+run;
+proc freq data=alldata; table source*dka; run;
+
+
 proc freq data=alldata; table source*dka; run;
 proc sort data=new_corrections_pp3; by pp3; run;
 proc sort data=alldata; by pp3; run;
@@ -366,8 +372,8 @@ label Age_AtOnset="Age at onset"
 run;
 proc freq data=alldata; table Hispanic English; run;
 proc print data=alldata;
-var  instudy dka dkaknown;
-where instudy=1;
+var MRN source instudy dka dkaknown;
+where dka in (""," ");
 run;
 proc contents; run;
 proc freq data=alldata; table instudy*dkaknown;run;
@@ -379,7 +385,11 @@ var ageatonset;
 class dkaknown;
 run;
 proc freq data=alldata;
-table instudy*dkaknown;
+table instudy*dkaknown / missing;
+run;
+proc print data=alldata;
+var mrn source instudy dka dkaknown;
+where dkaknown=0;
 run;
 proc freq data=alldata;
 tables dkaknown*(gender race_eth new_ins) / chisquare exact;
@@ -910,14 +920,14 @@ ods rtf close;
 /* multivariate model with predictors that were significant on univariate */
 ods rtf file="C:\temp\output.rtf" style=journal;
 proc logistic data=clinic;
-class race_eth new_ins(ref="Private") year Rural_or_non_rural(ref='Non-rural');
-model dka(event='Yes') = Age_AtOnset race_eth new_ins year Rural_or_non_rural InitalA1c;
+class  new_ins(ref="Private") year Rural_or_non_rural(ref='Non-rural');
+model dka(event='Yes') = Age_AtOnset  new_ins year Rural_or_non_rural InitalA1c;
 where new_ins ne 'None';
 run;
 /* model without A1c */
-proc logistic data=alldata;
-class race_eth new_ins year Rural_or_non_rural(ref='Non-rural');
-model dka(event='Yes') = Age_AtOnset race_eth new_ins year Rural_or_non_rural ;
+proc logistic data=clinic;
+class  new_ins year Rural_or_non_rural(ref='Non-rural');
+model dka(event='Yes') = Age_AtOnset  new_ins year Rural_or_non_rural ;
 where new_ins ne 'None';
 run;
 ods rtf close;
