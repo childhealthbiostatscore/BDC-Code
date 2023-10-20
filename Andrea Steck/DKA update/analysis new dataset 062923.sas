@@ -33,13 +33,17 @@ run;
 data alldata;
 set data.alldata;
 run;
-proc freq data=alldata; table Rural_or_non_rural / missing; run;
+proc freq data=alldata; table Rural_or_non_rural Insurance InsuranceGroup / missing; run;
 proc print data=alldata; var ZipCode_DateOfDiagnosis; where Rural_or_non_rural in (""," "); run;
 proc contents; run;
 /* start out with 148 missing Rural_or_non_rural */
 proc print data=alldata;
 var MRN source instudy dka DKA pH bicarb;
 where dka in (""," ");
+run;
+proc print data=alldata;
+where mrn=1516406;
+var mrn source instudy Rural_or_non_rural ZipCode_DateOfDiagnosis;
 run;
 
 /* create new variable for active/inactive study participants */
@@ -61,6 +65,10 @@ else if instudy=1 and (ge6moprior=0 or seen_12mo_prior=0) then active_inactive_c
 run;
 proc freq data=alldata;
 table active_inactive_clinic*instudy;
+run;
+proc print data=alldata;
+where mrn=1034232;
+var mrn source instudy new_ins;
 run;
 
 data x;
@@ -85,10 +93,16 @@ else age_cat=3;
 format age_cat age_cat.;
 run;
 
+proc freq data=alldata; table new_ins*insurancegroup / missing; run;
 data alldata;
 set alldata;
-new_ins=insurancegroup;
+if new_ins in (""," ") then new_ins=insurancegroup;
 run;
+proc print data=alldata;
+where mrn=1516406;
+var mrn source instudy Rural_or_non_rural;
+run;
+
 
 /* recode English cap and noncap */
 proc freq data=alldata; table PrimaryLanguage; run;
@@ -152,6 +166,10 @@ run;
 data alldata;
 set alldata;
 if DKA="YES" then dka="Yes";
+run;
+proc print data=alldata;
+where mrn=1034232;
+var mrn source instudy new_ins;
 run;
 
 /* read in hardcoded corrections */
@@ -344,6 +362,14 @@ if Rural_or_non_rural="*Zipcode:" then Rural_or_non_rural="";
 run;
 proc freq data=alldata; table dka*DKA / missing; run;
 
+proc print data=alldata;
+where new_ins in (""," ");
+var MRN source instudy new_ins InsuranceGroup;
+run;
+proc freq data=alldata;
+table source*instudy;
+where new_ins in (""," ");
+run;
 
 /* compare DKA status known to unknown */
 proc freq data=alldata; table dka; run;
@@ -751,6 +777,9 @@ title;
 proc freq data=foranalysis; tables Rural_or_non_rural*active_inactive_clinic / chisq; run;
 proc freq data=alldata; tables Rural_or_non_rural*active_inactive_clinic / chisq; run;
 * for some reason this code isn't working....will export to R;
+proc export data=alldata
+  outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\table1.csv" dbms=csv replace;
+run;
 proc export data=alldata
   outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\table1.csv" dbms=csv replace;
 run;

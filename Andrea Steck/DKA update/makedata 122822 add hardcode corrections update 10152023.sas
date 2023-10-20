@@ -33,7 +33,7 @@ libname data "C:\temp\Morgan Sooy DKA update\Data_raw";
        informat DKA $3. ;
        informat DKA_sev $10. ;
        informat Rural_or_non_rural $9. ;
-       informat ZipCode_DateOfDiagnosis $8. ;
+       informat ZipCode_DateOfDiagnosis $5. ;
        informat State_DateOfDiagnosis $2. ;
        informat PrimaryLanguage $30. ;
        informat NewOnset_DxThroughScreeningStudy $9. ;
@@ -68,7 +68,7 @@ libname data "C:\temp\Morgan Sooy DKA update\Data_raw";
        format DKA $3. ;
        format DKA_sev $10. ;
        format Rural_or_non_rural $9. ;
-       format ZipCode_DateOfDiagnosis $8. ;
+       format ZipCode_DateOfDiagnosis $5. ;
        format State_DateOfDiagnosis $2. ;
        format PrimaryLanguage $30. ;
        format NewOnset_DxThroughScreeningStudy $9. ;
@@ -205,6 +205,14 @@ data alldata;
 merge alldata missing_covariates_mrn;
 by mrn;
 run;
+proc print data=alldata;
+var mrn source instudy new_ins;
+where instudy;
+run;
+proc print data=alldata;
+where mrn=1034232;
+var mrn source instudy new_ins;
+run;
 proc sort data=alldata; by pp3; run;
 proc sort data=missing_covariates_pp; by pp3; run;
 data alldata;
@@ -213,6 +221,10 @@ by pp3;
 run;
 proc freq data=alldata; table Rural_or_non_rural / missing; run;
 proc print data=alldata; var ZipCode_DateOfDiagnosis; where Rural_or_non_rural in (""," "); run;
+proc print data=alldata;
+where mrn=1034232;
+var mrn source instudy new_ins;
+run;
 /* 148 observations missing ZipCode_DateOfDiagnosis and Rural_or_non_rural */
 
 /* read in file of missing ppts and add to the dataset*/
@@ -247,7 +259,7 @@ proc print data=alldata; var ZipCode_DateOfDiagnosis; where Rural_or_non_rural i
        informat dka $3. ;
        informat DKA_sev $6. ;
        informat Rural_or_non_rural $1. ;
-       informat ZipCode_DateOfDiagnosis $8. ;
+       informat ZipCode_DateOfDiagnosis $5. ;
        informat State_DateOfDiagnosis $8. ;
        informat PrimaryLanguage $7. ;
        informat NewOnset_DxThroughScreeningStudy $8. ;
@@ -282,7 +294,7 @@ proc print data=alldata; var ZipCode_DateOfDiagnosis; where Rural_or_non_rural i
        format dka $3. ;
        format DKA_sev $6. ;
        format Rural_or_non_rural $1. ;
-       format ZipCode_DateOfDiagnosis $8. ;
+       format ZipCode_DateOfDiagnosis $5. ;
        format State_DateOfDiagnosis $8. ;
        format PrimaryLanguage $7. ;
        format NewOnset_DxThroughScreeningStudy $8. ;
@@ -347,7 +359,16 @@ proc freq data=alldata; table Rural_or_non_rural / missing; run;
 proc print data=alldata; var ZipCode_DateOfDiagnosis Rural_or_non_rural; where Rural_or_non_rural in (""," "); run;
 /* 179 observations missing ZipCode_DateOfDiagnosis and Rural_or_non_rural */
 proc print data=alldata;
-where MRN=1516406;
+where mrn=1516406;
+var mrn source instudy Rural_or_non_rural ZipCode_DateOfDiagnosis;
+run;
+data alldata;
+set alldata;
+if MRN=1189698 then ZipCode_DateOfDiagnosis=67871;
+run;
+data alldata;
+set alldata;
+if MRN=1724085 then ZipCode_DateOfDiagnosis=80111;
 run;
 
 /* need to make sure rural/nonrural and race/eth get updated */
@@ -377,6 +398,9 @@ run;
     ;
     if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
     run;
+proc print data=zips; where STATE="CO"; run;
+proc freq data=alldata; table ZipCode_DateOfDiagnosis; run;
+
 
 data zips;
 length Rural_Non_Rural $10;
@@ -387,12 +411,16 @@ run;
 proc freq data=zips; table Rural_Non_Rural; run;
 proc sort data=zips; by ZipCode_DateOfDiagnosis; run;
 proc sort data=alldata; by ZipCode_DateOfDiagnosis; run;
-
 data alldata;
 merge alldata(in=ina) zips;
 by ZipCode_DateOfDiagnosis; 
 if ina;
 run;
+proc print data=alldata;
+where mrn in (1189698,1724085);
+var mrn source instudy Rural_or_non_rural ZipCode_DateOfDiagnosis;
+run;
+
 data alldata;
 set alldata;
 if ZipCode_DateOfDiagnosis="" or ZipCode_DateOfDiagnosis=" " then Rural_Non_Rural="";
@@ -400,13 +428,34 @@ else if  Rural_Non_Rural="" or Rural_Non_Rural=" " then Rural_Non_Rural="Non-rur
 run;
 data alldata;
 set alldata;
+if ZipCode_DateOfDiagnosis not in (""," ") and Rural_or_non_rural in (""," ") then Rural_or_non_rural="Non-rural";
+run;
+proc print data=alldata;
+where mrn=1045809;
+var mrn source instudy Rural_or_non_rural ZipCode_DateOfDiagnosis;
+run;
+data alldata;
+set alldata;
 if Rural_or_non_rural in (""," ") then Rural_or_non_rural=Rural_or_non_rural;
+run;
+data alldata;
+set alldata;
+if MRN=1189698 then Rural_or_non_rural='Non-rural';
+run;
+data alldata;
+set alldata;
+if MRN=1724085 then Rural_or_non_rural='Non-rural';
+run;
+proc print data=alldata;
+where mrn in (1189698,1724085);
+var mrn source instudy Rural_or_non_rural ZipCode_DateOfDiagnosis;
 run;
 proc freq data=alldata; table Rural_or_non_rural / missing; run;
 proc print data=alldata; var ZipCode_DateOfDiagnosis Rural_or_non_rural; where Rural_or_non_rural in (""," "); run;
 /* still 179 observations missing ZipCode_DateOfDiagnosis and Rural_or_non_rural */
 proc print data=alldata;
-where MRN=1516406;
+where mrn=1034232;
+var mrn source instudy new_ins;
 run;
 
 /* read in hardcoded corrections */
@@ -565,4 +614,8 @@ proc print data=alldata; var ZipCode_DateOfDiagnosis Rural_or_non_rural; where R
 
 proc freq data=alldata;
 table state State_DateOfDiagnosis;
+run;
+proc print data=alldata;
+where mrn=1034232;
+var mrn source instudy new_ins;
 run;
