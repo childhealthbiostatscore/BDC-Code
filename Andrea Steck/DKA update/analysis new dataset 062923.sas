@@ -1,8 +1,8 @@
 
 *libname data 'S:\Shared Projects\Laura\BDC\Projects\Todd Alonso\DKA\Data';
 *libname data 'T:\Todd Alonso\DKA\Data';
-*libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
-libname data "C:\temp\Morgan Sooy DKA update\Data_raw";
+libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
+*libname data "C:\temp\Morgan Sooy DKA update\Data_raw";
 libname save 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\';
 
 proc format;
@@ -160,6 +160,29 @@ else if source="MarianJama" and (ethnicity ne "Hispanic or Latino" and race ne "
 else if source="MarianJama" and (ethnicity ne "Hispanic or Latino" and race ne "Hispanic") and race="Black or African Ame" 
 		then race_eth="Non-Hispanic Black";
 else if source="MarianJama" and race_eth in ("",".") then race_eth="Other";
+run;
+/* code race_eth for Morgan's missing people */
+proc print data=alldata;
+where source="MORGAN" and race_eth in (""," ") and instudy=1;
+var mrn source instudy active_inactive_clinic race new_eth Ethnicity race_eth;
+run;
+data alldata;
+set alldata;
+if source="MORGAN" and race_eth in (""," ") and race="White" and Ethnicity="Not Hispanic or Latino" then race_eth="Non-Hispanic White";
+if source="MORGAN" and race_eth in (""," ") and race="Black/African Americ" and Ethnicity="Hispanic or Latino" then race_eth="Other";
+if source="MORGAN" and race_eth in (""," ") and race="White" and Ethnicity="Not Reported" then race_eth="Other";
+if source="MORGAN" and race_eth in (""," ") and race in ("More than one Race","Unknown OR Not Repor","Other") then race_eth="Other";
+run;
+proc print data=alldata;
+where source="MORGAN" and race_eth in (""," ") and instudy=1;
+var mrn source instudy active_inactive_clinic race new_eth Ethnicity race_eth;
+run;
+proc freq data=alldata;
+table race_eth;
+run;
+proc print data=alldata;
+where race_eth in (""," ") ;
+var mrn source instudy active_inactive_clinic race new_eth Ethnicity race_eth;
 run;
 
 /* create variable for DKA severity */
@@ -698,7 +721,7 @@ ods rtf close;
 
 /* comparison of study and clinic patients */
 proc contents data=foranalysis; run;
-%include 'S:\SAS tools\Amanda table 1\3 or more category Macros with KW.sas';
+%include 'V:\SAS tools\Amanda table 1\3 or more category Macros with KW.sas';
 proc datasets;
 delete OutTable ;
 run;
@@ -788,7 +811,7 @@ set alldata;
 run;
 
 /* rates of DKA by study participation and year */
-ods rtf file="B:\Projects\Andrea Steck\Morgan Sooy DKA update\Report\DKA rates for figures.rtf";
+ods rtf file="W:\Projects\Andrea Steck\Morgan Sooy DKA update\Report\DKA rates for figures.rtf";
 proc freq data=alldata;
 table year / binomial(level="2017") alpha=0.05;
 where instudy=0;
@@ -986,3 +1009,21 @@ run;
 proc export data=dka_severity_unknown
   outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_severity_unknown.csv" dbms=csv replace;
 run;
+
+proc print data=alldata;
+where mrn=1516406;
+var mrn source instudy Rural_or_non_rural ZipCode_DateOfDiagnosis;
+run;
+proc print data=alldata;
+where Rural_or_non_rural in (""," ");
+var mrn source instudy Rural_or_non_rural ZipCode_DateOfDiagnosis;
+run;
+proc print data=alldata;
+where new_ins in (""," ") and instudy=1;
+var mrn source instudy active_inactive_clinic insurancegroup new_ins;
+run;
+proc print data=alldata;
+where race_eth in (""," ") ;
+var mrn source instudy active_inactive_clinic race new_eth Ethnicity race_eth;
+run;
+proc contents; run;
