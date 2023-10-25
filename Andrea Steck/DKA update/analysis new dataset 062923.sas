@@ -1,14 +1,14 @@
 
 *libname data 'S:\Shared Projects\Laura\BDC\Projects\Todd Alonso\DKA\Data';
 *libname data 'T:\Todd Alonso\DKA\Data';
-libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
+libname data 'U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
 *libname data "C:\temp\Morgan Sooy DKA update\Data_raw";
-libname save 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\';
+libname save 'U:\Projects\Andrea Steck\Morgan Sooy DKA update\';
 
 proc format;
-  value age_cat 1='<6 years'
-                2='6- <13 years'
-				3='13+ years';
+  value $ age_cat "1"="<6 years"
+                "2"="6- <13 years"
+				"3"="13+ years";
   value $ gender "Female"="Female"
 				 "Male"="Male";
   value $ new_ins "Military Plans"="Military Plans"
@@ -92,6 +92,8 @@ else if Age_AtOnset>=6 and Age_AtOnset<13 then age_cat=2;
 else age_cat=3;
 format age_cat age_cat.;
 run;
+proc print data=alldata; var Age_AtOnset age_cat; run;
+proc freq data=alldata; table age_cat; run;
 
 proc freq data=alldata; table new_ins*insurancegroup / missing; run;
 data alldata;
@@ -206,7 +208,7 @@ run;
  ***********************************************************************/
    data WORK.CORRECTIONS    ;
     %let _EFIERR_ = 0; 
-    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat DKA $3. ;
        informat dka_sev $10. ;
@@ -247,7 +249,7 @@ proc freq data=alldata; table source*dka; run;
  ***********************************************************************/
     data WORK.NEW_corrections    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DKA Severity Issues - fixed_07.05.23.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DKA Severity Issues - fixed_07.05.23.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat PP3 best32. ;
        informat pH 8.2 ;
@@ -332,7 +334,7 @@ proc print data=alldata; var ZipCode_DateOfDiagnosis; where Rural_or_non_rural i
 /* still 148 missing Rural_or_non_rural */
 
 proc freq data=alldata; table source*dka; run;
-ods rtf file="W:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_crosstab.rtf"; 
+ods rtf file="U:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_crosstab.rtf"; 
 proc freq data=alldata;
 where source="TODD"; 
 table dka*dka_sev / missing;
@@ -362,7 +364,7 @@ run;
 proc sort data=dka_prob; by source; run;
 proc print data=dka_prob; run;
 proc export data=dka_prob
-  outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_issues.csv" dbms=csv replace;
+  outfile="U:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_issues.csv" dbms=csv replace;
 run;
 
 /* Morgan says to delete ppts not living in CO in her dataset between 2017-2021 */
@@ -393,6 +395,14 @@ proc freq data=alldata;
 table source*instudy;
 where new_ins in (""," ");
 run;
+proc freq data=alldata; table insurance*new_ins; run;
+/* hard code a few more insurance values */
+data alldata;
+set alldata;
+if insurance in ("CICP","RMHP Direct PPO","ROCKY MOUNTAIN HEALTH PLAN","ROCKY MOUNTAIN HEALTH PLANS","Rocky Mountain HMO","ROCKY MOUNTAIN HP",
+  "ROCKY MTN HEALTH MAINTENANCE","ROCKY MTN HMO MEDICAID") then new_ins="Public";
+run;
+proc freq data=alldata; table insurance*new_ins; run;
 
 /* compare DKA status known to unknown */
 proc freq data=alldata; table dka; run;
@@ -447,7 +457,7 @@ run;
 data foranalysis;
 set alldata;
 run;
-%include 'V:\SAS tools\Amanda table 1\2 category macros with KW.sas';
+%include 'U:\SAS tools\Amanda table 1\2 category macros with KW.sas';
 proc datasets;
 delete OutTable ;
 run;
@@ -482,7 +492,7 @@ run;
 
 /* export csv file */
 proc export data=alldata
-outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\morgan cleaned final dataset no unknown all CO.csv"
+outfile="U:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\morgan cleaned final dataset no unknown all CO.csv"
 replace
 dbms="csv";
 run;
@@ -721,7 +731,7 @@ ods rtf close;
 
 /* comparison of study and clinic patients */
 proc contents data=foranalysis; run;
-%include 'V:\SAS tools\Amanda table 1\3 or more category Macros with KW.sas';
+%include 'U:\SAS tools\Amanda table 1\3 or more category Macros with KW.sas';
 proc datasets;
 delete OutTable ;
 run;
@@ -786,7 +796,7 @@ else if Age_AtOnset>=12 and Age_AtOnset<=18 then age_new_cat="12 - 18 years old"
 run;
 proc freq data=alldata; table age_new_cat; run;
 
-ods rtf file='W:\Projects\Andrea Steck\Morgan Sooy DKA update\numbers_for_figures.rtf' style=journal;
+ods rtf file='V:\Projects\Andrea Steck\Morgan Sooy DKA update\numbers_for_figures.rtf' style=journal;
 proc freq data=alldata;
 table active_inactive_clinic*year*dka;
 title "Numbers for figures: 0 = clinic, 1 = active, 2 = inactive";
@@ -801,17 +811,17 @@ proc freq data=foranalysis; tables Rural_or_non_rural*active_inactive_clinic / c
 proc freq data=alldata; tables Rural_or_non_rural*active_inactive_clinic / chisq; run;
 * for some reason this code isn't working....will export to R;
 proc export data=alldata
-  outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\table1.csv" dbms=csv replace;
+  outfile="U:\Projects\Andrea Steck\Morgan Sooy DKA update\table1.csv" dbms=csv replace;
 run;
 proc export data=alldata
-  outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\table1.csv" dbms=csv replace;
+  outfile="U:\Projects\Andrea Steck\Morgan Sooy DKA update\table1.csv" dbms=csv replace;
 run;
 data save.table1;
 set alldata;
 run;
 
 /* rates of DKA by study participation and year */
-ods rtf file="W:\Projects\Andrea Steck\Morgan Sooy DKA update\Report\DKA rates for figures.rtf";
+ods rtf file="U:\Projects\Andrea Steck\Morgan Sooy DKA update\Report\DKA rates for figures.rtf";
 proc freq data=alldata;
 table year / binomial(level="2017") alpha=0.05;
 where instudy=0;
@@ -968,6 +978,7 @@ proc logistic data=clinic;
 model dka(event='Yes') = InitalA1c ;
 run;
 ods rtf close;
+proc print data=clinic; var age_cat; run;
 
 /* multivariate model with predictors that were significant on univariate */
 ods rtf file="C:\temp\output.rtf" style=journal;
@@ -998,7 +1009,7 @@ run;
 proc print data=active_missing; 
 run;
 proc export data=active_missing
-  outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\active_study_participants_missing_covariates.csv" dbms=csv replace;
+  outfile="U:\Projects\Andrea Steck\Morgan Sooy DKA update\active_study_participants_missing_covariates.csv" dbms=csv replace;
 run;
 
 /* checking all participants with DKA=yes and DKA severity=unknown */
@@ -1007,7 +1018,7 @@ set alldata;
 where dka='Yes' and dka_sev="Unknown";
 run;
 proc export data=dka_severity_unknown
-  outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_severity_unknown.csv" dbms=csv replace;
+  outfile="U:\Projects\Andrea Steck\Morgan Sooy DKA update\dka_severity_unknown.csv" dbms=csv replace;
 run;
 
 proc print data=alldata;
