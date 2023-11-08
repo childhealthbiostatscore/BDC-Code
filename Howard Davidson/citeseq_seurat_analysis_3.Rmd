@@ -24,12 +24,30 @@ library(caTools)
 # analysis pckgs
 library(Seurat) # need these for Differential expression testing
 library(SeuratObject)
-# library(DESeq2)
+library(DESeq2)
 #library(scran)
 library(pzfx)
-
+library(SingleCellExperiment)
+library(S4Vectors)
 # cell express %
 library(scCustomize)
+
+###
+library(cowplot)
+#library(Matrix.utils)
+library(edgeR)
+library(Matrix)
+library(reshape2)
+library(S4Vectors)
+library(SingleCellExperiment)
+library(pheatmap)
+#library(apeglm)
+library(png)
+library(DESeq2)
+library(RColorBrewer)
+library(data.table)
+
+###
 
 # data
 home_dir = "S:/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/"
@@ -38,7 +56,11 @@ knitr::opts_knit$set(root.dir = home_dir)
 # cd4_processed = readRDS(paste0(home_dir, "OneDrive_1_6-28-2023/cd4_cells_processed.rds"))
 # cd8_processed = readRDS(paste0(home_dir, "OneDrive_1_6-28-2023/cd8_cells_processed.rds"))
 df = readRDS(paste0(home_dir, "OneDrive_1_6-28-2023/normalized.rds"))
-df2 = SetIdent(df, value= df@meta.data$RNA_clustifyr_celltype_individual)
+#use regular clusters
+df2 = df
+
+# new clusters
+#df2 = SetIdent(df, value= df@meta.data$RNA_clustifyr_celltype_individual)
 #rm(df)
 ```
 
@@ -190,6 +212,93 @@ avg_est_cpep = avg_est_cpep %>% mutate(avg_est_cpep_g_med = ifelse(mean_est_cpep
 df2@meta.data = left_join(df2@meta.data, avg_est_cpep,  by=c('donor_number'='id'))
 ```
 
+```{r pseudobulk, include=FALSE}
+
+# code modified from seurat website
+
+# Extract raw counts and metadata to create SingleCellExperiment object
+counts <- df2@assays$RNA@counts 
+
+metadata <- df2@meta.data
+
+# Set up metadata as desired for aggregation and DE analysis
+metadata$cluster_id <- factor(df2@active.ident)
+
+# Create single cell experiment object
+sce <- SingleCellExperiment(assays = list(counts = counts), 
+                           colData = metadata)
+
+# Explore the raw counts for the dataset
+
+## Check the assays present
+# assays(sce)
+
+## Check the counts matrix
+# dim(counts(sce))
+# counts(sce)[1:6, 1:6]
+
+# # Explore the cellular metadata for the dataset
+# 
+# dim(colData(sce))
+# head(colData(sce))
+
+# Extract unique names of clusters (= levels of cluster_id factor variable)
+cluster_names <- levels(colData(sce)$cluster_id)
+# cluster_names
+# 
+# # Total number of clusters = 13
+# length(cluster_names)
+
+# Extract unique names of samples (= levels of sample_id factor variable)
+ sample_names <- levels(colData(sce)$donor)
+# sample_names
+# 
+# # Total number of samples
+# length(sample_names)
+
+# Subset metadata to include only the variables you want to aggregate across (here, we want to aggregate by sample and by cluster)
+groups <- colData(sce)[, c("cluster_id", "donor")]
+head(groups)
+
+# Aggregate across cluster-sample groups
+# transposing row/columns to have cell_ids as row names matching those of groups
+aggregate.Matrix<-function(x,groupings=NULL,form=NULL,fun='sum',...)
+{
+  if(!is(x,'Matrix'))
+    x<-Matrix(as.matrix(x),sparse=TRUE)
+  if(fun=='count')
+    x<-x!=0
+  groupings2<-groupings
+  if(!is(groupings2,'data.frame'))
+    groupings2<-as(groupings2,'data.frame')
+  groupings2<-data.frame(lapply(groupings2,as.factor))
+  groupings2<-data.frame(interaction(groupings2,sep = '_'))
+  colnames(groupings2)<-'A'
+  if(is.null(form))
+    form<-as.formula('~0+.')
+  form<-as.formula(form)
+  mapping<-dMcast(groupings2,form)
+  colnames(mapping)<-substring(colnames(mapping),2)
+  result<-t(mapping) %*% x
+  if(fun=='mean')
+    result@x<-result@x/(aggregate.Matrix(x,groupings2,fun='count'))@x
+  attr(result,'crosswalk')<-grr::extract(groupings,match(rownames(result),groupings2$A))
+  return(result)
+}
+
+
+aggr_counts <- aggregate.Matrix(t(counts(sce)), 
+                                groupings = groups, fun = "sum") 
+
+# Explore output matrix
+# class(aggr_counts)
+# dim(aggr_counts)
+# aggr_counts[1:6, 1:6]
+# Transpose aggregated matrix to have genes as rows and samples as columns
+aggr_counts <- t(aggr_counts)
+aggr_counts[1:6, 1:6]
+
+```
 
 
 ```{r Findmarkers, include = FALSE}
