@@ -24,12 +24,30 @@ library(caTools)
 # analysis pckgs
 library(Seurat) # need these for Differential expression testing
 library(SeuratObject)
-# library(DESeq2)
+library(DESeq2)
 #library(scran)
 library(pzfx)
-
+library(SingleCellExperiment)
+library(S4Vectors)
 # cell express %
 library(scCustomize)
+
+###
+library(cowplot)
+#library(Matrix.utils)
+library(edgeR)
+library(Matrix)
+library(reshape2)
+library(S4Vectors)
+library(SingleCellExperiment)
+library(pheatmap)
+#library(apeglm)
+library(png)
+library(DESeq2)
+library(RColorBrewer)
+library(data.table)
+
+###
 
 # data
 home_dir = "S:/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/"
@@ -38,7 +56,11 @@ knitr::opts_knit$set(root.dir = home_dir)
 # cd4_processed = readRDS(paste0(home_dir, "OneDrive_1_6-28-2023/cd4_cells_processed.rds"))
 # cd8_processed = readRDS(paste0(home_dir, "OneDrive_1_6-28-2023/cd8_cells_processed.rds"))
 df = readRDS(paste0(home_dir, "OneDrive_1_6-28-2023/normalized.rds"))
-df2 = SetIdent(df, value= df@meta.data$RNA_clustifyr_celltype_individual)
+#use regular clusters
+df2 = df
+
+# new clusters
+#df2 = SetIdent(df, value= df@meta.data$RNA_clustifyr_celltype_individual)
 #rm(df)
 ```
 
@@ -84,44 +106,54 @@ delta_df$v_2y = factor(delta_df$v_2y, labels = c("Y0", "Y2"))
 delta_a1c = spread(delta_df%>% select(`HWD ID`, a1c, v_2y), v_2y, a1c)
 delta_wks = spread(delta_df%>% select(`HWD ID`, duration_current_wk, v_2y), v_2y, duration_current_wk) %>% mutate(Y0_t = Y0, Y2_t = Y2) %>% select(`HWD ID`, Y0_t, Y2_t)
 delta_df = full_join(delta_a1c, delta_wks); rm(delta_wks, delta_a1c, a1c_df_delta)
-# calculate delta; this is curently in weeks so well need to divid e by 52 to get it into terms of years
+# calculate delta; this is curently in weeks so well need to divide by 52 to get it into terms of years
 delta_df = delta_df %>% mutate(delta_a1c = (Y2- Y0)/(Y2_t/52 - Y0_t/52)) %>% select(`HWD ID`, delta_a1c)
 a1c_df = left_join(a1c_df, delta_df)
 
 
 a1c_df = a1c_df[, days_from_v1 :=  cumsum(c(0, diff(as.Date(VisitDate)))), by=`HWD ID`]# days from baseline
-# a1c_df = a1c_df %>% mutate(y1_elig = ifelse(abs(days_from_v1- 365) < 90, 1, 0),
-#                            abs_y1_days = ifelse(abs(days_from_v1- 365) < 90, abs(days_from_v1- 365), NA))
 
+a1c_auc_df = a1c_df %>% group_by(`HWD ID`) %>% filter(!is.na(a1c)) %>% mutate(auc_trap = trapz(days_from_v1, a1c))
+a1c_df = left_join(a1c_df, a1c_auc_df)
+# fill in values
+a1c_df = a1c_df %>% group_by(`HWD ID`) %>% fill(auc_trap)
 
-
-# 
-# a1c_y1 = a1c_df %>% group_by(`HWD ID`) %>% summarise(min_y1_days = min(abs_y1_days, na.rm = T))
-# a1c_y1 = a1c_df %>% group_by(`HWD ID`) %>% summarise(min_y1_days = min(abs_y1_days, na.rm = T))
-# a1c_y1$min_y1_days[is.infinite(a1c_y1$min_y1_days)] = NA
-# a1c_df = full_join(a1c_df, a1c_y1); rm(a1c_y1)
-# a1c_df = a1c_df %>% mutate(yr1a1c = ifelse(abs_y1_days == min_y1_days, a1c, NA))
-# a1c_df = a1c_df %>% group_by(`HWD ID`) %>% fill(yr1a1c)
-# 
-# 
-# avg_a1c = a1c_df %>% group_by(`HWD ID`) %>% summarise(meana1c = mean(a1c, na.rm = T),
-#                                                       firsta1c = first(a1c, na_rm = T),
-#                                                       maxa1c = max(a1c, na.rm=T),
-#                                                       yr1a1c = mean(yr1a1c, na.rm = T)) %>% mutate(id = `HWD ID`)
-
-# add in slopes and auc
-# a1c_slopes = a1c_df %>% group_by(`HWD ID`) %>% do(tidy(lm(a1c ~ days_from_v1, data = .))) %>% filter(term == "days_from_v1") %>% select(`HWD ID`, estimate) %>% rename(a1c_slope = estimate)
-# avg_a1c = left_join(avg_a1c, a1c_slopes) ; rm(a1c_slopes)
-
-avg_a1c$a1c_auc = sapply(split(a1c_df,a1c_df$`HWD ID`),function(df) trapz(df$days_from_v1,df$a1c))
+a1c_df = a1c_df %>% mutate(id = `HWD ID`)
 
 # dichotomize
-avg_a1c = avg_a1c %>% mutate(avg_a1c_g_med = ifelse(meana1c > median(meana1c,na.rm = T), "G_med", " L_med"),
-                             first_a1c_g_med = ifelse(firsta1c > median(firsta1c,na.rm = T), "G_med", " L_med"),
-                             y1_a1c_g_med = ifelse(yr1a1c > median(yr1a1c,na.rm = T), "G_med", " L_med"),
-                             max_a1c_g_med = ifelse(maxa1c > median(maxa1c,na.rm = T), "G_med", " L_med"),
-                             slope_a1c_g_med = ifelse(a1c_slope > median(a1c_slope,na.rm = T), "G_med", " L_med"),
-                             auc_a1c_g_med = ifelse(a1c_auc > median(a1c_auc,na.rm = T), "G_med", " L_med"))
+a1c_df = a1c_df %>% mutate(auc_a1c_g_med = ifelse(auc_trap > median(auc_trap,na.rm = T), "G_med", " L_med"),
+                           delta_a1c_g_med = ifelse(delta_a1c > median(delta_a1c,na.rm = T), "G_med", " L_med"))
+
+
+# IDDA1c
+
+# We are interested in delta, auc, not so much mean 
+# delta
+idda1c_df_delta = a1c_df %>% filter(!is.na(a1c)) %>% group_by(`HWD ID`) %>%  mutate(duration_current_wk = as.numeric(difftime(as.Date(VisitDate), as.Date(`Date of Diagnosis`), units = "weeks")),
+                                                   v_0y = ifelse(duration_current_wk == min(duration_current_wk), 1, 0),
+                                                   v_2y = ifelse(abs(duration_current_wk-104) == min(abs(duration_current_wk - 104)), 1, 0))
+
+# take the y0 and y2 dates and subtract a1c / time interval
+delta_df = idda1c_df_delta %>% filter(v_0y == 1 | v_2y == 1)
+delta_df$v_2y = factor(delta_df$v_2y, labels = c("Y0", "Y2"))
+delta_idda1c = spread(delta_df%>% select(`HWD ID`, IDDA1C, v_2y), v_2y, IDDA1C)
+
+### CONFIRM THAT THIS IS DOING WHAT WE WANT FOR ALL SUBJ
+
+delta_wks = spread(delta_df%>% select(`HWD ID`, duration_current_wk, v_2y), v_2y, duration_current_wk) %>% mutate(Y0_t = Y0, Y2_t = Y2) %>% select(`HWD ID`, Y0_t, Y2_t)
+delta_df = full_join(delta_a1c, delta_wks); rm(delta_wks, delta_a1c, a1c_df_delta)
+# calculate delta; this is curently in weeks so well need to divide by 52 to get it into terms of years
+delta_df = delta_df %>% mutate(delta_a1c = (Y2- Y0)/(Y2_t/52 - Y0_t/52)) %>% select(`HWD ID`, delta_a1c)
+a1c_df = left_join(a1c_df, delta_df)
+
+
+a1c_df = a1c_df[, days_from_v1 :=  cumsum(c(0, diff(as.Date(VisitDate)))), by=`HWD ID`]# days from baseline
+
+a1c_auc_df = a1c_df %>% group_by(`HWD ID`) %>% filter(!is.na(a1c)) %>% mutate(auc_trap = trapz(days_from_v1, a1c))
+a1c_df = left_join(a1c_df, a1c_auc_df)
+# fill in values
+a1c_df = a1c_df %>% group_by(`HWD ID`) %>% fill(auc_trap)
+
 
 
 df2@meta.data = left_join(df2@meta.data, avg_a1c,  by=c('donor_number'='id'))
@@ -180,6 +212,93 @@ avg_est_cpep = avg_est_cpep %>% mutate(avg_est_cpep_g_med = ifelse(mean_est_cpep
 df2@meta.data = left_join(df2@meta.data, avg_est_cpep,  by=c('donor_number'='id'))
 ```
 
+```{r pseudobulk, include=FALSE}
+
+# code modified from seurat website
+
+# Extract raw counts and metadata to create SingleCellExperiment object
+counts <- df2@assays$RNA@counts 
+
+metadata <- df2@meta.data
+
+# Set up metadata as desired for aggregation and DE analysis
+metadata$cluster_id <- factor(df2@active.ident)
+
+# Create single cell experiment object
+sce <- SingleCellExperiment(assays = list(counts = counts), 
+                           colData = metadata)
+
+# Explore the raw counts for the dataset
+
+## Check the assays present
+# assays(sce)
+
+## Check the counts matrix
+# dim(counts(sce))
+# counts(sce)[1:6, 1:6]
+
+# # Explore the cellular metadata for the dataset
+# 
+# dim(colData(sce))
+# head(colData(sce))
+
+# Extract unique names of clusters (= levels of cluster_id factor variable)
+cluster_names <- levels(colData(sce)$cluster_id)
+# cluster_names
+# 
+# # Total number of clusters = 13
+# length(cluster_names)
+
+# Extract unique names of samples (= levels of sample_id factor variable)
+ sample_names <- levels(colData(sce)$donor)
+# sample_names
+# 
+# # Total number of samples
+# length(sample_names)
+
+# Subset metadata to include only the variables you want to aggregate across (here, we want to aggregate by sample and by cluster)
+groups <- colData(sce)[, c("cluster_id", "donor")]
+head(groups)
+
+# Aggregate across cluster-sample groups
+# transposing row/columns to have cell_ids as row names matching those of groups
+aggregate.Matrix<-function(x,groupings=NULL,form=NULL,fun='sum',...)
+{
+  if(!is(x,'Matrix'))
+    x<-Matrix(as.matrix(x),sparse=TRUE)
+  if(fun=='count')
+    x<-x!=0
+  groupings2<-groupings
+  if(!is(groupings2,'data.frame'))
+    groupings2<-as(groupings2,'data.frame')
+  groupings2<-data.frame(lapply(groupings2,as.factor))
+  groupings2<-data.frame(interaction(groupings2,sep = '_'))
+  colnames(groupings2)<-'A'
+  if(is.null(form))
+    form<-as.formula('~0+.')
+  form<-as.formula(form)
+  mapping<-dMcast(groupings2,form)
+  colnames(mapping)<-substring(colnames(mapping),2)
+  result<-t(mapping) %*% x
+  if(fun=='mean')
+    result@x<-result@x/(aggregate.Matrix(x,groupings2,fun='count'))@x
+  attr(result,'crosswalk')<-grr::extract(groupings,match(rownames(result),groupings2$A))
+  return(result)
+}
+
+
+aggr_counts <- aggregate.Matrix(t(counts(sce)), 
+                                groupings = groups, fun = "sum") 
+
+# Explore output matrix
+# class(aggr_counts)
+# dim(aggr_counts)
+# aggr_counts[1:6, 1:6]
+# Transpose aggregated matrix to have genes as rows and samples as columns
+aggr_counts <- t(aggr_counts)
+aggr_counts[1:6, 1:6]
+
+```
 
 
 ```{r Findmarkers, include = FALSE}
