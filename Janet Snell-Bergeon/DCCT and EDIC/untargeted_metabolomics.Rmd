@@ -17,6 +17,7 @@ library(webchem)
 library(omu)
 library(PCAtools)
 library(dplyr)
+library(stringr)
 home_dir = ifelse(.Platform$OS.type != "unix","T:/Janet Snell-Bergeon/AHA collaborative grant/Metabolomics",
                   "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Metabolomics")
 knitr::opts_knit$set(root.dir = home_dir)
@@ -26,8 +27,8 @@ knitr::opts_knit$set(root.dir = home_dir)
 #setwd(home_dir)
 # Read in raw data
 raw_data <- 
-  read.csv("/Volumes/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Metabolomics/EDIC metabolomics final data matrix.csv",
-                     stringsAsFactors = F,na.strings = c("","NA"))
+  read.csv("/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Metabolomics/EDIC metabolomics final data matrix.csv", stringsAsFactors = F,na.strings = c("","NA"))
+compound.info <- raw_data %>% select(NovaMT.Library.No.,External.Identifier,Compound, m.z_light, m.z_heavy)
 # Format
 data <- raw_data %>% 
   mutate(compound = coalesce(NovaMT.Library.No.,External.Identifier),
@@ -47,305 +48,123 @@ data <- data %>% select(CVD:Healthy.124) %>% t(.) %>% as.data.frame(.) # Transpo
 colnames(data) <- names
 data$GlobalSampleID <- as.character(rownames(data))
 
-# create study group based on IDs, but what are HDs?
-
-
-
-data <- left_join(data,clinical,by = "GlobalSampleID")
-data <- data %>% select(GlobalSampleID:GROUP,everything())
-data$GROUP[grepl("QC",data$GlobalSampleID)] <- "QC"
-data$GROUP <- as.factor(data$GROUP)
-# QC batch info
-# Injection order
-sampledata <- read.csv("./Data_Cleaned/injection_seq.csv",
-                       stringsAsFactors = F)
-sampledata$batch <- sapply(strsplit(sampledata$SampleName,"_"),`[`,2)
-sampledata$batch[nrow(sampledata)] <- sampledata$batch[(nrow(sampledata)-1)]
-sampledata$batch <- sub("Batch0","",sampledata$batch)
-sampledata <- sampledata %>% fill(batch,.direction = "up") %>%
-  mutate(order = 1:n())
-# Merge
-data <- left_join(data,sampledata[,c("GlobalSampleID","batch")],
-                  by = "GlobalSampleID")
-data$batch <- as.factor(data$batch)
-
-
-# Order columns
-data <- data %>% select(GlobalSampleID:GROUP,batch,everything())
-# Column formats
-data[,c("GlobalSampleID","sex","race")] <- 
-  lapply(data[,c("GlobalSampleID","sex","race")],as.factor) 
+# get actual study IDs
+id_labels <- read.csv("/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Metabolomics/metabolomics_without_imputation.csv", nrows = 1)
+id_labels <- id_labels[,17:ncol(id_labels)]
+id_labels <- t(id_labels)
+a <- row.names(id_labels)
+id_labels <- cbind(id_labels, a)
+colnames(id_labels) <- c("group_id_labels","CURRENT_LABEL")
+id_labels <- as.data.frame(id_labels)
+id_labels$CURRENT_LABEL <- word(id_labels$CURRENT_LABEL,2,sep = "\\.")
+id_labels <- id_labels %>% filter(group_id_labels %in% c("CVD","HD","Healthy"))
+data <- cbind(data, id_labels)
+data_group <- row.names(data)
+data_group <- word(data_group,1,sep = "\\.")
+data <- cbind(data,data_group)
+# read in linking file
+linking <- read.csv("/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Data_Raw/snell_bergeon_21550_Linking_File.csv")
+linking$MASK_PAT <- linking$mask_pat
+linking <- linking %>% select(MASK_PAT, CURRENT_LABEL)
+linking$CURRENT_LABEL <- str_replace(linking$CURRENT_LABEL ," ", "_")
+data <- merge(data, linking, by="CURRENT_LABEL", all.x = T, all.y = F)
+# read in study data
+study_dat <- read.csv("/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics/Raw data/QEDIC_WP_DDA_60SPD_StudyInformat.csv")
+# need to link study data to results file
+data <- merge(data, study_dat, by="MASK_PAT", all.x = T, all.y = F)
+# reorder columns
+data <- cbind(data[,1:2],data[,412:ncol(data)],data[,3:411])
 ```
 
 # Pre-processing
 
 ```{r echo=FALSE}
 # Check for samples missing > 80% of compounds, remove them
-missing <- which(rowSums(is.na(data[,10:ncol(data)])) / length(10:ncol(data)) > 0.8)
-data <- data[-missing,]
+#missing <- (rowSums(is.na(data[,131:ncol(data)])) / length(131:ncol(data))) > 0.8
+#data <- data[-missing,]
 # Same for 0 instead of NA - none
-missing0 <- which(rowSums(data[,10:ncol(data)] == 0) / length(10:ncol(data)) > 0.8)
+#missing0 <- which(rowSums(data[,10:ncol(data)] == 0) / length(10:ncol(data)) > 0.8)
 # Check for and remove compounds with > 20% missing in research - none
-research <- which(colSums(is.na(data[!grepl("QC",data$GlobalSampleID),])) / 
-                    (nrow(data))-13 > 0.2)
+#research <- which(colSums(is.na(data[!grepl("QC",data$GlobalSampleID),])) / 
+#                    (nrow(data))-13 > 0.2)
 # or > 80% missing in QC - none
-qc <- names(which(colSums(is.na(data[grepl("QC",data$GlobalSampleID),10:ncol(data)])) / 
-                    13 > 0.2))
-data <- data[,!(names(data) %in% qc)]
+#qc <- names(which(colSums(is.na(data[grepl("QC",data$GlobalSampleID),10:ncol(data)])) / 
+#                    13 > 0.2))
+#data <- data[,!(names(data) %in% qc)]
 # Check for compounds with CV > 0.3 in QC samples
-qc_cv <- names(which(lapply(data[grepl("QC",data$GlobalSampleID),10:ncol(data)],function(x){
-  sd(x,na.rm = T)/mean(x,na.rm = T)
-}) > 0.3))
-data <- data[,!(names(data) %in% qc_cv)]
+#qc_cv <- names(which(lapply(data[grepl("QC",data$GlobalSampleID),131:ncol(data)],function(x){
+#  sd(x,na.rm = T)/mean(x,na.rm = T)
+#}) > 0.3))
+#data <- data[,!(names(data) %in% qc_cv)]
 # Remove bad name compound
-data[,grep("314_",colnames(data))] <- NULL
+#data[,grep("314_",colnames(data))] <- NULL
 ```
 
-Removed `r length(missing)` samples missing > 80% of compounds and `r length(missing0)` samples with > 80% of compounds equal to 0. Also removed `r length(research)` compounds with > 20% missing in research samples and `r length(qc)` compounds with > 80% missing in QC samples. Finally, removed `r length(qc_cv)` compounds with CV > 0.3 in QC samples. 
 
-# T tests
+# Moderated T Tests
 
-```{r echo=FALSE,cache=TRUE}
-# Find the effective number of variables for multiple testing adjustment.
-# Correlation matrix between all metabolites
-mets <- data[,10:ncol(data)]
-cor_mat <- cor(mets,use = "complete.obs")
-# Get eigenvalues for correlation matrix
-values <- eigen(cor_mat)$values
-# Calculate effective M
-M <- dim(cor_mat)[1]
-meff <- 1 + (M - 1)*(1 - (var(values)/M))
-# Try Randi's method of the number of PCs needed to explain 95% of variance 
-# pca <- pca(mets,center = T,scale = T,ncomp = 100)
-```
+## CARV
 
-```{r echo=FALSE}
-# Non-missing outcome
-X <- data[,c(7,8,10:ncol(data))]
-X <- X[!is.na(X[,1]),]
-X$GROUP <- as.factor(as.character(X$GROUP))
-# Log transform
-# X[,3:ncol(X)] <- lapply(X[,3:ncol(X)],function(x){log(x,base = 2)})
-ts <- lapply(colnames(X)[3:ncol(X)], 
-             function(x){
-               form <- as.formula(paste0(x,"~CACp"))
-               t <- t.test(form,X)
-               return(list("metabolite"=x,"p"=t$p.value))
-             })
-ts <- data.frame(do.call(rbind,ts))
-ts$p <- as.numeric(ts$p)
-ts <- ts[order(ts$p),]
-# Sidak correction
-alpha <- 1 - (1 - 0.05)^(1/meff)
-# Randi's suggestion
-# alpha <- 0.05 / 76
-ts <- ts[which(ts$p <= 0.05),]
-```
+Moderated t tests were performed to test for differences in proteins between those who experienced CARV and those who did not. 
 
-# ANOVA
-
-## Permutation Tests
-
-Density represents the number of significant metabolites and the red line indicates the number of hits in non-permuted data. P values were not adjusted for multiple comparisons.
-
-```{r echo=FALSE,eval=FALSE}
-# Non-missing outcome
-X <- data[,-1]
-X <- X[!is.na(X[,1]),]
-X[,2:5] <- lapply(X[,2:5],as.factor)
-
-anovas <- lapply(colnames(X)[7:ncol(X)], function(x){
-  form <- as.formula(paste0(x,"~GROUP+age+sex+race+batch"))
-  mod <- lm(form,X)
-  f <- anova(mod)
-  return(list("metabolite"=x,"p"=f$`Pr(>F)`[1]))
-})
-anovas <- data.frame(do.call(rbind,anovas))
-anovas$p <- as.numeric(anovas$p)
-anovas <- anovas[order(anovas$p),]
-# Correct for multiple testing
-anovas <- anovas[which(anovas$p <= alpha),]
-```
-
-# Moderated t tests
-
-```{r echo=FALSE,cache=TRUE}
-# Design matrix - 0 and 1 for CAC progression
-design <- as.data.frame(as.numeric(data$CACp)-1)
-colnames(design) <- "CACp"
-design <- model.matrix(~CACp,design)
-# "Expression" matrix (samples in columns) for each
-X <- data[match(rownames(design),rownames(X)),10:ncol(data)]
-# Linear model
-fit <- lmFit(t(X),design)
+```{r results='asis'}
+# Make design matrix
+carv <- model.matrix(~data$CARV)
+# Unadjusted models
+y <- t(data[,131:ncol(data)])
+fit <- lmFit(y,carv)
 fit <- eBayes(fit)
 # Results
-results <- topTable(fit,coef = 2,number = nrow(X))
-results$m.z <- sapply(strsplit(rownames(results),"_"),"[[",2)
-results$p.value <- results$P.Value
-results$t.score <- fit$t[match(rownames(results),rownames(fit$t)),2]
-results$foldchange <- 2^results$logFC
-results$pvalue <- results$P.Value
-# Columns
-results <- results[,c("m.z","p.value","t.score")]
-write.csv(results,"B:/Projects/Janet Snell-Bergeon/AHA collaborative grant/Multiomics pathways/Metaboanalyst results/global metabolomics results.csv")
-# These results must then be uploaded to MetaboAnalyst for compound identification.
-# Once the KEGG names are obtained they can be converted using CTS, and the results uploaded to ChemRICH
+res = topTable(fit,coef = 2,number=nrow(y),sort.by = "p")
+#res$NovaMT.Library.No. <- word(row.names(res),1,sep = "\\_")
+#res <- merge(res, compound.info, by=c("NovaMT.Library.No."), all.x = T, all.y = T)
+kable(res,row.names = F)
+write.csv(res,"/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Metabolomics/Reports/metabolomics_by_CARV.csv")
 ```
 
-# Moderated ANOVA
+#### Adjusted for sex, age, diabetes duration, treatment group
 
-```{r echo=FALSE}
-# Design matrix - 0 and 1 for CAC progression
-design <- as.data.frame(data$GROUP[data$GROUP != "QC"])
-colnames(design) <- "GROUP"
-design$GROUP <- as.factor(as.numeric(design$GROUP))
-design <- model.matrix(~GROUP,design)
-# "Expression" matrix (samples in columns) for each
-X <- data[match(rownames(design),rownames(X)),10:ncol(data)]
-# Linear model
-fit <- lmFit(t(X),design)
+```{r results='asis'}
+# Make design matrix
+carv <- model.matrix(~CARV+SEX+AGE+DURATION+GROUP,data)
+# Unadjusted models
+fit <- lmFit(y,carv)
 fit <- eBayes(fit)
 # Results
-results <- topTable(fit,coef = c(2,3),number = nrow(X))
-results$m.z <- sapply(strsplit(rownames(results),"_"),"[[",2)
-results$p.value <- results$P.Value
-results$t.score <- fit$t[match(rownames(results),rownames(fit$t)),2]
-write.csv(results[,c("m.z","p.value","t.score")],row.names = F,
-          file = "./Data_Cleaned/moderated_anova_GROUP.csv")
+res = topTable(fit,coef = 2,number = nrow(y),sort.by = "p")
+kable(head(res,10),caption = "Not adjusted for storage time",row.names = F)
+write.csv(res,"/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Metabolomics/Reports/metabolomics_by_CARV_adj_sex_age_duration_group.csv")
 ```
 
-# Metabolite classes
+## HARD
 
-```{r echo=FALSE}
-# Import identified compounds. These were found by uploading moderated t test
-# results to the peaks to pathways module in MetaboAnalyst
-kegg <- read.csv("./Data_Cleaned/mummichog_matched_compound_all.csv")
-# Add to data
-raw_data$Query.Mass <-raw_data$Neutral.Mass..Da.+1.0078
-classes <- left_join(raw_data,kegg,by = "Query.Mass")
-# Remove unidentified metabolites
-classes <- classes[!is.na(classes$Matched.Compound),]
-# Get compound classes
-colnames(classes)[which(colnames(classes) == "Matched.Compound")] <-
-  "KEGG"
-classes <- assign_hierarchy(classes,keep_unknowns = F,identifier = "KEGG")
-# Order by class name
-classes <- classes[order(classes$Class),]
+Moderated t tests were performed to test for differences in proteins between those who experienced HARD and those who did not. 
+
+```{r results='asis'}
+# Make design matrix
+hard <- model.matrix(~data$HARD)
+# Unadjusted models
+y <- t(data[,131:ncol(data)])
+fit <- lmFit(y,hard)
+fit <- eBayes(fit)
+# Results
+res = topTable(fit,coef = 2,number=nrow(y),sort.by = "p")
+#res$NovaMT.Library.No. <- word(row.names(res),1,sep = "\\_")
+#res <- merge(res, compound.info, by=c("NovaMT.Library.No."), all.x = T, all.y = T)
+kable(res,row.names = F)
+write.csv(res,"/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Metabolomics/Reports/metabolomics_by_HARD.csv")
 ```
 
-# Correlation matrix (clustered by metabolite class)
+#### Adjusted for sex, age, diabetes duration, treatment group
 
-```{r echo=FALSE}
-# Transpose for correlation matrix
-cor_mat <- t(classes[!is.na(classes$Class),24:263])
-colnames(cor_mat) <- classes$Class[!is.na(classes$Class)]
-# Clustered heatmap
-# Correlation matrix
-cor = round(cor(cor_mat,use = "pairwise.complete.obs"),3)
-heatmap(cor,Rowv = NA,Colv = NA,main = "No Clustering")
-heatmap(cor,main = "Default Clustering")
-```
-
-# PCA Heatmaps (per Randi Johnson)
-
-On imputed data from Qibin
-
-```{r pca heatmap}
-# Format data
-pca.mat = read.csv("./Data_Cleaned/metabolomics.csv",
-                     stringsAsFactors = F,na.strings = c("","NA"))
-compounds = pca.mat$Compound
-pca.mat = pca.mat[,25:ncol(pca.mat)]
-
-colnames(pca.mat) = gsub("IsoMS_results_","",colnames(pca.mat))
-colnames(pca.mat) = gsub("*_.*","",colnames(pca.mat))
-pca.mat$S171 = NULL
-pca.mat$S050 = NULL
-# Metadata
-cov = data[,1:9]
-rownames(cov) = cov$GlobalSampleID
-cov = cov[,-1]
-cov = cov[colnames(pca.mat),]
-# PCA
-pca = pca(pca.mat, metadata = cov, center=TRUE, scale=TRUE)
-```
-
-### Screeplots
-
-```{r screeplots}
-screeplot(pca,components = 1:30)
-```
-
-### Scatterplots
-
-```{r scatterplots}
-#Plot
-pca.frame <- pca$rotated
-pca.frame$class <- cov$GROUP
-ggplot(pca.frame, aes(x=PC1, y=PC2, color=class)) +
-  geom_point() +
-  theme_bw()
-```
-
-### Correlation heatmaps
-
-```{r cor_heatmaps,warning=FALSE,message=FALSE}
-eigencorplot(pca,metavars = 
-               c("age","sex","race","bmiV1","acV1","GROUP","batch"))
-```
-
-# Association with age, BMI, etc.
-
-## Age
-
-```{r}
-age = data$age[14:nrow(data)]
-ts = lapply(data[14:nrow(data),10:ncol(data)],function(x){
-  d = as.data.frame(cbind(age,x))
-  m = lm(age~x,d)
-  summary(m)$coefficients[2,4]
-})
-ts = do.call(rbind,ts)
-```
-
-Without adjusting for multiple comparisons, there are `r sum(ts<0.05)` metabolites significantly associated with age. After FDR adjustment there are `r sum(p.adjust(ts,"fdr")<0.05)`.
-
-## BMI
-
-```{r}
-bmi = data$bmi[14:nrow(data)]
-ts = lapply(data[14:nrow(data),10:ncol(data)],function(x){
-  d = as.data.frame(cbind(bmi,x))
-  m = lm(bmi~x,d)
-  summary(m)$coefficients[2,4]
-})
-ts = do.call(rbind,ts)
-```
-
-Without adjusting for multiple comparisons, there are `r sum(ts<0.05)` metabolites significantly associated with BMI. After FDR adjustment there are `r sum(p.adjust(ts,"fdr")<0.05)`.
-
-## Albumin to creatinine ratio
-
-```{r}
-ac = data$acV1[14:nrow(data)]
-ts = lapply(data[14:nrow(data),10:ncol(data)],function(x){
-  d = as.data.frame(cbind(ac,x))
-  m = lm(ac~x,d)
-  summary(m)$coefficients[2,4]
-})
-ts = do.call(rbind,ts)
-```
-
-Without adjusting for multiple comparisons, there are `r sum(ts<0.05)` metabolites significantly associated with BMI. After FDR adjustment there are `r sum(p.adjust(ts,"fdr")<0.05)`.
-
-```{r}
-# Get top metabolites for PC loadings
-l = lapply(pca$loadings, function(c){
-  o = order(abs(c),decreasing = T)
-  compounds[o]
-})
-l = do.call(cbind,l)
-write.csv(l,file = "./Data_Cleaned/pc_loadings.csv",
-          row.names = F,na="Unidentified")
+```{r results='asis'}
+# Make design matrix
+hard <- model.matrix(~HARD+SEX+AGE+DURATION+GROUP,data)
+# Unadjusted models
+fit <- lmFit(y,hard)
+fit <- eBayes(fit)
+# Results
+res = topTable(fit,coef = 2,number = nrow(y),sort.by = "p")
+kable(head(res,10),caption = "Not adjusted for storage time",row.names = F)
+write.csv(res,"/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Metabolomics/Reports/metabolomics_by_HARD_adj_sex_age_duration_group.csv")
 ```
