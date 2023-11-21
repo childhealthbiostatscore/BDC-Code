@@ -14,7 +14,7 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
 #knitr::opts_knit$set(root.dir = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/EDIC/Lipidomics")
-knitr::opts_knit$set(root.dir = "~/Dropbox/Work/Janet Snell-Bergeon/EDIC/Proteomics")
+#knitr::opts_knit$set(root.dir = "~/Dropbox/Work/Janet Snell-Bergeon/EDIC/Proteomics")
 library(tidyverse)
 library(limma)
 library(knitr)
@@ -22,9 +22,9 @@ library(knitr)
 
 ```{r include=FALSE}
 # Import
-intensities = read.csv("./Data_Clean/peptide_groups.csv",stringsAsFactors = F)
+intensities = read.csv("/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics/Raw data/peptide_groups.csv",stringsAsFactors = F)
 # Get compound info in separate frame
-info = read.csv("./Data_Clean/protein_info.csv",stringsAsFactors = F)
+info = read.csv("/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics/Raw data/protein_info.csv",stringsAsFactors = F)
 accession = sapply(strsplit(intensities[,"Master.Protein.Accessions"],"; "),"[[",1)
 sequence = intensities$Sequence
 compound_info = data.frame(cbind(accession,sequence))
@@ -38,8 +38,8 @@ intensities$sample_id = gsub("Abundance_","",rownames(intensities))
 intensities = intensities %>% select(sample_id,everything())
 intensities[,2:ncol(intensities)] = lapply(intensities[,2:ncol(intensities)],function(c){log(as.numeric(c))})
 # Get sample info and IDs
-sample.info = read.csv("./Data_Clean/study_info.csv")
-id_list = read.csv("./Data_Clean/id_list.csv")
+sample.info = read.csv("/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics/Raw data/QEDIC_WP_DDA_60SPD_StudyInformat.csv")
+id_list = read.csv("/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics/Raw data/sample_info.csv")
 id_list = id_list[,c("Subject.ID","Raw.File.Name")]
 sample.info = left_join(sample.info,id_list,by = "Subject.ID")
 sample.info = sample.info[!(duplicated(sample.info$Raw.File.Name)),]
@@ -69,10 +69,11 @@ y <- t(intensities[,2:ncol(intensities)])
 fit <- lmFit(y,carv)
 fit <- eBayes(fit)
 # Results
-res = topTable(fit,coef = 2,sort.by = "p")
+res = topTable(fit,coef = 2,number=nrow(y),sort.by = "p")
 res$Name = compound_info$Description[as.numeric(sub("V","",rownames(res)))]
 res$Function = compound_info$mol_function[as.numeric(sub("V","",rownames(res)))]
 kable(res,row.names = F)
+write.csv(res,"/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics/Reports/glycated_proteomics_by_CARV.csv")
 ```
 
 #### Adjusted for sex, age, diabetes duration, treatment group
@@ -88,6 +89,7 @@ res = topTable(fit,coef = 2,number = nrow(y),sort.by = "p")
 res$Name = compound_info$Description[as.numeric(sub("V","",rownames(res)))]
 res$Function = compound_info$mol_function[as.numeric(sub("V","",rownames(res)))]
 kable(head(res,10),caption = "Not adjusted for storage time",row.names = F)
+write.csv(res,"/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics/Reports/glycated_proteomics_by_CARV_adjusted_sex_age_duration_group.csv")
 ```
 
 There were `r sum(res$P.Value < 0.05,na.rm=T)` nominally significant proteins.
@@ -103,6 +105,7 @@ res = topTable(fit,coef = 2,number = nrow(y),sort.by = "p")
 res$Name = compound_info$Description[as.numeric(sub("V","",rownames(res)))]
 res$Function = compound_info$mol_function[as.numeric(sub("V","",rownames(res)))]
 kable(head(res,10),caption = "Adjusted for storage time",row.names = F)
+write.csv(res,"/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics/Reports/glycated_proteomics_by_CARV_adjusted_sex_age_duration_group_storagetime.csv")
 ```
 
 There were `r sum(res$P.Value < 0.05,na.rm=T)` nominally significant proteins.
@@ -111,8 +114,8 @@ There were `r sum(res$P.Value < 0.05,na.rm=T)` nominally significant proteins.
 
 ```{r results='asis'}
 # Make design matrices
-carv_low <- model.matrix(~CARV,low)
-carv_high <- model.matrix(~CARV,high)
+carv_low <- model.matrix(~CARV,low[low$sample_id %in% intensities$sample_id,])
+carv_high <- model.matrix(~CARV,high[high$sample_id %in% intensities$sample_id,])
 # Unadjusted models
 y_low <- t(intensities[intensities$sample_id %in% low$sample_id,2:ncol(intensities)])
 y_high <- t(intensities[intensities$sample_id %in% high$sample_id,2:ncol(intensities)])
@@ -129,6 +132,8 @@ high_res = topTable(fit_high,coef = 2,number = nrow(y_high),sort.by = "p")
 high_res$Name = compound_info$Description[as.numeric(sub("V","",rownames(high_res)))]
 high_res$Function = compound_info$mol_function[as.numeric(sub("V","",rownames(high_res)))]
 kable(head(high_res,10),caption = "High Storage Time",row.names = F)
+write.csv(low_res,"/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics/Reports/glycated_proteomics_by_CARV_low_storage_time.csv")
+write.csv(high_res,"/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics/Reports/glycated_proteomics_by_CARV_high_storage_time.csv")
 ```
 
 There were `r sum(low_res$P.Value < 0.05,na.rm=T)` nominally significant proteins in the low group and `r sum(high_res$P.Value < 0.05,na.rm=T)` in the high group.
@@ -137,8 +142,8 @@ There were `r sum(low_res$P.Value < 0.05,na.rm=T)` nominally significant protein
 
 ```{r results='asis'}
 # Split sample info
-male = sample.info[sample.info$SEX == "M",]
-female = sample.info[sample.info$SEX == "F",]
+male = sample.info[sample.info$SEX == "M" & sample.info$sample_id %in% intensities$sample_id,]
+female = sample.info[sample.info$SEX == "F" & sample.info$sample_id %in% intensities$sample_id,,]
 # Make design matrices
 carv_male <- model.matrix(~CARV,male)
 carv_female <- model.matrix(~CARV,female)
@@ -158,6 +163,8 @@ female_res = topTable(fit_female,coef = 2,number = nrow(y_high),sort.by = "p")
 female_res$Name = compound_info$Description[as.numeric(sub("V","",rownames(female_res)))]
 female_res$Function = compound_info$mol_function[as.numeric(sub("V","",rownames(female_res)))]
 kable(head(female_res,10),caption = "Females",row.names = F)
+write.csv(female_res,"/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics/Reports/glycated_proteomics_by_CARV_female.csv")
+write.csv(male_res,"/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics/Reports/glycated_proteomics_by_CARV_male.csv")
 ```
 
 There were `r sum(male_res$P.Value < 0.05,na.rm=T)` nominally significant proteins in the male group and `r sum(female_res$P.Value < 0.05,na.rm=T)` in the female group.
@@ -170,23 +177,25 @@ Moderated t tests were performed to test for differences in proteins between tho
 
 ```{r results='asis'}
 # Make design matrix
-hard <- model.matrix(~HARD,sample.info[!is.na(sample.info$storage_time),])
+hard <- model.matrix(~HARD,sample.info[!is.na(sample.info$storage_time) & sample.info$sample_id %in% intensities$sample_id,])
+hard <- model.matrix(~HARD,sample.info[sample.info$sample_id %in% intensities$sample_id,])
 # Unadjusted models
 y <- t(intensities[intensities$sample_id %in% sample.info[!is.na(sample.info$storage_time),"sample_id"],2:ncol(intensities)])
 fit <- lmFit(y,hard)
 fit <- eBayes(fit)
 # Results
-res = topTable(fit_low,coef = 2,sort.by = "p")
+res = topTable(fit_low,coef = 2,number=nrow(y),sort.by = "p")
 res$Name = compound_info$Description[as.numeric(sub("V","",rownames(res)))]
 res$Function = compound_info$mol_function[as.numeric(sub("V","",rownames(res)))]
 kable(res,row.names = F)
+write.csv(res,"/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics/Reports/glycated_proteomics_by_HARD.csv")
 ```
 
 ### Adjusted for sex, age, diabetes duration, treatment group
 
 ```{r results='asis'}
 # Make design matrix
-hard <- model.matrix(~HARD+SEX+AGE+DURATION+GROUP,sample.info)
+hard <- model.matrix(~HARD+SEX+AGE+DURATION+GROUP,sample.info[sample.info$sample_id %in% intensities$sample_id,])
 # Unadjusted models
 fit <- lmFit(y,hard)
 fit <- eBayes(fit)
@@ -195,13 +204,14 @@ res = topTable(fit,coef = 2,number = nrow(y),sort.by = "p")
 res$Name = compound_info$Description[as.numeric(sub("V","",rownames(res)))]
 res$Function = compound_info$mol_function[as.numeric(sub("V","",rownames(res)))]
 kable(head(res,10),caption = "Not adjusted for storage time",row.names = F)
+write.csv(res,"/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics/Reports/glycated_proteomics_by_HARD_adjusted_sex_age_duration_group.csv")
 ```
 
 There were `r sum(res$P.Value < 0.05,na.rm=T)` nominally significant proteins.
 
 ```{r results='asis'}
 # Make design matrix
-hard <- model.matrix(~HARD+SEX+AGE+DURATION+GROUP+storage_time,sample.info)
+hard <- model.matrix(~HARD+SEX+AGE+DURATION+GROUP+storage_time,sample.info[sample.info$sample_id %in% intensities$sample_id,])
 # Unadjusted models
 fit <- lmFit(y,hard)
 fit <- eBayes(fit)
@@ -210,6 +220,7 @@ res = topTable(fit,coef = 2,number = nrow(y),sort.by = "p")
 res$Name = compound_info$Description[as.numeric(sub("V","",rownames(res)))]
 res$Function = compound_info$mol_function[as.numeric(sub("V","",rownames(res)))]
 kable(head(res,10),caption = "Adjusted for storage time",row.names = F)
+write.csv(res,"/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics/Reports/glycated_proteomics_by_HARD_adjusted_sex_age_duration_group_storagetime.csv")
 ```
 
 There were `r sum(res$P.Value < 0.05,na.rm=T)` nominally significant proteins.
@@ -218,8 +229,8 @@ There were `r sum(res$P.Value < 0.05,na.rm=T)` nominally significant proteins.
 
 ```{r results='asis'}
 # Make design matrices
-hard_low <- model.matrix(~HARD,low)
-hard_high <- model.matrix(~HARD,high)
+hard_low <- model.matrix(~HARD,low[low$sample_id %in% intensities$sample_id,])
+hard_high <- model.matrix(~HARD,high[high$sample_id %in% intensities$sample_id,])
 # Unadjusted models
 y_low <- t(intensities[intensities$sample_id %in% low$sample_id,2:ncol(intensities)])
 y_high <- t(intensities[intensities$sample_id %in% high$sample_id,2:ncol(intensities)])
@@ -236,6 +247,8 @@ high_res = topTable(fit_high,coef = 2,number = nrow(y_high),sort.by = "p")
 high_res$Name = compound_info$Description[as.numeric(sub("V","",rownames(high_res)))]
 high_res$Function = compound_info$mol_function[as.numeric(sub("V","",rownames(high_res)))]
 kable(head(high_res,10),caption = "High Storage Time",row.names = F)
+write.csv(low_res,"/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics/Reports/glycated_proteomics_by_HARD_low_storage_time.csv")
+write.csv(high_res,"/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics/Reports/glycated_proteomics_by_HARD_high_storage_time.csv")
 ```
 
 There were `r sum(low_res$P.Value < 0.05,na.rm=T)` nominally significant proteins in the low group and `r sum(high_res$P.Value < 0.05,na.rm=T)` in the high group.
@@ -262,6 +275,8 @@ female_res = topTable(fit_female,coef = 2,number = nrow(y_high),sort.by = "p")
 female_res$Name = compound_info$Description[as.numeric(sub("V","",rownames(female_res)))]
 female_res$Function = compound_info$mol_function[as.numeric(sub("V","",rownames(female_res)))]
 kable(head(female_res,10),caption = "Females",row.names = F)
+write.csv(female_res,"/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics/Reports/glycated_proteomics_by_HARD_female.csv")
+write.csv(male_res,"/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics/Reports/glycated_proteomics_by_HARD_male.csv")
 ```
 
 There were `r sum(male_res$P.Value < 0.05,na.rm=T)` nominally significant proteins in the male group and `r sum(female_res$P.Value < 0.05,na.rm=T)` in the female group.
@@ -272,7 +287,7 @@ Moderated t tests were performed to test for differences in proteins between con
 
 ```{r results='asis'}
 # controls stratified by storage time
-controls = sample.info[sample.info$GROUP == "STANDARD",]
+controls = sample.info[sample.info$GROUP == "STANDARD" & sample.info$sample_id %in% intensities$sample_id,]
 # Make design matrix
 stor <- model.matrix(~storage_time,controls)
 # Unadjusted models
