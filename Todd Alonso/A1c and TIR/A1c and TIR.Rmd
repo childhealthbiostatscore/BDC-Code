@@ -21,8 +21,11 @@ library(tidyr)
 library(stringr)
 library(car)
 library(emmeans)
+library(plotly)
+library(ggpubr)
+library(patchwork)
 
-alldata <- read.csv("/Volumes/BDC/Projects/Todd Alonso/A1c and TIR/Raw data/Peds_T1D_5groups_5_11_withDKAcol.csv",na.strings = c(" ","","NULL","#VALUE","#VALUE!","?"))
+alldata <- read.csv("/Users/timvigers/Documents/Work/BDC/Todd Alonso/A1c and TIR/Raw data/Peds_T1D_5groups_5_11_withDKAcol.csv",na.strings = c(" ","","NULL","#VALUE","#VALUE!","?"))
 
 # original analysis limited to >= 70% SENSOR WEAR, with N=1952
 # for now, keep all patients in regardless of CGM use
@@ -47,7 +50,7 @@ data$DKA.at.onset <- ifelse(data$DKA.at.onset=="UNKN",NA,data$DKA.at.onset)
 data$A1C_Value <- ifelse(data$A1C_Value>14,14,data$A1C_Value)
 
 # read in data file with DKA and SH events
-dka_sh <- read.csv("/Volumes/BDC/Projects/Todd Alonso/A1c and TIR/Raw data/Peds_T1D_5groups_5_11_11152021 with SH and DKA event count.csv",na.strings = c(" ","","NULL","#VALUE","#VALUE!","?","N/A"))
+dka_sh <- read.csv("/Users/timvigers/Documents/Work/BDC/Todd Alonso/A1c and TIR/Raw data/Peds_T1D_5groups_5_11_11152021 with SH and DKA event count.csv",na.strings = c(" ","","NULL","#VALUE","#VALUE!","?","N/A"))
 data <- merge(data,dka_sh,by="EPICMRN",all.x = T,all.y = F)
 data$DKA_missing0 <- ifelse(is.na(data$DKA),0,data$DKA)
 data$SH_missing0 <- ifelse(is.na(data$SH),0,data$SH)
@@ -159,7 +162,8 @@ Pearson's correlation coefficient and generalized linear models were used to exa
 Model summary. 
 
 ```{r echo=FALSE, include=T, comment=""}
-dka_mod <- glm(DKA ~ as.factor(CGMUsePercent_group), data=data, offset = log(Visit.interval_days/365), family = "poisson")
+data$CGMUsePercent_group = as.factor(data$CGMUsePercent_group)
+dka_mod <- glm(DKA ~ CGMUsePercent_group, data=data, offset = log(Visit.interval_days/365), family = "poisson")
 dka_mod_anova <- Anova(dka_mod, type="III")
 print(dka_mod_anova)
 ```
@@ -177,7 +181,7 @@ print(dka_mod_means)
 Model summary. 
 
 ```{r echo=FALSE, include=T, comment=""}
-sh_mod <- glm(SH ~ as.factor(CGMUsePercent_group), data=data, offset = log(Visit.interval_days/365), family = "poisson")
+sh_mod <- glm(SH ~ CGMUsePercent_group, data=data, offset = log(Visit.interval_days/365), family = "poisson")
 sh_mod_anova <- Anova(sh_mod, type="III")
 print(sh_mod_anova)
 ```
@@ -377,4 +381,55 @@ The unadjusted correlation in those without DKA at diagnosis was `r corsave_dkan
 plot(dkano_a1clt14$A1C_Value,dkano_a1clt14$CGMInRange)
 
 summary(mod_dkano_a1clt14)
+```
+
+# 3D Regression: TIR, HbA1c, and Mean Sensor Glucose
+
+Due to the low proportion of HbA1c values above the limit of detection (approximately `r round(mean(data$A1C_Value >= 14)*100)`%), HbA1c values above the limit were set to 14 and included in the following analyses.
+
+```{r fig.height=10,fig.width=10}
+# PCA
+pca_data = na.omit(data_a1clt14[,c("CGMMeanGlucose","A1C_Value","CGMInRange")])
+pca = prcomp(pca_data)
+# Get PC1 line
+pc1_mean = (pca$x[, 1]*pca$rotation[1, 1]) + pca$center[1]
+pc1_a1c = (pca$x[, 1]*pca$rotation[2, 1]) + pca$center[2]
+pc1_tir = (pca$x[, 1]*pca$rotation[3, 1]) + pca$center[3]
+pcs = data.frame("CGMMeanGlucose" = pc1_mean,"A1C_Value" = pc1_a1c,
+                 "CGMInRange" = pc1_tir)
+# Base plot
+fig <- plot_ly(pca_data, x = ~CGMMeanGlucose, y = ~A1C_Value, z = ~CGMInRange, 
+               type = 'scatter3d', mode = 'markers',marker = list(size = 1))
+# Add PC1
+fig = fig %>% add_trace(data = pcs,
+                  x = ~CGMMeanGlucose, y = ~A1C_Value, z = ~CGMInRange,
+                  type = "scatter3d", mode = "lines+markers") %>%
+  layout(showlegend = FALSE)
+fig
+```
+
+## Pairwise linear models
+
+```{r fig.width=12,fig.height=9}
+p1 = ggscatter(data, x = "CGMMeanGlucose", y = "A1C_Value", add = "reg.line") +
+  stat_cor(p.accuracy = 0.001,
+    aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), 
+    label.y = 5.5,label.x = 300
+  ) +
+  stat_regline_equation(label.y = 4.75,label.x = 300) +
+  xlab("Mean Sensor Glucose") + ylab("HbA1c") + ggtitle("HbA1c vs. Mean Glucose")
+
+p2 = ggscatter(data, x = "CGMInRange", y = "A1C_Value", add = "reg.line") +
+  stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")), 
+           label.y = 12.5,label.x = 75,p.accuracy = 0.001) +
+  stat_regline_equation(label.y = 12,label.x = 75) +
+  xlab("TIR") + ylab("HbA1c") + ggtitle("HbA1c vs. TIR")
+
+p3 = ggscatter(data, y = "CGMInRange", x = "CGMMeanGlucose", add = "reg.line") +
+  stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+           label.y = 90,label.x = 250,p.accuracy = 0.001) +
+  stat_regline_equation(label.y = 80,label.x = 250) +
+  xlab("Mean Sensor Glucose") + ylab("TIR") + ggtitle("Mean Glucose vs. TIR")
+# Arrange
+(plot_spacer() + p1) / (p2 + p3)
 ```
