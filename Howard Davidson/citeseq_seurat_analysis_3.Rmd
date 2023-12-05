@@ -20,7 +20,7 @@ library(data.table)
 library(broom)
 library(pROC)
 library(caTools)
-
+library(glmnet)
 # analysis pckgs
 library(Seurat) # need these for Differential expression testing
 library(SeuratObject)
@@ -124,6 +124,10 @@ a1c_df = a1c_df %>% mutate(id = `HWD ID`)
 a1c_df = a1c_df %>% mutate(auc_a1c_g_med = ifelse(auc_trap > median(auc_trap,na.rm = T), "G_med", " L_med"),
                            delta_a1c_g_med = ifelse(delta_a1c > median(delta_a1c,na.rm = T), "G_med", " L_med"))
 
+# add donor id for below
+id_df = df2@meta.data %>% select(donor_number, donor) %>% unique()
+
+a1c_df = left_join(a1c_df, id_df, by=c('HWD ID'= "donor_number"))
 
 # IDDA1c
 
@@ -446,9 +450,120 @@ df_binder = function(listy){
 counts_df = df_binder(counts_df)
 
 # do we want to melt the~24000 variables into one variable?
-```
+counts_df_long = melt(setDT(counts_df), id.vars = c("donor", "cluster", "newid"), variable.name = "gene")
+counts_df_long = counts_df_long %>% group_by(cluster) %>% mutate(total_counts = sum(value),
+                                                                 p_exp_ind = value/total_counts)
 
+counts_df_long = counts_df_long %>% group_by(cluster,gene) %>% mutate(total_value = sum(value),
+                                                                            p_exp = total_value/total_counts)
+
+gene_clusters = counts_df_long %>% select(cluster, gene, total_value, total_counts, p_exp) %>% unique()
+# top 500 by clusters?
+genecluster_xpress_t500 = gene_clusters %>% group_by(cluster) %>% arrange(desc(p_exp))  %>% dplyr::slice(1:5)
+```
 
 notes: cluster metadata:
 
-very small cell counts for the clusters 10- 12 (maybe 9)
+very small cell counts for the clusters 10- 12 (maybe 9 as well)
+
+
+```{r elasticnet, include=FALSE}
+# we have the regular a1c outcomes df, a1c_df (outcomes are a1c delta and a1c auc)
+# we have pseudobulked genes by both cluseter and cluster/id in countsdflong and genecluster
+
+# combine datasets? once per cluster?
+test_net_df = 
+
+  
+  
+ ###### from tim ############
+small_subset = transformed_df
+
+small_subset = small_subset %>% mutate(y = cpep_model_decayrate) %>% select(-cpep_model_decayrate)
+small_subset = small_subset %>% na.omit
+
+# no formula in recipe
+small_subset_recipe = recipe(small_subset)%>%  update_role(everything()) %>% update_role(y, new_role = "outcome")
+small_subset_recipe = small_subset_recipe %>% step_nzv(all_predictors())
+## PCA
+
+# pca_large_subset = 
+#   large_subset_recipe %>%
+#   step_pca(all_predictors(), num_comp = 2)
+cv <- trainControl(method = "cv", number = 5,allowParallel = T)
+
+# Base recipe
+# Need to use role updating for large dimension datasets
+cpep_recipe <- recipe(df) %>%
+  update_role(cpep_model_decayrate,new_role = "outcome") %>%
+  update_role(-one_of("cpep_model_decayrate"),new_role = "predictor") %>%
+  step_nzv(all_predictors())
+
+# Use caret to train the model
+
+# Parallel training
+cl <- makePSOCKcluster(detectCores()*0.5)
+registerDoParallel(cl)
+elnet <- train(
+  small_subset_recipe,
+  data = na.omit(small_subset),
+  method = "glmnet",
+  family = "binomial",
+  trControl = cv,
+  tuneLength = 10,
+  allowParallel = T
+)
+stopCluster(cl)
+# Get the best models
+res = elnet$results
+kable(head(res[order(res$Accuracy,decreasing = T),],5),row.names = F)
+
+
+
+
+
+
+########################
+  
+  #### SAMPLE CODE #######
+pkgs <- list("glmnet", "doParallel", "foreach", "pROC")
+lapply(pkgs, require, character.only = T)
+registerDoParallel(cores = 4)
+ 
+df1 <- read.csv("Downloads/credit_count.txt")
+df2 <- df1[df1$CARDHLDR == 1, ]
+set.seed(2017)
+n <- nrow(df2)
+sample <- sample(seq(n), size = n * 0.5, replace = FALSE)
+train <- df2[sample, -1]
+test <- df2[-sample, -1]
+mdlY <- as.factor(as.matrix(train["DEFAULT"]))
+mdlX <- as.matrix(train[setdiff(colnames(df1), c("CARDHLDR", "DEFAULT"))])
+newY <- as.factor(as.matrix(test["DEFAULT"]))
+newX <- as.matrix(test[setdiff(colnames(df1), c("CARDHLDR", "DEFAULT"))])
+# ELASTIC NET WITH 0 < ALPHA < 1
+a <- seq(0.1, 0.9, 0.05)
+search <- foreach(i = a, .combine = rbind) %dopar% {
+  cv <- cv.glmnet(mdlX, mdlY, family = "binomial", nfold = 10, type.measure = "deviance", paralle = TRUE, alpha = i)
+  data.frame(cvm = cv$cvm[cv$lambda == cv$lambda.1se], lambda.1se = cv$lambda.1se, alpha = i)
+}
+cv3 <- search[search$cvm == min(search$cvm), ]
+md3 <- glmnet(mdlX, mdlY, family = "binomial", lambda = cv3$lambda.1se, alpha = cv3$alpha)
+coef(md3)
+#(Intercept) -1.434700e+00
+#AGE         -8.426525e-04
+#ACADMOS      .           
+#ADEPCNT      .           
+#MAJORDRG     6.276924e-02
+#MINORDRG     .           
+#OWNRENT     -2.780958e-02
+#INCOME      -1.305118e-04
+#SELFEMPL     .           
+#INCPER      -2.085349e-06
+#EXP_INC      .           
+#SPENDING     .           
+#LOGSPEND    -9.992808e-02
+roc(newY, as.numeric(predict(md3, newX, type = "response")))
+#Area under the curve: 0.6449
+
+```
