@@ -46,7 +46,7 @@ library(png)
 library(DESeq2)
 library(RColorBrewer)
 library(data.table)
-
+library(Matrix.utils)
 ###
 
 # data
@@ -213,7 +213,6 @@ df2@meta.data = left_join(df2@meta.data, avg_est_cpep,  by=c('donor_number'='id'
 ```
 
 ```{r pseudobulk, include=FALSE}
-
 # code modified from seurat website
 
 # Extract raw counts and metadata to create SingleCellExperiment object
@@ -286,7 +285,7 @@ aggregate.Matrix<-function(x,groupings=NULL,form=NULL,fun='sum',...)
   return(result)
 }
 
-
+#remotes::install_github("cvarrichio/Matrix.utils")
 aggr_counts <- aggregate.Matrix(t(counts(sce)), 
                                 groupings = groups, fun = "sum") 
 
@@ -296,293 +295,143 @@ aggr_counts <- aggregate.Matrix(t(counts(sce)),
 # aggr_counts[1:6, 1:6]
 # Transpose aggregated matrix to have genes as rows and samples as columns
 aggr_counts <- t(aggr_counts)
-aggr_counts[1:6, 1:6]
+# aggr_counts[1:6, 1:6]
 
+## Exploring structure of function output (list)
+#tstrsplit(colnames(aggr_counts), "_") %>% str()
+
+## Comparing the first 10 elements of our input and output strings
+# head(colnames(aggr_counts), n = 10)
+# head(tstrsplit(colnames(aggr_counts), "_")[[1]], n = 10)
+
+# Loop over all cell types to extract corresponding counts, and store information in a list
+
+
+# cluster level
+## Initiate empty list
+counts_ls <- list()
+
+for (i in 1:length(cluster_names)) {
+
+  ## Extract indexes of columns in the global matrix that match a given cluster
+  column_idx <- which(tstrsplit(colnames(aggr_counts), "_")[[1]] == cluster_names[i])
+  
+  ## Store corresponding sub-matrix as one element of a list
+  counts_ls[[i]] <- aggr_counts[, column_idx]
+  names(counts_ls)[i] <- cluster_names[i]
+
+}
+
+# Explore the different components of the list
+str(counts_ls)
+
+# sample level
+# Reminder: explore structure of metadata
+#head(colData(sce))
+
+# Extract sample-level variables
+metadata <- colData(sce) %>% 
+  as.data.frame() %>% 
+  dplyr::select( donor, donor_number)
+ 
+# dim(metadata)
+# head(metadata)
+
+# Exclude duplicated rows
+metadata <- metadata[!duplicated(metadata), ]
+rownames(metadata) <- metadata$donor
+# dim(metadata)
+# head(metadata)
+
+
+# Number of cells per sample and cluster
+# t <- table(colData(sce)$donor,
+#            colData(sce)$cluster_id)
+# t[1:6, 1:6]
+
+# Creating metadata list
+
+## Initiate empty list
+metadata_ls <- list()
+
+for (i in 1:length(counts_ls)) {
+  
+    ## Initiate a data frame for cluster i with one row per sample (matching column names in the counts matrix)
+    df_pb <- data.frame(cluster_sample_id = colnames(counts_ls[[i]]))
+    
+    ## Use tstrsplit() to separate cluster (cell type) and sample IDs
+    df_pb$cluster_id <- tstrsplit(df_pb$cluster_sample_id, "_")[[1]]
+    df_pb$donor  <- tstrsplit(df_pb$cluster_sample_id, "_")[[2]]
+    
+    
+    ## Retrieve cell count information for this cluster from global cell count table
+    idx <- which(colnames(t) == unique(df_pb$cluster_id))
+    cell_counts <- t[, idx]
+    
+    ## Remove samples with zero cell contributing to the cluster
+    cell_counts <- cell_counts[cell_counts > 0]
+    
+    ## Match order of cell_counts and sample_ids
+    sample_order <- match(df_pb$donor, names(cell_counts))
+    cell_counts <- cell_counts[sample_order]
+    
+    ## Append cell_counts to data frame
+    df_pb$cell_count <- cell_counts
+    
+    
+    ## Join data frame (capturing metadata specific to cluster) to generic metadata
+    df_pb <- plyr::join(df_pb, metadata, 
+                     by = intersect(names(df_pb), names(metadata)))
+    
+    ## Update rownames of metadata to match colnames of count matrix, as needed later for DE
+    rownames(df_pb) <- df_pb$cluster_sample_id
+    
+    ## Store complete metadata for cluster i in list
+    metadata_ls[[i]] <- df_pb
+    names(metadata_ls)[i] <- unique(df_pb$cluster_id)
+
+}
+
+# Explore the different components of the list
+#str(metadata_ls)
+
+
+# Select cell type of interest
+# cluster_names
+# Double-check that both lists have same names
+all(names(counts_ls) == names(metadata_ls))
+
+
+# Check matching of matrix columns and metadata rows
+cluster_counts <- counts_ls[[8]]
+cluster_metadata <- metadata_ls[[8]]
+
+cluster_counts[1:6, 1:6]
+head(cluster_metadata)
+
+all(colnames(cluster_counts) == rownames(cluster_metadata))
+###################################################
+# this is the part that im not sure is doing what we want it to do
+# Create DESeq2 object        
+dds <- DESeqDataSetFromMatrix(cluster_counts, 
+                              colData = cluster_metadata, 
+                              design = ~ 1)
+
+###################################################
+
+# i think we want a matrix/dataframe where each matrix is combined and added a cluster variable?
+test = lapply(counts_ls, t)
+
+test4 = test[[1]]
+test4[1:6, 1:6]
+
+
+test2 = lapply(test, as.data.frame)
+
+test2 = plyr::rbind.fill.matrix(test)
 ```
 
 
-```{r Findmarkers, include = FALSE}
-#view(df2@meta.data)
-############ A1C ##############
-# set a1c groups as the ident
-# avg a1c
-Idents(df2) = df2$avg_a1c_g_med
-a1c_avg_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
+notes: cluster metadata:
 
-# slope a1c
-Idents(df2) = df2$slope_a1c_g_med
-a1c_slope_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
-
-# auc a1c
-Idents(df2) = df2$auc_a1c_g_med
-a1c_auc_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
-###############################
-
-############ IDDA1C ##############
-# set a1c groups as the ident
-# avg idda1c
-Idents(df2) = df2$avg_idda1c_g_med
-idda1c_avg_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
-
-# slope idda1c
-Idents(df2) = df2$slope_idda1c_g_med
-idda1c_slope_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
-
-# auc idda1c
-Idents(df2) = df2$auc_idda1c_g_med
-idda1c_auc_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
-###############################
-
-############ Daily Dose ##############
-# set a1c groups as the ident
-# avg dose_udk
-Idents(df2) = df2$avg_dose_udk_g_med
-dose_udk_avg_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
-
-# slope dose_udk
-Idents(df2) = df2$slope_dose_udk_g_med
-dose_udk_slope_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
-
-# auc dose_udk
-Idents(df2) = df2$auc_dose_udk_g_med
-dose_udk_auc_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
-###############################
-
-############ cpep ##############
-# set a1c groups as the ident
-# avg est_cpep
-Idents(df2) = df2$avg_est_cpep_g_med
-est_cpep_avg_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
-
-# slope est_cpep
-Idents(df2) = df2$slope_est_cpep_g_med
-est_cpep_slope_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
-
-# auc est_cpep
-Idents(df2) = df2$auc_est_cpep_g_med
-est_cpep_auc_markers = FindMarkers(df2, ident.1 = 'G_med', ident.2 = ' L_med')
-###############################
-```
-
-# Main Questions
-
-# A1c
-
-## cutoff values used
-
--   mean a1c: `r median(avg_a1c$meana1c, na.rm = T)`
--   slope: `r median(avg_a1c$a1c_slope, na.rm = T)`
--   auc: `r median(avg_a1c$a1c_auc, na.rm = T)`
-
-### Mean
-
-```{r}
-kable(a1c_avg_markers)
-```
-
-### Slope
-
-```{r}
-kable(a1c_slope_markers)
-```
-
-### AUC
-
-```{r}
-kable(a1c_auc_markers)
-```
-
-### Intersection
-
-```{r}
-# All 3
-print("All 3 Groups")
-Reduce(intersect, list(
-  rownames(a1c_slope_markers),
-  rownames(a1c_avg_markers),  rownames(a1c_auc_markers)
-))
-
-print("Slope and Avg")
-Reduce(intersect, list(
-  rownames(a1c_slope_markers),
-  rownames(a1c_avg_markers)
-))
-
-
-print("Slope and AUC")
-Reduce(intersect, list(
-  rownames(a1c_slope_markers), rownames(a1c_auc_markers)
-))
-
-
-print("Avg and AUC")
-Reduce(intersect, list(
-  rownames(a1c_avg_markers), rownames(a1c_auc_markers)
-))
-```
-
-
-# IDDA1C
-
-## cutoff values used
-
--   mean a1c: `r median(avg_idda1c$mean_idda1c, na.rm = T)`
--   slope: `r median(avg_idda1c$idda1c_slope, na.rm = T)`
--   auc: `r median(avg_idda1c$idda1c_auc, na.rm = T)`
-
-### Mean
-
-```{r}
-kable(idda1c_avg_markers)
-```
-
-### Slope
-
-```{r}
-kable(idda1c_slope_markers)
-```
-
-### AUC
-
-```{r}
-kable(idda1c_auc_markers)
-```
-
-### Intersection
-
-```{r}
-# All 3
-print("All 3 Groups")
-Reduce(intersect, list(
-  rownames(idda1c_slope_markers),
-  rownames(idda1c_avg_markers),  rownames(idda1c_auc_markers)
-))
-
-print("Slope and Avg")
-Reduce(intersect, list(
-  rownames(idda1c_slope_markers),
-  rownames(idda1c_avg_markers)
-))
-
-
-print("Slope and AUC")
-Reduce(intersect, list(
-  rownames(idda1c_slope_markers), rownames(idda1c_auc_markers)
-))
-
-
-print("Avg and AUC")
-Reduce(intersect, list(
-  rownames(idda1c_avg_markers), rownames(idda1c_auc_markers)
-))
-```
-
-# dose_udk
-
-## cutoff values used
-
--   mean a1c: `r median(avg_dose_udk$mean_dose_udk, na.rm = T)`
--   slope: `r median(avg_dose_udk$dose_udk_slope, na.rm = T)`
--   auc: `r median(avg_dose_udk$dose_udk_auc, na.rm = T)`
-
-### Mean
-
-```{r}
-kable(dose_udk_avg_markers)
-```
-
-### Slope
-
-```{r}
-kable(dose_udk_slope_markers)
-```
-
-### AUC
-
-```{r}
-kable(dose_udk_auc_markers)
-```
-
-### Intersection
-
-```{r}
-# All 3
-print("All 3 Groups")
-Reduce(intersect, list(
-  rownames(dose_udk_slope_markers),
-  rownames(dose_udk_avg_markers),  rownames(dose_udk_auc_markers)
-))
-
-print("Slope and Avg")
-Reduce(intersect, list(
-  rownames(dose_udk_slope_markers),
-  rownames(dose_udk_avg_markers)
-))
-
-
-print("Slope and AUC")
-Reduce(intersect, list(
-  rownames(dose_udk_slope_markers), rownames(dose_udk_auc_markers)
-))
-
-
-print("Avg and AUC")
-Reduce(intersect, list(
-  rownames(dose_udk_avg_markers), rownames(dose_udk_auc_markers)
-))
-```
-
-# est_cpep
-
-## cutoff values used
-
--   mean a1c: `r median(avg_est_cpep$mean_est_cpep, na.rm = T)`
--   slope: `r median(avg_est_cpep$est_cpep_slope, na.rm = T)`
--   auc: `r median(avg_est_cpep$est_cpep_auc, na.rm = T)`
-
-### Mean
-
-```{r}
-kable(est_cpep_avg_markers)
-```
-
-### Slope
-
-```{r}
-kable(est_cpep_slope_markers)
-```
-
-### AUC
-
-```{r}
-kable(est_cpep_auc_markers)
-```
-
-### Intersection
-
-```{r}
-# All 3
-print("All 3 Groups")
-Reduce(intersect, list(
-  rownames(est_cpep_slope_markers),
-  rownames(est_cpep_avg_markers),  rownames(est_cpep_auc_markers)
-))
-
-print("Slope and Avg")
-Reduce(intersect, list(
-  rownames(est_cpep_slope_markers),
-  rownames(est_cpep_avg_markers)
-))
-
-
-print("Slope and AUC")
-Reduce(intersect, list(
-  rownames(est_cpep_slope_markers), rownames(est_cpep_auc_markers)
-))
-
-
-print("Avg and AUC")
-Reduce(intersect, list(
-  rownames(est_cpep_avg_markers), rownames(est_cpep_auc_markers)
-))
-```
+very small cell counts for the clusters 10- 12 (maybe 9)
