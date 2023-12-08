@@ -6,9 +6,6 @@ output: word_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
-knitr::opts_knit$set(root.dir = "B:/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/")
-#knitr::opts_knit$set(root.dir = "/Volumes/som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01")
 library(arsenal)
 library(skimr)
 library(knitr)
@@ -17,6 +14,15 @@ library(caret)
 library(limma)
 library(tableone)
 library(mixOmics)
+switch(Sys.info()[["sysname"]],
+  Windows = {
+    home_dir <- "B:/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics"
+  },
+  Darwin = {
+    home_dir <- "/Users/timvigers/Dropbox/Work/BDC/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics"
+  }
+)
+knitr::opts_knit$set(root.dir = home_dir,echo = F)
 ```
 
 ```{r, echo=FALSE, warning=FALSE}
@@ -26,10 +32,10 @@ library(mixOmics)
 # Convert to categorical
 
 # Janet merged in correct age and diabetes duration at the metabolomics visit
-df <- read.csv("B:/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics/Raw data/QEDIC_WP_DDA_60SPD_StudyInformat.csv")
+df <- read.csv("Raw data/QEDIC_WP_DDA_60SPD_StudyInformat.csv")
 #df <- read.csv("./Raw data/QEDIC_WP_DDA_60SPD_StudyInformat.csv")
 # Proteins
-prot = read.delim("B:/Projects/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01/Proteomics/Raw data/EDIC_WP_DDA_60SPD_Proteins.txt")
+prot = read.delim("Raw data/EDIC_WP_DDA_60SPD_Proteins.txt")
 #prot = read.delim("./Raw data/EDIC_WP_DDA_60SPD_Proteins.txt")
 rownames(prot) = prot$Accession
 X = prot[,grep("Normalized",colnames(prot))]
@@ -60,7 +66,8 @@ nmiss_row <- apply(df[,names(df) %in% protnames],1,function(x) sum(is.na(x)))
 # VisitAge VisitDuration SEX BMI00	DBP00	SBP00	AER00	CHL00	TRG00	HDL00	LDL00 SMOKE00
 # not sure which variable corresponds to baseline HbA1c
 df$SMOKE00 <- as.factor(df$SMOKE00)
-t1_vars <- c("VisitAge","VisitDuration","SEX","BMI00","DBP00","SBP00","AER00","CHL00","TRG00","HDL00","LDL00","SMOKE00")
+t1_vars <- c("VisitAge","VisitDuration","SEX","BMI00","DBP00","SBP00",
+             "AER00","CHL00","TRG00","HDL00","LDL00","SMOKE00")
 t1 <- CreateTableOne(data=df,vars=t1_vars,strata = "CARV")
 t1 <- print(t1,printToggle = F,varLabels=TRUE,missing=T,showAllLevels = T,test = T)
 
@@ -85,7 +92,8 @@ colnames(desc) <- c("Description","protid")
 results_cvd$protid <- row.names(results_cvd)
 results_cvd <- merge(results_cvd,desc,by="protid",all.x=T,all.y = T)
 results_cvd <- results_cvd[order(results_cvd$adj.P.Val),] 
-write.csv(results_cvd,"B:\\Projects\\Janet Snell-Bergeon\\CACTI DCCT EDIC omics R01\\Proteomics\\Reports\\DCCT EDIC CARV.csv")
+results_cvd$symbol = prot$Gene.Symbol[match(results_cvd$protid,prot$Accession)]
+write.csv(results_cvd,"Reports/DCCT EDIC CARV.csv")
 #write.csv(results_cvd,"./Reports/DCCT EDIC CARV.csv")
 # need to adjust for tx
 cvd_contrast_adj <- model.matrix(~CARV + GROUP , data=df)
@@ -96,7 +104,7 @@ results_cvd_adj <- topTable(fit_cvd_adj,coef = 2,number = nrow(ymat))
 results_cvd_adj$protid <- row.names(results_cvd_adj)
 results_cvd_adj <- merge(results_cvd_adj,desc,by="protid",all.x=T,all.y = T)
 results_cvd_adj <- results_cvd_adj[order(results_cvd_adj$adj.P.Val),] 
-write.csv(results_cvd_adj,"B:\\Projects\\Janet Snell-Bergeon\\CACTI DCCT EDIC omics R01\\Proteomics\\Reports\\DCCT EDIC CARV adjusted GROUP.csv")
+write.csv(results_cvd_adj,"Reports/DCCT EDIC CARV adjusted GROUP.csv")
 #write.csv(results_cvd_adj,"./Reports/DCCT EDIC CARV adjusted GROUP.csv")
 
 # adjust for sex, age, and duration
@@ -108,7 +116,7 @@ results_cvd_adj2 <- topTable(fit_cvd_adj2,coef = 2,number = nrow(ymat))
 results_cvd_adj2$protid <- row.names(results_cvd_adj2)
 results_cvd_adj2 <- merge(results_cvd_adj2,desc,by="protid",all.x=T,all.y = T)
 results_cvd_adj2 <- results_cvd_adj2[order(results_cvd_adj2$adj.P.Val),] 
-write.csv(results_cvd_adj2,"B:\\Projects\\Janet Snell-Bergeon\\CACTI DCCT EDIC omics R01\\Proteomics\\Reports\\DCCT EDIC CARV adjusted GROUP VisitAge SEX Visit Duration.csv")
+write.csv(results_cvd_adj2,"Reports/DCCT EDIC CARV adjusted GROUP VisitAge SEX Visit Duration.csv")
 #write.csv(results_cvd_adj2,"./Reports/DCCT EDIC CARV adjusted GROUP VisitAge SEX Visit Duration.csv")
 
 # limma stratified by sex
@@ -135,7 +143,7 @@ colnames(desc) <- c("Description","protid")
 results_cvd_males$protid <- row.names(results_cvd_males)
 results_cvd_males <- merge(results_cvd_males,desc,by="protid",all.x=T,all.y = T)
 results_cvd_males <- results_cvd_males[order(results_cvd_males$adj.P.Val),] 
-write.csv(results_cvd_males,"B:\\Projects\\Janet Snell-Bergeon\\CACTI DCCT EDIC omics R01\\Proteomics\\Reports\\DCCT EDIC CARV males.csv")
+write.csv(results_cvd_males,"Reports/DCCT EDIC CARV males.csv")
 results_cvd_females <- topTable(fit_cvd_females,coef = 2,number = nrow(ymat))
 desc <- as.data.frame(prot[,"Description"])
 desc$protid <- row.names(prot)
@@ -143,7 +151,7 @@ colnames(desc) <- c("Description","protid")
 results_cvd_females$protid <- row.names(results_cvd_females)
 results_cvd_females <- merge(results_cvd_females,desc,by="protid",all.x=T,all.y = T)
 results_cvd_females <- results_cvd_females[order(results_cvd_females$adj.P.Val),] 
-write.csv(results_cvd_females,"B:\\Projects\\Janet Snell-Bergeon\\CACTI DCCT EDIC omics R01\\Proteomics\\Reports\\DCCT EDIC CARV females.csv")
+write.csv(results_cvd_females,"Reports/DCCT EDIC CARV females.csv")
 # ADJUSTED FOR TX
 cvd_contrast_adj_males <- model.matrix(~CARV + GROUP , data=males)
 fit_cvd_adj_males <- lmFit(ymat_males,cvd_contrast_adj_males)
@@ -156,12 +164,12 @@ results_cvd_adj_males <- topTable(fit_cvd_adj_males,coef = 2,number = nrow(ymat)
 results_cvd_adj_males$protid <- row.names(results_cvd_adj_males)
 results_cvd_adj_males <- merge(results_cvd_adj_males,desc,by="protid",all.x=T,all.y = T)
 results_cvd_adj_males <- results_cvd_adj_males[order(results_cvd_adj_males$adj.P.Val),] 
-write.csv(results_cvd_adj_males,"B:\\Projects\\Janet Snell-Bergeon\\CACTI DCCT EDIC omics R01\\Proteomics\\Reports\\DCCT EDIC CARV adjusted GROUP males.csv")
+write.csv(results_cvd_adj_males,"Reports/DCCT EDIC CARV adjusted GROUP males.csv")
 results_cvd_adj_females <- topTable(fit_cvd_adj_females,coef = 2,number = nrow(ymat))
 results_cvd_adj_females$protid <- row.names(results_cvd_adj_females)
 results_cvd_adj_females <- merge(results_cvd_adj_females,desc,by="protid",all.x=T,all.y = T)
 results_cvd_adj_females <- results_cvd_adj_females[order(results_cvd_adj_females$adj.P.Val),] 
-write.csv(results_cvd_adj_females,"B:\\Projects\\Janet Snell-Bergeon\\CACTI DCCT EDIC omics R01\\Proteomics\\Reports\\DCCT EDIC CARV adjusted GROUP females.csv")
+write.csv(results_cvd_adj_females,"Reports/DCCT EDIC CARV adjusted GROUP females.csv")
 # ADJUSTED FOR TX, AGE, duration
 cvd_contrast_adj2_males <- model.matrix(~CARV + GROUP + VisitAge + VisitDuration , data=males)
 fit_cvd_adj2_males <- lmFit(ymat_males,cvd_contrast_adj2_males)
@@ -174,12 +182,12 @@ results_cvd_adj2_males <- topTable(fit_cvd_adj2_males,coef = 2,number = nrow(yma
 results_cvd_adj2_males$protid <- row.names(results_cvd_adj2_males)
 results_cvd_adj2_males <- merge(results_cvd_adj2_males,desc,by="protid",all.x=T,all.y = T)
 results_cvd_adj2_males <- results_cvd_adj2_males[order(results_cvd_adj2_males$adj.P.Val),] 
-write.csv(results_cvd_adj2_males,"B:\\Projects\\Janet Snell-Bergeon\\CACTI DCCT EDIC omics R01\\Proteomics\\Reports\\DCCT EDIC CARV adjusted GROUP VisitAge Visit Duration males.csv")
+write.csv(results_cvd_adj2_males,"Reports/DCCT EDIC CARV adjusted GROUP VisitAge Visit Duration males.csv")
 results_cvd_adj2_females <- topTable(fit_cvd_adj2_females,coef = 2,number = nrow(ymat))
 results_cvd_adj2_females$protid <- row.names(results_cvd_adj2_females)
 results_cvd_adj2_females <- merge(results_cvd_adj2_females,desc,by="protid",all.x=T,all.y = T)
 results_cvd_adj2_females <- results_cvd_adj2_females[order(results_cvd_adj2_females$adj.P.Val),] 
-write.csv(results_cvd_adj2_females,"B:\\Projects\\Janet Snell-Bergeon\\CACTI DCCT EDIC omics R01\\Proteomics\\Reports\\DCCT EDIC CARV adjusted GROUP VisitAge Visit Duration females.csv")
+write.csv(results_cvd_adj2_females,"Reports/DCCT EDIC CARV adjusted GROUP VisitAge Visit Duration females.csv")
 
 # sensitivity analysis excluding the outliers on PCA
 outliers <- c("F205","F233","F26","F169","F36","F171")
@@ -193,11 +201,11 @@ results_cvd_adj_sens <- topTable(fit_cvd_adj_sens,coef = 2,number = nrow(ymat))
 results_cvd_adj_sens$protid <- row.names(results_cvd_adj_sens)
 results_cvd_adj_sens <- merge(results_cvd_adj_sens,desc,by="protid",all.x=T,all.y = T)
 results_cvd_adj_sens <- results_cvd_adj_sens[order(results_cvd_adj_sens$adj.P.Val),] 
-write.csv(results_cvd_adj_sens,"B:\\Projects\\Janet Snell-Bergeon\\CACTI DCCT EDIC omics R01\\Proteomics\\Reports\\DCCT EDIC CARV adjusted GROUP VisitAge SEX Visit Duration sensitivity analysis excluding outliers.csv")
+write.csv(results_cvd_adj_sens,"Reports/DCCT EDIC CARV adjusted GROUP VisitAge SEX Visit Duration sensitivity analysis excluding outliers.csv")
 #write.csv(results_cvd_adj_sens,"./Reports/DCCT EDIC CARV adjusted GROUP VisitAge SEX Visit Duration sensitivity analysis excluding outliers.csv")
 # write file for LASSO regression
 lasso <- df[,names(df) %in% c(protnames,"CARV","groupnum","VisitAge","sexnum","VisitDuration")]
-write.csv(lasso,"B:\\Projects\\Janet Snell-Bergeon\\CACTI DCCT EDIC omics R01\\Proteomics\\Clean data\\lasso.csv",row.names = F)
+write.csv(lasso,"Clean data/lasso.csv",row.names = F)
 #write.csv(lasso,"./Clean data/lasso.csv",row.names = F)
 
 # sPLS-DA
