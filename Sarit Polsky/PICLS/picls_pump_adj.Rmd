@@ -13,6 +13,8 @@ library(nlme)
 library(emmeans)
 library(readxl)
 library(openxlsx)
+library(lubridate)
+library(data.table)
 
 #data upl  S:/Laura/BDC\Projects\Sarit Polsky\PICLS
 ######## FIRST SHEET. TDD STUFF
@@ -28,7 +30,7 @@ names(list_of_tdd_dfs) <- tdd_df_names
 
 ########## SECIND SHEET PUMP ADJ
 pump_files_list <- list.files(path = 'S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/CGM_Pump_ins',full.names = TRUE)
-list_of_pumpdfs <- lapply(as.list(pump_files_list), function(x) read_xlsx(x, sheet = 2))
+list_of_pumpdfs <- lapply(as.list(pump_files_list), function(x) read_xlsx(x, sheet = 2, col_types = c("text", "date", "text", "numeric", "numeric", "numeric", "numeric", "numeric")))
 
 # Create a vector of names based on the first word of the filename + "Balance"
 # Note that we can't use empty space in object names, hence the underscore
@@ -50,7 +52,7 @@ column_namer = function(x){
 
 # want to add id and combine datasets
 list_of_tdd_dfs = mapply(cbind, list_of_tdd_dfs, "SampleID"=tdd_df_names, SIMPLIFY=F)
-list_of_tdd_dfs[[2]]$`Gestational Week` = as.character(list_of_tdd_dfs[[2]]$`Gestational Week`)
+#list_of_tdd_dfs[[2]]$`Gestational Week` = as.Date(list_of_tdd_dfs[[2]]$`Gestational Week`)
 list_of_tdd_dfs[[22]] = list_of_tdd_dfs[[22]] %>% select(-Index)
 
 list_of_tdd_dfs = lapply(list_of_tdd_dfs, column_namer)
@@ -59,20 +61,35 @@ list_of_tdd_dfs = lapply(list_of_tdd_dfs, column_namer)
 tdd_df = do.call(rbind, list_of_tdd_dfs)
 tdd_df = tdd_df %>% filter(!is.na(gweek))
 
-
 # pump settings   ,not sure if we need"Date of pump adjustment"
-pumpvarnames = c("Gestational age","Start Time","Basal units/hour","Carb ratio (g/U)","Correction bolus","Total basal (U)","Active insulin time (hours)" )
+pumpvarnames = c("Gestational age","Date of pump adjustment","Start Time","Basal units/hour","Carb ratio (g/U)","Correction bolus","Total basal (U)","Active insulin time (hours)" )
 
 column_namer_p = function(x){
   df = x
   df = df %>% select(pumpvarnames)
-  df$
-  df
+
+  return(df)
 }
+
+
 list_of_pumpdfs = lapply(list_of_pumpdfs, column_namer_p)
 list_of_pumpdfs = mapply(cbind, list_of_pumpdfs, "sampleid"=pump_df_names, SIMPLIFY=F)
 
 pump_df = do.call(rbind, list_of_pumpdfs)
+
+
+## get into analysis/table form
+pump_adj_df = pump_df %>% mutate(adj_count = ifelse(!is.na(`Date of pump adjustment`), 1, 0))
+pump_adj_df$gweek = factor(tstrsplit(pump_adj_df$`Gestational age`, "w")[[1]], levels = c("Preconception", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
+                                                                                             "11", "12", "13", "14", "15", "16", "17", "18", "19", "20",
+                                                                                             "21", "22", "23", "24", "25", "26", "27", "28", "29", "30",
+                                                                                             "31", "32", "33", "34", "35", "36", "37", "38", "Postpartum"))
+pump_adj_df = pump_adj_df %>% filter(!is.na(gweek))
+test = pump_adj_df %>% group_by(gweek) %>% summarise(sum = sum(adj_count))
+
+## add in wks order for the desc tables, and months for the model
+
+## model function will be outcome = int + group + time + groupTime
 
 ```
 
