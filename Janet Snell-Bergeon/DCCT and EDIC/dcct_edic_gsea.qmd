@@ -26,41 +26,35 @@ library(tidyverse)
 library(clusterProfiler)
 library(ReactomePA)
 library(org.Hs.eg.db)
-switch(Sys.info()[["sysname"]],
-  Windows = {
-    home_dir <- "OneDrive - The University of Colorado Denver"
-  },
-  Darwin = {
-    home_dir <- "~/Dropbox/Work/BDC/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01"
-  }
-)
-knitr::opts_knit$set(root.dir = home_dir)
+library(biomaRt)
+knitr::opts_knit$set(root.dir = "~/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/BDC/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01")
 ```
 
 ```{r data cleaning}
 # Import results
-res = read.csv("Proteomics/Reports/DCCT EDIC CARV.csv",na.strings = "")
-# Convert names to Entrez ID
-names_symbol = bitr(sub(";.*","",names$symbol),fromType = "SYMBOL",
-            toType = "ENTREZID",OrgDb = org.Hs.eg.db)
-colnames(names_symbol) = c("symbol","entrez1")
-names_uniprot = bitr(sub(";.*","",res$protid),fromType = "UNIPROT",
-            toType = "ENTREZID",OrgDb = org.Hs.eg.db)
-colnames(names_uniprot) = c("protid","entrez2")
-res = left_join(res,names_symbol,relationship = "many-to-many")
+res <- read.csv("Proteomics/Reports/DCCT EDIC CARV.csv", na.strings = "")
+# Import annotations
+load("./Data_Raw/annotations.RData")
+# Add to dataframe
+res$entrez <- protein_anotation$Entrez[match(res$protid, protein_anotation$UniProt)]
+unadjusted <- res[, c("logFC", "entrez")]
+names(unadjusted) <- res$entrez
+unadjusted <- unadjusted[!is.na(names(unadjusted))]
 # GSEA
-y <- gsePathway(unadjusted, 
-                pvalueCutoff = 1,
-                pAdjustMethod = "BH", 
-                verbose = FALSE)
+y <- gsePathway(unadjusted, pvalueCutoff = 1, pAdjustMethod = "BH", verbose = FALSE)
 ```
+
+# Protein-to-gene linkage
+
+We used the `biomaRt` R package to link UniProt IDs to Entrez Gene IDs, based on Ensembl's most recent version of the Human Genes BioMart. A total of `r sum(is.na(res$entrez))` proteins were not linked to an Entrez ID.
+
+See `~/GitHub/BDC-Code/Janet Snell-Bergeon/DCCT and EDIC/create_omics_linkage_file.R` for additional documentation.
 
 # Table
 
 ```{r}
 #| label: tbl-planets
 #| tbl-cap: Planets
-
 ```
 
 # Figure
@@ -68,5 +62,4 @@ y <- gsePathway(unadjusted,
 ```{r}
 #| label: fig-planets
 #| fig-cap: Planets
-
 ```
