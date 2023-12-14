@@ -15,14 +15,17 @@ metabs <- metabs %>%
     masserror = Mass.Error..ppm.,
     rterror = RT.Error..s.
   ) %>%
-  select(compound, m.z, rt, masserror, rterror)
+  select(compound, m.z, rt, masserror, rterror,External.Identifier,Compound)
 metabs$name <- paste(
   metabs$compound,
   metabs$m.z,
   metabs$rt,
   sep = "_"
 )
-metabs <- metabs %>% select(name, everything())
+metabs <- metabs %>%
+  rename(`NovaMT Library No.` = compound,
+         `External Identifier`=External.Identifier) %>% 
+  select(name,`NovaMT Library No.`,`External Identifier`,Compound,everything())
 metabs$Platform = "Untargeted Metabolomics"
 # Import proteomics
 proteins <- read.delim("./Proteomics/Raw data/EDIC_WP_DDA_60SPD_Proteins.txt")
@@ -58,9 +61,9 @@ lipids = lipids %>% select(LipidSpecies,Platform) %>% rename(name = LipidSpecies
 df = full_join(metabs,prots,by = join_by(name, Platform))
 df = full_join(df,lipids,by = join_by(name, Platform))
 df = df %>%
-  select(name,Platform,compound:rterror,Entrez,Ensembl) %>%
-  rename(Name = name,Compound = compound,`M/Z` = m.z,
+  rename(`Variable Name` = name,`M/Z` = m.z,
          RT = rt,`Mass Error` = masserror,`RT Error` = rterror,
-         `Entrez Gene ID` = Entrez,`Ensembl Gene ID`)
+         `Entrez Gene ID` = Entrez,`Ensembl Gene ID`= Ensembl) %>%
+  select(`Variable Name`,Platform,everything())
 # Save
 write.csv(df,file = "Data_Clean/DCCT-EDIC Analyte Info.csv",na="",row.names = F)
