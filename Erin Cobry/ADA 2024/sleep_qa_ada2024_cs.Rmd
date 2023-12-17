@@ -21,6 +21,102 @@ sd_df = read_csv("S:/Laura/BDC/Projects/Erin Cobry/ADA 2024/SleepDisruptors QA/S
 ```{r data clean, include = FALSE}
 sd_df = sd_df %>% mutate(gender_m_fo = case_when(parent_gender == 1 ~ "Male",
                               parent_gender == 2 | parent_gender == 3 ~"Female/Other"
-                              ))
+                              ),
+                         age_cat = case_when(age < 12 & age >= 6 ~ "6-12",
+                                             age >= 12 ~ "13-18"),
+                         race = case_when(race___1 == 1 ~ "White, Non-Hispanic",
+                                          race___2 == 1 ~ "Black/African American",
+                                          race___3 == 1 ~ "Hispanic/Latino",
+                                          race___4 == 1 ~ "Native Hawaiian/Pacific Islander",
+                                          race___5 == 1 ~ "Asian",
+                                          race___6 == 1 ~ "American Indian/Alaskan Native",
+                                          race___8 == 1 ~ "Don't Wish to Answer",
+                                          TRUE ~ "Unknown"
+                                          ))
+sd_df$insulinmethod = factor(sd_df$insulinmethod, levels = c("1","2"), labels = c("Injections", "Insulin Pump"))
+sd_df$currenthcltech = factor(sd_df$currenthcltech, levels = c("1","0"), labels = c("Yes", "No"))
+sd_df$current_cgm_use= factor(sd_df$current_cgm_use, levels = c("1","2"), labels = c("Yes", "No"))
+sd_df$rurality= factor(sd_df$rurality, levels = c("1","2"), labels = c("Rural", "Urban"))
+
 # table(sd_df$gender_m_fo)
+
+
+# demog covariates
+demog_df = sd_df %>% select(record_id, redcap_event_name,gender_m_fo ,age, age_cat,race , diabetesduration, insulinmethod, currenthcltech, current_cgm_use, rurality) %>% 
+  filter(redcap_event_name == "enrollment_arm_1")
+
+a1c_col = sd_df %>% filter(redcap_event_name == "surveys_arm_1") %>% select(record_id, hba1c) 
+
+demog_df = left_join(demog_df, a1c_col) %>% select( -record_id, -redcap_event_name) %>% filter(!is.na(gender_m_fo)) ; rm(a1c_col)
+#demog_df = left_join(demog_df, a1c_col) %>% filter(!is.na(gender_m_fo))
+# table(demog_df$gender_m_fo)
+
+#  run analyses w both age and agecat
+#### TO DO ADD SURVEYS
+
+demogs = sd_df %>% select(record_id,redcap_event_name,gender_m_fo ,age_cat, currenthcltech, current_cgm_use) %>% 
+  filter(redcap_event_name == "enrollment_arm_1") %>% select(-redcap_event_name)
+analysis = sd_df %>% select(record_id,redcap_event_name,
+                            totalsleep_avg, onsetlatency_avg, sleepefficency_avg, waso_avg,   # sleep meas
+                            sensor_70_180, sensor_181_250, sensor_g251, sensor_u54, sensor_55_69 # diab meas
+) %>% filter(redcap_event_name == "surveys_arm_1") %>% select(-redcap_event_name)
+
+analysis = left_join(analysis, demogs) ; rm(demogs)
 ```
+
+Variables:
+Sleep measures (RedCap wrist actigraphy variable)
+Total sleep
+Sleep latency
+Sleep efficiency
+WASO
+Diabetes measures (RedCap Pump & CGM Glycemic Data OR Injection & BG Meter Glycemic Data Instruments [depending on the insulin method for each patient])
+Time in range (70-180)
+Time hypoglycemic (<70 – combine <54 and 55-69)
+Time hyperglycemic (>180 – combine 181-250 and >250)
+HCL use (for those on HCL, if RedCap value blank do not include) -- log reg?
+Sensor use (for those on sensor, if RedCap value blank do not include) -- log reg
+
+Also look at some of the survey measures – you should have scoring t-tables from Erin to do so
+Morningness/Eveningness Questionnaire 
+SRDB Scale
+Hypoglycemia Fear Survey child/Teen
+Child_PROMIS_Sleep Disturbance
+Child_PROMIS_Sleep Related Impairment 
+Child_PROMIS_Psychological stress
+Child_PROMIS_Anxiety
+Child_PROMIS_Depressive Symptoms 
+
+```{r functions, include = F}
+fit_mod = function(outcome,df,plot = T,diagnostics = F){
+
+  # Fit random intercept model
+  f = as.formula(paste0(outcome,"~ gender_m_fo"))
+  mod = lmer(f,data = df)
+  
+  print(summary(mod))
+}
+
+
+```
+
+Demographics:
+Age (RedCap variable in baseline demographics instrument) --- for analyses interested in both cat and cts
+Race/ethnicity (RedCap variable in baseline demographics instrument)
+HbA1c (RedCap variable in Pump and CGM Glycemic Data form)
+T1D duration (RedCap T1D duration equation in baseline demographics instrument) 
+Number on pump (RedCap variable [insulinmethod] injection vs pump in baseline demographics instrument)
+Number on HCL (RedCap variable [currenthcltech] closed loop system in baseline demographics instrument)
+Number on sensor (RedCap variable [current_cgm_use] in baseline demographics instrument)
+Percent rural (Redcap variable [rurality] in baseline demographics instrument)
+
+```{r demog table, include = F}
+t1 = table1(~ . |gender_m_fo, data = demog_df )
+```
+
+to do : score surveys, finish function (lin and log), fit, interpret models
+```{r models, include=FALSE}
+
+
+```
+
