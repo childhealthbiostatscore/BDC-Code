@@ -2,7 +2,10 @@
 title: "sleep_qa_ada2024"
 author: "Casey Sakamoto"
 date: "2023-11-28"
-output: html_document
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
 ---
 
 ```{r setup, include=FALSE}
@@ -13,8 +16,40 @@ library(performance)
 library(knitr)
 library(table1)
 library(readr)
+library(readxl)
+library(lme4)
+
 # data upload
 sd_df = read_csv("S:/Laura/BDC/Projects/Erin Cobry/ADA 2024/SleepDisruptors QA/SleepDisruptorsInAdo_DATA_2023-11-28_1536.csv")
+
+# promis tables
+Depression_T <- read_excel("S:/Laura/BDC/Projects/Erin Cobry/ADA 2024/SleepDisruptors QA/Depression T-tables.xlsx", 
+    sheet = "Pedaitric Depressive Symptoms 8")
+Depression_T$raw = Depression_T$`Raw Score`
+Depression_T$depression_t = Depression_T$`T-score`
+
+
+Anxiety_T <- read_excel("S:/Laura/BDC/Projects/Erin Cobry/ADA 2024/SleepDisruptors QA/Anxiety T-tables.xlsx", 
+    sheet = "Pediatric Anxiety 8a")
+Anxiety_T$raw = Anxiety_T$`Raw Summed Score`
+Anxiety_T$anxiety_t = Anxiety_T$`T-Score`
+
+
+Psychological_Stress_T <- read_excel("S:/Laura/BDC/Projects/Erin Cobry/ADA 2024/SleepDisruptors QA/Psychological Stress Experience T-tables.xlsx", 
+    sheet = "Pediatric Psych Stress Exp 4a")
+Psychological_Stress_T$raw= Psychological_Stress_T$`Raw Score`
+Psychological_Stress_T$psych_stress_t = Psychological_Stress_T$`T-score`
+
+Sleep_Disturbance_T <- read_excel("S:/Laura/BDC/Projects/Erin Cobry/ADA 2024/SleepDisruptors QA/Sleep Disturbance and Sleep Related Impairment T Tables.xlsx", 
+    sheet = "Pediatric Sleep Disturbance")
+Sleep_Disturbance_T$raw = Sleep_Disturbance_T$`Raw Summed Score`
+Sleep_Disturbance_T$sleep_disturbance_t = Sleep_Disturbance_T$`T-Score`
+
+
+Impairment_T <- read_excel("S:/Laura/BDC/Projects/Erin Cobry/ADA 2024/SleepDisruptors QA/Sleep Disturbance and Sleep Related Impairment T Tables.xlsx", 
+    sheet = "Pediatric Sleep-Related Impairm")
+Impairment_T$raw = Impairment_T$`Raw Summed Score`
+Impairment_T$sleep_impairment_t = Impairment_T$`T-Score`
 ```
 
 
@@ -62,61 +97,250 @@ analysis = sd_df %>% select(record_id,redcap_event_name,
 ) %>% filter(redcap_event_name == "surveys_arm_1") %>% select(-redcap_event_name)
 
 analysis = left_join(analysis, demogs) ; rm(demogs)
+analysis = analysis %>% mutate(sensor_hypoglycemic = sensor_u54 + sensor_55_69,
+                               sensor_hyperglycemic = sensor_181_250 + sensor_g251)
+
+
+# Also look at some of the survey measures – you should have scoring t-tables from Erin to do so
+# survey scoring
+
+survey_df = sd_df %>% mutate(mesc_total = (6 - me_oob) + me_getup + (5 - me_gym) + (5 - me_testtime)
+                             + (5 - me_besttime) + (6 - me_p_bedtime) + me_malert + (6-me_b_bedtime)
+                             + me_6am + (5 - me_time2alert),# Morningness/Eveningness Questionnaire
+                             across(snore_ht:interrupts, ~ .x - 1)) 
+
+mesc = survey_df %>% select(record_id, mesc_total) %>% filter(!is.na(mesc_total))
+  
+srdb = survey_df %>% filter(redcap_event_name == "surveys_arm_2") %>% mutate(SRDB_score = rowMeans(across(snore_ht:interrupts), na.rm = T)) %>%
+  select(record_id, SRDB_score) # SRDB Scale
+
+srdb$record_id = sub("^.", "1", srdb$record_id)
+
+hfs = survey_df %>% filter(redcap_event_name == "surveys_arm_1") %>% mutate(across(bedtime_snacks:having_low_sugar, ~ .x - 1),
+                           hfs_total = rowSums(across(bedtime_snacks:having_low_sugar), na.rm=F)) %>% select(record_id, hfs_total)# Hypoglycemia Fear Survey child/Teen
+
+# Child_PROMIS_Sleep Disturbance
+# Child_PROMIS_Sleep Related Impairment 
+# Child_PROMIS_Psychological stress
+# Child_PROMIS_Anxiety
+# Child_PROMIS_Depressive Symptoms 
+promis = survey_df %>% filter(redcap_event_name == "surveys_arm_1") %>% mutate(
+  sleep_dist_raw = rowSums(across(sd_falling:sd_tossed)),
+  sleep_imp_raw =  rowSums(across(sri_sleepy:sri_mood)),
+  psy_stress_raw =  rowSums(across(ps_stressed:ps_manage)),
+  anxiety_raw =  rowSums(across(a_awful:a_bed)),
+  depress_raw =  rowSums(across(ds_sad:ds_hard))) %>% select(record_id, sleep_dist_raw:depress_raw)
+
+
+promis = left_join(promis, Anxiety_T, by = c('anxiety_raw' = 'raw')) %>% select(record_id, sleep_dist_raw:depress_raw,anxiety_t)
+
+promis = left_join(promis, Depression_T, by = c('depress_raw' = 'raw')) %>% select(record_id, sleep_dist_raw:depress_raw,anxiety_t,depression_t)
+
+promis = left_join(promis, Sleep_Disturbance_T, by = c('sleep_dist_raw' = 'raw')) %>% select(record_id, sleep_dist_raw:depress_raw,anxiety_t,depression_t,sleep_disturbance_t)
+
+promis = left_join(promis, Impairment_T, by = c('sleep_imp_raw' = 'raw')) %>% select(record_id, sleep_dist_raw:depress_raw,anxiety_t,depression_t,sleep_disturbance_t,sleep_impairment_t)
+
+promis = left_join(promis, Psychological_Stress_T, by = c('psy_stress_raw' = 'raw')) %>% select(record_id, sleep_dist_raw:depress_raw,anxiety_t,depression_t,sleep_disturbance_t,sleep_impairment_t,psych_stress_t)
+
+surveys = full_join(promis, hfs) %>% unique()
+surveys = full_join(surveys, srdb) %>% unique()
+surveys = full_join(surveys, mesc) %>% unique()
+
+analysis = full_join(analysis,surveys) %>% unique()
+
+analysis$hoursc = vapply(strsplit(as.character(analysis$totalsleep_avg),":"), `[`, 1, FUN.VALUE=character(1))
+analysis$minsc = vapply(strsplit(as.character(analysis$totalsleep_avg),":"), `[`, 2, FUN.VALUE=character(1))
+analysis$sleeptotal_avg = as.numeric(analysis$hoursc)*60 + as.numeric(analysis$minsc)
 ```
 
-Variables:
-Sleep measures (RedCap wrist actigraphy variable)
-Total sleep
-Sleep latency
-Sleep efficiency
-WASO
-Diabetes measures (RedCap Pump & CGM Glycemic Data OR Injection & BG Meter Glycemic Data Instruments [depending on the insulin method for each patient])
-Time in range (70-180)
-Time hypoglycemic (<70 – combine <54 and 55-69)
-Time hyperglycemic (>180 – combine 181-250 and >250)
-HCL use (for those on HCL, if RedCap value blank do not include) -- log reg?
-Sensor use (for those on sensor, if RedCap value blank do not include) -- log reg
 
-Also look at some of the survey measures – you should have scoring t-tables from Erin to do so
-Morningness/Eveningness Questionnaire 
-SRDB Scale
-Hypoglycemia Fear Survey child/Teen
-Child_PROMIS_Sleep Disturbance
-Child_PROMIS_Sleep Related Impairment 
-Child_PROMIS_Psychological stress
-Child_PROMIS_Anxiety
-Child_PROMIS_Depressive Symptoms 
 
 ```{r functions, include = F}
-fit_mod = function(outcome,df,plot = T,diagnostics = F){
+fit_mod = function(outcome,df){
 
   # Fit random intercept model
   f = as.formula(paste0(outcome,"~ gender_m_fo"))
-  mod = lmer(f,data = df)
+  mod = lm(f,data = df)
   
+  f2 = as.formula(paste0(outcome,"~ gender_m_fo + factor(age_cat)"))
+  mod2 = lm(f2,data = df)
+
+  print("Base Model")
+  cat("\n")
   print(summary(mod))
+  cat("\n")
+  print("Age Adj Model")
+  cat("\n")
+  print(summary(mod2))
 }
-
-
 ```
 
-Demographics:
-Age (RedCap variable in baseline demographics instrument) --- for analyses interested in both cat and cts
-Race/ethnicity (RedCap variable in baseline demographics instrument)
-HbA1c (RedCap variable in Pump and CGM Glycemic Data form)
-T1D duration (RedCap T1D duration equation in baseline demographics instrument) 
-Number on pump (RedCap variable [insulinmethod] injection vs pump in baseline demographics instrument)
-Number on HCL (RedCap variable [currenthcltech] closed loop system in baseline demographics instrument)
-Number on sensor (RedCap variable [current_cgm_use] in baseline demographics instrument)
-Percent rural (Redcap variable [rurality] in baseline demographics instrument)
+# Data remarks
+For the age categories of 6-12/13-18 there was a pretty uneven split; I included the model results in case they were of interest, but especially with the categorical outcomes where we essentially stratify age and then gender group theres very few subjects in each category.
+
+# Methods
+
+Demographics stratified by gender group were produced. 
+
+For numeric outcomes t-tests (adjusting for age and not adjusting) were performed. 
+
+For categorical outcomes a chi square test of independence performed.
+
+# Demographics
 
 ```{r demog table, include = F}
 t1 = table1(~ . |gender_m_fo, data = demog_df )
 ```
 
-to do : score surveys, finish function (lin and log), fit, interpret models
-```{r models, include=FALSE}
 
+# Model Output
 
+## Sleep Measures
+
+### Total sleep
+
+Gender was not significantly associated with avg total sleep (min) in either the base or age adjusted models (p = .86, 0.42)
+
+```{r tsm}
+fit_mod('sleeptotal_avg', analysis)
 ```
 
+### Sleep latency
+
+Gender was not significantly associated with sleep latency in either the base or age adjusted models (p = .74, .99)
+
+```{r slm}
+fit_mod('onsetlatency_avg', analysis)
+```
+
+### Sleep efficiency
+
+Gender was not significantly associated with sleep efficiency in either the base or age adjusted models (p = .65, .70)
+
+```{r sem}
+fit_mod('sleepefficency_avg', analysis)
+```
+
+### waso
+
+Gender was not significantly associated with WASO avgs in either the base or age adjusted models (p = .32, .57)
+
+```{r wasom}
+fit_mod('waso_avg', analysis)
+```
+
+
+## Diabetes measures 
+
+### Time in range (70-180)
+
+Gender was not significantly associated with TIR in either the base or age adjusted models (p = .83, .89)
+
+```{r tirmm}
+fit_mod('sensor_70_180', analysis)
+```
+
+### Time hypoglycemic (<70 – combine <54 and 55-69)
+
+Gender was not significantly associated with TBR in either the base or age adjusted models (p = .06, .06)
+
+```{r tbrmm}
+fit_mod('sensor_hypoglycemic', analysis)
+```
+
+### Time hyperglycemic (>180 – combine 181-250 and >250)
+
+Gender was not significantly associated with TBR in either the base or age adjusted models (p = .10, .10)
+
+```{r tarmm}
+fit_mod('sensor_hyperglycemic', analysis)
+```
+
+### HCL use (for those on HCL, if RedCap value blank do not include) 
+
+Gender was not significantly associated with HCL use p = 1
+
+```{r hclmm}
+#table(analysis$gender_m_fo, analysis$currenthcltech)
+chisq.test(analysis$gender_m_fo, analysis$currenthcltech)$p.value
+```
+
+
+### Sensor use (for those on sensor, if RedCap value blank do not include) -- log reg
+
+Gender was not significantly associated with sensor use p = 1
+
+```{r summ}
+#table(analysis$gender_m_fo, analysis$current_cgm_use)
+chisq.test(analysis$gender_m_fo, analysis$current_cgm_use)$p.value
+```
+
+
+
+## Survey measures 
+
+### Morningness/Eveningness Questionnaire 
+
+Gender is not associated with mesc scores (p = 0.61) in the unadjusted model, and the age adjusted (p = 0.85).
+
+```{r mescn}
+fit_mod("mesc_total", analysis)
+```
+
+### SRDB Scale
+
+Gender is associated with SRDB scores (p = 0.03) in the unadjusted model, but not the age adjusted (p = 0.07). Male subjects on average had 0.07 (SE = 0.033)lower score than female/other group.
+
+```{r srdbn}
+fit_mod("SRDB_score", analysis)
+```
+
+### Hypoglycemia Fear Survey child/Teen
+
+Gender was not significantly associated with HFS total scores in both unadjusted and age adjusted models (p = 0.6, 0.5)
+
+```{r hfsm}
+fit_mod("hfs_total", analysis)
+```
+
+### Child_PROMIS_Sleep Disturbance
+
+Gender was not significantly associated with promis sleep disturbance t scores scores in both unadjusted and age adjusted models (p = 0.18, 0.28)
+
+```{r pdismsd}
+fit_mod("sleep_disturbance_t", analysis)
+``` 
+
+### Child_PROMIS_Sleep Related Impairment 
+
+Gender is associated with Sleep related impairment promis t scores  (p = 0.03) in the unadjusted model, but not the age adjusted (p = 0.10). Male subjects on average had 4.7 (SE = 2.1)lower score than the female/other group.
+
+```{r promsd}
+fit_mod("sleep_impairment_t", analysis)
+``` 
+
+
+### Child_PROMIS_Psychological stress
+
+Gender is associated with psychological stress promis t scores  (p = 0.01) in the unadjusted model, and the age adjusted (p = 0.02). Male subjects on average had 5.1 (SE = 1.8)lower scores than the female/other group in the unadjusted model and 4.8 (se = 1.9) in the age adjusted model.
+
+```{r pssmsd}
+fit_mod("psych_stress_t", analysis)
+``` 
+
+### Child_PROMIS_Anxiety
+
+Gender is associated with anxiety promis t scores  (p = 0.03) in the unadjusted model, but not the age adjusted (p = 0.07). Male subjects on average had 5.4 (SE = 2.4)lower scores than the female/other group.
+
+```{r pand}
+fit_mod("anxiety_t", analysis)
+``` 
+
+
+### Child_PROMIS_Depressive Symptoms 
+
+Gender is associated with depresion promis t scores  (p = 0.005) in the unadjusted model, and the age adjusted (p = 0.01). Male subjects on average had 6.8 (SE = 2.3)lower scores than the female/other group in the unadjusted model and 6.5(se 2.5) in the adjusted.
+
+```{r desd}
+fit_mod("depression_t", analysis)
+``` 
