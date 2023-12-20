@@ -30,12 +30,12 @@ library(pzfx)
 library(SingleCellExperiment)
 library(S4Vectors)
 # cell express %
-library(scCustomize)
+#library(scCustomize)
 
 ###
-library(cowplot)
+#library(cowplot)
 #library(Matrix.utils)
-library(edgeR)
+#library(edgeR)
 library(Matrix)
 library(reshape2)
 library(S4Vectors)
@@ -46,7 +46,7 @@ library(png)
 library(DESeq2)
 library(RColorBrewer)
 library(data.table)
-library(Matrix.utils)
+#library(Matrix.utils)
 ###
 
 # data
@@ -57,7 +57,7 @@ knitr::opts_knit$set(root.dir = home_dir)
 # cd8_processed = readRDS(paste0(home_dir, "OneDrive_1_6-28-2023/cd8_cells_processed.rds"))
 df = readRDS(paste0(home_dir, "OneDrive_1_6-28-2023/normalized.rds"))
 #use regular clusters
-df2 = df
+#df2 = df
 
 # new clusters
 #df2 = SetIdent(df, value= df@meta.data$RNA_clustifyr_celltype_individual)
@@ -65,7 +65,108 @@ df2 = df
 ```
 
 ```{r, include = F}
+# DE function
+# get gene ids
+gene_list = unique(rownames(df))
 
+# find cells where most highly expressed
+cells = FetchData(df, layer = "counts", vars = gene_list[1:1000]) # whole thing is 15 gigs come back and change later
+cells$type = df@active.ident # what is the general type mean? ident? or is there a cell id that im lookn for?
+cell_count = data.frame(table(cells$type))
+colnames(cell_count) = c("Cell.Type", "n Cells")
+cells = cells %>%
+    group_by(type) %>%
+    summarise(across(where(is.numeric), ~ sum(.x, na.rm = TRUE))) %>%
+    column_to_rownames("type")
+  max <- lapply(cells, function(c) {
+    rownames(cells)[order(c, decreasing = T)[1:2]] })
+
+# DE function
+de <- function(seurat_object = so, outcome, ref_group, vars) {
+  # Get Entrez Gene IDs
+  entrez <- analytes$EntrezGeneSymbol[match(vars, analytes$AptName)]
+  entrez <- entrez[entrez %in% rownames(seurat_object)]
+  entrez <- unique(entrez)
+  # Find cells where most highly expressed
+  cells <- FetchData(seurat_object, vars = entrez, slot = "counts")
+  cells$type <- seurat_object$generaltype
+  cell_count <- data.frame(table(cells$type))
+  colnames(cell_count) <- c("Cell.Type", "n Cells")
+  cells <- cells %>%
+    group_by(type) %>%
+    summarise(across(where(is.numeric), ~ sum(.x, na.rm = TRUE))) %>%
+    column_to_rownames("type")
+  max <- lapply(cells, function(c) {
+    rownames(cells)[order(c, decreasing = T)[1:2]]
+  })
+  # DE testing
+  de_tables <- lapply(names(max), function(n) {
+    # Compare expression in two highest expressing cell types
+    c1 <- tryCatch(
+      FindMarkers(seurat_object,
+        features = n, ident.1 = ref_group,
+        group.by = outcome, subset.ident = max[[n]][1],
+        logfc.threshold = 0, verbose = F
+      ),
+      error = function(err) NULL, warning = function(war) NULL
+    )
+    if (!is.null(c1)) {
+      c1$`Cell Type` <- max[[n]][1]
+      c1$`Gene` <- n
+    }
+    c2 <- tryCatch(
+      FindMarkers(seurat_object,
+        features = n, ident.1 = ref_group,
+        group.by = outcome, subset.ident = max[[n]][2],
+        logfc.threshold = 0, verbose = F
+      ),
+      error = function(err) NULL, warning = function(war) NULL
+    )
+    if (!is.null(c2)) {
+      c2$`Cell Type` <- max[[n]][2]
+      c2$`Gene` <- n
+    }
+    # Merge tables if necessary
+    t <- do.call(rbind, list(c1, c2))
+    return(t)
+  })
+  # Combine rows and print
+  de_table <- data.frame(do.call(rbind, de_tables))
+  de_table <- de_table[order(de_table$Gene), ]
+  # Make our own dot plots because Seurat is weird - according to GitHub need to
+  # use their dotplot function to get percent expression though? You'd think
+  # they would have a function for that...
+  dp <- apply(de_table, 1, function(r) {
+    g <- r["Gene"]
+    i <- r["Cell.Type"]
+    d <- DotPlot(seurat_object, features = g, group.by = outcome, idents = i)
+    d <- d$data
+    d$cell <- i
+    return(d)
+  })
+  dp <- data.frame(do.call(rbind, dp))
+  # Default in Seurat is to plot scaled expression, ask Petter which he prefers
+  p <- ggplot(dp, aes(x = cell, y = id, color = avg.exp)) +
+    geom_point(aes(size = pct.exp)) +
+    facet_wrap(~features.plot, scales = "free_x") +
+    scale_size_continuous(name = "Percent Expression") +
+    scale_color_continuous(name = "Average Expression") +
+    theme_bw() +
+    theme(axis.title.y = element_blank(), axis.title.x = element_blank())
+  cat("\n")
+  print(p)
+  cat("\n")
+  de_table <- de_table %>%
+    select(Gene, Cell.Type, avg_log2FC, pct.1, pct.2, p_val, p_val_adj)
+  de_table <- left_join(de_table, cell_count, by = join_by(Cell.Type))
+  rownames(de_table) <- NULL
+  cat("\n")
+  pander(de_table)
+  cat("\n")
+}
+# trying to follow the logic
+# get the ids
+  
 ```
 
 ```{r, include = FALSE}
