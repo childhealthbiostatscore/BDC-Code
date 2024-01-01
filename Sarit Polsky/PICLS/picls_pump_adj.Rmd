@@ -13,6 +13,8 @@ library(nlme)
 library(emmeans)
 library(readxl)
 library(openxlsx)
+library(lubridate)
+library(data.table)
 
 #data upl  S:/Laura/BDC\Projects\Sarit Polsky\PICLS
 ######## FIRST SHEET. TDD STUFF
@@ -28,7 +30,7 @@ names(list_of_tdd_dfs) <- tdd_df_names
 
 ########## SECIND SHEET PUMP ADJ
 pump_files_list <- list.files(path = 'S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/CGM_Pump_ins',full.names = TRUE)
-list_of_pumpdfs <- lapply(as.list(pump_files_list), function(x) read_xlsx(x, sheet = 2))
+list_of_pumpdfs <- lapply(as.list(pump_files_list), function(x) read_xlsx(x, sheet = 2, col_types = c("text", "date", "text", "numeric", "numeric", "numeric", "numeric", "numeric")))
 
 # Create a vector of names based on the first word of the filename + "Balance"
 # Note that we can't use empty space in object names, hence the underscore
@@ -36,6 +38,9 @@ pump_df_names <- paste0(str_extract(basename(pump_files_list), "[^ ]+"), "_TDD_d
 
 # Assign the names to our list of dfs
 names(list_of_pumpdfs) <- pump_df_names
+
+#### groups
+
 ```
 
 ```{r data clean, include=FALSE}
@@ -50,7 +55,7 @@ column_namer = function(x){
 
 # want to add id and combine datasets
 list_of_tdd_dfs = mapply(cbind, list_of_tdd_dfs, "SampleID"=tdd_df_names, SIMPLIFY=F)
-list_of_tdd_dfs[[2]]$`Gestational Week` = as.character(list_of_tdd_dfs[[2]]$`Gestational Week`)
+#list_of_tdd_dfs[[2]]$`Gestational Week` = as.Date(list_of_tdd_dfs[[2]]$`Gestational Week`)
 list_of_tdd_dfs[[22]] = list_of_tdd_dfs[[22]] %>% select(-Index)
 
 list_of_tdd_dfs = lapply(list_of_tdd_dfs, column_namer)
@@ -59,28 +64,151 @@ list_of_tdd_dfs = lapply(list_of_tdd_dfs, column_namer)
 tdd_df = do.call(rbind, list_of_tdd_dfs)
 tdd_df = tdd_df %>% filter(!is.na(gweek))
 
+# add in groups, months and pid
+tdd_df$pid = substr(tdd_df$sampleid,1,4) 
+tdd_df = left_join(tdd_df, groups)
+tdd_df$randomization_group = factor(tdd_df$randomization_group, levels = c(1,2), labels = c("HCL","SAPT") )
+tdd_df_wk_avg = tdd_df %>% group_by(pid, gweek) %>% summarise(tdd_u_wk = mean(tdd_u, na.rm = T),
+                                                              td_bolus_wk = mean(td_bolus, na.rm = T),
+                                                              td_basal_wk = mean(td_basal, na.rm = T),
+                                                              bolus_perc_wk = mean(bolus_perc, na.rm = T),
+                                                              basal_perc_wk = mean(basal_perc, na.rm = T))
+
+tdd_df = tdd_df %>% mutate(gmonth = case_when(gweek %in% c("1","2","3","4") ~ "1",
+                                              gweek %in% c("5","6","7","8") ~ "2",
+                                              gweek %in% c("9","10","11","12") ~ "3",
+                                              gweek %in% c("13","14","15","16") ~ "4",
+                                              gweek %in% c("17","18","19","20") ~ "5",
+                                              gweek %in% c("21","22","23","24") ~ "6",
+                                              gweek %in% c("25","26","27","28") ~ "7",
+                                              gweek %in% c("29","30","31","32") ~ "8",
+                                              gweek %in% c("33","34","35","36") ~ "9",
+                                              gweek %in% c("37","38","39") ~ "10",
+                                              TRUE ~ gweek))
+tdd_df$gmonth = factor(tdd_df$gmonth, levels = c("Preconception","1","2","3","4","5","6","7","8","9","10","Postpartum"))
+tdd_df_month = tdd_df %>% group_by(pid, gmonth) %>% summarise(tdd_u_m = mean(tdd_u, na.rm = T),
+                                                              td_bolus_m = mean(td_bolus, na.rm = T),
+                                                              td_basal_m = mean(td_basal, na.rm = T),
+                                                              bolus_perc_m = mean(bolus_perc, na.rm = T),
+                                                              basal_perc_m = mean(basal_perc, na.rm = T))
+tdd_df_month = left_join(tdd_df_month, groups %>% select(pid, randomization_group))
 
 # pump settings   ,not sure if we need"Date of pump adjustment"
-pumpvarnames = c("Gestational age","Start Time","Basal units/hour","Carb ratio (g/U)","Correction bolus","Total basal (U)","Active insulin time (hours)" )
+pumpvarnames = c("Gestational age","Date of pump adjustment","Start Time","Basal units/hour","Carb ratio (g/U)","Correction bolus","Total basal (U)","Active insulin time (hours)" )
 
 column_namer_p = function(x){
   df = x
   df = df %>% select(pumpvarnames)
-  df$
-  df
+
+  return(df)
 }
+
+
 list_of_pumpdfs = lapply(list_of_pumpdfs, column_namer_p)
 list_of_pumpdfs = mapply(cbind, list_of_pumpdfs, "sampleid"=pump_df_names, SIMPLIFY=F)
 
 pump_df = do.call(rbind, list_of_pumpdfs)
 
+
+## get into analysis/table form
+pump_adj_df = pump_df %>% mutate(adj_count = ifelse(!is.na(`Date of pump adjustment`), 1, 0))
+pump_adj_df$gweek = factor(tstrsplit(pump_adj_df$`Gestational age`, "w")[[1]], levels = c("Preconception", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
+                                                                                             "11", "12", "13", "14", "15", "16", "17", "18", "19", "20",
+                                                                                             "21", "22", "23", "24", "25", "26", "27", "28", "29", "30",
+                                                                                             "31", "32", "33", "34", "35", "36", "37", "38", "Postpartum"))
+pump_adj_df = pump_adj_df %>% filter(!is.na(gweek))
+pump_adj_df$pid = substr(pump_adj_df$sampleid,1,4) 
+pump_adj_df = left_join(pump_adj_df, groups)
+pump_adj_df$randomization_group = factor(pump_adj_df$randomization_group, levels = c(1,2), labels = c("HCL","SAPT") )
+
+
+n_pump_adj = pump_adj_df %>% group_by(gweek, randomization_group) %>% summarise(sum = sum(adj_count))
+
+## add in wks order for the desc tables, and months for the model
+
+## model function will be outcome = int + group + time + groupTime 1 = hcl 2 = sapt
+```
+
+```{r models fun, include = F}
+contrasts = c("1 randomization_group1 - 1 randomization_group2",
+"2 randomization_group1 - 2 randomization_group2",
+"3 randomization_group1 - 3 randomization_group2",
+"4 randomization_group1 - 4 randomization_group2",
+"5 randomization_group1 - 5 randomization_group2",
+"6 randomization_group1 - 6 randomization_group2",
+"7 randomization_group1 - 7 randomization_group2",
+"8 randomization_group1 - 8 randomization_group2",
+"9 randomization_group1 - 9 randomization_group2",
+"10 randomization_group1 - 10 randomization_group2")
+# "1 randomization_group1 - 1 randomization_group2" in case we need pre/post
+# "1 randomization_group1 - 1 randomization_group2"
+fit_mod = function(outcome, df){
+
+    # Fit model
+  f = as.formula(paste0(outcome,"~","gmonth + randomization_group + gmonth*randomization_group"))
+  mod = lme(f,
+            random = ~1|pid,
+            data = df,
+            na.action = na.omit)
+    cat("\n")
+  print(outcome)
+  cat("\n")
+   # Means
+  mod_means = emmeans(mod,specs=pairwise ~ gmonth*randomization_group, adjust="none")
+
+  mod_means2 = emmeans(mod,specs=~ gmonth*randomization_group, adjust="none")
+  
+  print(kable(mod_means$contrasts,digits = 3,caption = "Timepoint Contrasts"))[c(39,61,82, 102, 121, 139, 156, 172, 187, 201)]
+  print(kable(mod_means2,digits = 3,caption = "Timepoint Means"))
+
+}
 ```
 
 We will plan to analyze the number of pump adjustments made per gestational week and the average basal rates, carb ratios, and correction factors for each meal period (breakfast, lunch, evening, overnight) for each time period in pregnancy (4-8 weeks gestation, etc.).
 
-these are the pump settings we're looking at: total daily dose, total daily bolus, total daily basal, and percent basal/bolus
+# Descriptive statistics per gestational week 
 
-```{r pump data}
+## number pump adjustments by group
 
-
+```{r}
+pump_adj_df %>% group_by(gweek, randomization_group) %>% summarise(sum = sum(adj_count))
 ```
+
+#
+
+# Models
+
+# Non-PostPartum Months
+
+# TDD data
+
+## total daily dose 
+```{r}
+fit_mod("tdd_u_m", tdd_df_month)
+```
+total daily bolus 
+```{r}
+fit_mod("td_bolus_m", tdd_df_month)
+```
+total daily basal 
+```{r}
+fit_mod("td_basal_m", tdd_df_month)
+```
+percent basal  
+```{r}
+fit_mod("basal_perc_m", tdd_df_month)
+```
+percent bolus 
+```{r}
+fit_mod("bolus_perc_m", tdd_df_month)
+```
+
+# PostPartum Weeks
+
+# Number of changes to pump settings per week/month 
+
+## Basal units/hour 
+
+## Carb ratio 
+
+## Correction bolus (breakfast, lunch, afternoon snack, dinner – which hours correspond to each meal? Does this matter if we are just analyzing the number of changes per week/month?) 

@@ -1,0 +1,142 @@
+---
+title: "DCCT/EDIC Proteomics Gene Set Enrichment Analysis"
+author: "Laura Pyle & Tim Vigers"
+date: "today"
+date-format: long
+format:
+  html:
+    toc: true
+    toc-depth: 5
+    toc-float: true
+    code-fold: true
+    self-contained: true
+    fig-cap-location: top
+    page-layout: full
+    theme:
+      light: flatly
+      dark: darkly
+bibliography: /Users/timvigers/Documents/Miscellaneous/zotero.bib
+csl: /Users/timvigers/Documents/Miscellaneous/american-medical-association.csl
+editor: source
+---
+
+```{r setup}
+#| include: false
+library(tidyverse)
+library(clusterProfiler)
+library(ReactomePA)
+library(org.Hs.eg.db)
+library(enrichplot)
+knitr::opts_knit$set(root.dir = "~/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/BDC/Janet Snell-Bergeon/CACTI DCCT EDIC omics R01")
+```
+
+# Protein-to-gene linkage
+
+We used the `biomaRt` R package to link UniProt IDs to Entrez Gene IDs, based on Ensembl's most recent version of the Human Genes BioMart. 
+
+See `~/GitHub/BDC-Code/Janet Snell-Bergeon/DCCT and EDIC/create_omics_linkage_file.R` for additional documentation.
+
+# GSEA
+
+```{r data cleaning}
+# Import results
+res <- read.csv("Proteomics/Reports/DCCT EDIC CARV.csv", na.strings = c("", "NA"))
+res <- res[!is.na(res$logFC), ]
+# Import annotations
+load("./Data_Raw/annotations.RData")
+# Add to dataframe
+res$entrez <- protein_anotation$Entrez[match(res$protid, protein_anotation$UniProt)]
+```
+
+A total of `r sum(is.na(res$entrez))` proteins were not linked to an Entrez ID (out of `r nrow(res)`).
+
+## Unadjusted
+
+```{r}
+unadjusted <- res$logFC[!is.na(res$entrez)]
+names(unadjusted) <- res$entrez[!is.na(res$entrez)]
+unadjusted <- sort(unadjusted, decreasing = T)
+dups <- duplicated(names(unadjusted))
+y <- gsePathway(unadjusted[!dups], pvalueCutoff = 1, pAdjustMethod = "BH", verbose = FALSE)
+x <- setReadable(y, "org.Hs.eg.db", "ENTREZID")
+```
+
+A total of `r sum(dups)` gene IDs were duplicated, so those with lower effect sizes were removed for GSEA analysis.
+
+### Dotplot
+
+```{r}
+dotplot(y)
+```
+
+### Ridgeplot
+
+```{r fig.height=10,fig.width=8}
+ridgeplot(y)
+```
+
+### Network plot
+
+```{r}
+cnetplot(x)
+```
+
+### UpSet plot
+
+```{r}
+upsetplot(y) + ylab("logFC")
+```
+
+### GSEA plot
+
+```{r}
+gseaplot2(y, geneSetID = 1:5)
+```
+
+## Adjusted for GROUP, VisitAge, SEX, Visit, Duration
+
+```{r}
+res = read.csv("Proteomics/Reports/DCCT EDIC CARV adjusted GROUP VisitAge SEX Visit Duration.csv",
+               na.strings = c("","NA"))
+res <- res[!is.na(res$logFC), ]
+res$entrez <- protein_anotation$Entrez[match(res$protid, protein_anotation$UniProt)]
+
+adjusted <- res$logFC[!is.na(res$entrez)]
+names(adjusted) <- res$entrez[!is.na(res$entrez)]
+adjusted <- sort(adjusted, decreasing = T)
+dups <- duplicated(names(adjusted))
+y <- gsePathway(adjusted[!dups], pvalueCutoff = 1, pAdjustMethod = "BH", verbose = FALSE)
+x <- setReadable(y, "org.Hs.eg.db", "ENTREZID")
+```
+
+A total of `r sum(dups)` gene IDs were duplicated, so those with lower effect sizes were removed for GSEA analysis.
+
+### Dotplot
+
+```{r}
+dotplot(y)
+```
+
+### Ridgeplot
+
+```{r fig.height=10,fig.width=8}
+ridgeplot(y)
+```
+
+### Network plot
+
+```{r}
+cnetplot(x)
+```
+
+### UpSet plot
+
+```{r}
+upsetplot(y) + ylab("logFC")
+```
+
+### GSEA plot
+
+```{r}
+gseaplot2(y, geneSetID = 1:5)
+```
