@@ -22,6 +22,7 @@ library(arsenal)
 library(knitr)
 library(chron)
 library(M3)
+library(lubridate)
 library(ggplot2)
 
 knitr::opts_chunk$set(echo = FALSE)
@@ -38,7 +39,7 @@ setwd(home_dir)
 
 ```{r include=TRUE, warning=FALSE, message=F}
 # Import data
-setwd(home_dir)
+#setwd(home_dir)
 source("/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/Inpatient CGM study/Data raw/AccuracyOfTheDexcomG-Glucose_R_2022-12-05_1514.r")
 glucose <- data
 glucose <- glucose %>% filter(!is.na(bgvalue))
@@ -103,6 +104,17 @@ cgm$date <- as.Date(cgm$date_time)
 cgm$time <- as.ITime(cgm$date_time)
 cgm$record_id <- cgm$subjectid
 cgm_keep <- cgm %>% select(record_id,date_time,sensorglucose)
+
+# read in start and stop date/time of insulin administration and exclude times outside this window
+iv_time <- read.csv("/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/Inpatient CGM study/Data raw/AccuracyOfTheDexcomG-IVInsulin_DATA_2023-02-24_2222.csv")
+iv_time <- iv_time %>% select(record_id,gtt_start_daet,insulin_drip_stop)
+iv_time$record_id <- str_pad(iv_time$record_id,3,pad="0")
+iv_time$gtt_start_daet <- mdy_hm(iv_time$gtt_start_daet)
+iv_time$insulin_drip_stop <- mdy_hm(iv_time$insulin_drip_stop)
+ins_duration <- iv_time
+ins_duration$ins_duration <- ins_duration$insulin_drip_stop - ins_duration$gtt_start_daet
+ins_duration <- ins_duration %>% select(record_id, ins_duration)
+patient <- merge(patient, ins_duration, by="record_id", all.x = T, all.y = F)
 
 # find CGM measure that is closest to each POC glucose by ID and date/time, with no more than 5 minutes difference
 glucose_keep$cgm_glucose <- unlist(apply(glucose_keep,1,function(r){
@@ -199,7 +211,7 @@ demo <- merge(demo, numpoc, by="record_id", all.x = T, all.y = F)
 
 ```{r include=TRUE, warning=FALSE, message=F}
 t1 <- tableby(data=demo,  ~ age + gender.factor + race + ethnicity + 
-                pumpuser.factor + automatedyn.factor + a1c + duration_years + admit_length_hours + POC_n, numeric.stats=c("Nmiss2","median","q1q3"))
+                pumpuser.factor + automatedyn.factor + a1c + duration_years + admit_length_hours + POC_n + ins_duration, numeric.stats=c("Nmiss2","median","q1q3"))
 kable(summary(t1))
 
 ```
