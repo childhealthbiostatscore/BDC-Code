@@ -36,6 +36,8 @@ glucose <- data
 glucose <- glucose %>% filter(!is.na(bgvalue))
 glucose <- glucose %>% filter(!glucose$record_id %in% c("Test 1","Test 2"))
 glucose <- glucose %>% filter(glucose$bgvalue<400)
+# 5 measures <40 removed
+glucose <- glucose %>% filter(glucose$bgvalue>=40)
 glucose$date <- as.Date(glucose$date)
 glucose$time <- as.ITime(glucose$time)
 glucose$date_time <- as.POSIXct(paste(glucose$date, glucose$time), format="%Y-%m-%d %H:%M:%S")
@@ -114,11 +116,13 @@ patient <- merge(patient, ins_duration, by="record_id", all.x = T, all.y = F)
 cgm_keep$time_from_ins_start <- as.numeric((cgm_keep$date_time - cgm_keep$gtt_start_daet ) / 3600) -7
 # now categorize times
 cgm_keep$time_window <- case_when(
-  cgm_keep$date_time<cgm_keep$gtt_start_daet | cgm_keep$date_time>cgm_keep$insulin_drip_stop ~ "Not on insulin drip",
-  cgm_keep$time_from_ins_start>0 & cgm_keep$time_from_ins_start<3 & cgm_keep$date_time<=cgm_keep$insulin_drip_stop ~ "0 - 3 hours",
+  cgm_keep$time_from_ins_start<0 ~ "Not on insulin drip",
+  cgm_keep$date_time>cgm_keep$insulin_drip_stop ~ "Not on insulin drip",
+  cgm_keep$time_from_ins_start>=0 & cgm_keep$time_from_ins_start<3 & cgm_keep$date_time<=cgm_keep$insulin_drip_stop ~ "0 - 3 hours",
    cgm_keep$time_from_ins_start>=3 & cgm_keep$time_from_ins_start<6 & cgm_keep$date_time<=cgm_keep$insulin_drip_stop  ~ "3-6 hours",
    cgm_keep$time_from_ins_start>=6 & cgm_keep$date_time<=cgm_keep$insulin_drip_stop ~ "6+ hours"
 )
+
 
 glucose_keep <- merge(glucose_keep,iv_time,by="record_id",all.x=T,all.y=F)
 #glucose_keep <- glucose_keep %>% filter(date_time>=gtt_start_daet)
@@ -143,6 +147,15 @@ glucose_keep$time_window <- unlist(apply(glucose_keep,1,function(r){
   try(if(is.na(dt) | abs(difftime(dat$date_time[which.min(abs(dat$date_time-dt))],dt,units = "mins")) > 5 ){x = NA})
   return(x)
 }))
+glucose_keep$time_from_ins_start <- ((glucose_keep$date_time - glucose_keep$gtt_start_daet)/60) - 6
+glucose_keep$time_window <- case_when(
+  !is.na(glucose_keep$time_window) ~ glucose_keep$time_window,
+  is.na(glucose_keep$time_window) & glucose_keep$time_from_ins_start<0 ~ "Not on insulin drip",
+  is.na(glucose_keep$time_window) & glucose_keep$date_time>glucose_keep$insulin_drip_stop ~ "Not on insulin drip",
+  is.na(glucose_keep$time_window) & glucose_keep$time_from_ins_start>=0 & glucose_keep$time_from_ins_start<3 & glucose_keep$date_time<=glucose_keep$insulin_drip_stop ~ "0 - 3 hours",
+   is.na(glucose_keep$time_window) & glucose_keep$time_from_ins_start>=3 & glucose_keep$time_from_ins_start<6 & glucose_keep$date_time<=glucose_keep$insulin_drip_stop  ~ "3-6 hours",
+   is.na(glucose_keep$time_window) & glucose_keep$time_from_ins_start>=6 & glucose_keep$date_time<=glucose_keep$insulin_drip_stop ~ "6+ hours"
+)
 
 # merge in patient location
 glucose_keep <- merge(glucose_keep,patient_keep,by="record_id",all.x = T,all.y=F)
@@ -187,7 +200,7 @@ glucose_keep$in_20_20 <- as.factor(glucose_keep$in_20_20)
 glucose_keep$in_30_30 <- as.factor(glucose_keep$in_30_30)
 
 # keep only patients admitted for DKA
-#glucose_keep <- glucose_keep %>% filter(DKA=="DKA")
+glucose_keep <- glucose_keep %>% filter(DKA=="DKA")
 
 # separate df for ICU and medical floor/ED
 icu <- glucose_keep %>% filter(locationfloor.factor=="ICU")
