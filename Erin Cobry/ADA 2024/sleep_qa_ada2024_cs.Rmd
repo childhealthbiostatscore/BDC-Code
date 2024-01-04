@@ -54,6 +54,7 @@ Impairment_T$sleep_impairment_t = Impairment_T$`T-Score`
 
 
 ```{r data clean, include = FALSE}
+
 sd_df = sd_df %>% mutate(gender_m_fo = case_when(parent_gender == 1 ~ "Male",
                               parent_gender == 2 | parent_gender == 3 ~"Female/Other"
                               ),
@@ -70,6 +71,9 @@ sd_df = sd_df %>% mutate(gender_m_fo = case_when(parent_gender == 1 ~ "Male",
                                           ))
 sd_df$insulinmethod = factor(sd_df$insulinmethod, levels = c("1","2"), labels = c("Injections", "Insulin Pump"))
 sd_df$currenthcltech = factor(sd_df$currenthcltech, levels = c("1","0"), labels = c("Yes", "No"))
+sd_df$parenteducation = factor(sd_df$parenteducation, levels = c("2","3","4","5","6","7","8"),
+                               labels = c("Less than Highschool", "GED", "Highschool Graduate",
+                                          "Trade/Technical School", "Some College", "College Graduate", "Graduate School"))
 sd_df$current_cgm_use= factor(sd_df$current_cgm_use, levels = c("1","2"), labels = c("Yes", "No"))
 sd_df$rurality= factor(sd_df$rurality, levels = c("1","2"), labels = c("Rural", "Urban"))
 
@@ -77,7 +81,7 @@ sd_df$rurality= factor(sd_df$rurality, levels = c("1","2"), labels = c("Rural", 
 
 
 # demog covariates
-demog_df = sd_df %>% select(record_id, redcap_event_name,gender_m_fo ,age, age_cat,race , diabetesduration, insulinmethod, currenthcltech, current_cgm_use, rurality) %>% 
+demog_df = sd_df %>% select(record_id, redcap_event_name,gender_m_fo ,age, age_cat,race ,parenteducation, diabetesduration, insulinmethod, currenthcltech, current_cgm_use, rurality) %>% 
   filter(redcap_event_name == "enrollment_arm_1")
 
 a1c_col = sd_df %>% filter(redcap_event_name == "surveys_arm_1") %>% select(record_id, hba1c) 
@@ -93,7 +97,7 @@ demogs = sd_df %>% select(record_id,redcap_event_name,gender_m_fo ,age_cat, curr
   filter(redcap_event_name == "enrollment_arm_1") %>% select(-redcap_event_name)
 analysis = sd_df %>% select(record_id,redcap_event_name,
                             totalsleep_avg, onsetlatency_avg, sleepefficency_avg, waso_avg,   # sleep meas
-                            sensor_70_180, sensor_181_250, sensor_g251, sensor_u54, sensor_55_69 # diab meas
+                            sensor_70_180, sensor_181_250, sensor_g251, sensor_u54, sensor_55_69,sensor_mean # diab meas
 ) %>% filter(redcap_event_name == "surveys_arm_1") %>% select(-redcap_event_name)
 
 analysis = left_join(analysis, demogs) ; rm(demogs)
@@ -173,6 +177,22 @@ fit_mod = function(outcome,df){
   cat("\n")
   print(summary(mod2))
 }
+
+pvalue <- function(x, ...) {
+    # Construct vectors of data y, and groups (strata) g
+    y <- unlist(x)
+    g <- factor(rep(1:length(x), times=sapply(x, length)))
+    if (is.numeric(y)) {
+        # For numeric variables, perform a standard 2-sample t-test
+        p <- t.test(y ~ g)$p.value
+    } else {
+        # For categorical variables, perform a chi-squared test of independence
+        p <- chisq.test(table(y, g))$p.value
+    }
+    # Format the p-value, using an HTML entity for the less-than sign.
+    # The initial empty string places the output on the line below the variable label.
+    c("", sub("<", "&lt;", format.pval(p, digits=3, eps=0.001)))
+}
 ```
 
 # Data remarks
@@ -189,7 +209,7 @@ For categorical outcomes a chi square test of independence performed.
 # Demographics
 
 ```{r demog table}
-t1 = table1(~ . |gender_m_fo, data = demog_df )
+t1 = table1(~ . |gender_m_fo, data = demog_df, overall=F, extra.col=list(`P-value`=pvalue) )
 t2 = table1(~ . |age_cat, data = demog_df )
 t3 = table1(~ . |age_cat*gender_m_fo, data = demog_df )
 
@@ -270,7 +290,7 @@ chisq.test(analysis$gender_m_fo, analysis$currenthcltech)$p.value
 ```
 
 
-### Sensor use (for those on sensor, if RedCap value blank do not include) -- log reg
+### Sensor use (for those on sensor, if RedCap value blank do not include) -- log reg?
 
 Gender was not significantly associated with sensor use p = 1
 
@@ -279,7 +299,13 @@ Gender was not significantly associated with sensor use p = 1
 chisq.test(analysis$gender_m_fo, analysis$current_cgm_use)$p.value
 ```
 
+### Sensor Glucose Mean
 
+Gender was not significantly associated with mean sensor glucose (p= 0.6), or in the age adjusted model (p = 0.65)
+
+```{r msgs}
+fit_mod("sensor_mean", analysis)
+```
 
 ## Survey measures 
 
