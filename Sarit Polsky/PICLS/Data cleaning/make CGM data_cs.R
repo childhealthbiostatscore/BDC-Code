@@ -9,12 +9,12 @@ library(chron)
 library(data.table)
 # setup
 
-setwd("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Final raw CGM files for analysis")
-outdir <- "S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/Cleaned CGM data"
+setwd("/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Final raw CGM files for analysis")
+outdir <- "/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/Cleaned CGM data"
 
 # read in file with trimester dates, admission dates, discharge dates
 # trimester 3 will end at admission, PP will start at discharge
-tri_dates <- read.csv("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data cleaning/CGM Data Check_6.8.23.csv")
+tri_dates <- read.csv("/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data cleaning/CGM Data Check_6.8.23.csv")
 tri_dates$FirstTri <- as.Date(tri_dates$FirstTri,format = "%m/%d/%Y")
 tri_dates$SecondTri <- as.Date(tri_dates$SecondTri,format = "%m/%d/%Y")
 tri_dates$ThirdTri <- as.Date(tri_dates$ThirdTri,format = "%m/%d/%Y")
@@ -23,7 +23,7 @@ tri_dates$Run.in.Start <- as.Date(tri_dates$Run.in.Start, format = "%m/%d/%Y")
 tri_dates$Run.in.End <- as.Date(tri_dates$Run.in.End, format = "%m/%d/%Y")
 
 # read in labor admission dates
-labor_dates <- read_xlsx("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data cleaning/L&D Admission Dates for PICLS.xlsx")
+labor_dates <- read_xlsx("/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data cleaning/L&D Admission Dates for PICLS.xlsx")
 labor_dates$pid <- labor_dates$`Study ID`
 labor_dates$`Study ID` <- NULL
 labor_dates <- labor_dates %>% filter(!is.na(pid))
@@ -32,7 +32,7 @@ dates$subjectid <- dates$pid
 dates$pid <- NULL
 
 # get date of visit 15 for restarting PP data
-ppdates <- read.csv("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data cleaning/Data files/PICLSStudyHCLVsSAPTI-V15Dates_DATA_2022-11-07_2228.csv")
+ppdates <- read.csv("/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data cleaning/Data files/PICLSStudyHCLVsSAPTI-V15Dates_DATA_2022-11-07_2228.csv")
 ppdates <- ppdates %>% filter(redcap_repeat_instrument=="pregnancy_visits")
 ppdates$subjectid <- ppdates$pid
 ppdates$pid <- NULL
@@ -69,7 +69,7 @@ alldata2 <- merge(alldata2,ppdates,by="subjectid",all.x = T, all.y = F)
 alldata2$sensorglucose <- as.numeric(alldata2$sensorglucose)
 
 # merge in acetaminophen data and delete any data within X hours of acetaminophen
-acetaminophen <- read.csv("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Acetaminophen/PICLSStudyHCLVsSAPTI-Acetaminophen_DATA_2023-07-09_1639.csv",
+acetaminophen <- read.csv("/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Acetaminophen/PICLSStudyHCLVsSAPTI-Acetaminophen_DATA_2023-07-09_1639.csv",
                           na.strings = c("NA",""," "))
 acetaminophen$subjectid <- acetaminophen$pid
 acetaminophen <- acetaminophen %>% select(subjectid,acet_date,acet_time)
@@ -163,7 +163,7 @@ for (df in split1) {
   df <- as.data.frame(df)
   df <- df[,c("subjectid","timestamp","sensorglucose")]
   df <- df[order(df$timestamp),]
-  filename <- paste0("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files CS/",df$subjectid[1],"_T1.csv")
+  filename <- paste0("/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files CS/",df$subjectid[1],"_T1.csv")
   write.csv(df,file = filename,row.names = F)
 }
 
@@ -172,7 +172,7 @@ for (df in split2) {
   df <- as.data.frame(df)
   df <- df[,c("subjectid","timestamp","sensorglucose")]
   df <- df[order(df$timestamp),]
-  filename <- paste0("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files CS/",df$subjectid[1],"_T2.csv")
+  filename <- paste0("/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files CS/",df$subjectid[1],"_T2.csv")
   write.csv(df,file = filename,row.names = F)
 }
 
@@ -181,7 +181,7 @@ for (df in split3) {
   df <- as.data.frame(df)
   df <- df[,c("subjectid","timestamp","sensorglucose")]
   df <- df[order(df$timestamp),]
-  filename <- paste0("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files CS/",df$subjectid[3],"_T3.csv")
+  filename <- paste0("/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files CS/",df$subjectid[3],"_T3.csv")
   write.csv(df,file = filename,row.names = F)
 }
 
@@ -190,7 +190,7 @@ for (df in splitpp) {
   df <- as.data.frame(df)
   df <- df[,c("subjectid","timestamp","sensorglucose")]
   df <- df[order(df$timestamp),]
-  filename <- paste0("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files CS/",df$subjectid[1],"_PP.csv")
+  filename <- paste0("/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files CS/",df$subjectid[1],"_PP.csv")
   write.csv(df,file = filename,row.names = F)
 }
 
@@ -199,16 +199,16 @@ for (df in splitrunin) {
   df <- as.data.frame(df)
   df <- df[,c("subjectid","timestamp","sensorglucose")]
   df <- df[order(df$timestamp),]
-  filename <- paste0("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files CS/",df$subjectid[1],"_Runin.csv")
+  filename <- paste0("/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files CS/",df$subjectid[1],"_Runin.csv")
   write.csv(df,file = filename,row.names = F)
 }
 
 # then run cgmvariables()
-cgmvariables(inputdirectory = "S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files CS/", 
-             outputdirectory = "S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/", 
+cgmvariables(inputdirectory = "/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/Cleaned CGM files CS/", 
+             outputdirectory = "/Volumes/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/", 
              outputname = "cleanedcgm_noacet",
              id_filename = T, printname = T,
-             customintervals = list(c(0,54),c(0,63),c(63,140),c(140,600),c(0,69)))
+             customintervals = list(c(0,54),c(0,63),c(63,140),c(140,600),c(0,69),c(70,140)))
 
 # does not appear to be counting excursions correctly, probably because of all the gaps
 # when I finalize the dataset, should exclude these variables
