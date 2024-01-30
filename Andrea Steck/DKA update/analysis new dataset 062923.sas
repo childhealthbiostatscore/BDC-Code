@@ -457,7 +457,7 @@ run;
 data foranalysis;
 set alldata;
 run;
-%include 'W:\Shared Projects\Laura\BDC\SAS tools\Amanda table 1\2 category macros with KW.sas';
+%include 'V:\SAS tools\Amanda table 1\2 category macros with KW.sas';
 proc datasets;
 delete OutTable ;
 run;
@@ -489,6 +489,8 @@ proc freq data=alldata; table instudy; run;
 data foranalysis;
 set alldata;
 run;
+
+
 
 /* export csv file */
 proc export data=alldata
@@ -877,7 +879,30 @@ title;
 /******************/
 /* STUDY PATIENTS */
 /******************/
+/* this is where I stopped - this descriptive table is not working */
+/* get desc stats Morgan asked for, and then clarify why Andrea wants */
 proc contents data=alldata; run;
+data foranalysis;
+set alldata;
+where instudy;
+run;
+proc datasets;
+delete OutTable ;
+run;
+quit;
+%CON(BV = fup_prior_dx_mo, OC=instudy_active);
+%CON(BV = fup_first_to_last_visit_mo, OC=instudy_active);
+ods rtf file='c:\temp\output.rtf' style=journal;
+proc print data=outtable noobs label;
+var _Label_ RowVarc C0 c1 xPC ;
+label 	_Label_ = '00'x
+		RowVarc = '00'x
+		C0 = 'DKA status unknown'
+		C1 = 'DKA status known'
+		xPC = 'P-value' ;
+run;
+ods rtf close;
+
 data activestudy;
 set alldata;
 where instudy_active;

@@ -1,6 +1,6 @@
 *libname data 'S:\Shared Projects\Laura\BDC\Projects\Todd Alonso\DKA\Data';
-libname data 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
-libname data "W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw";
+libname data 'W:\Shared Projects\Laura\BDC\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
+libname data "W:\Shared Projects\Laura\BDC\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw";
 
  /**********************************************************************
  *   PRODUCT:   SAS
@@ -12,7 +12,7 @@ libname data "W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw";
  ***********************************************************************/
     data WORK.ALLDATA    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\MASTER 10.18.23 MS.csv' delimiter = ',' MISSOVER DSD lrecl=13106 firstobs=2 ;
+    infile 'W:\Shared Projects\Laura\BDC\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\MASTER 10.18.23 MS.csv' delimiter = ',' MISSOVER DSD lrecl=13106 firstobs=2 ;
        informat MRN best32. ;
        informat PP3 best32. ;
        informat Sample_ID best32. ;
@@ -139,7 +139,7 @@ proc contents; run;
  ***********************************************************************/
     data WORK.missing_covariates    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\active_study_participants_missing_covariates updated.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'W:\Shared Projects\Laura\BDC\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\active_study_participants_missing_covariates updated.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat PP3 best32. ;
        informat Age_AtOnset best32. ;
@@ -238,7 +238,7 @@ run;
  ***********************************************************************/
     data WORK.prev_excl    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\10.11.23 2017-2021 Previously excluded people to add to master.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'W:\Shared Projects\Laura\BDC\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\10.11.23 2017-2021 Previously excluded people to add to master.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat PP3 best32. ;
        informat Sample_ID best32. ;
@@ -384,7 +384,7 @@ run;
  ***********************************************************************/
     data WORK.zips    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DMERuralZIP.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'W:\Shared Projects\Laura\BDC\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DMERuralZIP.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat STATE $2. ;
        informat ZipCode_DateOfDiagnosis $5. ;
        informat YEAR_QTR best32. ;
@@ -520,10 +520,13 @@ where MRN=1516406;
 run;
 
 /* create variable ge6moprior */
+/* calculate length of followup: initial research visit to diagnosis date, and initial research visit to last research visit */
 data study;
 set study;
 fup_prior_dx = onsetdate - Initial_research_study_visit_dat;
 fup_prior_dx_mo = fup_prior_dx/30.44;
+fup_first_to_last_visit = Last_research_study_visit_date - Initial_research_study_visit_dat;
+fup_first_to_last_visit_mo = fup_first_to_last_visit/30.44;
 run;
 proc print data=study;
 where MRN=1516406;
@@ -542,7 +545,10 @@ run;
 proc print data=study;
 where MRN=1516406;
 run;
-
+proc print data= study;
+var onsetdate Initial_research_study_visit_dat Last_research_study_visit_date fup_prior_dx_mo fup_first_to_last_visit_mo;
+run;
+proc contents; run;
 
 /* create variable seen_12mo_prior */
 data study;
@@ -603,7 +609,7 @@ proc freq data=alldata; table instudy source; run;
 
 /* export csv file */
 proc export data=alldata
-outfile="W:\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\morgan cleaned final dataset.csv"
+outfile="W:\Shared Projects\Laura\BDC\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\morgan cleaned final dataset.csv"
 replace
 dbms="csv";
 run;
