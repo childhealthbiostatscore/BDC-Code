@@ -1,5 +1,3 @@
-*libname data 'S:\Shared Projects\Laura\BDC\Projects\Todd Alonso\DKA\Data';
-libname data 'W:\Shared Projects\Laura\BDC\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
 libname data "W:\Shared Projects\Laura\BDC\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw";
 
  /**********************************************************************
@@ -348,19 +346,8 @@ run;
     ;
     if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
     run;
-proc freq data=prev_excl; table instudy; run;
-proc print data=prev_excl;
-where MRN=1516406;
-run;
 data alldata;
 set alldata prev_excl;
-run;
-proc freq data=alldata; table Rural_or_non_rural / missing; run;
-proc print data=alldata; var ZipCode_DateOfDiagnosis Rural_or_non_rural; where Rural_or_non_rural in (""," "); run;
-/* 179 observations missing ZipCode_DateOfDiagnosis and Rural_or_non_rural */
-proc print data=alldata;
-where mrn=1516406;
-var mrn source instudy Rural_or_non_rural ZipCode_DateOfDiagnosis;
 run;
 data alldata;
 set alldata;
@@ -398,9 +385,6 @@ run;
     ;
     if _ERROR_ then call symputx('_EFIERR_',1);  /* set ERROR detection macro variable */
     run;
-proc print data=zips; where STATE="CO"; run;
-proc freq data=alldata; table ZipCode_DateOfDiagnosis; run;
-
 
 data zips;
 length Rural_Non_Rural $10;
@@ -408,17 +392,12 @@ set zips;
 drop YEAR_QTR; 
 Rural_Non_Rural="Rural";
 run;
-proc freq data=zips; table Rural_Non_Rural; run;
 proc sort data=zips; by ZipCode_DateOfDiagnosis; run;
 proc sort data=alldata; by ZipCode_DateOfDiagnosis; run;
 data alldata;
 merge alldata(in=ina) zips;
 by ZipCode_DateOfDiagnosis; 
 if ina;
-run;
-proc print data=alldata;
-where mrn in (1189698,1724085);
-var mrn source instudy Rural_or_non_rural ZipCode_DateOfDiagnosis;
 run;
 
 data alldata;
@@ -429,10 +408,6 @@ run;
 data alldata;
 set alldata;
 if ZipCode_DateOfDiagnosis not in (""," ") and Rural_or_non_rural in (""," ") then Rural_or_non_rural="Non-rural";
-run;
-proc print data=alldata;
-where mrn=1045809;
-var mrn source instudy Rural_or_non_rural ZipCode_DateOfDiagnosis;
 run;
 data alldata;
 set alldata;
@@ -445,17 +420,6 @@ run;
 data alldata;
 set alldata;
 if MRN=1724085 then Rural_or_non_rural='Non-rural';
-run;
-proc print data=alldata;
-where mrn in (1189698,1724085);
-var mrn source instudy Rural_or_non_rural ZipCode_DateOfDiagnosis;
-run;
-proc freq data=alldata; table Rural_or_non_rural / missing; run;
-proc print data=alldata; var ZipCode_DateOfDiagnosis Rural_or_non_rural; where Rural_or_non_rural in (""," "); run;
-/* still 179 observations missing ZipCode_DateOfDiagnosis and Rural_or_non_rural */
-proc print data=alldata;
-where mrn=1034232;
-var mrn source instudy new_ins;
 run;
 
 /* read in hardcoded corrections */
@@ -506,7 +470,6 @@ proc freq data=alldata; table instudy; run;*/
 /* now we have the dataset which contains study participants and non-participants */
 /* MAKE SURE THE N IS RIGHT */
 /* for study participants, need to limit to 70 subjects with at least 6 months of follow up */
-proc freq data=alldata; table instudy; run;
 data nonstudy;
 set alldata;
 where instudy=0;
@@ -515,9 +478,6 @@ data study;
 set alldata; 
 where instudy=1;
 run; 
-proc print data=study;
-where MRN=1516406;
-run;
 
 /* create variable ge6moprior */
 /* calculate length of followup: initial research visit to diagnosis date, and initial research visit to last research visit */
@@ -525,30 +485,17 @@ data study;
 set study;
 fup_prior_dx = onsetdate - Initial_research_study_visit_dat;
 fup_prior_dx_mo = fup_prior_dx/30.44;
-fup_first_to_last_visit = Last_research_study_visit_date - Initial_research_study_visit_dat;
-fup_first_to_last_visit_mo = fup_first_to_last_visit/30.44;
+fup_first_last = Last_research_study_visit_date - Initial_research_study_visit_dat;
+fup_first_last_mo = fup_first_last/30.44;
 run;
 proc print data=study;
-where MRN=1516406;
+var fup_prior_dx fup_prior_dx_mo fup_first_last fup_first_last_mo;
 run;
 data study;
 set study;
 if fup_prior_dx_mo>=6 then ge6moprior=1;
 else ge6moprior=0;
 run;
-proc print data=study;
-where MRN=1516406;
-run;
-proc print data=study;
-var onsetdate Initial_research_study_visit_dat fup_prior_dx fup_prior_dx_mo ge6moprior;
-run;
-proc print data=study;
-where MRN=1516406;
-run;
-proc print data= study;
-var onsetdate Initial_research_study_visit_dat Last_research_study_visit_date fup_prior_dx_mo fup_first_to_last_visit_mo;
-run;
-proc contents; run;
 
 /* create variable seen_12mo_prior */
 data study;
@@ -560,12 +507,6 @@ set study;
 if last_visit_to_dx<12 then seen_12mo_prior = 1;
 else seen_12mo_prior=0;
 run;
-proc print data=study;
-var onsetdate Last_research_study_visit_date last_visit_to_dx seen_12mo_prior;
-run;
-proc freq data=study;
-table ge6moprior*seen_12mo_prior;
-run;
 /*data study;
 set study;
 if ge6moprior=1; 
@@ -574,38 +515,30 @@ data study;
 set study;
 if seen_12mo_prior=1; 
 run; */
-proc freq data=study;
-table ge6moprior*seen_12mo_prior;
-run;
 
 data alldata;
 set study nonstudy;
 run;
-proc freq data=alldata;
-table ge6moprior*seen_12mo_prior;
+proc print data=alldata;
+var fup_prior_dx fup_prior_dx_mo fup_first_last_mo fup_first_last_mo_mo;
 run;
 proc print data=alldata;
-where MRN=1516406;
+where instudy=1;
+var fup_prior_dx fup_prior_dx_mo fup_first_last_mo fup_first_last_mo_mo;
 run;
-
 /* per Morgan, delete PP3 ID 41815 */
 data alldata;
 set alldata;
 if PP3="41815" then delete;
 run;
 
-proc freq data=alldata;
-table instudy*dka;
-run;
-proc freq data=alldata;
-table Rural_Non_Rural rural_non_rural / missing;
-run;
-
 /* write final dataset */
 data data.alldata;
 set alldata;
 run;
-proc freq data=alldata; table instudy source; run;
+proc print data=data.alldata;
+var fup_prior_dx fup_prior_dx_mo fup_first_last fup_first_last_mo;
+run;
 
 /* export csv file */
 proc export data=alldata
@@ -614,14 +547,4 @@ replace
 dbms="csv";
 run;
 
-proc freq data=alldata; table Rural_or_non_rural / missing; run;
-proc print data=alldata; var ZipCode_DateOfDiagnosis Rural_or_non_rural; where Rural_or_non_rural in (""," "); run;
-/* 148 observations missing ZipCode_DateOfDiagnosis and Rural_or_non_rural */
 
-proc freq data=alldata;
-table state State_DateOfDiagnosis;
-run;
-proc print data=alldata;
-where mrn=1034232;
-var mrn source instudy new_ins;
-run;

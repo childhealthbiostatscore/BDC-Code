@@ -1,8 +1,4 @@
-
-*libname data 'S:\Shared Projects\Laura\BDC\Projects\Todd Alonso\DKA\Data';
-*libname data 'W:\Shared Projects\Laura\BDC\Todd Alonso\DKA\Data';
 libname data 'W:\Shared Projects\Laura\BDC\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw';
-*libname data "C:\temp\Morgan Sooy DKA update\Data_raw";
 libname save 'W:\Shared Projects\Laura\BDC\Projects\Andrea Steck\Morgan Sooy DKA update\';
 
 proc format;
@@ -33,18 +29,6 @@ run;
 data alldata;
 set data.alldata;
 run;
-proc freq data=alldata; table Rural_or_non_rural Insurance InsuranceGroup / missing; run;
-proc print data=alldata; var ZipCode_DateOfDiagnosis; where Rural_or_non_rural in (""," "); run;
-proc contents; run;
-/* start out with 148 missing Rural_or_non_rural */
-proc print data=alldata;
-var MRN source instudy dka DKA pH bicarb;
-where dka in (""," ");
-run;
-proc print data=alldata;
-where mrn=1516406;
-var mrn source instudy Rural_or_non_rural ZipCode_DateOfDiagnosis;
-run;
 
 /* create new variable for active/inactive study participants */
 data alldata;
@@ -53,34 +37,12 @@ if instudy=0 then instudy_active=.;
 else if instudy=1 and ge6moprior=1 and seen_12mo_prior=1 then instudy_active=1;
 else if instudy=1 and (ge6moprior=0 or seen_12mo_prior=0) then instudy_active=0;
 run;
-proc freq data=alldata;
-table instudy_active*ge6moprior*seen_12mo_prior;
-run;
 data alldata;
 set alldata;
 length active_inactive_clinic $ 25;
 if instudy=0 then active_inactive_clinic=0;
 else if instudy=1 and ge6moprior=1 and seen_12mo_prior=1 then active_inactive_clinic=1;
 else if instudy=1 and (ge6moprior=0 or seen_12mo_prior=0) then active_inactive_clinic=2;
-run;
-proc freq data=alldata;
-table active_inactive_clinic*instudy;
-run;
-proc print data=alldata;
-where mrn=1034232;
-var mrn source instudy new_ins;
-run;
-
-data x;
-set alldata;
-where (dka="No" and dka_sev="Mild DKA") or (dka="Yes" and dka_sev="No DKA") or
-  dka in (""," ") or dka_sev in ("", " ");
-keep mrn pp3 source ph bicarb dka dka_sev;
-run;
-proc sort data=x; by source; run;
-proc print data=x; run;
-proc freq data=alldata;
-table ph;
 run;
 
 /* create variable for categorical age */
@@ -92,22 +54,13 @@ else if Age_AtOnset>=6 and Age_AtOnset<13 then age_cat=2;
 else age_cat=3;
 format age_cat age_cat.;
 run;
-proc print data=alldata; var Age_AtOnset age_cat; run;
-proc freq data=alldata; table age_cat; run;
 
-proc freq data=alldata; table new_ins*insurancegroup / missing; run;
 data alldata;
 set alldata;
 if new_ins in (""," ") then new_ins=insurancegroup;
 run;
-proc print data=alldata;
-where mrn=1516406;
-var mrn source instudy Rural_or_non_rural;
-run;
-
 
 /* recode English cap and noncap */
-proc freq data=alldata; table PrimaryLanguage; run;
 data alldata;
 set alldata;
 if PrimaryLanguage='ENGLISH' then PrimaryLanguage='English';
@@ -208,7 +161,7 @@ run;
  ***********************************************************************/
    data WORK.CORRECTIONS    ;
     %let _EFIERR_ = 0; 
-    infile 'W:\Shared Projects\Laura\BDC\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'V:\Shared Projects\Laura\BDC\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\checking_DKA_07FEB2023.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat DKA $3. ;
        informat dka_sev $10. ;
@@ -249,7 +202,7 @@ proc freq data=alldata; table source*dka; run;
  ***********************************************************************/
     data WORK.NEW_corrections    ;
     %let _EFIERR_ = 0; /* set the ERROR detection macro variable */
-    infile 'W:\Shared Projects\Laura\BDC\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DKA Severity Issues - fixed_07.05.23.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
+    infile 'V:\Shared Projects\Laura\BDC\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\DKA Severity Issues - fixed_07.05.23.csv' delimiter = ',' MISSOVER DSD lrecl=32767 firstobs=2 ;
        informat MRN best32. ;
        informat PP3 best32. ;
        informat pH 8.2 ;
@@ -457,7 +410,7 @@ run;
 data foranalysis;
 set alldata;
 run;
-%include 'V:\SAS tools\Amanda table 1\2 category macros with KW.sas';
+%include 'W:\SAS tools\Amanda table 1\2 category macros with KW.sas';
 proc datasets;
 delete OutTable ;
 run;
@@ -494,7 +447,7 @@ run;
 
 /* export csv file */
 proc export data=alldata
-outfile="W:\Shared Projects\Laura\BDC\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\morgan cleaned final dataset no unknown all CO.csv"
+outfile="V:\Shared Projects\Laura\BDC\Projects\Andrea Steck\Morgan Sooy DKA update\Data_raw\morgan cleaned final dataset no unknown all CO.csv"
 replace
 dbms="csv";
 run;
@@ -731,9 +684,16 @@ ods rtf file="C:\temp\output.rtf" style=journal;
 proc print data=newtest label noobs; run;
 ods rtf close;
 
+/* label */
+data alldata;
+set alldata;
+label fup_prior_dx_mo="Follow up first visit to diagnosis (months)";
+label fup_first_last_mo="Follow up first visit to last visit (months)";
+run;
+
 /* comparison of study and clinic patients */
 proc contents data=foranalysis; run;
-%include 'W:\Shared Projects\Laura\BDC\SAS tools\Amanda table 1\3 or more category Macros with KW.sas';
+%include 'W:\SAS tools\Amanda table 1\3 or more category Macros with KW.sas';
 proc datasets;
 delete OutTable ;
 run;
@@ -879,29 +839,32 @@ title;
 /******************/
 /* STUDY PATIENTS */
 /******************/
-/* this is where I stopped - this descriptive table is not working */
-/* get desc stats Morgan asked for, and then clarify why Andrea wants */
 proc contents data=alldata; run;
 data foranalysis;
 set alldata;
 where instudy;
+run;
+proc print data=foranalysis;
+var fup_prior_dx_mo fup_first_last_mo; 
 run;
 proc datasets;
 delete OutTable ;
 run;
 quit;
 %CON(BV = fup_prior_dx_mo, OC=instudy_active);
-%CON(BV = fup_first_to_last_visit_mo, OC=instudy_active);
+%CON(BV = fup_first_last_mo, OC=instudy_active);
 ods rtf file='c:\temp\output.rtf' style=journal;
 proc print data=outtable noobs label;
 var _Label_ RowVarc C0 c1 xPC ;
 label 	_Label_ = '00'x
 		RowVarc = '00'x
-		C0 = 'DKA status unknown'
-		C1 = 'DKA status known'
+		C0 = 'Inactive study participant'
+		C1 = 'Active study participant'
 		xPC = 'P-value' ;
 run;
 ods rtf close;
+proc print data=alldata; var fup_prior_dx_mo fup_first_last_mo; run;
+proc freq data=foranalysis; table instudy_active; run;
 
 data activestudy;
 set alldata;
