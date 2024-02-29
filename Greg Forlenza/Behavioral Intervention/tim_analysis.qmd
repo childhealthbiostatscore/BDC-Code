@@ -7,6 +7,7 @@ format:
   html:
     toc: true
     toc-depth: 5
+    number-sections: true
     toc-float: true
     code-fold: true
     self-contained: true
@@ -46,6 +47,23 @@ reviewInvalidRecords(Records)
 ```
 
 ```{r data cleaning}
+#| message: false
+# Add treatment group to glycemic data
+db_glycemic_data <- left_join(
+  db_glycemic_data,
+  db_randomization_form %>%
+    filter(!is.na(treatment_group)) %>%
+    select(record_id, treatment_group)
+)
+# Everyone else is considered "observe clinically"
+db_glycemic_data$treatment_group <- as.character(db_glycemic_data$treatment_group)
+db_glycemic_data$treatment_group[is.na(db_glycemic_data$treatment_group)] <-
+  "Observe Clincically"
+db_glycemic_data$treatment_group <- factor(db_glycemic_data$treatment_group,
+  levels = c("Observe Clincically", "Behavioral Intervention", "Care+ (Control)")
+)
+# If they are missing gly_timepoint they don't have glycemic data at that visit
+db_glycemic_data <- db_glycemic_data %>% filter(!is.na(gly_timepoint))
 ```
 
 # Table 1
@@ -70,6 +88,29 @@ db_demographics %>%
 
 # Glycemic data
 
+## Groups by timepoint
+
+```{r}
+db_glycemic_data %>%
+  group_by(gly_timepoint) %>%
+  summarise(
+    n = length(unique(record_id)),
+    `n Observe Clincically` = sum(treatment_group == "Observe Clincically"),
+    `n Behavioral Intervention` = sum(treatment_group == "Behavioral Intervention"),
+    `n Care+ (Control)` = sum(treatment_group == "Care+ (Control)")
+  ) %>%
+  kable()
+# Write for checking
+write.csv(
+  db_glycemic_data %>%
+    select(
+      record_id, redcap_event_name, redcap_survey_identifier,
+      treatment_group, everything()
+    ),
+  file = "~/cleaned_glycemic_data.csv", row.names = F, na = ""
+)
+```
+
 ## HbA1c
 
 ### Plot
@@ -77,22 +118,23 @@ db_demographics %>%
 ```{r}
 v <- "gly_a1c"
 df <- db_glycemic_data %>%
-  select(record_id, gly_timepoint, all_of(v)) %>%
+  select(record_id, gly_timepoint, treatment_group, all_of(v)) %>%
   drop_na()
 p <- ggplot(df, aes(
-  x = gly_timepoint, y = !!sym(v), group = record_id, color = factor(record_id)
+  x = gly_timepoint, y = !!sym(v), group = record_id, color = treatment_group
 )) +
   geom_point() +
   geom_line() +
   theme_bw() +
-  theme(legend.position = "none", axis.title.x = element_blank())
+  theme(axis.title.x = element_blank())
 ggplotly(p)
 ```
 
 ### Model
 
 ```{r}
-f <- as.formula(paste0(v, "~gly_timepoint+(1|record_id)"))
+#| message: false
+f <- as.formula(paste0(v, "~gly_timepoint*treatment_group+(1|record_id)"))
 mod <- lmer(f, data = db_glycemic_data)
 ```
 
@@ -105,7 +147,7 @@ kable(tidy(mod, effects = "fixed"), digits = 3)
 #### Means
 
 ```{r}
-kable(data.frame(emmeans(mod, ~gly_timepoint)), digits = 3)
+kable(data.frame(emmeans(mod, ~ gly_timepoint * treatment_group)), digits = 3)
 ```
 
 ## Sensor wear
@@ -115,22 +157,22 @@ kable(data.frame(emmeans(mod, ~gly_timepoint)), digits = 3)
 ```{r}
 v <- "gly_sensorwear"
 df <- db_glycemic_data %>%
-  select(record_id, gly_timepoint, all_of(v)) %>%
+  select(record_id, gly_timepoint, treatment_group, all_of(v)) %>%
   drop_na()
 p <- ggplot(df, aes(
-  x = gly_timepoint, y = !!sym(v), group = record_id, color = factor(record_id)
+  x = gly_timepoint, y = !!sym(v), group = record_id, color = treatment_group
 )) +
   geom_point() +
   geom_line() +
   theme_bw() +
-  theme(legend.position = "none", axis.title.x = element_blank())
+  theme(axis.title.x = element_blank())
 ggplotly(p)
 ```
 
 ### Model
 
 ```{r}
-f <- as.formula(paste0(v, "~gly_timepoint+(1|record_id)"))
+f <- as.formula(paste0(v, "~gly_timepoint*treatment_group+(1|record_id)"))
 mod <- lmer(f, data = db_glycemic_data)
 ```
 
@@ -143,7 +185,7 @@ kable(tidy(mod, effects = "fixed"), digits = 3)
 #### Means
 
 ```{r}
-kable(data.frame(emmeans(mod, ~gly_timepoint)), digits = 3)
+kable(data.frame(emmeans(mod, ~ gly_timepoint * treatment_group)), digits = 3)
 ```
 
 ## Sensor under 54
@@ -153,15 +195,15 @@ kable(data.frame(emmeans(mod, ~gly_timepoint)), digits = 3)
 ```{r}
 v <- "gly_sensor_u54"
 df <- db_glycemic_data %>%
-  select(record_id, gly_timepoint, all_of(v)) %>%
+  select(record_id, gly_timepoint, treatment_group, all_of(v)) %>%
   drop_na()
 p <- ggplot(df, aes(
-  x = gly_timepoint, y = !!sym(v), group = record_id, color = factor(record_id)
+  x = gly_timepoint, y = !!sym(v), group = record_id, color = treatment_group
 )) +
   geom_point() +
   geom_line() +
   theme_bw() +
-  theme(legend.position = "none", axis.title.x = element_blank())
+  theme(axis.title.x = element_blank())
 ggplotly(p)
 ```
 
@@ -170,7 +212,7 @@ ggplotly(p)
 Because the majority of people did not have any time under 54 mg/dL, we used a hurdle model in which the first part of the model is the probability of a zero value and the second part is the probability of the non-zero values. 
 
 ```{r}
-f <- as.formula(paste0(v, " ~ gly_timepoint"))
+f <- as.formula(paste0(v, " ~ gly_timepoint*treatment_group"))
 mod <- mixed_model(f,
   random = ~ 1 | record_id, data = df,
   family = hurdle.lognormal(), n_phis = 1, zi_fixed = ~1
@@ -188,7 +230,7 @@ kable(tidy(mod), digits = 3)
 These model means do not really make sense since we can't have negative values for this outcome, so this model likely needs additional work.
 
 ```{r}
-kable(data.frame(emmeans(mod, ~gly_timepoint)), digits = 3)
+kable(data.frame(emmeans(mod, ~ gly_timepoint * treatment_group)), digits = 3)
 ```
 
 ## Sensor 54 - 69
@@ -198,15 +240,15 @@ kable(data.frame(emmeans(mod, ~gly_timepoint)), digits = 3)
 ```{r}
 v <- "gly_sensor_54_69"
 df <- db_glycemic_data %>%
-  select(record_id, gly_timepoint, all_of(v)) %>%
+  select(record_id, gly_timepoint, treatment_group, all_of(v)) %>%
   drop_na()
 p <- ggplot(df, aes(
-  x = gly_timepoint, y = !!sym(v), group = record_id, color = factor(record_id)
+  x = gly_timepoint, y = !!sym(v), group = record_id, color = treatment_group
 )) +
   geom_point() +
   geom_line() +
   theme_bw() +
-  theme(legend.position = "none", axis.title.x = element_blank())
+  theme(axis.title.x = element_blank())
 ggplotly(p)
 ```
 
@@ -215,7 +257,7 @@ ggplotly(p)
 Because the majority of people did not have any time in the range 54 - 69 mg/dL, we used a hurdle model in which the first part of the model is the probability of a zero value and the second part is the probability of the non-zero values. 
 
 ```{r}
-f <- as.formula(paste0(v, " ~ gly_timepoint"))
+f <- as.formula(paste0(v, " ~ gly_timepoint*treatment_group"))
 mod <- mixed_model(f,
   random = ~ 1 | record_id, data = df,
   family = hurdle.lognormal(), n_phis = 1, zi_fixed = ~1
@@ -231,7 +273,7 @@ kable(tidy(mod), digits = 3)
 #### Means
 
 ```{r}
-kable(data.frame(emmeans(mod, ~gly_timepoint)), digits = 3)
+kable(data.frame(emmeans(mod, ~ gly_timepoint * treatment_group)), digits = 3)
 ```
 
 ## Sensor 70 - 180
@@ -241,22 +283,22 @@ kable(data.frame(emmeans(mod, ~gly_timepoint)), digits = 3)
 ```{r}
 v <- "gly_sensor_70_180"
 df <- db_glycemic_data %>%
-  select(record_id, gly_timepoint, all_of(v)) %>%
+  select(record_id, gly_timepoint, treatment_group, all_of(v)) %>%
   drop_na()
 p <- ggplot(df, aes(
-  x = gly_timepoint, y = !!sym(v), group = record_id, color = factor(record_id)
+  x = gly_timepoint, y = !!sym(v), group = record_id, color = treatment_group
 )) +
   geom_point() +
   geom_line() +
   theme_bw() +
-  theme(legend.position = "none", axis.title.x = element_blank())
+  theme(axis.title.x = element_blank())
 ggplotly(p)
 ```
 
 ### Model
 
 ```{r}
-f <- as.formula(paste0(v, "~gly_timepoint+(1|record_id)"))
+f <- as.formula(paste0(v, "~gly_timepoint*treatment_group+(1|record_id)"))
 mod <- lmer(f, data = db_glycemic_data)
 ```
 
@@ -269,7 +311,7 @@ kable(tidy(mod, effects = "fixed"), digits = 3)
 #### Means
 
 ```{r}
-kable(data.frame(emmeans(mod, ~gly_timepoint)), digits = 3)
+kable(data.frame(emmeans(mod, ~ gly_timepoint * treatment_group)), digits = 3)
 ```
 
 ## Sensor 181 - 250
@@ -279,22 +321,22 @@ kable(data.frame(emmeans(mod, ~gly_timepoint)), digits = 3)
 ```{r}
 v <- "gly_sensor_181_250"
 df <- db_glycemic_data %>%
-  select(record_id, gly_timepoint, all_of(v)) %>%
+  select(record_id, gly_timepoint, treatment_group, all_of(v)) %>%
   drop_na()
 p <- ggplot(df, aes(
-  x = gly_timepoint, y = !!sym(v), group = record_id, color = factor(record_id)
+  x = gly_timepoint, y = !!sym(v), group = record_id, color = treatment_group
 )) +
   geom_point() +
   geom_line() +
   theme_bw() +
-  theme(legend.position = "none", axis.title.x = element_blank())
+  theme(axis.title.x = element_blank())
 ggplotly(p)
 ```
 
 ### Model
 
 ```{r}
-f <- as.formula(paste0(v, "~gly_timepoint+(1|record_id)"))
+f <- as.formula(paste0(v, "~gly_timepoint*treatment_group+(1|record_id)"))
 mod <- lmer(f, data = db_glycemic_data)
 ```
 
@@ -307,7 +349,7 @@ kable(tidy(mod, effects = "fixed"), digits = 3)
 #### Means
 
 ```{r}
-kable(data.frame(emmeans(mod, ~gly_timepoint)), digits = 3)
+kable(data.frame(emmeans(mod, ~ gly_timepoint * treatment_group)), digits = 3)
 ```
 
 ## Sensor > 250
@@ -317,22 +359,22 @@ kable(data.frame(emmeans(mod, ~gly_timepoint)), digits = 3)
 ```{r}
 v <- "gly_sensor_g250"
 df <- db_glycemic_data %>%
-  select(record_id, gly_timepoint, all_of(v)) %>%
+  select(record_id, gly_timepoint, treatment_group, all_of(v)) %>%
   drop_na()
 p <- ggplot(df, aes(
-  x = gly_timepoint, y = !!sym(v), group = record_id, color = factor(record_id)
+  x = gly_timepoint, y = !!sym(v), group = record_id, color = treatment_group
 )) +
   geom_point() +
   geom_line() +
   theme_bw() +
-  theme(legend.position = "none", axis.title.x = element_blank())
+  theme(axis.title.x = element_blank())
 ggplotly(p)
 ```
 
 ### Model
 
 ```{r}
-f <- as.formula(paste0(v, "~gly_timepoint+(1|record_id)"))
+f <- as.formula(paste0(v, "~gly_timepoint*treatment_group+(1|record_id)"))
 mod <- lmer(f, data = db_glycemic_data)
 ```
 
@@ -345,7 +387,7 @@ kable(tidy(mod, effects = "fixed"), digits = 3)
 #### Means
 
 ```{r}
-kable(data.frame(emmeans(mod, ~gly_timepoint)), digits = 3)
+kable(data.frame(emmeans(mod, ~ gly_timepoint * treatment_group)), digits = 3)
 ```
 
 ## Mean sensor
@@ -355,22 +397,22 @@ kable(data.frame(emmeans(mod, ~gly_timepoint)), digits = 3)
 ```{r}
 v <- "gly_sensor_mean"
 df <- db_glycemic_data %>%
-  select(record_id, gly_timepoint, all_of(v)) %>%
+  select(record_id, gly_timepoint, treatment_group, all_of(v)) %>%
   drop_na()
 p <- ggplot(df, aes(
-  x = gly_timepoint, y = !!sym(v), group = record_id, color = factor(record_id)
+  x = gly_timepoint, y = !!sym(v), group = record_id, color = treatment_group
 )) +
   geom_point() +
   geom_line() +
   theme_bw() +
-  theme(legend.position = "none", axis.title.x = element_blank())
+  theme(axis.title.x = element_blank())
 ggplotly(p)
 ```
 
 ### Model
 
 ```{r}
-f <- as.formula(paste0(v, "~gly_timepoint+(1|record_id)"))
+f <- as.formula(paste0(v, "~gly_timepoint*treatment_group+(1|record_id)"))
 mod <- lmer(f, data = db_glycemic_data)
 ```
 
@@ -383,7 +425,7 @@ kable(tidy(mod, effects = "fixed"), digits = 3)
 #### Means
 
 ```{r}
-kable(data.frame(emmeans(mod, ~gly_timepoint)), digits = 3)
+kable(data.frame(emmeans(mod, ~ gly_timepoint * treatment_group)), digits = 3)
 ```
 
 ## Sensor SD
@@ -393,22 +435,22 @@ kable(data.frame(emmeans(mod, ~gly_timepoint)), digits = 3)
 ```{r}
 v <- "gly_sensor_sd"
 df <- db_glycemic_data %>%
-  select(record_id, gly_timepoint, all_of(v)) %>%
+  select(record_id, gly_timepoint, treatment_group, all_of(v)) %>%
   drop_na()
 p <- ggplot(df, aes(
-  x = gly_timepoint, y = !!sym(v), group = record_id, color = factor(record_id)
+  x = gly_timepoint, y = !!sym(v), group = record_id, color = treatment_group
 )) +
   geom_point() +
   geom_line() +
   theme_bw() +
-  theme(legend.position = "none", axis.title.x = element_blank())
+  theme(axis.title.x = element_blank())
 ggplotly(p)
 ```
 
 ### Model
 
 ```{r}
-f <- as.formula(paste0(v, "~gly_timepoint+(1|record_id)"))
+f <- as.formula(paste0(v, "~gly_timepoint*treatment_group+(1|record_id)"))
 mod <- lmer(f, data = db_glycemic_data)
 ```
 
@@ -421,5 +463,5 @@ kable(tidy(mod, effects = "fixed"), digits = 3)
 #### Means
 
 ```{r}
-kable(data.frame(emmeans(mod, ~gly_timepoint)), digits = 3)
+kable(data.frame(emmeans(mod, ~ gly_timepoint | treatment_group)), digits = 3)
 ```
