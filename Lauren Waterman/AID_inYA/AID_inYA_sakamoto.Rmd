@@ -1,0 +1,176 @@
+---
+title: ""
+author: "Casey Sakamoto"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 5
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(arsenal)
+library(tidyverse)
+library(performance)
+library(knitr)
+library(readxl)
+library(lubridate)
+library(table1)
+library(nlme) # mixed models
+library(emmeans)
+library(ggrepel)
+
+#data
+visit_level <- read_excel("S:/Laura/BDC/Projects/Lauren Waterman/AID_inYA/AID A1c master with notes.xlsx", 
+    sheet = "VisitLevel")
+patient_level <- read_excel("S:/Laura/BDC/Projects/Lauren Waterman/AID_inYA/AID A1c master with notes.xlsx", 
+    sheet = "PatientLevel")
+```
+
+```{r dataclean, include=FALSE}
+# demographics -- patient level
+# note that there are sums and a small table at the bottom of the spreadsheet, so need to remove the rows where no MRN
+demog_df = patient_level %>% filter(!is.na(MRN))
+
+# create retention rate var
+disco_df = demog_df %>% mutate(disc_perm = ifelse(`currently on`=="n",1,0),
+                               disc_temp = ifelse(`temp d/c`== "y" |`temp d/c`== "Y" ,1,0),
+                               temp_reason = `...21`) %>% select(MRN, disc_perm, disc_temp, temp_reason, AID_StartDate)
+disco_df = disco_df %>% mutate(temp_dc_13 = ifelse(temp_reason == 1 | temp_reason == 3, 1,0),
+                               any_dc = ifelse(disc_perm == 1 | disc_temp == 1, 1, 0))
+
+# remove pregnant visits
+visitlevel = visit_level %>% filter(Pregnant == 'n')
+
+# categorize into 90 day increments
+# create days group
+visitlevel = visitlevel %>% mutate(time_cat = case_when(DaysFromIndexVisitDate < 0  ~ "Baseline",
+                                                    DaysFromIndexVisitDate >=0 & DaysFromIndexVisitDate < 90 ~ "0-89",
+                                                    DaysFromIndexVisitDate >=90 & DaysFromIndexVisitDate < 180 ~ "90-179",
+                                                    DaysFromIndexVisitDate >=180 & DaysFromIndexVisitDate < 270 ~ "180-269",
+                                                    DaysFromIndexVisitDate >= 270 & DaysFromIndexVisitDate < 360 ~ "270-359",
+                                                    DaysFromIndexVisitDate >= 360 & DaysFromIndexVisitDate < 450 ~ "360-449",
+                                                    DaysFromIndexVisitDate >= 450 & DaysFromIndexVisitDate < 540 ~ "450-539",
+                                                    DaysFromIndexVisitDate >= 540 & DaysFromIndexVisitDate < 630 ~ "540-629",
+                                                    DaysFromIndexVisitDate >= 630 & DaysFromIndexVisitDate < 720 ~ "630-719",
+                                                    DaysFromIndexVisitDate >= 720  ~ "> 720"))
+visitlevel$time_cat = factor(visitlevel$time_cat, levels = c("Baseline", "0-89", "90-179", "180-269", "270-359","360-449","450-539","540-629","630-719", "> 720"))
+
+############################
+analysis = left_join(visitlevel, demog_df)
+analysis = left_join(analysis, disco_df)
+# within each subj time group take the closest days to the end of the category (least neg baseline, closest to 90, 179, etc)
+analysis = analysis %>% group_by(MRN, time_cat) %>% filter(DaysFromIndexVisitDate == max(DaysFromIndexVisitDate)) %>% ungroup()
+
+############################
+
+# create age vars
+analysis = analysis %>% mutate(Age = as.numeric(difftime(VisitDate, DOB))/365.25,
+                               Age_cat = case_when(Age < 19 ~ "14-18",
+                                                   Age < 23 & Age >= 19 ~ "19-22",
+                                                   Age < 26 & Age >= 23 ~ "23-25",
+                                                   Age >= 26 & Age < 30 ~ "26-30",
+                                                   Age >= 30 ~ " > 30"),
+                               
+                               a1c = `A1cValue_+/-7daysFromVisit`)
+
+
+
+# test = data.frame(table(demog_df$MRN)) # 2 duplicate mrns (622 unique out of 624 obs in patient_level)1864674 1936618
+# test_dupes = demog_df %>% filter(MRN %in% c(1864674, 1936618))
+# test_dupes2 = visit_level %>% filter(MRN %in% c(1864674, 1936618))
+# gather baseline and 2nd visit for insulin regimen changed
+
+analysis$any_dc = ifelse(is.na(analysis$any_dc), 0, analysis$any_dc)
+analysis$any_dc = factor(analysis$any_dc, levels = c(0,1), labels = c("Never DC", "Any DC"))
+
+baseline = analysis %>% filter(time_cat == "Baseline")
+baseline_a1c = baseline %>% mutate(baseline_a1c = case_when(`A1cValue_+/-7daysFromVisit` < 7 ~ "< 7",
+                                                            `A1cValue_+/-7daysFromVisit` < 9 & `A1cValue_+/-7daysFromVisit` >= 7 ~ "7-9",
+                                                            `A1cValue_+/-7daysFromVisit` > 9 ~ "> 9")) %>% select(MRN, baseline_a1c, AID_StartDate)
+
+analysis = left_join(analysis, baseline_a1c)
+```
+
+```{r t1, include = FALSE}
+# create table 1
+# table 1 includes: diabetes duration at time of aid initiation (days = 0), age at day = 0, prior insulin use (non aid pump or mdi, system switched to, race/ethn, insurance cat)
+
+table1_df = analysis %>% filter(time_cat=="Baseline") %>%select(Age_cat, Race_Ethnicity, Gender, DiabetesDuration, InsulinRegimen, CGM, InsuranceCategory_IndexVisitDate, any_dc)
+table1_df$any_dc = ifelse(is.na(table1_df$any_dc), 0, table1_df$any_dc )
+table
+t1 = table1(~Age_cat+ Race_Ethnicity+ Gender+ DiabetesDuration+ InsulinRegimen+ CGM+ InsuranceCategory_IndexVisitDate|any_dc, data = table1_df, render.continuous = c(. = "Mean (SD)"))
+```
+
+```{r models, include = FALSE}
+
+```
+
+# Background
+
+## Pre-Meeting Info
+
+ A1c over time for the overall sample, by baseline age, baseline A1c (</=7, 7-9, >9), and baseline insulin regimen. We were also hoping to see the percent of people meeting the recommendations of A1c </=7 at each data point (0-3, 3-6, 6-9, 9-12, 12-15, 15-18, 18-21, 21-24 months [though if necessary I think we could combine the last four groupings into 12-18 months and 18-24 months depending on how many data points there are).
+
+I also have a variable for each data point on whether the AID system had been discontinued. On the patient level there is an indication if they had the system discontinued for any reason, along with a categorical variable as to why it was (listed on the patient level sheet). I was hoping that we could do a comparison between those who remained on AID during the entire study period compared to those with at least one break in usage. 
+
+## meeting notes
+
+similar to last analysis - include 30 + 24 mo out -- 3mo intervals
+
+change in a1c over time-- overall and by baseline age, baseline a1c, insulin regimen
+
+also hoping to see % < 7 a1c at each timepoint & discontinuations (each visit by above)
+
+[retention rates] those who discontinued ever vs stayed on
+- those who dc'd overall similar to baseline age in previous analysis
+
+overall trend in a1c breakdown for age and retention rates -- does this see <7 a1c across groups
+
+if we can divide discontinued group fro 1+3 in reason_cat in patient level
+
+demographics of overall, split by retention
+
+do not include pregnant = y in study
+
+
+# Outstanding Data Remarks/Questions
+
+- 2 subjects each with MRN 1864674 and 1936618 in patient level -- doesn't seem to be a problem at visit level; looks like only one set of visits per MRN
+
+- 156/3340 visits pregnant = y were excluded
+- 47/3184 visits were "multiple" visits in a window; value closest to the window border was used similar to the abstract 
+- = 3137 visits used
+
+- several subjects don't have a visit for Baseline ( days < 0 ): not included in desc stats table for now
+(this n for desc table will be 613 (624-9))
+
+# Methods
+
+# Analysis
+
+## Visits and Discontinuations
+
+- Number of visits by timepoint really only dropped off after the 2y mark
+- 98 of 624 participants had some sort of discontinuation, 24 of which was permanent. Of the discontinuations, 39 had either supply issues (24) or cost/insurance issues (15) as the specific reason for discontinuation
+
+```{r demog/t1, echo=FALSE}
+print("Number of Visits by Time (days from index), Age, and Time and Age")
+
+kable(analysis %>% group_by(time_cat, Age_cat) %>% summarise(n()))
+kable(analysis%>% group_by(Age_cat) %>% summarise(n()))
+kable(analysis%>% group_by(time_cat) %>% summarise(n()))
+
+print("Overall Retention Rates")
+disco_df %>% summarise(sum(disc_perm), sum(disc_temp), sum(any_dc), sum(temp_dc_13, na.rm=T))
+```
+
+## Demographics
+
+Overall and split by retention rates
+
+```{r t1, echo = FALSE}
+t1
+```
