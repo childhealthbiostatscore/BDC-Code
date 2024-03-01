@@ -50,7 +50,7 @@ library(SeuratObject)
 ###
 
 # data
-#home_dir = "/run/user/1001/gvfs/smb-share:server=ucdenver.pvt,share=som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/"
+home_dir = "/run/user/1001/gvfs/smb-share:server=ucdenver.pvt,share=som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/"
 knitr::opts_knit$set(root.dir = home_dir)
 #setwd("/run/user/1001/gvfs/smb-share:server=ucdenver.pvt,share=som/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/")
 # cd4_processed = readRDS(paste0(home_dir, "OneDrive_1_6-28-2023/cd4_cells_processed.rds"))
@@ -60,12 +60,59 @@ knitr::opts_knit$set(root.dir = home_dir)
 #df2 = df
 
 # casey workspace on lambda
+# copied to documents for file choose
 filename = file.choose()
 df = readRDS(filename)
 
 # new clusters
 #df2 = SetIdent(df, value= df@meta.data$RNA_clustifyr_celltype_individual)
 #rm(df)
+```
+```{r}
+# Casey's code
+# Convert Seurat to cell by gene matrix, add cluster
+
+######### DO ON LAMBDA MUCH QUICKER STILL LONG THOUGH ###########
+gene_list <- unique(rownames(df))
+cells <- FetchData(df, vars = gene_list)
+cells$cluster <- Idents(df)
+# want to avg by donor cells then by cluster, so add a donor var maybe?
+cells$donor = df$donor
+
+# calculate perc expression level for cluster by donor
+# first group by donor cells within each cluster
+test_exp = cells %>% 
+  group_by(cluster, donor) %>%
+  summarise(across(where(is.numeric), ~ mean(.x>0, na.rm=T)*100))
+# 286 rows (23donor*13 cluster = 299, so this num makes sense i think)
+
+# then group by cluster, avg of avgs?
+test_exp2 = test_exp %>% select(-donor)
+test_exp_cluster = test_exp2 %>%
+  group_by(cluster) %>% 
+  summarise(across(where(is.numeric),~mean(.x>0, na.rm = T)*100))
+#################################################################
+# # Calculate average expression level for each gene
+# mean_expr <- cells %>%
+#   summarise(across(where(is.numeric), ~ mean(.x, na.rm = T)))
+# # Calculate the percentage of cells expressing
+# perc_exp <- cells %>%
+#   summarise(across(where(is.numeric), ~ mean(.x > 0, na.rm = T) * 100))
+# # By cluster
+# # Calculate average expression level for each gene
+# mean_expr_clust <- cells %>%
+#   group_by(cluster) %>%
+#   summarise(across(where(is.numeric), ~ mean(.x, na.rm = T)))
+# # Calculate the percentage of cells expressing
+# perc_exp_clust <- cells %>%
+#   group_by(cluster) %>%
+#   summarise(across(where(is.numeric), ~ mean(.x > 0, na.rm = T) * 100))
+
+# write 
+getwd()
+write_csv(test_exp_cluster, "mean_express_cluster.csv")
+write_csv(perc_exp_clust, "perc_express_cluster.csv")
+
 ```
 
 ```{r}
@@ -74,6 +121,7 @@ df = readRDS(filename)
 gene_list <- unique(rownames(df))
 cells <- FetchData(df, vars = gene_list)
 cells$cluster <- Idents(df)
+
 # Calculate average expression level for each gene
 mean_expr <- cells %>%
   summarise(across(where(is.numeric), ~ mean(.x, na.rm = T)))
@@ -92,11 +140,11 @@ perc_exp_clust <- cells %>%
 
 # write 
 #getwd()
-write_csv(mean_expr_clust, "mean_express_cluster.csv")
-write_csv(perc_exp_clust, "perc_express_cluster.csv")
+# write_csv(mean_expr_clust, "mean_express_cluster.csv")
+# write_csv(perc_exp_clust, "perc_express_cluster.csv")
 
 ```
-
+############# IGNORE BELOW #####################
 ```{r, include = F}
 # DE function
 # get gene ids
