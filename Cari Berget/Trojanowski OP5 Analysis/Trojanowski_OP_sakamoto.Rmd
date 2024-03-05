@@ -1,0 +1,269 @@
+---
+title: "Tech Satisfaction after HCL"
+author: "Casey Sakamoto"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 5
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(arsenal)
+library(tidyverse)
+library(performance)
+library(knitr)
+library(readr)
+
+
+# 3 different data sets
+HCL_DATA_2024 <- read_csv("S:/Laura/BDC/Projects/Cari Berget/Berget Trojanowski distress/HCLClinicalObservati_DATA_2024.csv")
+ClinicalObservationC_DATA_2024 <- read_csv("S:/Laura/BDC/Projects/Cari Berget/Berget Trojanowski distress/ClinicalObservationC_DATA_2024-03-05_0920.csv")
+ClinicalObservationP_DATA_2024 <- read_csv("S:/Laura/BDC/Projects/Cari Berget/Berget Trojanowski distress/ClinicalObservationP_DATA_2024-03-05_0931.csv")
+```
+
+```{r data clean, include = FALSE}
+################## Clinical Obs - Child/ Adult ##########################
+
+# surveys - paid c need to be coded 0-4, subtract by 1 before scoring, paid y ready
+# baseline
+clinicalc_bl = ClinicalObservationC_DATA_2024 %>% filter(timepoint == 0) %>% select(record_id, timepoint,redcap_event_name,demographics_hcl, demographics_age, demographics_ethnicity,
+                                                                                    demographics_race, demographics_sex, demographics_insurance, demographics_t1d_duration, hba1c,
+                                                                                    ya_paid1:ya_paid20, c_paid1:c_paid20, inspire_b1:inspire_b17)
+
+# sub 1 from cpaid then reverse score, remove 5 from inspires
+clinicalc_bl = clinicalc_bl %>% mutate(across(c_paid1:c_paid20, ~.-1))
+clinicalc_bl = clinicalc_bl %>% mutate(across(c_paid1:c_paid20, ~4-.))
+
+remove5 = function(x){ifelse(x==5, NA_real_, x)}
+clinicalc_bl = clinicalc_bl %>% mutate(across(inspire_b1:inspire_b17, remove5))
+
+# score paid and inspire bl  
+clinicalc_bl = clinicalc_bl %>% mutate(c_paid =  select(., c_paid1:c_paid20) %>% rowMeans(na.rm=T),
+          c_paid_score =  c_paid*25,
+          ya_paid =  select(., ya_paid1:ya_paid20) %>% rowSums(),
+          ya_paid_score =  ya_paid*1.25,
+          paid_score = ifelse(is.na(ya_paid_score), c_paid_score, ya_paid_score),
+          inspire_score = select(., inspire_b1:inspire_b17) %>% rowMeans(na.rm=T)*25)
+clinicalc_bl = clinicalc_bl %>% select(record_id, timepoint,redcap_event_name,demographics_hcl, demographics_age, demographics_ethnicity,                                                                                    demographics_race, demographics_sex, demographics_insurance, demographics_t1d_duration, hba1c,paid_score, inspire_score) 
+clinicalc_bl = clinicalc_bl %>% mutate(baseline_paid = paid_score)
+
+# followup
+clinicalc_f = ClinicalObservationC_DATA_2024 %>% filter(timepoint != 0) %>% select(record_id, timepoint,redcap_event_name, hba1c,
+                                                                                    ya_paid1:ya_paid20, c_paid1:c_paid20, inspire_f1:inspire_f17)
+
+# sub 1 from cpaid then reverse score, remove 5 from inspires
+clinicalc_f = clinicalc_f %>% mutate(across(c_paid1:c_paid20, ~.-1))
+clinicalc_f = clinicalc_f %>% mutate(across(c_paid1:c_paid20, ~4-.))
+
+clinicalc_f = clinicalc_f %>% mutate(across(inspire_f1:inspire_f17, remove5))
+
+# score paid and inspire bl  
+clinicalc_f = clinicalc_f %>% mutate(c_paid =  select(., c_paid1:c_paid20) %>% rowMeans(na.rm=T),
+          c_paid_score =  c_paid*25,
+          ya_paid =  select(., ya_paid1:ya_paid20) %>% rowSums(),
+          ya_paid_score =  ya_paid*1.25,
+          paid_score = ifelse(is.na(ya_paid_score), c_paid_score, ya_paid_score),
+          inspire_score = select(., inspire_f1:inspire_f17) %>% rowMeans(na.rm=T)*25)
+clinicalc_f = clinicalc_f %>% select(record_id, timepoint,redcap_event_name, hba1c,paid_score, inspire_score)
+
+# merge base and FU
+clinical_c = full_join(clinicalc_bl, clinicalc_f)
+clinical_c = clinical_c %>% group_by(record_id) %>% fill(demographics_hcl:demographics_t1d_duration, .direction = "down")
+# ignore adult arm record id 181-184
+clinical_c = clinical_c %>% filter(!(record_id %in% c(181,182,183,184)))
+# only include controliq=1, exclude medtronic (0)
+clinical_c = clinical_c %>% filter(demographics_hcl == 1)
+rm(clinicalc_bl, clinicalc_f, ClinicalObservationC_DATA_2024)
+#########################################################################
+################## Clinical Obs - Parent       ##########################
+# surveys - paid c need to be coded 0-4, subtract by 1 before scoring, paid y ready
+# baseline
+clinicalp_bl = ClinicalObservationP_DATA_2024 %>% filter(p_timepoint == 0) %>% select(record_id, p_timepoint,redcap_event_name,
+                                                                                    p_paid1:p_paid18, p_b_inspire1:p_b_inspire21)
+
+# sub 1 from ppaid then reverse score, remove 5 from inspires
+clinicalp_bl = clinicalp_bl %>% mutate(across(p_paid1:p_paid18, ~.-1))
+clinicalp_bl = clinicalp_bl %>% mutate(across(p_paid1:p_paid18, ~4-.))
+
+clinicalp_bl = clinicalp_bl %>% mutate(across(p_b_inspire1:p_b_inspire21, remove5))
+
+# score paid and inspire bl  
+clinicalp_bl = clinicalp_bl %>% mutate(p_paid =  select(., p_paid1:p_paid18) %>% rowMeans(na.rm=T),
+          p_paid_score =  p_paid*25,
+          p_inspire_score = select(., p_b_inspire1:p_b_inspire21) %>% rowMeans(na.rm=T)*25)
+clinicalp_bl = clinicalp_bl %>% select(record_id, p_timepoint,redcap_event_name,p_paid_score, p_inspire_score) 
+clinicalp_bl = clinicalp_bl %>% mutate(baseline_p_paid = p_paid_score)
+
+# followup
+clinicalp_f = ClinicalObservationP_DATA_2024 %>% select(record_id,redcap_event_name, p_inspire1_t1:p_inspire21_t1,
+                                                            p_inspire1_t2:p_inspire21_t2,p_inspire1_t3:p_inspire21_t3,
+                                                            p_inspire1_t4:p_inspire21_t4,p_inspire1_t4_suvey5:p_inspire21_t4_suvey5, 
+                                                        p_paid1_t1:p_paid18_t1,p_paid1_t2:p_paid18_t2,p_paid1_t3:p_paid18_t3,
+                                                        p_paid1_t4:p_paid18_t4,p_paid1_t4_suvey5:p_paid18_t4_suvey5)
+
+# sub 1 from cpaid then reverse score, remove 5 from inspires
+clinicalp_f = clinicalp_f %>% mutate(across(p_paid1_t1:p_paid18_t4_suvey5, ~.-1))
+clinicalp_f = clinicalp_f %>% mutate(across(p_paid1_t1:p_paid18_t4_suvey5, ~4-.))
+
+clinicalp_f = clinicalp_f %>% mutate(across(p_inspire1_t1:p_inspire21_t4_suvey5, remove5))
+
+# score paid and inspire bl  
+clinicalp_f = clinicalp_f %>% mutate(p_paid1 =  select(., p_paid1_t1:p_paid18_t1) %>% rowMeans(na.rm=T),
+          p_paid_score1 =  p_paid1*25,
+          p_paid2 =  select(., p_paid1_t2:p_paid18_t2) %>% rowMeans(na.rm=T),
+          p_paid_score2 =  p_paid2*25,
+          p_paid3=  select(., p_paid1_t3:p_paid18_t3) %>% rowMeans(na.rm=T),
+          p_paid_score3 =  p_paid3*25,
+          p_paid4 =  select(., p_paid1_t4:p_paid18_t4) %>% rowMeans(na.rm=T),
+          p_paid_score4 =  p_paid4*25,
+          p_paid5 =  select(., p_paid1_t4_suvey5:p_paid18_t4_suvey5) %>% rowMeans(na.rm=T),
+          p_paid_score5 =  p_paid5*25,
+          
+          p_inspire_score1 = select(., p_inspire1_t1:p_inspire21_t1) %>% rowMeans(na.rm=T)*25,
+          p_inspire_score2 = select(., p_inspire1_t2:p_inspire21_t2) %>% rowMeans(na.rm=T)*25,
+          p_inspire_score3 = select(., p_inspire1_t3:p_inspire21_t3) %>% rowMeans(na.rm=T)*25,
+          p_inspire_score4 = select(., p_inspire1_t4:p_inspire21_t4) %>% rowMeans(na.rm=T)*25,
+          p_inspire_score5 = select(., p_inspire1_t4_suvey5:p_inspire21_t4_suvey5) %>% rowMeans(na.rm=T)*25)
+
+clinicalp_f = clinicalp_f %>% select(record_id, p_paid_score1,p_paid_score2,p_paid_score3,p_paid_score4,p_paid_score5,
+                                     p_inspire_score1,p_inspire_score2,p_inspire_score3,p_inspire_score4,p_inspire_score5)
+
+# wide to long, add p_timepoint and timepoint vars
+clinicalp_f_paid = clinicalp_f %>% select(record_id, p_paid_score1:p_paid_score5) %>% pivot_longer(cols=!record_id,
+                                                                                                   names_to ="timepoint",
+                                                                                                   names_prefix = "p_paid_score",
+                                                                                                   values_to = "p_paid_score")
+clinicalp_f_ins = clinicalp_f %>% select(record_id, p_inspire_score1:p_inspire_score5) %>% pivot_longer(cols=!record_id,
+                                                                                                   names_to ="timepoint",
+                                                                                                   names_prefix = "p_inspire_score",
+                                                                                                   values_to = "p_inspire_score")
+clinicalp_f_scores = full_join(clinicalp_f_ins,clinicalp_f_paid)
+clinicalp_f_scores$p_timepoint = as.numeric(clinicalp_f_scores$timepoint)
+# merge base and FU
+clinical_p = full_join(clinicalp_bl, clinicalp_f_scores) %>% unique()
+clinical_p = clinical_p %>% group_by(record_id) %>% fill(baseline_p_paid, .direction = "down")
+
+# only include controliq=1, exclude medtronic (0)
+# control iq users start at 120, ignore all else
+clinical_p = clinical_p %>% filter(!(record_id %in% c("1a")))
+clinical_p$record_id = as.numeric(clinical_p$record_id)
+clinical_p = clinical_p %>% filter(record_id >= 120) %>% select(record_id, p_timepoint, p_paid_score,p_inspire_score,baseline_p_paid)
+
+rm(clinicalp_bl, clinicalp_f, ClinicalObservationP_DATA_2024, clinicalp_f_ins,clinicalp_f_paid,clinicalp_f_scores)
+#########################################################################
+# join clinical obs
+clinical = full_join(clinical_c, clinical_p, by = c("record_id", "timepoint" = "p_timepoint")) %>% unique()
+clinical = clinical %>% select(record_id, timepoint, demographics_hcl:demographics_t1d_duration, hba1c:baseline_p_paid)
+clinical = clinical %>% group_by(record_id) %>% fill(demographics_hcl:demographics_t1d_duration, .direction = "down")
+rm(clinical_c,clinical_p)
+########################################################################
+
+############################OMNIPOD 5 COHORT################################
+
+
+# CHILD BASELINE
+op5c_bl = HCL_DATA_2024 %>% select(record_id, redcap_event_name, demo_c_age, demo_c_insurance,demo_c_hcl,demo_c_ethnicity,demo_c_race,demo_c_sex,demo_c_t1d_duration,gly_a1c,
+                                   c_b_inspire1:c_b_inspire17, c_b_paid1:c_b_paid20, 
+                                           ya_b_header_timepoint:ya_b_inspire17) %>% filter(redcap_event_name == "child_bl_arm_1")
+# score surveys
+op5c_bl =op5c_bl %>% mutate(cb_inspire_total = select(., c_b_inspire1:c_b_inspire17) %>% rowMeans()*25, 
+                                               ya_b_inspire_total = select(., ya_b_inspire1:ya_b_inspire17) %>% rowMeans()*25,
+                                               inspire_score = ifelse(demo_c_age < 13, cb_inspire_total, ya_b_inspire_total), # INSPIRE TOTAL
+                                               
+                                               
+                                               cb_paid =  select(., c_b_paid1:c_b_paid20) %>% rowSums(),
+                                               cb_paid_score = (80 - cb_paid)*25/20,
+                                               ya_paid =  select(., ya_b_paid1:ya_b_paid20) %>% rowSums(),
+                                               ya_paid_score = (80 - ya_paid)*25/20,
+                                               paid_score = ifelse(demo_c_age < 13, cb_paid_score, ya_paid_score), # PAID
+                            timepoint = 0,
+                            baseline_paid = paid_score
+                                   )  %>% select(record_id, timepoint,redcap_event_name, demo_c_age:gly_a1c, inspire_score, paid_score, baseline_paid)
+
+# CHILD FU
+op5c_fu = HCL_DATA_2024 %>% select(record_id,redcap_event_name,gly_a1c,c_f_timepoint:c_f_inspire17,
+                                           ya_f_header_timepoint:ya_f_inspire17, seeds_fu1:seeds_fu20) %>% filter(redcap_event_name %in% c("child_m1_arm_1","child_m3_arm_1","child_m6_arm_1","child_m9_arm_1", "child_m12_arm_1"))
+op5c_fu = left_join(op5c_fu, op5c_bl %>% select(record_id, demo_c_age) %>% unique())
+
+op5c_fu =op5c_fu %>% mutate(cb_inspire_total = select(., c_f_inspire1:c_f_inspire17) %>% rowMeans()*25, 
+                                               ya_f_inspire_total = select(., ya_f_inspire1:ya_f_inspire17) %>% rowMeans()*25,
+                                               inspire_score = ifelse(demo_c_age < 13, cb_inspire_total, ya_f_inspire_total), # INSPIRE TOTAL
+                                               
+                                              
+                                               cb_paid =  select(., c_f_paid1:c_f_paid20) %>% rowSums(),
+                                               cb_paid_score = (80 - cb_paid)*25/20,
+                                               ya_paid =  select(., ya_f_paid1:ya_f_paid20) %>% rowSums(),
+                                               ya_paid_score = (80 - ya_paid)*25/20,
+                                               paid_score = ifelse(demo_c_age < 13, cb_paid_score, ya_paid_score) # PAID
+                                               
+
+                                   )  %>% select(record_id, redcap_event_name, demo_c_age,gly_a1c, inspire_score, paid_score)
+
+op5c_fu = op5c_fu %>% mutate(timepoint = case_when(redcap_event_name == "child_m1_arm_1" ~ 1,
+                                                    redcap_event_name == "child_m3_arm_1" ~ 2,
+                                                    redcap_event_name == "child_m6_arm_1" ~ 3,
+                                                    redcap_event_name == "child_m9_arm_1" ~ 4,
+                                                    redcap_event_name == "child_m12_arm_1" ~ 5))
+# merge child
+op5c = full_join(op5c_bl, op5c_fu) %>% unique() %>%mutate(hba1c = gly_a1c) %>% select(-redcap_event_name, - gly_a1c)
+rm(op5c_bl,op5c_fu)
+# PARENT BL
+op5p_bl = HCL_DATA_2024 %>% select(record_id,redcap_event_name, p_b_inspire1:p_b_inspire21, p_b_hfs_behave1:p_b_hfs_worry26,
+                                       p_b_paid1:p_b_paid18) %>% filter(redcap_event_name == "parent_bl_arm_1")
+
+op5p_bl = op5p_bl %>% mutate(inspire_score_p = select(., p_b_inspire1:p_b_inspire21) %>% rowMeans()*25, # inspire
+
+                                               paid_p =  select(., p_b_paid1:p_b_paid18) %>% rowSums(),
+                                               paid_score_p = (72-paid_p)*25/18 ,
+                             
+                             timepoint = 0, 
+                             baseline_p_paid = paid_score_p
+                                   )  %>% select(record_id, timepoint,redcap_event_name, inspire_score_p,paid_score_p, baseline_p_paid)
+
+# PARENT FU
+op5p_fu = HCL_DATA_2024 %>% select(record_id,redcap_event_name, p_f_inspire1:p_f_inspire21, p_f_hfs_behave1:p_f_hfs_worry26,
+                                       p_f_paid1:p_f_paid18) %>% filter(redcap_event_name %in% c("parent_m1_arm_1","parent_m3_arm_1","parent_m6_arm_1","parent_m9_arm_1", "parent_m12_arm_1"))
+
+op5p_fu = op5p_fu %>% mutate(inspire_score_p = select(., p_f_inspire1:p_f_inspire21) %>% rowMeans()*25, 
+                                      
+                                               
+                                               paid_p =  select(., p_f_paid1:p_f_paid18) %>% rowSums(),
+                                               paid_score_p = (72-paid_p)*25/18 
+                                   )  %>% select(record_id, redcap_event_name, inspire_score_p,paid_score_p)
+op5p_fu = op5p_fu %>% mutate(timepoint = case_when(redcap_event_name == "parent_m1_arm_1" ~ 1,
+                                                    redcap_event_name == "parent_m3_arm_1" ~ 2,
+                                                    redcap_event_name == "parent_m6_arm_1" ~ 3,
+                                                    redcap_event_name == "parent_m9_arm_1" ~ 4,
+                                                    redcap_event_name == "parent_m12_arm_1" ~ 5))
+
+op5p = full_join(op5p_bl, op5p_fu)
+rm(op5p_bl,op5p_fu)
+# merge datasets
+op5 = full_join(op5c, op5p)
+rm(op5c, op5p, HCL_DATA_2024)
+
+op5$demographics_age = op5$demo_c_age
+op5$demographics_ethnicity = op5$demo_c_ethnicity
+op5$demographics_hcl = op5$demo_c_hcl
+op5$demographics_race = op5$demo_c_race
+op5$demographics_sex = op5$demo_c_sex
+op5$demographics_insurance = op5$demo_c_insurance + 1
+op5$demographics_t1d_duration = op5$demo_c_t1d_duration
+
+# record_id, timepoint,redcap_event_name, demographics_t1d_duration, hba1c,
+
+# child outcomes
+analysis = full_join(analysis_gly_t1, psy_soc)
+
+analysis$redcap_event_name = factor(analysis$redcap_event_name, levels = c("child_bl_arm_1","child_m1_arm_1","child_m3_arm_1","child_m6_arm_1","child_m9_arm_1", "child_m12_arm_1"),
+                                    labels = c("Baseline", "Month 1", "Month 3", "Month 6","Month 9", "Month 12"))
+
+```
+
+-	Two separate mixed models (one for kids and one for parents) with tech satisfaction as a time-varying covariate predicting diabetes distress at each time point
+-	Model covariates: baseline distress, A1C, sex, T1D duration
+-	Hypothesis: Those with higher satisfaction will have lower diabetes distress.
+-	Scoring guides for INSPIRE (tech satisfaction) and PAID (diabetes distress) appear at the end of this document
