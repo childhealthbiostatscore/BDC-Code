@@ -20,6 +20,7 @@ library(table1)
 library(nlme)
 library(lme4)
 library(emmeans)
+library(ggplot2)
 
 # 3 different data sets
 HCL_DATA_2024 <- read_csv("S:/Laura/BDC/Projects/Cari Berget/Berget Trojanowski distress/HCLClinicalObservati_DATA_2024.csv")
@@ -278,64 +279,18 @@ analysis$demographics_sex = factor(analysis$demographics_sex, levels = c(0,1), l
 analysis$demographics_insurance = factor(analysis$demographics_insurance, levels = c(1,2,3,4), labels = c("Public", "Private", "Other", "Uninsured"))
 
 analysis$timepoint = factor(analysis$timepoint, levels = c(0,1,2,3,4,5), labels = c("Baseline", "1 Month", "3 Months", "6 Months", "9 Months", "12 Months"))
+# final cleaning bits
+analysis = analysis %>% fill(baseline_paid, baseline_p_paid, .direction = "down")
 ```
 
 ```{r t1, include=FALSE}
 my.render.cont <- function(x) {
     with(stats.apply.rounding(stats.default(x), digits=2), c("",
         "Mean (SD)"=sprintf("%s (&plusmn; %s)", MEAN, SD)))}
-baseline = analysis %>% filter(timepoint==0)
+baseline = analysis %>% filter(timepoint=="Baseline")
 demog_t1 = table1(~., data = baseline %>% ungroup() %>%select(demographics_age:demographics_t1d_duration, hcl,hba1c, baseline_paid, -record_id ), render.continuous= my.render.cont)
 ```
 
-```{r models, include = FALSE}
-# fit model fun
-fit_mod = function(outcome="paid_score",df=analysis, parent = F){
-if(parent == F){
-    # Fit model
-  f = as.formula(paste0(outcome,"~","inspire_score*timepoint + ","demographics_sex + demographics_t1d_duration + hba1c + baseline_paid"))
-  mod = lme(f,
-            random = ~1|record_id,
-            data = df,
-            na.action = na.omit)
-}else{
-   f = as.formula(paste0("p_paid_score","~","p_inspire_score*timepoint + ","demographics_sex + demographics_t1d_duration + hba1c + baseline_p_paid"))
-  mod = lme(f,
-            random = ~1|record_id,
-            data = df,
-            na.action = na.omit)
-}
-  print(f, " ", outcome)
-  
-    # Anova
-  mod_anova = anova.lme(mod, type="marginal")
-  print(kable(mod_anova,digits = 3,caption = "Test of Overall Effect"))
-
- 
-   # Means
-  mod_means = emmeans(mod,specs=pairwise ~ redcap_event_name, adjust="none")
-  mod_means2 = emmeans(mod,specs=~ redcap_event_name, adjust="none")
-  print(kable(mod_means2,digits = 3,caption = "Timepoint Means"))
-  print(kable(mod_means$contrasts,digits = 3,caption = "Timepoint Contrasts"))
-  
-
-   # Number of obs
-  cat("\n")
-  cat(paste("This model was fit using",nobs(mod),"observations."))
-  cat("\n")
-}
-
-# problems with a1c and baseline paid for soem reason when fitting the models
-
-# mod_test = lme(paid_score ~ inspire_score*timepoint + demographics_sex + demographics_t1d_duration + baseline_paid,
-#             random = ~1|record_id,
-#             data = analysis,
-#             na.action = na.omit)
-# mod_anova_test = anova.lme(mod_test)
-# mod_means_test = emmeans(mod_test, specs=~timepoint, adjust="none")
-# kable(mod_anova_test)
-# kable(mod_means_test,digits = 3,caption = "Timepoint Means")
-```
 # Background
 -	Two separate mixed models (one for kids and one for parents) with tech satisfaction as a time-varying covariate predicting diabetes distress at each time point
 -	Model covariates: baseline distress, A1C, sex, T1D duration
@@ -344,20 +299,54 @@ if(parent == F){
 
 # Methods
 
+Demographics were produced from a combined dataset of Control IQ and OP5 users. Linear mixed models were fit associating parent and child PAID and INSPIRE scores, adjusting for baseline PAID, sex, t1d duration, and Hba1c.
+
 # Analysis
 
 ## Demographics Table
-```{r t1}
+```{r demogs}
 demog_t1
+
+sum(is.na(baseline$paid_score))
+# missing test
+# analysis %>% group_by(timepoint) %>% summarise(sum(is.na(paid_score)))
+# miss_paid = analysis %>% group_by(record_id) %>% summarise(sum(is.na(paid_score)))
+# table(miss_paid$`sum(is.na(paid_score))`)
+
 ```
 
 ## Child Model
+
+Child INSPIRE scores were significantly associated with child PAID scores. (p = 0.041) Each point in INSPIRE scores was associated with  a 0.1 decrease (SE = 0.04) in PAID score.
+
 ```{r m1}
-analysis2 = analysis %>% filter(timepoint %in% c("Baseline", "1 Month", "3 Months"))
-fit_mod(df = analysis2)
+mod_child = lme(paid_score ~ inspire_score + timepoint + demographics_sex + demographics_t1d_duration + hba1c +baseline_paid,
+            random = ~1|record_id,
+            data = analysis,
+            na.action = na.omit)
+mod_child_anova = anova.lme(mod_child)
+
+kable(mod_child_anova, caption = "Overall Test of Effect")
+summary(mod_child)
+mod_child_means = emmeans(mod_child, specs=~timepoint, adjust="none")
+kable(mod_child_means,digits = 3,caption = "Timepoint PAID Means")
 ```
+
 
 ## Parent Model
 
+Parent INSPIRE scores were significantly associated with Parent PAID scores. (p = 0.041) Each point increase in parent INSPIRE scores was associated with a 0.15 decrease (SE = 0.04) in parent PAID score.
+
+
 ```{r m2}
+mod_parent = lme(p_paid_score ~ p_inspire_score + timepoint + demographics_sex + demographics_t1d_duration + hba1c +baseline_p_paid,
+            random = ~1|record_id,
+            data = analysis,
+            na.action = na.omit)
+mod_parent_anova = anova.lme(mod_parent)
+mod_parent_means = emmeans(mod_parent, specs=~timepoint, adjust="none")
+
+kable(mod_parent_anova, caption = "Overall Test of Effect")
+summary(mod_parent)
+kable(mod_parent_means,digits = 3,caption = "Timepoint PAID Means")
 ```
