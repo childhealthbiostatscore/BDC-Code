@@ -266,9 +266,7 @@ UPDATE: next steps similar to difacto study (emailed from kristen);
 -- average by donor cells then by cluster (intersect the cluster with the donors cells -- 20% or x% perc expression)
 
 2) elasticnet
-
-
-```{r test elnet, include = FALSE}
+```{r variable selection pre elnet, include = FALSE}
 # donor and hwd id match
 ids = df2@meta.data %>% select(donor, `HWD ID.y`) %>% unique()
 colnames(ids) = c("donor", "HWD ID")
@@ -276,125 +274,30 @@ avg_a1c = full_join(avg_a1c, ids)
 
 # cluster 0
 c_0$donor = factor(c_0$donor)
-analysis_0 = full_join(avg_a1c, c_0)
-analysis_0 = analysis_0 %>%  filter(!is.na(donor)) %>% select(a1c_slope, cluster0_genes)
-# not converging for our 500 so well choose the most correlated 100 to a1c slope
-test_cor_0 = as.data.frame(cor(analysis_0,analysis_0$a1c_slope))
-test_cor_0$gene = rownames(test_cor_0)
-test_cor_0$V1 = abs(test_cor_0$V1)
-test_cor_0 = test_cor_0[order(test_cor_0$V1, decreasing = T),]
-cluster0_genes_test = test_cor_0$gene[2:71]
-cluster0_genes_test  = make.names(cluster0_genes_test , unique = T, allow_ = F)
+analysis_c0 = full_join(avg_a1c, c_0)
+analysis_c0_a1c_slope = analysis_c0 %>%  filter(!is.na(donor)) %>% select(a1c_slope, cluster0_genes)
 
+models_simple_c0 = list()
+# with apply:
+coefs_mat_0 = expand.grid(c("a1c_slope"), cluster0_genes)
 
-cluster0_en = easy_elasticnet(data = analysis_0, outcome = "a1c_slope",cv_method = "loo",
-                              predictors = cluster0_genes_test, model_type = "gaussian")
-
-print(cluster0_en)
-
-# cluster 1
-c_1$donor = factor(c_1$donor)
-analysis_1 = full_join(avg_a1c, c_1)
-analysis_1 = analysis_1 %>%  filter(!is.na(donor)) %>% select(a1c_slope, cluster1_genes)
-# not converging for our 500 so well choose the most correlated 100 to a1c slope
-test_cor_1 = as.data.frame(cor(analysis_1,analysis_1$a1c_slope))
-test_cor_1$gene = rownames(test_cor_1)
-test_cor_1$V1 = abs(test_cor_1$V1)
-test_cor_1 = test_cor_1[order(test_cor_1$V1, decreasing = T),]
-cluster1_genes_test = test_cor_1$gene[2:51]
-cluster1_genes_test  = make.names(cluster1_genes_test , unique = T, allow_ = F)
-
-
-cluster1_en = easy_elasticnet(data = analysis_1, outcome = "a1c_slope",cv_method = "loo",
-                              predictors = cluster1_genes_test, model_type = "gaussian")
-
-print(cluster1_en)
-
-
-# cluster 1
-c_2$donor = factor(c_2$donor)
-analysis_2 = full_join(avg_a1c, c_2)
-analysis_2 = analysis_2 %>%  filter(!is.na(donor)) %>% select(a1c_slope, cluster2_genes)
-# not converging for our 500 so well choose the most correlated 100 to a1c slope
-test_cor_2 = as.data.frame(cor(analysis_2,analysis_2$a1c_slope))
-test_cor_2$gene = rownames(test_cor_2)
-test_cor_2$V1 = abs(test_cor_2$V1)
-test_cor_2 = test_cor_2[order(test_cor_2$V1, decreasing = T),]
-cluster2_genes_test = test_cor_2$gene
-cluster2_genes_test  = make.names(cluster2_genes_test , unique = T, allow_ = F)
-
-
-cluster2_en = easy_elasticnet(data = analysis_2, outcome = "a1c_slope",cv_method = "loo",
-                              predictors = cluster2_genes_test, model_type = "gaussian")
-
-print(cluster2_en)
+mods = apply(coefs_mat_0, 1, function(row) {
+  lm(as.formula(paste(row[1], "~", row[2])), data = analysis_c0_a1c_slope)
+})
+names(mods) = with(coefs_mat_0, paste(Var1, "vs", Var2))
+coefs = lapply(mods, tidy, simplify = F)
+# combine
+test0_res = dplyr::bind_rows(coefs, .id = "mod")
+test0_res = test0_res %>% filter(p.value < 0.05 & term != "(Intercept)")
+new_genes_0 = test0_res$term
+new_genes_0 =  make.names(new_genes_0 , unique = T, allow_ = F)
+# elnet
+cluster0_en = easy_elasticnet(data = analysis_c0, outcome = "a1c_slope",cv_method = "loo",
+                              predictors = new_genes_0, model_type = "gaussian", out="1se.error")
 ```
+
 to do: rank genes by corr to outcome and choose n (50-100 maybe) highest corrs
 
 
-2) elasticnet
-
-## Change in CAC per year
-
-```{r include=FALSE}
-
-# omics selected by moderated t-test and PLSDA
-omics = unique(c("gly_P02671.7","gly_P02671.5","gly_P02671.4","gly_P02671.3",
-          "AAA01201000179.0807263.4","gly_P02679","HMDB00510161.0696402.9",
-          "AAA01201000179.0809235.7","gly_P02675.4","gly_P02675","gly_P02647",
-          "P02655","gly_P02647.1","HMDB00510161.0694436","gly_P02652",
-          "gly_P01009","gly_P01834.11","P01817","AcCa 10:3",
-          "HMDB0028822260.1378628.6","AAA01201000179.0807263.4",
-          "gly_P02671.3","gly_P02671.7"))
-limited_omics = c("AAA01201000179.0807263.4","gly.P02671.7","gly.P02671.3",
-          "gly.P02671.5","gly.P02671.4")
-# Take out people without diabetes, remove diabetes status from predictors
-df = df[df$diabetic == 1,]
-clinical_predictors = clinical_predictors[-which(clinical_predictors == "dia")]
-# Log transform 
-df[,omics] = log(df[,omics])
-# Fix names
-colnames(df)[which(colnames(df) %in% omics)] = make.names(omics,unique = T,allow_ = F)
-omics = make.names(omics,unique = T,allow_ = F)
-# Variables for null model
-null_vars <- c("age","sex","durcatV1")
-# Sometimes using too many alpha/lambda values results in duplicate values for the 
-# error metric. This doesn't seem to be a problem but throws a lot of warnings
-cac_change_select = easy_elasticnet(data = df,outcome = "cac_change_per_yr",
-                           predictors = clinical_predictors,
-                           model_type = "gaussian")
-```
-
-### Null model (age, sex, T1D duration only)
-
-```{r}
-n_cac_change  = as.formula(paste0("cac_change_per_yr~",paste0(null_vars,collapse = "+")))
-null_mod = lm(formula = n_cac_change,data = df)
-kable(tidy(null_mod),digits = 3)
-```
-
-### Clinical model results
-
-```{r}
-f_cac_change = as.formula(paste0("cac_change_per_yr~",
-                                 paste0(cac_change_select,collapse = "+")))
-clin_mod = lm(formula = f_cac_change,data = df)
-kable(tidy(clin_mod),digits = 3)
-```
-
-### Omics model results (no imputation)
-
-```{r}
-omics_mod = lm(formula = update(f_cac_change,paste0("~ . +",paste0(limited_omics,collapse = "+"))),
-         data = df)
-kable(tidy(omics_mod),digits = 3)
-```
-
-### Model comparison
-
-```{r}
-mc = as.data.frame(compare_performance(clin_mod,omics_mod,null_mod,
-                                       metrics = c("R2","R2_adj"),verbose = F))
-mc$Name = c("Clinical Model","Omics Model","Null model")
-kable(mc,digits = 3)
-```
+## elasticnet
+Unfortunately, ElasticNet fails to produce a particularly helpful model in this case. This may be due to small sample size combined with a high dimension data set. Models returned are null; the models which minimize cvm coefficient were those that selected none of the features.
