@@ -19,6 +19,13 @@ library(data.table)
 library(broom)
 library(pROC)
 library(caTools)
+
+library(caret)
+library(tidymodels)
+library(doParallel)
+library(DataExplorer)
+library(knitr)
+library(ranger)
 # update the dfs as change (changes in first chunk of version 3 on the Lambda)
 perc_express_cluster <- read.csv("S:/Laura/BDC/Projects/Howard Davidson/perc_express_cluster_TEST.csv")
 
@@ -288,7 +295,7 @@ names(mods) = with(coefs_mat_0, paste(Var1, "vs", Var2))
 coefs = lapply(mods, tidy, simplify = F)
 # combine
 test0_res = dplyr::bind_rows(coefs, .id = "mod")
-test0_res = test0_res %>% filter(p.value < 0.05 & term != "(Intercept)")
+test0_res = test0_res %>% filter(p.value < 0.1 & term != "(Intercept)")
 new_genes_0 = test0_res$term
 new_genes_0 =  make.names(new_genes_0 , unique = T, allow_ = F)
 # elnet
@@ -301,3 +308,44 @@ to do: rank genes by corr to outcome and choose n (50-100 maybe) highest corrs
 
 ## elasticnet
 Unfortunately, ElasticNet fails to produce a particularly helpful model in this case. This may be due to small sample size combined with a high dimension data set. Models returned are null; the models which minimize cvm coefficient were those that selected none of the features.
+
+
+## forest
+
+```{r forest, include = FALSE}
+# cluster 0
+analysis_c0_a1c_slope = analysis_c0_a1c_slope %>% select(a1c_slope, all_of(new_genes_0))
+set.seed(1017)
+recipe_c0 = recipe(analysis_c0_a1c_slope) %>% update_role(everything()) %>% update_role(a1c_slope, new_role = "outcome")
+recipe_c0 = recipe_c0 %>%
+  step_zv(all_predictors()) %>%
+  step_nzv(all_predictors()) %>%
+  step_YeoJohnson(all_predictors()) %>%
+  step_normalize(all_predictors()) %>%
+  prep()
+transformed_c0 <- bake(recipe_c0,analysis_c0_a1c_slope)
+
+
+transformed_c0_recipe = recipe(transformed_c0)%>%  update_role(everything()) %>% update_role(a1c_slope, new_role = "outcome")
+transformed_c0_recipe = transformed_c0_recipe %>% step_nzv(all_predictors())
+
+cv <- trainControl(method = "LOOCV",allowParallel = T)
+
+cl <- makePSOCKcluster(detectCores()*0.5)
+registerDoParallel(cl)
+rf_c0 <- train(
+  transformed_c0_recipe,
+  data = transformed_c0,
+  method = "ranger",
+  trControl = cv,
+  tuneLength = 25,
+  allowParallel = T
+)
+stopCluster(cl)
+# Get the best models
+res_c0 = rf_c0$results
+kable(head(res_c0[order(res_c0$Rsquared,decreasing = T),],5),row.names = F)
+rf_c0_fin = rf_c0$finalModel
+rf_c0_fin
+
+```
