@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 ---
 title: ""
 author: "Tim Vigers & Laura Pyle"
@@ -41,7 +40,6 @@ df = readRDS(paste0(home_dir, "OneDrive_1_6-28-2023/normalized.rds"))
 df2 = df
 ```
 
-
 ```{r fun, include = FALSE}
 gene_list = function(df, cutoff){
   # df is one cluster w/ all donors at perc_expr level
@@ -56,32 +54,17 @@ gene_list = function(df, cutoff){
   return(donorgenes)
 }
 
-# Tims elnet
-source("D:/Repositories/shared-resources/Machine Learning/Tim - ElasticNet CV/easy_elasticnet.R")
-```
-Calculate gene frequencies for each donor in cluster 0 and remove genes that have a freq < X eg 0.2
-
-Add cluster tag to gene name to create unique ID eg B2M  becomes “0-B2M” etc
-
-Bind rows for each donor
-
-Determine number of occurrences for each gene and remove those with values less than 23.
-
-Repeat for other clusters.
-
-
-Clarify: 
-
-For each Cluster,
-
-get percent expressions by donor to get a list of genes expressing above a minimum % cutoff
-remove the genes not expressed by all donors within the cluster (only take the intersection of these gene lists)
-
-```{r col clusters, include = F}
 # Cluster 0
 c_0 = perc_express_donorcluster %>% filter(cluster == 0) %>% select(-cluster)
 a = gene_list(c_0, 22.3) 
-cluster0_genes = Reduce(intersect, a) # 22.3 for 505 
+cluster0_genes = Reduce(intersect, a) 
+
+# Tims elnet
+source("D:/Repositories/shared-resources/Machine Learning/Tim - ElasticNet CV/easy_elasticnet.R")
+```
+
+```{r col clusters, include = FALSE}
+# 22.3 for 505 
 
 # # Cluster 1
 # c_1 = perc_express_donorcluster %>% filter(cluster == 1) %>% select(-cluster)
@@ -136,7 +119,7 @@ cluster0_genes = Reduce(intersect, a) # 22.3 for 505
 
 ```
 
-```{r previous output}
+```{r outcomes derive, include = FALSE}
 # outcomes data
 read_excel_allsheets <- function(filename, tibble = FALSE) {
     # I prefer straight data.frames
@@ -249,19 +232,10 @@ avg_est_cpep = avg_est_cpep %>% mutate(avg_est_cpep_g_med = ifelse(mean_est_cpep
 df2@meta.data = left_join(df2@meta.data, avg_est_cpep,  by=c('donor_number'='id'))
 test = df2@meta.data
 ```
-QUESTIONS:
 
-- Understanding of avg by donor cells then by cluster; is this still in percent expressed, or have we gone into mean express territory?
--- for percent expressed when aggregated first into donor-cluster cells then back into cluster over a quarter have 100% expressed for c0;
---------for AL627309 (first col in un transposed donor-cluster ) in  we have 11/23 subjects in cluster 0 with very small % express -- into the cluster form we have 47.8% is this the correct % we are looking for?
+```{r variable selection and elnet, include = FALSE}
+# A1c Slope
 
-
-UPDATE: next steps similar to difacto study (emailed from kristen);
-1) identify features corr w outcome -- delta, auc (coded in previous citeseq seurat analysis)
--- average by donor cells then by cluster (intersect the cluster with the donors cells -- 20% or x% perc expression)
-
-2) elasticnet
-```{r variable selection pre elnet, include = FALSE}
 # donor and hwd id match
 ids = df2@meta.data %>% select(donor, `HWD ID.y`) %>% unique()
 colnames(ids) = c("donor", "HWD ID")
@@ -286,17 +260,59 @@ test0_res = dplyr::bind_rows(coefs, .id = "mod")
 test0_res = test0_res %>% filter(p.value < 0.1 & term != "(Intercept)")
 new_genes_0 = test0_res$term
 new_genes_0 =  make.names(new_genes_0 , unique = T, allow_ = F)
-# elnet
-cluster0_en = easy_elasticnet(data = analysis_c0, outcome = "a1c_slope",cv_method = "loo",
+# elnet small subset
+cluster0_en_small = easy_elasticnet(data = analysis_c0, outcome = "a1c_slope",cv_method = "loo",
                               predictors = new_genes_0, model_type = "gaussian", out="1se.error")
+
+# best model 
+cluster0_en_a1cslope_small_best = cluster0_en_small %>% filter(cvm == min(cvm))
+cluster0_en_a1cslope_small_best_notall = cluster0_en_small %>% filter(nzero != length(new_genes_0)) %>% filter(cvm == min(cvm))
+
+# elnet large subset
+cluster0_en_a1cslope_large = easy_elasticnet(data = analysis_c0, outcome = "a1c_slope",cv_method = "loo",
+                              predictors = coefs_mat_0$Var2, model_type = "gaussian", out="1se.error")
+
+# best models
+cluster0_en_a1cslope_large_best = cluster0_en_a1cslope_large %>% filter(cvm == min(cvm))
+cluster0_en_a1cslope_large_best_notall = cluster0_en_a1cslope_large %>% filter(nzero != length(new_genes_0)) %>% filter(cvm == min(cvm))
 ```
 
-to do: rank genes by corr to outcome and choose n (50-100 maybe) highest corrs
 
+# Methods
 
-## elasticnet
-Unfortunately, ElasticNet fails to produce a particularly helpful model in this case. This may be due to small sample size combined with a high dimension data set. Models returned are null; the models which minimize cvm coefficient were those that selected none of the features.
+Inital dataframe was first subsetted by donor and cluster. Frequencies were calculated, and genes with a frequency less than 22% were removed, leaving a subset of 505 genes (Large subset -- listed in Appendix). This set was further reduced via univariable linear regression with each outcome, with genes with p > 0.1 further removed. 
 
+Leave One Out cross validation was performed for both elasticnet and regression forests variable selection methods. For elastic net models, models within 1 SE were examined, with the best model being chosen by MSE. In cases where all features were selected (none dropped) the model with the smallest MSE which did not select all features was also examined.
+
+# A1c Slope Analysis
+
+## Elasticnet
+
+### Large Gene List (505 genes)
+
+```{r a1cslope large}
+print("Best Model")
+kable(cluster0_en_a1cslope_large_best)
+print("Best Model Not All Features")
+kable(cluster0_en_a1cslope_large_best_notall[1,])
+
+print("Gene List")
+kable(new_genes_0)
+```
+
+### Small Gene List (48 Genes)
+
+The best model 
+
+```{r a1cslope smol}
+print("Best Model")
+kable(cluster0_en_a1cslope_small_best)
+print("Best Model Not All Features")
+kable(cluster0_en_a1cslope_small_best_notall[1,])
+
+print("Gene List")
+kable(new_genes_0)
+```
 
 ## forest
 
@@ -338,7 +354,13 @@ res_c0 = rf_c0$results
 kable(head(res_c0[order(res_c0$Rsquared,decreasing = T),],5),row.names = F)
 rf_c0_fin = rf_c0$finalModel
 rf_c0_fin
+```
 
 
+## Large Gene Subset list
 
+% expression cutoff for ~ 500 genes: 22.3%
+
+```{r large subset}
+kable(cluster0_genes)
 ```
