@@ -263,10 +263,10 @@ aa = as.data.frame(a$coefficients) %>% filter(!(is.na(p.value)))
 
 
 ## Using LOOCV to determine the optimal tuning parameter lambda
-
+expressions_df_idda1c = na.omit(expressions_df_idda1c)
 ### set seed
 set.seed(1017)
-N<-dim(transformed_analysis_idda1c)[1]
+N<-dim(expressions_df_idda1c)[1]
 ind<-sample(N,N)
 lambda <- seq(500,0,by=-5)
 
@@ -277,7 +277,7 @@ nk <- floor(N/kk)
 Devianz_ma<-matrix(Inf,ncol=kk,nrow=length(lambda))
 
 ## first fit good starting model
-PQL<-glmmPQL(IDDA1C_binned~1,random = ~1|donor,family="gaussian",data=transformed_analysis_idda1c)
+PQL<-glmmPQL(IDDA1C_binned~1,random = ~1|donor,family="gaussian",data=expressions_df_idda1c)
 Delta.start<-c(as.numeric(PQL$coef$fixed),rep(0,6),as.numeric(t(PQL$coef$random$donor)))
 Q.start<-as.numeric(VarCorr(PQL)[1,1])
 
@@ -295,21 +295,20 @@ print(paste("Iteration ", j,sep=""))
     indi <- ind[((i-1)*nk+1):N]
     }
   
-idda1c.train<-soccer[-indi,]
-soccer.test<-soccer[indi,]
+idda1c.train<-expressions_df_idda1c[-indi,]
+idda1c.test<-expressions_df_idda1c[indi,]
   
-glm2 <- try(glmmLasso(points~transfer.spendings  
-        + ave.unfair.score  + ball.possession
-        + tackles + ave.attend + sold.out, rnd = list(team=~1),  
-        family = family, data = soccer.train, lambda=lambda[j],switch.NR=FALSE,final.re=FALSE,
+glm2 <- try(glmmLasso(fix = testfrom,
+                      rnd = list(donor=~1),
+                      data = idda1c.train, lambda=lambda[j],switch.NR=FALSE,final.re=FALSE,
         control=list(start=Delta.start,q_start=Q.start))
         ,silent=TRUE) 
         
     if(!inherits(glm2, "try-error"))
     {  
-    y.hat<-predict(glm2,soccer.test)    
+    y.hat<-predict(glm2,idda1c.test)    
 
-    Devianz_ma[j,i]<-sum(family$dev.resids(soccer.test$points,y.hat,wt=rep(1,length(y.hat))))
+    Devianz_ma[j,i]<-sum(family$dev.resids(idda1c.test$points,y.hat,wt=rep(1,length(y.hat))))
     }
 }
 print(sum(Devianz_ma[j,]))
@@ -319,10 +318,9 @@ Devianz_vec<-apply(Devianz_ma,1,sum)
 opt2<-which.min(Devianz_vec)
        
        
-glm2_final <- glmmLasso(points~transfer.spendings  
-                        + ave.unfair.score + ball.possession
-                        + tackles + ave.attend + sold.out, rnd = list(team=~1),  
-                        family = family, data = soccer, lambda=lambda[opt2],switch.NR=FALSE,final.re=FALSE,
+glm2_final <- glmmLasso(fix = testfrom,
+                        rnd = list(donor=~1),  
+                        data = expressions_df_idda1c, lambda=lambda[opt2],switch.NR=FALSE,final.re=FALSE,
                         control=list(start=Delta.start,q_start=Q.start))
 
 
