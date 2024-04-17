@@ -27,7 +27,6 @@ library(knitr)
 library(ranger)
 library(nlme)
 library(lme4)
-library(MASS)
 library(lmerTest)
 # update the dfs as change (changes in first chunk of version 3 on the Lambda)
 #perc_express_cluster <- read.csv("S:/Laura/BDC/Projects/Howard Davidson/perc_express_cluster_TEST.csv")
@@ -173,9 +172,9 @@ outcomes_df = outcomes_df %>% arrange(`HWD ID`, as.Date(VisitDate)) %>% group_by
 idda1c_df = outcomes_df %>% select(`HWD ID`, IDDA1C, VisitDate, visit, bmi, Gender, `Age at visit`)
 idda1c_df = idda1c_df %>% group_by(`HWD ID`) %>% mutate(first_visit = case_when(visit== 1 ~ VisitDate),
                                                             idda1c_bl = case_when(visit==1~IDDA1C)) %>% fill(first_visit,idda1c_bl) %>% ungroup() 
-# group into 3month bins
+# group into 6month bins
 idda1c_df = idda1c_df %>% mutate(month_from_bl = as.duration(first_visit %--% VisitDate)/dmonths(1))
-idda1c_df = idda1c_df %>% mutate(visit_binned = floor(month_from_bl/3))
+idda1c_df = idda1c_df %>% mutate(visit_binned = floor(month_from_bl/6))
 
 analysis_idda1c = idda1c_df %>% group_by(`HWD ID`, visit_binned) %>% mutate(IDDA1C_binned = mean(IDDA1C, na.rm=T),
                                                                  bmi_binned = mean(bmi, na.rm=T),
@@ -203,7 +202,9 @@ expressions_df$donor = as.factor(expressions_df$donor)
 # idda1c
 analysis_idda1c = left_join(analysis_idda1c, ids)%>% ungroup() %>% select(-`HWD ID`)
 expressions_df_idda1c = left_join(analysis_idda1c, expressions_df)
+#table(expressions_df_idda1c$visit_binned)
 
+#expressions_df_idda1c_2y = expressions_df_idda1c %>% filter(visit_binned < 12)
 #pare the list of 6000 genes down with univariate regression, p <.1
 # models_simple = list()
 # with apply:
@@ -214,7 +215,7 @@ idda1c_mods = apply(idda1c_coefs_mat, 1, function(row) {
       data = expressions_df_idda1c)
 })
 names(idda1c_mods) = with(idda1c_coefs_mat, paste(Var1, "vs", Var2))
-idda1c_coefs = lapply(mods, tidy, simplify = F)
+idda1c_coefs = lapply(idda1c_mods, tidy, simplify = F)
 
 # combine
 idda1c_uni_res = dplyr::bind_rows(idda1c_coefs, .id = "mod")
@@ -225,7 +226,7 @@ idda1c_new_genes = idda1c_uni_res$term
 ```{r elastic net, include = FALSE}
 library(glmmLasso)
 library(str2str)
-
+library(MASS)
 # # loocv method
 # loocv_tc = trainControl(method = "LOOCV", allowParallel = TRUE)
 # # Parallel training
@@ -233,7 +234,13 @@ library(str2str)
 # registerDoParallel(cl)
 
 # IDDa1c
-expressions_df_idda1c = expressions_df_idda1c %>% select(IDDA1C_binned:donor, all_of(idda1c_new_genes))
+expressions_df_idda1c = expressions_df_idda1c %>% dplyr::select(IDDA1C_binned:donor, all_of(idda1c_new_genes))
+expressions_df_idda1c = expressions_df_idda1c %>% filter(!is.na(donor))
+
+
+#expressions_df_idda1c_2y = expressions_df_idda1c_2y %>% mutate_all(~ifelse(is.nan(.), NA, .))
+
+
 # scale and center the data
 set.seed(1017)
 # predictors to be scaled and centered
@@ -249,14 +256,16 @@ transformed_analysis_idda1c <- bake(recipe_idda1c,expressions_df_idda1c)
 # find optimal lambda
 # format donor visit and gender as factors
 # formula
-idda1c_coefs_lasso = colnames(transformed_analysis_idda1c %>% select(-donor)) 
-testfrom = as.formula(v2frm(idda1c_coefs_lasso, y = 1L))
+idda1c_coefs_lasso = colnames(transformed_analysis_idda1c %>% dplyr::select(-donor)) 
+testform = as.formula(v2frm(idda1c_coefs_lasso, y = 1L))
 
-testfit = glmmLasso(fix = testfrom,
+# maybe only include the first 6 slots?
+#test_df = transformed_analysis_idda1c %>% filter(visit_binned < 7)
+
+testfit = glmmLasso(fix = testform,
                     rnd = list(donor = ~1),
-                    data = na.omit(transformed_analysis_idda1c),
-                    lambda = 83,final.re = T,
-                    control = glmmLassoControl(method = "REML"))
+                    data = na.omit(test_df),
+                    lambda = 59,final.re = T)
 a = summary(testfit)
 aa = as.data.frame(a$coefficients) %>% filter(!(is.na(p.value)))
 
@@ -268,10 +277,11 @@ expressions_df_idda1c = na.omit(expressions_df_idda1c)
 set.seed(1017)
 N<-dim(expressions_df_idda1c)[1]
 ind<-sample(N,N)
-lambda <- seq(500,0,by=-5)
+lambda <- seq(500,0,by=-50)
+
 
 ## set number of folds
-kk<-N-1
+kk<-5
 nk <- floor(N/kk)
 
 Devianz_ma<-matrix(Inf,ncol=kk,nrow=length(lambda))
