@@ -839,6 +839,9 @@ title;
 /******************/
 /* STUDY PATIENTS */
 /******************/
+
+/* by active/inactive */
+
 proc contents data=alldata; run;
 data foranalysis;
 set alldata;
