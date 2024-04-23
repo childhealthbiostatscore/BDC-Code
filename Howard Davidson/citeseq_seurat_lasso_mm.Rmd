@@ -32,13 +32,13 @@ library(lmerTest)
 #perc_express_cluster <- read.csv("S:/Laura/BDC/Projects/Howard Davidson/perc_express_cluster_TEST.csv")
 
 # check donor cluster level
-#perc_express_donorcluster  <- read.csv("S:/Laura/BDC/Projects/Howard Davidson/perc_express_donorcluster_TEST.csv")
-perc_express_donorcluster  <- read.csv("/Volumes/PEDS/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/perc_express_donorcluster_TEST.csv")
+perc_express_donorcluster  <- read.csv("S:/Laura/BDC/Projects/Howard Davidson/perc_express_donorcluster_TEST.csv")
+#perc_express_donorcluster  <- read.csv("/Volumes/PEDS/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/perc_express_donorcluster_TEST.csv")
 #rownames(df2) = colnames(perc_express_donorcluster)
 
 # data
-#home_dir = "S:/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/"
-home_dir = "/Volumes/PEDS/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/"
+home_dir = "S:/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/"
+#home_dir = "/Volumes/PEDS/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/"
 
 knitr::opts_knit$set(root.dir = home_dir)
 #setwd("S:/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/")
@@ -155,8 +155,8 @@ read_excel_allsheets <- function(filename, tibble = FALSE) {
 }
 
 
-#a1ccpep = read_excel_allsheets("S:/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/IDDA1C_Cpep.xlsx")
-a1ccpep = read_excel_allsheets("/Volumes/PEDS/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/IDDA1C_Cpep.xlsx")
+a1ccpep = read_excel_allsheets("S:/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/IDDA1C_Cpep.xlsx")
+#a1ccpep = read_excel_allsheets("/Volumes/PEDS/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/IDDA1C_Cpep.xlsx")
 # remove all df as it looks incomplete
 a1ccpep = a1ccpep[-1]
 
@@ -230,12 +230,27 @@ idda1c_new_genes = idda1c_uni_res$term
 ```{r elastic net, include = FALSE}
 library(glmmLasso)
 library(str2str)
-library(MASS)
 # # loocv method
 # loocv_tc = trainControl(method = "LOOCV", allowParallel = TRUE)
 # # Parallel training
 # cl <- makePSOCKcluster(detectCores()*0.5)
 # registerDoParallel(cl)
+
+# scale and center the data
+# set.seed(1017)
+# predictors to be scaled and centered
+# recipe_idda1c = recipe(expressions_df_idda1c) %>% update_role(everything()) %>% update_role(IDDA1C_binned, new_role = "outcome")
+# recipe_idda1c = recipe_idda1c %>%
+#   step_zv(all_predictors(),-c(Gender, visit_binned, donor)) %>%
+#   step_nzv(all_predictors(),-c(Gender, visit_binned, donor)) %>%
+#   step_YeoJohnson(all_predictors(),-c(Gender, visit_binned, donor)) %>%
+#   step_normalize(all_predictors(),-c(Gender, visit_binned, donor)) %>%
+#   prep()
+# transformed_analysis_idda1c <- bake(recipe_idda1c,expressions_df_idda1c)
+
+# find optimal lambda
+# format donor visit and gender as factors
+# formula
 
 # IDDa1c
 expressions_df_idda1c = expressions_df_idda1c %>% dplyr::select(IDDA1C_binned:donor, all_of(idda1c_new_genes))
@@ -245,24 +260,59 @@ expressions_df_idda1c = expressions_df_idda1c %>% filter(!is.na(donor))
 #expressions_df_idda1c_2y = expressions_df_idda1c_2y %>% mutate_all(~ifelse(is.nan(.), NA, .))
 
 
-# scale and center the data
-set.seed(1017)
-# predictors to be scaled and centered
-recipe_idda1c = recipe(expressions_df_idda1c) %>% update_role(everything()) %>% update_role(IDDA1C_binned, new_role = "outcome")
-recipe_idda1c = recipe_idda1c %>%
-  step_zv(all_predictors(),-c(Gender, visit_binned, donor)) %>%
-  step_nzv(all_predictors(),-c(Gender, visit_binned, donor)) %>%
-  step_YeoJohnson(all_predictors(),-c(Gender, visit_binned, donor)) %>%
-  step_normalize(all_predictors(),-c(Gender, visit_binned, donor)) %>%
-  prep()
-transformed_analysis_idda1c <- bake(recipe_idda1c,expressions_df_idda1c)
-
-# find optimal lambda
-# format donor visit and gender as factors
-# formula
 idda1c_coefs_lasso = colnames(transformed_analysis_idda1c %>% dplyr::select(-donor)) 
 testform = as.formula(v2frm(idda1c_coefs_lasso, y = 1L))
 
+
+
+expressions_df_idda1c = na.omit(expressions_df_idda1c)
+### set seed
+set.seed(1017)
+N<-dim(expressions_df_idda1c)[1]
+ind<-sample(N,N)
+lambda <- seq(500,50,by=-5)
+BIC_vec<-rep(Inf,length(lambda))
+AIC_vec<-rep(Inf, length(lambda))
+
+################## First Simple Method ############################################
+## Using BIC (or AIC, respectively) to determine the optimal tuning parameter lambda
+## first fit good starting model
+library(MASS);library(nlme)
+# ## first fit good starting model
+PQL<-glmmPQL(IDDA1C_binned~1,random = ~1|donor,family="gaussian",data=expressions_df_idda1c)
+Delta.start<-c(as.numeric(PQL$coef$fixed),rep(0,6),as.numeric(t(PQL$coef$random$donor)))
+Q.start<-as.numeric(VarCorr(PQL)[1,1])
+
+
+for(j in 1:length(lambda))
+{
+print(paste("Iteration ", j,sep=""))
+
+
+glm1 <- try(glmmLasso(fix = testform,
+                      rnd = list(donor=~1),
+                      data = expressions_df_idda1c, lambda=lambda[j],switch.NR=FALSE,final.re=FALSE,
+        control=list(start=Delta.start,q_start=Q.start))
+        ,silent=TRUE)
+
+
+if(!inherits(glm1, "try-error"))
+{  
+BIC_vec[j]<-glm1$bic
+AIC_vec[j] = glm1$aic
+}
+        
+}
+    
+opt<-which.min(BIC_vec)
+        
+         
+glm1_final <- glmmLasso(fix = testform,
+                        rnd = list(donor=~1),
+                        data = expressions_df_idda1c, lambda=lambda[opt],switch.NR=FALSE,final.re=FALSE)
+
+a = summary(glm1_final)
+aa = as.data.frame(a$coefficients) %>% filter(!(is.na(p.value)))
 # maybe only include the first 6 slots?
 #test_df = transformed_analysis_idda1c %>% filter(visit_binned < 7)
 
@@ -276,71 +326,63 @@ testform = as.formula(v2frm(idda1c_coefs_lasso, y = 1L))
 
 
 ## Using LOOCV to determine the optimal tuning parameter lambda
-expressions_df_idda1c = na.omit(expressions_df_idda1c)
-### set seed
-set.seed(1017)
-N<-dim(expressions_df_idda1c)[1]
-ind<-sample(N,N)
-lambda <- seq(500,0,by=-50)
-
-
-## set number of folds
-kk<-5
-nk <- floor(N/kk)
-
-Devianz_ma<-matrix(Inf,ncol=kk,nrow=length(lambda))
-
-## first fit good starting model
-PQL<-glmmPQL(IDDA1C_binned~1,random = ~1|donor,family="gaussian",data=expressions_df_idda1c)
-Delta.start<-c(as.numeric(PQL$coef$fixed),rep(0,6),as.numeric(t(PQL$coef$random$donor)))
-Q.start<-as.numeric(VarCorr(PQL)[1,1])
-
-
-for(j in 1:length(lambda))
-{
-print(paste("Iteration ", j,sep=""))
-  
-  for (i in 1:kk)
-  {
-    if (i < kk)
-    {
-    indi <- ind[(i-1)*nk+(1:nk)]
-    }else{
-    indi <- ind[((i-1)*nk+1):N]
-    }
-  
-idda1c.train<-expressions_df_idda1c[-indi,]
-idda1c.test<-expressions_df_idda1c[indi,]
-  
-glm2 <- try(glmmLasso(fix = testform,
-                      rnd = list(donor=~1),
-                      data = idda1c.train, lambda=lambda[j],switch.NR=FALSE,final.re=FALSE,
-        control=list(start=Delta.start,q_start=Q.start))
-        ,silent=TRUE) 
-        
-    if(!inherits(glm2, "try-error"))
-    {  
-    y.hat<-predict(glm2,idda1c.test)    
-
-    Devianz_ma[j,i]<-sum(family$dev.resids(idda1c.test$points,y.hat,wt=rep(1,length(y.hat))))
-    }
-}
-print(sum(Devianz_ma[j,]))
-}
-    
-Devianz_vec<-apply(Devianz_ma,1,sum)
-opt2<-which.min(Devianz_vec)
-       
-       
-glm2_final <- glmmLasso(fix = testform, 
-                        rnd = list(donor=~1),  
-                        data = expressions_df_idda1c, lambda=lambda[opt2],switch.NR=FALSE,final.re=FALSE,
-                        control=list(start=Delta.start,q_start=Q.start), 
-                        final.re=TRUE)
-
-
-
-summary(glm2_final)
+# ## set number of folds
+# kk<-5
+# nk <- floor(N/kk)
+# 
+# Devianz_ma<-matrix(Inf,ncol=kk,nrow=length(lambda))
+# 
+# ## first fit good starting model
+# PQL<-glmmPQL(IDDA1C_binned~1,random = ~1|donor,family="gaussian",data=expressions_df_idda1c)
+# Delta.start<-c(as.numeric(PQL$coef$fixed),rep(0,6),as.numeric(t(PQL$coef$random$donor)))
+# Q.start<-as.numeric(VarCorr(PQL)[1,1])
+# 
+# 
+# for(j in 1:length(lambda))
+# {
+# print(paste("Iteration ", j,sep=""))
+#   
+#   for (i in 1:kk)
+#   {
+#     if (i < kk)
+#     {
+#     indi <- ind[(i-1)*nk+(1:nk)]
+#     }else{
+#     indi <- ind[((i-1)*nk+1):N]
+#     }
+#   
+# idda1c.train<-expressions_df_idda1c[-indi,]
+# idda1c.test<-expressions_df_idda1c[indi,]
+#   
+# glm2 <- try(glmmLasso(fix = testform,
+#                       rnd = list(donor=~1),
+#                       data = idda1c.train, lambda=lambda[j],switch.NR=FALSE,final.re=FALSE,
+#         control=list(start=Delta.start,q_start=Q.start))
+#         ,silent=TRUE) 
+#         
+#     if(!inherits(glm2, "try-error"))
+#     {  
+#     y.hat<-predict(glm2,idda1c.test)    
+# 
+#     Devianz_ma[j,i]<-sum(family$dev.resids(idda1c.test$points,y.hat,wt=rep(1,length(y.hat))))
+#     }
+# }
+# print(sum(Devianz_ma[j,]))
+# }
+#     
+# Devianz_vec<-apply(Devianz_ma,1,sum)
+# opt2<-which.min(Devianz_vec)
+#        
+#        
+# glm2_final <- glmmLasso(fix = testform, 
+#                         rnd = list(donor=~1),  
+#                         data = expressions_df_idda1c, lambda=lambda[opt2],switch.NR=FALSE,final.re=FALSE,
+#                         control=list(start=Delta.start,q_start=Q.start), 
+#                         final.re=TRUE)
+# 
+# 
+# 
+# summary(glm2_final)
 
 ```
 
