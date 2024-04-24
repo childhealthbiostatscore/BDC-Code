@@ -18,10 +18,12 @@ library(data.table)
 library(broom)
 library(pROC)
 library(caTools)
-
+library(nlme)
+library(lme4)
 library(caret)
 library(tidymodels)
 library(doParallel)
+library(str2str)
 library(DataExplorer)
 library(knitr)
 library(ranger)
@@ -153,7 +155,20 @@ read_excel_allsheets <- function(filename, tibble = FALSE) {
 a1ccpep = read_excel_allsheets("S:/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/IDDA1C_Cpep.xlsx")
 # remove all df as it looks incomplete
 a1ccpep = a1ccpep[-1]
+############# mixed part ################################################################################################################
+# change to numeric
+outcomes_df <- Reduce(function(x, y) merge(x, y, all = TRUE), a1ccpep)
+outcomes_df = outcomes_df %>% filter(!is.na(`HWD ID`)) %>% mutate(a1c = as.numeric( case_when(A1c_Value == "NULL" ~ NA,
+                                                                        TRUE ~ A1c_Value)),
+                                                        bmi = as.numeric( case_when(BMI == "NULL" ~ NA,
+                                                                        TRUE ~ BMI)))
+# add in visit num and baseline values
+outcomes_df = outcomes_df %>% arrange(`HWD ID`, as.Date(VisitDate)) %>% group_by(`HWD ID`) %>% mutate(visit = row_number(),
+                                                                                                      ecpep = case_when(`Est C-pep` >= 0 ~ `Est C-pep` ,
+                                                                                                                        `Est C-pep` < 0 ~ 0 ),
+                                                                                                      hwdid=`HWD ID`)
 
+############################################################################################################################################
 # change to numeric
 a1c_df <- Reduce(function(x, y) merge(x, y, all = TRUE), a1ccpep)
 a1c_df = a1c_df %>% filter(!is.na(`HWD ID`)) %>% mutate(a1c = as.numeric( case_when(A1c_Value == "NULL" ~ NA,
@@ -245,6 +260,27 @@ avg_est_cpep$est_cpep_auc = sapply(split(a1c_df,a1c_df$`HWD ID`),function(df) tr
 avg_est_cpep = avg_est_cpep %>% mutate(avg_est_cpep_g_med = ifelse(mean_est_cpep > median(mean_est_cpep,na.rm = T), "G_med", " L_med"),
                              slope_est_cpep_g_med = ifelse(est_cpep_slope > median(est_cpep_slope,na.rm = T), "G_med", " L_med"),
                              auc_est_cpep_g_med = ifelse(est_cpep_auc > median(est_cpep_auc,na.rm = T), "G_med", " L_med"))
+
+
+
+########## MIXED MODELS COMPONENT #################################################################
+
+
+# IDDA1c
+idda1c_df_mixed = outcomes_df %>% select(`HWD ID`, IDDA1C, VisitDate, visit, bmi, Gender, `Age at visit`)
+idda1c_df_mixed = idda1c_df_mixed %>% group_by(`HWD ID`) %>% mutate(first_visit = case_when(visit== 1 ~ VisitDate),
+                                                            idda1c_bl = case_when(visit==1~IDDA1C)) %>% fill(first_visit,idda1c_bl) %>% ungroup() 
+# group into 6month bins
+idda1c_df_mixed = idda1c_df_mixed %>% mutate(month_from_bl = as.duration(first_visit %--% VisitDate)/dmonths(1))
+idda1c_df_mixed = idda1c_df_mixed %>% mutate(visit_binned = floor(month_from_bl/6))
+
+analysis_idda1c_mixed = idda1c_df_mixed %>% group_by(`HWD ID`, visit_binned) %>% mutate(IDDA1C_binned = mean(IDDA1C, na.rm=T),
+                                                                 bmi_binned = mean(bmi, na.rm=T),
+                                                                 age_binned = mean(`Age at visit`, na.rm=T)) %>%
+  select(`HWD ID`, IDDA1C_binned, bmi_binned, age_binned, Gender, idda1c_bl, visit_binned) %>% unique()
+
+
+##################################################################################################
 ```
 
 ```{r variable selection and elnet, include = FALSE}
@@ -294,11 +330,6 @@ transformed_analysis_idda1c_slope <- bake(recipe_idda1c_slope,analysis_idda1c_sl
 predictors_idda1c_slope_en_large = colnames(transformed_analysis_idda1c_slope)[-1]
 predictors_idda1c_slope_en = intersect(predictors_idda1c_slope_en_large, new_genes)
 
-# elnet small subset
-# a1c_slope_en_large = easy_elasticnet(data = transformed_analysis_a1c_slope, outcome = "a1c_slope",cv_method = "loo",
-#                               predictors = predictors_a1c_slope_en_large, model_type = "gaussian", out="1se.error")
-
-# best model 0 covariates chosen; cvm = .0001124 best model with > 0 covariates selected 5776 features, cvm .0001128
 
 idda1c_slope_en_small = easy_elasticnet(data = transformed_analysis_idda1c_slope, outcome = "idda1c_slope",cv_method = "loo",
                               predictors = predictors_idda1c_slope_en, model_type = "gaussian", out="1se.error")
@@ -306,35 +337,43 @@ idda1c_slope_en_small = easy_elasticnet(data = transformed_analysis_idda1c_slope
 ```
 
 
-```{r test mixed models pckg}
-# test that mixed models work
-library(nlme)
-library(lme4)
+```{r mixed model, include = F}
+#change to factor
+expressions_df$donor = as.factor(expressions_df$donor)
 
-a1c_df$hwdid = a1c_df$`HWD ID`
-a1c_df$age = a1c_df$`Age Co`
-idda1c_mod_nogenes = lme(IDDA1C ~ Gender + age + BMI + visit,
-            random = ~1|hwdid,
-            data = a1c_df,
-            na.action = na.omit)
-summary(idda1c_mod_nogenes)
+# idda1c mixed df
+analysis_idda1c_mixed = left_join(analysis_idda1c_mixed, ids)%>% ungroup() %>% select(-`HWD ID`)
+expressions_df_idda1c_mixed = left_join(analysis_idda1c_mixed, expressions_df)
+#table(expressions_df_idda1c$visit_binned)
+
+expressions_df_idda1c_mixed = expressions_df_idda1c_mixed %>% filter(visit_binned < 5)
+# select vars chosen in tims elastic net
+expressions_df_idda1c_mixed = expressions_df_idda1c_mixed %>% dplyr::select(IDDA1C_binned,idda1c_bl,donor,visit_binned, all_of(idda1c_slope_en_small))
+expressions_df_idda1c_mixed = expressions_df_idda1c_mixed %>% filter(!is.na(donor))
+
+# create form
+idda1c_coefs_mm = colnames(expressions_df_idda1c_mixed %>% dplyr::select(-donor)) 
+idda1c_mm_form = as.formula(v2frm(idda1c_coefs_mm, y = 1L))
+
+
+
+idda1c_mixed_mod = lmer(IDDA1C_binned ~ idda1c_bl + visit_binned + RPL35A_c_5 + RPS3_c_7 + RPS6_c_8 + HNRNPDL_c_10 + RPS10_c_12 + HSP90AA1_c_12 + RPL3_c_12 + (1|donor),
+            data = expressions_df_idda1c_mixed)
+# summary(idda1c_mixed_mod)
+
+# plot predicted values of idda1c
+expressions_df_idda1c_mixed%>% na.omit() %>% dplyr::mutate(pred_idda1c = predict(idda1c_mixed_mod, newdata=.,re.form=~(1|donor))) %>%
+  ggplot(aes(x = visit_binned, y = IDDA1C_binned)) + 
+  geom_point()+
+  geom_smooth(aes(y = pred_idda1c), method = "lm",color = "black")
+
+
+
 ```
 
 
-# Methods
-
-Inital dataframe was first subsetted by donor and cluster. Percent expressions were calculated by cluster such that each cluster was pared down to ~ 500 genes. This cutoff was between 20-30% by cluster (total genes n = 5815). Data were then scaled and centered. This set was further reduced via univariable linear regression with each outcome, with genes with p > 0.1 further removed (total genes n = 433). 
-
-Leave One Out cross validation was performed for elasticnet variable selection. Models within 1 SE of the MSE of the best model were examined, with the best model being chosen by MSE. 
-
-# A1c Slope Analysis
-
-Elasticnets were performed on the large gene list (n = 5815 genes). The best models by Cross Validated Mean error selected 0 features from the list. The best model with > 0 features selected included 5776 features, but slightly higher CVMe. 
-
-Elasticnets were then performed on the smaller gene list (n = 433 genes). The best model by CVMe included 61 genes listed below. Each suffix "_c_X" represents cluster.
-
 ```{r enet a1cslope}
-print(a1c_slope_en_small)
+summary(idda1c_mixed_mod)
 ```
 
 
