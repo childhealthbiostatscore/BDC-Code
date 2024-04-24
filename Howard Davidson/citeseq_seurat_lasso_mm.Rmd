@@ -207,7 +207,7 @@ expressions_df$donor = as.factor(expressions_df$donor)
 analysis_idda1c = left_join(analysis_idda1c, ids)%>% ungroup() %>% select(-`HWD ID`)
 expressions_df_idda1c = left_join(analysis_idda1c, expressions_df)
 #table(expressions_df_idda1c$visit_binned)
-
+expressions_df_idda1c = expressions_df_idda1c %>% filter(visit_binned < 5)
 #expressions_df_idda1c_2y = expressions_df_idda1c %>% filter(visit_binned < 12)
 #pare the list of 6000 genes down with univariate regression, p <.1
 # models_simple = list()
@@ -236,17 +236,7 @@ library(str2str)
 # cl <- makePSOCKcluster(detectCores()*0.5)
 # registerDoParallel(cl)
 
-# scale and center the data
-# set.seed(1017)
-# predictors to be scaled and centered
-# recipe_idda1c = recipe(expressions_df_idda1c) %>% update_role(everything()) %>% update_role(IDDA1C_binned, new_role = "outcome")
-# recipe_idda1c = recipe_idda1c %>%
-#   step_zv(all_predictors(),-c(Gender, visit_binned, donor)) %>%
-#   step_nzv(all_predictors(),-c(Gender, visit_binned, donor)) %>%
-#   step_YeoJohnson(all_predictors(),-c(Gender, visit_binned, donor)) %>%
-#   step_normalize(all_predictors(),-c(Gender, visit_binned, donor)) %>%
-#   prep()
-# transformed_analysis_idda1c <- bake(recipe_idda1c,expressions_df_idda1c)
+
 
 # find optimal lambda
 # format donor visit and gender as factors
@@ -260,9 +250,25 @@ expressions_df_idda1c = expressions_df_idda1c %>% filter(!is.na(donor))
 #expressions_df_idda1c_2y = expressions_df_idda1c_2y %>% mutate_all(~ifelse(is.nan(.), NA, .))
 
 
-idda1c_coefs_lasso = colnames(transformed_analysis_idda1c %>% dplyr::select(-donor)) 
+idda1c_coefs_lasso = colnames(expressions_df_idda1c %>% dplyr::select(-donor)) 
+
+
+#idda1c_coefs_lasso = colnames(transformed_analysis_idda1c %>% dplyr::select(-donor)) 
 testform = as.formula(v2frm(idda1c_coefs_lasso, y = 1L))
 
+# scale and center the data
+# set.seed(1017)
+# predictors to be scaled and centered
+# recipe_idda1c = recipe(expressions_df_idda1c) %>% update_role(everything()) %>% update_role(IDDA1C_binned, new_role = "outcome")
+# recipe_idda1c = recipe_idda1c %>%
+#   step_zv(all_predictors(),-c(Gender, visit_binned, donor)) %>%
+#   step_nzv(all_predictors(),-c(Gender, visit_binned, donor)) %>%
+#   step_YeoJohnson(all_predictors(),-c(Gender, visit_binned, donor)) %>%
+#   step_normalize(all_predictors(),-c(Gender, visit_binned, donor)) %>%
+#   prep()
+# transformed_analysis_idda1c <- bake(recipe_idda1c,expressions_df_idda1c)
+
+expressions_df_idda1c = transformed_analysis_idda1c
 
 
 expressions_df_idda1c = na.omit(expressions_df_idda1c)
@@ -310,6 +316,10 @@ opt<-which.min(BIC_vec)
 glm1_final <- glmmLasso(fix = testform,
                         rnd = list(donor=~1),
                         data = expressions_df_idda1c, lambda=lambda[opt],switch.NR=FALSE,final.re=FALSE)
+
+glm1_final <- glmmLasso(fix = testform,
+                        rnd = list(donor=~1),
+                        data = expressions_df_idda1c, lambda=90,switch.NR=FALSE,final.re=FALSE)
 
 a = summary(glm1_final)
 aa = as.data.frame(a$coefficients) %>% filter(!(is.na(p.value)))
