@@ -247,20 +247,21 @@ recipe_idda1c = recipe_idda1c %>%
 transformed_analysis_idda1c <- bake(recipe_idda1c,expressions_df_idda1c)
 
 # USING THE EXPRESSIONS DATA
-idda1c_coefs_lasso = colnames(expressions_df_idda1c %>% dplyr::select(-donor)) 
+expressions_df_idda1c_naomit = na.omit(expressions_df_idda1c)
+idda1c_coefs_lasso = colnames(expressions_df_idda1c_naomit %>% dplyr::select(-donor)) 
 testform = as.formula(v2frm(idda1c_coefs_lasso, y = 1L))
-
 # USING THE TRANSFORMED DATA
 idda1c_coefs_lasso2 = colnames(transformed_analysis_idda1c %>% dplyr::select(-donor)) 
 testform2 = as.formula(v2frm(idda1c_coefs_lasso, y = 1L))
 expressions_df_idda1c2 = transformed_analysis_idda1c
 # expressions_df_idda1c2 = na.omit(expressions_df_idda1c2)
 
-# SWITCHING BETWEEN USING testform and expressions and testform2 and expressions2
+
+# SWITCHING BETWEEN USING testform and expressions and testform2 and expressions2, and testform and expressions_naomit
 
 ### set seed
 set.seed(1017)
-N<-dim(expressions_df_idda1c2)[1]
+N<-dim(expressions_df_idda1c_naomit)[1]
 ind<-sample(N,N)
 lambda <- seq(500,50,by=-5)
 BIC_vec<-rep(Inf,length(lambda))
@@ -271,7 +272,7 @@ AIC_vec<-rep(Inf, length(lambda))
 ## first fit good starting model
 library(MASS);library(nlme)
 # ## first fit good starting model
-PQL<-glmmPQL(IDDA1C_binned~1,random = ~1|donor,family="gaussian",data=expressions_df_idda1c2)
+PQL<-glmmPQL(IDDA1C_binned~1,random = ~1|donor,family="gaussian",data=expressions_df_idda1c_naomit)
 Delta.start<-c(as.numeric(PQL$coef$fixed),rep(0,6),as.numeric(t(PQL$coef$random$donor)))
 Q.start<-as.numeric(VarCorr(PQL)[1,1])
 
@@ -283,7 +284,7 @@ print(paste("Iteration ", j,sep=""))
 
 glm1 <- try(glmmLasso(fix = testform,
                       rnd = list(donor=~1),
-                      data = expressions_df_idda1c2, lambda=lambda[j],switch.NR=FALSE,final.re=FALSE,
+                      data = expressions_df_idda1c_naomit, lambda=lambda[j],switch.NR=FALSE,final.re=FALSE,
         control=list(start=Delta.start,q_start=Q.start))
         ,silent=TRUE)
 
@@ -301,7 +302,7 @@ opt<-which.min(BIC_vec)
          
 glm1_final <- glmmLasso(fix = testform,
                         rnd = list(donor=~1),
-                        data = expressions_df_idda1c2, lambda=lambda[opt],switch.NR=FALSE,final.re=FALSE)
+                        data = expressions_df_idda1c_naomit, lambda=lambda[opt],switch.NR=FALSE,final.re=FALSE)
 
 a = summary(glm1_final)
 aa = as.data.frame(a$coefficients) %>% filter(!(is.na(p.value)))
