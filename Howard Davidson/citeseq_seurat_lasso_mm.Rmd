@@ -230,19 +230,35 @@ idda1c_new_genes = idda1c_uni_res$term
 ```{r elastic net, include = FALSE}
 library(glmmLasso)
 library(str2str)
+library(robustbase)
+# # IDDa1c
+# expressions_df_idda1c = expressions_df_idda1c %>% dplyr::select(IDDA1C_binned:donor, all_of(idda1c_new_genes))
+# expressions_df_idda1c = expressions_df_idda1c %>% filter(!is.na(donor))
+# 
+# 
+# # scale and center the data
+# # predictors to be scaled and centered
+# recipe_idda1c = recipe(expressions_df_idda1c) %>% update_role(everything()) %>% update_role(IDDA1C_binned, new_role = "outcome")
+# recipe_idda1c = recipe_idda1c %>%
+#   step_zv(all_predictors(),-c(Gender, visit_binned, donor)) %>%
+#   step_nzv(all_predictors(),-c(Gender, visit_binned, donor)) %>%
+#   step_YeoJohnson(all_predictors(),-c(Gender, visit_binned, donor)) %>%
+#   step_normalize(all_predictors(),-c(Gender, visit_binned, donor)) %>%
+#   prep()
+# transformed_analysis_idda1c <- bake(recipe_idda1c,expressions_df_idda1c)
 
-# IDDa1c
-expressions_df_idda1c = expressions_df_idda1c %>% dplyr::select(IDDA1C_binned:donor, all_of(idda1c_new_genes))
+expressions_df_idda1c = expressions_df_idda1c %>% dplyr::select(IDDA1C_binned,idda1c_bl,donor,visit_binned, all_of(idda1c_new_genes))
 expressions_df_idda1c = expressions_df_idda1c %>% filter(!is.na(donor))
+
 
 # scale and center the data
 # predictors to be scaled and centered
 recipe_idda1c = recipe(expressions_df_idda1c) %>% update_role(everything()) %>% update_role(IDDA1C_binned, new_role = "outcome")
 recipe_idda1c = recipe_idda1c %>%
-  step_zv(all_predictors(),-c(Gender, visit_binned, donor)) %>%
-  step_nzv(all_predictors(),-c(Gender, visit_binned, donor)) %>%
-  step_YeoJohnson(all_predictors(),-c(Gender, visit_binned, donor)) %>%
-  step_normalize(all_predictors(),-c(Gender, visit_binned, donor)) %>%
+  step_zv(all_predictors(),-c(visit_binned, donor)) %>%
+  step_nzv(all_predictors(),-c( visit_binned, donor)) %>%
+  step_YeoJohnson(all_predictors(),-c(visit_binned, donor)) %>%
+  step_normalize(all_predictors(),-c( visit_binned, donor)) %>%
   prep()
 transformed_analysis_idda1c <- bake(recipe_idda1c,expressions_df_idda1c)
 
@@ -251,74 +267,74 @@ expressions_df_idda1c_naomit = na.omit(expressions_df_idda1c)
 idda1c_coefs_lasso = colnames(expressions_df_idda1c_naomit %>% dplyr::select(-donor)) 
 testform = as.formula(v2frm(idda1c_coefs_lasso, y = 1L))
 # USING THE TRANSFORMED DATA
-idda1c_coefs_lasso2 = colnames(transformed_analysis_idda1c %>% dplyr::select(-donor)) 
-testform2 = as.formula(v2frm(idda1c_coefs_lasso, y = 1L))
 expressions_df_idda1c2 = transformed_analysis_idda1c
-# expressions_df_idda1c2 = na.omit(expressions_df_idda1c2)
+expressions_df_idda1c2 = na.omit(expressions_df_idda1c2)
 
-
+full_rank_cols = colnames(as.data.frame(fullRank(expressions_df_idda1c2%>%dplyr::select(SSR2_c_0:MIF_c_12))))
+expressions_df_idda1c2 = expressions_df_idda1c2 %>% select(IDDA1C_binned:donor, full_rank_cols)
+idda1c_coefs_lasso2 = colnames(expressions_df_idda1c2 %>% dplyr::select(-donor)) 
+testform2 = as.formula(v2frm(idda1c_coefs_lasso2, y = 1L))
 # SWITCHING BETWEEN USING testform and expressions and testform2 and expressions2, and testform and expressions_naomit
 
 ### set seed
 set.seed(1017)
-N<-dim(expressions_df_idda1c_naomit)[1]
+N<-dim(expressions_df_idda1c2)[1]
 ind<-sample(N,N)
 lambda <- seq(500,50,by=-5)
 BIC_vec<-rep(Inf,length(lambda))
 AIC_vec<-rep(Inf, length(lambda))
 
 ################## First Simple Method ############################################
-## Using BIC (or AIC, respectively) to determine the optimal tuning parameter lambda
-## first fit good starting model
-library(MASS);library(nlme)
-# ## first fit good starting model
-PQL<-glmmPQL(IDDA1C_binned~1,random = ~1|donor,family="gaussian",data=expressions_df_idda1c_naomit)
-Delta.start<-c(as.numeric(PQL$coef$fixed),rep(0,6),as.numeric(t(PQL$coef$random$donor)))
-Q.start<-as.numeric(VarCorr(PQL)[1,1])
+# Using BIC (or AIC, respectively) to determine the optimal tuning parameter lambda
+# first fit good starting model
+ library(MASS);library(nlme)
+ # ## first fit good starting model
+ PQL<-glmmPQL(IDDA1C_binned~1,random = ~1|donor,family="gaussian",data=expressions_df_idda1c2)
+ Delta.start<-c(as.numeric(PQL$coef$fixed),rep(0,6),as.numeric(t(PQL$coef$random$donor)))
+ Q.start<-as.numeric(VarCorr(PQL)[1,1])
 
 
-for(j in 1:length(lambda))
-{
-print(paste("Iteration ", j,sep=""))
+ for(j in 1:length(lambda))
+ {
+ print(paste("Iteration ", j,sep=""))
 
 
-glm1 <- try(glmmLasso(fix = testform,
-                      rnd = list(donor=~1),
-                      data = expressions_df_idda1c_naomit, lambda=lambda[j],switch.NR=FALSE,final.re=FALSE,
-        control=list(start=Delta.start,q_start=Q.start))
-        ,silent=TRUE)
+ glm1 <- try(glmmLasso(fix = testform2,
+                       rnd = list(donor=~1),
+                       data = expressions_df_idda1c2, lambda=lambda[j],switch.NR=FALSE,final.re=TRUE,
+         control=list(start=Delta.start,q_start=Q.start))
+         ,silent=TRUE)
 
 
-if(!inherits(glm1, "try-error"))
-{  
-BIC_vec[j]<-glm1$bic
-AIC_vec[j] = glm1$aic
-}
-        
-}
-    
-opt<-which.min(BIC_vec)
-        
-         
-glm1_final <- glmmLasso(fix = testform,
-                        rnd = list(donor=~1),
-                        data = expressions_df_idda1c_naomit, lambda=lambda[opt],switch.NR=FALSE,final.re=FALSE)
+ if(!inherits(glm1, "try-error"))
+ {
+ BIC_vec[j]<-glm1$bic
+ AIC_vec[j] = glm1$aic
+ }
 
-a = summary(glm1_final)
-aa = as.data.frame(a$coefficients) %>% filter(!(is.na(p.value)))
+ }
+
+ opt<-which.min(BIC_vec)
+
+
+ glm1_final <- glmmLasso(fix = testform2,
+                         rnd = list(donor=~1),
+                         data = expressions_df_idda1c2, lambda=lambda[opt],switch.NR=FALSE,final.re=TRUE)
+
+ a = summary(glm1_final)
+ aa = as.data.frame(a$coefficients) %>% filter(!(is.na(p.value)))
 # maybe only include the first 6 slots?
-#test_df = transformed_analysis_idda1c %>% filter(visit_binned < 7)
-
-#testfit = glmmLasso(fix = testform,
-#                    rnd = list(donor = ~1),
-#                    data = na.omit(test_df),
-#                    lambda = 59,final.re = T)
-#a = summary(testfit)
-#aa = as.data.frame(a$coefficients) %>% filter(!(is.na(p.value)))
-
+test_df = transformed_analysis_idda1c %>% filter(visit_binned < 7)
+testfit = glmmLasso(fix = testform,
+                    rnd = list(donor = ~1),
+                    data = na.omit(test_df),
+                    lambda = 59,final.re = T)
+a = summary(testfit)
+aa = as.data.frame(a$coefficients) %>% filter(!(is.na(p.value)))
 
 
-## Using LOOCV to determine the optimal tuning parameter lambda
+
+# # Using CV to determine the optimal tuning parameter lambda
 # ## set number of folds
 # kk<-5
 # nk <- floor(N/kk)
@@ -326,7 +342,7 @@ aa = as.data.frame(a$coefficients) %>% filter(!(is.na(p.value)))
 # Devianz_ma<-matrix(Inf,ncol=kk,nrow=length(lambda))
 # 
 # ## first fit good starting model
-# PQL<-glmmPQL(IDDA1C_binned~1,random = ~1|donor,family="gaussian",data=expressions_df_idda1c)
+# PQL<-glmmPQL(IDDA1C_binned~1,random = ~1|donor,family="gaussian",data=expressions_df_idda1c2)
 # Delta.start<-c(as.numeric(PQL$coef$fixed),rep(0,6),as.numeric(t(PQL$coef$random$donor)))
 # Q.start<-as.numeric(VarCorr(PQL)[1,1])
 # 
@@ -334,7 +350,7 @@ aa = as.data.frame(a$coefficients) %>% filter(!(is.na(p.value)))
 # for(j in 1:length(lambda))
 # {
 # print(paste("Iteration ", j,sep=""))
-#   
+# 
 #   for (i in 1:kk)
 #   {
 #     if (i < kk)
@@ -343,34 +359,34 @@ aa = as.data.frame(a$coefficients) %>% filter(!(is.na(p.value)))
 #     }else{
 #     indi <- ind[((i-1)*nk+1):N]
 #     }
-#   
-# idda1c.train<-expressions_df_idda1c[-indi,]
-# idda1c.test<-expressions_df_idda1c[indi,]
-#   
-# glm2 <- try(glmmLasso(fix = testform,
+# 
+# idda1c.train<-expressions_df_idda1c2[-indi,]
+# idda1c.test<-expressions_df_idda1c2[indi,]
+# 
+# glm2 <- try(glmmLasso(fix = testform2,
 #                       rnd = list(donor=~1),
-#                       data = idda1c.train, lambda=lambda[j],switch.NR=FALSE,final.re=FALSE,
+#                       data = idda1c.train, lambda=lambda[j],switch.NR=FALSE,final.re=TRUE,
 #         control=list(start=Delta.start,q_start=Q.start))
-#         ,silent=TRUE) 
-#         
+#         ,silent=TRUE)
+# 
 #     if(!inherits(glm2, "try-error"))
-#     {  
-#     y.hat<-predict(glm2,idda1c.test)    
+#     {
+#     y.hat<-predict(glm2,idda1c.test)
 # 
 #     Devianz_ma[j,i]<-sum(family$dev.resids(idda1c.test$points,y.hat,wt=rep(1,length(y.hat))))
 #     }
 # }
 # print(sum(Devianz_ma[j,]))
 # }
-#     
+# 
 # Devianz_vec<-apply(Devianz_ma,1,sum)
 # opt2<-which.min(Devianz_vec)
-#        
-#        
-# glm2_final <- glmmLasso(fix = testform, 
-#                         rnd = list(donor=~1),  
-#                         data = expressions_df_idda1c, lambda=lambda[opt2],switch.NR=FALSE,final.re=FALSE,
-#                         control=list(start=Delta.start,q_start=Q.start), 
+# 
+# 
+# glm2_final <- glmmLasso(fix = testform2,
+#                         rnd = list(donor=~1),
+#                         data = expressions_df_idda1c2, lambda=lambda[opt2],switch.NR=FALSE,
+#                         control=list(start=Delta.start,q_start=Q.start),
 #                         final.re=TRUE)
 # 
 # 
@@ -402,4 +418,55 @@ ecpep_mod_nogenes = lme(ecpep_binned ~ Gender + age_binned + bmi_binned + visit_
 
 summary(idda1c_mod_nogenes)
 summary(ecpep_mod_nogenes)
+
+
+# test base covariates
+
+# USING THE EXPRESSIONS DATA
+expressions_df_idda1c_base = expressions_df_idda1c2 %>% select(IDDA1C_binned:donor) %>% na.omit()
+idda1c_coefs_lasso_base = colnames(expressions_df_idda1c_base %>% dplyr::select(-donor)) 
+testform_base = as.formula(v2frm(idda1c_coefs_lasso_base, y = 1L))
+
+### set seed
+set.seed(1017)
+N<-dim(expressions_df_idda1c_base)[1]
+ind<-sample(N,N)
+lambda <- seq(500,0,by=-2)
+BIC_vec<-rep(Inf,length(lambda))
+AIC_vec<-rep(Inf, length(lambda))
+# ## first fit good starting model
+PQL<-glmmPQL(IDDA1C_binned~1,random = ~1|donor,family="gaussian",data=expressions_df_idda1c_base)
+Delta.start<-c(as.numeric(PQL$coef$fixed),rep(0,6),as.numeric(t(PQL$coef$random$donor)))
+Q.start<-as.numeric(VarCorr(PQL)[1,1])
+
+
+for(j in 1:length(lambda))
+{
+print(paste("Iteration ", j,sep=""))
+
+
+glm1 <- try(glmmLasso(fix = testform_base,
+                      rnd = list(donor=~1),
+                      data = expressions_df_idda1c_base, lambda=lambda[j],switch.NR=FALSE,final.re=TRUE,
+        control=list(start=Delta.start,q_start=Q.start))
+        ,silent=TRUE)
+
+
+if(!inherits(glm1, "try-error"))
+{  
+BIC_vec[j]<-glm1$bic
+AIC_vec[j] = glm1$aic
+}
+        
+}
+    
+opt<-which.min(BIC_vec)
+        
+         
+glm1_final <- glmmLasso(fix = testform_base,
+                        rnd = list(donor=~1),
+                        data = expressions_df_idda1c_base, lambda=lambda[opt],switch.NR=FALSE,final.re=TRUE)
+
+a = summary(glm1_final)
+aa = as.data.frame(a$coefficients) %>% filter(!(is.na(p.value)))
 ```
