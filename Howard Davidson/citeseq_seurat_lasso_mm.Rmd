@@ -230,51 +230,33 @@ idda1c_new_genes = idda1c_uni_res$term
 ```{r elastic net, include = FALSE}
 library(glmmLasso)
 library(str2str)
-# # loocv method
-# loocv_tc = trainControl(method = "LOOCV", allowParallel = TRUE)
-# # Parallel training
-# cl <- makePSOCKcluster(detectCores()*0.5)
-# registerDoParallel(cl)
-
-
-
-# find optimal lambda
-# format donor visit and gender as factors
-# formula
 
 # IDDa1c
 expressions_df_idda1c = expressions_df_idda1c %>% dplyr::select(IDDA1C_binned:donor, all_of(idda1c_new_genes))
 expressions_df_idda1c = expressions_df_idda1c %>% filter(!is.na(donor))
 
+# scale and center the data
+# predictors to be scaled and centered
+recipe_idda1c = recipe(expressions_df_idda1c) %>% update_role(everything()) %>% update_role(IDDA1C_binned, new_role = "outcome")
+recipe_idda1c = recipe_idda1c %>%
+  step_zv(all_predictors(),-c(Gender, visit_binned, donor)) %>%
+  step_nzv(all_predictors(),-c(Gender, visit_binned, donor)) %>%
+  step_YeoJohnson(all_predictors(),-c(Gender, visit_binned, donor)) %>%
+  step_normalize(all_predictors(),-c(Gender, visit_binned, donor)) %>%
+  prep()
+transformed_analysis_idda1c <- bake(recipe_idda1c,expressions_df_idda1c)
 
-#expressions_df_idda1c_2y = expressions_df_idda1c_2y %>% mutate_all(~ifelse(is.nan(.), NA, .))
 
 
-idda1c_coefs_lasso = colnames(expressions_df_idda1c %>% dplyr::select(-donor)) 
-
-
-#idda1c_coefs_lasso = colnames(transformed_analysis_idda1c %>% dplyr::select(-donor)) 
+idda1c_coefs_lasso = colnames(transformed_analysis_idda1c %>% dplyr::select(-donor)) 
 testform = as.formula(v2frm(idda1c_coefs_lasso, y = 1L))
 
-# scale and center the data
-# set.seed(1017)
-# predictors to be scaled and centered
-# recipe_idda1c = recipe(expressions_df_idda1c) %>% update_role(everything()) %>% update_role(IDDA1C_binned, new_role = "outcome")
-# recipe_idda1c = recipe_idda1c %>%
-#   step_zv(all_predictors(),-c(Gender, visit_binned, donor)) %>%
-#   step_nzv(all_predictors(),-c(Gender, visit_binned, donor)) %>%
-#   step_YeoJohnson(all_predictors(),-c(Gender, visit_binned, donor)) %>%
-#   step_normalize(all_predictors(),-c(Gender, visit_binned, donor)) %>%
-#   prep()
-# transformed_analysis_idda1c <- bake(recipe_idda1c,expressions_df_idda1c)
+expressions_df_idda1c2 = transformed_analysis_idda1c
+# expressions_df_idda1c2 = na.omit(expressions_df_idda1c2)
 
-# expressions_df_idda1c = transformed_analysis_idda1c
-
-
-expressions_df_idda1c = na.omit(expressions_df_idda1c)
 ### set seed
 set.seed(1017)
-N<-dim(expressions_df_idda1c)[1]
+N<-dim(expressions_df_idda1c2)[1]
 ind<-sample(N,N)
 lambda <- seq(500,50,by=-5)
 BIC_vec<-rep(Inf,length(lambda))
@@ -285,7 +267,7 @@ AIC_vec<-rep(Inf, length(lambda))
 ## first fit good starting model
 library(MASS);library(nlme)
 # ## first fit good starting model
-PQL<-glmmPQL(IDDA1C_binned~1,random = ~1|donor,family="gaussian",data=expressions_df_idda1c)
+PQL<-glmmPQL(IDDA1C_binned~1,random = ~1|donor,family="gaussian",data=expressions_df_idda1c2)
 Delta.start<-c(as.numeric(PQL$coef$fixed),rep(0,6),as.numeric(t(PQL$coef$random$donor)))
 Q.start<-as.numeric(VarCorr(PQL)[1,1])
 
@@ -297,7 +279,7 @@ print(paste("Iteration ", j,sep=""))
 
 glm1 <- try(glmmLasso(fix = testform,
                       rnd = list(donor=~1),
-                      data = expressions_df_idda1c, lambda=lambda[j],switch.NR=FALSE,final.re=FALSE,
+                      data = expressions_df_idda1c2, lambda=lambda[j],switch.NR=FALSE,final.re=FALSE,
         control=list(start=Delta.start,q_start=Q.start))
         ,silent=TRUE)
 
@@ -315,11 +297,11 @@ opt<-which.min(BIC_vec)
          
 glm1_final <- glmmLasso(fix = testform,
                         rnd = list(donor=~1),
-                        data = expressions_df_idda1c, lambda=lambda[opt],switch.NR=FALSE,final.re=FALSE)
+                        data = expressions_df_idda1c2, lambda=lambda[opt],switch.NR=FALSE,final.re=FALSE)
 
 glm1_final <- glmmLasso(fix = testform,
                         rnd = list(donor=~1),
-                        data = expressions_df_idda1c, lambda=90,switch.NR=FALSE,final.re=FALSE)
+                        data = expressions_df_idda1c2, lambda=90,switch.NR=FALSE,final.re=FALSE)
 
 a = summary(glm1_final)
 aa = as.data.frame(a$coefficients) %>% filter(!(is.na(p.value)))
