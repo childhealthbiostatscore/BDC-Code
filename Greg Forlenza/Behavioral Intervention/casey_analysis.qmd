@@ -23,7 +23,7 @@ editor:
     wrap: 72
 ---
 
-```{r libraries and import}
+```{r libraries and import, include = F}
 #| include: false
 library(tidyverse)
 library(plotly)
@@ -48,9 +48,7 @@ reviewInvalidRecords(Records)
 # api k:  0FB8B28FB5F4D22A98C5090488CE0BCB
 ```
 
-api k:0FB8B28FB5F4D22A98C5090488CE0BCB
-
-```{r data cleaning}
+```{r data cleaning, include=FALSE}
 #| message: false
 # Add treatment group to glycemic data
 db_glycemic_data <- left_join(
@@ -64,7 +62,7 @@ db_glycemic_data$treatment_group <- as.character(db_glycemic_data$treatment_grou
 db_glycemic_data$treatment_group[is.na(db_glycemic_data$treatment_group)] <-
   "Observe Clincically"
 db_glycemic_data$treatment_group <- factor(db_glycemic_data$treatment_group,
-  levels = c("Observe Clincically", "Behavioral Intervention", "Care+ (Control)")
+  levels = c("Observe Clinically", "Behavioral Intervention", "Care+ (Control)")
 )
 # If they are missing gly_timepoint they don't have glycemic data at that visit
 db_glycemic_data <- db_glycemic_data %>% filter(!is.na(gly_timepoint))
@@ -72,14 +70,14 @@ db_glycemic_data <- db_glycemic_data %>% filter(!is.na(gly_timepoint))
 
 # Table 1
 
-```{r}
+```{r, echo = FALSE}
 #| label: tbl-1
 #| tbl-cap: Participant Characteristics
 #| # add in group
 db_tgroups = db_glycemic_data %>% select(record_id, treatment_group) %>% unique()
 db_demographics = left_join(db_demographics, db_tgroups)
 #|
-db_demographics %>%
+db_demographics %>% filter(redcap_event_name == "Baseline (Arm 1: Optimal Use)")  %>%
   select(redcap_event_name, treatment_group,demo_hcl, demo_hcl_2, demo_age:demo_predict) %>%
   mutate(
     redcap_event_name = droplevels(redcap_event_name),
@@ -97,24 +95,46 @@ db_demographics %>%
   as_kable_extra()
 ```
 
+# APPENDED MAY 2024: SURVEY ANALYSIS
+
+• Survey Analysis (Table 4) 
+
+o At baseline we
+conducted the following surveys: Paid-PEDS, Inspire, Hypoglycemia Fear
+Survey, Diabetes Technology Questionnaire. We need to see how the
+baseline scores for each of these tools compared between the 3 groups. 
+
+o In the intervention group we also gave an "Intervention" survey which
+included questions about the sessions as well as Diabetes Centered
+Family Conflict questions. I'd like to look at each question for this
+one in addition to composite scores
+
+
+
 # Glycemic data
 
 • Glycemic Data (Table 2) -- Needs some Pump data as well 
-o We can drop HbA1c from the analysis as the observation period was too short to see a
-change in HbA1c. I can just ignore it if you provide it, but there's no
-reason to bother even analyzing it. 
-o We need to add an analysis for Time in Automated Mode 
-o We need to add number of boluses per day --
-This is a BIG part of the hypothesis o The 5 glucose buckets should be
-\<54 (Level 2 hypoglycemia), \<70 (Level 1 hypoglycemia; so just add
-\<54 into 54-69), 70-180 (TIR), \>180 (Level 1 hyperglycemia; so just
-add \>250 into 181-250), and \>250 (Level 2 hyperglycemia) 
+
+• Model-Based
+Analysis (Table 3)
+o The main hypothesis we have for this project is how the intervention impacted bolusing behavior and how the bolusing behavior impacted TIR. I think we probably need a LMM looking at the
+relationship between number of boluses per day on TIR between the BI and
+Care+ groups.
+
+o What I want to answer here is "Did the BI impact bolusing behavior and if so did that drive improvement in TIR?" I thinkLMM would be best for that, but I'm always happy to learn if there is a
+better method. 
+
+o As far as the model goes, I'm torn on controlling for
+baseline HbA1c or baseline TIR. The goal of the project is to target
+people with low TIR, so I'm worried that controlling for it will cancel
+out what we're really trying to do. Also really happy to discuss this so
+I can understand it better. 
 
 
 
 ## Groups by timepoint
 
-```{r}
+```{r gbt}
 db_glycemic_data %>%
   group_by(gly_timepoint) %>%
   summarise(
@@ -135,86 +155,15 @@ db_glycemic_data %>%
 # )
 ```
 
-
-
-• Model-Based
-Analysis (Table 3)
-o The main hypothesis we have for this project is how the intervention impacted bolusing behavior and how the bolusing behavior impacted TIR. I think we probably need a LMM looking at the
-relationship between number of boluses per day on TIR between the BI and
-Care+ groups.
-
-o What I want to answer here is "Did the BI impact bolusing behavior and if so did that drive improvement in TIR?" I thinkLMM would be best for that, but I'm always happy to learn if there is a
-better method. 
-
-o As far as the model goes, I'm torn on controlling for
-baseline HbA1c or baseline TIR. The goal of the project is to target
-people with low TIR, so I'm worried that controlling for it will cancel
-out what we're really trying to do. Also really happy to discuss this so
-I can understand it better. 
-
-• Survey Analysis (Table 4) 
-
-o At baseline we
-conducted the following surveys: Paid-PEDS, Inspire, Hypoglycemia Fear
-Survey, Diabetes Technology Questionnaire. We need to see how the
-baseline scores for each of these tools compared between the 3 groups. 
-
-o In the intervention group we also gave an "Intervention" survey which
-included questions about the sessions as well as Diabetes Centered
-Family Conflict questions. I'd like to look at each question for this
-one in addition to composite scores
-
-## HbA1c
-
-### Plot
-
-```{r}
-v <- "gly_a1c"
-df <- db_glycemic_data %>%
-  select(record_id, gly_timepoint, treatment_group, all_of(v)) %>%
-  drop_na()
-p <- ggplot(df, aes(
-  x = gly_timepoint, y = !!sym(v), group = record_id, color = treatment_group
-)) +
-  geom_point() +
-  geom_line() +
-  theme_bw() +
-  theme(axis.title.x = element_blank())
-ggplotly(p)
-```
-
-### Model
-
-```{r}
-#| message: false
-f <- as.formula(paste0(v, "~gly_timepoint*treatment_group+(1|record_id)"))
-mod <- lmer(f, data = db_glycemic_data)
-```
-
-#### Results
-
-```{r}
-kable(tidy(mod, effects = "fixed"), digits = 3)
-```
-
-#### Means
-
-```{r}
-kable(data.frame(emmeans(mod, ~ gly_timepoint * treatment_group)), digits = 3)
-```
-
 ## Sensor wear
 
 ### Plot
 
-```{r}
+```{r sw}
 v <- "gly_sensorwear"
-df <- db_glycemic_data %>%
-  select(record_id, gly_timepoint, treatment_group, all_of(v)) %>%
-  drop_na()
-p <- ggplot(df, aes(
-  x = gly_timepoint, y = !!sym(v), group = record_id, color = treatment_group
-)) +
+df <- db_glycemic_data %>%  select(record_id, gly_timepoint, treatment_group, all_of(v)) %>%  drop_na()
+
+p <- ggplot(df, aes(  x = gly_timepoint, y = !!sym(v), group = record_id, color = treatment_group)) +
   geom_point() +
   geom_line() +
   theme_bw() +
@@ -224,20 +173,20 @@ ggplotly(p)
 
 ### Model
 
-```{r}
+```{r sw m}
 f <- as.formula(paste0(v, "~gly_timepoint*treatment_group+(1|record_id)"))
 mod <- lmer(f, data = db_glycemic_data)
 ```
 
 #### Results
 
-```{r}
+```{r sw r}
 kable(tidy(mod, effects = "fixed"), digits = 3)
 ```
 
 #### Means
 
-```{r}
+```{rsw me}
 kable(data.frame(emmeans(mod, ~ gly_timepoint * treatment_group)), digits = 3)
 ```
 
@@ -245,7 +194,7 @@ kable(data.frame(emmeans(mod, ~ gly_timepoint * treatment_group)), digits = 3)
 
 ### Plot
 
-```{r}
+```{r su54}
 v <- "gly_sensor_u54"
 df <- db_glycemic_data %>%
   select(record_id, gly_timepoint, treatment_group, all_of(v)) %>%
@@ -267,7 +216,7 @@ used a hurdle model in which the first part of the model is the
 probability of a zero value and the second part is the probability of
 the non-zero values.
 
-```{r}
+```{r su54 m}
 f <- as.formula(paste0(v, " ~ gly_timepoint*treatment_group"))
 mod <- mixed_model(f,
   random = ~ 1 | record_id, data = df,
@@ -277,7 +226,7 @@ mod <- mixed_model(f,
 
 #### Results
 
-```{r}
+```{r su54 r}
 kable(tidy(mod), digits = 3)
 ```
 
@@ -286,16 +235,17 @@ kable(tidy(mod), digits = 3)
 These model means do not really make sense since we can't have negative
 values for this outcome, so this model likely needs additional work.
 
-```{r}
+```{r su54 me}
 kable(data.frame(emmeans(mod, ~ gly_timepoint * treatment_group)), digits = 3)
 ```
 
-## Sensor 54 - 69
+## Sensor Under 70
 
 ### Plot
 
 ```{r}
-v <- "gly_sensor_54_69"
+db_glycemic_data$gly_sensor_u70 = db_glycemic_data$gly_sensor_u54 + db_glycemic_data$gly_sensor_54_69
+v <- "gly_sensor_u70"
 df <- db_glycemic_data %>%
   select(record_id, gly_timepoint, treatment_group, all_of(v)) %>%
   drop_na()
@@ -374,12 +324,14 @@ kable(tidy(mod, effects = "fixed"), digits = 3)
 kable(data.frame(emmeans(mod, ~ gly_timepoint * treatment_group)), digits = 3)
 ```
 
-## Sensor 181 - 250
+## Sensor Over 180
 
 ### Plot
 
 ```{r}
-v <- "gly_sensor_181_250"
+db_glycemic_data$gly_sensor_g181 = db_glycemic_data$gly_sensor_g250 + db_glycemic_data$gly_sensor_181_250
+v <- "gly_sensor_g181"
+
 df <- db_glycemic_data %>%
   select(record_id, gly_timepoint, treatment_group, all_of(v)) %>%
   drop_na()
