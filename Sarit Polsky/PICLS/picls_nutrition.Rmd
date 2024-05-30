@@ -19,19 +19,11 @@ library(readr)
 library(readxl)
 library(stringr)
 library(lubridate)
-
-knitr::opts_chunk$set(echo = FALSE)
-if(Sys.info()["sysname"] == "Windows"){
-  home_dir = "Z:/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
-} else if (Sys.info()["sysname"] == "Linux"){
-  home_dir = "~/UCD/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
-} else if (Sys.info()["sysname"] == "Darwin"){
-  home_dir = "/Volumes/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects"
-}
-knitr::opts_knit$set(root.dir = home_dir)
-rm(home_dir)
+library(nlme)
+library(table1)
 
 
+#data upload
 Final_Baseline <- read_excel("S:/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/CTRC files/18-1798 Nutrient Analysis Export/18-1798 Final Baseline.xlsx")
 Final_2Tri <- read_excel("S:/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/CTRC files/18-1798 Nutrient Analysis Export/18-1798 Final 2nd trimester.xlsx")
 Final_3Tri <- read_excel("S:/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/CTRC files/18-1798 Nutrient Analysis Export/18-1798 Final 3rd Trimester.xlsx")
@@ -47,14 +39,8 @@ PICLS <- read_csv("S:/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/PIC
 gestdates <- read_csv("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data cleaning/CGM Data Check_6.8.23.csv") 
 groups <- read.csv("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/PICLSStudyHCLVsSAPTI-RandomizedPatients_DATA_2022-11-14_1616.csv")%>% select(pid, randomization_group)
 groups$randomization_group = factor(groups$randomization_group, levels = c(1,2), labels = c("HCL","SAPT") )
-
 ```
 
-```{r funs, include = FALSE}
-nth.word <- function(my.string, nth){
-    return(unlist(strsplit(my.string, "-"))[[nth]][nth])
-}
-```
 
 ```{r dc, include = FALSE}
 ######################### ctrc data clean ######################################
@@ -137,12 +123,8 @@ ctrc2 = ctrc2 %>% mutate(tp = case_when(date < mdy(SecondTri) ~ "Trimester 1",
                                         date >= mdy(`Delivery Date`) ~ "Post Partum" ))
 ctrc2$tp = factor(ctrc2$tp, levels = c("Trimester 1", "Trimester 2", "Trimester 3", "Post Partum"))
 
-################################################################################
 
-# redcap = PICLS %>% select(pid, redcap_event_name, bmi_baseline, bmi_preg,obs_birth_weight_pounds,obs_birth_weight_ounces, obs_pregnancy_compl, obs_pregnancy_compl_types___3, obs_pregnancy_compl_types___4, post_pregnancy_compl_types_hosp___15, post_pregnancy_compl_types_hosp___16,post_pregnancy_compl_types___15, post_pregnancy_compl_types___16)
-
-########################### Aim 1   ############################################
-# carbs
+########################### MDIET   ############################################
 maternal_diet_subj_day = ctrc2 %>% group_by(randomization_group, tp,pid, `Date of Intake`) %>% summarise(CarbTotal = sum(`Total Carbohydrate (g)`),
                                                                  Carb_Perc_Caltotal = mean(`% Calories from Carbohydrate`), # carbs
                                                                  FatTotal = sum(`Total Fat (g)`),
@@ -159,52 +141,147 @@ maternal_diet_subj_day = ctrc2 %>% group_by(randomization_group, tp,pid, `Date o
                                                                  )
 
 maternal_diet_group = maternal_diet_subj_day %>% group_by(randomization_group, tp) %>% summarise_all(.funs = mean) %>% select(-pid) %>% ungroup() %>% select(-`Date of Intake`)
+maternal_diet_group2 = maternal_diet_subj_day %>% group_by( tp) %>% summarise_all(.funs = mean) %>% select(-pid, -randomization_group) %>% ungroup() %>% select(-`Date of Intake`)
+
 
 ################################################################################
-###################### Fiber totals ############################################
+###################### Fiber Diet totals ############################################
 
-# ctrc2 = ctrc2 %>% mutate(fiber_grp = case_when(`Total Dietary Fiber (g)` < 15 ~ "Poor",
-#                                       `Total Dietary Fiber (g)` >= 15 & `Total Dietary Fiber (g)` < 28 ~ "Moderate",
-#                                       `Total Dietary Fiber (g)` > 28 ~ "High"))
+fiber_groups = maternal_diet_subj_day %>% group_by(pid, tp) %>% select(pid, tp, randomization_group, FiberTotal) %>% summarise(avg_daily_fiber = mean(FiberTotal))
+fiber_groups = fiber_groups %>% mutate(Diet_Quality = case_when(avg_daily_fiber < 15 ~ "Poor/Low Quality",
+                                                                avg_daily_fiber >= 15 & avg_daily_fiber < 28 ~ "Moderate Quality",
+                                                                avg_daily_fiber>= 28 ~"High Quality"))
 
-# also look at fiber grps for subj avgs etc
+fiber_groups = left_join(fiber_groups, groups)
+fiber_groups$Diet_Quality = factor(fiber_groups$Diet_Quality, levels = c("Poor/Low Quality", "Moderate Quality","High Quality"))
+
+################################################################################
+
+###################### Overall Diet totals #####################################
+
+diet_groups = maternal_diet_subj_day %>% group_by(pid, tp)  %>% summarise(avg_daily_fiber = mean(FiberTotal),
+                                                                           avg_daily_carb = mean(CarbTotal),
+                                                                           avg_daily_fat_perc = mean(Fat_Perc_Caltotal),
+                                                                           avg_daily_satfat_perc = mean(SFA_Perc_Caltotal))
+
+diet_groups = diet_groups %>% mutate(Fiber = ifelse(avg_daily_fiber >= 28, "High Quality","Not High Quality"),
+                                     Carb = ifelse(avg_daily_carb >= 175 & avg_daily_carb < 220, "High Quality","Not High Quality"),
+                                     Fat = ifelse(avg_daily_fat_perc <= 30, "High Quality","Not High Quality"),
+                                     SatFat = ifelse(avg_daily_satfat_perc < 10, "High Quality","Not High Quality"),
+                                     Overall = ifelse(Fiber=="High Quality"&Carb=="High Quality"&Fat=="High Quality"&SatFat=="High Quality", "High Quality", "Not High Quality"))
+diet_groups = left_join(diet_groups, groups)
+################################################################################
+
+###################### MIXED MODELS ############################################
+
+cleanedcgm_noacet <- read_csv("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/cleanedcgm_noacet.csv")
+gmi_data = cleanedcgm_noacet %>% mutate(pid = word(subject_id,1,sep = "_"),tri = word(subject_id,2,sep = "_")) %>% select(pid, tri, gmi)
+gmi_data = gmi_data %>% mutate(tp = case_when(tri == "T1" ~ "Trimester 1",
+                                              tri == "T2" ~ "Trimester 2",
+                                              tri == "T3" ~ "Trimester 3",
+                                              tri == "PP" ~ "Post Partum"
+                                              )) %>% filter(!is.na(tp)) %>% select(-tri)
+
+
+
+Preg_visits <- read_csv("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/QPregnancyVisits_DATA_2022-12-04_1234.csv")
+
+Preg_visits = left_join(Preg_visits, gestdates)
+
+Preg_visits = Preg_visits %>% mutate(tp = case_when(mdy(date_preg) < mdy(SecondTri) ~ "Trimester 1",
+                                        mdy(date_preg) >= mdy(SecondTri) & mdy(date_preg) < mdy(ThirdTri) ~ "Trimester 2",
+                                        mdy(date_preg) >= mdy(ThirdTri) & mdy(date_preg) < mdy(`Delivery Date`) ~ "Trimester 3",
+                                        mdy(date_preg) >= mdy(`Delivery Date`) ~ "Post Partum" ))
+Preg_visits$tp = factor(Preg_visits$tp, levels = c("Trimester 1", "Trimester 2", "Trimester 3", "Post Partum"))
+matweights = Preg_visits %>% select(pid, tp, weight_preg, date_preg,FirstTri,SecondTri,ThirdTri,`Delivery Date`)
+
+# maternal weight gain
+matweights_tri = matweights %>% group_by(pid, tp) %>% summarise(avg_tri_weight = mean(weight_preg, na.rm=T)) %>% filter(!is.na(tp))
+analysis_mwg = left_join(matweights_tri,fiber_groups) %>% group_by(pid) %>%fill(randomization_group, .direction = "updown") %>% filter(!is.na(randomization_group))
+analysis_mwg = left_join(analysis_mwg, gmi_data)
+analysis_mwg$tp = factor(analysis_mwg$tp, levels = c("Trimester 1", "Trimester 2", "Trimester 3", "Post Partum"))
+
+MWG_model = lme(avg_tri_weight ~ avg_daily_fiber + tp + gmi, random = ~1|pid,
+                data = analysis_mwg,
+                na.action = na.omit)
+summary(MWG_model)
+# outcome: mwg ~ fiber + GMI + tp |pid
+
+# nns
+
+
 ################################################################################
 ```
-Outstanding Data questions/remarks
+# Outstanding Data questions/remarks
 
+Double check aggregating goals for aims 2 & 3 -- Daily aggregation then average across subj?
 
-Methods
+Double Check variables to use for outcomes: maternal weight, neonatal size/ how to measure them by trimester: last weight, net weight gain etc.
+
+# Methods
 
 Nutritional Dates set by gestational dating/trimester.
 
-Maternal Diet assessed by group-timepoint means across subjects. 
+Maternal Diet assessed by group-timepoint daily means across subjects.
 
+Diet Quality assessed by totalling Fiber intake by day then averaging across subject-trimesters and stratifying into Poor/Low, Moderate, and High Quality Diet groups. Similarly for other Diet outcomes for Overall High Quality Diet aim.
 
+Mixed Models For Diet Quality (thru Fiber outcome) were fit with random intercept for subject, and adjusting for trimester and GMI for Maternal Weight gain and Neonatal size outcomes. Associations were assessed.
+
+# Analysis
+
+## Maternal Diet
 
 ```{r aim1}
-maternal_diet_group[by=.(randomization_group, tp)]
+print("OVERALL")
+kable(maternal_diet_group2[by=.(tp)])
+print("Rand Groups")
+kable(maternal_diet_group[by=.(tp, randomization_group)])
 ```
+## Diet Quality via Fiber Intake 
 
 ```{r aim2}
-hist(ctrc$`Total Dietary Fiber (g)`, main = "Total Dietary Fiber (g)")
-
-# total meals
-table(ctrc2$fiber_grp, ctrc2$randomization_group)
-table(ctrc2$fiber_grp, ctrc2$tp, ctrc2$randomization_group)
-
-# by subject averages
-table
-
+table1(~Diet_Quality|tp, data = fiber_groups)
+table1(~Diet_Quality|tp*randomization_group, data = fiber_groups)
 ```
-lots of sub 5 meals; should I be adding these up -> totals by trimester instead of avgs? Only 100A BL average high quality diet based on fiber and 110A Tr2 average Moderate quality.
 
-only 23 rows total had fiber above 15 
+## Diet Quality via Overall Criteria
+
+Fiber > 28 - n = 13
+175 <= Carb < 220 - n = 9
+Fat <=30 - n = 8
+SatFat <10 - n = 12 (n = 6 for both satfat/fat joint)
+
+3 categories - n = 3
+
+-- double check how to aggregate the diet totals
+
 ```{r aim3}
+table1(~Fiber+Carb+Fat+SatFat+Overall|tp, data = diet_groups)
+table1(~Fiber+Carb+Fat+SatFat+Overall|tp*randomization_group, data = diet_groups)
 
-
+# check distn before aggregating by subj-tri
+print("DAILY TOTALS")
+hist(maternal_diet_subj_day$FiberTotal, main = "Total Dietary Fiber (g)")
+hist(maternal_diet_subj_day$CarbTotal, main = "Total Carb")
+hist(maternal_diet_subj_day$Fat_Perc_Caltotal, main = "Total Fat %")
+hist(maternal_diet_subj_day$SFA_Perc_Caltotal, main = "Total SFA %")
 ```
 
-```{r aim4}
+## Association of Diet thru Fiber Intake independent of GMI
 
+### Maternal Weight Gain
+
+Diet Quality using fiber as a surrogate marker is significantly associated with maternal weight gain independent of GMI (p = 0.03).
+
+On average, we would expect every gram of daily fiber consumed to associate with a 0.13kg (SE = 0.05) decrease in Maternal weight
+
+```{r mwg model}
+summary(MWG_model)
+```
+
+### Neonatal Size
+
+```{r nns model}
 
 ```
