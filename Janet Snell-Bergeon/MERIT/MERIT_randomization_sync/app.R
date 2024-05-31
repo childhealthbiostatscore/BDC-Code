@@ -15,14 +15,20 @@ server <- function(input, output) {
       batch_size = 10e6, verbose = F,
       fields = c("record_id", "exercise_order")
     )$data
-    exercise <- exercise %>% rename(participant_id = record_id)
+    exercise <- exercise %>%
+      rename(
+        participant_id = record_id,
+        screening_exercise_order = exercise_order
+      )
     # Pull from MERIT
     merit <- redcap_read(
       redcap_uri = "https://redcap.ucdenver.edu/api/",
       token = "",
       batch_size = 10e6, verbose = F,
-      fields = c("participant_id", "exercise_order")
+      fields = c("participant_id", "screening_exercise_order")
     )$data
+    merit = merit %>% select(participant_id,screening_exercise_order) %>% 
+      distinct()
     # Get differences for printing
     diffs <- setdiff(exercise, merit)
     # Import into MERIT database
