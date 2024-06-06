@@ -20,6 +20,8 @@ library(readxl)
 library(stringr)
 library(lubridate)
 library(nlme)
+library(lme4)
+library(lmerTest)
 library(table1)
 
 
@@ -35,10 +37,15 @@ mp_daily <- read_excel("S:/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOG
     sheet = "Daily Totals")
 
 PICLS <- read_csv("S:/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/PICLSStudyHCLVsSAPTI_DATA_2024-05-24_1006(1).csv")
-# groups and gest dates
+# groups and gest dates and centiles
 gestdates <- read_csv("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data cleaning/CGM Data Check_6.8.23.csv") 
 groups <- read.csv("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/PICLSStudyHCLVsSAPTI-RandomizedPatients_DATA_2022-11-14_1616.csv")%>% select(pid, randomization_group)
 groups$randomization_group = factor(groups$randomization_group, levels = c(1,2), labels = c("HCL","SAPT") )
+
+centiles = read_excel("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/BulkCentileCalc_Global_v8.0.6.1_PICLS_v5_CJ.xlsm", 
+    sheet = "Import") %>% filter(!is.na(`Data ID`)) %>% mutate(pid = `Data ID`)
+
+
 ```
 
 
@@ -77,7 +84,7 @@ tri3_ctrc = Final_3Tri %>% mutate(tp = "Trimester 3", pid = `Participant/Menu ID
                                                                                           `Glycemic Load (bread reference)`,
                                                                                           `Glycemic Load (glucose reference)`, `Glycemic Index (glucose reference)`)
 
-pp_ctrc = Final_3Tri %>% mutate(tp = "Post Partum", pid = `Participant/Menu ID`) %>% select(pid, tp,`Date of Intake`, `Meal Name`,`Meal Time`,
+pp_ctrc = Final_PP %>% mutate(tp = "Post Partum", pid = `Participant/Menu ID`) %>% select(pid, tp,`Date of Intake`, `Meal Name`,`Meal Time`,
                                                                                           `Total Carbohydrate (g)`,`% Calories from Carbohydrate`, `Total Grains (ounce equivalents)`,
                                                                                           `Total Protein (g)`, `Animal Protein (g)`, `Vegetable Protein (g)`,`% Calories from Protein`,
                                                                                           `Total Fat (g)`,`% Calories from Fat`, `Total Saturated Fatty Acids (SFA) (g)`,
@@ -123,7 +130,7 @@ ctrc2 = ctrc2 %>% mutate(tp = case_when(date < mdy(SecondTri) ~ "Trimester 1",
                                         date >= mdy(`Delivery Date`) ~ "Post Partum" ))
 ctrc2$tp = factor(ctrc2$tp, levels = c("Trimester 1", "Trimester 2", "Trimester 3", "Post Partum"))
 
-
+ctrc2 = ctrc2 %>% unique()
 ########################### MDIET   ############################################
 maternal_diet_subj_day = ctrc2 %>% group_by(randomization_group, tp,pid, `Date of Intake`) %>% summarise(CarbTotal = sum(`Total Carbohydrate (g)`),
                                                                  Carb_Perc_Caltotal = mean(`% Calories from Carbohydrate`), # carbs
@@ -204,19 +211,52 @@ analysis_mwg$tp = factor(analysis_mwg$tp, levels = c("Trimester 1", "Trimester 2
 MWG_model = lme(avg_tri_weight ~ avg_daily_fiber + tp + gmi, random = ~1|pid,
                 data = analysis_mwg,
                 na.action = na.omit)
-summary(MWG_model)
+# summary(MWG_model)
 # outcome: mwg ~ fiber + GMI + tp |pid
 
 # nns
+nns_cent = centiles %>% select(pid, Birthweight, Centile)
+analysis_nns = left_join(analysis_mwg, nns_cent) %>% select(pid, tp, Centile,Birthweight, gmi, avg_daily_fiber)
 
+NNS_model = lmerTest::lmer(Centile ~ avg_daily_fiber + tp + gmi +(1|pid),
+                data = analysis_nns,
+                na.action = na.omit)
+
+summary(NNS_model)
+
+NNS_model_bw = lmerTest::lmer(Birthweight ~ avg_daily_fiber + tp + gmi +(1|pid),
+                data = analysis_nns,
+                na.action = na.omit)
+
+summary(NNS_model_bw)
 
 ################################################################################
+
+tri_counts = analysis_nns %>% group_by(pid, tp) %>% summarise(has_data=!is.na(avg_daily_fiber))
+visit_sums = tri_counts %>% ungroup() %>% group_by(pid) %>% summarise(sum = sum(has_data)) 
+
+# head(maternal_diet_subj_day[order(maternal_diet_subj_day$FiberTotal, decreasing = T),]%>% select(pid,tp,`Date of Intake`,FiberTotal), n = 10)
+# ctrc2 %>% select(pid, tp,`Total Dietary Fiber (g)`,`Date of Intake`) %>% filter(pid == "205B")
+# test = Final_3Tri %>% filter(`Participant/Menu ID`=="119A")
+
 ```
 # Outstanding Data questions/remarks
 
-Double check aggregating goals for aims 2 & 3 -- Daily aggregation then average across subj?
+```{r}
+print("Maximum Fiber Values by Meal")
+head(maternal_diet_subj_day$FiberTotal)
 
-Double Check variables to use for outcomes: maternal weight, neonatal size/ how to measure them by trimester: last weight, net weight gain etc.
+print("Highest Daily Fiber Totals NOT AVERAGED")
+head(maternal_diet_subj_day[order(maternal_diet_subj_day$FiberTotal, decreasing = T),]%>% select(pid,tp,FiberTotal, `Date of Intake`), n = 10)
+```
+
+- Fiber values reasonable? this would indicate I got rid of the data problem with the duplicates check. I will be spot checking some of these outliers after I send this analysis out.
+
+- Subject 119A has a meal on 7/14 which is 41.593 grams. maybe a typo? 
+- 202B and 100A have a pretty high meal in multiple trimesters
+- 203 and 205 also in the top 10 
+
+- model nns not converging great 
 
 # Methods
 
@@ -254,8 +294,8 @@ SatFat <10 - n = 12 (n = 6 for both satfat/fat joint)
 
 3 categories - n = 3
 
--- double check how to aggregate the diet totals
-
+ - Maximum Fiber values by meal and Maximum Fiber values by Day (not averaged into trimester) listed as sanity check that values were reasonable.
+ 
 ```{r aim3}
 table1(~Fiber+Carb+Fat+SatFat+Overall|tp, data = diet_groups)
 #table1(~Fiber+Carb+Fat+SatFat+Overall|tp*randomization_group, data = diet_groups)
@@ -274,7 +314,7 @@ hist(maternal_diet_subj_day$SFA_Perc_Caltotal, main = "Total SFA %")
 
 Diet Quality using fiber as a surrogate marker is significantly associated with maternal weight gain independent of GMI (p = 0.03).
 
-On average, we would expect every gram of daily fiber consumed to associate with a 0.13kg (SE = 0.05) decrease in Maternal weight
+On average, we would expect every gram of daily fiber consumed to associate with a 0.19kg (SE = 0.08) decrease in Maternal weight
 
 ```{r mwg model}
 summary(MWG_model)
@@ -282,7 +322,36 @@ summary(MWG_model)
 
 ### Neonatal Size
 
-```{r nns model}
+NNS infant centiles used. Model had trouble converging, looks like the fit model isn't great.
 
-test = ctrc2 %>% filter(pid == "200B")
+Diet Quality using fiber as a surrogate marker is not significantly associated with Neonatal Size independent of GMI (p = 0.9999).
+
+```{r nns model}
+summary(NNS_model)
+```
+
+# Appendix
+
+Below is a list of which trimesters are missing data for FIBER for each subject. "False" indicates subject trimester (or post partum) has no data. Next is the amount of trimester data by subjects. 4 subjects had data from 1 trimester, 5 had data from 2, 8 had data from 3, and 5 subject had diet data for all 4 timepoints.
+
+Next is the scatterplots for centile vs the other covariates. Model convergence errors with including tp and avg_daily_fiber, but no issues including just GMI.
+
+```{r apendix}
+# who has data  each tri
+kable(tri_counts)
+kable(visit_sums)
+
+# sums of amount of visits 
+table(visit_sums$sum)
+
+# fiber groups
+print("fiber group count by trimester")
+table(analysis_mwg$tp, analysis_mwg$Diet_Quality)
+
+#plot(analysis_nns$Centile, analysis_nns$tp)
+plot( analysis_nns$avg_daily_fiber,analysis_nns$Centile)
+plot(analysis_nns$gmi, analysis_nns$Centile)
+cthist = analysis_nns %>% filter(tp == "Trimester 1")
+hist(cthist$Centile)
+
 ```
