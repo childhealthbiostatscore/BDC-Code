@@ -25,6 +25,7 @@ library(ggplot2)
 # 3 different data sets
 HCL_DATA_2024 <- read_csv("S:/Laura/BDC/Projects/Cari Berget/Berget Trojanowski distress/HCLClinicalObservati_DATA_2024.csv")
 ClinicalObservationC_DATA_2024 <- read_csv("S:/Laura/BDC/Projects/Cari Berget/Berget Trojanowski distress/ClinicalObservationC_DATA_2024-03-05_0920.csv")
+#test_co_tp = ClinicalObservationC_DATA_2024 %>% select(record_id, gyl_timepoint, timepoint, redcap_event_name)
 ```
 
 
@@ -90,7 +91,8 @@ clinical_hfs_f = clinical_hfs_f %>% mutate(hfs_total = hfs_maintain + hfs_worry)
 
 clinical_hfs = full_join(clinical_hfs_b,clinical_hfs_f)
 
-clinicalc_f = ClinicalObservationC_DATA_2024 %>% filter(timepoint != 0) %>% select(record_id, timepoint,redcap_event_name, hba1c,
+# check 1
+clinicalc_f = ClinicalObservationC_DATA_2024 %>% filter(!grepl("baseline", redcap_event_name)) %>% select(record_id, timepoint,redcap_event_name, hba1c,
                                                                                     ya_paid1:ya_paid20, c_paid1:c_paid20, inspire_f1:inspire_f17,
                                                                                    time_am, sensor_wear, tdd, dailymealbolus, sleep,exercise,
                                                                                                           sensor_u54:sensor_g250, sensor_mean)
@@ -261,7 +263,6 @@ analysis = full_join(clinical, op5) %>% select(-demographics_hcl)
 analysis = analysis %>% filter(demographics_age >= 13 & demographics_age <=30)
 analysis = analysis %>% mutate(cohort = ifelse(demographics_age < 18, "13-17", "18-30"))
 
-id_count = analysis %>% group_by(record_id, hcl, cohort) %>% summarise(count = n())
 
 
 
@@ -284,6 +285,18 @@ analysis = analysis %>% mutate(sensor_u70 = sensor_54_69 + sensor_u54,
 # analysis = analysis %>% filter(!(record_id == "233_ciq" & timepoint == "1 Month"))
 
 analysis = analysis %>% unique() %>% ungroup()
+
+analysis2 = analysis %>% group_by(record_id, timepoint) %>% fill(hba1c:hfs_total, .direction = "updown") %>% select(-redcap_event_name) %>% unique()  %>% ungroup()
+
+# keep = rowMeans(is.na(analysis2[,1:38])) < 0.23
+# test = analysis2[keep,]
+# test_count = test %>% group_by(record_id, cohort, hcl) %>% summarise(count = n())
+# table(test_count$hcl, test_count$cohort) # numbers match up with list
+
+
+
+id_count = analysis2 %>% group_by(record_id, hcl, cohort) %>% summarise(count = n())
+
 analysis_c1 = analysis %>% filter(cohort == "18-30")
 
 analysis_c1_m1ref = analysis_c1
@@ -354,8 +367,9 @@ fit_mod_inf4 = function(outcome,df, contrasts = F){
 my.render.cont <- function(x) {
     with(stats.apply.rounding(stats.default(x), digits=2), c("",
         "Mean (SD)"=sprintf("%s (&plusmn; %s)", MEAN, SD)))}
-baseline = analysis %>% filter(timepoint=="Baseline")
-
+baseline = analysis2 %>% filter(timepoint=="Baseline")
+bl_count = baseline %>% group_by(record_id, cohort, hcl) %>% summarise(count = n())
+table(bl_count$hcl, bl_count$cohort) # numbers match up with list
 
 demog_t1 = table1(~.|cohort, data = baseline %>% ungroup() %>%select(demographics_age:demographics_t1d_duration, cohort), render.continuous= my.render.cont)
 gly_t1 = table1(~.|cohort,data = baseline %>% ungroup() %>% select(time_am, sensor_wear, tdd, dailymealbolus, sleep,exercise,sensor_70_180,
