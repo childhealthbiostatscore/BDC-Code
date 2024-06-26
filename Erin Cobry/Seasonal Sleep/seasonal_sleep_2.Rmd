@@ -94,6 +94,9 @@ analysis = analysis %>%  mutate(totalsleep_avg_min = hour(totalsleep_avg)* 60 + 
 analysis = analysis %>% filter(!is.na(visit_type))
 analysis = analysis %>% filter(!(record_id %in% exclude))
 # number of visits per subject; need to try and get to 2?
+
+# only school age kids
+analysis2 = analysis %>% filter(record_id %in% include)
 #table(analysis$record_id)
 
 # fit model fun
@@ -411,12 +414,125 @@ mod_w1317 = lme(waso_avg ~ visit_type, random = ~1|record_id, data = analysis %>
 res_w1317 = tidy(mod_w1317, "fixed")
 res_w1317$term = sub("Period","",res_w1317$term)
 
+# overall school summer glycemic
+# TIR
+mod_tir = lme(sensor_70_180 ~ visit_type, random = ~1|record_id, data = analysis, na.action = na.omit)
+res_tir = tidy(mod_tir, "fixed")
+res_tir$term = sub("Period","",res_tir$term)
+# tar
+# TIR
+mod_tar = lme(sensor_g180 ~ visit_type, random = ~1|record_id, data = analysis, na.action = na.omit)
+res_tar = tidy(mod_tar, "fixed")
+res_tar$term = sub("Period","",res_tar$term)
+# tbr
+# TIR
+mod_tbr = lme(sensor_u70 ~ visit_type, random = ~1|record_id, data = analysis, na.action = na.omit)
+res_tbr = tidy(mod_tbr, "fixed")
+res_tbr$term = sub("Period","",res_tbr$term)
+# smg
+mod_smg = lme(sensor_mean ~ visit_type, random = ~1|record_id, data = analysis, na.action = na.omit)
+res_smg = tidy(mod_smg, "fixed")
+res_smg$term = sub("Period","",res_smg$term)
+
 ```
 
 ## Updated Demog
 
-```{r demog table up, include = FALSE}
 
+```{r newt1,echo=FALSE, results='asis'}
+# Basic demographics
+child_demographics = exportRecords(rcon,forms = "child_demographics_chart_review")
+child_demographics$record_id = ids
+# Get Hba1c
+hba1c = exportRecords(rcon,forms = "glycemic_data")
+hba1c$record_id = ids
+hba1c = hba1c %>% filter(record_id >= 200,gyl_timepoint == "Baseline") %>%
+  select(record_id,hba1c)
+# Format
+child_demographics$t1d_duration = 
+  as.numeric(difftime(child_demographics$consent_date,
+                      child_demographics$t1d_diagnosis,units = "days"))/365.25
+child_demographics = child_demographics %>% 
+  select(record_id,cons_age,childgender,t1d_duration) %>%
+  filter(!record_id %in% exclude)
+child_demographics = 
+  child_demographics[rowSums(is.na(child_demographics)) < (ncol(child_demographics)-1),]
+# Add Hba1c
+child_demographics = left_join(child_demographics,hba1c,by = "record_id")
+# Table
+f = as.formula(paste("~",paste0(colnames(child_demographics)[-1],collapse = "+")))
+t1a = tableby(f,data = child_demographics%>%filter(record_id %in% include))
+summary(t1a,digits = 3,labelTranslations = list(t1d_duration = "T1D Duration (years)"))
+
+# Get data
+glyc = exportRecords(rcon,forms = "glycemic_data")
+glyc$record_id = ids
+glyc = glyc %>% filter(record_id %in% include) %>% select(record_id, gyl_timepoint, sensor_g251:sensor_sd, night_sensor_low,night_sensor_below, night_sensor_target, night_sensor_above, night_sensor_high, night_sensor_mean, night_sensor_sd, time_am,sensor_wear) %>% filter(record_id > 199) %>% filter(!is.na(gyl_timepoint))
+
+# Table
+f_2 = as.formula(paste("gyl_timepoint ~",paste0(colnames(glyc)[-(1:2)],collapse = "+")))
+t_glyc = tableby(f_2,data = glyc)
+summary(t_glyc,digits = 3, labelTranslations = list(night_sensor_low = "Night < 54",
+                                                    night_sensor_below = "Night 55-69",
+                                                    night_sensor_target = "Night 70-180",
+                                                    night_sensor_above = "Night 181-250",
+                                                    night_sensor_high = "Night >251",
+                                                    night_sensor_mean = "Night Sensor Mean",
+                                                    night_sensor_sd = "Night Sensor SD"))
+
+# Basic demographics
+parent_demographics = exportRecords(rcon,forms = "parent_demographics")
+parent_demographics$record_id = ids
+parent_demographics$age = 
+  as.numeric(difftime(parent_demographics$parent_demographics_timestamp,
+                      parent_demographics$parent_bday,units = "days"))/365.25
+parent_demographics = parent_demographics %>% 
+  select(record_id,age,parent_gender,race,parent_check_night,child_check_glucose,
+         insulinmethod,previous_cgm_use,currenthcltech) %>% 
+  filter(!record_id %in% exclude)
+parent_demographics = 
+  parent_demographics[rowSums(is.na(parent_demographics)) < (ncol(parent_demographics)-1),]
+parent_demographics$record_id2 = as.character(as.numeric(parent_demographics$record_id) + 100)
+parent_demographics = parent_demographics %>% filter(record_id2 %in% include) %>% select(-record_id2)
+# Table
+f = as.formula(paste("~",paste0(colnames(parent_demographics)[-1],collapse = "+")))
+t1a = tableby(f,data = parent_demographics)
+summary(t1a,digits = 2,labelTranslations = list(age = "Age (years)",
+                                                currenthcltech = "currenthcltech"))
+
+```
+
+## Glycemic overall analyses
+
+### TIR
+There is not a significant difference in TIR between the school and summer groups (p = 0.624)
+
+
+```{r}
+kable(res_tir[,2:ncol(res_tir)],digits = 3)
+```
+
+### TAR
+There is not a significant difference in TAR 180 between the school and summer groups (p = 0.693)
+
+
+```{r}
+kable(res_tar[,2:ncol(res_tar)],digits = 3)
+```
+
+### TBR
+There is not a significant difference in TBR 70 between the school and summer groups (p = 0.257)
+
+
+```{r}
+kable(res_tbr[,2:ncol(res_tbr)],digits = 3)
+```
+### Mean Glucose
+There is not a significant difference in sensor mean glucose between the school and summer groups (p = 0.559)
+
+
+```{r}
+kable(res_smg[,2:ncol(res_smg)],digits = 3)
 ```
 
 ## Age Specific Analyses
@@ -445,7 +561,7 @@ kable(res_se612[,2:ncol(res_ts612)],digits = 3)
 
 note: n = 16 visits
 
-```{r summerdata, include= FALSE}
+```{r summer data, include= FALSE}
 analysis_summer612 = analysis %>% filter(visit_type == "Summer") %>% filter(Age < 13 & Age > 5)
 ```
 
@@ -455,6 +571,8 @@ print("total sleep avg")
 fit_mod("totalsleep_avg_min", df = analysis_summer612)
 print("sleep efficiency")
 fit_mod("sleepefficency_avg", df = analysis_summer612)
+
+analysis %>% group_by(record_id) %>% summarise(n = n())
 ```
 
 
