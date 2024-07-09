@@ -1,0 +1,256 @@
+---
+title: "Insulin Cost Analysis"
+author: "Casey Sakamoto"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 5
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(arsenal)
+library(tidyverse)
+library(performance)
+library(knitr)
+library(MASS)
+library(readxl)
+# data import
+Insulin_cost_whole_sample <- read_excel("S:/Laura/BDC/Projects/Lauren Waterman/Insulin cost analysis/Insulin_cost_whole sample.xlsx", 
+    sheet = "Insulin_whole sample")
+
+```
+
+```{r dc, include = F}
+
+Insulin_cost_whole_sample$friends_family =  Insulin_cost_whole_sample$`Friends/Family (binary: 0=0, 1=any)`
+analysis = Insulin_cost_whole_sample %>% replace(.=="NULL", NA)%>%mutate(insulin_cost = case_when(`Cost per month` == "NULL" ~ NA_real_,
+                                                                         TRUE ~ as.numeric(`Cost per month`)),
+                                                insurance = case_when(`insurance_type (3=private, 2=public, 1=tricare, 4=other, 5=none, 6=unsure)` == 3 ~ "Private",
+                                                                      `insurance_type (3=private, 2=public, 1=tricare, 4=other, 5=none, 6=unsure)` == 2 ~ "Public",
+                                                                      `insurance_type (3=private, 2=public, 1=tricare, 4=other, 5=none, 6=unsure)` == 1 ~ "Tricare",
+                                                                      `insurance_type (3=private, 2=public, 1=tricare, 4=other, 5=none, 6=unsure)` == 4 ~ "Other",
+                                                                      `insurance_type (3=private, 2=public, 1=tricare, 4=other, 5=none, 6=unsure)` == 6 ~ "Unsure"),
+                                                race = case_when(`race (0=w, 1=b, 2=Asian, 3=native hawaiian, 4=american indian, 5=multiple, 6=?)` == 0 ~"White",
+                                                                 `race (0=w, 1=b, 2=Asian, 3=native hawaiian, 4=american indian, 5=multiple, 6=?)` == 1 ~"Black",
+                                                                 `race (0=w, 1=b, 2=Asian, 3=native hawaiian, 4=american indian, 5=multiple, 6=?)` == 2 ~"Asian",
+                                                                 `race (0=w, 1=b, 2=Asian, 3=native hawaiian, 4=american indian, 5=multiple, 6=?)` == 3 ~"Native Hawaiian",
+                                                                 `race (0=w, 1=b, 2=Asian, 3=native hawaiian, 4=american indian, 5=multiple, 6=?)` == 4 ~"American Indian",
+                                                                 `race (0=w, 1=b, 2=Asian, 3=native hawaiian, 4=american indian, 5=multiple, 6=?)` == 5 ~"Multiple",
+                                                                 `race (0=w, 1=b, 2=Asian, 3=native hawaiian, 4=american indian, 5=multiple, 6=?)` == 6 ~"Unknown"),
+                                                sex = case_when(`gender (1=m, 2=f, 3=o)` == 1 ~ "Male",
+                                                                `gender (1=m, 2=f, 3=o)` == 2 ~ "Female",
+                                                                `gender (1=m, 2=f, 3=o)` == 3 ~ "Other"),
+                                                ethnicity = case_when(`ethnicity (0=H, 1=NH)`== 0 ~ "Hispanic",
+                                                                      `ethnicity (0=H, 1=NH)` == 1 ~ "Nonhispanic"),
+                                                diabetes_duration = `Diabetes duration`,
+                                                emerging_adult = `Emerging Adult`,
+                                                instate = `instate (1=yes)`,
+                                                ration1 = `Run out (binary: 0=0, 1=any)`,
+                                                ration2 = friends_family,
+                                                ration3 = `Not filled Rx: cost (binary: 0=0, 1=any)`,
+                                                ration4 = `Running out (binary: 0=0, 1=any)`, 
+                                                ration5 = `Paid case (binary: 0=0, 1=any)`,
+                                                ration6 = `Black market insulin (binary: 0=0, 1=any)`,
+                                                ration7 = `Ration due to cost (binary: 0=0, 1=any)`) %>%  filter(!is.na(record_id))
+analysis[99:105] = lapply(analysis[99:105], as.numeric)
+analysis = analysis %>% mutate(rationsum = rowSums(across(ration1:ration7)),
+                               rationing = case_when(rationsum == 0 ~ "Non Rationer",
+                                                     rationsum > 0 ~ "Rationer"))
+analysis$TIR = as.numeric(analysis$TIR)
+
+# likerts 
+```
+
+```{r function, include = F}
+# fit model fun
+fit_mod = function(outcome,compgroup,df,age=FALSE){
+
+  if(age==FALSE){
+    # Fit model
+    
+    f = as.formula(paste0(outcome,"~",compgroup,"+ sex + diabetes_duration + race + ethnicity + insurance"))
+    mod = lm(f, data = df, na.action = na.omit)
+    summary(mod)
+  }
+    else{
+    # Fit model
+    
+    f = as.formula(paste0(outcome,"~",compgroup,"+ sex + diabetes_duration + race + ethnicity + insurance + age"))
+    mod = lm(f, data = df, na.action = na.omit)
+    summary(mod)
+  }
+}
+
+fit_lr_mod = function(outcome,compgroup,df){
+    f = as.formula(paste0(outcome,"~",compgroup,"+ sex + diabetes_duration + race + ethnicity + insurance"))
+    mod = glm(f, data = df, na.action = na.omit, family = binomial(link='logit'))
+    summary(mod)
+}
+
+fit_olr_mod = function(outcome,compgroup,df){
+    f = as.formula(paste0(outcome,"~",compgroup,"+ sex + diabetes_duration + race + ethnicity + insurance"))
+    mod = polr(f, Hess = TRUE, data = df)
+    ctable = coef(summary(mod))
+    p <- pnorm(abs(ctable[, "t value"]), lower.tail = FALSE) * 2
+
+## combined table
+(ctable <- cbind(ctable, "p value" = p))
+    kable(ctable)
+}
+
+```
+# Outstanding Data Remarks
+
+- Record ID 12 has out of pocket costs and some other columns as "NULL" --> set to NA
+- Wasn't sure how to name the rationing columns so i went with the first few words of the column name in the frequency tables
+- for likerts is there a data key? what does NS mean? if not sure, then is there an order to the variables? if not we could run a multinomial logistic regression
+
+# Methods
+
+For all models, adjusting for sex, diabetes duration, race/eth, insurance, when applicable add in age
+
+"is there a difference in out of pocket costs between groups?"
+
+aim 1 and 2: linear models with above covariates
+
+aim 3: logreg
+
+
+
+# Analysis
+
+## Demographics by subgrouping
+
+## Aim 1: Comparisons of out of pocket costs (col e)
+
+### Emerging adults vs parents/guardians (col d)
+
+```{r}
+fit_mod("insulin_cost", "emerging_adult", df = analysis, age=FALSE )
+```
+
+### instate v out of state (col i)
+
+```{r}
+fit_mod("insulin_cost", "instate", df = analysis, age=FALSE )
+```
+
+### rationers****
+
+```{r}
+fit_mod("insulin_cost", "rationing", df = analysis, age=FALSE )
+```
+
+## Aim 2: hba1c and TIR
+
+### Emerging adults vs parents/guardians (col d)
+
+```{r}
+fit_mod("TIR", "emerging_adult", df = analysis, age=TRUE )
+```
+
+```{r}
+fit_mod("HbA1c", "emerging_adult", df = analysis, age=TRUE )
+```
+
+### instate v out of state (col i)
+
+```{r}
+fit_mod("TIR", "instate", df = analysis, age=TRUE )
+```
+
+```{r}
+fit_mod("HbA1c", "instate", df = analysis, age=TRUE )
+```
+### rationers****
+
+```{r}
+fit_mod("TIR", "rationing", df = analysis, age=TRUE )
+```
+
+```{r}
+fit_mod("HbA1c", "rationing", df = analysis, age=TRUE )
+```
+
+## Aim 4: comparing rationing response among subgroups
+
+### ermeging adult
+
+```{r}
+analysis %>% group_by(emerging_adult) %>% summarise(n = n(),
+                                                    run_out = sum(ration1, na.rm = T),
+                                                    friends_family = sum(ration2, na.rm = T),
+                                                    not_filled_rx = sum(ration3, na.rm = T),
+                                                    running_out = sum(ration4, na.rm = T),
+                                                    paid_case = sum(ration5, na.rm = T),
+                                                    black_market = sum(ration6, na.rm = T),
+                                                    ration_cost = sum(ration7, na.rm = T))
+
+print("Run Out")
+fit_lr_mod("ration1", "emerging_adult", df = analysis)
+
+print("Friends/Family")
+fit_lr_mod("ration2", "emerging_adult", df = analysis)
+
+print("Not Filled Rx")
+fit_lr_mod("ration3", "emerging_adult", df = analysis)
+
+print("Running Out")
+fit_lr_mod("ration4", "emerging_adult", df = analysis)
+
+print("Paid Case")
+fit_lr_mod("ration5", "emerging_adult", df = analysis)
+
+print("Black Market")
+fit_lr_mod("ration6", "emerging_adult", df = analysis)
+
+print("Ration due to Cost")
+fit_lr_mod("ration7", "emerging_adult", df = analysis)
+
+```
+
+### instate
+
+```{r}
+analysis %>% group_by(instate) %>% summarise(n = n(),
+                                                    run_out = sum(ration1, na.rm = T),
+                                                    friends_family = sum(ration2, na.rm = T),
+                                                    not_filled_rx = sum(ration3, na.rm = T),
+                                                    running_out = sum(ration4, na.rm = T),
+                                                    paid_case = sum(ration5, na.rm = T),
+                                                    black_market = sum(ration6, na.rm = T),
+                                                    ration_cost = sum(ration7, na.rm = T))
+
+print("Run Out")
+fit_lr_mod("ration1", "instate", df = analysis)
+
+print("Friends/Family")
+fit_lr_mod("ration2", "instate", df = analysis)
+
+print("Not Filled Rx")
+fit_lr_mod("ration3", "instate", df = analysis)
+
+print("Running Out")
+fit_lr_mod("ration4", "instate", df = analysis)
+
+print("Paid Case")
+fit_lr_mod("ration5", "instate", df = analysis)
+
+print("Black Market")
+fit_lr_mod("ration6", "instate", df = analysis)
+
+print("Ration due to Cost")
+fit_lr_mod("ration7", "instate", df = analysis)
+```
+
+## likerts
+
+###
+
+```{r}
+with(analysis, table(instate, `Too expensive (binary 1=D, 2=A, 3=NS)`))
+#fit_olr_mod("`Too expensive (binary 1=D, 2=A, 3=NS)`", "instate", df = analysis)
+```
