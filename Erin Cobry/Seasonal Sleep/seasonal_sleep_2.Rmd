@@ -26,6 +26,7 @@ library(table1)
 
 # data and subj list upload
 HCL_Study_Subjects = read_excel("S:/Laura/BDC/Projects/Erin Cobry/Summer vs. School Sleep/Data_Clean/HCL_Study_Subjects1.xlsx") %>% filter(!is.na(DOB))
+
 # hcl and sleep dataset
 token = read.table("S:/Laura/BDC/Projects/Erin Cobry/ADA 2022/HCL and Sleep/api_token.txt")[1,1]
 rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",token = token)
@@ -43,6 +44,8 @@ exclude = c(101,201,102,202,103,203,110,210,119,219,121,221,131,231,141,241)
 ## subject list from nikita
 visitdates <- read_excel("S:/Laura/BDC/Projects/Erin Cobry/Summer vs. School Sleep/Sleep Diabetes Data 9.10.23.xlsx")
 include = unique(visitdates$record_id)
+
+HCL_Study_Subjects = HCL_Study_Subjects %>% filter(Subject %in% include)
 
 m3_visit = visitdates %>% select(record_id, M3, season) %>% filter(!is.na(M3))
 m6_visit = visitdates %>% select(record_id, M6, season) %>% filter(!is.na(M6))
@@ -91,12 +94,16 @@ analysis = analysis %>%  mutate(totalsleep_avg_min = hour(totalsleep_avg)* 60 + 
                                                                          sensor_g180 = sensor_181_250 + sensor_g251
                                                                          )
 
+analysis = analysis %>% filter(record_id %in% include)
+analysis[analysis$record_id == 209, "Age"] = 13.0001
+analysis[analysis$record_id == 209, "visit_type"] = "School"
 analysis = analysis %>% filter(!is.na(visit_type))
-analysis = analysis %>% filter(!(record_id %in% exclude))
-# number of visits per subject; need to try and get to 2?
-
-# only school age kids
-analysis2 = analysis %>% filter(record_id %in% include)
+# figure out 227 and 230 6 mo
+# analysis = analysis %>% filter(!(record_id %in% exclude))
+# # number of visits per subject; need to try and get to 2?
+# 
+# # only school age kids
+# analysis2 = analysis %>% filter(record_id %in% include)
 #table(analysis$record_id)
 
 # fit model fun
@@ -130,14 +137,22 @@ fit_mod = function(outcome,df){
   cat("\n")
 }
 
+# test = study_subjects %>% filter(!is.na(visit_date))
+# test = test %>% mutate(age_grp = case_when(Age > 6 & Age < 13 ~ "6-12", Age > 13 & Age < 18 ~ "13-18"))
+# test_b = test %>% filter(visit == "Baseline (before HCL)")
+# #test_b %>% group_by(age_grp) %>% summarise(n())
 ```
 
 # 1: Table for sleep duration by age group and summer/school
 ```{r table, include = FALSE}
 #m6_list = c(200,202,205,206,207,208,243,244,245,246)
 analysis_table = analysis %>% mutate(age_grp = case_when(Age > 6 & Age < 13 ~ "6-12", Age > 13 & Age < 18 ~ "13-18")) #%>% filter(!(record_id %in% m6_list & timepoint_cs == "6 Months"))
+analysis = analysis %>% mutate(age_grp = case_when(Age > 6 & Age < 13 ~ "6-12", Age > 13 & Age < 18 ~ "13-18")) #%>% filter(!(record_id %in% m6_list & timepoint_cs == "6 Months"))
+
 analysis_table$age_grp = factor(analysis_table$age_grp, levels = c("6-12", "13-18"))
 
+#analysis_table %>% filter(timepoint_cs == "Baseline (before HCL)") %>% group_by(age_grp) %>% summarise(n())
+#length(unique(analysis_table$record_id))
 
 sleep_table = table1( ~ totalsleep_avg_min|visit_type*age_grp,
                       data = analysis_table,
@@ -147,6 +162,14 @@ sleep_table = table1( ~ totalsleep_avg_min|visit_type*age_grp,
 
 ```{r t1}
 sleep_table
+
+# baseline counts
+analysis_table %>% filter(timepoint_cs == "Baseline (before HCL)") %>% group_by(age_grp) %>% summarise(n())
+
+analysis  %>% group_by(age_grp, timepoint_cs) %>% summarise(n())
+
+analysis  %>% group_by(visit_type, timepoint_cs) %>% summarise(n())
+
 ```
 
 # 2: Differences in Sleep measures for summer/school 
@@ -229,7 +252,6 @@ kable(res_w[,2:ncol(res_w)],digits = 3)
 
 # 3: Just Summer visits baseline vs hcl
 
-note: only 3 Baseline visits (subj 200, 202, 205) , 11 3mo, 10 6mo
 
 ```{r summerdata, include= FALSE}
 analysis_summer = analysis %>% filter(visit_type == "Summer")
@@ -301,8 +323,6 @@ fit_mod("sensor_mean", df = analysis_summer)
 ```
 
 # 4: Just School visits baseline vs hcl
-
-note:n =  36 bl, 24 m3, 19 m6
 
 ```{r schooldata, include= FALSE}
 analysis_school = analysis %>% filter(visit_type == "School")
