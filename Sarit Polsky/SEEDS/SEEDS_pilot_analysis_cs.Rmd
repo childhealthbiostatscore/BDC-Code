@@ -26,20 +26,87 @@ pilot_pat <- read_csv("S:/Laura/BDC/Projects/Sarit Polsky/SEEDS/SEEDSPilotPatien
 pilot_res <- read_csv("S:/Laura/BDC/Projects/Sarit Polsky/SEEDS/SEEDSPilotResearchSt_DATA_2024-07-17_0911.csv")
 ```
 
+
 ```{r dc, include = FALSE}
-# redcap instruments: SEEDS Pilot HCP: HCP_Enrollment Survey*, HCP_confidence, HCP_Time&Encounter, HCP_confidence_EOS, HCP Pilot Final Questionnaire
+############### SEEDS Pilot HCP: HCP_Enrollment Survey*, HCP_confidence, HCP_Time&Encounter, HCP_confidence_EOS, HCP Pilot Final Questionnaire ####################
 pilot_hcp = pilot_hcp %>% select(record_id:redcap_repeat_instance,hcpenroll_ptname:hcp_enrollment_survey_complete,
                                  hcpconf_cgmoverall:hcp_confidence_complete,
                                  hcpte_datetime:hcp_timeencounter_complete,
                                  hcpconf_cgmoverall_eos:hcp_confidence_eos_complete,
                                  hcpfinal_provdegree___1:hcp_pilot_final_questionnaire_complete)
 
-#SEEDS Pilot Patient:PT_Enroll*Participant Withdrawal Or Removal
-pilot_pat = pilot_pat %>% select(record_id, pt_enroll_dob:pt_enroll_complete, worremoval_practicetype:participant_withdrawal_or_removal_complete)
+pilot_hcp = pilot_hcp %>% mutate(Practice_Type = case_when(hcpenroll_practicetype == 0 ~ "Primary Care",
+                                                           hcpenroll_practicetype == 1 ~ "Adult Endocrinology",
+                                                           hcpenroll_practicetype == 2 ~ "Pediatric Endocrinology"),
+                                 Use_EHR = case_when(hcpenroll_ehr == 0 ~ "CHCO EPIC",
+                                                     hcpenroll_ehr == 1 ~ "UCH EPIC",
+                                                     hcpenroll_ehr == 2 ~ "Does Not Use",
+                                                     hcpenroll_ehr == 3 ~ "Other"),
+                                 Apprx_Pt_Medicare = hcpenroll_ptmedicare,
+                                 Apprx_Pt_Medicaid = hcpenroll_ptmedicaid,
+                                 Apprx_Pt_Dual = hcpenroll_ptdualmed,
+                                 Apprx_Pt_Selfpay = hcpenroll_ptselfpay,
+                                 Apprx_Pt_Otherpay = hcpenroll_ptotherpay,
+                                 Apprx_Pt_CommercialPrivate = hcpenroll_ptcomm,
+                                 Weekly_Pts = hcpenroll_totalpts,
+                                 Apprx_T1D_Pts = hcpenroll_t1dpts,
+                                 Apprx_T2D_Pts_noins = hcpenroll_t2dptsnoinsulin,
+                                 Apprx_T2D_Pts_ins = hcpenroll_t2dptsinsulin,
+                                 Practice_Apprx_T1D_Pts = hcpenroll_t1dptsprx,
+                                 Practice_Apprx_T2D_Pts_noins = hcpenroll_t2dptsprxni,
+                                 Practice_Apprx_T2D_Pts_ins = hcpenroll_t2dptsprxwi)
 
-# SEEDS Pilot Research Staff Research Staff Time&Encounter*
+# hcp demog table
+pilot_hcp_demog = pilot_hcp %>% select(record_id, Practice_Type:Practice_Apprx_T2D_Pts_ins) %>% filter(!is.na(Practice_Type))                                 
+HCP_Demographics = table1(~.|Practice_Type, data = pilot_hcp_demog %>% select(-record_id))                                 
+
+# descriptive statistics
+
+
+################## SEEDS Pilot Patient:PT_Enroll*Participant Withdrawal Or Removal ######################
+#Should any data points be excluded?	Pilot Patients Adult-1-Unassigned and PCP-2-Unassigned  
+
+pilot_pat = pilot_pat %>% select(record_id, pt_enroll_dob:pt_enroll_complete, worremoval_practicetype:participant_withdrawal_or_removal_complete)
+pilot_pat = pilot_pat %>% filter(! record_id %in% c("Adult-1-Unassigned", "PCP-2-Unassigned"))
+
+#patient demographics table
+pilot_pat = pilot_pat %>% mutate(Race = case_when(pt_enroll_race___1 == 1 ~ "White",
+                                                  pt_enroll_race___2 == 1 ~ "Black or African American",
+                                                  pt_enroll_race___3 == 1 ~ "American Indian or Alaska Native",
+                                                  pt_enroll_race___4 == 1 ~ "Asian",
+                                                  pt_enroll_race___5 == 1 ~ "Native Hawaiian or Pacific Islander",
+                                                  pt_enroll_race___6 == 1 ~"Other",
+                                                  TRUE ~ "Missing"),
+                                 Ethnicity = case_when(pt_enroll_ethnicity == 0 ~ "Non-Hispanic",
+                                                       pt_enroll_ethnicity == 1 ~ "Hispanic or Latino"),
+                                 Diabetes_Type = case_when(pt_enroll_diabetestype == 1 ~ "Type 1 Diabetes",
+                                                           pt_enroll_diabetestype == 2 ~ "Type 2 Diabetes",
+                                                           pt_enroll_diabetestype == 3 ~ "Other"),
+                                 Diabetes_Duration = pt_enroll_diabetesdur,
+                                 Insurance_Type = case_when(pt_enroll_insurancetype___0 == 1 ~ "Commercial",
+                                                            pt_enroll_insurancetype___1 == 1 ~ "Medicare",
+                                                            pt_enroll_insurancetype___2 == 1 ~ "Medicaid",
+                                                            pt_enroll_insurancetype___3 == 1 ~ "Government or Military",
+                                                            pt_enroll_insurancetype___4 == 1 ~ "None",
+                                                            pt_enroll_insurancetype___5 == 1 ~ "Other"),
+                                 Device_Use = factor(pt_enroll_usedevices, levels= c(0,1), labels= c("Yes", "No")),
+                                 Practice_Type = case_when(pt_enroll_practicetype == 0 ~ "Primary Care",
+                                                           pt_enroll_practicetype == 1 ~ "Adult Endocrinology",
+                                                           pt_enroll_practicetype == 2 ~ "Pediatric Endocrinology"
+                                                           ))
+
+Patient_Demographics = table1(~ Race + Ethnicity + Diabetes_Type + Diabetes_Duration + Insurance_Type + Device_Use| Practice_Type, data = pilot_pat)
+
+############################ SEEDS Pilot Research Staff Research Staff Time&Encounter*###################################
 pilot_res = pilot_res %>% select(record_id:redcap_repeat_instance, hcpte_datetime:research_staff_timeencounter_complete)
 
 
 # questionnaire_scoring: hcp conf: 1-10 likert; hcp_confidence_eos: 1-10 likert; hcp_final questionnaire: both 1-5 and 1-10 likert
+```
+
+
+Other comments	Research Staff record ID “Tamara Oser” should be included for analysis with a T&E # of 0.
+```{r}
+Patient_Demographics
+HCP_Demographics
 ```
