@@ -61,7 +61,71 @@ pilot_hcp_demog = pilot_hcp %>% select(record_id, Practice_Type:Practice_Apprx_T
 HCP_Demographics = table1(~.|Practice_Type, data = pilot_hcp_demog %>% select(-record_id))                                 
 
 # descriptive statistics
+# 	*HCP_Enrollment_survey: analyze demographic info by practice type and overall, report of likert scale question, report percentage of patients seen in payer categories
 
+hcp_enroll  = pilot_hcp %>% filter(is.na(redcap_repeat_instrument)) %>% select(record_id, Practice_Type ,hcpenroll_tech1:hcpenroll_tech3)
+hcp_enroll = hcp_enroll %>% mutate(across(hcpenroll_tech1:hcpenroll_tech3, as.factor))
+HCP_Likert = table1(~.|Practice_Type, data =hcp_enroll %>% select(-record_id)) 
+
+#	*HCP Pilot Final Questionnaire: analyze by practice type and overall of all quantitative data (free-text not included in analysis)
+
+hcp_finalq = pilot_hcp %>% select(record_id, Practice_Type, hcpfinal_provdegree___1:hcp_pilot_final_questionnaire_complete) %>% filter(!is.na(Practice_Type)) %>%
+  mutate(prov_degree = case_when(hcpfinal_provdegree___1 == 1 ~ "MD/DO or equivalent",
+                                 hcpfinal_provdegree___2 == 1 ~ "PhD",
+                                 hcpfinal_provdegree___3 == 1 ~ "PharmD",
+                                 hcpfinal_provdegree___4 == 1 ~ "PA/NP",
+                                 hcpfinal_provdegree___5 == 1 ~ "MSN",
+                                 hcpfinal_provdegree___6 == 1 ~ "RN",
+                                 hcpfinal_provdegree___7 == 1 ~ "RD",
+                                 hcpfinal_provdegree___8 == 1 ~ "Other"))
+
+hcp_finalq = hcp_finalq %>% select(-c(hcpfinal_provdegree___1:hcpfinal_provdegree_other,
+                                     hcpfinal_traininghelpful:hcpfinal_ptsasked,
+                                     hcpfinal_partdeclineyes, hcpfinal_endosuggestionyes,
+                                     hcpfinal_websiteufno, hcpfinal_websitenavno,
+                                     hcpfinal_websitefree,hcpfinal_websiteunclear,hcpfinal_websitemissingyes,
+                                     hcpfinal_websiteclearno,hcpfinal_workflowclearno_2,hcpfinal_workflowmissingyes,
+                                     hcpfinal_insurancewffeedback,hcpfinal_nodevicestartyes,hcpfinal_prevdevyes,
+                                     hcpfinal_prevdevno,hcpfinal_devicedisncontyes,hcpfinal_timesaveyes,hcpfinal_endopumpsupportyes_2,
+                                     hcp_pilot_final_questionnaire_complete)) %>% mutate(across(hcpfinal_trainingprocess:hcpfinal_endoinjection, as.factor))
+
+HCP_FinalQ = table1(~.|Practice_Type, data =hcp_finalq %>% select(-c(record_id, hcpfinal_practicetype))) 
+
+
+# iii.	HCP_Time&Encounter: analyze of time spent on tasks and billing codes, by practice type and overall, and visit type and overall
+hcp_te = pilot_hcp %>% select(record_id, Practice_Type, hcpte_type:hcp_timeencounter_complete) %>% fill(Practice_Type) %>% filter(!is.na(hcpte_type))
+
+hcp_te = hcp_te %>% select(record_id, Practice_Type, hcpte_time,hcpte_bill,hcpte_bill_yes___0:hcpte_bill_yes___6) %>% 
+  mutate(billing_codes = case_when(hcpte_bill_yes___0 == 1 ~ "95249",
+                                   hcpte_bill_yes___1 == 1 ~ "95250",
+                                   hcpte_bill_yes___2 == 1 ~ "95251",
+                                   hcpte_bill_yes___3 == 1 ~ "99213 (w/modifier 25)",
+                                   hcpte_bill_yes___4 == 1 ~ "99214 (w/modifier 25)",
+                                   hcpte_bill_yes___5 == 1 ~ "99215 (w/modifier 25)",
+                                   hcpte_bill_yes___6 == 1 ~ "Other",
+                                   hcpte_bill == 2 ~ "Not Billed")) %>% select(-(hcpte_bill_yes___0:hcpte_bill_yes___6), -hcpte_bill)
+HCP_TE = table1(~.|Practice_Type, data =hcp_te %>% select(-c(record_id))) 
+
+hcp_te_device = pilot_hcp %>% select(record_id, Practice_Type, hcpte_type:hcp_timeencounter_complete) %>% fill(Practice_Type) %>% filter(!is.na(hcpte_type))
+hcp_te_device = hcp_te_device %>% select(record_id, Practice_Type, hcpte_type,hcpte_devicerx:new_device_type)
+hcp_te_device = hcp_te_device %>% mutate(device_prescribed = case_when(hcpte_devicerx == 1 ~"Yes",
+                                                                       hcpte_devicerx == 0 ~"No",
+                                                                       hcpte_type == 1 ~"Non SEEDS Pt Encounter"))
+
+hcp_te_device = hcp_te_device %>% select(record_id, Practice_Type, device_prescribed)
+HCP_Device = table1(~.|Practice_Type, data =hcp_te_device %>% select(-c(record_id))) 
+
+#d.	CGM Data from patients who started on CGM during the pilot i.	Compare from baseline to 6-week post device start
+hcp_cgm = pilot_hcp %>% select(record_id, Practice_Type, hcpconf_cgmoverall:hcp_confidence_complete, hcpconf_cgmoverall_eos:hcp_confidence_eos_complete) %>% 
+  fill(Practice_Type) %>% filter(!is.na(hcpconf_cgmoverall))
+
+hcp_cgm_long = gather(hcp_cgm, key = "eos", value = "Likert", -record_id, -Practice_Type)
+hcp_cgm_long = hcp_cgm_long %>% filter(!(eos %in% c("hcp_confidence_complete", "hcp_confidence_eos_complete")))
+hcp_cgm_long$eos = str_remove(hcp_cgm_long$eos, "hcpconf_")
+hcp_cgm_long = hcp_cgm_long %>% mutate(eos_visit = ifelse(grepl("_eos", eos), "EOS","Baseline"))
+hcp_cgm_long = hcp_cgm_long %>% mutate(likert_q = str_remove(eos, "_eos")) %>% select(-eos)
+
+#lapply(split(hcp_cgm_long, hcp_cgm_long$likert_q), function(df) t.test(Likert ~ eos_visit , data = df))
 
 ################## SEEDS Pilot Patient:PT_Enroll*Participant Withdrawal Or Removal ######################
 #Should any data points be excluded?	Pilot Patients Adult-1-Unassigned and PCP-2-Unassigned  
@@ -94,19 +158,169 @@ pilot_pat = pilot_pat %>% mutate(Race = case_when(pt_enroll_race___1 == 1 ~ "Whi
                                                            pt_enroll_practicetype == 1 ~ "Adult Endocrinology",
                                                            pt_enroll_practicetype == 2 ~ "Pediatric Endocrinology"
                                                            ))
-
+# c.	SEEDS Pilot Patient (PID 27895)i.	*PT_Enroll: analysis of demographics by practice type and overall
 Patient_Demographics = table1(~ Race + Ethnicity + Diabetes_Type + Diabetes_Duration + Insurance_Type + Device_Use| Practice_Type, data = pilot_pat)
+
+# ii.	Participant Withdrawal Or Removal: analyze the reason for withdrawal or removal by practice type and overall
+pat_wr = pilot_pat %>% mutate(withdrawal_reason = case_when(withdrawal_reason___0 == 1 ~ "Patient Participant Moved Away",
+                                                            withdrawal_reason___1 == 1 ~ "No Longer Wanted to be in Study",
+                                                            withdrawal_reason___2 == 1 ~ "HCP Participant Moved Away",
+                                                            withdrawal_reason___3 == 1 ~ "Other",
+                                                            withdrawal_reason___4 == 1 ~ "No Reason Given"),
+                              removal_reason = case_when(removal_reason___0 == 1 ~ "Patient Participant Moved Away",
+                                                            removal_reason___1 == 1 ~ "No Longer Wanted to be in Study",
+                                                            removal_reason___2 == 1 ~ "HCP Participant Moved Away",
+                                                            removal_reason___3 == 1 ~ "Other",
+                                                            removal_reason___4 == 1 ~ "No Reason Given"),
+                              include = ifelse(is.na(withdrawal_or_removal), 0, 1)) %>% 
+  select(record_id, Practice_Type, withdrawal_or_removal, withdrawal_reason, removal_reason, include)
+PAT_WR = table1(~withdrawal_reason + removal_reason| Practice_Type, data = pat_wr %>% select(-record_id) %>% filter(include == 1))
 
 ############################ SEEDS Pilot Research Staff Research Staff Time&Encounter*###################################
 pilot_res = pilot_res %>% select(record_id:redcap_repeat_instance, hcpte_datetime:research_staff_timeencounter_complete)
 
+## i.	*Research Staff Time&Encounter: analyze of time spent by practice type and overall, visit type and overall,  
+pilot_res_te = pilot_res %>% select(record_id, rste_practice_type, rste_hcp_whichvisit___0:rste_hcp_whichvisit___4, rste_time) %>% 
+  mutate(visit_type = case_when(rste_hcp_whichvisit___0 == 1 ~ "Enrollment",
+                                rste_hcp_whichvisit___1 == 1 ~ "Training A (Protocol/Device Expert Consultation)",
+                                rste_hcp_whichvisit___2 == 1 ~ "Training B (endo.digital)",
+                                rste_hcp_whichvisit___3 == 1 ~ "Patient Recruitment",
+                                rste_hcp_whichvisit___4 == 1 ~ "Other/Not Tied to a Visit")) %>% select(-c(rste_hcp_whichvisit___0:rste_hcp_whichvisit___4))
+
+pilot_res_te[57,3] = 0 
+
+pilot_res_te = pilot_res_te %>% filter(!is.na(rste_time == 0))
+pilot_res_te$rste_practice_type = factor(pilot_res_te$rste_practice_type, levels = c(0,1,2), labels = c("Patient", "HCP", "Both"))
+RES_TE_vis = table1(~ rste_time| visit_type, data = pilot_res_te %>% filter(!is.na(visit_type)))
+RES_TE_prac = table1(~ rste_time| rste_practice_type, data = pilot_res_te %>% filter(!is.na(rste_practice_type)))
+RES_TE_both = t(table1(~ rste_time| rste_practice_type*visit_type, data = pilot_res_te %>% filter(!is.na(rste_practice_type)) %>% filter(!is.na(visit_type))))
 
 # questionnaire_scoring: hcp conf: 1-10 likert; hcp_confidence_eos: 1-10 likert; hcp_final questionnaire: both 1-5 and 1-10 likert
 ```
 
 
-Other comments	Research Staff record ID “Tamara Oser” should be included for analysis with a T&E # of 0.
+
+# Data Remarks/ Questions
+
+- did we receive CGM info for analysis plan 6d from Dreamed? I'm not sure what variables to look for.
+
+- Tamara Oser time spent set to 0, any other input for classifications etc?
+
+
+# Methods
+
+Demographics for the overall groups and subgroups produced.
+
+Descriptive statistics were produced for survey responses and likerts.
+
+T-tests were run on the confidence outcomes between baseline and EOS for the overall and Patient Care groups. Insufficient data to run the tests for the other two subgroups.
+
+# Analysis
+
+## HCP
+
+note: Adult-2 record id missing a bunch of questions
+
+### Demographics
+
+```{r}
+HCP_Demographics
+```
+
+### Enrollment Likert
+
+1: Strong Disagree - 5: Strong Agree
+tech savvy, ask for help when troubleshooting, first to try new tech
+
+```{r}
+HCP_Likert
+```
+
+### Final Questionnaire
+Likerts:
+1: Not at all Satisfied - 10 :Extremely Satisfied, 11 = N/A
+1: Strong Disagree - 5: Strong Agree 6: N/A
+
+1 = Yes, 0 or 2 = No , 3 : N/A
+tech savvy, ask for help when troubleshooting, first to try new tech
+
+```{r}
+HCP_FinalQ
+```
+
+### Time & Encounter
+
+data from any task or work related to an enrolled SEEDS participant; thus each subj has multiple rows per task
+
+the devices type column was completely blank, so instead presenting whether one was prescribed
+
+```{r}
+HCP_TE
+HCP_Device
+```
+
+### CGM Confidence Overall
+
+1 = "not at all confident" and 10 = "very confident"
+
+```{r}
+lapply(split(hcp_cgm_long, hcp_cgm_long$likert_q), function(df) t.test(Likert ~ eos_visit , data = df))
+```
+
+### CGM Confidence Primary Care
+
+1 = "not at all confident" and 10 = "very confident"
+
+```{r}
+hcp_cgm_long_pc = hcp_cgm_long %>% filter(Practice_Type == "Primary Care")
+lapply(split(hcp_cgm_long_pc, hcp_cgm_long_pc$likert_q), function(df) t.test(Likert ~ eos_visit , data = df ))
+```
+
+### CGM Confidence Adult Endo
+
+1 = "not at all confident" and 10 = "very confident"
+
+not enough 'y' observations to run tests for this subgroup; not large enough N
+
+```{r}
+hcp_cgm_long_ae = hcp_cgm_long %>% filter(Practice_Type == "Adult Endocrinology")
+#lapply(split(hcp_cgm_long_ae, hcp_cgm_long_ae$likert_q), function(df) t.test(Likert ~ eos_visit , data = df ))
+```
+
+### CGM Confidence Ped Endo
+
+1 = "not at all confident" and 10 = "very confident"
+
+not enough 'y' observations to run tests for this subgroup; not large enough N
+
+
+```{r}
+hcp_cgm_long_pe = hcp_cgm_long %>% filter(Practice_Type == "Pediatric Endocrinology")
+# lapply(split(hcp_cgm_long_pe, hcp_cgm_long_pe$likert_q), function(df) t.test(Likert ~ eos_visit , data = df ))
+```
+
+## Patient
+
+### Demographics
+
 ```{r}
 Patient_Demographics
-HCP_Demographics
+```
+
+### Participant Withdrawal or Removal
+
+```{r}
+PAT_WR
+```
+
+
+
+## Researcher
+
+### Time Encounter
+
+```{r}
+RES_TE_vis
+RES_TE_prac
+RES_TE_both
 ```
