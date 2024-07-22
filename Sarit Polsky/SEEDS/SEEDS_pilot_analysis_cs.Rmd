@@ -125,6 +125,31 @@ hcp_cgm_long$eos = str_remove(hcp_cgm_long$eos, "hcpconf_")
 hcp_cgm_long = hcp_cgm_long %>% mutate(eos_visit = ifelse(grepl("_eos", eos), "EOS","Baseline"))
 hcp_cgm_long = hcp_cgm_long %>% mutate(likert_q = str_remove(eos, "_eos")) %>% select(-eos)
 
+test = hcp_cgm_long %>% spread(likert_q, Likert)
+
+# p value table
+my.render.cont <- function(x) {
+    with(stats.apply.rounding(stats.default(x), digits=2), c("",
+        "Mean (SD)"=sprintf("%s (&plusmn; %s)", MEAN, SD)))
+}
+
+pvalue <- function(x, ...) {
+    # Construct vectors of data y, and groups (strata) g
+    y <- unlist(x)
+    g <- factor(rep(1:length(x), times=sapply(x, length)))
+    if (is.numeric(y)) {
+        # For numeric variables, perform a standard 2-sample t-test
+        p <- t.test(y ~ g, paired = T)$p.value
+    } else {
+        # For categorical variables, perform a chi-squared test of independence
+        p <- chisq.test(table(y, g))$p.value
+    }
+    # Format the p-value, using an HTML entity for the less-than sign.
+    # The initial empty string places the output on the line below the variable label.
+    c("", sub("<", "&lt;", format.pval(p, digits=3, eps=0.001)))
+}
+
+
 #lapply(split(hcp_cgm_long, hcp_cgm_long$likert_q), function(df) t.test(Likert ~ eos_visit , data = df))
 
 ################## SEEDS Pilot Patient:PT_Enroll*Participant Withdrawal Or Removal ######################
@@ -219,7 +244,7 @@ T-tests were run on the confidence outcomes between baseline and EOS for the ove
 
 ## HCP
 
-note: Adult-2 record id missing a bunch of questions
+note:  record id Adult-2 missing a bunch of questions
 
 ### Demographics
 
@@ -264,16 +289,17 @@ HCP_Device
 1 = "not at all confident" and 10 = "very confident"
 
 ```{r}
-lapply(split(hcp_cgm_long, hcp_cgm_long$likert_q), function(df) t.test(Likert ~ eos_visit , data = df))
+table1(~.|eos_visit , data = test %>% filter(record_id != "Adult-2" )%>% select(-record_id, - Practice_Type) , overall=F, extra.col=list(`P-value`=pvalue),render.continuous=my.render.cont )
 ```
 
 ### CGM Confidence Primary Care
 
 1 = "not at all confident" and 10 = "very confident"
 
+not enough 'y' observations to run tests for this subgroup; not large enough N
+
 ```{r}
-hcp_cgm_long_pc = hcp_cgm_long %>% filter(Practice_Type == "Primary Care")
-lapply(split(hcp_cgm_long_pc, hcp_cgm_long_pc$likert_q), function(df) t.test(Likert ~ eos_visit , data = df ))
+table1(~.|eos_visit , data = test %>% filter(Practice_Type == "Primary Care" ) %>% select(-record_id, - Practice_Type) , overall=F ,render.continuous=my.render.cont )
 ```
 
 ### CGM Confidence Adult Endo
@@ -283,20 +309,19 @@ lapply(split(hcp_cgm_long_pc, hcp_cgm_long_pc$likert_q), function(df) t.test(Lik
 not enough 'y' observations to run tests for this subgroup; not large enough N
 
 ```{r}
-hcp_cgm_long_ae = hcp_cgm_long %>% filter(Practice_Type == "Adult Endocrinology")
-#lapply(split(hcp_cgm_long_ae, hcp_cgm_long_ae$likert_q), function(df) t.test(Likert ~ eos_visit , data = df ))
+table1(~.|eos_visit , data = test %>% filter(Practice_Type == "Adult Endocrinology" ) %>% select(-record_id, - Practice_Type) , overall=F ,render.continuous=my.render.cont )
+
 ```
 
 ### CGM Confidence Ped Endo
 
 1 = "not at all confident" and 10 = "very confident"
 
-not enough 'y' observations to run tests for this subgroup; not large enough N
-
+t-tests able to run for some columns; low n should be taken into account
 
 ```{r}
-hcp_cgm_long_pe = hcp_cgm_long %>% filter(Practice_Type == "Pediatric Endocrinology")
-# lapply(split(hcp_cgm_long_pe, hcp_cgm_long_pe$likert_q), function(df) t.test(Likert ~ eos_visit , data = df ))
+table1(~.|eos_visit , data = test %>% filter(Practice_Type == "Pediatric Endocrinology" ) %>% select(-record_id, - Practice_Type) , overall=F,extra.col=list(`P-value`=pvalue) ,render.continuous=my.render.cont )
+
 ```
 
 ## Patient
