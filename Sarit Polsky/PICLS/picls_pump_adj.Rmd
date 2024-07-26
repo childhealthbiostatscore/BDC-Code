@@ -15,6 +15,7 @@ library(readxl)
 library(openxlsx)
 library(lubridate)
 library(data.table)
+library(table1)
 
 #data upl  S:/Laura/BDC\Projects\Sarit Polsky\PICLS
 ######## FIRST SHEET. TDD STUFF
@@ -101,12 +102,34 @@ tdd_df_month_a = tdd_df_month %>% filter(gmonth %in% c("1","2","3","4","5","6","
 # pump settings   ,not sure if we need"Date of pump adjustment"
 pumpvarnames = c("Gestational age","Date of pump adjustment","Start Time","Basal units/hour","Carb ratio (g/U)","Correction bolus","Total basal (U)","Active insulin time (hours)" )
 
+
+# lets just case when this
+# 0.166666666666667 = 4
+# 0.145833333333333 = 3.5
+# 0.135416666666667 = 3.25
+# 0.125 = 3
+# 0.114583333333333  = 2.75
+# 0.104166666666667 = 2.5
+# 0.09375000 = 2.25
+# 0.0833333333333333  = 2.00
+
 column_namer_p = function(x){
   df = x
-  df = df %>% select(pumpvarnames)
+  df = df %>% select(pumpvarnames) %>% mutate(activetime = case_when(`Active insulin time (hours)` == 4 ~ 4,
+                                                                     `Active insulin time (hours)` == 3 ~ 3,
+                                                                     `Active insulin time (hours)` == 1/6 ~ 4,
+                                                                     `Active insulin time (hours)` == 7/48 ~ 3.5,
+                                                                     `Active insulin time (hours)` == 13/96  ~ 3.25,
+                                                                     `Active insulin time (hours)` == 0.125  ~ 3,
+                                                                     `Active insulin time (hours)` == 11/96  ~ 2.75,
+                                                                     `Active insulin time (hours)` == 5/48 ~ 2.5,
+                                                                     `Active insulin time (hours)` == 0.09375000 ~ 2.25,
+                                                                     `Active insulin time (hours)` == 1/12 ~ 2.0,))
 
   return(df)
 }
+
+
 
 
 list_of_pumpdfs = lapply(list_of_pumpdfs, column_namer_p)
@@ -114,6 +137,7 @@ list_of_pumpdfs = mapply(cbind, list_of_pumpdfs, "sampleid"=pump_df_names, SIMPL
 
 pump_df = do.call(rbind, list_of_pumpdfs)
 
+#table(pump_df$`Active insulin time (hours)`, pump_df$activetime)
 
 ## get into analysis/table form
 pump_adj_df = pump_df %>% mutate(adj_count = ifelse(!is.na(`Date of pump adjustment`), 1, 0))
@@ -126,7 +150,7 @@ pump_adj_df$pid = substr(pump_adj_df$sampleid,1,4)
 pump_adj_df = left_join(pump_adj_df, groups)
 pump_adj_df$randomization_group = factor(pump_adj_df$randomization_group, levels = c(1,2), labels = c("HCL","SAPT") )
 
-
+# PUMP ADJUSTS
 n_pump_adj = pump_adj_df %>% group_by(gweek, pid,randomization_group) %>% summarise(sum = sum(adj_count))
 
 
@@ -146,8 +170,30 @@ n_pump_adj$gmonth = factor(n_pump_adj$gmonth, levels = c("Preconception","1","2"
 
 n_pump_adj_month = n_pump_adj %>% group_by(pid, gmonth, randomization_group) %>% summarise(pump_adj_m = sum(sum, na.rm = T))
 
+# AVERAGE ACTIVE INSULIN TIME 
+
+n_aai = pump_adj_df %>% group_by(gweek, pid,randomization_group) %>% summarise(Average_Active_Insulin = mean(activetime, na.rm = T))
 
 
+n_aai = n_aai %>% mutate(gmonth = case_when(gweek %in% c("1","2","3","4") ~ "1",
+                                              gweek %in% c("5","6","7","8") ~ "2",
+                                              gweek %in% c("9","10","11","12") ~ "3",
+                                              gweek %in% c("13","14","15","16") ~ "4",
+                                              gweek %in% c("17","18","19","20") ~ "5",
+                                              gweek %in% c("21","22","23","24") ~ "6",
+                                              gweek %in% c("25","26","27","28") ~ "7",
+                                              gweek %in% c("29","30","31","32") ~ "8",
+                                              gweek %in% c("33","34","35","36") ~ "9",
+                                              gweek %in% c("37","38","39") ~ "10",
+                                              TRUE ~ gweek))
+
+n_aai$gmonth = factor(n_aai$gmonth, levels = c("Preconception","1","2","3","4","5","6","7","8","9","10","Postpartum"))
+
+n_aai_month = n_aai %>% group_by(pid, gmonth, randomization_group) %>% summarise(Average_Active_Insulin_m = mean(Average_Active_Insulin, na.rm = T))
+aai_df = n_aai_month %>% group_by( gmonth, randomization_group) %>% summarise(mean_Average_Active_Insulin_Time = mean(Average_Active_Insulin_m, na.rm = T) )
+
+
+#######################################
 test = n_pump_adj %>% group_by(randomization_group, gweek) %>% summarise(mean_adj_by_subj = mean(sum), n_subj = n_distinct(pid))
 ## model function will be outcome = int + group + time + groupTime 1 = hcl 2 = sapt
 
@@ -187,6 +233,12 @@ fit_mod = function(outcome, df){
 # Methods
 
 Pump adjustments by gest week were provided. Linear mixed models were fit with random intercept for patient including group, gest month, and group time interaction. Contrasts were performed to compare groups at each gest month.
+
+# Appended July 2024 :  average active insulin time for the HCL group and SAPT group separated by preconception each gestational month and postpartum
+
+```{r}
+kable(aai_df%>% arrange(.,gmonth))
+```
 
 # Descriptive statistics per gestational week 
 
