@@ -266,6 +266,23 @@ mwg_total = full_join(maternal_weight_gain_tri, last_weights_pp %>% select(pid, 
 
 analysis_aim1_tri = left_join(standardized_tri_avg, mwg_total) %>% unique()
 
+#### Diet quality
+
+analysis_aim1_tri = analysis_aim1_tri %>% mutate(s_fiber_group = case_when(avg_daily_fiber_s < 15 ~ "Low Quality",
+                                                                         avg_daily_fiber_s >= 15 & avg_daily_fiber_s < 28 ~ "Medium Quality",
+                                                                         avg_daily_fiber_s >= 28 ~ "High Quality"),
+                                                 s_Fiber = case_when(avg_daily_fiber_s < 28 ~ "Not High Quality",
+                                                                     avg_daily_fiber_s >= 28 ~ "High Quality"),
+                                                 s_Carb = case_when(avg_daily_carb_s >= 175 & avg_daily_carb_s < 220 ~ "High Quality",
+                                                                    avg_daily_carb_s < 175 | avg_daily_carb_s >= 220 ~ "Not High Quality"),
+                                                 s_Fat = case_when(avg_daily_fat_s <= 30 ~ "High Quality",
+                                                                   avg_daily_fat_s > 30 ~ "Not High Quality"),
+                                                 s_SatFat = case_when(avg_daily_satfat_s < 10 ~ "High Quality",
+                                                                      avg_daily_satfat_s >= 10 ~ "Not High Quality"),
+                                                 s_Overall = ifelse(s_Fiber=="High Quality"& s_Carb=="High Quality"&s_Fat=="High Quality"&s_SatFat=="High Quality", "High Quality", "Not High Quality"))
+
+analysis_aim1_tri$s_fiber_group = factor(analysis_aim1_tri$s_fiber_group, levels = c("Low Quality", "Medium Quality", "High Quality"))
+
 analysis_m1_tri = analysis_aim1_tri %>% filter(tp != "Post Partum")
 analysis_m1 = analysis_m1_tri %>% ungroup() %>% group_by(pid) %>% select(avg_daily_fiber_s:avg_daily_plant_perc_s, avg_weekly_weight_gain_lbs) %>% 
   summarise(fiber_s = mean(avg_daily_fiber_s),
@@ -294,6 +311,14 @@ sg_pp = standardized_groups %>% filter(tp == "Post Partum") %>% group_by(pid, tp
                                                                            avg_daily_animal_perc = mean(Animal_Protein_Perc),
                                                                            avg_daily_plant_perc = mean(Plant_Protein_Perc))
 analysis_m1_pp = left_join(mwg_total %>% filter(tp == "Post Partum"), sg_pp ) %>% filter(!is.na(avg_daily_fiber))
+
+
+
+
+# Fiber > 28 
+# 175 <= Carb < 220
+# Fat <=30 
+# SatFat <10  (n = 6 for both satfat/fat joint)
 ```
 
 ```{r function, include = F}
@@ -351,6 +376,26 @@ Generalized Linear Mixed Models with a binomial link function (Mixed Effects Log
 
 Linear Models for Post Partum Maternal Weight Retention were fit with Average Daily fiber intake, carb, fat and saturated fat, and total protein, animal and plant protein intake as a percentage of total calories. Post Partum Weight retention is defined  as the difference between post partum weight and first pregnancy weight.
 
+# Appended 8/13/2024
+
+## Standardized Diet Quality (Overall and Fiber)
+
+### Overall Criteria
+
+n = 15 for high quality standardized fiber (4 more than non standardized), n = 19 for high quality standardized carbs (3 more than non standardized)
+
+note: This might be driven by extrapolation/higher fat lower cal meals that met criteria when averaged, but when standardized caused to switch groups (in previous analysis we had ~ 20 and 30 percent meeting high quality for fat and satfat)
+
+```{r}
+table1(~s_Fiber + s_Carb + s_Fat + s_SatFat + s_Overall|tp, data = analysis_aim1_tri)
+```
+
+### Fiber Criteria
+
+```{r}
+table1(~s_fiber_group|tp, data = analysis_aim1_tri)
+```
+
 # Analysis
 
 ## Excessive Weight Gain
@@ -375,8 +420,12 @@ Standardized Fiber, Carb, Fat, SatFat, Protein, and Percentage of Animal/Plant P
 
 #### Fiber
 
+fiber group not associated with EWG
+
 ```{r}
 fit_lr_mod("avg_daily_fiber_s", analysis_m1_tri, F)
+
+fit_lr_mod("s_fiber_group", analysis_m1_tri, F)
 ```
 
 #### Carb
