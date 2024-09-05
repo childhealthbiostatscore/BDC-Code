@@ -16,7 +16,7 @@ library(openxlsx)
 library(lubridate)
 library(data.table)
 library(table1)
-
+library(chron)
 #data upl  S:/Laura/BDC\Projects\Sarit Polsky\PICLS
 ######## FIRST SHEET. TDD STUFF
 tdd_files_list <- list.files(path = 'S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/CGM_Pump_ins',full.names = TRUE)
@@ -31,7 +31,7 @@ names(list_of_tdd_dfs) <- tdd_df_names
 
 ########## SECIND SHEET PUMP ADJ
 pump_files_list <- list.files(path = 'S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/CGM_Pump_ins',full.names = TRUE)
-list_of_pumpdfs <- lapply(as.list(pump_files_list), function(x) read_xlsx(x, sheet = 2, col_types = c("text", "date", "text", "numeric", "numeric", "numeric", "numeric", "numeric")))
+list_of_pumpdfs <- lapply(as.list(pump_files_list), function(x) read_xlsx(x, sheet = 2, col_types = c("text", "date", "time", "numeric", "numeric", "numeric", "numeric", "numeric")))
 
 # Create a vector of names based on the first word of the filename + "Balance"
 # Note that we can't use empty space in object names, hence the underscore
@@ -137,7 +137,29 @@ list_of_pumpdfs = mapply(cbind, list_of_pumpdfs, "sampleid"=pump_df_names, SIMPL
 
 pump_df = do.call(rbind, list_of_pumpdfs)
 
-#table(pump_df$`Active insulin time (hours)`, pump_df$activetime)
+####### APPENDED SEP 2024 ################################
+pump_df = pump_df %>% mutate(time_conv = case_when(grepl(":", `Start Time`) ~ `Start Time`,
+                                                     grepl(".", `Start Time`) ~ as.character(times(as.numeric(`Start Time`)))))
+
+
+pump_df = pump_df %>% mutate(time_conv_l = str_length(time_conv))
+pump_df = pump_df %>% mutate(time_conv2 = ifelse(time_conv_l == 8, gsub('.{3}$', '', time_conv), time_conv))
+pump_df = pump_df %>% mutate(time_conv3 = ifelse(time_conv_l == 4, paste0("0",time_conv2), time_conv2),
+                             time_conv_final = hm(time_conv3)) 
+pump_df = pump_df %>% select(-c(time_conv:time_conv_l))
+
+
+
+pump_df2 = pump_df %>% group_by(sampleid) %>% fill(`Gestational age`, .direction = "down")
+pump_df2 = pump_df2 %>% group_by(sampleid) %>% fill(`Date of pump adjustment`, .direction = "down") %>% filter(!is.na(`Start Time`))
+
+# "Basal units/hour","Carb ratio (g/U)","Correction bolus"
+pump_df2 = pump_df2%>% group_by(sampleid, `Date of pump adjustment`) %>% fill(c("Basal units/hour","Carb ratio (g/U)","Correction bolus"), .direction = "down")
+#table(pump_df$time_conv3)
+
+pump_set_df = pump_df2
+
+##########################################################
 
 ## get into analysis/table form
 pump_adj_df = pump_df %>% mutate(adj_count = ifelse(!is.na(`Date of pump adjustment`), 1, 0))
