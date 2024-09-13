@@ -18,6 +18,7 @@ library(knitr)
 library(MASS)
 library(table1)
 library(readxl)
+library(quantreg)
 # data import
 Insulin_cost_whole_sample <- read_excel("S:/Laura/BDC/Projects/Lauren Waterman/Insulin cost analysis/Insulin_cost_whole sample.xlsx", 
     sheet = "Insulin_whole sample")
@@ -57,7 +58,7 @@ analysis = Insulin_cost_whole_sample %>% replace(.=="NULL", NA)%>%mutate(insulin
                                                 ration6 = `Black market insulin (binary: 0=0, 1=any)`,
                                                 ration7 = `Ration due to cost (binary: 0=0, 1=any)`) %>%  filter(!is.na(record_id))
 analysis[99:105] = lapply(analysis[99:105], as.numeric)
-analysis = analysis %>% mutate(rationsum = rowSums(across(ration1:ration7)),
+analysis = analysis %>% mutate(rationsum = rowSums(across(ration1:ration7), na.rm = T)* NA ^ (rowSums(!is.na(across(ration1:ration7))) == 0),
                                rationing = case_when(rationsum == 0 ~ "Non Rationer",
                                                      rationsum > 0 ~ "Rationer"))
 analysis$TIR = as.numeric(analysis$TIR)
@@ -102,6 +103,24 @@ fit_mod = function(outcome,compgroup,df,age=FALSE){
     f = as.formula(paste0(outcome,"~",compgroup,"+ sex + diabetes_duration + race + ethnicity + insurance + age"))
     mod = lm(f, data = df, na.action = na.omit)
     summary(mod)
+  }
+}
+
+fit_qmod = function(outcome,compgroup,df,age=FALSE){
+
+  if(age==FALSE){
+    # Fit model
+    
+    f = as.formula(paste0(outcome,"~",compgroup,"+ sex + diabetes_duration + race + ethnicity + insurance"))
+    mod = rq(f, data = df, na.action = na.omit)
+    summary(mod, se = "iid")
+  }
+    else{
+    # Fit model
+    
+    f = as.formula(paste0(outcome,"~",compgroup,"+ sex + diabetes_duration + race + ethnicity + insurance + age"))
+    mod = rq(f, data = df, na.action = na.omit)
+    summary(mod, se = "iid")
   }
 }
 
@@ -152,6 +171,42 @@ aim 4,5,6: logistic regression with above covariates
 
 
 # Analysis
+
+# appended sept 2024: insulin costs median analysis
+
+50th quantile (median) regression was performed on insulin costs, adjusting for the same covariates as the insulin cost OLS linear models. For p-value calculations, assumes errors are independent and identically distributed.
+
+### Insulin cost and insurance (public/private)
+
+There is a significant difference in median insulin costs between insurance groups (p = 0.01). Median public insurance users are predicted to pay 16.67 (se = 6.6) less than median private insurance users.
+
+```{r}
+fit_qmod("insulin_cost", "insurance", df = analysis_ins1, age=FALSE )
+```
+
+### Insulin cost and insurance (public/private+tricare)
+
+Singularity (collinearity issues) -- Model doesn't converge.
+
+```{r}
+# fit_qmod("insulin_cost", "insurance2", df = analysis_ins2, age=FALSE )
+# Error in rq.fit.br(x, y, tau = tau, ...) : Singular design matrix
+```
+
+### Insulin cost and emerging adults, instate, rationing
+
+There is not a significant difference in the emerging adult group for median insulin cost (p = 0.48)
+
+There is a significant difference between median insulin costs between in and out of state subjects (p = 0.02). Median insulin costs are 12.14 (se = 5.34) lower in the instate group than the out of state group.
+
+There is a significant difference between median insulin costs between rationer and non rationer subjects (p = 0.03). Median insulin costs are 10.00 (se = 4.45) higher in the rationer group than the nonrationing group.
+
+```{r}
+fit_qmod("insulin_cost", "emerging_adult", df = analysis, age=FALSE )
+fit_qmod("insulin_cost", "instate", df = analysis, age=FALSE )
+fit_qmod("insulin_cost", "rationing", df = analysis, age=FALSE )
+
+```
 
 # APPENDED AUGUST 2024
 
@@ -440,13 +495,13 @@ fit_mod("insulin_cost", "instate", df = analysis, age=FALSE )
 
 ### rationers
 
-There is a significant difference in oop costs between rationers and non rationers (p = 0.004). On average, Rationers spend 52.14 (SE = 17.70) higher than nonrationers. 
+There is a significant difference in oop costs between rationers and non rationers (p = 0.004). On average, Rationers spend 52.96 (SE = 17.37) higher than nonrationers. 
 
 ```{r}
 fit_mod("insulin_cost", "rationing", df = analysis, age=FALSE )
 
 table1(~insulin_cost|rationing, data = analysis %>% filter(!is.na(rationing)))
-(19.3 -	77.6) 
+(19.1 -	77.8) 
 ```
 
 ## Aim 2: hba1c and TIR
@@ -479,8 +534,9 @@ fit_mod("HbA1c", "instate", df = analysis, age=TRUE )
 
 ### rationers
 
-There is a significant difference in TIR between rationers and nonrationers (p = 0.02). On average, rationers have 9.78 (SE = 4.03) lower TIR than nonrationers. 
-There is a significant difference in a1c between rationers and nonrationers (p = 0.003). On average, rationers have 0.69 (SE =.23) higher TIR than nonrationers. 
+There is a significant difference in TIR between rationers and nonrationers (p = 0.02). On average, rationers have 9.49 (SE = 3.92) lower TIR than nonrationers. 
+
+There is a significant difference in a1c between rationers and nonrationers (p = 0.003). On average, rationers have 0.74 (SE =.23) higher TIR than nonrationers. 
 
 
 ```{r}
@@ -535,7 +591,7 @@ fit_lr_mod("ration7", "emerging_adult", df = analysis)
 
 ### instate
 
-Not filled Rx: instate/outstate is associated with not filling rx (p = 0.01)
+Not filled Rx: instate/outstate is associated with not filling rx (p = 0.01) 
 Running out:instate/outstate is associated with running out (p = 0.048)
 Paid Case: instate/outstate is associated with paid case (p = 0.006)
 ration due to cost: instate/outstate is associated with ration due to cost (p = 0.047)
