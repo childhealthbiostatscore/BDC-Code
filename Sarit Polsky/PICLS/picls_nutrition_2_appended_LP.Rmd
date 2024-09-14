@@ -1,0 +1,699 @@
+---
+title: ""
+author: "Casey Sakamoto"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 5
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(arsenal)
+library(tidyverse)
+library(performance)
+library(knitr)
+library(readr)
+library(readxl)
+library(stringr)
+library(lubridate)
+library(nlme)
+library(lme4)
+library(lmerTest)
+library(table1)
+
+
+#data upload
+Final_Baseline <- read_excel("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/CTRC files/18-1798 Nutrient Analysis Export/18-1798 Final Baseline.xlsx")
+Final_2Tri <- read_excel("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/CTRC files/18-1798 Nutrient Analysis Export/18-1798 Final 2nd trimester.xlsx")
+Final_3Tri <- read_excel("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/CTRC files/18-1798 Nutrient Analysis Export/18-1798 Final 3rd Trimester.xlsx")
+Final_PP <- read_excel("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/CTRC files/18-1798 Nutrient Analysis Export/18-1798 Final Postpartum.xlsx")
+
+mp_meal <- read_excel("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/CTRC files/18-1798 Nutrient Analysis Export/18-1798 Missing Participants Export.xlsx", 
+    sheet = "Meal Totals")
+mp_daily <- read_excel("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/CTRC files/18-1798 Nutrient Analysis Export/18-1798 Missing Participants Export.xlsx", 
+    sheet = "Daily Totals")
+
+PICLS <- read_csv("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/PICLSStudyHCLVsSAPTI_DATA_2024-05-24_1006(1).csv")
+# groups and gest dates and centiles
+gestdates <- read_csv("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data cleaning/CGM Data Check_6.8.23.csv") 
+groups <- read.csv("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/PICLSStudyHCLVsSAPTI-RandomizedPatients_DATA_2022-11-14_1616.csv")%>% select(pid, randomization_group)
+groups$randomization_group = factor(groups$randomization_group, levels = c(1,2), labels = c("HCL","SAPT") )
+
+centiles = read_excel("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/BulkCentileCalc_Global_v8.0.6.1_PICLS_v5_CJ.xlsm", 
+    sheet = "Import") %>% filter(!is.na(`Data ID`)) %>% mutate(pid = `Data ID`)
+
+
+```
+
+
+```{r dc, include = FALSE}
+######################### ctrc data clean ######################################
+baseline_ctrc = Final_Baseline %>% mutate(tp = "Baseline", pid = `Participant/Menu ID`) %>% select(pid, tp,`Date of Intake`, `Meal Name`,`Meal Time`,
+                                                                                          `Total Carbohydrate (g)`,`% Calories from Carbohydrate`, `Total Grains (ounce equivalents)`,
+                                                                                          `Total Protein (g)`, `Animal Protein (g)`, `Vegetable Protein (g)`,`% Calories from Protein`,
+                                                                                          `Total Fat (g)`,`% Calories from Fat`, `Total Saturated Fatty Acids (SFA) (g)`,
+                                                                                          `Total Monounsaturated Fatty Acids (MUFA) (g)`,`% Calories from MUFA`,
+                                                                                          `Total Polyunsaturated Fatty Acids (PUFA) (g)`,`% Calories from PUFA`,
+                                                                                          `Total Dietary Fiber (g)`, `Soluble Dietary Fiber (g)`, `Insoluble Dietary Fiber (g)`,
+                                                                                          `Water (g)`, 108:110,`Glycemic Index (bread reference)`,`% Calories from SFA`,
+                                                                                          `Glycemic Load (bread reference)`,
+                                                                                          `Glycemic Load (glucose reference)`, `Glycemic Index (glucose reference)`,`Energy (kcal)` )
+
+tri2_ctrc = Final_2Tri %>% mutate(tp = "Trimester 2", pid = `Participant/Menu ID`) %>% select(pid, tp,`Date of Intake`, `Meal Name`,`Meal Time`,
+                                                                                          `Total Carbohydrate (g)`,`% Calories from Carbohydrate`, `Total Grains (ounce equivalents)`,
+                                                                                          `Total Protein (g)`, `Animal Protein (g)`, `Vegetable Protein (g)`,`% Calories from Protein`,
+                                                                                          `Total Fat (g)`,`% Calories from Fat`, `Total Saturated Fatty Acids (SFA) (g)`,
+                                                                                          `Total Monounsaturated Fatty Acids (MUFA) (g)`,`% Calories from MUFA`,
+                                                                                          `Total Polyunsaturated Fatty Acids (PUFA) (g)`,`% Calories from PUFA`,
+                                                                                          `Total Dietary Fiber (g)`, `Soluble Dietary Fiber (g)`, `Insoluble Dietary Fiber (g)`,
+                                                                                          `Water (g)`, 108:110,`Glycemic Index (bread reference)`,`% Calories from SFA`,
+                                                                                          `Glycemic Load (bread reference)`,
+                                                                                          `Glycemic Load (glucose reference)`, `Glycemic Index (glucose reference)`,`Energy (kcal)` )
+
+tri3_ctrc = Final_3Tri %>% mutate(tp = "Trimester 3", pid = `Participant/Menu ID`) %>% select(pid, tp,`Date of Intake`, `Meal Name`,`Meal Time`,
+                                                                                          `Total Carbohydrate (g)`,`% Calories from Carbohydrate`, `Total Grains (ounce equivalents)`,
+                                                                                          `Total Protein (g)`, `Animal Protein (g)`, `Vegetable Protein (g)`,`% Calories from Protein`,
+                                                                                          `Total Fat (g)`,`% Calories from Fat`, `Total Saturated Fatty Acids (SFA) (g)`,
+                                                                                          `Total Monounsaturated Fatty Acids (MUFA) (g)`,`% Calories from MUFA`,
+                                                                                          `Total Polyunsaturated Fatty Acids (PUFA) (g)`,`% Calories from PUFA`,
+                                                                                          `Total Dietary Fiber (g)`, `Soluble Dietary Fiber (g)`, `Insoluble Dietary Fiber (g)`,
+                                                                                          `Water (g)`, 108:110,`Glycemic Index (bread reference)`,`% Calories from SFA`,
+                                                                                          `Glycemic Load (bread reference)`,
+                                                                                          `Glycemic Load (glucose reference)`, `Glycemic Index (glucose reference)`,`Energy (kcal)` )
+
+pp_ctrc = Final_PP %>% mutate(tp = "Post Partum", pid = `Participant/Menu ID`) %>% select(pid, tp,`Date of Intake`, `Meal Name`,`Meal Time`,
+                                                                                          `Total Carbohydrate (g)`,`% Calories from Carbohydrate`, `Total Grains (ounce equivalents)`,
+                                                                                          `Total Protein (g)`, `Animal Protein (g)`, `Vegetable Protein (g)`,`% Calories from Protein`,
+                                                                                          `Total Fat (g)`,`% Calories from Fat`, `Total Saturated Fatty Acids (SFA) (g)`,
+                                                                                          `Total Monounsaturated Fatty Acids (MUFA) (g)`,`% Calories from MUFA`,
+                                                                                          `Total Polyunsaturated Fatty Acids (PUFA) (g)`,`% Calories from PUFA`,
+                                                                                          `Total Dietary Fiber (g)`, `Soluble Dietary Fiber (g)`, `Insoluble Dietary Fiber (g)`,
+                                                                                          `Water (g)`, 108:110,`Glycemic Index (bread reference)`,`% Calories from SFA`,
+                                                                                          `Glycemic Load (bread reference)`,
+                                                                                          `Glycemic Load (glucose reference)`, `Glycemic Index (glucose reference)`,`Energy (kcal)` )
+
+mp_ctrc = mp_meal %>% mutate(pid_string = `Participant/Menu ID`) %>% select(pid_string,`Date of Intake`, `Meal Name`,`Meal Time`,
+                                                                                          `Total Carbohydrate (g)`,`% Calories from Carbohydrate`, `Total Grains (ounce equivalents)`,
+                                                                                          `Total Protein (g)`, `Animal Protein (g)`, `Vegetable Protein (g)`,`% Calories from Protein`,
+                                                                                          `Total Fat (g)`,`% Calories from Fat`, `Total Saturated Fatty Acids (SFA) (g)`,
+                                                                                          `Total Monounsaturated Fatty Acids (MUFA) (g)`,`% Calories from MUFA`,
+                                                                                          `Total Polyunsaturated Fatty Acids (PUFA) (g)`,`% Calories from PUFA`,
+                                                                                          `Total Dietary Fiber (g)`, `Soluble Dietary Fiber (g)`, `Insoluble Dietary Fiber (g)`,
+                                                                                          `Water (g)`, 108:110,`Glycemic Index (bread reference)`,`% Calories from SFA`,
+                                                                                          `Glycemic Load (bread reference)`,
+                                                                                          `Glycemic Load (glucose reference)`, `Glycemic Index (glucose reference)`,`Energy (kcal)` )
+
+mp_ctrc = mp_ctrc %>% mutate(pid = stringr::word(pid_string, 1), tri = word(pid_string,2)) 
+mp_ctrc = mp_ctrc %>% mutate(tp = case_when(tri == "3rd" ~ "Trimester 3",
+                                            tri == "Base" ~ "Baseline",
+                                            tri == "Post" ~ "Post Partum"))
+mp_ctrc = mp_ctrc %>% select(-tri, -pid_string)
+
+
+# merge
+ctrc = full_join(baseline_ctrc, tri2_ctrc)
+ctrc = full_join(ctrc, tri3_ctrc)
+ctrc = full_join(ctrc, pp_ctrc)
+ctrc = full_join(ctrc, mp_ctrc)
+ctrc = right_join(groups, ctrc)
+
+ctrc= ctrc %>% mutate(mufapufa = `% Calories from MUFA` + `% Calories from MUFA`)
+gestdates = gestdates %>% select(pid, EDD_Final:`Delivery Date`)
+ctrc2 = left_join(ctrc, gestdates)
+ctrc2$date = ctrc2$`Date of Intake`
+ctrc2 = ctrc2 %>% mutate(tp = case_when(date < mdy(SecondTri) ~ "Trimester 1",
+                                        date >= mdy(SecondTri) & date < mdy(ThirdTri) ~ "Trimester 2",
+                                        date >= mdy(ThirdTri) & date < mdy(`Delivery Date`) ~ "Trimester 3",
+                                        date >= mdy(`Delivery Date`) ~ "Post Partum" ))
+ctrc2$tp = factor(ctrc2$tp, levels = c("Trimester 1", "Trimester 2", "Trimester 3", "Post Partum"))
+
+ctrc2 = ctrc2 %>% unique()
+
+########################### MDIET   ############################################
+maternal_diet_subj_day = ctrc2 %>% group_by(randomization_group, tp,pid, `Date of Intake`) %>% summarise(CarbTotal = sum(`Total Carbohydrate (g)`),
+                                                                 Carb_Perc_Caltotal = mean(`% Calories from Carbohydrate`), # carbs
+                                                                 FatTotal = sum(`Total Fat (g)`),
+                                                                 Fat_Perc_Caltotal = mean(`% Calories from Fat`),
+                                                                 SFA_Perc_Caltotal = mean(`% Calories from SFA`),
+                                                                 MUFA_plus_PUFA_Perc_Caltotal = mean(mufapufa), #fats
+                                                                 ProteinTotal = sum(`Total Protein (g)`),
+                                                                 Protein_Perc_Caltotal = mean(`% Calories from Protein`),
+                                                                 Animal_Protein_Perc = mean((`Animal Protein (g)`/`Total Protein (g)`)*100, na.rm=T),
+                                                                 Plant_Protein_Perc = mean((`Vegetable Protein (g)`/`Total Protein (g)`)*100, na.rm=T), # protein
+                                                                 FiberTotal = sum(`Total Dietary Fiber (g)`),
+                                                                 GlyIndex_b = mean(`Glycemic Index (bread reference)`),
+                                                                 GlyIndex_g = mean(`Glycemic Index (glucose reference)`),
+                                                                 Cal_Total = sum(`Energy (kcal)`),
+                                                                 Sfa_total = sum(`Total Saturated Fatty Acids (SFA) (g)`),
+                                                                 Animal_total = sum(`Animal Protein (g)`),
+                                                                 Plant_total = sum(`Vegetable Protein (g)`)
+                                                                 )
+
+maternal_diet_group = maternal_diet_subj_day %>% group_by(randomization_group, tp) %>% summarise_all(.funs = mean) %>% select(-pid) %>% ungroup() %>% select(-`Date of Intake`)
+maternal_diet_group2 = maternal_diet_subj_day %>% group_by( tp) %>% summarise_all(.funs = mean) %>% select(-pid, -randomization_group) %>% ungroup() %>% select(-`Date of Intake`)
+
+
+################################################################################
+
+####################### Standardized Diets ##########################################
+
+####### EDIT HERE
+
+#### add in extra columns for grams, then a column for standardized percentages of calorie totals below
+
+#### add in a table for these standardized percentage values 
+
+## converting grams of fat/prot/carb to calories: 9 fat, 4 carb, prot, 2 fiber
+
+# standardized fiber intake averaged across the three trimesters, carb, fat and saturated fat, and total protein, animal and plant protein intake as a percentage of total calories
+standardized_groups = maternal_diet_subj_day %>% group_by(pid, tp) %>% select(pid, tp, randomization_group, Cal_Total, FiberTotal,
+                                                                              CarbTotal, FatTotal, Sfa_total, ProteinTotal, Animal_Protein_Perc, Plant_Protein_Perc, Animal_total, Plant_total) %>%
+  mutate(# standardized percentage of calorie total
+         s_fiber_calperc = (2*FiberTotal)/Cal_Total,
+         s_carb_calperc = (4*CarbTotal)/Cal_Total,
+         s_fat_calperc = (9*FatTotal)/Cal_Total,
+         s_sfat_calperc = (9*Sfa_total)/Cal_Total,
+         s_protein_calperc = (4*ProteinTotal)/Cal_Total,
+
+         # standardized grams
+         s_fiber_g = (FiberTotal)*2000/Cal_Total,
+         s_carb_g = (CarbTotal)*2000/Cal_Total,
+         s_fat_g = (FatTotal)*2000/Cal_Total,
+         s_sfat_g = (Sfa_total)*2000/Cal_Total,
+         s_protein_g = (ProteinTotal)*2000/Cal_Total,
+         s_animal_perc = (Animal_total)/ProteinTotal*100,
+         s_plant_perc = (Plant_total)/ProteinTotal*100,
+         
+         # Caltotals
+         caltotal = Cal_Total)
+
+# ###################### Fiber Diet totals ############################################
+# 
+# fiber_groups = maternal_diet_subj_day %>% group_by(pid, tp) %>% select(pid, tp, randomization_group, FiberTotal) %>% summarise(avg_daily_fiber = mean(FiberTotal))
+# fiber_groups = fiber_groups %>% mutate(Diet_Quality = case_when(avg_daily_fiber < 15 ~ "Poor/Low Quality",
+#                                                                 avg_daily_fiber >= 15 & avg_daily_fiber < 28 ~ "Moderate Quality",
+#                                                                 avg_daily_fiber>= 28 ~"High Quality"))
+# 
+# fiber_groups = left_join(fiber_groups, groups)
+# fiber_groups$Diet_Quality = factor(fiber_groups$Diet_Quality, levels = c("Poor/Low Quality", "Moderate Quality","High Quality"))
+
+################################################################################
+
+###################### STdized Grouped into trimester avg #####################################
+
+standardized_tri_avg = standardized_groups %>% group_by(pid, tp)  %>% summarise(avg_daily_fiber_g_s = mean(s_fiber_g),
+                                                                           avg_daily_carb_g_s = mean(s_carb_g),
+                                                                           avg_daily_fat_g_s = mean(s_fat_g),
+                                                                           avg_daily_satfat_g_s = mean(s_sfat_g),
+                                                                           avg_daily_protein_g_s = mean(s_protein_g),
+
+                                                                           avg_daily_fiber_calperc = mean(s_fiber_calperc)*100,
+                                                                           avg_daily_carb__calperc = mean(s_carb_calperc)*100,
+                                                                           avg_daily_fat__calperc = mean(s_fat_calperc)*100,
+                                                                           avg_daily_satfat__calperc = mean(s_sfat_calperc)*100,
+                                                                           avg_daily_protein__calperc = mean(s_protein_calperc)*100,
+                                                                           avg_daily_animal_perc_s = mean(s_animal_perc),
+                                                                           avg_daily_plant_perc_s = mean(s_plant_perc),
+                                                                           avg_caltotal = mean(Cal_Total))
+
+# diet_groups = diet_groups %>% mutate(Fiber = ifelse(avg_daily_fiber >= 28, "High Quality","Not High Quality"),
+#                                      Carb = ifelse(avg_daily_carb >= 175 & avg_daily_carb < 220, "High Quality","Not High Quality"),
+#                                      Fat = ifelse(avg_daily_fat_perc <= 30, "High Quality","Not High Quality"),
+#                                      SatFat = ifelse(avg_daily_satfat_perc < 10, "High Quality","Not High Quality"),
+#                                      Overall = ifelse(Fiber=="High Quality"&Carb=="High Quality"&Fat=="High Quality"&SatFat=="High Quality", "High Quality", "Not High Quality"))
+# diet_groups = left_join(diet_groups, groups)
+################################################################################
+
+###################### MATERNAL WEIGHT GAIN ############################################
+
+cleanedcgm_noacet <- read_csv("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/cleanedcgm_noacet.csv")
+gmi_data = cleanedcgm_noacet %>% mutate(pid = word(subject_id,1,sep = "_"),tri = word(subject_id,2,sep = "_")) %>% select(pid, tri, gmi)
+gmi_data = gmi_data %>% mutate(tp = case_when(tri == "T1" ~ "Trimester 1",
+                                              tri == "T2" ~ "Trimester 2",
+                                              tri == "T3" ~ "Trimester 3",
+                                              tri == "PP" ~ "Post Partum"
+                                              )) %>% filter(!is.na(tp)) %>% select(-tri)
+
+
+
+Preg_visits <- read_csv("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/QPregnancyVisits_DATA_2022-12-04_1234.csv")
+
+Preg_visits = left_join(Preg_visits, gestdates)
+
+Preg_visits = Preg_visits %>% mutate(tp = case_when(mdy(date_preg) < mdy(SecondTri) ~ "Trimester 1",
+                                        mdy(date_preg) >= mdy(SecondTri) & mdy(date_preg) < mdy(ThirdTri) ~ "Trimester 2",
+                                        mdy(date_preg) >= mdy(ThirdTri) & mdy(date_preg) < mdy(`Delivery Date`) ~ "Trimester 3",
+                                        mdy(date_preg) >= mdy(`Delivery Date`) ~ "Post Partum" ))
+Preg_visits$tp = factor(Preg_visits$tp, levels = c("Trimester 1", "Trimester 2", "Trimester 3", "Post Partum"))
+matweights = Preg_visits %>% select(pid, tp, weight_preg, date_preg,FirstTri,SecondTri,ThirdTri,`Delivery Date`, bmi_preg)
+
+# CHANGING TYPO FROM 68KG to 99 KG
+matweights[141, 3] = 99.0
+
+precons = PICLS %>% filter(redcap_event_name =="preconception_arm_1")%>% select(pid, weight_precon)
+
+all_weights = left_join(matweights, precons) %>% filter(!is.na(tp))
+last_weights = all_weights %>% group_by(pid, tp) %>% filter(!is.na(weight_preg)) %>% mutate(last_weight = ifelse(date_preg == max(date_preg), 1, 0)) %>% filter(last_weight == 1) %>% ungroup()
+
+# avg weight gain by trimester, then converted to pounds to classify as excessive weight gain
+last_weights = last_weights %>% mutate(weight_gain_total = weight_preg - weight_precon,
+                                       week_length = as.numeric(difftime(mdy(date_preg), mdy(FirstTri), units="weeks")),
+                                       avg_weekly_weight_gain = weight_gain_total/week_length,
+                                       avg_weekly_weight_gain_lbs = avg_weekly_weight_gain*2.20462,
+                                       weight_gain_total_lbs = weight_gain_total*2.20462)
+
+last_weights = last_weights %>% mutate(excessive_weight_gain_wk = case_when(bmi_preg < 25 ~ ifelse(avg_weekly_weight_gain_lbs > 0.92, 1, 0),
+                                                                         bmi_preg < 30 & bmi_preg >=25 ~ ifelse(avg_weekly_weight_gain_lbs > 0.66, 1, 0),
+                                                                         bmi_preg >= 30  ~ ifelse(avg_weekly_weight_gain_lbs > 0.52, 1, 0)),
+                                       excessive_weight_gain_total_tri = case_when(tp == "Trimester 3" & bmi_preg < 25~ ifelse(weight_gain_total_lbs > 35, 1,0),
+                                                                               tp == "Trimester 3" & bmi_preg < 30 & bmi_preg >=25~ ifelse(weight_gain_total_lbs > 25, 1,0),
+                                                                               tp == "Trimester 3" & bmi_preg >= 30~ ifelse(weight_gain_total_lbs > 20, 1,0)))
+
+last_weights_tri = last_weights %>% filter(tp != "Post Partum") %>% group_by(pid) %>%fill(excessive_weight_gain_total_tri, .direction="updown")
+last_weights_tri = last_weights_tri %>% mutate(excessive_weight_gain = ifelse(excessive_weight_gain_wk == 1 |tp == "Trimester 3" & excessive_weight_gain_total_tri == 1, 1, 0))
+# post partum
+last_weights_pp = last_weights %>% filter(tp == "Post Partum") %>% mutate(excessive_weight_gain_total_pp = case_when(bmi_preg < 25~ ifelse(weight_gain_total_lbs > 35, 1,0),
+                                                                                bmi_preg < 30 & bmi_preg >=25~ ifelse(weight_gain_total_lbs > 25, 1,0),
+                                                                                bmi_preg >= 30~ ifelse(weight_gain_total_lbs > 20, 1,0)))
+last_weights_pp = last_weights_pp %>% mutate(excessive_weight_gain = ifelse(excessive_weight_gain_wk == 1 |excessive_weight_gain_total_pp == 1, 1, 0))
+
+# tables
+excessive_weight_tbl = last_weights_tri %>% group_by(tp) %>% summarise(count = sum(excessive_weight_gain, na.rm=T), percent = mean(excessive_weight_gain, na.rm=T)*100)
+excessive_weight_tbl_pp = last_weights_pp %>% group_by(tp) %>% summarise(count = sum(excessive_weight_gain, na.rm=T), percent = mean(excessive_weight_gain, na.rm=T)*100)
+
+# analysis for weekly mwg 
+maternal_weight_gain_tri = last_weights_tri %>% select(pid, tp, excessive_weight_gain, avg_weekly_weight_gain_lbs, weight_gain_total_lbs)
+avg_mwg_tri = maternal_weight_gain_tri %>% group_by(pid) %>% summarise(weekly_weight_gain_avg = mean(avg_weekly_weight_gain_lbs, na.rm =T))
+###################### ANALYSIS SET FOR AIM 1 #####################################
+mwg_total = full_join(maternal_weight_gain_tri, last_weights_pp %>% select(pid, tp, excessive_weight_gain, avg_weekly_weight_gain_lbs, weight_gain_total_lbs)) %>% unique()
+
+analysis_aim1_tri = left_join(standardized_tri_avg, mwg_total) %>% unique()
+
+#### Diet quality
+
+analysis_aim1_tri = analysis_aim1_tri %>% mutate(s_fiber_group = case_when(avg_daily_fiber_g_s < 15 ~ "Low Quality",
+                                                                         avg_daily_fiber_g_s >= 15 & avg_daily_fiber_g_s < 28 ~ "Medium Quality",
+                                                                         avg_daily_fiber_g_s >= 28 ~ "High Quality"),
+                                                 s_Fiber = case_when(avg_daily_fiber_g_s < 28 ~ "Not High Quality",
+                                                                     avg_daily_fiber_g_s >= 28 ~ "High Quality"),
+                                                 s_Carb = case_when(avg_daily_carb_g_s >= 175 & avg_daily_carb_g_s < 220 ~ "High Quality",
+                                                                    avg_daily_carb_g_s < 175  ~ "Not High Quality (< 175)", 
+                                                                    avg_daily_carb_g_s >= 220 ~ "Not High Quality (>220)"),
+                                                 s_Fat = case_when(avg_daily_fat__calperc <= 30 ~ "High Quality",
+                                                                   avg_daily_fat__calperc > 30 ~ "Not High Quality"),
+                                                 s_SatFat = case_when(avg_daily_satfat__calperc < 10 ~ "High Quality",
+                                                                      avg_daily_satfat__calperc >= 10 ~ "Not High Quality"),
+                                                 s_Overall = ifelse(s_Fiber=="High Quality"& s_Carb=="High Quality"&s_Fat=="High Quality"&s_SatFat=="High Quality", "High Quality", "Not High Quality"))
+
+analysis_aim1_tri$s_fiber_group = factor(analysis_aim1_tri$s_fiber_group, levels = c("Low Quality", "Medium Quality", "High Quality"))
+
+analysis_m1_tri = analysis_aim1_tri %>% filter(tp != "Post Partum")
+analysis_m1 = analysis_m1_tri %>% ungroup() %>% group_by(pid) %>% select(avg_daily_fiber_g_s:avg_daily_plant_perc_s, avg_weekly_weight_gain_lbs) %>% 
+  summarise(fiber_s = mean(avg_daily_fiber_g_s),
+            carb_s = mean(avg_daily_carb_g_s),
+            fat_s = mean(avg_daily_fat_g_s),
+            sfat_s = mean(avg_daily_satfat_g_s),
+            protein_s = mean(avg_daily_protein_g_s),
+            animal_perc_s = mean(avg_daily_animal_perc_s),
+            plant_perc_s = mean(avg_daily_plant_perc_s),
+            avg_wk_weight_gain_lbs = mean(avg_weekly_weight_gain_lbs, na.rm=T))
+
+adjust = last_weights_tri %>% filter(tp == "Trimester 3") %>% select(pid, week_length)
+analysis_m1 = left_join(analysis_m1, adjust)
+analysis_m1[analysis_m1$pid == "110A", "week_length"] = 14.428571
+
+##############################
+base_bmis = PICLS %>% select(pid, bmi_baseline) %>% filter(!is.na(bmi_baseline))
+analysis_m1_tri = left_join(analysis_m1_tri, base_bmis)
+
+#analysis_m1_pp = analysis_aim1_tri %>% filter(tp == "Post Partum")
+sg_pp = standardized_groups %>% filter(tp == "Post Partum") %>% group_by(pid, tp)  %>% summarise(avg_daily_fiber = mean(FiberTotal),
+                                                                           avg_daily_carb = mean(CarbTotal),
+                                                                           avg_daily_fat = mean(FatTotal),
+                                                                           avg_daily_satfat = mean(Sfa_total),
+                                                                           avg_daily_protein = mean(ProteinTotal),
+                                                                           avg_daily_animal_perc = mean(Animal_Protein_Perc),
+                                                                           avg_daily_plant_perc = mean(Plant_Protein_Perc))
+analysis_m1_pp = left_join(mwg_total %>% filter(tp == "Post Partum"), sg_pp ) %>% filter(!is.na(avg_daily_fiber))
+
+
+
+analysis_aim1_tri$standard_effect = 2000/analysis_aim1_tri$avg_caltotal
+analysis_aim1_tri = left_join(analysis_aim1_tri, base_bmis)
+# Fiber > 28 
+# 175 <= Carb < 220
+# Fat <=30 
+# SatFat <10  (n = 6 for both satfat/fat joint)
+```
+
+```{r function, include = F}
+# fit model fun
+fit_mod = function(assoc,df){
+  
+  # Fit model
+  print(assoc)  
+  f = as.formula(paste0("avg_wk_weight_gain_lbs","~",assoc, "+ week_length"))
+  mod = lm(f, data = df, na.action = na.omit)
+  print(summary(mod))
+  ggplot(data = df, aes_string(assoc, "avg_wk_weight_gain_lbs")) + geom_point() + theme_classic()
+ 
+}
+
+fit_lr_mod = function(assoc, df, interaction=FALSE){
+  if(interaction==FALSE){
+  print(assoc)  
+  f = as.formula(paste0("excessive_weight_gain","~",assoc, "+ tp + bmi_baseline + (1|pid)"))
+  mod = glmer(f, df, family = binomial)
+  summary(mod)
+  }
+  else{
+  print(assoc)  
+  f = as.formula(paste0("excessive_weight_gain","~",assoc, "*bmi_baseline + tp  + (1|pid)"))
+  mod = glmer(f, df, family = binomial)
+  summary(mod)
+  }
+}
+
+fit_mod_pp = function(assoc,df){
+  
+  # Fit model
+  print(assoc)  
+  f = as.formula(paste0("weight_gain_total_lbs","~",assoc))
+  mod = lm(f, data = df, na.action = na.omit)
+  print(summary(mod))
+  ggplot(data = df, aes_string(assoc, "weight_gain_total_lbs")) + geom_point() + theme_classic()
+ 
+}
+
+```
+
+# Outstanding Data questions/remarks
+
+# Methods
+
+Subjects maternal weight gain was measured using the latest date in a trimester compared with the preconception weight. This was then averaged into a weekly weight gain over all trimesters.
+
+Excessive weight gain(either by weekly weight gain or total weight gain) was derived, and was stratified by timepoint.
+
+Linear Models for Maternal Weight Gain were fit with standardized fiber intake, carb, fat and saturated fat, and total protein, animal and plant protein intake as a percentage of total calories averaged across the three trimesters. Standardization was based on a 2000 calorie diet and averaged first over trimesters, then overall. Avg Weekly Maternal Weight gain was measured as the average weekly weight gain across trimesters then averaged all together. Linear Models were adjusted for weeks of gestation between the first and last weight measurement used.
+
+Generalized Linear Mixed Models with a binomial link function (Mixed Effects Logistic Regression) for Excessive Weight Gain were fit adjusting for enrollment maternal BMI. Similar Models were fit including an interaction term between the dietary independent variable and Maternal BMI at enrollment
+
+Linear Models for Post Partum Maternal Weight Retention were fit with Average Daily fiber intake, carb, fat and saturated fat, and total protein, animal and plant protein intake as a percentage of total calories. Post Partum Weight retention is defined  as the difference between post partum weight and first pregnancy weight.
+
+# Appended 8/27/2024
+
+## visit count/ctrc log count
+
+Most recent date the data was pulled from BDC Shared drive: may 2024; new data added in march 2024.
+
+The data seems to match the data we should have PRIOR to discrepancies ie) for 100A we have YNY for baseline, 2nd, 3rd tri; but the discrepancy column lists 2nd tri - Y.
+
+Notes list this data as previously "Archived;" haven't checked every part of every file (hard to code with different naming conventions/duplicate filenames), but it looks like it should be able to match up to correct, or closer to correct numbers as listed in email ( 22 tri 1, 16 tri 2, 14 tri 3, 15 pp) .
+
+Outstanding remarks: Wanted to chat about this in the meeting instead of over email to confirm what's what/ safe to trust etc within the "archive" folder
+
+
+
+
+```{r}
+# ctrc files aggregated from maternal_diet_subj_day dataframe into standardized_tri_Avg datafram in order to get a visit for tri 1 ,2 ,3, pp
+
+table(standardized_tri_avg$tp)
+
+
+table(standardized_tri_avg$pid, standardized_tri_avg$tp)
+
+# discrepancy for 2nd tri so should have actual log 2nd tri as jul 19
+testid = maternal_diet_subj_day %>% ungroup()%>%select(pid, tp, `Date of Intake`) %>% filter(pid == "100A")
+print((testid))
+```
+
+## Standardized Diet Quality (Overall and Fiber)
+
+Standardized diet quality was based on taking the average daily total grams consumed for each nutrition type, converting to calories (9 per gram for fats, etc), then standardizing to a 2000 calorie diet total.
+
+### Overall Criteria
+
+n = 15 for high quality standardized fiber (4 more than non standardized), n = 19 for high quality standardized carbs (3 more than non standardized)
+
+
+#### Overall Criteria
+
+```{r}
+table1(~s_Fiber + s_Carb + s_Fat + s_SatFat + s_Overall|tp, data = analysis_aim1_tri)
+```
+
+#### Dietary distributions by timepoint
+
+standardized daily values (g)
+
+```{r}
+table1(~avg_daily_fiber_g_s + avg_daily_carb_g_s  + avg_daily_fat_g_s + avg_daily_satfat_g_s + avg_daily_protein_g_s |tp, data = analysis_aim1_tri)
+```
+
+standardizing effect sizes
+
+```{r}
+table1(~ standard_effect |tp, data = analysis_aim1_tri)
+```
+
+#### Calorie Percentage distributions by timepoint
+
+```{r}
+table1(~avg_caltotal+avg_daily_fiber_calperc+ avg_daily_carb__calperc  + avg_daily_fat__calperc +
+         avg_daily_satfat__calperc +  avg_daily_protein__calperc+avg_daily_animal_perc_s + avg_daily_plant_perc_s |tp, data = analysis_aim1_tri)
+
+```
+
+
+### Fiber Criteria
+
+```{r}
+table1(~s_fiber_group|tp, data = analysis_aim1_tri)
+```
+
+### Excessive weight gain 3rd tri only
+
+note: poor distn of EWG
+
+```{r}
+analysis_aim1_tri3 = analysis_aim1_tri %>% filter(tp == "Trimester 3")
+table(analysis_aim1_tri3$excessive_weight_gain, analysis_aim1_tri3$s_Fiber)
+
+ew_lr_tri3 = glm(excessive_weight_gain ~ s_Fiber+ bmi_baseline, data = analysis_aim1_tri3, family = "binomial")
+summary(ew_lr_tri3)
+```
+
+# Analysis
+
+## Excessive Weight Gain
+
+### Excessive Weight Gain table
+
+Excessive weight gain is defines as avg weight gain of 0.92lbs/wk, 0.66lbs/wk, or 0.52lbs/wk for Normal, Overweight, and Obese Maternal BMI,
+Or a total weight gain of 35, 25, or 20 lbs respectively.
+
+Below is the excessive weight gain distribution by trimester.
+
+```{r, results='asis'}
+# trimester excessive weight gain counts
+kable(excessive_weight_tbl)
+# post-partum
+kable(excessive_weight_tbl_pp)
+```
+
+### Mixed Logistic Regression Models
+
+Standardized Fiber, Carb, Fat, SatFat, Protein, and Percentage of Animal/Plant Protein were not found to be associated with excessive weight gain.
+
+#### Fiber
+
+fiber group not associated with EWG
+
+```{r}
+fit_lr_mod("avg_daily_fiber_g_s", analysis_m1_tri, F)
+
+fit_lr_mod("s_fiber_group", analysis_m1_tri, F)
+```
+
+#### Carb
+
+```{r}
+fit_lr_mod("avg_daily_carb_g_s", analysis_m1_tri, F)
+```
+
+#### Fat
+
+```{r}
+fit_lr_mod("avg_daily_fat_g_s", analysis_m1_tri, F)
+```
+
+#### Sat Fat
+
+```{r}
+fit_lr_mod("avg_daily_satfat_g_s", analysis_m1_tri, F)
+```
+
+#### Protein
+
+```{r}
+fit_lr_mod("avg_daily_protein_g_s", analysis_m1_tri, F)
+```
+
+#### Animal Protein
+
+```{r}
+fit_lr_mod("avg_daily_animal_perc_s", analysis_m1_tri, F)
+```
+
+#### Plant Protein
+
+```{r}
+fit_lr_mod("avg_daily_plant_perc_s", analysis_m1_tri, F)
+```
+
+### Mixed Logistic Regression Models with interaction term
+
+Most models had trouble converging including the interaction term. I would interpret terms here with a grain of salt.
+
+#### Fiber
+
+```{r}
+fit_lr_mod("avg_daily_fiber_g_s", analysis_m1_tri, T)
+```
+
+#### Carb
+
+```{r}
+fit_lr_mod("avg_daily_carb_g_s", analysis_m1_tri, T)
+```
+
+#### Fat
+
+```{r}
+fit_lr_mod("avg_daily_fat_g_s", analysis_m1_tri, T)
+```
+
+#### Sat Fat
+
+```{r}
+fit_lr_mod("avg_daily_satfat_g_s", analysis_m1_tri, T)
+```
+
+#### Protein
+
+```{r}
+fit_lr_mod("avg_daily_protein_g_s", analysis_m1_tri, T)
+```
+
+#### Animal Protein
+
+```{r}
+fit_lr_mod("avg_daily_animal_perc_s", analysis_m1_tri, T)
+```
+
+#### Plant Protein
+
+```{r}
+fit_lr_mod("avg_daily_plant_perc_s", analysis_m1_tri, T)
+```
+
+## Maternal Weight Gain
+
+Standardized Fiber, Carb, Fat, SatFat, Protein, and Percentage of Animal/Plant Protein were not found to be associated with maternal weight gain.
+
+### Linear Models
+
+#### Fiber
+
+```{r}
+fit_mod("fiber_s", analysis_m1)
+```
+
+#### Carb
+
+```{r}
+fit_mod("carb_s", analysis_m1)
+```
+
+#### Fat
+
+```{r}
+fit_mod("fat_s", analysis_m1)
+```
+
+#### Sat Fat
+
+```{r}
+fit_mod("sfat_s", analysis_m1)
+```
+
+#### Protein
+
+```{r}
+fit_mod("protein_s", analysis_m1)
+```
+
+#### Animal Protein
+
+```{r}
+fit_mod("animal_perc_s", analysis_m1)
+```
+
+#### Plant Protein
+
+```{r}
+fit_mod("plant_perc_s", analysis_m1)
+```
+
+## Post Partum Weight Retention
+
+### Linear Models
+
+Standardized Fiber, Carb, Fat, SatFat, Protein, and Percentage of Animal/Plant Protein were not found to be associated with Post Partum Maternal Weight retention.
+
+#### Fiber
+
+```{r}
+fit_mod_pp("avg_daily_fiber", analysis_m1_pp)
+```
+
+#### Carb
+
+```{r}
+fit_mod_pp("avg_daily_carb", analysis_m1_pp)
+```
+
+#### Fat
+
+```{r}
+fit_mod_pp("avg_daily_fat", analysis_m1_pp)
+```
+
+#### Sat Fat
+
+```{r}
+fit_mod_pp("avg_daily_satfat", analysis_m1_pp)
+```
+
+#### Protein
+
+```{r}
+fit_mod_pp("avg_daily_protein", analysis_m1_pp)
+```
+
+#### Animal Protein
+
+```{r}
+fit_mod_pp("avg_daily_animal_perc", analysis_m1_pp)
+```
+
+#### Plant Protein
+
+```{r}
+fit_mod_pp("avg_daily_plant_perc", analysis_m1_pp)
+```
