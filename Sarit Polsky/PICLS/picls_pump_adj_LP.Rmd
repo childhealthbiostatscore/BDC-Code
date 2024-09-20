@@ -1,8 +1,14 @@
 ---
 title: "PICLS_cs"
 author: "Casey Sakamoto"
-date: "2023-11-13"
-output: html_document
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    theme: readable
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
 ---
 
 ```{r setup, include = FALSE}
@@ -18,6 +24,8 @@ library(data.table)
 library(table1)
 library(chron)
 library(htmlTable)
+library(sjPlot)
+
 #data upl  S:/Laura/BDC\Projects\Sarit Polsky\PICLS
 ######## FIRST SHEET. TDD STUFF
 tdd_files_list <- list.files(path = '/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/CGM_Pump_ins',full.names = TRUE)
@@ -199,6 +207,10 @@ avg_pumpset_cr_week = pump_set_df %>% group_by(pid, gweek,gmonth, meal_period, r
 avg_pumpset_cr_week$gmonth = factor(avg_pumpset_cr_week$gmonth, levels = c("Preconception","1","2","3","4","5","6","7","8","9","10","Postpartum"))
 
 avg_pumpset_cr_month = avg_pumpset_cr_week %>% group_by(pid, gmonth, meal_period, randomization_group) %>% summarise(carb_ratio_avg_m = mean(carb_ratio_avg, na.rm = T)) %>% ungroup()
+avg_pumpset_cr_month_breakfast = avg_pumpset_cr_month %>% filter(meal_period == "Breakfast")
+avg_pumpset_cr_month_lunch = avg_pumpset_cr_month %>% filter(meal_period == "Lunch")
+avg_pumpset_cr_month_dinner = avg_pumpset_cr_month %>% filter(meal_period == "Dinner")
+avg_pumpset_cr_month_overnight = avg_pumpset_cr_month %>% filter(meal_period == "Overnight")
 
 pumpset_cr_df = avg_pumpset_cr_month %>% group_by(randomization_group, gmonth, meal_period) %>% summarise(Avg_Carb_Ratio_gU = mean(carb_ratio_avg_m, na.rm = T)) %>% ungroup()
 
@@ -300,22 +312,53 @@ fit_mod = function(outcome, df){
 
   mod_means2 = emmeans(mod,specs=~ gmonth*randomization_group, adjust="none")
   
+  mod_anova <- anova.lme(mod, type="marginal")
+  
+  print(mod_anova)
+  print(kable(mod_means$contrasts[c(35,57,78,98, 117,135, 152, 168, 183,197)],digits = 3,caption = "Timepoint Contrasts", row.names = T))
+  print(kable(mod_means2,digits = 3,caption = "Timepoint Means"))
+
+}
+
+fit_mod_cr = function(outcome, df){
+
+    # Fit model
+  f = as.formula(paste0(outcome,"~","gmonth + randomization_group + gmonth*randomization_group"))
+  mod = lme(f,
+            random = ~1|pid,
+            data = df,
+            correlation = corAR1(),
+            na.action = na.omit)
+    cat("\n")
+  print(outcome)
+  cat("\n")
+   # Means
+  mod_means = emmeans(mod,specs=pairwise ~ gmonth*randomization_group, adjust="none")
+
+  mod_means2 = emmeans(mod,specs=~ gmonth*randomization_group, adjust="none")
+  
 
   print(kable(mod_means$contrasts[c(35,57,78,98, 117,135, 152, 168, 183,197)],digits = 3,caption = "Timepoint Contrasts", row.names = T))
   print(kable(mod_means2,digits = 3,caption = "Timepoint Means"))
 
 }
 
-
 ```
 
 # Methods
 
-Pump adjustments by gest week were provided. Linear mixed models were fit with random intercept for patient including group, gest month, and group time interaction. Contrasts were performed to compare groups at each gest month.
+Linear mixed models were fit with random intercept for patient including group, gest month, and group time interaction. Contrasts were performed to compare groups at each gest month.
 
-# Appended Sept 2024 : Average Carb Ratios, Correction boluses for each meal period for HCL and SAPT groups, separated by month
+# Descriptive statistics 
 
-note: first averaged by subject,then aggregated into group/month
+## number pump adjustments by group
+
+Mean Subject pump adjustments by group and gest week. Noted in PICLS meeting during early weeks only a few subjects had data
+
+```{r}
+#kable(pump_adj_df %>% group_by(gweek, randomization_group) %>% summarise(sum = sum(adj_count)))
+kable(test%>% arrange(.,gweek))
+```
 
 ## Carb Ratios
 
@@ -329,72 +372,91 @@ kable(pumpset_cr_df)
 kable(pumpset_cb_df)
 ```
 
-# Appended July 2024 :  average active insulin time for the HCL group and SAPT group separated by preconception each gestational month and postpartum
+## Average Active Insulin Time
 
 ```{r}
 kable(aai_df%>% arrange(.,gmonth))
 ```
 
-# Descriptive statistics per gestational week 
-
-## number pump adjustments by group
-
-Mean Subject pump adjustments by group and gest week. Noted in PICLS meeting during early weeks only a few subjects had data
-
-```{r}
-#kable(pump_adj_df %>% group_by(gweek, randomization_group) %>% summarise(sum = sum(adj_count)))
-kable(test%>% arrange(.,gweek))
-```
-
 # Models
 
-# TDD data
+The first table in each set of model output is the overall ANOVA table. The p-value for the term labeled "gmonth:randomization_group" is the test of whether the trends in the outcome differed by group. If that p-value is significant, refer to the table of timepoint contrast for the comparison of the two groups at each timepoint.
 
-## total daily dose 
+## TDD data
 
-There were no significant monthly differences between HCL and SAPT group for TDD by month.
+### total daily dose 
 
 ```{r}
 fit_mod("tdd_u_m", tdd_df_month)
-```
-## total daily bolus 
 
-There was a significant difference between tdb at month 10 between groups (p = 0.03). The HCL on average had 18.6 (se 7.9) higher tdb than the sapt group.
+```
+
+### total daily bolus 
 
 ```{r}
 fit_mod("td_bolus_m", tdd_df_month)
 ```
 
-## total daily basal 
-
-There was a significant difference between tdb at month 9 between groups (p = 0.03). The HCL on average had 9.8 (se 4.2) lower td basal than the sapt group.
-
+### total daily basal 
 
 ```{r}
 fit_mod("td_basal_m", tdd_df_month)
 ```
-## percent basal
 
-There was a significant difference in percent bolus between groups in months 2 and 9 (p = 0.03, 0.01)
-HCL's percent bolus is on average 12.0 (se 5.3) points lower at 2 months and 13.7 (se = 4.9) points lower than the SAPT group at 9 months.
+### percent basal
 
 ```{r}
 fit_mod("basal_perc_m", tdd_df_month)
 ```
 
-## percent bolus 
-
-There was a significant difference in percent bolus between groups in months 2 and 9 (p = 0.03, 0.01)
-HCL's percent bolus is on average 12.0 (se 5.3) points higher at 2 months and 13.7 (se = 4.9) points higher than the SAPT group at 9 months.
+### percent bolus 
 
 ```{r}
 fit_mod("bolus_perc_m", tdd_df_month)
 ```
 
-# Number of changes to pump settings per month
+## Pump settings
 
-There were no signifcant differences in the amount of changes to pump settings per month between groups.
+### Number of changes to pump settings per month
 
 ```{r}
 fit_mod("pump_adj_m", n_pump_adj_month)
+```
+
+### Carb ratios
+
+#### Breakfast
+
+```{r}
+fit_mod("carb_ratio_avg_m", avg_pumpset_cr_month_breakfast)
+```
+
+#### Lunch
+
+```{r}
+fit_mod("carb_ratio_avg_m", avg_pumpset_cr_month_lunch)
+```
+
+#### Dinner
+
+```{r}
+fit_mod("carb_ratio_avg_m", avg_pumpset_cr_month_dinner)
+```
+
+#### Overnight
+
+```{r}
+fit_mod("carb_ratio_avg_m", avg_pumpset_cr_month_overnight)
+```
+
+### Correction bolus
+
+```{r}
+fit_mod("correction_bolus_avg_m", avg_pumpset_cb_month)
+```
+
+### Average active insulin time
+
+```{r}
+fit_mod("Average_Active_Insulin_m", n_aai_month)
 ```
