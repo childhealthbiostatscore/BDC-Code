@@ -20,6 +20,7 @@ library(nlme)
 library(lme4)
 library(emmeans)
 library(lubridate)
+library(cowplot)
 # data upload
 #analysis_raw <- read_csv("S:/Laura/BDC/Projects/Cari Berget/a1c_hcl_omnipod/DATA/HCLClinicalObservati_DATA_2023-06-14_1345.csv")
 analysis_raw <- read_csv("S:/Laura/BDC/Projects/Cari Berget/a1c_hcl_omnipod/DATA/HCLClinicalObservati_DATA_2024.csv")
@@ -275,6 +276,75 @@ child_t1 = table1(~.|redcap_event_name, data = analysis %>% select(-record_id), 
 
 demog_t1 = table1(~., data = demogs)
 ```
+
+# APPENDED SEPT 2024
+
+```{r,echo = FALSE}
+# more information on the groups:
+
+# # of participants in each a1c group (low, middle, high) 
+analysis = analysis %>% mutate(a1c_group = case_when(gly_a1c >=9 ~ "High",
+                                                     gly_a1c > 7 & gly_a1c < 9 ~ "Middle",
+                                                     gly_a1c <= 7 ~ "Low"))
+
+# n's at baseline (note: 6 missing baseline gly_a1c as reflected in T1 below)
+kable(table(analysis %>% filter(redcap_event_name == "Baseline") %>% select(a1c_group)))
+
+# Mean age of participants in each a1c group and the range
+kable(analysis %>% filter(redcap_event_name == "Baseline", !is.na(a1c_group)) %>% group_by(a1c_group) %>% summarise(mean_age = mean(demo_c_age, na.rm = T),
+                                                                                                              sd_age = sd(demo_c_age, na.rm = T),
+                                                                                                              min_age = min(demo_c_age, na.rm = T),
+                                                                                                              max_age = max(demo_c_age, na.rm = T)))
+
+# Average a1c for the participants in each a1c group, plus a range of a1c in that group
+
+kable(analysis %>% filter(redcap_event_name == "Baseline", !is.na(a1c_group)) %>% group_by(a1c_group) %>% summarise(mean_a1c = mean(gly_a1c, na.rm = T),
+                                                                                                              sd_a1c = sd(gly_a1c, na.rm = T),
+                                                                                                              min_a1c = min(gly_a1c, na.rm = T),
+                                                                                                              max_a1c = max(gly_a1c, na.rm = T))
+)
+```
+
+```{r, include = F}
+# 4 box graph showing differences between low, middle and high a1c groups using line graphs.  Measure on Y axis and timepoints across X access (baseline/month1, m3, m6, m9, m12)
+# grab vars
+analysis = analysis %>% mutate(gly_sensor_u70 = gly_sensor_54_69 + gly_sensor_u54)
+plot_df = analysis %>% select(a1c_group, redcap_event_name, gly_time_am, gly_sensorwear, gly_a1c, gly_sensor_70_180, gly_sensor_u70, gly_dailybolus) %>% filter(!is.na(a1c_group))
+
+# a)	Automated Mode Use, CGM Use 
+use_plot_df = plot_df %>% select(a1c_group, redcap_event_name, gly_sensorwear, gly_time_am) %>% 
+  pivot_longer(cols = gly_sensorwear:gly_time_am, names_to = "Measure", values_to = "Percent") %>% filter(!is.na(Percent))
+use_plot = ggplot(data = use_plot_df, aes(x = redcap_event_name, y = Percent, color = a1c_group, linetype = Measure, group = interaction(a1c_group, Measure))) + 
+  stat_summary(geom='line', fun = mean) + theme_classic()
+
+
+# b)	A1c
+a1c_plot_df = plot_df %>% select(a1c_group, redcap_event_name, gly_a1c) 
+a1c_plot = ggplot(data = a1c_plot_df, aes(x = redcap_event_name, y = gly_a1c, color = a1c_group, group = a1c_group)) + 
+  stat_summary(geom='line', fun = mean) + theme_classic() + theme(legend.position="none")
+
+
+# c)	TIR (70-180 mg/dL) and TBR (<70 mg/dL)
+tir_plot_df = plot_df %>% select(a1c_group, redcap_event_name, gly_sensor_70_180, gly_sensor_u70) %>% 
+  pivot_longer(cols = gly_sensor_70_180:gly_sensor_u70, names_to = "Measure", values_to = "Sensor") %>% filter(!is.na(Sensor))
+tir_plot = ggplot(data = tir_plot_df, aes(x = redcap_event_name, y = Sensor, color = a1c_group, linetype = Measure, group = interaction(a1c_group, Measure))) + 
+  stat_summary(geom='line', fun = mean) + theme_classic()
+
+# d)	Number of boluses/day 
+bol_plot_df = plot_df %>% select(a1c_group, redcap_event_name, gly_dailybolus) 
+bol_plot = ggplot(data = bol_plot_df, aes(x = redcap_event_name, y = gly_dailybolus, color = a1c_group, group = a1c_group)) + 
+  stat_summary(geom='line', fun = mean) + theme_classic() + theme(legend.position="none")
+
+
+```
+
+```{r,echo = FALSE}
+figure_grid = plot_grid(a1c_plot,use_plot, bol_plot,tir_plot, ncol = 2)
+
+figure_grid
+
+```
+
 # Background
 
 Objectives: 
