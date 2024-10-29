@@ -24,6 +24,21 @@ library(lme4)
 library(lmerTest)
 library(table1)
 
+rename <- function(df) {
+  df$"Omega-6 Fatty Acids (g)"  <- NA
+  colnames(df[,c("PUFA 18:2 (linoleic acid) (g)")]) <- 
+    c("PUFA 18:2 (linoleic acid, undifferentiated) (g)")
+  names(df)[names(df) == 'PUFA 18:2 (linoleic acid) (g)'] <- 'PUFA 18:2 (linoleic acid, undifferentiated) (g)'
+  names(df)[names(df) == 'PUFA 18:3 (linolenic acid) (g)'] <- 'PUFA 18:3 (linolenic acid, undifferentiated) (g)'
+  names(df)[names(df) == 'PUFA 20:4 (arachidonic acid) (g)'] <- 'PUFA 20:4 (arachidonic acid, undifferentiated) (g)'
+  names(df)[names(df) == 'PUFA 20:5 (eicosapentaenoic acid [EPA]) (g)'] <- 'PUFA 20:5 n-3 (eicosapentaenoic acid [EPA]) (g)'
+  names(df)[names(df) == 'PUFA 22:5 (docosapentaenoic acid [DPA]) (g)'] <- 'PUFA 22:5 n-3 (docosapentaenoic acid [DPA]) (g)'
+  names(df)[names(df) == 'PUFA 22:6 (docosahexaenoic acid [DHA]) (g)'] <- 'PUFA 22:6 n-3 (docosahexaenoic acid [DHA]) (g)'
+  df$"PUFA 18:2 n-6 (linoleic acid [LA]) (g)" <- NA
+  df$"PUFA 18:3 n-6 (gamma-linolenic acid [GLA]) (g)" <- NA
+  df$"PUFA 20:4 n-6 (arachidonic acid [AA]) (g)" <- NA
+  return(df)
+}
 
 #data upload
 Final_Baseline <- read_excel("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/CTRC files/18-1798 Nutrient Analysis Export/18-1798 Final Baseline.xlsx")
@@ -35,6 +50,114 @@ mp_meal <- read_excel("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Lau
     sheet = "Meal Totals")
 mp_daily <- read_excel("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/CTRC files/18-1798 Nutrient Analysis Export/18-1798 Missing Participants Export.xlsx", 
     sheet = "Daily Totals")
+# divide mp_meal into trimesters
+mp_meal_Baseline <- mp_meal %>% filter(str_detect(`Participant/Menu ID`, "Base"))
+mp_meal_Baseline$`Participant/Menu ID` <- substr(mp_meal_Baseline$`Participant/Menu ID`, 1, 4)
+mp_meal_3rd_Tri <- mp_meal %>% filter(str_detect(`Participant/Menu ID`, "3rd"))
+mp_meal_3rd_Tri$`Participant/Menu ID` <- substr(mp_meal_3rd_Tri$`Participant/Menu ID`, 1, 4)
+mp_meal_Post <- mp_meal %>% filter(str_detect(`Participant/Menu ID`, "Post"))
+mp_meal_Post$`Participant/Menu ID` <- substr(mp_meal_Post$`Participant/Menu ID`, 1, 4)
+# combine
+Final_Baseline <- rbind(Final_Baseline, mp_meal_Baseline)
+Final_3Tri <- rbind(Final_3Tri, mp_meal_3rd_Tri)
+Final_PP <- rbind(Final_PP, mp_meal_Post)
+
+# year for 211B was entered as 2021 but really 2022
+temp <- Final_PP %>% filter(`Participant/Menu ID` == "211B")
+temp$`Date of Intake` <- temp$`Date of Intake` %m+% years(1)
+Final_PP <- Final_PP %>% filter(!`Participant/Menu ID` == "211B")
+Final_PP <- rbind(Final_PP, temp)
+
+# read in archive files and check if they already exist
+# probably baseline for 111A
+extra1 <- read_excel("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/CTRC files/18-1798 Nutrient Analysis Export/NDS export archive/18-1798 Nutrient Analysis Export 1st Trimester.xlsx")
+a <- colnames(extra1)
+a <- data.frame(cbind(a, rep(1, ncol(extra1))))
+names(a) <- c("varname", "in_extra")
+b <- colnames(Final_Baseline)
+b <- data.frame(cbind(b, rep(1, ncol(Final_Baseline))))
+names(b) <- c("varname", "in_final_baseline")
+ab <- full_join(a, b, by = "varname")
+# combine
+extra1 <- rename(extra1)
+Final_Baseline <- rbind(Final_Baseline, extra1)
+
+# this file is 2nd trimester for 108A, already in dataset
+extra2 <- read_excel("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/CTRC files/18-1798 Nutrient Analysis Export/NDS export archive/18-1798 Nutrient Analysis Export 2nd Trimester 9.10.2020.xlsx")
+
+# 2nd trimester 100A
+extra3 <- read_excel("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/CTRC files/18-1798 Nutrient Analysis Export/NDS export archive/18-1798 Nutrient Analysis Export 2nd Trimester.xlsx")
+a <- colnames(extra3)
+a <- data.frame(cbind(a, rep(1, ncol(extra3))))
+names(a) <- c("varname", "in_extra")
+b <- colnames(Final_2Tri)
+b <- data.frame(cbind(b, rep(1, ncol(Final_2Tri))))
+names(b) <- c("varname", "in_final_2Tri")
+ab <- full_join(a, b, by = "varname")
+extra3 <- rename(extra3)
+Final_2Tri <- rbind(Final_2Tri, extra3)
+
+# file 18-1798 Nutrient Analysis Export 3rd Trimester 9.10.2020 has mix of data from 100A and 112A, but already in dataset
+
+# 3rd trimester 108A
+extra4 <- read_excel("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/CTRC files/18-1798 Nutrient Analysis Export/NDS export archive/18-1798 Nutrient Analysis Export 3rd Trimester.xlsx")
+a <- colnames(extra4)
+a <- data.frame(cbind(a, rep(1, ncol(extra4))))
+names(a) <- c("varname", "in_extra")
+b <- colnames(Final_3Tri)
+b <- data.frame(cbind(b, rep(1, ncol(Final_3Tri))))
+names(b) <- c("varname", "in_final_3Tri")
+ab <- full_join(a, b, by = "varname")
+extra4 <- rename(extra4)
+Final_3Tri <- rbind(Final_3Tri, extra4)
+
+# file 18-1798 Nutrient Analysis Export 110A 2nd Tri is 2nd trimester for 110A, already in dataset
+# file 18-1798 Nutrient Analysis Export Baseline 9.10.2020 is a mix of baseline data, all of it already in dataset
+
+# file 18-1798 Nutrient Analysis Export Baseline has data from 102A, 106A which are not on master list of food logs
+# file also has baseline for 108A which was missing
+# also baseline for 112A which was missing
+# also baseline for 113A which was missing
+extra5 <- read_excel("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/CTRC files/18-1798 Nutrient Analysis Export/NDS export archive/18-1798 Nutrient Analysis Export Baseline.xlsx")
+extra5 <- extra5 %>% filter(`Participant/Menu ID` %in% c("108A", "112A", "113A"))
+a <- colnames(extra5)
+a <- data.frame(cbind(a, rep(1, ncol(extra5))))
+names(a) <- c("varname", "in_extra")
+b <- colnames(Final_Baseline)
+b <- data.frame(cbind(b, rep(1, ncol(Final_Baseline))))
+names(b) <- c("varname", "in_final_baseline")
+ab <- full_join(a, b, by = "varname")
+write_csv(ab,"/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/mismatch_colnames.csv")
+extra5 <- rename(extra5)
+Final_Baseline <- rbind(Final_Baseline, extra5)
+
+# file 18-1798 Nutrient Analysis Export Post-Partum 9.10.2020 has PP for 100A, already in dataset
+
+# file 18-1798 Nutrient Analysis Export Post-Partum has PP for 108A which does not appear to be in dataset, but is also not marked missing
+extra6 <- read_excel("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/CTRC files/18-1798 Nutrient Analysis Export/NDS export archive/18-1798 Nutrient Analysis Export Post-Partum.xlsx")
+extra6 <- extra6 %>% filter(`Participant/Menu ID` %in% c("108A"))
+a <- colnames(extra6)
+a <- data.frame(cbind(a, rep(1, ncol(extra6))))
+names(a) <- c("varname", "in_extra")
+b <- colnames(Final_PP)
+b <- data.frame(cbind(b, rep(1, ncol(Final_PP))))
+names(b) <- c("varname", "in_final_PP")
+ab <- full_join(a, b, by = "varname")
+extra6 <- rename(extra6)
+Final_PP <- rbind(Final_PP, extra6)
+
+# file 18-1798 Nutrient Analysis Export Post-Partum has 3rd trimester for 107A (mislabeled as PP) which does not appear to be in dataset, but is also not marked missing
+extra6a <- read_excel("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/CTRC files/18-1798 Nutrient Analysis Export/NDS export archive/18-1798 Nutrient Analysis Export Post-Partum.xlsx")
+extra6a <- extra6a %>% filter(`Participant/Menu ID` %in% c("107A"))
+a <- colnames(extra6a)
+a <- data.frame(cbind(a, rep(1, ncol(extra6a))))
+names(a) <- c("varname", "in_extra")
+b <- colnames(Final_3Tri)
+b <- data.frame(cbind(b, rep(1, ncol(Final_3Tri))))
+names(b) <- c("varname", "in_final_3Tri")
+ab <- full_join(a, b, by = "varname")
+extra6a <- rename(extra6a)
+Final_3Tri <- rbind(Final_3Tri, extra6a)
 
 PICLS <- read_csv("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/PICLSStudyHCLVsSAPTI_DATA_2024-05-24_1006(1).csv")
 # groups and gest dates and centiles
@@ -119,6 +242,7 @@ ctrc = full_join(ctrc, tri3_ctrc)
 ctrc = full_join(ctrc, pp_ctrc)
 ctrc = full_join(ctrc, mp_ctrc)
 ctrc = right_join(groups, ctrc)
+# 107A is in the above file
 
 ctrc= ctrc %>% mutate(mufapufa = `% Calories from MUFA` + `% Calories from MUFA`)
 gestdates = gestdates %>% select(pid, EDD_Final:`Delivery Date`)
@@ -229,7 +353,7 @@ standardized_tri_avg = standardized_groups %>% group_by(pid, tp)  %>% summarise(
 
 ###################### MATERNAL WEIGHT GAIN ############################################
 
-cleanedcgm_noacet <- read_csv("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/cleanedcgm_noacet.csv")
+cleanedcgm_noacet <- read_csv("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Raw/cleanedcgm_noacet.csv")
 gmi_data = cleanedcgm_noacet %>% mutate(pid = word(subject_id,1,sep = "_"),tri = word(subject_id,2,sep = "_")) %>% select(pid, tri, gmi)
 gmi_data = gmi_data %>% mutate(tp = case_when(tri == "T1" ~ "Trimester 1",
                                               tri == "T2" ~ "Trimester 2",
@@ -239,7 +363,7 @@ gmi_data = gmi_data %>% mutate(tp = case_when(tri == "T1" ~ "Trimester 1",
 
 
 
-Preg_visits <- read_csv("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/QPregnancyVisits_DATA_2022-12-04_1234.csv")
+Preg_visits <- read_csv("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/QPregnancyVisits_DATA_2022-12-04_1234.csv")
 
 Preg_visits = left_join(Preg_visits, gestdates)
 
@@ -408,16 +532,6 @@ Linear Models for Post Partum Maternal Weight Retention were fit with Average Da
 
 ## visit count/ctrc log count
 
-Most recent date the data was pulled from BDC Shared drive: may 2024; new data added in march 2024.
-
-The data seems to match the data we should have PRIOR to discrepancies ie) for 100A we have YNY for baseline, 2nd, 3rd tri; but the discrepancy column lists 2nd tri - Y.
-
-Notes list this data as previously "Archived;" haven't checked every part of every file (hard to code with different naming conventions/duplicate filenames), but it looks like it should be able to match up to correct, or closer to correct numbers as listed in email ( 22 tri 1, 16 tri 2, 14 tri 3, 15 pp) .
-
-Outstanding remarks: Wanted to chat about this in the meeting instead of over email to confirm what's what/ safe to trust etc within the "archive" folder
-
-
-
 
 ```{r}
 # ctrc files aggregated from maternal_diet_subj_day dataframe into standardized_tri_Avg datafram in order to get a visit for tri 1 ,2 ,3, pp
@@ -427,9 +541,6 @@ table(standardized_tri_avg$tp)
 
 table(standardized_tri_avg$pid, standardized_tri_avg$tp)
 
-# discrepancy for 2nd tri so should have actual log 2nd tri as jul 19
-testid = maternal_diet_subj_day %>% ungroup()%>%select(pid, tp, `Date of Intake`) %>% filter(pid == "100A")
-print((testid))
 ```
 
 ## Standardized Diet Quality (Overall and Fiber)
