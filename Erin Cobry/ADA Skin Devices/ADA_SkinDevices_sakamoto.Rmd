@@ -24,11 +24,12 @@ source("S:/Laura/BDC/Projects/Erin Cobry/ADA Skin and Devices/InsulinPumpsAndSen
 ```
 
 ```{r dc, include=FALSE}
+data$skinreactio
 analysis_raw = data %>% select(record_id, calculated_age, gender.factor, hispanic_latino.factor, race___1.factor:race___6.factor, # demographics ##
                                diabetesduration, hba1c, cgm_use.factor, cgm_type.factor, insulin_pump.factor, type_insulin_pumo.factor,
                                device_location___1.factor:device_location___7.factor, ############
                                
-                               skin_reactions.factor, problem_location___1.factor:problem_location___7.factor, # Skin Related Questions due to cgm
+                               skin_reactions.factor, problem_location___1.factor:problem_location___7.factor, skin_reaction_description___1.factor:skin_reaction_description___5.factor,# Skin Related Questions due to cgm
                                pump_skin_reaction.factor, pump_location_problem, pump_skin_appearance___1.factor:pump_skin_appearance___5.factor # Qs due to pump
                                )
 # race classification
@@ -42,34 +43,157 @@ analysis_raw = analysis_raw %>% rowwise() %>% mutate(race_count = sum(!grepl("Un
                                                                       race_count > 1 ~ "Multiracial"
                                                                       ))
 
+analysis_raw = analysis_raw %>% mutate(race_w = ifelse(Race == "White", "White", "Nonwhite"))
+
+# pump/cgm / both/neither reactions
+analysis_raw = analysis_raw %>% mutate(Reactions_Group = case_when(skin_reactions.factor == "Yes" & pump_skin_reaction.factor == "Yes" ~ "CGM and Pump Reactions",
+                                                                   skin_reactions.factor == "No" & pump_skin_reaction.factor == "No" ~ "Neither",
+                                                                   skin_reactions.factor == "Yes" & pump_skin_reaction.factor == "No" ~ "CGM Reactions",
+                                                                   skin_reactions.factor == "No" & pump_skin_reaction.factor == "Yes" ~ "Pump Reactions"))
+
+analysis_raw = analysis_raw %>% mutate(Any_Reactions = ifelse(skin_reactions.factor == "Yes" | pump_skin_reaction.factor == "Yes", "Yes", "No"))
+
+analysis = analysis_raw %>% filter(Reactions_Group != "Neither")
+
+
+                                                                   
 ```
 
 
-```{r demogs, echo = FALSE}
-demog_df = analysis_raw %>% select( calculated_age, gender.factor, Race, hispanic_latino.factor, diabetesduration:device_location___7.factor)
+```{r tables, echo = FALSE}
+
+# table 1
+demog_df = analysis_raw %>% select( calculated_age, gender.factor, Race, race_w,hispanic_latino.factor, diabetesduration:device_location___7.factor)
 
 dt1 = table1(~., data = demog_df)
 #dt1
+
+# skin related questions cgm
+
+# location
+cgm_skin_location_df = analysis_raw %>% filter(skin_reactions.factor == "Yes") %>% select(problem_location___1.factor:problem_location___7.factor)
+csl_colnames = c("Upper Buttocks", "Abdomen", "Upper Hip", "Upper Thigh", "Upper Arm", "Forearm", "Other")
+
+colnames(cgm_skin_location_df) = csl_colnames
+csl_location = table1(~., data = cgm_skin_location_df)
+
+# reaction
+cgm_skin_reaction_df = analysis_raw %>% filter(skin_reactions.factor == "Yes") %>% select(skin_reaction_description___1.factor:skin_reaction_description___5.factor)
+
+csr_colnames = c("Redness", "Itching", "Scarring", "Infections", "Other")
+colnames(cgm_skin_reaction_df) = csr_colnames
+
+csr_reactions = table1(~., data = cgm_skin_reaction_df)
+
+# skin related questions pump
+
+# location
+analysis_raw$pump_skin_reaction.factor
+pump_skin_location_df = analysis_raw %>% filter(pump_skin_reaction.factor == "Yes") %>% select(pump_location_problem)
+
+# reaction
+pump_skin_reaction_df = analysis_raw %>% filter(pump_skin_reaction.factor == "Yes") %>% select(pump_skin_appearance___1.factor:pump_skin_appearance___5.factor)
+
+colnames(pump_skin_reaction_df) = csr_colnames
+
+pump_reactions = table1(~., data = pump_skin_reaction_df)
+
+
+```
+
+```{r analysis ds, echo = F}
+# 1.	Categorize based on race/ethnicity and gender (Race/ethnicity and gender can both be found on Demographics section of the survey)
+  # a.	Analyze if there was a difference in skin reactions incidence with diabetes devices (combine those with CGM only, pump only, and CGM and pump reactions) _and the race/ethnicity (include how many of each category). 
+  # b.	Analyze if there was a difference in skin reactions incidence with diabetes devices (combine those with CGM only, pump only, and CGM and pump reactions) _and the gender (include how many of each category).
+
 ```
 
 # Outstanding Data Remarks/ Questions
 
 - Some subjects race had multiple checked. Currently classifying in own category as multirace for demographic description
   - Distribution of race overwhelmingly white with only a few nonwhite (N = 11 nonwhite across 4 categories, 86 White) maybe Dichotomize W/NW?
-- 
+  - Hisp/Latino ("Yes" N= 11) all selected White as race (1 Prefer not to answer)
+  - Gender contains n = 1 for other, creating a group split of n = 56 F, 40M, 1 Oth
+  
+- pump skin location differently formatted than cgm; how to classify some of these?
 
 # Background
 
-Skin related questions (selected items) – Skin and Diabetes Devices Survey (after Demographics)
-a.	Skin reactions due to the use of glucose sensor (please describe location and skin reaction): Question #1 (skin reaction due to the use of CGM (yes/no)), Question #2 (location of skin reaction), Question #3 (description of skin reaction)
-b.	Skin reaction due to the use of insulin pump (please describe location and skin reaction):  Question #4 (skin reaction due to the use of insulin pump (yes/no)), Question #5 (location of skin reaction), Question #6 (description of skin reaction)
-
-Analysis Ideas
-1.	Categorize based on race/ethnicity and gender (Race/ethnicity and gender can both be found on Demographics section of the survey)
-a.	Analyze if there was a difference in skin reactions incidence with diabetes devices (combine those with CGM only, pump only, and CGM and pump reactions) _and the race/ethnicity (include how many of each category). 
-b.	Analyze if there was a difference in skin reactions incidence with diabetes devices (combine those with CGM only, pump only, and CGM and pump reactions) _and the gender (include how many of each category).
-
 
 # Methods
+Demographics and skin related questions were produced. Due to low cell counts within race and gender groups, Fisher's Exact tests were performed to assess difference in skin reactions by gender and race.
+
 
 # Analysis
+
+## Demographics
+```{r}
+dt1
+```
+
+## Skin reactions due to the use of glucose sensor 
+
+N = 53 yes, 43 No
+
+```{r}
+# Total n = Yes
+table(analysis_raw$skin_reactions.factor)
+
+# Location 
+csl_location
+
+# description
+csr_reactions
+```
+
+## Skin reactions due to the use of insulin pump
+
+N = 45 yes, 41 No
+
+```{r}
+# Total n = Yes
+table(analysis_raw$pump_skin_reaction.factor)
+
+# Location 
+table(pump_skin_location_df$pump_location_problem)
+
+# description
+pump_reactions
+```
+
+## Skin Reaction Groups by Gender/Race
+
+```{r}
+table(analysis_raw$Reactions_Group)
+
+table(analysis_raw$Reactions_Group, analysis_raw$gender.factor)
+
+table(analysis_raw$Reactions_Group, analysis_raw$race_w)
+```
+
+### Difference in Skin Reactions Groups by Gender and Race
+
+No significant differences were found within Skin Reaction groups by Gender (p = 0.81) or Race (p = 0.82).
+
+```{r}
+fisher.test(analysis$Reactions_Group, analysis$gender.factor)
+fisher.test(analysis$Reactions_Group, analysis$race_w)
+
+# Chisq sanity check -- similar results
+# chisq.test(analysis$Reactions_Group, analysis$gender.factor) 0.8
+# chisq.test(analysis$Reactions_Group, analysis$race_w) 0.5
+```
+
+### APPENDED 11/13 Difference in Any Skin Reactions by Gender and Race
+
+There were no significant association between device use and gender (p > 0.99) or race (p = 0.08)
+
+```{r}
+table(analysis_raw$Any_Reactions, analysis_raw$gender.factor)
+
+fisher.test(analysis_raw$Any_Reactions, analysis_raw$gender.factor)
+fisher.test(analysis_raw$Any_Reactions, analysis_raw$race_w)
+
+```
+
+
