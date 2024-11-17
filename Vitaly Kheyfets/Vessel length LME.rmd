@@ -1,0 +1,56 @@
+---
+title: "Vessel Length LME"
+author: "Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    theme: readable
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+---
+
+```{r libraries,echo=FALSE, include=F}
+library(knitr)
+library(tidyverse)
+library(lmerTest)
+library(emmeans)
+library(readxl)
+library(stringr)
+
+knitr::opts_chunk$set(echo = FALSE,warning = FALSE)
+```
+
+```{r data,echo=FALSE}
+d <- readxl::read_xlsx("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Vitaly Kheyfets/Length_FullVasc.xlsx")
+
+# first transpose
+data <- as.data.frame(t(d))
+data$id <- row.names(data)
+# wide to long
+data_long <- reshape(data = data, direction = "long", varying = colnames(data[,1:13264]), v.names = "length")
+
+# R-FS# = Female Sham mice
+# R-MS# = Male Sham mice
+# Rw4-FP# = Female mice at 4 weeks after PAB
+# Rw4-MP# = Male mice at 4 weeks after PAB
+# Rw7-FP# = Female mice at 7 weeks after PAB
+# Rw7-MP# = Male mice at 7 weeks after PAB
+data_long$sex <- ifelse(str_detect(data_long$id, "F") == TRUE, "F", "M")
+data_long$tx <- ifelse(str_detect(data_long$id, "S"), "Sham", 
+                       ifelse(str_detect(data_long$id, "4"), "PABw4", "PABw7"))
+data_long$log_length <- log(data_long$length)
+```
+
+```{r data,echo=FALSE}
+emm_options(pbkrtest.limit = 217060)
+lme_model_int <- lmer(log_length ~ tx * sex + (1 | id), data = data_long)
+#mod_means_int <- emmeans(lme_model_int,c("tx","sex"), lmerTest.limit = 300000)
+#mod_pairs <-  pairs(mod_means_int,adjust="tukey", simple="each")
+
+lme_model_noint <- lmer(log_length ~ tx + (1 | id), data = data_long)
+mod_means_noint <- emmeans(lme_model_noint,"tx", lmerTest.limit = 300000)
+mod_pairs_noint <-  pairs(mod_means_noint,adjust="tukey", simple="each")
+
+```
