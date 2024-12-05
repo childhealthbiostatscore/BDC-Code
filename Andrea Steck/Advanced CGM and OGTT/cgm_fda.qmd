@@ -15,27 +15,73 @@ format:
     theme:
       light: flatly
       dark: darkly
-bibliography: /Users/timvigers/Documents/Miscellaneous/zotero.bib
-csl: /Users/timvigers/GitHub/styles/american-medical-association.csl
 editor: source
 ---
 
-```{r libraries and import}
+```{r setup}
 #| include: false
+library(Rfast)
 library(tidyverse)
 library(tidyfun)
-load("/Users/timvigers/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT/Data_Clean/fda_dataset.RData")
+library(haven)
+library(hms)
+library(refund)
+library(refund.shiny)
+knitr::opts_knit$set(root.dir = "/Users/timvigers/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT")
 ```
 
-# Data cleaning
+```{r}
+# Import CGM data
+cgm <- read_sas("./Data_Raw/rawcgmdata.sas7bdat")
+# Round time to nearest minute
+cgm$sensordisplaytime <- parse_date_time(cgm$sensordisplaytime,
+  orders = c("Ymd HMS", "Ymd")
+)
+cgm$sensordisplaytime <- round_date(cgm$sensordisplaytime, unit = "5 minutes")
+# Separate date and time columns
+cgm$Date <- as_date(cgm$sensordisplaytime)
+cgm$Time <- as_hms(cgm$sensordisplaytime)
+# Import longitudinal data
+df <- read.csv("./Data_Clean/Longitudinal CGM data for 165 subjects.csv", na.strings = c("", "."))
+# Participant info
+df <- df %>%
+  select(ID, Date.of.T1D.dx) %>%
+  filter(rowSums(!is.na(.)) > 0) %>%
+  distinct() %>%
+  rename(`Date of Diagnosis` = Date.of.T1D.dx)
+df$`Date of Diagnosis` <- mdy(df$`Date of Diagnosis`)
+df$Group <- factor(!is.na(df$`Date of Diagnosis`),
+  levels = c(F, T), labels = c("No T1D", "T1D")
+)
+```
 
-- Timestamps were rounded to the nearest 5-minutes.
-- Missing glucose values were not interpolated.
+# One day per participant
 
-# Figures
+## Data cleaning
 
 ```{r}
-#| label: fig-indiv-glucose
+# Convert to a wide format where each row is a participant-date
+fda_df <- cgm %>%
+  mutate(Time = as.numeric(Time)) %>%
+  arrange(Time) %>%
+  pivot_wider(
+    names_from = Time,
+    values_from = SensorValue,
+    id_cols = ID,
+    values_fn = ~ mean(.x, na.rm = TRUE)
+  ) %>%
+  arrange(ID) %>%
+  tf_gather(`0`:`86100`, key = "Glucose")
+fda_df <- left_join(fda_df, df, by = join_by(ID))
+```
+
+- Timestamps were rounded to the nearest 5-minutes.
+- Missing glucose values were linearly interpolated.
+
+## Figures
+
+```{r}
+#| label: fig-indiv-glucose-one-day
 #| fig-cap: Individual glucose curves
 #| message: false
 fda_df |>
@@ -46,7 +92,7 @@ fda_df |>
 ```
 
 ```{r}
-#| label: fig-mean-glucose
+#| label: fig-mean-glucose-one-day
 #| fig-cap: Mean glucose curves
 #| message: false
 fda_df |>
@@ -57,9 +103,106 @@ fda_df |>
   geom_spaghetti(linewidth = 1.25, alpha = 1)
 ```
 
+## Functional PCA
 
-Start with a very simple Cox model
-  Outcome is time to diagnosis, standard covariates (age, sex, BMI, etc.) plus TIR or something
-  This will tell us more about the data
-Maybe try a Cox lasso if possible
-For data cleaning, keep it as raw as possible
+```{r}
+#| eval: false
+Y <- fda_df$Glucose %>%
+  as.data.frame(unnest = TRUE)
+colnames(Y) <- c(".id", ".index", ".value")
+
+fit.fpca <- fpca.sc(ydata = Y)
+plot_shiny(obj = fit.fpca)
+
+
+fda_df <- cgm %>%
+  mutate(Time = as.numeric(Time)) %>%
+  arrange(Time) %>%
+  pivot_wider(
+    names_from = Time,
+    values_from = SensorValue,
+    id_cols = ID,
+    values_fn = ~ mean(.x, na.rm = TRUE)
+  ) %>%
+  arrange(ID)
+t = df
+t$Glucose = fda_df %>% select(-ID) %>% as.matrix()
+
+fit.fosr = bayes_fosr(Glucose~Group, data = t)
+plot_shiny(fit.fosr)
+```
+
+# Multiple days per participant
+
+## Data cleaning
+
+```{r}
+# Convert to a wide format where each row is a participant-date
+fda_df <- cgm %>%
+  mutate(Time = as.numeric(Time)) %>%
+  arrange(Time) %>%
+  pivot_wider(
+    names_from = Time,
+    values_from = SensorValue,
+    id_cols = c(ID, Date),
+    values_fn = ~ mean(.x, na.rm = TRUE)
+  ) %>%
+  arrange(ID, Date) %>%
+  tf_gather(`0`:`86100`, key = "Glucose")
+fda_df <- left_join(fda_df, df, by = join_by(ID))
+```
+
+- Timestamps were rounded to the nearest 5-minutes.
+- Missing glucose values were linearly interpolated.
+
+## Figures
+
+```{r}
+#| label: fig-indiv-glucose-multiple-days
+#| fig-cap: Individual glucose curves
+#| message: false
+fda_df |>
+  ggplot(aes(y = Glucose, color = factor(ID))) +
+  geom_spaghetti(alpha = 0.1) +
+  facet_wrap(~Group) +
+  theme(legend.position = "none")
+```
+
+```{r}
+#| label: fig-mean-glucose-multiple-days
+#| fig-cap: Mean glucose curves
+#| message: false
+fda_df |>
+  group_by(Group) |>
+  reframe(mean_gluc = mean(Glucose, na.rm = T)) |>
+  mutate(smooth_mean = tfb(mean_gluc, verbose = FALSE)) |>
+  ggplot(aes(y = smooth_mean, color = Group)) +
+  geom_spaghetti(linewidth = 1.25, alpha = 1)
+```
+
+## Multilevel Functional PCA
+
+Accounts for multiple observations of a function within each participant.
+
+```{r}
+#| eval: false
+Y <- fda_df$Glucose %>%
+  as.matrix()
+
+fit.mfpca <- mfpca.sc(Y, id = fda_df$ID)
+plot_shiny(fit.mfpca)
+```
+
+## Time-varying Functional PCA
+
+Accounts for multiple observations of a function within each participant, and incorporates information about the actual time of each visit.
+
+# Questions for Andrea and Brigs
+
+1. Is it okay to average each person's data across dates. For example, each person in this FDA dataset has a value at 00:00, which is the average of all their midnight glucose values. Then the FDA is fit to an average day of data for each person.
+  - Are we losing too much information this way?
+  - This also relates to Janet's discovery about Dexcom data. How should we deal with that?
+
+2. Is it okay to do linear interpretation between glucose values?
+
+3. Assuming I can get TV-FPCA, what would we use as a start date? First visit?
