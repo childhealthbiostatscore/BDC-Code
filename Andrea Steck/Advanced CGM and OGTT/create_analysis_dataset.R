@@ -20,7 +20,7 @@ fda_df <- cgm %>%
     names_from = Time,
     values_from = SensorValue,
     id_cols = c(ID, Date),
-    values_fn = mean
+    values_fn = ~ mean(.x, na.rm = TRUE)
   ) %>%
   arrange(ID, Date) %>%
   tf_gather(`0`:`86100`, key = "Glucose", evaluator = tf_approx_none)
