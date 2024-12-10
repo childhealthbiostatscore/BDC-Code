@@ -305,12 +305,15 @@ kable(analysis %>% filter(redcap_event_name == "Baseline", !is.na(a1c_group)) %>
 )
 ```
 
+
 ```{r, include = F}
 library(cowplot)
 # 4 box graph showing differences between low, middle and high a1c groups using line graphs.  Measure on Y axis and timepoints across X access (baseline/month1, m3, m6, m9, m12)
 # grab vars
 analysis = analysis %>% mutate(gly_sensor_u70 = gly_sensor_54_69 + gly_sensor_u54)
 plot_df = analysis %>% select(a1c_group, redcap_event_name, gly_time_am, gly_sensorwear, gly_a1c, gly_sensor_70_180, gly_sensor_u70, gly_dailybolus) %>% filter(!is.na(a1c_group))
+meanna = function(x){return(mean(x, na.rm = T))}
+test_df = plot_df %>% group_by(a1c_group, redcap_event_name) %>% summarise_all(meanna)
 
 # a)	Automated Mode Use, CGM Use 
 use_plot_df = plot_df %>% filter(redcap_event_name != "Baseline") %>% select(a1c_group, redcap_event_name, gly_sensorwear, gly_time_am) %>% 
@@ -319,10 +322,11 @@ use_plot_df$Measure = factor(use_plot_df$Measure, levels = c("gly_sensorwear", "
 
 # remove the sensorwear
 use_plot_df = use_plot_df %>% filter(Measure != "% Sensor Wear")
+use_plot_df$a1c_group = factor(use_plot_df$a1c_group, levels = c("Low","Middle","High"))
 
 use_plot = ggplot(data = use_plot_df, aes(x = redcap_event_name, y = Percent, shape = a1c_group, linetype = Measure, group = interaction(a1c_group, Measure))) +
   xlab("") + ylab("% Automated Mode Use") + ylim(50,100) +  
-  stat_summary(geom='line', fun = mean) +  stat_summary(geom='point', fun = mean) +
+  stat_summary(geom='line', fun = mean) +  stat_summary(geom='point', fun = meanna) +
   theme_classic() + labs(title = "", tag = "B") + theme(plot.title = element_text(hjust = 0.5),
                                                         plot.tag = element_text(size = 32, hjust = 0.5),
                                                         plot.tag.location = "panel",
@@ -338,9 +342,11 @@ use_plot
 
 # b)	A1c
 a1c_plot_df = plot_df %>% select(a1c_group, redcap_event_name, gly_a1c) 
+a1c_plot_df$a1c_group = factor(a1c_plot_df$a1c_group, levels = c("Low","Middle","High"))
+
 a1c_plot = ggplot(data = a1c_plot_df, aes(x = redcap_event_name, y = gly_a1c, shape = a1c_group, group = a1c_group)) +
   xlab("")+ ylab("A1C")+
-  stat_summary(geom='line', fun = mean) +  stat_summary(geom='point', fun = mean) +
+  stat_summary(geom='line', fun = mean) +  stat_summary(geom='point', fun = meanna) +
   theme_classic() + labs(title = "", tag = "A") + theme(plot.title = element_text(hjust = 0.5),
                                                         plot.tag = element_text(size = 32, hjust = 0.5),
                                                         plot.tag.location = "panel" ,
@@ -350,12 +356,15 @@ a1c_plot = ggplot(data = a1c_plot_df, aes(x = redcap_event_name, y = gly_a1c, sh
 # c)	TIR (70-180 mg/dL) and TBR (<70 mg/dL)
 tir_plot_df = plot_df %>% select(a1c_group, redcap_event_name, gly_sensor_70_180, gly_sensor_u70) %>% 
   pivot_longer(cols = gly_sensor_70_180:gly_sensor_u70, names_to = "Measure", values_to = "Sensor") %>% filter(!is.na(Sensor))
+
+tir_plot_df$a1c_group = factor(tir_plot_df$a1c_group, levels = c("Low","Middle","High"))
+
 tir_plot_df$Measure = factor(tir_plot_df$Measure, levels = c("gly_sensor_70_180", "gly_sensor_u70"), labels = c("70-180 mg/dL", "< 70 mg/dL"))
 
 tir_plot = ggplot(data = tir_plot_df, aes(x = redcap_event_name, y = Sensor, shape = a1c_group, linetype = Measure, group = interaction(a1c_group, Measure))) +
   xlab("")+ ylab("Percent")  + ylim(0,80) + guides(linetype = guide_legend(""),
                                                    shape = "none")  + 
-  stat_summary(geom='line', fun = mean) +  stat_summary(geom='point', fun = mean) +
+  stat_summary(geom='line', fun = mean) +  stat_summary(geom='point', fun = meanna) +
   theme_classic() + labs(title = "", tag = "D") + theme(plot.title = element_text(hjust = 0.5),
                                                         plot.tag = element_text(size = 32, hjust = 0.5),
                                                         plot.tag.location = "panel",
@@ -365,9 +374,11 @@ tir_plot = ggplot(data = tir_plot_df, aes(x = redcap_event_name, y = Sensor, sha
 
 # d)	Number of boluses/day 
 bol_plot_df = plot_df %>% select(a1c_group, redcap_event_name, gly_dailybolus) 
+bol_plot_df$a1c_group = factor(bol_plot_df$a1c_group, levels = c("Low","Middle","High"))
+
 bol_plot = ggplot(data = bol_plot_df, aes(x = redcap_event_name, y = gly_dailybolus, shape = a1c_group, group = a1c_group)) +
   xlab("")+ ylab("Meal Boluses Per Day")+ guides(shape = guide_legend("A1C Group")) + 
-  stat_summary(geom='line', fun = mean) +  stat_summary(geom='point', fun = mean) +
+  stat_summary(geom='line', fun = mean) +  stat_summary(geom='point', fun = meanna) +
   theme_classic() + labs(title = "", tag = "C")  + theme(plot.title = element_text(hjust = 0.5),
                                                         plot.tag = element_text(size = 32, hjust = 0.5),
                                                         plot.tag.location = "panel" )
@@ -389,6 +400,97 @@ analysis %>% group_by(a1c_group, redcap_event_name) %>% summarise(mean = mean(gl
 analysis2 %>% group_by(a1c_group, redcap_event_name) %>% summarise(mean = mean(gly_time_am))
 
 ```
+
+
+```{r, include = F}
+library(cowplot)
+# 4 box graph showing differences between low, middle and high a1c groups using line graphs.  Measure on Y axis and timepoints across X access (baseline/month1, m3, m6, m9, m12)
+# grab vars
+analysis = analysis %>% mutate(gly_sensor_u70 = gly_sensor_54_69 + gly_sensor_u54)
+plot_df = analysis %>% select(a1c_group, redcap_event_name, gly_time_am, gly_sensorwear, gly_a1c, gly_sensor_70_180, gly_sensor_u70, gly_dailybolus) %>% filter(!is.na(a1c_group))
+meanna = function(x){return(mean(x, na.rm = T))}
+test_df = plot_df %>% group_by(a1c_group, redcap_event_name) %>% summarise_all(meanna)
+
+use_plot_df = test_df %>% select(a1c_group, redcap_event_name, gly_time_am) %>% filter(redcap_event_name != "Baseline")
+use_plot_df$a1c_group = factor(use_plot_df$a1c_group, levels = c("Low","Middle","High"))
+
+use_plot = ggplot(data = use_plot_df, aes(x = redcap_event_name, y = gly_time_am, shape = a1c_group, group = a1c_group)) +
+  xlab("") + ylab("% Automated Mode Use") + ylim(30,100) +  
+  stat_summary(geom='line', fun = mean) +  stat_summary(geom='point', fun = mean) +
+  theme_classic() + labs(title = "", tag = "B") + theme(plot.title = element_text(hjust = 0.5),
+                                                        plot.tag = element_text(size = 32, hjust = 0.5),
+                                                        plot.tag.location = "panel",
+                                                        legend.position = "none")
+
+
+### TEST
+use_plot
+
+#####
+
+
+
+# b)	A1c
+a1c_plot_df = test_df %>% select(a1c_group, redcap_event_name, gly_a1c) 
+a1c_plot_df$a1c_group = factor(a1c_plot_df$a1c_group, levels = c("Low","Middle","High"))
+
+a1c_plot = ggplot(data = a1c_plot_df, aes(x = redcap_event_name, y = gly_a1c, shape = a1c_group, group = a1c_group)) +
+  xlab("")+ ylab("A1C")+
+  stat_summary(geom='line', fun = mean) +  stat_summary(geom='point', fun = meanna) +
+  theme_classic() + labs(title = "", tag = "A") + theme(plot.title = element_text(hjust = 0.5),
+                                                        plot.tag = element_text(size = 32, hjust = 0.5),
+                                                        plot.tag.location = "panel" ,
+                                                        legend.position = "none")
+
+a1c_plot
+# c)	TIR (70-180 mg/dL) and TBR (<70 mg/dL)
+tir_plot_df = plot_df %>% select(a1c_group, redcap_event_name, gly_sensor_70_180, gly_sensor_u70) %>% 
+  pivot_longer(cols = gly_sensor_70_180:gly_sensor_u70, names_to = "Measure", values_to = "Sensor") %>% filter(!is.na(Sensor))
+
+tir_plot_df$a1c_group = factor(tir_plot_df$a1c_group, levels = c("Low","Middle","High"))
+
+tir_plot_df$Measure = factor(tir_plot_df$Measure, levels = c("gly_sensor_70_180", "gly_sensor_u70"), labels = c("70-180 mg/dL", "< 70 mg/dL"))
+
+tir_plot = ggplot(data = tir_plot_df, aes(x = redcap_event_name, y = Sensor, shape = a1c_group, linetype = Measure, group = interaction(a1c_group, Measure))) +
+  xlab("")+ ylab("Percent")  + ylim(0,80) + guides(linetype = guide_legend(""),
+                                                   shape = "none")  + 
+  stat_summary(geom='line', fun = mean) +  stat_summary(geom='point', fun = meanna) +
+  theme_classic() + labs(title = "", tag = "D") + theme(plot.title = element_text(hjust = 0.5),
+                                                        plot.tag = element_text(size = 32, hjust = 0.5),
+                                                        plot.tag.location = "panel",
+                                                        legend.position = c(0.9,0.3))
+
+
+
+# d)	Number of boluses/day 
+bol_plot_df = test_df %>% select(a1c_group, redcap_event_name, gly_dailybolus) 
+bol_plot_df$a1c_group = factor(bol_plot_df$a1c_group, levels = c("Low","Middle","High"))
+
+bol_plot = ggplot(data = bol_plot_df, aes(x = redcap_event_name, y = gly_dailybolus, shape = a1c_group, group = a1c_group)) +
+  xlab("")+ ylab("Meal Boluses Per Day")+ guides(shape = guide_legend("A1C Group")) + 
+  stat_summary(geom='line', fun = mean) +  stat_summary(geom='point', fun = meanna) +
+  theme_classic() + labs(title = "", tag = "C")  + theme(plot.title = element_text(hjust = 0.5),
+                                                        plot.tag = element_text(size = 32, hjust = 0.5),
+                                                        plot.tag.location = "panel" )
+
+legend_grid = get_legend(bol_plot)
+
+bol_plot = bol_plot + theme(legend.position = "none")
+######################
+# figure_grid = plot_grid(a1c_plot,use_plot, bol_plot,tir_plot, ncol = 2)
+# figure_grid
+# figure_grid2 = ggdraw(plot_grid(plot_grid(figure_grid, ncol = 1),
+#                    plot_grid(NULL, legend_grid, ncol = 1),
+#                              rel_widths = c(1, 0.2)))
+# 
+# ggsave("a1c_groups.png", plot = figure_grid2, height = 7, width = 15)
+
+use_plot_df %>% filter(a1c_group == "High") %>% filter(Measure != "% Sensor Wear") %>% group_by(redcap_event_name) %>% summarise(mean = mean(Percent))
+analysis %>% group_by(a1c_group, redcap_event_name) %>% summarise(mean = mean(gly_time_am))
+analysis2 %>% group_by(a1c_group, redcap_event_name) %>% summarise(mean = mean(gly_time_am))
+
+```
+
 
 ```{r,echo = FALSE}
 use_plot_df %>% filter(a1c_group == "High") %>% filter(Measure != "% Sensor Wear") %>% group_by(redcap_event_name) %>% summarise(mean = mean(Percent))
