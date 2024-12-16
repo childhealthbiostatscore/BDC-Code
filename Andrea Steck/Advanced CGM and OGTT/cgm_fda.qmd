@@ -32,12 +32,11 @@ knitr::opts_knit$set(root.dir = "/Users/timvigers/Library/CloudStorage/OneDrive-
 
 ```{r}
 # Import CGM data
-cgm <- read_sas("./Data_Raw/rawcgmdata.sas7bdat")
+cgm <- read_sas("./Data_Raw/rawcgmdata_clean.sas7bdat")
 # Round time to nearest minute
-cgm$sensordisplaytime <- parse_date_time(cgm$sensordisplaytime,
-  orders = c("Ymd HMS", "Ymd")
-)
+cgm$sensordisplaytime <- as.POSIXct(cgm$sensordisplaytime, origin = "1960-01-01")
 cgm$sensordisplaytime <- round_date(cgm$sensordisplaytime, unit = "5 minutes")
+cgm <- cgm %>% arrange(ID, DOVISIT, sensordisplaytime)
 # Separate date and time columns
 cgm$Date <- as_date(cgm$sensordisplaytime)
 cgm$Time <- as_hms(cgm$sensordisplaytime)
@@ -46,12 +45,11 @@ df <- read.csv("./Data_Clean/Longitudinal CGM data for 165 subjects.csv", na.str
 # Participant info
 df <- df %>%
   select(ID, Date.of.T1D.dx) %>%
-  filter(rowSums(!is.na(.)) > 0) %>%
+  filter(rowSums(!is.na(.)) > 0) %>% # Remove rows that are entirely missing
   distinct() %>%
-  rename(`Date of Diagnosis` = Date.of.T1D.dx)
-df$`Date of Diagnosis` <- mdy(df$`Date of Diagnosis`)
+  rename(`Date of Diagnosis` = mdy(Date.of.T1D.dx))
 df$Group <- factor(!is.na(df$`Date of Diagnosis`),
-  levels = c(F, T), labels = c("No T1D", "T1D")
+  levels = c(F, T), labels = c("Non-Progressor", "Progressor")
 )
 ```
 
@@ -125,10 +123,12 @@ fda_df <- cgm %>%
     values_fn = ~ mean(.x, na.rm = TRUE)
   ) %>%
   arrange(ID)
-t = df
-t$Glucose = fda_df %>% select(-ID) %>% as.matrix()
+t <- df
+t$Glucose <- fda_df %>%
+  select(-ID) %>%
+  as.matrix()
 
-fit.fosr = bayes_fosr(Glucose~Group, data = t)
+fit.fosr <- bayes_fosr(Glucose ~ Group, data = t)
 plot_shiny(fit.fosr)
 ```
 
