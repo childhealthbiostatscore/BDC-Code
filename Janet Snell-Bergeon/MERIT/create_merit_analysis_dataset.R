@@ -11,10 +11,11 @@ df <- exportRecordsTyped(rcon)
 # Subset tracking data
 tracking <- df %>%
   select(
-    participant_id, screening_exercise_order, contains("track_bc"),
+    participant_id, contains("screening_exercise_order"), contains("track_bc"),
     track_period_start, track_date_postitive,
     track_period_start_mo2, track_date_positive_ovu_2,
-    track_period_start_mo3, track_date_positive_ovu_3
+    track_period_start_mo3, track_date_positive_ovu_3,
+    contains("mo1_ex"), contains("mo2_ex"), contains("mo3_ex")
   ) %>%
   group_by(participant_id) %>%
   summarise(across(everything(), ~ first(.x, na_rm = T)))
@@ -47,7 +48,7 @@ cgm <- lapply(cgm, function(f) {
 cgm <- do.call(rbind, cgm)
 # Format glucose column
 cgm$sensorglucose <- as.numeric(cgm$sensorglucose)
-cgm = cgm[!is.na(cgm$sensorglucose),]
+cgm <- cgm[!is.na(cgm$sensorglucose), ]
 # Add study phase
 cgm <- left_join(cgm, tracking, by = join_by(participant_id))
 cgm$study_phase <- "Month 1"
@@ -62,8 +63,34 @@ cgm$menstrual_phase[cgm$study_phase == "Month 2" &
 cgm$menstrual_phase[cgm$study_phase == "Month 3" &
   cgm$timestamp >= cgm$track_date_positive_ovu_3 + days(1)] <- "Luteal"
 cgm$menstrual_phase[cgm$track_bc == "Yes"] <- NA
-cgm_check <- cgm %>%
-  group_by(participant_id, study_phase, menstrual_phase) %>%
-  slice_min(row_number())
+# Add exercise timing info
+cgm$exercising <- "No"
+cgm$exercising[cgm$timestamp >= cgm$mo1_ex1_time &
+  cgm$timestamp < cgm$mo1_ex1_time_stop] <- "Yes"
+cgm$exercising[cgm$timestamp >= cgm$mo1_ex2_time &
+  cgm$timestamp < cgm$mo1_ex2_time_stop] <- "Yes"
+cgm$exercising[cgm$timestamp >= cgm$mo2_ex1_time &
+  cgm$timestamp < cgm$mo2_ex1_time_stop] <- "Yes"
+cgm$exercising[cgm$timestamp >= cgm$mo2_ex2_time &
+  cgm$timestamp < cgm$mo2_ex2_time_stop] <- "Yes"
+cgm$exercising[cgm$timestamp >= cgm$mo3_ex1_time &
+  cgm$timestamp < cgm$mo3_ex1_time_stop] <- "Yes"
+cgm$exercising[cgm$timestamp >= cgm$mo3_ex2_time &
+  cgm$timestamp < cgm$mo3_ex2_time_stop] <- "Yes"
+# Exercise type
+cgm$exercise_type <- cgm$screening_exercise_order_mo1
+cgm$exercise_type[cgm$study_phase == "Month 2"] <-
+  cgm$screening_exercise_order_mo2[cgm$study_phase == "Month 2"]
+cgm$exercise_type[cgm$study_phase == "Month 3"] <-
+  cgm$screening_exercise_order_mo3[cgm$study_phase == "Month 3"]
+# For now use standard definitions of daytime and nighttime
+cgm$time_of_day <- "Day"
+cgm$time_of_day[hour(cgm$timestamp) < 6 | hour(cgm$timestamp) > 23] <- "Night"
+# Remove unnecessary columns
+cgm <- cgm %>%
+  select(
+    participant_id, timestamp, sensorglucose, time_of_day, study_phase,
+    menstrual_phase, exercise_type, exercising
+  )
 # Save dataset
 save(cgm, file = "./Data_Clean/analysis_data.RData")
