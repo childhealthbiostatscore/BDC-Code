@@ -1,0 +1,121 @@
+---
+title: "MERIT Analyses"
+author: "Tim Vigers"
+date: "today"
+date-format: long
+format:
+  html:
+    toc: true
+    toc-depth: 5
+    toc-float: true
+    code-fold: true
+    self-contained: true
+    fig-cap-location: top
+    page-layout: full
+    theme:
+      light: flatly
+      dark: darkly
+bibliography: /Users/timvigers/Dropbox/Miscellaneous/zotero.bib
+csl: /Users/timvigers/Dropbox/GitHub/styles/american-medical-association.csl
+editor: source
+---
+
+```{r setup}
+#| include: false
+library(tidyverse)
+library(lubridate)
+library(hms)
+knitr::opts_knit$set(root.dir = "/Users/timvigers/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Janet Snell-Bergeon/MERIT")
+```
+
+```{r data cleaning}
+load("./Data_Clean/analysis_data.RData")
+```
+
+```{r functions}
+# Phase plot for a single participant - assumes specific column names for now
+merit_phase_plot <- function(df = cgm, phase = "menstrual_phase") {
+  # Get start and end times
+  if (phase == "menstrual_phase") {
+    phases <- df %>%
+      group_by(study_phase, menstrual_phase) %>%
+      summarise(
+        start = first(timestamp, na_rm = T),
+        end = last(timestamp, na_rm = T),
+        .groups = "drop"
+      )
+    p <- df %>%
+      ggplot(aes(x = timestamp, y = sensorglucose)) +
+      geom_rect(
+        data = phases, aes(
+          xmin = start, xmax = end, ymin = -Inf, ymax = Inf,
+          fill = menstrual_phase
+        ),
+        alpha = 0.2, inherit.aes = F
+      ) +
+      geom_point(shape = ".") +
+      scale_fill_discrete(name = "Menstrual Phase")
+  } else if (phase == "study_phase") {
+    phases <- df %>%
+      group_by(study_phase) %>%
+      summarise(
+        start = first(timestamp, na_rm = T),
+        end = last(timestamp, na_rm = T),
+        .groups = "drop"
+      )
+    p <- df %>%
+      ggplot(aes(x = timestamp, y = sensorglucose)) +
+      geom_rect(
+        data = phases, aes(
+          xmin = start, xmax = end, ymin = -Inf, ymax = Inf,
+          fill = study_phase
+        ),
+        alpha = 0.2, inherit.aes = F
+      ) +
+      geom_point(shape = ".") +
+      scale_fill_discrete(name = "Study Phase")
+  }
+  # Plot formatting
+  p <- p +
+    ylim(c(35, 405)) +
+    xlab("Time") +
+    ylab("Sensor Glucose (mg/dL)") +
+    theme_bw()
+  return(p)
+}
+merit_agp <- function(df = cgm) {
+  p <- df %>%
+    mutate(Time = as_hms(round_date(timestamp, "5 minutes"))) %>%
+    group_by(study_phase, menstrual_phase, Time) %>%
+    summarise(sensorglucose = mean(sensorglucose), .groups = "drop") %>%
+    ggplot(aes(x = Time, y = sensorglucose)) +
+    geom_point(shape = ".") +
+    geom_smooth(se = F, method = "loess", formula = "y ~ x") +
+    ylim(c(35, 405)) +
+    xlab("Time") +
+    ylab("Sensor Glucose (mg/dL)") +
+    facet_wrap(~ study_phase + menstrual_phase)
+}
+```
+
+# CGM Plots
+
+```{r results='asis'}
+invisible(lapply(unique(cgm$participant_id), function(id) {
+  df <- cgm %>% filter(participant_id == id)
+  cat("\n")
+  cat("\n")
+  cat("##", id)
+  cat("\n")
+  cat("\n")
+  merit_phase_plot(df, phase = "menstrual_phase") %>% print()
+  cat("\n")
+  cat("\n")
+  merit_phase_plot(df, phase = "study_phase") %>% print()
+  cat("\n")
+  cat("\n")
+  merit_agp(df) %>% print()
+  cat("\n")
+  cat("\n")
+}))
+```

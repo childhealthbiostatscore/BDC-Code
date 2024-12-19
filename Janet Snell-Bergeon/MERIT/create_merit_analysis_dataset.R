@@ -1,21 +1,23 @@
 library(redcapAPI)
 library(tidyverse)
 library(lubridate)
-library(cgmanalysis)
-# Get tracking information
+# Download from REDCap
 unlockREDCap(c(rcon = "MERIT Study"),
   keyring = "API_KEYs",
   envir = 1,
   url = "https://redcap.ucdenver.edu/api/"
 )
-tracking <- exportReportsTyped(rcon, report_id = 127037)
-tracking <- tracking %>%
+df <- exportRecordsTyped(rcon)
+# Subset tracking data
+tracking <- df %>%
   select(
-    participant_id,
+    participant_id, screening_exercise_order, contains("track_bc"),
     track_period_start, track_date_postitive,
     track_period_start_mo2, track_date_positive_ovu_2,
     track_period_start_mo3, track_date_positive_ovu_3
-  )
+  ) %>%
+  group_by(participant_id) %>%
+  summarise(across(everything(), ~ first(.x, na_rm = T)))
 # Working directory
 setwd("/Users/timvigers/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Janet Snell-Bergeon/MERIT")
 # Pull in everyone's CGM data
@@ -43,6 +45,9 @@ cgm <- lapply(cgm, function(f) {
 })
 # Combine CGM tables together
 cgm <- do.call(rbind, cgm)
+# Format glucose column
+cgm$sensorglucose <- as.numeric(cgm$sensorglucose)
+cgm = cgm[!is.na(cgm$sensorglucose),]
 # Add study phase
 cgm <- left_join(cgm, tracking, by = join_by(participant_id))
 cgm$study_phase <- "Month 1"
@@ -56,3 +61,9 @@ cgm$menstrual_phase[cgm$study_phase == "Month 2" &
   cgm$timestamp >= cgm$track_date_positive_ovu_2 + days(1)] <- "Luteal"
 cgm$menstrual_phase[cgm$study_phase == "Month 3" &
   cgm$timestamp >= cgm$track_date_positive_ovu_3 + days(1)] <- "Luteal"
+cgm$menstrual_phase[cgm$track_bc == "Yes"] <- NA
+cgm_check <- cgm %>%
+  group_by(participant_id, study_phase, menstrual_phase) %>%
+  slice_min(row_number())
+# Save dataset
+save(cgm, file = "./Data_Clean/analysis_data.RData")
