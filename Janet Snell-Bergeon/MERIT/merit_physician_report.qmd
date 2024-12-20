@@ -85,18 +85,60 @@ merit_phase_plot <- function(df = cgm, phase = "menstrual_phase") {
     theme_bw()
   return(p)
 }
-merit_agp <- function(df = cgm) {
+mean_glucose_plot <- function(df = cgm) {
   p <- df %>%
     mutate(Time = as_hms(round_date(timestamp, "5 minutes"))) %>%
-    group_by(study_phase, menstrual_phase, Time) %>%
+    group_by(menstrual_phase, Time) %>%
     summarise(sensorglucose = mean(sensorglucose), .groups = "drop") %>%
-    ggplot(aes(x = Time, y = sensorglucose)) +
+    ggplot(aes(x = Time, y = sensorglucose, color = menstrual_phase)) +
     geom_point(shape = ".") +
-    geom_smooth(se = F, method = "loess", formula = "y ~ x") +
-    ylim(c(35, 405)) +
+    geom_line() +
+    scale_color_discrete(name = "Menstrual Phase") +
     xlab("Time") +
-    ylab("Sensor Glucose (mg/dL)") +
-    facet_wrap(~ study_phase + menstrual_phase)
+    ylab("Mean Sensor Glucose (mg/dL)") +
+    theme_bw()
+  return(p)
+}
+sd_glucose_plot <- function(df = cgm) {
+  p <- df %>%
+    mutate(Time = as_hms(round_date(timestamp, "5 minutes"))) %>%
+    group_by(menstrual_phase, Time) %>%
+    summarise(sensorglucose = sd(sensorglucose), .groups = "drop") %>%
+    ggplot(aes(x = Time, y = sensorglucose, color = menstrual_phase)) +
+    geom_point(shape = ".") +
+    geom_line() +
+    scale_color_discrete(name = "Menstrual Phase") +
+    xlab("Time") +
+    ylab("Sensor Glucose SD (mg/dL)") +
+    theme_bw()
+  return(p)
+}
+tir_plot <- function(df = cgm, range = c(70, 180)) {
+  p <- df %>%
+    mutate(Time = as_hms(round_date(timestamp, "5 minutes"))) %>%
+    group_by(menstrual_phase, Time) %>%
+    summarise(
+      sensorglucose =
+        mean(sensorglucose >= range[1] & sensorglucose <= range[2]) * 100,
+      .groups = "drop"
+    ) %>%
+    ggplot(aes(x = Time, y = sensorglucose, color = menstrual_phase)) +
+    geom_point(shape = ".") +
+    geom_line() +
+    scale_color_discrete(name = "Menstrual Phase") +
+    xlab("Time") +
+    theme_bw()
+  if (is.infinite(range[1])) {
+    p <- p +
+      ylab(paste0("% of Values < ", range[2]))
+  } else if (is.infinite(range[2])) {
+    p <- p +
+      ylab(paste0("% of Values > ", range[1]))
+  } else {
+    p <- p +
+      ylab(paste0("% of Values in Range (", range[1], " - ", range[2], ")"))
+  }
+  return(p)
 }
 ```
 
@@ -111,7 +153,7 @@ invisible(lapply(unique(cgm$participant_id), function(id) {
   cat("## Tables")
   cat("\n")
   cat("\n")
-  cat("### CGM Matrics by Phase (Overall)")
+  cat("### CGM Metrics by Phase (Overall)")
   cat("\n")
   cat("\n")
   df %>%
@@ -133,10 +175,11 @@ invisible(lapply(unique(cgm$participant_id), function(id) {
       `Glucose SD` = sd(sensorglucose)
     ) %>%
     gt() %>%
+    cols_label(menstrual_phase = "Menstrual Phase") %>%
     print()
   cat("\n")
   cat("\n")
-  cat("### CGM Matrics by Phase and Time of Day")
+  cat("### CGM Metrics by Phase and Time of Day")
   cat("\n")
   cat("\n")
   df %>%
@@ -159,6 +202,10 @@ invisible(lapply(unique(cgm$participant_id), function(id) {
       .groups = "drop"
     ) %>%
     gt() %>%
+    cols_label(
+      time_of_day ~ "Time of Day",
+      menstrual_phase = "Menstrual Phase"
+    ) %>%
     print()
   cat("\n")
   cat("\n")
@@ -177,10 +224,34 @@ invisible(lapply(unique(cgm$participant_id), function(id) {
   merit_phase_plot(df, phase = "study_phase") %>% print()
   cat("\n")
   cat("\n")
-  cat("### Mean Glucose Values by Study and Menstrual Phase")
+  cat("### Mean Glucose Values by Menstrual Phase")
   cat("\n")
   cat("\n")
-  merit_agp(df) %>% print()
+  mean_glucose_plot(df) %>% print()
+  cat("\n")
+  cat("\n")
+  cat("### Glucose SD by Menstrual Phase")
+  cat("\n")
+  cat("\n")
+  sd_glucose_plot(df) %>% print()
+  cat("\n")
+  cat("\n")
+  cat("### TIR by Menstrual Phase")
+  cat("\n")
+  cat("\n")
+  tir_plot(df) %>% print()
+  cat("\n")
+  cat("\n")
+  tir_plot(df, c(-Inf, 70)) %>% print()
+  cat("\n")
+  cat("\n")
+  tir_plot(df, c(-Inf, 54)) %>% print()
+  cat("\n")
+  cat("\n")
+  tir_plot(df, c(180, Inf)) %>% print()
+  cat("\n")
+  cat("\n")
+  tir_plot(df, c(200, Inf)) %>% print()
   cat("\n")
   cat("\n")
 }))

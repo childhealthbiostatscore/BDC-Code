@@ -62,7 +62,7 @@ cgm$menstrual_phase[cgm$study_phase == "Month 2" &
   cgm$timestamp >= cgm$track_date_positive_ovu_2 + days(1)] <- "Luteal"
 cgm$menstrual_phase[cgm$study_phase == "Month 3" &
   cgm$timestamp >= cgm$track_date_positive_ovu_3 + days(1)] <- "Luteal"
-cgm$menstrual_phase[cgm$track_bc == "Yes"] <- NA
+cgm$menstrual_phase[cgm$track_bc == "Yes"] <- "On Birth Control"
 # Add exercise timing info
 cgm$exercising <- "No"
 cgm$exercising[cgm$timestamp >= cgm$mo1_ex1_time &
@@ -92,5 +92,11 @@ cgm <- cgm %>%
     participant_id, timestamp, sensorglucose, time_of_day, study_phase,
     menstrual_phase, exercise_type, exercising
   )
+# Activity
+activity <- read.csv("./Data_Raw/ActiGraph Watch Data Downloads/Data Transfer - 12_19_2024 9_18 PM UTC_638702400035593179/epochsummarydata.csv")
+# Round timestamps to 1 minute and combine
+# activity$timestamp <- round_date(activity$timestamp, "1 minute")
+# cgm$timestamp <- round_date(cgm$timestamp, "1 minute")
+# cgm <- full_join(cgm, activity, by = join_by(participant_id, timestamp))
 # Save dataset
 save(cgm, file = "./Data_Clean/analysis_data.RData")
