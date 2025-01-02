@@ -77,6 +77,20 @@ cgm$exercising[cgm$timestamp >= cgm$mo3_ex1_time &
   cgm$timestamp < cgm$mo3_ex1_time_stop] <- "Yes"
 cgm$exercising[cgm$timestamp >= cgm$mo3_ex2_time &
   cgm$timestamp < cgm$mo3_ex2_time_stop] <- "Yes"
+# 24 hours post-exercise
+cgm$exercise_24_hr_window <- "No"
+cgm$exercise_24_hr_window[cgm$timestamp >= cgm$mo1_ex1_time_stop &
+  cgm$timestamp < (cgm$mo1_ex1_time_stop + hours(24))] <- "Yes"
+cgm$exercise_24_hr_window[cgm$timestamp >= cgm$mo1_ex2_time_stop &
+  cgm$timestamp < (cgm$mo1_ex2_time_stop + hours(24))] <- "Yes"
+cgm$exercise_24_hr_window[cgm$timestamp >= cgm$mo2_ex1_time_stop &
+  cgm$timestamp < (cgm$mo2_ex1_time_stop + hours(24))] <- "Yes"
+cgm$exercise_24_hr_window[cgm$timestamp >= cgm$mo2_ex2_time_stop &
+  cgm$timestamp < (cgm$mo2_ex2_time_stop + hours(24))] <- "Yes"
+cgm$exercise_24_hr_window[cgm$timestamp >= cgm$mo3_ex1_time_stop &
+  cgm$timestamp < (cgm$mo3_ex1_time_stop + hours(24))] <- "Yes"
+cgm$exercise_24_hr_window[cgm$timestamp >= cgm$mo3_ex2_time_stop &
+  cgm$timestamp < (cgm$mo3_ex2_time_stop + hours(24))] <- "Yes"
 # Exercise type
 cgm$exercise_type <- cgm$screening_exercise_order_mo1
 cgm$exercise_type[cgm$study_phase == "Month 2"] <-
@@ -90,7 +104,7 @@ cgm$time_of_day[hour(cgm$timestamp) < 6 | hour(cgm$timestamp) > 23] <- "Night"
 cgm <- cgm %>%
   select(
     participant_id, timestamp, sensorglucose, time_of_day, study_phase,
-    menstrual_phase, exercise_type, exercising
+    menstrual_phase, exercise_type, exercising, exercise_24_hr_window
   )
 # Activity
 activity <- read.csv("./Data_Raw/ActiGraph Watch Data Downloads/Data Transfer - 12_19_2024 9_18 PM UTC_638702400035593179/epochsummarydata.csv")

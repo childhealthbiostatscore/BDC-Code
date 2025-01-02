@@ -84,50 +84,54 @@ merit_phase_plot <- function(df = cgm, phase = "menstrual_phase") {
     ylim(c(35, 405)) +
     xlab("Time") +
     ylab("Sensor Glucose (mg/dL)") +
+    scale_x_time(breaks = c(0, 43200, 86400)) +
     theme_bw()
   return(p)
 }
-mean_glucose_plot <- function(df = cgm) {
+mean_glucose_plot <- function(df = cgm, by = "menstrual_phase") {
   p <- df %>%
     mutate(Time = as_hms(round_date(timestamp, "5 minutes"))) %>%
-    group_by(menstrual_phase, Time) %>%
+    group_by(.data[[by]], Time) %>%
     summarise(sensorglucose = mean(sensorglucose), .groups = "drop") %>%
-    ggplot(aes(x = Time, y = sensorglucose, color = menstrual_phase)) +
+    ggplot(aes(x = Time, y = sensorglucose, color = .data[[by]])) +
     geom_point(shape = ".") +
     geom_line() +
-    scale_color_discrete(name = "Menstrual Phase") +
+    scale_color_discrete(name = element_blank()) +
+    scale_x_time(breaks = c(0, 43200, 86400)) +
     xlab("Time") +
     ylab("Mean Sensor Glucose (mg/dL)") +
     theme_bw()
   return(p)
 }
-sd_glucose_plot <- function(df = cgm) {
+sd_glucose_plot <- function(df = cgm, by = "menstrual_phase") {
   p <- df %>%
     mutate(Time = as_hms(round_date(timestamp, "5 minutes"))) %>%
-    group_by(menstrual_phase, Time) %>%
+    group_by(.data[[by]], Time) %>%
     summarise(sensorglucose = sd(sensorglucose), .groups = "drop") %>%
-    ggplot(aes(x = Time, y = sensorglucose, color = menstrual_phase)) +
+    ggplot(aes(x = Time, y = sensorglucose, color = .data[[by]])) +
     geom_point(shape = ".") +
     geom_line() +
-    scale_color_discrete(name = "Menstrual Phase") +
+    scale_color_discrete(name = element_blank()) +
+    scale_x_time(breaks = c(0, 43200, 86400)) +
     xlab("Time") +
     ylab("Sensor Glucose SD (mg/dL)") +
     theme_bw()
   return(p)
 }
-tir_plot <- function(df = cgm, range = c(70, 180)) {
+tir_plot <- function(df = cgm, range = c(70, 180), by = "menstrual_phase") {
   p <- df %>%
     mutate(Time = as_hms(round_date(timestamp, "5 minutes"))) %>%
-    group_by(menstrual_phase, Time) %>%
+    group_by(.data[[by]], Time) %>%
     summarise(
       sensorglucose =
         mean(sensorglucose >= range[1] & sensorglucose <= range[2]) * 100,
       .groups = "drop"
     ) %>%
-    ggplot(aes(x = Time, y = sensorglucose, color = menstrual_phase)) +
+    ggplot(aes(x = Time, y = sensorglucose, color = .data[[by]])) +
     geom_point(shape = ".") +
     geom_line() +
-    scale_color_discrete(name = "Menstrual Phase") +
+    scale_color_discrete(name = element_blank()) +
+    scale_x_time(breaks = c(0, 43200, 86400)) +
     xlab("Time") +
     theme_bw()
   if (is.infinite(range[1])) {
@@ -177,6 +181,7 @@ invisible(lapply(unique(cgm$participant_id), function(id) {
       `Glucose SD` = sd(sensorglucose)
     ) %>%
     gt() %>%
+    fmt_number(decimals = 2) %>%
     cols_label(menstrual_phase = "Menstrual Phase") %>%
     print()
   cat("\n")
@@ -204,10 +209,40 @@ invisible(lapply(unique(cgm$participant_id), function(id) {
       .groups = "drop"
     ) %>%
     gt() %>%
+    fmt_number(decimals = 2) %>%
     cols_label(
       time_of_day ~ "Time of Day",
       menstrual_phase = "Menstrual Phase"
     ) %>%
+    print()
+  cat("\n")
+  cat("\n")
+  cat("### CGM Metrics 24 Hours After Exercise Type")
+  cat("\n")
+  cat("\n")
+  df %>%
+    filter(exercise_24_hr_window == "Yes") %>%
+    group_by(exercise_type) %>%
+    summarise(
+      `Mean glucose` = mean(sensorglucose),
+      `TIR (70-180)` =
+        scales::percent(mean(sensorglucose >= 70 & sensorglucose <= 180),
+          accuracy = 0.01
+        ),
+      `TBR (< 70)` = scales::percent(mean(sensorglucose < 70), accuracy = 0.01),
+      `TBR (< 54)` = scales::percent(mean(sensorglucose < 54), accuracy = 0.01),
+      `TAR (> 180)` = scales::percent(mean(sensorglucose > 180),
+        accuracy = 0.01
+      ),
+      `TAR (> 200)` = scales::percent(mean(sensorglucose > 200),
+        accuracy = 0.01
+      ),
+      `Glucose SD` = sd(sensorglucose),
+      .groups = "drop"
+    ) %>%
+    gt() %>%
+    fmt_number(decimals = 2) %>%
+    cols_label(exercise_type ~ "Exercise Type") %>%
     print()
   cat("\n")
   cat("\n")
@@ -254,6 +289,24 @@ invisible(lapply(unique(cgm$participant_id), function(id) {
   cat("\n")
   cat("\n")
   tir_plot(df, c(200, Inf)) %>% print()
+  cat("\n")
+  cat("\n")
+  cat("### Mean Glucose Values 24 hours After Exercise Videos by Type")
+  cat("\n")
+  cat("\n")
+  df %>%
+    filter(exercise_24_hr_window == "Yes") %>%
+    mean_glucose_plot(., by = "exercise_type") %>%
+    print()
+  cat("\n")
+  cat("\n")
+  cat("### Glucose SD 24 hours After Exercise Videos by Type")
+  cat("\n")
+  cat("\n")
+  df %>%
+    filter(exercise_24_hr_window == "Yes") %>%
+    sd_glucose_plot(., by = "exercise_type") %>%
+    print()
   cat("\n")
   cat("\n")
 }))
