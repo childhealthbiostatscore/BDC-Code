@@ -108,8 +108,19 @@ cgm <- cgm %>%
   )
 # Activity
 activity <- read.csv("./Data_Raw/ActiGraph Watch Data Downloads/Data Transfer - 12_19_2024 9_18 PM UTC_638702400035593179/epochsummarydata.csv")
-# Round timestamps to 1 minute and combine
-# activity$timestamp <- round_date(activity$timestamp, "1 minute")
+# Format dates
+activity$Timestamp <- ymd_hms(sub("T", " ", activity$Timestamp))
+# There are some duplicate values, mostly due to daylight savings confusion
+# For now average these, but ask Janet how she wants to handle them
+dupes <- activity %>%
+  group_by(Subject, Timestamp) %>%
+  summarise(n = n()) %>%
+  filter(n > 1)
+t <- activity %>%
+  group_by(Subject, Timestamp) %>%
+  summarise(across(
+    c(Steps, AxisYCounts, Calories, Wear), ~ mean(.x, na.rm = TRUE)
+  ))
 # cgm$timestamp <- round_date(cgm$timestamp, "1 minute")
 # cgm <- full_join(cgm, activity, by = join_by(participant_id, timestamp))
 # Save dataset
