@@ -1,6 +1,6 @@
 ---
-title: ""
-author: "Casey Sakamoto"
+title: "PICLS Nutrition analysis"
+author: "Casey Sakamoto & Laura Pyle"
 date: "`r format(Sys.time(), '%d %B %Y')`"
 output:
   html_document:
@@ -26,6 +26,7 @@ library(nlme)
 library(lme4)
 library(lmerTest)
 library(table1)
+library(broom)
 
 rename <- function(df) {
   df$"Omega-6 Fatty Acids (g)"  <- NA
@@ -46,7 +47,7 @@ rename <- function(df) {
 #data upload
 Final_Baseline <- read_excel("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/CTRC files/18-1798 Nutrient Analysis Export/18-1798 Final Baseline.xlsx")
 more_baseline <-  read_excel("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/CTRC files/18-1798 Nutrient Analysis Export/NDS export archive/18-1798 Nutrient Analysis Export Baseline.xlsx")
-more_baseline <- more_baseline %>% filter(`Participant/Menu ID` %in% c("102A", "106A"))
+more_baseline <- more_baseline %>% filter(`Participant/Menu ID` %in% c("102A"))
 more_baseline <- rename(more_baseline)
 Final_Baseline <- rbind(Final_Baseline, more_baseline)
 Final_2Tri <- read_excel("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/CTRC files/18-1798 Nutrient Analysis Export/18-1798 Final 2nd trimester.xlsx")
@@ -176,6 +177,24 @@ names(b) <- c("varname", "in_final_3Tri")
 ab <- full_join(a, b, by = "varname")
 extra6a <- rename(extra6a)
 Final_3Tri <- rbind(Final_3Tri, extra6a)
+
+# extra days for trimester 1 119A
+extra7 <- read_excel("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/CTRC files/18-1798 Nutrient Analysis Export/119-A Missing Days.xlsx")
+a <- colnames(extra7)
+a <- data.frame(cbind(a, rep(1, ncol(extra7))))
+names(a) <- c("varname", "in_extra")
+b <- colnames(Final_Baseline)
+b <- data.frame(cbind(b, rep(1, ncol(Final_Baseline))))
+names(b) <- c("varname", "in_final_Baseline")
+ab <- full_join(a, b, by = "varname")
+extra7$`Meal Data Field 1 Descriptor` <- NULL
+extra7$`Meal Data Field 1 Response` <- NULL
+extra7$`Meal Data Field 2 Descriptor` <- NULL
+extra7$`Meal Data Field 2 Response` <- NULL
+extra7$`Meal Data Field 3 Descriptor` <- NULL
+extra7$`Meal Data Field 3 Response` <- NULL
+extra7$`Participant/Menu ID` <- "119A"
+Final_Baseline <- rbind(Final_Baseline, extra7)
 
 # read in corrected file sent by CTRC
 corrected <- read_excel('/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/CTRC files/18-1798 Nutrient Analysis Export/18-1798 11.22.2024 Export.xlsx')
@@ -324,7 +343,7 @@ maternal_diet_subj_day = ctrc2 %>% group_by(randomization_group, tp,pid, `Date o
                                                                  )
 
 # write file for Matthew to review
-write.csv(maternal_diet_subj_day, "/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/Data_clean/maternal_diet_subj_day.csv")
+write.csv(maternal_diet_subj_day, "/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/Data_clean/maternal_diet_subj_day.csv", row.names = F)
 
 maternal_diet_group = maternal_diet_subj_day %>% group_by(randomization_group, tp) %>% summarise_all(.funs = mean) %>% select(-pid) %>% ungroup() %>% select(-`Date of Intake`)
 maternal_diet_group2 = maternal_diet_subj_day %>% group_by( tp) %>% summarise_all(.funs = mean) %>% select(-pid, -randomization_group) %>% ungroup() %>% select(-`Date of Intake`)
@@ -612,11 +631,6 @@ fit_mod_pp = function(assoc,df){
 
 ```
 
-# Outstanding Data questions/remarks
-
-1) Weight gain per week was calculated as the final weight in each trimester minus the preconception weight, divided by the number of weeks in the trimester.
-2) Review "last weights tri" file
-
 # Methods
 
 Subjects maternal weight gain was measured using the last pregnancy visit compared with the preconception weight. This was then averaged into a weekly weight gain over gestation. Excessive weight gain(either by weekly weight gain or total weight gain) was derived for the entire pregnancy.
@@ -675,7 +689,11 @@ table1(~s_fiber_group|tp, data = analysis_aim1_tri)
 
 ## Excessive Weight Gain - Logistic regression with categorical predictors
 
-### Fiber
+In this section, the Analysis of Deviance table provides p-values for the test of each variable in the model.
+
+The second table for each model provides odds ratios (labeled "estimate").
+
+### Fiber - version 1 (three categories)
 
 ```{r}
 #fit_lr_mod("avg_daily_fiber_g_s", analysis_m1_tri, F)
@@ -684,11 +702,21 @@ table1(~s_fiber_group|tp, data = analysis_aim1_tri)
 
 mod = glm(excessive_weight_gain ~ s_fiber_group+ bmi_baseline, data = analysis_m1, family = "binomial")
 anova(mod)
-summary(mod)
+mod <- tidy(mod, exponentiate = TRUE)
+mod
+```
+
+### Fiber - version 2 (High quality vs. not high quality)
+
+```{r}
+#fit_lr_mod("avg_daily_fiber_g_s", analysis_m1_tri, F)
+
+#fit_lr_mod("s_fiber_group", analysis_m1_tri, F)
 
 mod = glm(excessive_weight_gain ~ s_Fiber+ bmi_baseline, data = analysis_m1, family = "binomial")
 anova(mod)
-summary(mod)
+mod <- tidy(mod, exponentiate = TRUE)
+mod
 ```
 
 ### Carb
@@ -697,24 +725,31 @@ summary(mod)
 #fit_lr_mod("avg_daily_carb_g_s", analysis_m1_tri, F)
 mod = glm(excessive_weight_gain ~ s_Carb+ bmi_baseline, data = analysis_m1, family = "binomial")
 anova(mod)
-summary(mod)
+mod <- tidy(mod, exponentiate = TRUE)
+mod
 ```
 
 ### Fat
 
+NOTE: only 2 people met criteria for high quality, so this model did not produce good estimates of the odds ratios.
+
 ```{r}
 mod = glm(excessive_weight_gain ~ s_Fat+ bmi_baseline, data = analysis_m1, family = "binomial")
 anova(mod)
-summary(mod)
+mod <- tidy(mod, exponentiate = TRUE)
+mod
 ```
 
 ### Sat Fat
+
+NOTE: only 2 people met criteria for high quality, so this model did not produce good estimates of the odds ratios.
 
 ```{r}
 #fit_lr_mod("avg_daily_satfat_g_s", analysis_m1_tri, F)
 mod = glm(excessive_weight_gain ~ s_SatFat+ bmi_baseline, data = analysis_m1, family = "binomial")
 anova(mod)
-summary(mod)
+mod <- tidy(mod, exponentiate = TRUE)
+mod
 ```
 
 ### Overall
