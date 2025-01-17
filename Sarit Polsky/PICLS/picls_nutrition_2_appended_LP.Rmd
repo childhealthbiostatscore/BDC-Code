@@ -219,8 +219,11 @@ corrected_3rd <- corrected %>% filter(str_detect(`Participant/Menu ID`, "3rd"))
 corrected_3rd$`Participant/Menu ID` <- substr(corrected_3rd$`Participant/Menu ID`, 1, 4)
 # combine corrected data into existing datasets
 Final_Baseline <- rbind(Final_Baseline, corrected_base)
+Final_Baseline <- Final_Baseline %>% filter(!`Participant/Menu ID` == "102A")
 Final_2Tri <- rbind(Final_2Tri, corrected_2nd)
+Final_2Tri <- Final_2Tri %>% filter(!`Participant/Menu ID` == "102A")
 Final_3Tri <- rbind(Final_3Tri, corrected_3rd)
+Final_3Tri <- Final_3Tri %>% filter(!`Participant/Menu ID` == "102A")
 
 PICLS <- read_csv("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/PICLSStudyHCLVsSAPTI_DATA_2024-05-24_1006(1).csv")
 # groups and gest dates and centiles
@@ -433,6 +436,7 @@ gmi_data = gmi_data %>% mutate(tp = case_when(tri == "T1" ~ "Trimester 1",
 
 
 Preg_visits <- read_csv("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/QPregnancyVisits_DATA_2022-12-04_1234.csv")
+Preg_visits <- Preg_visits %>% filter(!pid == "102A")
 
 Preg_visits = left_join(Preg_visits, gestdates)
 
@@ -447,6 +451,7 @@ matweights = Preg_visits %>% select(pid, tp, weight_preg, date_preg, FirstTri,Se
 matweights[141, 3] = 99.0
 
 precons = PICLS %>% filter(redcap_event_name =="preconception_arm_1")%>% select(pid, weight_precon)
+precons <- precons %>% filter(!pid == "102A")
 
 all_weights = left_join(matweights, precons) %>% filter(!is.na(tp)) 
 pp_weights <- all_weights %>% filter(tp == "Post Partum")
@@ -566,6 +571,7 @@ analysis_m1 <- left_join(analysis_m1, ewg, by = "pid")
 
 ##############################
 base_bmis = PICLS %>% select(pid, bmi_baseline) %>% filter(!is.na(bmi_baseline))
+base_bmis = base_bmis %>% filter(!pid == "102A")
 analysis_m1_tri = left_join(analysis_m1, base_bmis)
 analysis_m1 <- left_join(analysis_m1, base_bmis, by = "pid")
 
@@ -603,9 +609,9 @@ fit_mod = function(assoc,df){
   print(assoc)  
   f = as.formula(paste0("avg_wk_weight_gain_lbs","~",assoc))
   mod = lm(f, data = df, na.action = na.omit)
-  anova(mod)
+  print(anova(mod))
   print(summary(mod))
-  ggplot(data = df, aes_string(assoc, "avg_wk_weight_gain_lbs")) + geom_point() + theme_classic()
+#  ggplot(data = df, aes_string(assoc, "avg_wk_weight_gain_lbs")) + geom_point() + theme_classic()
  
 }
 
@@ -632,7 +638,7 @@ fit_mod_pp = function(assoc,df){
   print(assoc)  
   f = as.formula(paste0("pp_weight_retention","~",assoc))
   mod = lm(f, data = df, na.action = na.omit)
-  anova(mod)
+  print(anova(mod))
   print(summary(mod))
   ggplot(data = df, aes_string(assoc, "pp_weight_retention")) + geom_point() + theme_classic()
  
@@ -693,8 +699,19 @@ table1(~avg_caltotal+avg_daily_carb__calperc  + avg_daily_fat__calperc +
 table1(~s_fiber_group|tp, data = analysis_aim1_tri)
 ```
 
+### Weight gain
 
-# Models
+```{r}
+table1(~as.factor(excessive_weight_gain) + weight_gain_total_lbs + avg_weekly_weight_gain_lbs, data = analysis_aim1_tri)
+```
+
+### Post-partum weight retention
+
+```{r}
+table1(~pp_weight_retention, data = pp_weights)
+```
+
+# Models adjusted for baseline BMI
 
 ## Excessive Weight Gain - Logistic regression with categorical predictors
 
@@ -756,6 +773,114 @@ NOTE: only 2 people met criteria for high quality, so this model did not produce
 ```{r}
 #fit_lr_mod("avg_daily_satfat_g_s", analysis_m1_tri, F)
 mod = glm(excessive_weight_gain ~ s_SatFat+ bmi_baseline, data = analysis_m1, family = "binomial")
+anova(mod)
+mod <- tidy(mod, exponentiate = TRUE)
+mod
+```
+
+### Overall
+
+```{r}
+#fit_lr_mod("avg_daily_satfat_g_s", analysis_m1_tri, F)
+#mod = glm(excessive_weight_gain ~ s_Overall+ bmi_baseline, data = analysis_m1, family = "binomial")
+#anova(mod)
+#summary(mod)
+```
+
+## Average weekly weight gain - linear regression with categorical predictors
+
+### Fiber - version 1 (three categories)
+
+```{r}
+fit_mod("s_fiber_group + bmi_baseline", analysis_m1)
+```
+
+### Fiber - version 2 (High quality vs. not high quality)
+
+```{r}
+fit_mod("s_Fiber + bmi_baseline", analysis_m1)
+```
+
+### Carb
+
+```{r}
+fit_mod("s_Carb + bmi_baseline", analysis_m1)
+```
+
+### Fat
+
+```{r}
+fit_mod("s_Fat + bmi_baseline", analysis_m1)
+```
+
+### Sat Fat
+
+```{r}
+fit_mod("s_SatFat + bmi_baseline", analysis_m1)
+```
+
+# Models without adjustment for baseline BMI
+
+## Excessive Weight Gain - Logistic regression with categorical predictors
+
+In this section, the Analysis of Deviance table provides p-values for the test of each variable in the model.
+
+The second table for each model provides odds ratios (labeled "estimate").
+
+### Fiber - version 1 (three categories)
+
+```{r}
+#fit_lr_mod("avg_daily_fiber_g_s", analysis_m1_tri, F)
+
+#fit_lr_mod("s_fiber_group", analysis_m1_tri, F)
+
+mod = glm(excessive_weight_gain ~ s_fiber_group, data = analysis_m1, family = "binomial")
+anova(mod)
+mod <- tidy(mod, exponentiate = TRUE)
+mod
+```
+
+### Fiber - version 2 (High quality vs. not high quality)
+
+```{r}
+#fit_lr_mod("avg_daily_fiber_g_s", analysis_m1_tri, F)
+
+#fit_lr_mod("s_fiber_group", analysis_m1_tri, F)
+
+mod = glm(excessive_weight_gain ~ s_Fiber, data = analysis_m1, family = "binomial")
+anova(mod)
+mod <- tidy(mod, exponentiate = TRUE)
+mod
+```
+
+### Carb
+
+```{r}
+#fit_lr_mod("avg_daily_carb_g_s", analysis_m1_tri, F)
+mod = glm(excessive_weight_gain ~ s_Carb, data = analysis_m1, family = "binomial")
+anova(mod)
+mod <- tidy(mod, exponentiate = TRUE)
+mod
+```
+
+### Fat
+
+NOTE: only 2 people met criteria for high quality, so this model did not produce good estimates of the odds ratios.
+
+```{r}
+mod = glm(excessive_weight_gain ~ s_Fat, data = analysis_m1, family = "binomial")
+anova(mod)
+mod <- tidy(mod, exponentiate = TRUE)
+mod
+```
+
+### Sat Fat
+
+NOTE: only 2 people met criteria for high quality, so this model did not produce good estimates of the odds ratios.
+
+```{r}
+#fit_lr_mod("avg_daily_satfat_g_s", analysis_m1_tri, F)
+mod = glm(excessive_weight_gain ~ s_SatFat, data = analysis_m1, family = "binomial")
 anova(mod)
 mod <- tidy(mod, exponentiate = TRUE)
 mod
@@ -843,3 +968,34 @@ fit_mod_pp("s_Fat", pp_weights)
 fit_mod_pp("s_SatFat", pp_weights)
 ```
 
+## Average weekly weight gain - linear regression with categorical predictors
+
+### Fiber - version 1 (three categories)
+
+```{r}
+fit_mod("s_fiber_group", analysis_m1)
+```
+
+### Fiber - version 2 (High quality vs. not high quality)
+
+```{r}
+fit_mod("s_Fiber", analysis_m1)
+```
+
+### Carb
+
+```{r}
+fit_mod("s_Carb", analysis_m1)
+```
+
+### Fat
+
+```{r}
+fit_mod("s_Fat", analysis_m1)
+```
+
+### Sat Fat
+
+```{r}
+fit_mod("s_SatFat", analysis_m1)
+```
