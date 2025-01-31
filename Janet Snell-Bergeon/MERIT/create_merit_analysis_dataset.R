@@ -1,6 +1,7 @@
 library(redcapAPI)
 library(tidyverse)
 library(lubridate)
+library(readxl)
 # Download from REDCap
 unlockREDCap(c(rcon = "MERIT Study"),
   keyring = "API_KEYs",
@@ -107,21 +108,115 @@ cgm <- cgm %>%
     menstrual_phase, exercise_type, exercising, exercise_24_hr_window
   )
 # Activity
-activity <- read.csv("./Data_Raw/ActiGraph Watch Data Downloads/Data Transfer - 12_19_2024 9_18 PM UTC_638702400035593179/epochsummarydata.csv")
+activity <- read.csv("./Data_Raw/Actigraph/Data Transfer - 1_30_2025 5_19 PM UTC_638738544641160848/epochsummarydata.csv")
 # Format dates
 activity$Timestamp <- ymd_hms(sub("T", " ", activity$Timestamp))
+# Remove rows with Wear == "False"
+activity <- activity %>% filter(Wear == "True")
 # There are some duplicate values, mostly due to daylight savings confusion
 # For now average these, but ask Janet how she wants to handle them
-dupes <- activity %>%
-  group_by(Subject, Timestamp) %>%
-  summarise(n = n()) %>%
-  filter(n > 1)
-t <- activity %>%
+# Find the duplicates
+activity$id_time <- paste(activity$Subject, activity$Timestamp)
+dupes <- activity$id_time[duplicated(activity$id_time)]
+# Average only the duplicates (using group_by(Subject, Timestamp) on the whole
+# dataframe is really slow)
+dupes_df <- activity %>% filter(id_time %in% dupes)
+activity <- activity %>% filter(!id_time %in% dupes)
+dupes_df <- dupes_df %>%
   group_by(Subject, Timestamp) %>%
   summarise(across(
-    c(Steps, AxisYCounts, Calories, Wear), ~ mean(.x, na.rm = TRUE)
+    c(Steps, AxisYCounts, Calories), ~ mean(.x, na.rm = TRUE)
   ))
-# cgm$timestamp <- round_date(cgm$timestamp, "1 minute")
-# cgm <- full_join(cgm, activity, by = join_by(participant_id, timestamp))
+# Merge back in
+activity <- full_join(activity, dupes_df)
+activity <- activity %>% rename(participant_id = Subject, timestamp = Timestamp)
+# Add to CGM data
+cgm$timestamp <- round_date(cgm$timestamp, "1 minute")
+cgm <- full_join(cgm, activity, by = join_by(participant_id, timestamp))
+# List insulin files
+insulin_files <- list.files("./Data_Raw/Pump Downloads (CGM in Dexcom Data Folder)",
+  pattern = "\\.csv|\\.xls", recursive = T, full.names = T
+)
+# Loop and format files
+insulin <- lapply(insulin_files, function(f) {
+  id <- sub("_EX.*", "", basename(f))
+  id <- paste0(id, "_EX")
+  # Tidepool
+  if (length(grep("\\.xls", f)) > 0) {
+    basal <- read_excel(f, sheet = "Basal")
+    bolus <- read_excel(f, sheet = "Bolus")
+    # Round times to nearest minute.
+    basal$`Local Time` <- round_date(basal$`Local Time`, "1 minute")
+    bolus$`Local Time` <- round_date(bolus$`Local Time`, "1 minute")
+    # Tidepool basal rates are in units per hour, so calculate the dose at each
+    # start time
+    basal$basal_rate <- basal$`Duration (mins)` * basal$Rate
+    # For bolus, assume that column "normal" indicates insulin units. Only need
+    # timestamp and insulin right now.
+    basal <- basal %>%
+      select(`Local Time`, `Duration (mins)`, Rate) %>%
+      rename(
+        timestamp = "Local Time", basal_duration = "Duration (mins)",
+        basal_rate = Rate
+      )
+    bolus <- bolus %>%
+      select(`Local Time`, Normal) %>%
+      rename(bolus = "Normal", timestamp = "Local Time")
+    insulin <- full_join(basal, bolus, by = join_by(timestamp))
+    insulin$total_insulin <- rowSums(insulin[, c("basal_rate", "bolus")],
+      na.rm = T
+    )
+  } else {
+    insulin <- read_csv(f,
+      locale = locale(encoding = "latin1"), show_col_types = F,
+      name_repair = "unique_quiet", col_types = cols(.default = col_character())
+    )
+    if (ncol(insulin) == 14) {
+      insulin <- insulin %>%
+        select(`Timestamp (YYYY-MM-DDThh:mm:ss)`, `Insulin Value (u)`) %>%
+        rename(
+          timestamp = "Timestamp (YYYY-MM-DDThh:mm:ss)",
+          total_insulin = "Insulin Value (u)"
+        )
+      insulin$timestamp <- round_date(
+        ymd_hms(sub("T", " ", insulin$timestamp)), "1 minute"
+      )
+      insulin$total_insulin <- as.numeric(insulin$total_insulin)
+      insulin$bolus <- NA
+      insulin$basal <- NA
+    } else if (ncol(insulin) > 40) {
+      colnames(insulin) <- insulin[which(insulin[, 3] == "Pump")[1] + 1, ]
+      insulin$timestamp <- mdy_hms(paste(insulin$Date, insulin$Time), quiet = T)
+      insulin$timestamp <- round_date(insulin$timestamp, "1 minute")
+      insulin <- insulin %>%
+        rename(
+          basal_rate = "Basal Rate (U/h)",
+          basal_duration = "Temp Basal Duration (h:mm:ss)",
+          bolus = "Bolus Volume Delivered (U)"
+        )
+      insulin$basal_rate <- as.numeric(insulin$basal_rate)
+      insulin$basal_duration <- as.numeric(insulin$basal_duration)
+      insulin$bolus <- as.numeric(insulin$bolus)
+    }
+  }
+  # If there are duplicate timestamps, add them together
+  insulin <- insulin %>%
+    group_by(timestamp) %>%
+    summarise(
+      basal_rate = sum(basal_rate, na.rm = T),
+      basal_duration = sum(basal_duration, na.rm = T), 
+      bolus = sum(bolus, na.rm = T)
+    )
+  # Add ID and return
+  insulin$participant_id <- id
+  return(insulin)
+})
+# Combine and add to CGM data
+insulin <- do.call(rbind, insulin)
 # Save dataset
 save(cgm, file = "./Data_Clean/analysis_data.RData")
+
+
+# Notes
+# - Tidepool files have basal duration and rate, but MiniMed only has basal rate and "Temp Basal Duration (h:mm:ss)," which appears to be blank
+#   - Do we just assume each bolus is an hour?
