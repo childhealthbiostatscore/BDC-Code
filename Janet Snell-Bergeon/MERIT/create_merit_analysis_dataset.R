@@ -202,6 +202,18 @@ cgm <- left_join(cgm, tracking, by = join_by(participant_id))
 cgm$study_phase <- "Month 1"
 cgm$study_phase[cgm$timestamp >= cgm$track_period_start_mo2] <- "Month 2"
 cgm$study_phase[cgm$timestamp >= cgm$track_period_start_mo3] <- "Month 3"
+# Now add the insulin doses for those in REDCap
+redcap_insulin <- df %>%
+  select(
+    participant_id, redcap_event_name, insulin_follic_tdd,
+    insulin_follic_basal, insulin_follic_bolus, insulin_luteal_tdd,
+    insulin_luteal_basal, insulin_luteal_bolus
+  ) %>%
+  mutate(redcap_event_name = sub(" \\(.*", "", redcap_event_name)) %>%
+  rename(study_phase = redcap_event_name) %>%
+  rowwise() %>%
+  filter(sum(is.na(c_across(insulin_follic_tdd:insulin_luteal_bolus))) < 6)
+cgm <- left_join(cgm, redcap_insulin)
 # Add menstrual cycle phase
 cgm$menstrual_phase <- "Follicular"
 cgm$menstrual_phase[cgm$study_phase == "Month 1" &
@@ -251,8 +263,9 @@ cgm$time_of_day[hour(cgm$timestamp) < 6 | hour(cgm$timestamp) > 23] <- "Night"
 # Remove unnecessary columns
 cgm <- cgm %>%
   select(
-    participant_id:bolus, time_of_day, study_phase,
-    menstrual_phase, exercise_type, exercising, exercise_24_hr_window
+    participant_id:bolus, insulin_follic_tdd:insulin_luteal_bolus, time_of_day,
+    study_phase, menstrual_phase, exercise_type, exercising,
+    exercise_24_hr_window
   )
 cgm$id_time <- NULL
 # Save dataset
