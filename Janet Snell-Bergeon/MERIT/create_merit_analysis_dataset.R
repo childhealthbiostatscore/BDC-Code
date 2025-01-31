@@ -129,13 +129,16 @@ dupes_df <- dupes_df %>%
   ))
 # Merge back in
 activity <- full_join(activity, dupes_df)
-activity <- activity %>% rename(participant_id = Subject, timestamp = Timestamp)
+activity <- activity %>%
+  rename(participant_id = Subject, timestamp = Timestamp) %>%
+  select(participant_id, timestamp, Steps, AxisYCounts, Calories)
 # Add to CGM data
 cgm$timestamp <- round_date(cgm$timestamp, "1 minute")
 cgm <- full_join(cgm, activity, by = join_by(participant_id, timestamp))
 # List insulin files
-insulin_files <- list.files("./Data_Raw/Pump Downloads (CGM in Dexcom Data Folder)",
-  pattern = "\\.csv|\\.xls", recursive = T, full.names = T
+insulin_files <- list.files("./Data_Clean/Insulin",
+  recursive = T,
+  full.names = T
 )
 # Loop and format files
 insulin <- lapply(insulin_files, function(f) {
@@ -148,9 +151,6 @@ insulin <- lapply(insulin_files, function(f) {
     # Round times to nearest minute.
     basal$`Local Time` <- round_date(basal$`Local Time`, "1 minute")
     bolus$`Local Time` <- round_date(bolus$`Local Time`, "1 minute")
-    # Tidepool basal rates are in units per hour, so calculate the dose at each
-    # start time
-    basal$basal_rate <- basal$`Duration (mins)` * basal$Rate
     # For bolus, assume that column "normal" indicates insulin units. Only need
     # timestamp and insulin right now.
     basal <- basal %>%
@@ -162,9 +162,9 @@ insulin <- lapply(insulin_files, function(f) {
     bolus <- bolus %>%
       select(`Local Time`, Normal) %>%
       rename(bolus = "Normal", timestamp = "Local Time")
-    insulin <- full_join(basal, bolus, by = join_by(timestamp))
-    insulin$total_insulin <- rowSums(insulin[, c("basal_rate", "bolus")],
-      na.rm = T
+    insulin <- full_join(basal, bolus,
+      by = join_by(timestamp),
+      relationship = "many-to-many"
     )
   } else {
     insulin <- read_csv(f,
@@ -176,14 +176,14 @@ insulin <- lapply(insulin_files, function(f) {
         select(`Timestamp (YYYY-MM-DDThh:mm:ss)`, `Insulin Value (u)`) %>%
         rename(
           timestamp = "Timestamp (YYYY-MM-DDThh:mm:ss)",
-          total_insulin = "Insulin Value (u)"
+          bolus = "Insulin Value (u)"
         )
       insulin$timestamp <- round_date(
         ymd_hms(sub("T", " ", insulin$timestamp)), "1 minute"
       )
-      insulin$total_insulin <- as.numeric(insulin$total_insulin)
-      insulin$bolus <- NA
-      insulin$basal <- NA
+      insulin$basal_rate <- NA
+      insulin$basal_duration <- NA
+      insulin$bolus <- as.numeric(insulin$bolus)
     } else if (ncol(insulin) > 40) {
       colnames(insulin) <- insulin[which(insulin[, 3] == "Pump")[1] + 1, ]
       insulin$timestamp <- mdy_hms(paste(insulin$Date, insulin$Time), quiet = T)
@@ -194,29 +194,66 @@ insulin <- lapply(insulin_files, function(f) {
           basal_duration = "Temp Basal Duration (h:mm:ss)",
           bolus = "Bolus Volume Delivered (U)"
         )
+      insulin$basal_rate <- suppressWarnings(as.numeric(insulin$basal_rate))
+      insulin$basal_duration <- suppressWarnings(as.numeric(insulin$basal_duration))
+      insulin$bolus <- suppressWarnings(as.numeric(insulin$bolus))
+    } else if (ncol(insulin) == 20) {
+      colnames(insulin) <- insulin[which(insulin[, 2] == "BolusType")[1], ]
+      insulin <- insulin[which(insulin[, 2] == "BolusType")[1] + 1:nrow(insulin), ]
+      insulin <- insulin %>%
+        rename(timestamp = CompletionDateTime, bolus = InsulinDelivered)
+      insulin$timestamp <- round_date(
+        ymd_hms(sub("T", " ", insulin$timestamp)), "1 minute"
+      )
+      insulin$basal_rate <- NA
+      insulin$basal_duration <- NA
+      insulin$bolus <- as.numeric(insulin$bolus)
+    } else if (ncol(insulin) == 7) {
+      colnames(insulin) <- insulin[1, ]
+      insulin <- insulin[-1, ]
+      insulin <- insulin %>%
+        rename(
+          timestamp = Timestamp, basal_rate = Rate,
+          basal_duration = "Duration (minutes)"
+        )
+      insulin$timestamp <- round_date(mdy_hm(insulin$timestamp), "1 minute")
       insulin$basal_rate <- as.numeric(insulin$basal_rate)
       insulin$basal_duration <- as.numeric(insulin$basal_duration)
+      insulin$bolus <- NA
+    } else if (ncol(insulin) == 9) {
+      colnames(insulin) <- insulin[1, ]
+      insulin <- insulin[-1, ]
+      insulin <- insulin %>%
+        rename(
+          timestamp = Timestamp, bolus = "Insulin Delivered (U)"
+        )
+      insulin$timestamp <- round_date(mdy_hm(insulin$timestamp), "1 minute")
+      insulin$basal_rate <- NA
+      insulin$basal_duration <- NA
       insulin$bolus <- as.numeric(insulin$bolus)
     }
   }
-  # If there are duplicate timestamps, add them together
-  insulin <- insulin %>%
-    group_by(timestamp) %>%
-    summarise(
-      basal_rate = sum(basal_rate, na.rm = T),
-      basal_duration = sum(basal_duration, na.rm = T), 
-      bolus = sum(bolus, na.rm = T)
-    )
+  insulin <- insulin %>% select(timestamp, basal_rate, basal_duration, bolus)
   # Add ID and return
   insulin$participant_id <- id
   return(insulin)
 })
-# Combine and add to CGM data
+# Combine
 insulin <- do.call(rbind, insulin)
+# If there are duplicate timestamps, add them together
+insulin <- insulin %>%
+  group_by(timestamp) %>%
+  summarise(
+    basal_rate = sum(basal_rate, na.rm = T),
+    basal_duration = sum(basal_duration, na.rm = T),
+    bolus = sum(bolus, na.rm = T)
+  )
+# Convert 0s to missing since these are the result of adding together two NAs
+insulin$basal_rate[insulin$basal_rate == 0] <- NA
+insulin$basal_duration[insulin$basal_duration == 0] <- NA
+insulin$bolus[insulin$bolus == 0] <- NA
+# Add to CGM data
+cgm <- full_join(cgm, insulin)
+cgm$id_time <- NULL
 # Save dataset
 save(cgm, file = "./Data_Clean/analysis_data.RData")
-
-
-# Notes
-# - Tidepool files have basal duration and rate, but MiniMed only has basal rate and "Temp Basal Duration (h:mm:ss)," which appears to be blank
-#   - Do we just assume each bolus is an hour?
