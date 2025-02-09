@@ -437,7 +437,6 @@ gmi_data = gmi_data %>% mutate(tp = case_when(tri == "T1" ~ "Trimester 1",
 
 Preg_visits <- read_csv("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/QPregnancyVisits_DATA_2022-12-04_1234.csv")
 Preg_visits <- Preg_visits %>% filter(!pid == "102A")
-
 Preg_visits = left_join(Preg_visits, gestdates)
 
 Preg_visits = Preg_visits %>% mutate(tp = case_when(mdy(date_preg) < mdy(SecondTri) ~ "Trimester 1",
@@ -449,6 +448,7 @@ matweights = Preg_visits %>% select(pid, tp, weight_preg, date_preg, FirstTri,Se
 
 # CHANGING TYPO FROM 68KG to 99 KG
 matweights[141, 3] = 99.0
+matweights$date_preg_date_format <- as.Date(matweights$date_preg, format = "%m/%d/%Y")
 
 precons = PICLS %>% filter(redcap_event_name =="preconception_arm_1")%>% select(pid, weight_precon)
 precons <- precons %>% filter(!pid == "102A")
@@ -458,7 +458,7 @@ pp_weights <- all_weights %>% filter(tp == "Post Partum")
 pp_weights$date_preg <- as.Date(pp_weights$date_preg, format = "%m/%d/%Y")
 pp_weights = pp_weights %>% 
   group_by(pid) %>% 
-  filter(!is.na(weight_preg)) %>%
+  filter(!is.na(weight_precon)) %>%
   arrange(pid, date_preg) %>%  # Sort by date within each person
   slice_tail(n = 1) %>%        # Take the last row
   ungroup()
@@ -467,7 +467,7 @@ pp_weights = pp_weights %>%
 last_weights = all_weights %>% 
   group_by(pid) %>% 
   filter(!is.na(weight_preg) & !(tp == "Post Partum")) %>%
-  arrange(pid, date_preg) %>%  # Sort by date within each person
+  arrange(pid, date_preg_date_format) %>%  # Sort by date within each person
   slice_tail(n = 1) %>%        # Take the last row
   ungroup()
 
@@ -594,6 +594,8 @@ analysis_aim1_tri = left_join(analysis_aim1_tri, base_bmis)
 
 # create new df for weight gain with only 1 observation per person
 wtgain <- analysis_aim1_tri %>% select(pid, excessive_weight_gain, avg_weekly_weight_gain_lbs, weight_gain_total_lbs) %>% unique()
+wtgain$avg_weekly_gain_kg <- wtgain$avg_weekly_weight_gain_lbs*0.453592
+wtgain$weight_gain_total_kg <- wtgain$weight_gain_total_lbs*0.453592
 
 # make dataframe for PP weight retention
 dq <- analysis_m1 %>% select(pid, fiber_s, carb_s, fat_s, sfat_s, protein_s, animal_perc_s, 
@@ -601,6 +603,7 @@ dq <- analysis_m1 %>% select(pid, fiber_s, carb_s, fat_s, sfat_s, protein_s, ani
                              s_Fiber, s_Carb, s_Fat, s_SatFat, s_Overall)
 pp_weights <- left_join(dq, pp_weights, by = "pid")
 pp_weights$pp_weight_retention <- pp_weights$weight_preg - pp_weights$weight_precon
+pp_weights$pp_weight_retention_lbs <- pp_weights$pp_weight_retention * 2.20462
 write.csv(pp_weights, "/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/Data_clean/pp_weights.csv")
 ```
 
@@ -705,13 +708,14 @@ table1(~s_fiber_group|tp, data = analysis_aim1_tri)
 ### Weight gain
 
 ```{r}
-table1(~as.factor(excessive_weight_gain) + weight_gain_total_lbs + avg_weekly_weight_gain_lbs, data = wtgain)
+table1(~as.factor(excessive_weight_gain) + weight_gain_total_lbs + weight_gain_total_kg + avg_weekly_weight_gain_lbs + 
+         avg_weekly_gain_kg, data = wtgain)
 ```
 
 ### Post-partum weight retention
 
 ```{r}
-table1(~pp_weight_retention, data = pp_weights)
+table1(~pp_weight_retention + pp_weight_retention_lbs, data = pp_weights)
 ```
 
 # Models adjusted for baseline BMI
