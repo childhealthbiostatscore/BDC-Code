@@ -1,0 +1,172 @@
+---
+title: "CGM Trajectory Analysis"
+author: "Laura Pyle & Tim Vigers"
+date: "today"
+date-format: long
+format:
+  html:
+    toc: true
+    toc-depth: 5
+    toc-float: true
+    code-fold: true
+    self-contained: true
+    fig-cap-location: top
+    page-layout: full
+    theme:
+      light: flatly
+      dark: darkly
+editor: source
+---
+
+```{r setup}
+#| include: false
+library(tidyverse)
+library(haven)
+library(hms)
+library(traj)
+knitr::opts_knit$set(root.dir = "/Users/timvigers/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT")
+```
+
+```{r}
+# Import CGM data from Fran
+cgm <- read_sas("./Data_Raw/rawcgmdata_clean.sas7bdat")
+# Convert from numeric time to datetime, round to nearest 5 minutes
+cgm$sensordisplaytime <-
+  as.POSIXct(cgm$sensordisplaytime, origin = "1960-01-01")
+cgm$sensordisplaytime <- round_date(cgm$sensordisplaytime, "5 minutes")
+# Separate date and time columns, format
+cgm$Date <- as_date(cgm$sensordisplaytime)
+cgm$Time <- as_hms(cgm$sensordisplaytime)
+cgm <- cgm %>%
+  arrange(ID, sensordisplaytime) %>%
+  select(ID, Date, Time, DOVISIT, SensorValue)
+# For now, if people have duplicated sensor values, take the mean
+cgm <- cgm %>%
+  group_by(ID, Date, Time, DOVISIT) %>%
+  summarise(SensorValue = mean(SensorValue, na.rm = T), .groups = "drop")
+# Import demographic, etc. data
+df <- read.csv("./Data_Clean/Longitudinal CGM data for 165 subjects.csv",
+  na.strings = c("", ".")
+)
+# Remove unhelpful rows
+df <- df %>% filter(!is.na(ID))
+# Figure out each person's start date
+df <- df %>%
+  select(ID, DOB, Date.of.T1D.dx) %>%
+  mutate(
+    Group = factor(is.na(Date.of.T1D.dx),
+      levels = c(T, F),
+      labels = c("Non-Progressor", "Progressor")
+    )
+  ) %>%
+  select(ID, Group) %>%
+  distinct()
+# Put together
+cgm <- full_join(df, cgm, by = join_by(ID))
+cgm <- cgm %>% select(ID, Group, DOVISIT, Date, Time, SensorValue)
+# Drop NAs
+cgm <- cgm %>% drop_na()
+# Average by time of day
+mean_cgm <- cgm %>%
+  group_by(ID, Group, Time) %>%
+  summarise(Glucose = mean(SensorValue), .groups = "drop")
+# Convert to wide
+wide_cgm <- mean_cgm %>%
+  pivot_wider(names_from = Time, values_from = Glucose)
+# Measure labels
+m_labels <- list(
+  "m1" = "Maximum", "m2" = "Range", "m3" = "Mean value",
+  "m4" = "Standard deviation", "m5" = "Intercept of the linear model",
+  "m6" = "Slope of the linear model",
+  "m7" = "R2: Proportion of variance explained by the linear model",
+  "m8" = "Curve length (total variation)",
+  "m9" = "Rate of intersection with the mean",
+  "m10" = "Proportion of time spent above the mean",
+  "m11" = "Minimum of the first derivative",
+  "m12" = "Maximum of the first derivative",
+  "m13" = "Mean of the first derivative",
+  "m14" = "Standard deviation of the first derivative",
+  "m15" = "Minimum of the second derivative",
+  "m16" = "Maximum of the second derivative",
+  "m17" = "Mean of the second derivative",
+  "m18" = "Standard deviation of the second derivative",
+  "m19" = "Later change/Early change"
+)
+```
+
+# Non-progressors vs. progressors
+
+## Averaged across all CGMs
+
+```{r}
+ggplot(mean_cgm, aes(
+  x = Time, y = Glucose,
+  group = ID, colour = Group
+)) +
+  geom_line(alpha = 0.5) +
+  theme_bw() +
+  scale_color_manual(values = c("#0c457d", "#e8702a"))
+```
+
+```{r}
+set.seed(1017)
+step1 <- Step1Measures(subset(wide_cgm, select = -c(ID, Group)),
+  measures = 1:19
+)
+summary(step1)
+step2 <- Step2Selection(trajMeasures = step1)
+summary(step2)
+print(step2)
+step3 <- Step3Clusters(trajSelection = step2)
+plot(step3, spline = T)
+critplot(step3)
+wide_cgm$Cluster <- step3$partition$Cluster
+xtabs(~ Cluster + Group, data = wide_cgm)
+```
+
+## Averaged across CGM tracing
+
+```{r}
+# Average by time of day
+mean_cgm <- cgm %>%
+  group_by(ID, Group, DOVISIT, Time) %>%
+  summarise(Glucose = mean(SensorValue), .groups = "drop")
+# Convert to wide
+wide_cgm <- mean_cgm %>%
+  pivot_wider(names_from = Time, values_from = Glucose)
+```
+
+```{r}
+ggplot(mean_cgm, aes(
+  x = Time, y = Glucose,
+  group = interaction(ID, DOVISIT), colour = Group
+)) +
+  geom_line(alpha = 0.5) +
+  theme_bw() +
+  scale_color_manual(values = c("#0c457d", "#e8702a"))
+```
+
+```{r}
+step1 <- Step1Measures(subset(wide_cgm, select = -c(ID, Group, DOVISIT)),
+  measures = 1:19
+)
+summary(step1)
+step2 <- Step2Selection(trajMeasures = step1)
+summary(step2)
+print(step2)
+step3 <- Step3Clusters(trajSelection = step2)
+plot(step3, spline = T)
+critplot(step3)
+wide_cgm$Cluster <- step3$partition$Cluster
+xtabs(~ Cluster + Group, data = wide_cgm)
+```
+
+# Non-progressors vs. 12 to 9 months prior to progression
+
+# Non-progressors vs. 9 to 6 months prior to progression
+
+# Non-progressors vs. 6 to 3 months prior to progression
+
+# Non-progressors vs. 3 to 0 months prior to progression
+
+# Non-progressors vs. post-progression
