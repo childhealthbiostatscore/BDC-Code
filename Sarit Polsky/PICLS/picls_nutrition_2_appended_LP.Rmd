@@ -437,7 +437,6 @@ gmi_data = gmi_data %>% mutate(tp = case_when(tri == "T1" ~ "Trimester 1",
 
 Preg_visits <- read_csv("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/QPregnancyVisits_DATA_2022-12-04_1234.csv")
 Preg_visits <- Preg_visits %>% filter(!pid == "102A")
-
 Preg_visits = left_join(Preg_visits, gestdates)
 
 Preg_visits = Preg_visits %>% mutate(tp = case_when(mdy(date_preg) < mdy(SecondTri) ~ "Trimester 1",
@@ -449,6 +448,7 @@ matweights = Preg_visits %>% select(pid, tp, weight_preg, date_preg, FirstTri,Se
 
 # CHANGING TYPO FROM 68KG to 99 KG
 matweights[141, 3] = 99.0
+matweights$date_preg_date_format <- as.Date(matweights$date_preg, format = "%m/%d/%Y")
 
 precons = PICLS %>% filter(redcap_event_name =="preconception_arm_1")%>% select(pid, weight_precon)
 precons <- precons %>% filter(!pid == "102A")
@@ -458,7 +458,7 @@ pp_weights <- all_weights %>% filter(tp == "Post Partum")
 pp_weights$date_preg <- as.Date(pp_weights$date_preg, format = "%m/%d/%Y")
 pp_weights = pp_weights %>% 
   group_by(pid) %>% 
-  filter(!is.na(weight_preg)) %>%
+  filter(!is.na(weight_precon)) %>%
   arrange(pid, date_preg) %>%  # Sort by date within each person
   slice_tail(n = 1) %>%        # Take the last row
   ungroup()
@@ -467,9 +467,11 @@ pp_weights = pp_weights %>%
 last_weights = all_weights %>% 
   group_by(pid) %>% 
   filter(!is.na(weight_preg) & !(tp == "Post Partum")) %>%
-  arrange(pid, date_preg) %>%  # Sort by date within each person
+  arrange(pid, date_preg_date_format) %>%  # Sort by date within each person
   slice_tail(n = 1) %>%        # Take the last row
   ungroup()
+# hard code last weight for 110A per Sarit
+last_weights$weight_preg <- ifelse(last_weights$pid == "110A", 71.7, last_weights$weight_preg)
 
 # calculate total weight gain to get average per week
 last_weights = last_weights %>% mutate(weight_gain_total = weight_preg - weight_precon,
@@ -592,12 +594,18 @@ analysis_aim1_tri = left_join(analysis_aim1_tri, base_bmis)
 # Fat <=30 
 # SatFat <10  (n = 6 for both satfat/fat joint)
 
+# create new df for weight gain with only 1 observation per person
+wtgain <- analysis_aim1_tri %>% select(pid, excessive_weight_gain, avg_weekly_weight_gain_lbs, weight_gain_total_lbs) %>% unique()
+wtgain$avg_weekly_gain_kg <- wtgain$avg_weekly_weight_gain_lbs*0.453592
+wtgain$weight_gain_total_kg <- wtgain$weight_gain_total_lbs*0.453592
+
 # make dataframe for PP weight retention
 dq <- analysis_m1 %>% select(pid, fiber_s, carb_s, fat_s, sfat_s, protein_s, animal_perc_s, 
                              plant_perc_s, s_fat_calperc, s_satfat_calperc, s_fiber_group, 
                              s_Fiber, s_Carb, s_Fat, s_SatFat, s_Overall)
 pp_weights <- left_join(dq, pp_weights, by = "pid")
 pp_weights$pp_weight_retention <- pp_weights$weight_preg - pp_weights$weight_precon
+pp_weights$pp_weight_retention_lbs <- pp_weights$pp_weight_retention * 2.20462
 write.csv(pp_weights, "/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS 3 NUTRITION LOGS/Data_clean/pp_weights.csv")
 ```
 
@@ -648,11 +656,13 @@ fit_mod_pp = function(assoc,df){
 
 # Methods
 
-Subjects maternal weight gain was measured using the last pregnancy visit compared with the preconception weight. This was then averaged into a weekly weight gain over gestation. Excessive weight gain(either by weekly weight gain or total weight gain) was derived for the entire pregnancy.
+Diet quality variables (e.g., grams of fat, grams of fiber) were averaged across multiple days during which diet was recorded. Grams of fiber was standardized as (FiberTotal)*2000/Cal_Total
 
-Grams of fiber was standardized as (FiberTotal)*2000/Cal_Total
+Subjects maternal weight gain was measured using the last pregnancy visit compared with the preconception weight. Average weekly weight gain over gestation was calculated was the total change in weight divided by number of weeks of pregnancy. Excessive weight gain(either by weekly weight gain or total weight gain) was derived for the entire pregnancy.
 
-Generalized Linear Mixed Models with a binomial link function (Mixed Effects Logistic Regression) for Excessive Weight Gain were fit adjusting for enrollment maternal BMI. 
+Generalized linear models were used to test the association between excessive weight gain and diet variables, with and without adjustment for enrollment maternal BMI. 
+
+Linear models, with and without adjustment for enrollment maternal BMI, were used to test the association of average weekly weight gain as a continuous variable with diet quality variables.
 
 Linear Models for Post Partum Maternal Weight Retention were fit with Average Daily fiber intake, carb, fat and saturated fat, and total protein, animal and plant protein intake as a percentage of total calories. Post Partum Weight retention is defined  as the difference between post partum weight and first pregnancy weight.
 
@@ -702,22 +712,21 @@ table1(~s_fiber_group|tp, data = analysis_aim1_tri)
 ### Weight gain
 
 ```{r}
-table1(~as.factor(excessive_weight_gain) + weight_gain_total_lbs + avg_weekly_weight_gain_lbs, data = analysis_aim1_tri)
+table1(~as.factor(excessive_weight_gain) + weight_gain_total_lbs + weight_gain_total_kg + avg_weekly_weight_gain_lbs + 
+         avg_weekly_gain_kg, data = wtgain)
 ```
 
 ### Post-partum weight retention
 
 ```{r}
-table1(~pp_weight_retention, data = pp_weights)
+table1(~pp_weight_retention + pp_weight_retention_lbs, data = pp_weights)
 ```
 
 # Models adjusted for baseline BMI
 
 ## Excessive Weight Gain - Logistic regression with categorical predictors
 
-In this section, the Analysis of Deviance table provides p-values for the test of each variable in the model.
-
-The second table for each model provides odds ratios (labeled "estimate").
+In this section, the Analysis of Deviance table provides p-values for the test of each variable in the model. The second table for each model provides odds ratios (labeled "estimate"). The row labeled with the diet variable contains the estimates and p-values for the effect of the diet variable. The row labeled bmi_baseline contains the estimate and p-values for the effect of baseline BMI.
 
 ### Fiber - version 1 (three categories)
 
@@ -789,6 +798,8 @@ mod
 
 ## Average weekly weight gain - linear regression with categorical predictors
 
+In this section, the Analysis of Variance table provides p-values for the test of each variable in the model. The Coefficients table for each model provides beta values (labeled "estimate"). The row labeled with the diet variable contains the estimates and p-values for the effect of the diet variable. The row labeled bmi_baseline contains the estimate and p-values for the effect of baseline BMI.
+
 ### Fiber - version 1 (three categories)
 
 ```{r}
@@ -823,9 +834,7 @@ fit_mod("s_SatFat + bmi_baseline", analysis_m1)
 
 ## Excessive Weight Gain - Logistic regression with categorical predictors
 
-In this section, the Analysis of Deviance table provides p-values for the test of each variable in the model.
-
-The second table for each model provides odds ratios (labeled "estimate").
+In this section, the Analysis of Deviance table provides p-values for the test of each variable in the model. The second table for each model provides odds ratios (labeled "estimate"). The row labeled with the diet variable contains the estimates and p-values for the effect of the diet variable. 
 
 ### Fiber - version 1 (three categories)
 
@@ -899,6 +908,8 @@ mod
 
 ### Linear Models with continuous diet quality variables
 
+In this section, the Analysis of Variance table provides p-values for the test of each variable in the model. The Coefficients table for each model provides beta values (labeled "estimate"). The row labeled with the diet variable contains the estimates and p-values for the effect of the diet variable. 
+
 #### Fiber
 
 ```{r}
@@ -943,6 +954,8 @@ fit_mod_pp("plant_perc_s", pp_weights)
 
 ### Linear Models with categorical diet quality variables
 
+In this section, the Analysis of Variance table provides p-values for the test of each variable in the model. The Coefficients table for each model provides beta values (labeled "estimate"). The row labeled with the diet variable contains the estimates and p-values for the effect of the diet variable. 
+
 #### Fiber
 
 ```{r}
@@ -969,6 +982,8 @@ fit_mod_pp("s_SatFat", pp_weights)
 ```
 
 ## Average weekly weight gain - linear regression with categorical predictors
+
+In this section, the Analysis of Variance table provides p-values for the test of each variable in the model. The Coefficients table for each model provides beta values (labeled "estimate"). The row labeled with the diet variable contains the estimates and p-values for the effect of the diet variable. 
 
 ### Fiber - version 1 (three categories)
 
