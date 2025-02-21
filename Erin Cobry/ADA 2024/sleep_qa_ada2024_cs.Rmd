@@ -22,7 +22,7 @@ library(lme4)
 # data upload
 sd_df = read_csv("S:/Laura/BDC/Projects/Erin Cobry/ADA 2024/SleepDisruptors QA/SleepDisruptorsInAdo_DATA_2023-11-28_1536.csv")
 
-# promis tables
+# promis t tables
 Depression_T <- read_excel("S:/Laura/BDC/Projects/Erin Cobry/ADA 2024/SleepDisruptors QA/Depression T-tables.xlsx", 
     sheet = "Pedaitric Depressive Symptoms 8")
 Depression_T$raw = Depression_T$`Raw Score`
@@ -54,107 +54,154 @@ Impairment_T$sleep_impairment_t = Impairment_T$`T-Score`
 
 
 ```{r data clean, include = FALSE}
+# Data cleaning and transformation
+sd_df = sd_df %>%
+  mutate(
+    # Recategorizing parent gender
+    gender_m_fo = case_when(
+      parent_gender == 1 ~ "Male",
+      parent_gender == 2 | parent_gender == 3 ~ "Female/Other"
+    ),
+    # Categorizing age into groups
+    age_cat = case_when(
+      age < 12 & age >= 6 ~ "6-12",
+      age >= 12 ~ "13-18"
+    ),
+    # Recoding race variables
+    race = case_when(
+      race___1 == 1 ~ "White, Non-Hispanic",
+      race___2 == 1 ~ "Black/African American",
+      race___3 == 1 ~ "Hispanic/Latino",
+      race___4 == 1 ~ "Native Hawaiian/Pacific Islander",
+      race___5 == 1 ~ "Asian",
+      race___6 == 1 ~ "American Indian/Alaskan Native",
+      race___8 == 1 ~ "Don't Wish to Answer",
+      TRUE ~ "Unknown"
+    )
+  )
 
-sd_df = sd_df %>% mutate(gender_m_fo = case_when(parent_gender == 1 ~ "Male",
-                              parent_gender == 2 | parent_gender == 3 ~"Female/Other"
-                              ),
-                         age_cat = case_when(age < 12 & age >= 6 ~ "6-12",
-                                             age >= 12 ~ "13-18"),
-                         race = case_when(race___1 == 1 ~ "White, Non-Hispanic",
-                                          race___2 == 1 ~ "Black/African American",
-                                          race___3 == 1 ~ "Hispanic/Latino",
-                                          race___4 == 1 ~ "Native Hawaiian/Pacific Islander",
-                                          race___5 == 1 ~ "Asian",
-                                          race___6 == 1 ~ "American Indian/Alaskan Native",
-                                          race___8 == 1 ~ "Don't Wish to Answer",
-                                          TRUE ~ "Unknown"
-                                          ))
-sd_df$insulinmethod = factor(sd_df$insulinmethod, levels = c("1","2"), labels = c("Injections", "Insulin Pump"))
-sd_df$currenthcltech = factor(sd_df$currenthcltech, levels = c("1","0"), labels = c("Yes", "No"))
-sd_df$parenteducation = factor(sd_df$parenteducation, levels = c("2","3","4","5","6","7","8"),
+# Recoding categorical variables into factors with labels
+sd_df$insulinmethod = factor(sd_df$insulinmethod, levels = c("1", "2"), labels = c("Injections", "Insulin Pump"))
+sd_df$currenthcltech = factor(sd_df$currenthcltech, levels = c("1", "0"), labels = c("Yes", "No"))
+sd_df$parenteducation = factor(sd_df$parenteducation, levels = c("2", "3", "4", "5", "6", "7", "8"),
                                labels = c("Less than Highschool", "GED", "Highschool Graduate",
                                           "Trade/Technical School", "Some College", "College Graduate", "Graduate School"))
-sd_df$current_cgm_use= factor(sd_df$current_cgm_use, levels = c("1","2"), labels = c("Yes", "No"))
-sd_df$rurality= factor(sd_df$rurality, levels = c("1","2"), labels = c("Rural", "Urban"))
+sd_df$current_cgm_use = factor(sd_df$current_cgm_use, levels = c("1", "2"), labels = c("Yes", "No"))
+sd_df$rurality = factor(sd_df$rurality, levels = c("1", "2"), labels = c("Rural", "Urban"))
 
-# table(sd_df$gender_m_fo)
-
-
-# demog covariates
-demog_df = sd_df %>% select(record_id, redcap_event_name,gender_m_fo ,age, age_cat,race ,parenteducation, diabetesduration, insulinmethod, currenthcltech, current_cgm_use, rurality) %>% 
+# Extracting demographic covariates for analysis
+demog_df = sd_df %>%
+  select(record_id, redcap_event_name, gender_m_fo, age, age_cat, race, parenteducation, diabetesduration, 
+         insulinmethod, currenthcltech, current_cgm_use, rurality) %>%
   filter(redcap_event_name == "enrollment_arm_1")
 
-a1c_col = sd_df %>% filter(redcap_event_name == "surveys_arm_1") %>% select(record_id, hba1c) 
+# Extracting HbA1c data from a specific survey event
+a1c_col = sd_df %>%
+  filter(redcap_event_name == "surveys_arm_1") %>%
+  select(record_id, hba1c)
 
-demog_df = left_join(demog_df, a1c_col) %>% select( -record_id, -redcap_event_name) %>% filter(!is.na(gender_m_fo)) ; rm(a1c_col)
-#demog_df = left_join(demog_df, a1c_col) %>% filter(!is.na(gender_m_fo))
-# table(demog_df$gender_m_fo)
+# Merging demographic and HbA1c data
+demog_df = left_join(demog_df, a1c_col) %>%
+  select(-record_id, -redcap_event_name) %>%
+  filter(!is.na(gender_m_fo)) 
+rm(a1c_col) # Removing temporary variable to free memory
 
-#  run analyses w both age and agecat
-#### TO DO ADD SURVEYS
+# Selecting key demographic variables for analysis
+demogs = sd_df %>%
+  select(record_id, redcap_event_name, gender_m_fo, age_cat, currenthcltech, current_cgm_use) %>%
+  filter(redcap_event_name == "enrollment_arm_1") %>%
+  select(-redcap_event_name)
 
-demogs = sd_df %>% select(record_id,redcap_event_name,gender_m_fo ,age_cat, currenthcltech, current_cgm_use) %>% 
-  filter(redcap_event_name == "enrollment_arm_1") %>% select(-redcap_event_name)
-analysis = sd_df %>% select(record_id,redcap_event_name,
-                            totalsleep_avg, onsetlatency_avg, sleepefficency_avg, waso_avg,   # sleep meas
-                            sensor_70_180, sensor_181_250, sensor_g251, sensor_u54, sensor_55_69,sensor_mean # diab meas
-) %>% filter(redcap_event_name == "surveys_arm_1") %>% select(-redcap_event_name)
+# Selecting key sleep and diabetes-related variables for analysis
+analysis = sd_df %>%
+  select(record_id, redcap_event_name,
+         totalsleep_avg, onsetlatency_avg, sleepefficency_avg, waso_avg,   # Sleep measures
+         sensor_70_180, sensor_181_250, sensor_g251, sensor_u54, sensor_55_69, sensor_mean # Diabetes measures
+  ) %>%
+  filter(redcap_event_name == "surveys_arm_1") %>%
+  select(-redcap_event_name)
 
-analysis = left_join(analysis, demogs) ; rm(demogs)
-analysis = analysis %>% mutate(sensor_hypoglycemic = sensor_u54 + sensor_55_69,
-                               sensor_hyperglycemic = sensor_181_250 + sensor_g251)
+# Merging demographic data with analysis dataset
+analysis = left_join(analysis, demogs) 
+rm(demogs) # Removing temporary variable
 
+# Creating new computed variables for hypoglycemia and hyperglycemia
+analysis = analysis %>%
+  mutate(sensor_hypoglycemic = sensor_u54 + sensor_55_69,
+         sensor_hyperglycemic = sensor_181_250 + sensor_g251)
 
-# Also look at some of the survey measures – you should have scoring t-tables from Erin to do so
-# survey scoring
+# Processing survey responses
+survey_df = sd_df %>%
+  mutate(
+    # Calculating Morningness/Eveningness Questionnaire (MESC) total score
+    mesc_total = (6 - me_oob) + me_getup + (5 - me_gym) + (5 - me_testtime) +
+                 (5 - me_besttime) + (6 - me_p_bedtime) + me_malert + (6 - me_b_bedtime) +
+                 me_6am + (5 - me_time2alert),
+    # Adjusting survey responses to start from 0 instead of 1
+    across(snore_ht:interrupts, ~ .x - 1)
+  )
 
-survey_df = sd_df %>% mutate(mesc_total = (6 - me_oob) + me_getup + (5 - me_gym) + (5 - me_testtime)
-                             + (5 - me_besttime) + (6 - me_p_bedtime) + me_malert + (6-me_b_bedtime)
-                             + me_6am + (5 - me_time2alert),# Morningness/Eveningness Questionnaire
-                             across(snore_ht:interrupts, ~ .x - 1)) 
+# Extracting MESC total scores
+mesc = survey_df %>%
+  select(record_id, mesc_total) %>%
+  filter(!is.na(mesc_total))
 
-mesc = survey_df %>% select(record_id, mesc_total) %>% filter(!is.na(mesc_total))
-  
-srdb = survey_df %>% filter(redcap_event_name == "surveys_arm_2") %>% mutate(SRDB_score = rowMeans(across(snore_ht:interrupts), na.rm = T)) %>%
-  select(record_id, SRDB_score) # SRDB Scale
+# Calculating Sleep-Related Breathing Disorder (SRDB) score
+srdb = survey_df %>%
+  filter(redcap_event_name == "surveys_arm_2") %>%
+  mutate(SRDB_score = rowMeans(across(snore_ht:interrupts), na.rm = T)) %>%
+  select(record_id, SRDB_score)
 
+# Standardizing record_id values
 srdb$record_id = sub("^.", "1", srdb$record_id)
 
-hfs = survey_df %>% filter(redcap_event_name == "surveys_arm_1") %>% mutate(across(bedtime_snacks:having_low_sugar, ~ .x - 1),
-                           hfs_total = rowSums(across(bedtime_snacks:having_low_sugar), na.rm=F)) %>% select(record_id, hfs_total)# Hypoglycemia Fear Survey child/Teen
+# Calculating Hypoglycemia Fear Survey (HFS) total score
+hfs = survey_df %>%
+  filter(redcap_event_name == "surveys_arm_1") %>%
+  mutate(across(bedtime_snacks:having_low_sugar, ~ .x - 1),
+         hfs_total = rowSums(across(bedtime_snacks:having_low_sugar), na.rm = FALSE)) %>%
+  select(record_id, hfs_total)
 
-# Child_PROMIS_Sleep Disturbance
-# Child_PROMIS_Sleep Related Impairment 
-# Child_PROMIS_Psychological stress
-# Child_PROMIS_Anxiety
-# Child_PROMIS_Depressive Symptoms 
-promis = survey_df %>% filter(redcap_event_name == "surveys_arm_1") %>% mutate(
-  sleep_dist_raw = rowSums(across(sd_falling:sd_tossed)),
-  sleep_imp_raw =  rowSums(across(sri_sleepy:sri_mood)),
-  psy_stress_raw =  rowSums(across(ps_stressed:ps_manage)),
-  anxiety_raw =  rowSums(across(a_awful:a_bed)),
-  depress_raw =  rowSums(across(ds_sad:ds_hard))) %>% select(record_id, sleep_dist_raw:depress_raw)
+# Processing Child PROMIS survey scores
+promis = survey_df %>%
+  filter(redcap_event_name == "surveys_arm_1") %>%
+  mutate(
+    sleep_dist_raw = rowSums(across(sd_falling:sd_tossed)),  # Sleep Disturbance
+    sleep_imp_raw = rowSums(across(sri_sleepy:sri_mood)),   # Sleep Impairment
+    psy_stress_raw = rowSums(across(ps_stressed:ps_manage)), # Psychological Stress
+    anxiety_raw = rowSums(across(a_awful:a_bed)),           # Anxiety
+    depress_raw = rowSums(across(ds_sad:ds_hard))           # Depression
+  ) %>%
+  select(record_id, sleep_dist_raw:depress_raw)
 
+# Mapping raw scores to standardized T-scores
+promis = left_join(promis, Anxiety_T, by = c('anxiety_raw' = 'raw')) %>%
+  select(record_id, sleep_dist_raw:depress_raw, anxiety_t)
 
-promis = left_join(promis, Anxiety_T, by = c('anxiety_raw' = 'raw')) %>% select(record_id, sleep_dist_raw:depress_raw,anxiety_t)
+promis = left_join(promis, Depression_T, by = c('depress_raw' = 'raw')) %>%
+  select(record_id, sleep_dist_raw:depress_raw, anxiety_t, depression_t)
 
-promis = left_join(promis, Depression_T, by = c('depress_raw' = 'raw')) %>% select(record_id, sleep_dist_raw:depress_raw,anxiety_t,depression_t)
+promis = left_join(promis, Sleep_Disturbance_T, by = c('sleep_dist_raw' = 'raw')) %>%
+  select(record_id, sleep_dist_raw:depress_raw, anxiety_t, depression_t, sleep_disturbance_t)
 
-promis = left_join(promis, Sleep_Disturbance_T, by = c('sleep_dist_raw' = 'raw')) %>% select(record_id, sleep_dist_raw:depress_raw,anxiety_t,depression_t,sleep_disturbance_t)
+promis = left_join(promis, Impairment_T, by = c('sleep_imp_raw' = 'raw')) %>%
+  select(record_id, sleep_dist_raw:depress_raw, anxiety_t, depression_t, sleep_disturbance_t, sleep_impairment_t)
 
-promis = left_join(promis, Impairment_T, by = c('sleep_imp_raw' = 'raw')) %>% select(record_id, sleep_dist_raw:depress_raw,anxiety_t,depression_t,sleep_disturbance_t,sleep_impairment_t)
+promis = left_join(promis, Psychological_Stress_T, by = c('psy_stress_raw' = 'raw')) %>%
+  select(record_id, sleep_dist_raw:depress_raw, anxiety_t, depression_t, sleep_disturbance_t, sleep_impairment_t, psych_stress_t)
 
-promis = left_join(promis, Psychological_Stress_T, by = c('psy_stress_raw' = 'raw')) %>% select(record_id, sleep_dist_raw:depress_raw,anxiety_t,depression_t,sleep_disturbance_t,sleep_impairment_t,psych_stress_t)
-
+# Merging survey data
 surveys = full_join(promis, hfs) %>% unique()
 surveys = full_join(surveys, srdb) %>% unique()
 surveys = full_join(surveys, mesc) %>% unique()
 
-analysis = full_join(analysis,surveys) %>% unique()
+# Merging all survey and analysis datasets
+analysis = full_join(analysis, surveys) %>% unique()
 
-analysis$hoursc = vapply(strsplit(as.character(analysis$totalsleep_avg),":"), `[`, 1, FUN.VALUE=character(1))
-analysis$minsc = vapply(strsplit(as.character(analysis$totalsleep_avg),":"), `[`, 2, FUN.VALUE=character(1))
-analysis$sleeptotal_avg = as.numeric(analysis$hoursc)*60 + as.numeric(analysis$minsc)
+# Converting total sleep time from HH:MM format to minutes
+analysis$hoursc = vapply(strsplit(as.character(analysis$totalsleep_avg), ":"), `[`, 1, FUN.VALUE = character(1))
+analysis$minsc = vapply(strsplit(as.character(analysis$totalsleep_avg), ":"), `[`, 2, FUN.VALUE = character(1))
+analysis$sleeptotal_avg = as.numeric(analysis$hoursc) * 60 + as.numeric(analysis$minsc)
 ```
 
 
