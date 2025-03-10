@@ -8,15 +8,17 @@ output: html_document
 ```{r setup, include=FALSE}
 # Install and load necessary packages
 library(MOFA2)
+library(ggplot2)
+library(gridExtra)
 library(tidyverse)
 
 # while figuring out code lets look at score 2 then add in later
 # score 1 and 2 (can look at raw files link in comments below)
 #all_score1 <- readRDS("S:/Laura/BDC/Projects/Howard Davidson/R01/MOFA/all_scPS_score1.rds")
-all_score2 <- readRDS("S:/Laura/BDC/Projects/Howard Davidson/R01/MOFA/all_scPS_score2.rds")
+#all_score2 <- readRDS("S:/Laura/BDC/Projects/Howard Davidson/R01/MOFA/all_scPS_score2.rds")
 # raw scores
-#all_score1_r <- readRDS("S:/Laura/BDC/Projects/Howard Davidson/R01/MOFA/all_scPS_score1_raw.rds")
-all_score2_r <- readRDS("S:/Laura/BDC/Projects/Howard Davidson/R01/MOFA/all_scPS_score2_raw.rds")
+all_score1_r <- readRDS("S:/Laura/BDC/Projects/Howard Davidson/R01/MOFA/all_scPS_score1_raw.rds")
+#all_score2_r <- readRDS("S:/Laura/BDC/Projects/Howard Davidson/R01/MOFA/all_scPS_score2_raw.rds")
 
 # rest of files
 # clusters
@@ -35,19 +37,88 @@ analysis = left_join(covariates, auc_ida); rm(auc_ida, covariates)
 
 ```{r, include=FALSE}
 # transpose so rows is samples
-all_score2 = t(all_score2)
-# Check the dimensions of the matrix (rows = samples, columns = features)
-dim(all_score2)
-# Check for missing values (NAs) in the matrix
-sum(is.na(all_score2))
+#all_score2 = t(all_score2)
+all_score2 = t(all_score1_r)
+rm(all_score1_r)
+
+
+# Check the dimensions of the matrix (rows = samples, columns = features) # Check for missing values (NAs) in the matrix
+dim(all_score2);sum(is.na(all_score2))
 
 # scale the matrix (optional but commonly done) -- centered and scaled
 as2_s <- scale(all_score2)
+rm(all_score2)
 
-# You can create a MOFA object from a single dataset if it's your only data
-# Example for a single omics dataset:
-mofa_model <- create_mofa(list(dataset = as2_s))
+# not sure if necessary but making rownames its own column in cluster df
+clusters$sample = rownames(clusters)
+c2 = clusters %>% filter(sample %in% rownames(as2_s))
 
+# all(rownames(as2_s) %in% clusters$sample)  # Should return TRUE
+
+# Convert wide expression matrix to long format
+expr_long <- as.data.frame(as2_s) %>%
+  tibble::rownames_to_column("sample") %>%
+  pivot_longer(cols = -sample, names_to = "feature", values_to = "value") %>%
+  mutate(view = "RNA")  # Assign a view name (RNA expression)
+
+
+# Select relevant columns from clusters (modify as needed)
+metadata_selected <- clusters %>%
+  select(sample, donor,group = RNA_snn_res.0.3)  # Adjust 'group' column if needed for our clusters
+
+metadata_selected = left_join(metadata_selected,analysis, by = c("donor" = "Donor"))
+rm(c2);rm(as2_s);rm()
+# Merge expression data with metadata
+final_long_df <- expr_long %>%
+  left_join(metadata_selected, by = "sample")
+
+
+# using preferred data structure in the vignette
+mofaobject = create_mofa(final_long_df)
+
+# settings
+data_opts <- get_default_data_options(mofaobject)
+model_opts <- get_default_model_options(mofaobject)
+train_opts <- get_default_training_options(mofaobject)
+
+
+# build and train the mofa object
+MOFAobject <- prepare_mofa(
+  object = mofaobject,
+  data_options = data_opts,
+  model_options = model_opts,
+  training_options = train_opts
+)
+
+# train model
+outfile = file.path(getwd(),"model")
+MOFAobject.trained <- run_mofa(MOFAobject, outfile,use_basilisk = TRUE)
 ```
 
+```{r}
+#load model
+model <- load_model(outfile)
+# Variance explained for every factor in per view and group
+head(model@cache$variance_explained$r2_per_factor[[1]])
+plot_factor(model, 
+  factor = 1,
+  color_by = "AUC_raw"
+)
 
+
+# # Generate plots for factors 1 to 12
+# plots <- lapply(1:12, function(f) {
+#   plot_top_weights(model, factor = f, nfeatures = 20) + ggtitle(paste("Factor", f))
+# })
+# 
+# # Arrange all plots in a grid (adjust 'ncol' as needed)
+# grid.arrange(grobs = plots, ncol = 3)
+
+pdf("MOFA_top_weights_factors_1-12.pdf", width = 10, height = 12)
+
+for (f in 1:12) {
+  print(plot_top_weights(model, factor = f, nfeatures = 20) + ggtitle(paste("Cluster", f)))
+}
+
+dev.off()# 3 columns, adjust as needed
+```
