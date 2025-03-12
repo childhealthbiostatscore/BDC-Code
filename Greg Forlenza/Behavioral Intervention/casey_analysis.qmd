@@ -1,0 +1,504 @@
+---
+title: "JDRF Behavioral Intervention"
+author: "Tim Vigers, Casey Sakamoto"
+date: "today"
+date-format: long
+format:
+  html:
+    toc: true
+    toc-depth: 5
+    number-sections: true
+    toc-float: true
+    code-fold: true
+    self-contained: true
+    fig-height: 10
+    fig-width: 10
+    fig-cap-location: top
+    page-layout: full
+    theme:
+      light: flatly
+      dark: darkly
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+```{r libraries and import, include = F}
+#| include: false
+library(tidyverse)
+library(plotly)
+library(redcapAPI)
+library(gtsummary)
+library(lmerTest)
+library(GLMMadaptive)
+library(emmeans)
+library(broom.mixed)
+library(performance)
+library(kableExtra)
+unlockREDCap(c(rcon = "JDRF Behavioral Intervention"),
+  keyring = "API_KEYs",
+  envir = globalenv(),
+  url = "https://redcap.ucdenver.edu/api/"
+)
+exportBulkRecords(list(db = rcon), envir = globalenv())
+# Review invalid data
+Records <- exportRecordsTyped(rcon)
+reviewInvalidRecords(Records)
+
+# api k:  0FB8B28FB5F4D22A98C5090488CE0BCB
+```
+
+```{r data cleaning, include=FALSE}
+#| message: false
+# Add treatment group to glycemic data
+db_glycemic_data <- left_join(
+  db_glycemic_data,
+  db_randomization_form %>%
+    filter(!is.na(treatment_group)) %>%
+    select(record_id, treatment_group)
+)
+# Everyone else is considered "observe clinically"
+db_glycemic_data$treatment_group <- as.character(db_glycemic_data$treatment_group)
+db_glycemic_data$treatment_group[is.na(db_glycemic_data$treatment_group)] <-
+  "Observe Clincically"
+db_glycemic_data$treatment_group <- factor(db_glycemic_data$treatment_group,
+  levels = c("Observe Clinically", "Behavioral Intervention", "Care+ (Control)")
+)
+# If they are missing gly_timepoint they don't have glycemic data at that visit
+db_glycemic_data <- db_glycemic_data %>% filter(!is.na(gly_timepoint))
+```
+
+# Table 1
+
+```{r, echo = FALSE}
+#| label: tbl-1
+#| tbl-cap: Participant Characteristics
+#| # add in group
+db_tgroups = db_glycemic_data %>% select(record_id, treatment_group) %>% unique()
+db_demographics = left_join(db_demographics, db_tgroups)
+#|
+db_demographics %>% filter(redcap_event_name == "Baseline (Arm 1: Optimal Use)")  %>%
+  select(redcap_event_name, treatment_group,demo_hcl, demo_hcl_2, demo_age:demo_predict) %>%
+  mutate(
+    redcap_event_name = droplevels(redcap_event_name),
+    demo_probability = as.numeric(demo_probability)
+  ) %>%
+  tbl_summary(
+    by = treatment_group,
+    missing_text = "Missing",
+    type = list(
+      demo_age ~ "continuous", demo_probability ~ "continuous"
+    ),
+    statistic = list(
+      all_continuous() ~ "{mean} ({sd})")
+  ) %>% add_overall() %>%
+  as_kable_extra()
+```
+
+# APPENDED MAY 2024: SURVEY ANALYSIS
+
+STILL CODING/WRTING UP SURVEY ANALYSES
+
+o At baseline we
+conducted the following surveys: Paid-PEDS, Inspire, Hypoglycemia Fear
+Survey, Diabetes Technology Questionnaire. We need to see how the
+baseline scores for each of these tools compared between the 3 groups. 
+
+o In the intervention group we also gave an "Intervention" survey which
+included questions about the sessions as well as Diabetes Centered
+Family Conflict questions. I'd like to look at each question for this
+one in addition to composite scores
+
+# APPENDED MAY 2024 -- BOLUS ANALYSIS
+
+• Glycemic Data (Table 2) -- Needs some Pump data as well
+
+```{r bolus an}
+# want to see if behavioral intervention impacted bolus behavior and how bolus affected TIR
+# mediation function using lavaan package
+library(lavaan)
+
+# gly_dailybolus and gly_dailymealbolus the vars
+df = db_glycemic_data %>% select(record_id, gly_timepoint, treatment_group, gly_dailybolus, gly_sensor_70_180) %>%  drop_na()
+df$treatment_group = factor(df$treatment_group, levels = c("Care+ (Control)", "Behavioral Intervention"))
+mediation_model = "
+# mediator 
+gly_dailybolus ~ a*treatment_group
+gly_sensor_70_180 ~ b*gly_dailybolus
+# direct effect
+gly_sensor_70_180 ~ c*treatment_group
+# indirect effect
+ab := a*b
+# total effect
+total := c + (a*b)
+"
+fit = sem(mediation_model, data = df)
+summary(fit)
+parameterestimates(fit) %>% kable()
+
+ggplot(data = df,aes(group = treatment_group, x = gly_dailybolus, y = gly_sensor_70_180)) + geom_point(aes(color = treatment_group))
+```
+
+
+Question:"Did the BI impact bolusing behavior and if so did that drive improvement in TIR?" 
+
+
+## Writeup
+
+Remarks: In the main analysis LMM, we see that BI was not significantly associated with TIR 70-180 (p = 0.1).
+
+Treatment group (Care + vs Behavioral Intervention) was not associated with avg number of daily boluses used (var gly_dailybolus) (p = 0.8).
+
+Adjusting for treatment group, every 1-unit increase in average daily bolus use was associated with a 1.03 (S.E. = 0.37) higher TIR (p = 0.01).
+
+Treatment group was not associated with TIR indirectly through increases in bolus use (95% CI:[-1.33, 1.03], p = 0.801). **indirect effect ab
+
+There was no sufficient evidence treatment group was associated with TIR independent of its association with number of boluses used (p = 0.250)
+
+# Glycemic data
+
+## Groups by timepoint
+
+```{r gbt}
+db_glycemic_data %>%
+  group_by(gly_timepoint) %>%
+  summarise(
+    n = length(unique(record_id)),
+    `n Observe Clincically` = sum(treatment_group == "Observe Clincically"),
+    `n Behavioral Intervention` = sum(treatment_group == "Behavioral Intervention"),
+    `n Care+ (Control)` = sum(treatment_group == "Care+ (Control)")
+  ) %>%
+  kable()
+# # Write for checking
+# write.csv(
+#   db_glycemic_data %>%
+#     select(
+#       record_id, redcap_event_name, redcap_survey_identifier,
+#       treatment_group, everything()
+#     ),
+#   file = "~/cleaned_glycemic_data.csv", row.names = F, na = ""
+# )
+```
+
+## Sensor wear
+
+### Plot
+
+```{r sw}
+v <- "gly_sensorwear"
+df <- db_glycemic_data %>%  select(record_id, gly_timepoint, treatment_group, all_of(v)) %>%  drop_na()
+
+p <- ggplot(df, aes(  x = gly_timepoint, y = !!sym(v), group = record_id, color = treatment_group)) +
+  geom_point() +
+  geom_line() +
+  theme_bw() +
+  theme(axis.title.x = element_blank())
+ggplotly(p)
+```
+
+### Model
+
+```{r sw m}
+f <- as.formula(paste0(v, "~gly_timepoint*treatment_group+(1|record_id)"))
+mod <- lmer(f, data = db_glycemic_data)
+```
+
+#### Results
+
+```{r sw r}
+kable(tidy(mod, effects = "fixed"), digits = 3)
+```
+
+#### Means
+
+```{r sw me}
+kable(data.frame(emmeans(mod, ~ gly_timepoint * treatment_group)), digits = 3)
+```
+
+## Sensor under 54
+
+### Plot
+
+```{r su54}
+v <- "gly_sensor_u54"
+df <- db_glycemic_data %>%
+  select(record_id, gly_timepoint, treatment_group, all_of(v)) %>%
+  drop_na()
+p <- ggplot(df, aes(
+  x = gly_timepoint, y = !!sym(v), group = record_id, color = treatment_group
+)) +
+  geom_point() +
+  geom_line() +
+  theme_bw() +
+  theme(axis.title.x = element_blank())
+ggplotly(p)
+```
+
+### Model
+
+Because the majority of people did not have any time under 54 mg/dL, we
+used a hurdle model in which the first part of the model is the
+probability of a zero value and the second part is the probability of
+the non-zero values.
+
+```{r su54 m}
+f <- as.formula(paste0(v, " ~ gly_timepoint*treatment_group"))
+mod <- mixed_model(f,
+  random = ~ 1 | record_id, data = df,
+  family = hurdle.lognormal(), n_phis = 1, zi_fixed = ~1
+)
+```
+
+#### Results
+
+```{r su54 r}
+kable(tidy(mod), digits = 3)
+```
+
+#### Means
+
+These model means do not really make sense since we can't have negative
+values for this outcome, so this model likely needs additional work.
+
+```{r su54 me}
+kable(data.frame(emmeans(mod, ~ gly_timepoint * treatment_group)), digits = 3)
+```
+
+## Sensor Under 70
+
+### Plot
+
+```{r}
+db_glycemic_data$gly_sensor_u70 = db_glycemic_data$gly_sensor_u54 + db_glycemic_data$gly_sensor_54_69
+v <- "gly_sensor_u70"
+df <- db_glycemic_data %>%
+  select(record_id, gly_timepoint, treatment_group, all_of(v)) %>%
+  drop_na()
+p <- ggplot(df, aes(
+  x = gly_timepoint, y = !!sym(v), group = record_id, color = treatment_group
+)) +
+  geom_point() +
+  geom_line() +
+  theme_bw() +
+  theme(axis.title.x = element_blank())
+ggplotly(p)
+```
+
+### Model
+
+Because the majority of people did not have any time in the range 54 -
+69 mg/dL, we used a hurdle model in which the first part of the model is
+the probability of a zero value and the second part is the probability
+of the non-zero values.
+
+```{r}
+f <- as.formula(paste0(v, " ~ gly_timepoint*treatment_group"))
+mod <- mixed_model(f,
+  random = ~ 1 | record_id, data = df,
+  family = hurdle.lognormal(), n_phis = 1, zi_fixed = ~1
+)
+```
+
+#### Results
+
+```{r}
+kable(tidy(mod), digits = 3)
+```
+
+#### Means
+
+```{r}
+kable(data.frame(emmeans(mod, ~ gly_timepoint * treatment_group)), digits = 3)
+```
+
+## Sensor 70 - 180
+
+### Plot
+
+```{r}
+v <- "gly_sensor_70_180"
+df <- db_glycemic_data %>%
+  select(record_id, gly_timepoint, treatment_group, all_of(v)) %>%
+  drop_na()
+p <- ggplot(df, aes(
+  x = gly_timepoint, y = !!sym(v), group = record_id, color = treatment_group
+)) +
+  geom_point() +
+  geom_line() +
+  theme_bw() +
+  theme(axis.title.x = element_blank())
+ggplotly(p)
+```
+
+### Model
+
+```{r}
+f <- as.formula(paste0(v, "~gly_timepoint*treatment_group+(1|record_id)"))
+mod <- lmer(f, data = db_glycemic_data)
+```
+
+#### Results
+
+```{r}
+kable(tidy(mod, effects = "fixed"), digits = 3)
+```
+
+#### Means
+
+```{r}
+kable(data.frame(emmeans(mod, ~ gly_timepoint * treatment_group)), digits = 3)
+```
+
+## Sensor Over 180
+
+### Plot
+
+```{r}
+db_glycemic_data$gly_sensor_g181 = db_glycemic_data$gly_sensor_g250 + db_glycemic_data$gly_sensor_181_250
+v <- "gly_sensor_g181"
+
+df <- db_glycemic_data %>%
+  select(record_id, gly_timepoint, treatment_group, all_of(v)) %>%
+  drop_na()
+p <- ggplot(df, aes(
+  x = gly_timepoint, y = !!sym(v), group = record_id, color = treatment_group
+)) +
+  geom_point() +
+  geom_line() +
+  theme_bw() +
+  theme(axis.title.x = element_blank())
+ggplotly(p)
+```
+
+### Model
+
+```{r}
+f <- as.formula(paste0(v, "~gly_timepoint*treatment_group+(1|record_id)"))
+mod <- lmer(f, data = db_glycemic_data)
+```
+
+#### Results
+
+```{r}
+kable(tidy(mod, effects = "fixed"), digits = 3)
+```
+
+#### Means
+
+```{r}
+kable(data.frame(emmeans(mod, ~ gly_timepoint * treatment_group)), digits = 3)
+```
+
+## Sensor \> 250
+
+### Plot
+
+```{r}
+v <- "gly_sensor_g250"
+df <- db_glycemic_data %>%
+  select(record_id, gly_timepoint, treatment_group, all_of(v)) %>%
+  drop_na()
+p <- ggplot(df, aes(
+  x = gly_timepoint, y = !!sym(v), group = record_id, color = treatment_group
+)) +
+  geom_point() +
+  geom_line() +
+  theme_bw() +
+  theme(axis.title.x = element_blank())
+ggplotly(p)
+```
+
+### Model
+
+```{r}
+f <- as.formula(paste0(v, "~gly_timepoint*treatment_group+(1|record_id)"))
+mod <- lmer(f, data = db_glycemic_data)
+```
+
+#### Results
+
+```{r}
+kable(tidy(mod, effects = "fixed"), digits = 3)
+```
+
+#### Means
+
+```{r}
+kable(data.frame(emmeans(mod, ~ gly_timepoint * treatment_group)), digits = 3)
+```
+
+## Mean sensor
+
+### Plot
+
+```{r}
+v <- "gly_sensor_mean"
+df <- db_glycemic_data %>%
+  select(record_id, gly_timepoint, treatment_group, all_of(v)) %>%
+  drop_na()
+p <- ggplot(df, aes(
+  x = gly_timepoint, y = !!sym(v), group = record_id, color = treatment_group
+)) +
+  geom_point() +
+  geom_line() +
+  theme_bw() +
+  theme(axis.title.x = element_blank())
+ggplotly(p)
+```
+
+### Model
+
+```{r}
+f <- as.formula(paste0(v, "~gly_timepoint*treatment_group+(1|record_id)"))
+mod <- lmer(f, data = db_glycemic_data)
+```
+
+#### Results
+
+```{r}
+kable(tidy(mod, effects = "fixed"), digits = 3)
+```
+
+#### Means
+
+```{r}
+kable(data.frame(emmeans(mod, ~ gly_timepoint * treatment_group)), digits = 3)
+```
+
+## Sensor SD
+
+### Plot
+
+```{r}
+v <- "gly_sensor_sd"
+df <- db_glycemic_data %>%
+  select(record_id, gly_timepoint, treatment_group, all_of(v)) %>%
+  drop_na()
+p <- ggplot(df, aes(
+  x = gly_timepoint, y = !!sym(v), group = record_id, color = treatment_group
+)) +
+  geom_point() +
+  geom_line() +
+  theme_bw() +
+  theme(axis.title.x = element_blank())
+ggplotly(p)
+```
+
+### Model
+
+```{r}
+f <- as.formula(paste0(v, "~gly_timepoint*treatment_group+(1|record_id)"))
+mod <- lmer(f, data = db_glycemic_data)
+```
+
+#### Results
+
+```{r}
+kable(tidy(mod, effects = "fixed"), digits = 3)
+```
+
+#### Means
+
+```{r}
+kable(data.frame(emmeans(mod, ~ gly_timepoint | treatment_group)), digits = 3)
+```

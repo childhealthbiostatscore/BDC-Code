@@ -1,0 +1,385 @@
+---
+title: "MERIT Physician Reports"
+author: "Tim Vigers"
+date: "today"
+date-format: long
+format:
+  html:
+    toc: true
+    toc-depth: 5
+    toc-float: true
+    code-fold: true
+    self-contained: true
+    fig-cap-location: top
+    fig-width: 9
+    fig-height: 6
+    page-layout: full
+    theme:
+      light: flatly
+      dark: darkly
+bibliography: /Users/timvigers/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Personal/Miscellaneous/zotero.bib
+csl: /Users/timvigers/GitHub/styles/american-medical-association.csl
+editor: source
+---
+
+```{r setup}
+#| include: false
+library(tidyverse)
+library(lubridate)
+library(hms)
+library(gt)
+knitr::opts_knit$set(root.dir = "/Users/timvigers/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Janet Snell-Bergeon/MERIT")
+```
+
+```{r data cleaning}
+load("./Data_Clean/analysis_data.RData")
+cgm <- cgm %>% filter(participant_id == "101_EX")
+```
+
+```{r functions}
+# Phase plot for a single participant - assumes specific column names for now
+merit_phase_plot <- function(df = cgm, phase = "menstrual_phase") {
+  # Get start and end times
+  if (phase == "menstrual_phase") {
+    phases <- df %>%
+      group_by(study_phase, menstrual_phase) %>%
+      summarise(
+        start = first(timestamp, na_rm = T),
+        end = last(timestamp, na_rm = T),
+        .groups = "drop"
+      )
+    p <- df %>%
+      ggplot(aes(x = timestamp, y = sensorglucose)) +
+      geom_rect(
+        data = phases, aes(
+          xmin = start, xmax = end, ymin = -Inf, ymax = Inf,
+          fill = menstrual_phase
+        ),
+        alpha = 0.2, inherit.aes = F
+      ) +
+      geom_point(shape = ".") +
+      scale_fill_discrete(name = "Menstrual Phase")
+  } else if (phase == "study_phase") {
+    phases <- df %>%
+      group_by(study_phase) %>%
+      summarise(
+        start = first(timestamp, na_rm = T),
+        end = last(timestamp, na_rm = T),
+        .groups = "drop"
+      )
+    p <- df %>%
+      ggplot(aes(x = timestamp, y = sensorglucose)) +
+      geom_rect(
+        data = phases, aes(
+          xmin = start, xmax = end, ymin = -Inf, ymax = Inf,
+          fill = study_phase
+        ),
+        alpha = 0.2, inherit.aes = F
+      ) +
+      geom_point(shape = ".") +
+      scale_fill_discrete(name = "Study Phase")
+  }
+  # Plot formatting
+  p <- p +
+    ylim(c(35, 405)) +
+    xlab("Time") +
+    ylab("Sensor Glucose (mg/dL)") +
+    scale_x_time(breaks = c(0, 43200, 86400)) +
+    theme_bw()
+  return(p)
+}
+mean_glucose_plot <- function(df = cgm, by = "menstrual_phase") {
+  p <- df %>%
+    mutate(Time = as_hms(round_date(timestamp, "5 minutes"))) %>%
+    group_by(.data[[by]], Time) %>%
+    summarise(
+      sensorglucose = mean(sensorglucose, na.rm = T),
+      .groups = "drop"
+    ) %>%
+    ggplot(aes(x = Time, y = sensorglucose, color = .data[[by]])) +
+    geom_point(shape = ".") +
+    geom_line() +
+    scale_color_discrete(name = element_blank()) +
+    scale_x_time(breaks = c(0, 43200, 86400)) +
+    xlab("Time") +
+    ylab("Mean Sensor Glucose (mg/dL)") +
+    theme_bw()
+  return(p)
+}
+sd_glucose_plot <- function(df = cgm, by = "menstrual_phase") {
+  p <- df %>%
+    mutate(Time = as_hms(round_date(timestamp, "5 minutes"))) %>%
+    group_by(.data[[by]], Time) %>%
+    summarise(
+      sensorglucose = sd(sensorglucose, na.rm = T),
+      .groups = "drop"
+    ) %>%
+    ggplot(aes(x = Time, y = sensorglucose, color = .data[[by]])) +
+    geom_point(shape = ".") +
+    geom_line() +
+    scale_color_discrete(name = element_blank()) +
+    scale_x_time(breaks = c(0, 43200, 86400)) +
+    xlab("Time") +
+    ylab("Sensor Glucose SD (mg/dL)") +
+    theme_bw()
+  return(p)
+}
+tir_plot <- function(df = cgm, range = c(70, 180), by = "menstrual_phase") {
+  p <- df %>%
+    mutate(Time = as_hms(round_date(timestamp, "5 minutes"))) %>%
+    group_by(.data[[by]], Time) %>%
+    summarise(
+      sensorglucose =
+        mean(sensorglucose >= range[1] & sensorglucose <= range[2],
+          na.rm = T
+        ) * 100,
+      .groups = "drop"
+    ) %>%
+    ggplot(aes(x = Time, y = sensorglucose, color = .data[[by]])) +
+    geom_point(shape = ".") +
+    geom_line() +
+    scale_color_discrete(name = element_blank()) +
+    scale_x_time(breaks = c(0, 43200, 86400)) +
+    xlab("Time") +
+    theme_bw()
+  if (is.infinite(range[1])) {
+    p <- p +
+      ylab(paste0("% of Values < ", range[2]))
+  } else if (is.infinite(range[2])) {
+    p <- p +
+      ylab(paste0("% of Values > ", range[1]))
+  } else {
+    p <- p +
+      ylab(paste0("% of Values in Range (", range[1], " - ", range[2], ")"))
+  }
+  return(p)
+}
+```
+
+```{r results='asis'}
+#| warning: false
+invisible(lapply(unique(cgm$participant_id), function(id) {
+  df <- cgm %>% filter(participant_id == id)
+  cat("\n")
+  cat("\n")
+  cat("#", id)
+  cat("\n")
+  cat("\n")
+  cat("## Tables")
+  cat("\n")
+  cat("\n")
+  cat("### CGM Metrics by Phase (Overall)")
+  cat("\n")
+  cat("\n")
+  df %>%
+    group_by(menstrual_phase) %>%
+    summarise(
+      `Mean glucose` = mean(sensorglucose, na.rm = T),
+      `TIR (70-180)` =
+        scales::percent(
+          mean(sensorglucose >= 70 & sensorglucose <= 180,
+            na.rm = T
+          ),
+          accuracy = 0.01
+        ),
+      `TBR (< 70)` = scales::percent(mean(sensorglucose < 70, na.rm = T),
+        accuracy = 0.01
+      ),
+      `TBR (< 54)` = scales::percent(mean(sensorglucose < 54, na.rm = T),
+        accuracy = 0.01
+      ),
+      `TAR (> 180)` = scales::percent(mean(sensorglucose > 180, na.rm = T),
+        accuracy = 0.01
+      ),
+      `TAR (> 200)` = scales::percent(mean(sensorglucose > 200, na.rm = T),
+        accuracy = 0.01
+      ),
+      `Glucose SD` = sd(sensorglucose, na.rm = T)
+    ) %>%
+    gt() %>%
+    fmt_number(decimals = 2) %>%
+    cols_label(menstrual_phase = "Menstrual Phase") %>%
+    print()
+  cat("\n")
+  cat("\n")
+  cat("### CGM Metrics by Phase and Time of Day")
+  cat("\n")
+  cat("\n")
+  df %>%
+    group_by(time_of_day, menstrual_phase) %>%
+    summarise(
+      `Mean glucose` = mean(sensorglucose, na.rm = T),
+      `TIR (70-180)` =
+        scales::percent(
+          mean(sensorglucose >= 70 & sensorglucose <= 180,
+            na.rm = T
+          ),
+          accuracy = 0.01
+        ),
+      `TBR (< 70)` = scales::percent(mean(sensorglucose < 70, na.rm = T),
+        accuracy = 0.01
+      ),
+      `TBR (< 54)` = scales::percent(mean(sensorglucose < 54, na.rm = T),
+        accuracy = 0.01
+      ),
+      `TAR (> 180)` = scales::percent(mean(sensorglucose > 180, na.rm = T),
+        accuracy = 0.01
+      ),
+      `TAR (> 200)` = scales::percent(mean(sensorglucose > 200, na.rm = T),
+        accuracy = 0.01
+      ),
+      `Glucose SD` = sd(sensorglucose, na.rm = T),
+      .groups = "drop"
+    ) %>%
+    gt() %>%
+    fmt_number(decimals = 2) %>%
+    cols_label(
+      time_of_day ~ "Time of Day",
+      menstrual_phase = "Menstrual Phase"
+    ) %>%
+    print()
+  cat("\n")
+  cat("\n")
+  cat("### CGM Metrics 24 Hours After Exercise Type")
+  cat("\n")
+  cat("\n")
+  df %>%
+    filter(exercise_24_hr_window == "Yes") %>%
+    group_by(exercise_type) %>%
+    summarise(
+      `Mean glucose` = mean(sensorglucose, na.rm = T),
+      `TIR (70-180)` =
+        scales::percent(mean(sensorglucose >= 70 & sensorglucose <= 180, na.rm = T),
+          accuracy = 0.01
+        ),
+      `TBR (< 70)` = scales::percent(mean(sensorglucose < 70, na.rm = T), accuracy = 0.01),
+      `TBR (< 54)` = scales::percent(mean(sensorglucose < 54, na.rm = T), accuracy = 0.01),
+      `TAR (> 180)` = scales::percent(mean(sensorglucose > 180, na.rm = T),
+        accuracy = 0.01
+      ),
+      `TAR (> 200)` = scales::percent(mean(sensorglucose > 200, na.rm = T),
+        accuracy = 0.01
+      ),
+      `Glucose SD` = sd(sensorglucose, na.rm = T),
+      .groups = "drop"
+    ) %>%
+    gt() %>%
+    fmt_number(decimals = 2) %>%
+    cols_label(exercise_type ~ "Exercise Type") %>%
+    print()
+  cat("\n")
+  cat("\n")
+  cat("### CGM Metrics 24 Hours After Exercise Type and Phase")
+  cat("\n")
+  cat("\n")
+  df %>%
+    filter(exercise_24_hr_window == "Yes") %>%
+    group_by(exercise_type, menstrual_phase) %>%
+    summarise(
+      `Mean glucose` = mean(sensorglucose, na.rm = T),
+      `TIR (70-180)` =
+        scales::percent(mean(sensorglucose >= 70 & sensorglucose <= 180, na.rm = T),
+          accuracy = 0.01
+        ),
+      `TBR (< 70)` = scales::percent(mean(sensorglucose < 70, na.rm = T), accuracy = 0.01),
+      `TBR (< 54)` = scales::percent(mean(sensorglucose < 54, na.rm = T), accuracy = 0.01),
+      `TAR (> 180)` = scales::percent(mean(sensorglucose > 180, na.rm = T),
+        accuracy = 0.01
+      ),
+      `TAR (> 200)` = scales::percent(mean(sensorglucose > 200, na.rm = T),
+        accuracy = 0.01
+      ),
+      `Glucose SD` = sd(sensorglucose, na.rm = T),
+      .groups = "drop"
+    ) %>%
+    gt() %>%
+    fmt_number(decimals = 2) %>%
+    cols_label(exercise_type ~ "Exercise Type",
+      menstrual_phase = "Menstrual Phase"
+    ) %>%
+    print()
+  cat("\n")
+  cat("\n")
+  cat("### Insulin Dose by Phase (Overall)")
+  cat("\n")
+  cat("\n")
+  df %>%
+    group_by(menstrual_phase) %>%
+    summarise(
+      `Mean basal duration` = mean(basal_duration, na.rm = T),
+      `Mean basal rate` = mean(basal_rate, na.rm = T),
+      `Mean bolus` = mean(bolus, na.rm = T),
+    ) %>%
+    gt() %>%
+    fmt_number(decimals = 2) %>%
+    cols_label(menstrual_phase = "Menstrual Phase") %>%
+    print()
+  cat("\n")
+  cat("\n")
+  cat("\n")
+  cat("\n")
+  cat("## Graphs")
+  cat("\n")
+  cat("\n")
+  cat("### All Glucose Values by Menstrual Phase")
+  cat("\n")
+  cat("\n")
+  merit_phase_plot(df, phase = "menstrual_phase") %>% print()
+  cat("\n")
+  cat("\n")
+  cat("### All Glucose Values by Study Phase")
+  cat("\n")
+  cat("\n")
+  merit_phase_plot(df, phase = "study_phase") %>% print()
+  cat("\n")
+  cat("\n")
+  cat("### Mean Glucose Values by Menstrual Phase")
+  cat("\n")
+  cat("\n")
+  mean_glucose_plot(df) %>% print()
+  cat("\n")
+  cat("\n")
+  cat("### Glucose SD by Menstrual Phase")
+  cat("\n")
+  cat("\n")
+  sd_glucose_plot(df) %>% print()
+  cat("\n")
+  cat("\n")
+  cat("### TIR by Menstrual Phase")
+  cat("\n")
+  cat("\n")
+  tir_plot(df) %>% print()
+  cat("\n")
+  cat("\n")
+  tir_plot(df, c(-Inf, 70)) %>% print()
+  cat("\n")
+  cat("\n")
+  tir_plot(df, c(-Inf, 54)) %>% print()
+  cat("\n")
+  cat("\n")
+  tir_plot(df, c(180, Inf)) %>% print()
+  cat("\n")
+  cat("\n")
+  tir_plot(df, c(200, Inf)) %>% print()
+  cat("\n")
+  cat("\n")
+  cat("### Mean Glucose Values 24 hours After Exercise Videos by Type")
+  cat("\n")
+  cat("\n")
+  df %>%
+    filter(exercise_24_hr_window == "Yes") %>%
+    mean_glucose_plot(., by = "exercise_type") %>%
+    print()
+  cat("\n")
+  cat("\n")
+  cat("### Glucose SD 24 hours After Exercise Videos by Type")
+  cat("\n")
+  cat("\n")
+  df %>%
+    filter(exercise_24_hr_window == "Yes") %>%
+    sd_glucose_plot(., by = "exercise_type") %>%
+    print()
+  cat("\n")
+  cat("\n")
+}))
+```

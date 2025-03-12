@@ -15,10 +15,12 @@ library(readxl)
 library(openxlsx)
 library(lubridate)
 library(data.table)
-
+library(table1)
+library(chron)
+library(htmlTable)
 #data upl  S:/Laura/BDC\Projects\Sarit Polsky\PICLS
 ######## FIRST SHEET. TDD STUFF
-tdd_files_list <- list.files(path = 'S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/CGM_Pump_ins',full.names = TRUE)
+tdd_files_list <- list.files(path = '/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/CGM_Pump_ins',full.names = TRUE)
 list_of_tdd_dfs <- lapply(as.list(tdd_files_list), function(x) read_xlsx(x, sheet = 1))
 
 # Create a vector of names based on the first word of the filename + "Balance"
@@ -29,7 +31,7 @@ tdd_df_names <- paste0(str_extract(basename(tdd_files_list), "[^ ]+"), "_TDD_df"
 names(list_of_tdd_dfs) <- tdd_df_names
 
 ########## SECIND SHEET PUMP ADJ
-pump_files_list <- list.files(path = 'S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/CGM_Pump_ins',full.names = TRUE)
+pump_files_list <- list.files(path = '/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/CGM_Pump_ins',full.names = TRUE)
 list_of_pumpdfs <- lapply(as.list(pump_files_list), function(x) read_xlsx(x, sheet = 2, col_types = c("text", "date", "text", "numeric", "numeric", "numeric", "numeric", "numeric")))
 
 # Create a vector of names based on the first word of the filename + "Balance"
@@ -40,7 +42,7 @@ pump_df_names <- paste0(str_extract(basename(pump_files_list), "[^ ]+"), "_TDD_d
 names(list_of_pumpdfs) <- pump_df_names
 
 #### groups
-groups <- read.csv("S:/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/PICLSStudyHCLVsSAPTI-RandomizedPatients_DATA_2022-11-14_1616.csv")%>% select(pid, randomization_group)
+groups <- read.csv("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Sarit Polsky/PICLS/Data_Clean/PICLSStudyHCLVsSAPTI-RandomizedPatients_DATA_2022-11-14_1616.csv")%>% select(pid, randomization_group)
 
 ```
 
@@ -74,6 +76,7 @@ tdd_df_wk_avg = tdd_df %>% group_by(pid, gweek) %>% summarise(tdd_u_wk = mean(td
                                                               td_basal_wk = mean(td_basal, na.rm = T),
                                                               bolus_perc_wk = mean(bolus_perc, na.rm = T),
                                                               basal_perc_wk = mean(basal_perc, na.rm = T))
+#write.csv2(tdd_df, file = "ref_dates_picls.csv")
 
 tdd_df = tdd_df %>% mutate(gmonth = case_when(gweek %in% c("1","2","3","4") ~ "1",
                                               gweek %in% c("5","6","7","8") ~ "2",
@@ -100,12 +103,34 @@ tdd_df_month_a = tdd_df_month %>% filter(gmonth %in% c("1","2","3","4","5","6","
 # pump settings   ,not sure if we need"Date of pump adjustment"
 pumpvarnames = c("Gestational age","Date of pump adjustment","Start Time","Basal units/hour","Carb ratio (g/U)","Correction bolus","Total basal (U)","Active insulin time (hours)" )
 
+
+# lets just case when this
+# 0.166666666666667 = 4
+# 0.145833333333333 = 3.5
+# 0.135416666666667 = 3.25
+# 0.125 = 3
+# 0.114583333333333  = 2.75
+# 0.104166666666667 = 2.5
+# 0.09375000 = 2.25
+# 0.0833333333333333  = 2.00
+
 column_namer_p = function(x){
   df = x
-  df = df %>% select(pumpvarnames)
+  df = df %>% select(pumpvarnames) %>% mutate(activetime = case_when(`Active insulin time (hours)` == 4 ~ 4,
+                                                                     `Active insulin time (hours)` == 3 ~ 3,
+                                                                     `Active insulin time (hours)` == 1/6 ~ 4,
+                                                                     `Active insulin time (hours)` == 7/48 ~ 3.5,
+                                                                     `Active insulin time (hours)` == 13/96  ~ 3.25,
+                                                                     `Active insulin time (hours)` == 0.125  ~ 3,
+                                                                     `Active insulin time (hours)` == 11/96  ~ 2.75,
+                                                                     `Active insulin time (hours)` == 5/48 ~ 2.5,
+                                                                     `Active insulin time (hours)` == 0.09375000 ~ 2.25,
+                                                                     `Active insulin time (hours)` == 1/12 ~ 2.0,))
 
   return(df)
 }
+
+
 
 
 list_of_pumpdfs = lapply(list_of_pumpdfs, column_namer_p)
@@ -113,6 +138,83 @@ list_of_pumpdfs = mapply(cbind, list_of_pumpdfs, "sampleid"=pump_df_names, SIMPL
 
 pump_df = do.call(rbind, list_of_pumpdfs)
 
+####### APPENDED SEP 2024 ################################
+pump_df = pump_df %>% mutate(time_conv = case_when(grepl(":", `Start Time`) ~ `Start Time`,
+                                                     grepl(".", `Start Time`) ~ as.character(times(as.numeric(`Start Time`)))))
+
+
+pump_df = pump_df %>% mutate(time_conv_l = str_length(time_conv))
+pump_df = pump_df %>% mutate(time_conv2 = ifelse(time_conv_l == 8, gsub('.{3}$', '', time_conv), time_conv))
+pump_df = pump_df %>% mutate(time_conv3 = ifelse(time_conv_l == 4, paste0("0",time_conv2), time_conv2),
+                             time_conv_final = hm(time_conv3)) 
+pump_df = pump_df %>% select(-c(time_conv:time_conv_l))
+
+
+
+pump_df2 = pump_df %>% group_by(sampleid) %>% fill(`Gestational age`, .direction = "down")
+pump_df2 = pump_df2 %>% group_by(sampleid) %>% fill(`Date of pump adjustment`, .direction = "down") %>% filter(!is.na(`Start Time`))
+
+
+pump_df2 = pump_df2%>% group_by(sampleid, `Date of pump adjustment`) %>% fill(c("Basal units/hour","Carb ratio (g/U)","Correction bolus"), .direction = "down")
+#table(pump_df$time_conv3)
+
+pump_set_df = pump_df2
+
+pump_set_df$gweek = factor(tstrsplit(pump_set_df$`Gestational age`, "w")[[1]], levels = c("Preconception", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
+                                                                                             "11", "12", "13", "14", "15", "16", "17", "18", "19", "20",
+                                                                                             "21", "22", "23", "24", "25", "26", "27", "28", "29", "30",
+                                                                                             "31", "32", "33", "34", "35", "36", "37", "38", "Postpartum"))
+#pump_set_df = pump_set_df %>% filter(!is.na(gweek))
+pump_set_df$pid = substr(pump_set_df$sampleid,1,4) 
+pump_set_df = left_join(pump_set_df, groups)
+pump_set_df$randomization_group = factor(pump_set_df$randomization_group, levels = c(1,2), labels = c("HCL","SAPT") )
+
+pump_set_df = pump_set_df  %>% mutate(gmonth = case_when(gweek %in% c("1","2","3","4") ~ "1",
+                                              gweek %in% c("5","6","7","8") ~ "2",
+                                              gweek %in% c("9","10","11","12") ~ "3",
+                                              gweek %in% c("13","14","15","16") ~ "4",
+                                              gweek %in% c("17","18","19","20") ~ "5",
+                                              gweek %in% c("21","22","23","24") ~ "6",
+                                              gweek %in% c("25","26","27","28") ~ "7",
+                                              gweek %in% c("29","30","31","32") ~ "8",
+                                              gweek %in% c("33","34","35","36") ~ "9",
+                                              gweek %in% c("37","38","39") ~ "10",
+                                              TRUE ~ gweek)
+                                      )
+
+# table(pump_set_df$time_conv3)
+# meal times
+breakfast = c("05:00","06:00","06:30","07:00", "08:00", "09:00", "09:30", "10:00")
+lunch = c("11:00", "11:30", "12:00", "13:00", "13:30", "14:00", "14:30", "15:00", "15:30")
+dinner = c("16:00", "16:30", "17:00", "17:30", "18:00", "18:30", "19:00", "19:30", "20:00", "20:30", "21:00")
+overnight = c("22:00", "22:30", "23:00", "00:00", "01:30", "02:00", "03:00", "04:00", "04:30")
+pump_set_df = pump_set_df %>% mutate(meal_period = case_when(time_conv3 %in% breakfast ~ "Breakfast",
+                                                             time_conv3 %in% lunch ~ "Lunch",
+                                                             time_conv3 %in% dinner ~ "Dinner",
+                                                             time_conv3 %in% overnight ~ "Overnight"))
+
+
+# "Carb ratio (g/U)"
+avg_pumpset_cr_week = pump_set_df %>% group_by(pid, gweek,gmonth, meal_period, randomization_group) %>% summarise(carb_ratio_avg = mean(`Carb ratio (g/U)`, na.rm = T)) %>% ungroup()
+avg_pumpset_cr_week$gmonth = factor(avg_pumpset_cr_week$gmonth, levels = c("Preconception","1","2","3","4","5","6","7","8","9","10","Postpartum"))
+
+avg_pumpset_cr_month = avg_pumpset_cr_week %>% group_by(pid, gmonth, meal_period, randomization_group) %>% summarise(carb_ratio_avg_m = mean(carb_ratio_avg, na.rm = T)) %>% ungroup()
+
+pumpset_cr_df = avg_pumpset_cr_month %>% group_by(randomization_group, gmonth, meal_period) %>% summarise(Avg_Carb_Ratio_gU = mean(carb_ratio_avg_m, na.rm = T)) %>% ungroup()
+
+pumpset_cr_df = pumpset_cr_df[order(pumpset_cr_df$gmonth, pumpset_cr_df$meal_period),]
+
+# "Correction bolus"
+avg_pumpset_cb_week = pump_set_df %>% group_by(pid, gweek,gmonth, meal_period, randomization_group) %>% summarise(correction_bolus_avg = mean(`Correction bolus`, na.rm = T)) %>% ungroup()
+avg_pumpset_cb_week$gmonth = factor(avg_pumpset_cb_week$gmonth, levels = c("Preconception","1","2","3","4","5","6","7","8","9","10","Postpartum"))
+
+avg_pumpset_cb_month = avg_pumpset_cb_week %>% group_by(pid, gmonth, meal_period, randomization_group) %>% summarise(correction_bolus_avg_m = mean(correction_bolus_avg, na.rm = T)) %>% ungroup()
+
+pumpset_cb_df = avg_pumpset_cb_month %>% group_by(randomization_group, gmonth, meal_period) %>% summarise(Avg_Correction_Bolus = mean(correction_bolus_avg_m, na.rm = T)) %>% ungroup()
+
+pumpset_cb_df = pumpset_cb_df[order(pumpset_cb_df$gmonth, pumpset_cb_df$meal_period),]
+
+##########################################################
 
 ## get into analysis/table form
 pump_adj_df = pump_df %>% mutate(adj_count = ifelse(!is.na(`Date of pump adjustment`), 1, 0))
@@ -125,7 +227,7 @@ pump_adj_df$pid = substr(pump_adj_df$sampleid,1,4)
 pump_adj_df = left_join(pump_adj_df, groups)
 pump_adj_df$randomization_group = factor(pump_adj_df$randomization_group, levels = c(1,2), labels = c("HCL","SAPT") )
 
-
+# PUMP ADJUSTS
 n_pump_adj = pump_adj_df %>% group_by(gweek, pid,randomization_group) %>% summarise(sum = sum(adj_count))
 
 
@@ -145,9 +247,32 @@ n_pump_adj$gmonth = factor(n_pump_adj$gmonth, levels = c("Preconception","1","2"
 
 n_pump_adj_month = n_pump_adj %>% group_by(pid, gmonth, randomization_group) %>% summarise(pump_adj_m = sum(sum, na.rm = T))
 
+# AVERAGE ACTIVE INSULIN TIME 
+
+n_aai = pump_adj_df %>% group_by(gweek, pid,randomization_group) %>% summarise(Average_Active_Insulin = mean(activetime, na.rm = T))
 
 
+n_aai = n_aai %>% mutate(gmonth = case_when(gweek %in% c("1","2","3","4") ~ "1",
+                                              gweek %in% c("5","6","7","8") ~ "2",
+                                              gweek %in% c("9","10","11","12") ~ "3",
+                                              gweek %in% c("13","14","15","16") ~ "4",
+                                              gweek %in% c("17","18","19","20") ~ "5",
+                                              gweek %in% c("21","22","23","24") ~ "6",
+                                              gweek %in% c("25","26","27","28") ~ "7",
+                                              gweek %in% c("29","30","31","32") ~ "8",
+                                              gweek %in% c("33","34","35","36") ~ "9",
+                                              gweek %in% c("37","38","39") ~ "10",
+                                              TRUE ~ gweek))
 
+n_aai$gmonth = factor(n_aai$gmonth, levels = c("Preconception","1","2","3","4","5","6","7","8","9","10","Postpartum"))
+
+n_aai_month = n_aai %>% group_by(pid, gmonth, randomization_group) %>% summarise(Average_Active_Insulin_m = mean(Average_Active_Insulin, na.rm = T))
+# aai_df = n_aai_month %>% group_by( gmonth, randomization_group) %>% summarise(mean_Average_Active_Insulin_Time = mean(Average_Active_Insulin_m, na.rm = T),
+#                                                                               sd_Average_Active_Insulin_Time = sd(Average_Active_Insulin_m, na.rm = T))
+aai_df = n_aai_month %>% group_by( gmonth, randomization_group) %>% summarise(mean_Average_Active_Insulin_Time = mean(Average_Active_Insulin_m, na.rm = T))
+
+#######################################
+test = n_pump_adj %>% group_by(randomization_group, gweek) %>% summarise(mean_adj_by_subj = mean(sum), n_subj = n_distinct(pid))
 ## model function will be outcome = int + group + time + groupTime 1 = hcl 2 = sapt
 
 
@@ -187,12 +312,37 @@ fit_mod = function(outcome, df){
 
 Pump adjustments by gest week were provided. Linear mixed models were fit with random intercept for patient including group, gest month, and group time interaction. Contrasts were performed to compare groups at each gest month.
 
+# Appended Sept 2024 : Average Carb Ratios, Correction boluses for each meal period for HCL and SAPT groups, separated by month
+
+note: first averaged by subject,then aggregated into group/month
+
+## Carb Ratios
+
+```{r}
+kable(pumpset_cr_df)
+```
+
+## Correction Bolus
+
+```{r}
+kable(pumpset_cb_df)
+```
+
+# Appended July 2024 :  average active insulin time for the HCL group and SAPT group separated by preconception each gestational month and postpartum
+
+```{r}
+kable(aai_df%>% arrange(.,gmonth))
+```
+
 # Descriptive statistics per gestational week 
 
 ## number pump adjustments by group
 
+Mean Subject pump adjustments by group and gest week. Noted in PICLS meeting during early weeks only a few subjects had data
+
 ```{r}
-kable(pump_adj_df %>% group_by(gweek, randomization_group) %>% summarise(sum = sum(adj_count)))
+#kable(pump_adj_df %>% group_by(gweek, randomization_group) %>% summarise(sum = sum(adj_count)))
+kable(test%>% arrange(.,gweek))
 ```
 
 # Models

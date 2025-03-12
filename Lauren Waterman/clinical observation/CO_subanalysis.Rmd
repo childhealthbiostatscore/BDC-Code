@@ -1,0 +1,922 @@
+---
+title: "CO_subanalysis"
+author: "Casey Sakamoto"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 5
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(arsenal)
+library(tidyverse)
+library(performance)
+library(knitr)
+library(readr)
+library(table1)
+library(nlme)
+library(lme4)
+library(emmeans)
+library(ggplot2)
+
+# 3 different data sets
+HCL_DATA_2024 <- read_csv("S:/Laura/BDC/Projects/Cari Berget/Berget Trojanowski distress/HCLClinicalObservati_DATA_2024.csv")
+ClinicalObservationC_DATA_2024 <- read_csv("S:/Laura/BDC/Projects/Cari Berget/Berget Trojanowski distress/ClinicalObservationC_DATA_2024-03-05_0920.csv")
+#test_co_tp = ClinicalObservationC_DATA_2024 %>% select(record_id, gyl_timepoint, timepoint, redcap_event_name)
+```
+
+
+```{r data clean, include = FALSE}
+################## Clinical Obs - Child/ Adult ##########################
+
+clinicalc_bl = ClinicalObservationC_DATA_2024 %>% filter(grepl("baseline", redcap_event_name)) %>% select(record_id, redcap_event_name,timepoint,demographics_hcl, demographics_age,
+                                                                                                          demographics_ethnicity, demographics_race, demographics_sex, demographics_insurance,
+                                                                                                          demographics_t1d_duration, hba1c, ya_paid1:ya_paid20, c_paid1:c_paid20,
+                                                                                                          inspire_b1:inspire_b17, time_am, sensor_wear, tdd, dailymealbolus, sleep,exercise,
+                                                                                                          sensor_u54:sensor_g250, sensor_mean)
+
+clinicalc_bl = clinicalc_bl %>% group_by(record_id) %>% fill(timepoint:inspire_b17, .direction = c("updown"))  %>% unique() %>% ungroup()
+clinicalc_bl$redcap_event_name = "baseline_arm_1"
+# sub 1 from cpaid then reverse score, remove 5 from inspires
+clinicalc_bl = clinicalc_bl %>% mutate(across(c_paid1:c_paid20, ~.-1))
+clinicalc_bl = clinicalc_bl %>% mutate(across(c_paid1:c_paid20, ~4-.))
+
+remove5 = function(x){ifelse(x==5, NA_real_, x)}
+clinicalc_bl = clinicalc_bl %>% mutate(across(inspire_b1:inspire_b17, remove5))
+
+# score paid and inspire bl  
+clinicalc_bl = clinicalc_bl %>% mutate(c_paid =  select(., c_paid1:c_paid20) %>% rowMeans(na.rm=T),
+          c_paid_score =  c_paid*25,
+          ya_paid =  select(., ya_paid1:ya_paid20) %>% rowSums(),
+          ya_paid_score =  ya_paid*1.25,
+          paid_score = ifelse(is.na(ya_paid_score), c_paid_score, ya_paid_score),
+          inspire_score = select(., inspire_b1:inspire_b17) %>% rowMeans(na.rm=T)*25)
+clinicalc_bl = clinicalc_bl %>% select(record_id, timepoint,redcap_event_name,demographics_hcl, demographics_age, demographics_ethnicity,                                                                                    demographics_race, demographics_sex, demographics_insurance, demographics_t1d_duration, hba1c,paid_score, inspire_score,
+                                       time_am, sensor_wear, tdd, dailymealbolus, sleep,exercise, sensor_u54:sensor_g250, sensor_mean) 
+clinicalc_bl = clinicalc_bl %>% mutate(baseline_paid = paid_score)
+
+# followup
+clinical_hfs_b = ClinicalObservationC_DATA_2024 %>% filter(grepl("baseline", redcap_event_name)) %>% mutate( c_hfs_maintain = select(., c_hfs_behave3, c_hfs_behave4, c_hfs_behave7) %>% rowSums(),
+                                               c_hfs_worry_bg = select(., c_hfs_worry11:c_hfs_worry14, c_hfs_worry16, c_hfs_worry18,
+                                                                       c_hfs_worry19, c_hfs_worry22:c_hfs_worry23) %>% rowSums(),
+                                               c_hfs_worry_soc = select(., c_hfs_worry15,c_hfs_worry17,
+                                                                        c_hfs_worry20, c_hfs_worry21, c_hfs_worry25) %>% rowSums(),
+                                               
+                                               ya_hfs_maintain = select(.,ya_hfs_b_behave1:ya_hfs_b_behave15) %>% rowSums(),
+                                               ya_hfs_worry = select(., ya_hfs_b_worry16:ya_hfs_b_worry33) %>% rowSums(),
+                                               hfs_maintain = ifelse(is.na(ya_hfs_maintain), c_hfs_maintain, ya_hfs_maintain),
+                                               hfs_worry_bg =  c_hfs_worry_bg,
+                                               hfs_worry_soc = c_hfs_worry_soc,
+                                               hfs_worry = ifelse(is.na(ya_hfs_worry),c_hfs_worry_bg+c_hfs_worry_soc, ya_hfs_worry)) %>% select(record_id, timepoint, redcap_event_name, c_hfs_maintain:hfs_worry) # HFS)
+
+clinical_hfs_b = clinical_hfs_b %>% mutate(hfs_total = hfs_maintain + hfs_worry)
+
+clinical_hfs_f = ClinicalObservationC_DATA_2024 %>% filter(!grepl("baseline", redcap_event_name)) %>% mutate( c_hfs_maintain = select(., c_hfs_behave3, c_hfs_behave4, c_hfs_behave7) %>% rowSums(),
+                                               c_hfs_worry_bg = select(., c_hfs_worry11:c_hfs_worry14, c_hfs_worry16, c_hfs_worry18,
+                                                                       c_hfs_worry19, c_hfs_worry22:c_hfs_worry23) %>% rowSums(),
+                                               c_hfs_worry_soc = select(., c_hfs_worry15,c_hfs_worry17,
+                                                                        c_hfs_worry20, c_hfs_worry21, c_hfs_worry25) %>% rowSums(),
+                                               
+                                               ya_hfs_maintain = select(.,ya_hfs_f_behave1:ya_hfs_f_behave15) %>% rowSums(),
+                                               ya_hfs_worry = select(., ya_hfs_f_worry16:ya_hfs_f_worry33) %>% rowSums(),
+                                               hfs_maintain = ifelse(is.na(ya_hfs_maintain), c_hfs_maintain, ya_hfs_maintain),
+                                               hfs_worry_bg =  c_hfs_worry_bg,
+                                               hfs_worry_soc = c_hfs_worry_soc,
+                                               hfs_worry = ifelse(is.na(ya_hfs_worry),c_hfs_worry_bg+c_hfs_worry_soc, ya_hfs_worry)) %>% select(record_id, timepoint, redcap_event_name, c_hfs_maintain:hfs_worry) # HFS)
+
+clinical_hfs_f = clinical_hfs_f %>% mutate(hfs_total = hfs_maintain + hfs_worry)
+
+clinical_hfs = full_join(clinical_hfs_b,clinical_hfs_f)
+
+# check 1
+clinicalc_f = ClinicalObservationC_DATA_2024 %>% filter(!grepl("baseline", redcap_event_name)) %>% select(record_id, timepoint,redcap_event_name, hba1c,
+                                                                                    ya_paid1:ya_paid20, c_paid1:c_paid20, inspire_f1:inspire_f17,
+                                                                                   time_am, sensor_wear, tdd, dailymealbolus, sleep,exercise,
+                                                                                                          sensor_u54:sensor_g250, sensor_mean)
+
+# sub 1 from cpaid then reverse score, remove 5 from inspires
+clinicalc_f = clinicalc_f %>% mutate(across(c_paid1:c_paid20, ~.-1))
+clinicalc_f = clinicalc_f %>% mutate(across(c_paid1:c_paid20, ~4-.))
+
+clinicalc_f = clinicalc_f %>% mutate(across(inspire_f1:inspire_f17, remove5))
+
+# score paid and inspire bl  
+clinicalc_f = clinicalc_f %>% mutate(c_paid =  select(., c_paid1:c_paid20) %>% rowMeans(na.rm=T),
+          c_paid_score =  c_paid*25,
+          ya_paid =  select(., ya_paid1:ya_paid20) %>% rowSums(),
+          ya_paid_score =  ya_paid*1.25,
+          paid_score = ifelse(is.na(ya_paid_score), c_paid_score, ya_paid_score),
+          inspire_score = select(., inspire_f1:inspire_f17) %>% rowMeans(na.rm=T)*25)
+clinicalc_f = clinicalc_f %>% select(record_id, timepoint,redcap_event_name, hba1c,paid_score, inspire_score,
+                                     time_am, sensor_wear, tdd, dailymealbolus, sleep,exercise,
+                                                                                                          sensor_u54:sensor_g250, sensor_mean)
+
+# merge base and FU
+clinical_c = full_join(clinicalc_bl, clinicalc_f)
+clinical_c = full_join(clinical_c, clinical_hfs) %>% unique()
+clinical_c = clinical_c %>% group_by(record_id) %>% fill(demographics_hcl:demographics_t1d_duration, .direction = "down")
+# ignore adult arm record id 181-184
+clinical_c = clinical_c %>% filter(!(record_id %in% c(182,184)))
+# only include controliq=1, exclude medtronic (0)
+clinical= clinical_c %>% filter(demographics_hcl == 1)
+rm(clinicalc_bl, clinicalc_f, ClinicalObservationC_DATA_2024)
+#########################################################################
+
+
+############################OMNIPOD 5 COHORT################################
+hcl_hfs_bl = HCL_DATA_2024 %>% filter(grepl("child_bl", redcap_event_name)) %>%mutate(c_hfs_maintain = select(., c_b_hfs_behave3, c_b_hfs_behave4, c_b_hfs_behave7) %>% rowSums(),
+                                               c_hfs_worry_bg = select(., c_b_hfs_worry11:c_b_hfs_worry14, c_b_hfs_worry16, c_b_hfs_worry18,
+                                                                       c_b_hfs_worry19, c_b_hfs_worry22:c_b_hfs_worry23) %>% rowSums(),
+                                               c_hfs_worry_soc = select(., c_b_hfs_worry15,c_b_hfs_worry17,
+                                                                        c_b_hfs_worry20, c_b_hfs_worry21, c_b_hfs_worry25) %>% rowSums(),
+                                               
+                                               ya_hfs_maintain = select(., ya_b_hfs_behave3, ya_b_hfs_behave4, ya_b_hfs_behave7) %>% rowSums(),
+                                               ya_hfs_worry_bg = select(., ya_hfs_worry_b11:ya_hfs_worry_b14, ya_hfs_worry_b16, ya_hfs_worry_b18,
+                                                                       ya_hfs_worry_b19, ya_hfs_worry_b22:ya_hfs_worry_b23) %>% rowSums(),
+                                               ya_hfs_worry_soc = select(., ya_hfs_worry_b15,ya_hfs_worry_b17,
+                                                                        ya_hfs_worry_b20, ya_hfs_worry_b21, ya_hfs_worry_b25) %>% rowSums(),
+                                               hfs_maintain = ifelse(demo_c_age < 13, c_hfs_maintain, ya_hfs_maintain),
+                                               hfs_worry_bg = ifelse(demo_c_age < 13, c_hfs_worry_bg, ya_hfs_worry_bg),
+                                               hfs_worry_soc = ifelse(demo_c_age < 13, c_hfs_worry_soc, ya_hfs_worry_soc) # HFS
+                                               ) %>% select(record_id, redcap_event_name,hfs_maintain:hfs_worry_soc) %>% mutate(timepoint = 0)
+
+hcl_hfs_fu = HCL_DATA_2024 %>% filter(grepl("child", redcap_event_name))%>% filter(!grepl("bl", redcap_event_name))%>%
+  mutate(c_hfs_maintain = select(., c_f_hfs_behave3, c_f_hfs_behave4, c_f_hfs_behave7) %>% rowSums(),
+                                               c_hfs_worry_bg = select(., c_f_hfs_worry11:c_f_hfs_worry14, c_f_hfs_worry16, c_f_hfs_worry18,
+                                                                       c_f_hfs_worry19, c_f_hfs_worry22:c_f_hfs_worry23) %>% rowSums(),
+                                               c_hfs_worry_soc = select(., c_f_hfs_worry15,c_f_hfs_worry17,
+                                                                        c_f_hfs_worry20, c_f_hfs_worry21, c_f_hfs_worry25) %>% rowSums(),
+                                               
+                                               ya_hfs_maintain = select(., ya_f_hfs_behave3, ya_f_hfs_behave4, ya_f_hfs_behave7) %>% rowSums(),
+                                               ya_hfs_worry_bg = select(., ya_f_hfs_worry11:ya_f_hfs_worry14, ya_f_hfs_worry16, ya_f_hfs_worry18,
+                                                                       ya_f_hfs_worry19, ya_f_hfs_worry22:ya_f_hfs_worry23) %>% rowSums(),
+                                               ya_hfs_worry_soc = select(., ya_f_hfs_worry15,ya_f_hfs_worry17,
+                                                                        ya_f_hfs_worry20, ya_f_hfs_worry21, ya_f_hfs_worry25) %>% rowSums(),
+                                               hfs_maintain = ifelse(is.na(ya_hfs_maintain), c_hfs_maintain, ya_hfs_maintain),
+                                               hfs_worry_bg = ifelse(is.na(ya_hfs_worry_bg), c_hfs_worry_bg, ya_hfs_worry_bg),
+                                               hfs_worry_soc = ifelse(is.na(ya_hfs_worry_soc), c_hfs_worry_soc, ya_hfs_worry_soc))%>% select(record_id, redcap_event_name,hfs_maintain:hfs_worry_soc) %>%
+ mutate(timepoint = case_when(redcap_event_name == "child_m1_arm_1" ~ 1,
+                                                    redcap_event_name == "child_m3_arm_1" ~ 2,
+                                                    redcap_event_name == "child_m6_arm_1" ~ 3,
+                                                    redcap_event_name == "child_m9_arm_1" ~ 4,
+                                                    redcap_event_name == "child_m12_arm_1" ~ 5))# HFS)
+
+op5_hfs = full_join(hcl_hfs_bl, hcl_hfs_fu)
+
+# CHILD BASELINE
+op5c_bl = HCL_DATA_2024 %>% select(record_id, redcap_event_name, demo_c_age, demo_c_insurance,demo_c_hcl,demo_c_ethnicity,demo_c_race,demo_c_sex,demo_c_t1d_duration,gly_a1c,
+                                   c_b_inspire1:c_b_inspire17, c_b_paid1:c_b_paid20, 
+                                   ya_b_header_timepoint:ya_b_inspire17,
+                                   gly_time_am, gly_sensorwear, gly_sensor_u54:gly_sensor_mean,
+                                   gly_tdd, gly_dailymealbolus,gly_time_am_act,gly_time_am_ltd ) %>% filter(redcap_event_name == "child_bl_arm_1")
+# score surveys
+op5c_bl =op5c_bl %>% mutate(cb_inspire_total = select(., c_b_inspire1:c_b_inspire17) %>% rowMeans()*25, 
+                                               ya_b_inspire_total = select(., ya_b_inspire1:ya_b_inspire17) %>% rowMeans()*25,
+                                               inspire_score = ifelse(demo_c_age < 13, cb_inspire_total, ya_b_inspire_total), # INSPIRE TOTAL
+                                               
+                                               
+                                               cb_paid =  select(., c_b_paid1:c_b_paid20) %>% rowSums(),
+                                               cb_paid_score = (80 - cb_paid)*25/20,
+                                               ya_paid =  select(., ya_b_paid1:ya_b_paid20) %>% rowSums(),
+                                               ya_paid_score = (80 - ya_paid)*25/20,
+                                               paid_score = ifelse(demo_c_age < 13, cb_paid_score, ya_paid_score), # PAID
+                            timepoint = 0,
+                            baseline_paid = paid_score)  %>% select(record_id, timepoint,redcap_event_name, demo_c_age:gly_a1c, inspire_score,
+                                                 paid_score, baseline_paid,gly_time_am, gly_sensorwear, gly_sensor_u54:gly_sensor_mean,
+                                                 gly_tdd, gly_dailymealbolus,gly_time_am_act,gly_time_am_ltd)
+
+# CHILD FU
+op5c_fu = HCL_DATA_2024 %>% select(record_id,redcap_event_name,gly_a1c,c_f_timepoint:c_f_inspire17,
+                                           ya_f_header_timepoint:ya_f_inspire17, seeds_fu1:seeds_fu20,
+                                   gly_time_am, gly_sensorwear, gly_sensor_u54:gly_sensor_mean,
+                                   gly_tdd, gly_dailymealbolus,gly_time_am_act,gly_time_am_ltd ) %>%
+  filter(redcap_event_name %in% c("child_m1_arm_1","child_m3_arm_1","child_m6_arm_1","child_m9_arm_1", "child_m12_arm_1"))
+op5c_fu = left_join(op5c_fu, op5c_bl %>% select(record_id, demo_c_age) %>% unique())
+
+op5c_fu =op5c_fu %>% mutate(cb_inspire_total = select(., c_f_inspire1:c_f_inspire17) %>% rowMeans()*25, 
+                                               ya_f_inspire_total = select(., ya_f_inspire1:ya_f_inspire17) %>% rowMeans()*25,
+                                               inspire_score = ifelse(demo_c_age < 13, cb_inspire_total, ya_f_inspire_total), # INSPIRE TOTAL
+                                               
+                                              
+                                               cb_paid =  select(., c_f_paid1:c_f_paid20) %>% rowSums(),
+                                               cb_paid_score = (80 - cb_paid)*25/20,
+                                               ya_paid =  select(., ya_f_paid1:ya_f_paid20) %>% rowSums(),
+                                               ya_paid_score = (80 - ya_paid)*25/20,
+                                               paid_score = ifelse(demo_c_age < 13, cb_paid_score, ya_paid_score) # PAID
+                                               
+
+                                   )  %>% select(record_id, redcap_event_name, demo_c_age,gly_a1c, inspire_score, paid_score,
+                                                 gly_time_am, gly_sensorwear, gly_sensor_u54:gly_sensor_mean,
+                                   gly_tdd, gly_dailymealbolus,gly_time_am_act,gly_time_am_ltd )
+
+op5c_fu = op5c_fu %>% mutate(timepoint = case_when(redcap_event_name == "child_m1_arm_1" ~ 1,
+                                                    redcap_event_name == "child_m3_arm_1" ~ 2,
+                                                    redcap_event_name == "child_m6_arm_1" ~ 3,
+                                                    redcap_event_name == "child_m9_arm_1" ~ 4,
+                                                    redcap_event_name == "child_m12_arm_1" ~ 5))
+# merge child time_am, sensor_wear, tdd, dailymealbolus, sleep,exercise,sensor_u54:sensor_g250, sensor_mean
+op5 = full_join(op5c_bl, op5c_fu) %>% unique() %>%mutate(hba1c = gly_a1c,
+                                                          time_am = gly_time_am,
+                                                          sensor_wear = gly_sensorwear,
+                                                          tdd = gly_tdd,
+                                                          dailymealbolus = gly_dailymealbolus,
+                                                          sleep = gly_time_am_ltd,
+                                                          exercise = gly_time_am_act,
+                                                          sensor_u54 =gly_sensor_u54,
+                                                          sensor_54_69 = gly_sensor_54_69,
+                                                          sensor_70_180 = gly_sensor_70_180,
+                                                          sensor_181_250 = gly_sensor_181_250,
+                                                          sensor_g250 = gly_sensor_g250,
+                                                          sensor_mean = gly_sensor_mean,
+                                                          ) %>% select(-redcap_event_name, - gly_a1c, -c(gly_time_am:gly_time_am_ltd))
+
+op5 = full_join(op5, op5_hfs)
+rm(op5c_bl,op5c_fu)
+op5 = op5 %>% mutate(hfs_total = hfs_maintain + hfs_worry_bg + hfs_worry_soc)
+# merge datasets
+
+op5$demographics_age = op5$demo_c_age
+op5$demographics_ethnicity = op5$demo_c_ethnicity
+op5$demographics_hcl = op5$demo_c_hcl
+op5$demographics_race = op5$demo_c_race
+op5$demographics_sex = op5$demo_c_sex
+op5$demographics_insurance = op5$demo_c_insurance + 1
+op5$demographics_t1d_duration = op5$demo_c_t1d_duration
+
+
+op5 = op5 %>% select(record_id, timepoint, demographics_age:demographics_t1d_duration, hba1c, time_am:sensor_mean,inspire_score:baseline_paid,hfs_maintain:hfs_worry_soc)
+op5 = op5 %>% group_by(record_id) %>% fill(demographics_age:demographics_t1d_duration, .direction = "down")
+
+op5$record_id = paste0(as.character(op5$record_id),"_op5")
+clinical$record_id = paste0(as.character(clinical$record_id),"_ciq")
+
+op5$hcl = "Omnipod 5"
+clinical$hcl = "Control IQ"
+
+analysis = full_join(clinical, op5) %>% select(-demographics_hcl)
+
+
+# EXCLUDE METRONIC AND AGE < 13
+analysis = analysis %>% filter(demographics_age >= 13 & demographics_age <=30)
+analysis = analysis %>% mutate(cohort = ifelse(demographics_age < 18, "13-17", "18-30"))
+
+
+
+
+# factor the variables
+analysis$demographics_ethnicity = factor(analysis$demographics_ethnicity, levels = c(0,1,2), labels = c("Hispanic/Latino", "Not Hispanic/Latino", "Not Reported"))
+analysis$demographics_race = factor(analysis$demographics_race, levels = c(0,1,2,3,4,5,6), labels = c("American Indian/Alaska Native", "Asian", "Native Hawaiian/Pacific Islander",
+                                                                                                      "Black/African American", "White", ">1 Race", "Not Reported"))
+analysis$demographics_sex = factor(analysis$demographics_sex, levels = c(0,1), labels = c("Female", "Male"))
+analysis$demographics_insurance = factor(analysis$demographics_insurance, levels = c(1,2,3,4), labels = c("Public", "Private", "Other", "Uninsured"))
+analysis = analysis %>% mutate(timepoint = ifelse(!is.na(timepoint), timepoint,1))
+analysis$timepoint = factor(analysis$timepoint, levels = c(0,1,2,3,4,5), labels = c("Baseline", "1 Month", "3 Months", "6 Months", "9 Months", "12 Months"))
+# final cleaning bits
+analysis = analysis %>% fill(baseline_paid, .direction = "down")
+
+analysis = analysis %>% mutate(sensor_u70 = sensor_54_69 + sensor_u54,
+                               sensor_g180 = sensor_181_250 + sensor_g250)
+# drop month 1 data for 3_op5, 103_op5, 233_ciq
+# analysis = analysis %>% filter(!(record_id == "3_op5" & timepoint == "1 Month"))
+# analysis = analysis %>% filter(!(record_id == "103_op5" & timepoint == "1 Month"))
+# analysis = analysis %>% filter(!(record_id == "233_ciq" & timepoint == "1 Month"))
+
+analysis = analysis %>% unique() %>% ungroup()
+
+analysis2 = analysis %>% group_by(record_id, timepoint) %>% fill(hba1c:hfs_total, .direction = "updown") %>% select(-redcap_event_name) %>% unique()  %>% ungroup()
+
+# keep = rowMeans(is.na(analysis2[,1:38])) < 0.23
+# test = analysis2[keep,]
+# test_count = test %>% group_by(record_id, cohort, hcl) %>% summarise(count = n())
+# table(test_count$hcl, test_count$cohort) # numbers match up with list
+
+
+
+id_count = analysis2 %>% group_by(record_id, hcl, cohort) %>% summarise(count = n())
+
+analysis_c1 = analysis %>% filter(cohort == "18-30")
+
+analysis_c1_m1ref = analysis_c1
+analysis_c1_m1ref$timepoint = relevel(analysis_c1_m1ref$timepoint, ref = "1 Month")
+```
+
+```{r fun,include = FALSE}
+fit_mod_inf1 = function(outcome,df, contrasts = F){
+
+    # Fit model
+  f = as.formula(paste0(outcome,"~","timepoint + demographics_sex + demographics_ethnicity+ demographics_race + demographics_insurance + demographics_t1d_duration"))
+  mod = lme(f,
+            random = ~1|record_id,
+            data = df,
+            na.action = na.omit)
+ 
+  print(outcome)
+  
+    # Anova
+  print(summary(mod))
+  
+  mod_means = emmeans(mod,specs=pairwise ~ timepoint, adjust="none")
+  mod_means2 = emmeans(mod,specs=~ timepoint, adjust="none")
+
+  print(kable(mod_means2,digits = 3,caption = "Timepoint Means"))
+
+ if(contrasts == T){
+   # Means
+
+  print(kable(mod_means$contrasts,digits = 3,caption = "Timepoint Contrasts"))
+ #print(kable(mod_means$contrasts[c(3,8,12),],caption="Time point means.",format.args = list(scientific = FALSE)))
+}
+}
+
+fit_mod_inf4 = function(outcome,df, contrasts = F){
+
+    # Fit model
+  f = as.formula(paste0(outcome,"~","timepoint*cohort + demographics_sex + demographics_ethnicity+ demographics_race + demographics_insurance + demographics_t1d_duration"))
+  mod = lme(f,
+            random = ~1|record_id,
+            data = df,
+            na.action = na.omit)
+ 
+  print(outcome)
+  
+    # Anova
+  mod_anova = anova.lme(mod, type="marginal")
+  print(kable(mod_anova,digits = 3,caption = "Test of Overall Effect"))
+  #print(summary(mod))
+  
+  mod_means = emmeans(mod,specs=~ timepoint*cohort, adjust="none")
+  mod_means2 = emmeans(mod,specs=~ timepoint, adjust="none")
+
+  print(kable(mod_means,digits = 3,caption = "Timepoint Means"))
+
+ if(contrasts == T){
+   # Means
+
+  print(kable(mod_means$contrasts,digits = 3,caption = "Timepoint Contrasts"))
+ #print(kable(mod_means$contrasts[c(3,8,12),],caption="Time point means.",format.args = list(scientific = FALSE)))
+}
+}
+
+  
+```
+
+```{r tablez, include=FALSE}
+my.render.cont <- function(x) {
+    with(stats.apply.rounding(stats.default(x), digits=2), c("",
+        "Mean (SD)"=sprintf("%s (&plusmn; %s)", MEAN, SD)))}
+baseline = analysis2 %>% filter(timepoint=="Baseline")
+bl_count = baseline %>% group_by(record_id, cohort, hcl) %>% summarise(count = n())
+table(bl_count$hcl, bl_count$cohort) # numbers match up with list
+
+demog_t1 = table1(~.|cohort, data = baseline %>% ungroup() %>%select(demographics_age:demographics_t1d_duration, cohort), render.continuous= my.render.cont)
+gly_t1 = table1(~.|cohort,data = baseline %>% ungroup() %>% select(time_am, sensor_wear, tdd, dailymealbolus, sleep,exercise,sensor_70_180,
+                                                                   hba1c, sensor_mean, sensor_u70, sensor_u54,
+                                                                   sensor_g180, sensor_g250,cohort), render.continuous= my.render.cont )
+survey_t1 = table1(~.|cohort,data = baseline %>% ungroup() %>% select(paid_score,inspire_score,cohort), render.continuous= my.render.cont )
+```
+
+# outstanding Data questions/remarks
+
+- variable to use for prior insulin use?
+- how to report the gly/aid outcomes -- baseline?
+- covariate adjustment in models?
+
+
+
+# Methods
+
+Demographics, glycemic data, and survey data were produced from a combined dataset of Control IQ and OP5 users, split into cohorts of age 13-17 and 18-30.
+
+Linear Mixed Models with random intercept for subject were fit, adjusting sex, race/ethnicity, diabetes duration, and insurance type. When applicable, Linear contrasts were taken and compared between timepoints for various outcomes.
+
+Linear mixed models with the above covariates, and also including cohort and cohort*timepoint interaction were fit. Model Anovas were run to compare outcome differences over time across cohorts.
+
+# Analysis
+
+## Demographics/Tables
+```{r demogs}
+# sanity/data clean check
+table(id_count$hcl, id_count$cohort) # numbers match up with list
+
+demog_t1
+gly_t1
+survey_t1
+```
+
+# Inferential 1: Cohort 1
+
+## CGM Measures Baseline to 3,6,12
+
+*I interpreted the first couple outcomes, but they are all interpreted the same. Let me know if you need clarification/want to meet and chat about the output!
+
+### Time AM
+
+Time in AM was significantly different for months 3,6,12 from Baseline (all p < 0.0001).
+
+Month 3 on average had 66% (SE = 8.5) more use  than Baseline.
+
+Month 6 on average had 59% (SE=8.4) more use than baseline.
+
+Month 12 on average had 57% (SE = 8.5) more use than baseline.
+
+```{r tam}
+# mod_time_am = lme(time_am ~ timepoint + ,
+#             random = ~1|record_id,
+#             data = analysis,
+#             na.action = na.omit)
+# mod_time_am_anova = anova.lme(mod_time_am)
+# kable(mod_time_am_anova, caption = "Overall Test of Effect")
+# summary(mod_time_am)
+# mod_time_am_means = emmeans(mod_time_am, specs=~timepoint, adjust="none")
+# kable(mod_time_am_means,digits = 3,caption = "Timepoint Means")
+fit_mod_inf1("time_am", df = analysis_c1)
+```
+
+### TIME CGM
+
+There were no significant differences from baseline for % time CGM for Month 3 (P=0.56), Month 6 (p = 0.48), or Month 12(p = 0.80)
+
+```{r tcgm}
+# mod_sensor_wear = lme(sensor_wear ~ timepoint,
+#             random = ~1|record_id,
+#             data = analysis,
+#             na.action = na.omit)
+# mod_sensor_wear_anova = anova.lme(mod_sensor_wear)
+# kable(mod_sensor_wear_anova, caption = "Overall Test of Effect")
+# summary(mod_sensor_wear)
+# mod_sensor_wear_means = emmeans(mod_sensor_wear, specs=~timepoint, adjust="none")
+# kable(mod_sensor_wear_means,digits = 3,caption = "Timepoint Means")
+fit_mod_inf1("sensor_wear", df = analysis_c1)
+
+```
+
+### Total Daily Dose
+
+There were no significant differences from baseline for % time CGM for Months 3,6 or 12 (P=0.97, 0.06, 0.34)
+
+```{r tdd}
+# mod_tdd = lme(tdd ~ timepoint,
+#             random = ~1|record_id,
+#             data = analysis,
+#             na.action = na.omit)
+# mod_tdd_anova = anova.lme(mod_tdd)
+# kable(mod_tdd_anova, caption = "Overall Test of Effect")
+# summary(mod_tdd)
+# mod_tdd_means = emmeans(mod_tdd, specs=~timepoint, adjust="none")
+# kable(mod_tdd_means,digits = 3,caption = "Timepoint Means")
+fit_mod_inf1("tdd", df = analysis_c1)
+
+```
+
+### Daily Meal Bolus
+
+There were no significant differences from baseline for daily meal bolus for Month 3,6,12 (P=0.78, .91, .24)
+
+
+```{r dmb}
+# mod_dailymealbolus = lme(dailymealbolus ~ timepoint,
+#             random = ~1|record_id,
+#             data = analysis,
+#             na.action = na.omit)
+# mod_dailymealbolus_anova = anova.lme(mod_dailymealbolus)
+# kable(mod_dailymealbolus_anova, caption = "Overall Test of Effect")
+# summary(mod_dailymealbolus)
+# mod_dailymealbolus_means = emmeans(mod_dailymealbolus, specs=~timepoint, adjust="none")
+# kable(mod_dailymealbolus_means,digits = 3,caption = "Timepoint Means")
+
+fit_mod_inf1("dailymealbolus", df = analysis_c1)
+
+```
+### Sleep activity use
+
+Sleep AM use was significantly different for months 3,6,12 from Baseline (all p < 0.0001).
+
+
+```{r sam}
+# mod_sleep = lme(sleep ~ timepoint,
+#             random = ~1|record_id,
+#             data = analysis,
+#             na.action = na.omit)
+# mod_sleep_anova = anova.lme(mod_sleep)
+# kable(mod_sleep_anova, caption = "Overall Test of Effect")
+# summary(mod_sleep)
+# mod_sleep_means = emmeans(mod_sleep, specs=~timepoint, adjust="none")
+# kable(mod_sleep_means,digits = 3,caption = "Timepoint Means")
+
+fit_mod_inf1("sleep", df = analysis_c1)
+
+```
+
+### Exercise activity use
+
+Exercise AM use was significantly different for months 3,6,12 from Baseline (p = .01, .0002, 0.001).
+
+```{r eam}
+# mod_exercise = lme(exercise ~ timepoint,
+#             random = ~1|record_id,
+#             data = analysis,
+#             na.action = na.omit)
+# mod_exercise_anova = anova.lme(mod_exercise)
+# kable(mod_exercise_anova, caption = "Overall Test of Effect")
+# summary(mod_exercise)
+# mod_exercise_means = emmeans(mod_exercise, specs=~timepoint, adjust="none")
+# kable(mod_exercise_means,digits = 3,caption = "Timepoint Means")
+
+fit_mod_inf1("exercise", df = analysis_c1)
+
+```
+
+### TIR
+
+TIR was significantly different for months 3,6 from Baseline, but not M 12 (p = .004, .04, .06).
+
+```{r tir1}
+# mod_sensor_70_180 = lme(sensor_70_180 ~ timepoint,
+#             random = ~1|record_id,
+#             data = analysis,
+#             na.action = na.omit)
+# mod_sensor_70_180_anova = anova.lme(mod_sensor_70_180)
+# kable(mod_sensor_70_180_anova, caption = "Overall Test of Effect")
+# summary(mod_sensor_70_180)
+# mod_sensor_70_180_means = emmeans(mod_sensor_70_180, specs=~timepoint, adjust="none")
+# kable(mod_sensor_70_180_means,digits = 3,caption = "Timepoint Means")
+
+fit_mod_inf1("sensor_70_180", df = analysis_c1)
+
+```
+
+### A1c
+
+Hba1c was not significantly different for months 3,6,12 from Baseline (p = .48, .49, .22).
+
+```{r a1c1}
+# mod_hba1c = lme(hba1c ~ timepoint,
+#             random = ~1|record_id,
+#             data = analysis,
+#             na.action = na.omit)
+# mod_hba1c_anova = anova.lme(mod_hba1c)
+# kable(mod_hba1c_anova, caption = "Overall Test of Effect")
+# summary(mod_hba1c)
+# mod_hba1c_means = emmeans(mod_hba1c, specs=~timepoint, adjust="none")
+# kable(mod_hba1c_means,digits = 3,caption = "Timepoint Means")
+fit_mod_inf1("hba1c", df = analysis_c1)
+
+```
+
+### avg Glucose
+
+Avg Glucose was not significantly different for months 3,6,12 from Baseline (p = .15,  .78, .54).
+
+```{r sgm1}
+# mod_sensor_mean = lme(sensor_mean ~ timepoint,
+#             random = ~1|record_id,
+#             data = analysis,
+#             na.action = na.omit)
+# mod_sensor_mean_anova = anova.lme(mod_sensor_mean)
+# kable(mod_sensor_mean_anova, caption = "Overall Test of Effect")
+# summary(mod_sensor_mean)
+# mod_sensor_mean_means = emmeans(mod_sensor_mean, specs=~timepoint, adjust="none")
+# kable(mod_sensor_mean_means,digits = 3,caption = "Timepoint Means")
+
+fit_mod_inf1("sensor_mean", df = analysis_c1)
+
+```
+
+### Glucose < 70
+
+Time < 70 was not significantly different for months 3,6,12 from Baseline (p = .79, .42, .60).
+
+```{r ltt70tir}
+# mod_sensor_u70 = lme(sensor_u70 ~ timepoint,
+#             random = ~1|record_id,
+#             data = analysis,
+#             na.action = na.omit)
+# mod_sensor_u70_anova = anova.lme(mod_sensor_u70)
+# kable(mod_sensor_u70_anova, caption = "Overall Test of Effect")
+# summary(mod_sensor_u70)
+# mod_sensor_u70_means = emmeans(mod_sensor_u70, specs=~timepoint, adjust="none")
+# kable(mod_sensor_u70_means,digits = 3,caption = "Timepoint Means")
+fit_mod_inf1("sensor_u70", df = analysis_c1)
+
+```
+
+### Glucose < 54
+
+Time < 54 was not significantly different for month 3 from Baseline (p =.53, .55, .22).
+
+```{r ltt59tir}
+# mod_sensor_u54 = lme(sensor_u54 ~ timepoint,
+#             random = ~1|record_id,
+#             data = analysis,
+#             na.action = na.omit)
+# mod_sensor_u54_anova = anova.lme(mod_sensor_u54)
+# kable(mod_sensor_u54_anova, caption = "Overall Test of Effect")
+# summary(mod_sensor_u54)
+# mod_sensor_u54_means = emmeans(mod_sensor_u54, specs=~timepoint, adjust="none")
+# kable(mod_sensor_u54_means,digits = 3,caption = "Timepoint Means")
+fit_mod_inf1("sensor_u54", df = analysis_c1)
+
+```
+
+### Glucose >180
+
+Time >180  was significantly different for months 3,12 from Baseline (p = 0.01, 0.04) but not month 6 (p = 0.29).
+```{r gtt180tir}
+# mod_sensor_g180 = lme(sensor_g180 ~ timepoint,
+#             random = ~1|record_id,
+#             data = analysis,
+#             na.action = na.omit)
+# mod_sensor_g180_anova = anova.lme(mod_sensor_g180)
+# kable(mod_sensor_g180_anova, caption = "Overall Test of Effect")
+# summary(mod_sensor_g180)
+# mod_sensor_g180_means = emmeans(mod_sensor_g180, specs=~timepoint, adjust="none")
+# kable(mod_sensor_g180_means,digits = 3,caption = "Timepoint Means")
+fit_mod_inf1("sensor_g180", df = analysis_c1)
+
+```
+
+### Glucose >250
+
+Time >250  was not significantly different for months 3,6,12 from Baseline (p = .25, .82, .69).
+```{r gtt250tir}
+# mod_sensor_g250 = lme(sensor_g250 ~ timepoint,
+#             random = ~1|record_id,
+#             data = analysis,
+#             na.action = na.omit)
+# mod_sensor_g250_anova = anova.lme(mod_sensor_g250)
+# kable(mod_sensor_g250_anova, caption = "Overall Test of Effect")
+# summary(mod_sensor_g250)
+# mod_sensor_g250_means = emmeans(mod_sensor_g250, specs=~timepoint, adjust="none")
+# kable(mod_sensor_g250_means,digits = 3,caption = "Timepoint Means")
+fit_mod_inf1("sensor_g250", df = analysis_c1)
+
+```
+
+
+# Inferential 2: compare M1 to 3,6,12
+
+### Time AM
+
+Month 6 and 12 significantly different from month 1 (p = 0.048, 0.035). Month 3 p = 0.23
+```{r}
+fit_mod_inf1("time_am", analysis_c1_m1ref)
+```
+
+### time cgm
+
+Month 3, 6 and 12 not significantly different from month 1 (p = 0.67, .75 .49)
+```{r}
+fit_mod_inf1("sensor_wear", analysis_c1_m1ref)
+```
+
+### tdd
+
+Month 3, 6 and 12 not significantly different from month 1 (p = 0.33, .59 .87)
+```{r}
+fit_mod_inf1("tdd", analysis_c1_m1ref)
+```
+
+### daily meal bolus
+
+Month 3, 6 and 12 not significantly different from month 1 (p = 0.26, .43 .88)
+```{r}
+fit_mod_inf1("dailymealbolus", analysis_c1_m1ref)
+```
+
+### sleep activity use
+
+Month 3, 6 and 12 not significantly different from month 1 (p = 0.87, .92 .62)
+```{r}
+fit_mod_inf1("sleep", analysis_c1_m1ref)
+```
+
+### exercise activity use
+
+Month 3, 6 and 12 not significantly different from month 1 (p = 0.12, .61 .40)
+```{r}
+fit_mod_inf1("exercise", analysis_c1_m1ref)
+```
+
+### TIR
+
+Month 3, 6 and 12 not significantly different from month 1 (p = 0.16, .48 .56)
+```{r}
+fit_mod_inf1("sensor_70_180", analysis_c1_m1ref)
+```
+
+### a1c
+
+Month 3, 6 and 12 not significantly different from month 1 (p = 0.40, .43 .20)
+```{r}
+fit_mod_inf1("hba1c", analysis_c1_m1ref)
+```
+
+### avg glucose
+
+Month 3, 6 and 12 not significantly different from month 1 (p = 0.15, .65 .45)
+```{r}
+fit_mod_inf1("sensor_mean", analysis_c1_m1ref)
+```
+
+### glucose <70
+
+Month 3, 6 and 12 not significantly different from month 1 (p = 0.34, .99 .11)
+```{r}
+fit_mod_inf1("sensor_u70", analysis_c1_m1ref)
+```
+
+### glucose <54
+
+Month 3, 6 and 12 not significantly different from month 1 (p = 0.88, .38 .50)
+```{r}
+fit_mod_inf1("sensor_u54", analysis_c1_m1ref)
+```
+
+### glucose >180
+
+Month 3, 6 and 12 not significantly different from month 1 (p = 0.19, .92 .32)
+```{r}
+fit_mod_inf1("sensor_g180", analysis_c1_m1ref)
+```
+
+### glucose >250
+
+Month 3, 6 and 12 not significantly different from month 1 (p = 0.17, .55 .46)
+```{r}
+fit_mod_inf1("sensor_g250", analysis_c1_m1ref)
+```
+
+# Inferential 3: Survey baseline vs m3 m12
+
+### HFS
+
+Month 3 not significantly different from baseline(p = 0.08)
+
+Month 12 significantly different from baseline (p = 0.01)
+
+```{r}
+fit_mod_inf1("hfs_total", analysis_c1)
+```
+
+### PAID
+
+Month 3 not significantly different from baseline(p = 0.71)
+
+Month 12 significantly different from baseline (p = 0.03)
+
+```{r}
+fit_mod_inf1("paid_score", analysis_c1)
+```
+
+### INSPIRE
+
+Month 3 not significantly different from baseline(p = 0.23)
+
+Month 12 not significantly different from baseline (p = 0.92)
+
+```{r}
+fit_mod_inf1("inspire_score", analysis_c1)
+```
+
+# Inferential 4
+
+a statistically significant timepoint*cohort interaction term would signify that there is a difference in outcome change (timepoint) depending on the cohort.
+
+### Time AM
+
+There is a significant difference in change in Time in Auto Mode between the cohorts (p =0.003)
+
+```{r}
+fit_mod_inf4("time_am", analysis)
+#test = analysis %>% filter(timepoint == "Baseline" & cohort == "13-17") note a poor distribution: all 0's and one 93 in this group
+```
+
+### Time CGM
+
+There is not a significant difference in change in sensor wear between the cohorts (p =0.731)
+
+```{r}
+fit_mod_inf4("sensor_wear", analysis)
+```
+
+### tdd
+
+There is not a significant difference in change in TDD between the cohorts (p =0.403)
+
+```{r}
+fit_mod_inf4("tdd", analysis)
+```
+
+### daily meal bolus
+
+There is a significant difference in change in daily meal bolus between the cohorts (p =0.037)
+
+```{r}
+fit_mod_inf4("dailymealbolus", analysis)
+```
+
+### sleep act use
+
+There is not a significant difference in change in sleep activity use between the cohorts (p =0.764)
+
+```{r}
+fit_mod_inf4("sleep", analysis)
+```
+
+### sleep act use
+
+There is not a significant difference in change in sleep activity use between the cohorts (p =0.764)
+
+```{r}
+fit_mod_inf4("sleep", analysis)
+```
+
+### exercise act use
+
+There is not a significant difference in change in exercise activity use between the cohorts (p =0.953)
+
+```{r}
+fit_mod_inf4("exercise", analysis)
+```
+
+### TIR
+
+There is not a significant difference in change in tir between the cohorts (p =0.849)
+
+```{r}
+fit_mod_inf4("sensor_70_180", analysis)
+```
+
+### A1c
+
+There is not a significant difference in change in hba1c between the cohorts (p =0.875)
+
+```{r}
+fit_mod_inf4("hba1c", analysis)
+```
+
+### Avg Glucose
+
+There is not a significant difference in change in mean glucose between the cohorts (p =0.507)
+
+```{r}
+fit_mod_inf4("sensor_mean", analysis)
+```
+
+### glucose <70
+
+There is not a significant difference in change in time under 70 between the cohorts (p =0.275)
+
+```{r}
+fit_mod_inf4("sensor_u70", analysis)
+```
+
+### glucose <54
+
+There is a significant difference in change in time under 54 between the cohorts (p =0.029)
+
+```{r}
+fit_mod_inf4("sensor_u54", analysis)
+```
+
+### glucose >180
+
+There is not a significant difference in change in time above 180 between the cohorts (p =0.127)
+
+```{r}
+fit_mod_inf4("sensor_g180", analysis)
+```
+
+### glucose >250
+
+There is a significant difference in change in time above 250 between the cohorts (p =0.240)
+
+```{r}
+fit_mod_inf4("sensor_g250", analysis)
+```
+
+### HFS
+
+There is not a significant difference in change in hfs between the cohorts (p =0.282)
+
+```{r}
+fit_mod_inf4("hfs_total", analysis)
+```
+### PAID
+
+There is not a significant difference in change in paid score between the cohorts (p =0.199)
+
+```{r}
+fit_mod_inf4("paid_score", analysis)
+```
+
+### INSPIRE
+
+There is not a significant difference in change in inspire score between the cohorts (p =0.248)
+
+```{r}
+fit_mod_inf4("inspire_score", analysis)
+```

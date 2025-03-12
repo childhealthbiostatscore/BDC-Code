@@ -1,0 +1,333 @@
+---
+title: ""
+author: "Casey Sakamoto"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 5
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(arsenal)
+library(tidyverse)
+library(performance)
+library(knitr)
+library(readr)
+library(table1)
+
+
+```
+
+```{r dc, include=FALSE}
+# Data Upload and Labeling
+setwd("S:/Laura/BDC/Projects/Erin Cobry/ADA Skin and Devices/")
+source("S:/Laura/BDC/Projects/Erin Cobry/ADA Skin and Devices/InsulinPumpsAndSenso_R_2024-10-18.r")
+analysis_raw = data %>% select(record_id, calculated_age, gender.factor, hispanic_latino.factor, race___1.factor:race___6.factor, # demographics ##
+                               diabetesduration, hba1c, cgm_use.factor, cgm_type.factor, insulin_pump.factor, type_insulin_pumo.factor,
+                               device_location___1.factor:device_location___7.factor, ############
+                               
+                               skin_reactions.factor, problem_location___1.factor:problem_location___7.factor, skin_reaction_description___1.factor:skin_reaction_description___5.factor,# Skin Related Questions due to cgm
+                               pump_skin_reaction.factor, pump_location_problem, pump_skin_appearance___1.factor:pump_skin_appearance___5.factor, # Qs due to pump
+                               
+                               prepare_skin.factor,removal_technique.factor,skin_care.factor, adhesion_problem.factor,sensor_pump_activities.factor,overlay_tapes.factor,
+                               feelings_skin_reactions___1.factor:feelings_skin_reactions___7.factor,school.factor, hobbies.factor, sleep.factor, change_sensor_pumps.factor,
+                               stop_use.factor, # additional comparisons for yes/no reactions
+                               score_pedsql_parent,
+                               score_pedsql_young,
+                               score_peds_ql_child,
+                               score_pedsql_teen,
+                               score_pedsql_young_adult,
+                               paid_peds_score,
+                               paid_pr_auto_score,
+                               paid_adult_score #scores
+                               )
+
+# exclude 14 17 23 24
+analysis_raw = analysis_raw %>% filter(!(record_id %in% c(14,17,23,24)))
+
+# race classification
+analysis_raw = analysis_raw %>% rowwise() %>% mutate(race_count = sum(!grepl("Unchecked", c_across(race___1.factor:race___6.factor))),
+                                                     Race = case_when(race_count == 1 & race___1.factor == "Checked" ~ "American Indian/Alaska Native",
+                                                                      race_count == 1 & race___2.factor == "Checked" ~ "Asian",
+                                                                      race_count == 1 & race___3.factor == "Checked" ~ "African American/Black",
+                                                                      race_count == 1 & race___4.factor == "Checked" ~ "Native Hawaiian/Pacific Islander",
+                                                                      race_count == 1 & race___5.factor == "Checked" ~ "White",
+                                                                      race_count == 1 & race___6.factor == "Checked" ~ "Do Not Wish to Provide",
+                                                                      race_count > 1 ~ "Multiracial"
+                                                                      ))
+
+analysis_raw = analysis_raw %>% mutate(race_w = ifelse(Race == "White", "White", "Nonwhite"))
+
+# pump/cgm / both/neither reactions
+analysis_raw = analysis_raw %>% mutate(Reactions_Group = case_when(skin_reactions.factor == "Yes" & pump_skin_reaction.factor == "Yes" ~ "CGM and Pump Reactions",
+                                                                   skin_reactions.factor == "No" & pump_skin_reaction.factor == "No" ~ "Neither",
+                                                                   skin_reactions.factor == "Yes" & pump_skin_reaction.factor == "No" ~ "CGM Reactions",
+                                                                   skin_reactions.factor == "No" & pump_skin_reaction.factor == "Yes" ~ "Pump Reactions",
+                                                                   skin_reactions.factor == "Yes" & is.na(pump_skin_reaction.factor) ~ "CGM Reactions",
+                                                                   TRUE~"Neither"))
+
+analysis_raw = analysis_raw %>% mutate(Any_Reactions = ifelse(skin_reactions.factor == "Yes" | pump_skin_reaction.factor == "Yes", "Yes", "No"))
+
+analysis = analysis_raw %>% filter(Reactions_Group != "Neither")
+
+analysis_raw = analysis_raw %>% mutate(pedsql_score = coalesce(as.numeric(score_pedsql_parent),
+                               as.numeric(score_pedsql_young),
+                               as.numeric(score_peds_ql_child),
+                               as.numeric(score_pedsql_teen),
+                               as.numeric(score_pedsql_young_adult)),
+                                       paid_score = coalesce( as.numeric(paid_peds_score),
+                               as.numeric(paid_pr_auto_score),
+                               as.numeric(paid_adult_score)
+))
+# appended to remove the na any skin reactions
+analysis_raw = analysis_raw %>% filter(!is.na(Any_Reactions))                                                         
+```
+
+
+```{r tables, echo = FALSE}
+
+# table 1
+demog_df = analysis_raw %>% select( calculated_age, gender.factor, Race, race_w,hispanic_latino.factor, diabetesduration:device_location___7.factor)
+
+dt1 = table1(~., data = demog_df)
+#dt1
+
+# skin related questions cgm
+
+# location
+cgm_skin_location_df = analysis_raw %>% filter(skin_reactions.factor == "Yes") %>% select(problem_location___1.factor:problem_location___7.factor)
+csl_colnames = c("Upper Buttocks", "Abdomen", "Upper Hip", "Upper Thigh", "Upper Arm", "Forearm", "Other")
+
+colnames(cgm_skin_location_df) = csl_colnames
+csl_location = table1(~., data = cgm_skin_location_df)
+
+# reaction
+cgm_skin_reaction_df = analysis_raw %>% filter(skin_reactions.factor == "Yes") %>% select(skin_reaction_description___1.factor:skin_reaction_description___5.factor)
+
+csr_colnames = c("Redness", "Itching", "Scarring", "Infections", "Other")
+colnames(cgm_skin_reaction_df) = csr_colnames
+
+csr_reactions = table1(~., data = cgm_skin_reaction_df)
+
+# skin related questions pump
+
+# location
+#analysis_raw$pump_skin_reaction.factor
+pump_skin_location_df = analysis_raw %>% filter(pump_skin_reaction.factor == "Yes") %>% select(pump_location_problem)
+
+# new table
+pumpskinreactiontable = c(rep("Abdomen", 21), rep("Upper Buttocks", 10), rep("Arm", 9), "Upper Hip", rep("Legs", 12), rep("All/Anywhere", 4))
+
+
+# reaction
+pump_skin_reaction_df = analysis_raw %>% filter(pump_skin_reaction.factor == "Yes") %>% select(pump_skin_appearance___1.factor:pump_skin_appearance___5.factor)
+
+colnames(pump_skin_reaction_df) = csr_colnames
+
+pump_reactions = table1(~., data = pump_skin_reaction_df)
+
+# appended table
+pvalue <- function(x, ...) {
+    # Construct vectors of data y, and groups (strata) g
+    y <- unlist(x)
+    g <- factor(rep(1:length(x), times=sapply(x, length)))
+    if (is.numeric(y)) {
+        # For numeric variables, perform a standard 2-sample t-test
+        p <- t.test(y ~ g, na.action = na.omit)$p.value
+    } else {
+        # For categorical variables, perform a chi-squared test of independence
+        p <- fisher.test(table(y, g))$p.value
+    }
+    # Format the p-value, using an HTML entity for the less-than sign.
+    # The initial empty string places the output on the line below the variable label.
+    c("", sub("<", "&lt;", format.pval(p, digits=3, eps=0.001)))
+}
+
+t2_df = analysis_raw %>% select(Any_Reactions, prepare_skin.factor:stop_use.factor, pedsql_score,paid_score, hba1c)
+t2 = table1(~.|Any_Reactions, data = t2_df %>% filter(!is.na(Any_Reactions)), overall = F, extra.col = list(`P-Value`=pvalue))
+```
+
+# Outstanding Data Remarks/ Questions
+
+- Some subjects race had multiple checked. Currently classifying in own category as multirace for demographic description
+  - Distribution of race overwhelmingly white with only a few nonwhite (N = 11 nonwhite across 4 categories, 86 White) maybe Dichotomize W/NW?
+   ---- using white/nw (var: race_w)
+  - Hisp/Latino ("Yes" N= 11) all selected White as race (1 Prefer not to answer)
+  - Gender contains n = 1 for other, creating a group split of n = 56 F, 40M, 1 Oth : recid 32
+  
+- pump skin location differently formatted than cgm; how to classify some of these?
+
+# Background
+
+
+# Methods
+Demographics and skin related questions were produced. Due to low cell counts within race and gender groups, Fisher's Exact tests were performed to assess difference in skin reactions by gender and race.
+
+
+# Analysis
+
+## Demographics
+```{r}
+dt1
+```
+
+## Skin reactions due to the use of glucose sensor 
+
+N = 53 yes, 43 No
+
+```{r}
+# Total n = Yes
+table(analysis_raw$skin_reactions.factor)
+
+# Location 
+csl_location
+
+# description
+csr_reactions
+```
+
+## Skin reactions due to the use of insulin pump
+
+N = 45 yes, 41 No
+
+```{r}
+# Total n = Yes
+table(analysis_raw$pump_skin_reaction.factor)
+
+# Location 
+#table(pump_skin_location_df$pump_location_problem)
+
+# Updated
+kable(table(pumpskinreactiontable))
+
+# description
+pump_reactions
+```
+
+## Skin Reaction Groups by Gender/Race
+
+```{r}
+table(analysis_raw$Reactions_Group)
+
+table(analysis_raw$Reactions_Group, analysis_raw$gender.factor)
+
+table(analysis_raw$Reactions_Group, analysis_raw$race_w)
+```
+
+### Difference in Skin Reactions Groups by Gender and Race
+
+No significant differences were found within Skin Reaction groups by Gender (p = 0.81) or Race (p = 0.82).
+
+```{r}
+fisher.test(analysis$Reactions_Group, analysis$gender.factor)
+fisher.test(analysis$Reactions_Group, analysis$race_w)
+
+# Chisq sanity check -- similar results
+# chisq.test(analysis$Reactions_Group, analysis$gender.factor) 0.8
+# chisq.test(analysis$Reactions_Group, analysis$race_w) 0.5
+```
+
+### APPENDED 11/13 Difference in Any Skin Reactions by Gender and Race
+
+There were no significant association between device use and gender (p > 0.99) or race (p = 0.08)
+
+```{r}
+table(analysis_raw$Any_Reactions, analysis_raw$gender.factor)
+
+fisher.test(analysis_raw$Any_Reactions, analysis_raw$gender.factor)
+fisher.test(analysis_raw$Any_Reactions, analysis_raw$race_w)
+
+```
+
+
+# APPENDED
+
+Participants were dichotomized into Any Skin reactions Y/N (pump and cgm combined). Fishers exact tests were run to assess difference in reactions by skin and device questions.T-tests were performed on hba1c and survey outcomes between groups.
+
+There was a significant difference in all of the feelings due to skin reactions except embarrassed and other (p < 0.05). See below analysis.
+
+There was a significant difference in PAID scores between skin reactions groups (p = 0.01). The any skin reactions group had a 10.6 point higher Paid score on average
+
+
+```{r}
+t2
+```
+
+```{r, include = F}
+# prepare skin
+fisher.test(analysis_raw$Any_Reactions, analysis_raw$prepare_skin.factor)
+# removal technique
+fisher.test(analysis_raw$Any_Reactions, analysis_raw$removal_technique.factor)
+#skin care
+fisher.test(analysis_raw$Any_Reactions, analysis_raw$skin_care.factor)
+#adhesionproblem
+fisher.test(analysis_raw$Any_Reactions, analysis_raw$adhesion_problem.factor)
+# sensor pump activities
+fisher.test(analysis_raw$Any_Reactions, analysis_raw$sensor_pump_activities.factor)
+# overlay tapes
+fisher.test(analysis_raw$Any_Reactions, analysis_raw$overlay_tapes.factor)
+# self conscious ***
+fisher.test(analysis_raw$Any_Reactions, analysis_raw$feelings_skin_reactions___1.factor)
+# upset ***
+fisher.test(analysis_raw$Any_Reactions, analysis_raw$feelings_skin_reactions___2.factor)
+# embarrassed
+fisher.test(analysis_raw$Any_Reactions, analysis_raw$feelings_skin_reactions___3.factor)
+# uncomfortable ***
+fisher.test(analysis_raw$Any_Reactions, analysis_raw$feelings_skin_reactions___4.factor)
+# anger***
+fisher.test(analysis_raw$Any_Reactions, analysis_raw$feelings_skin_reactions___5.factor)
+# none of the above***
+fisher.test(analysis_raw$Any_Reactions, analysis_raw$feelings_skin_reactions___6.factor)
+# other
+fisher.test(analysis_raw$Any_Reactions, analysis_raw$feelings_skin_reactions___7.factor)
+# miss school
+fisher.test(analysis_raw$Any_Reactions, analysis_raw$school.factor)
+# stop hobbies 
+fisher.test(analysis_raw$Any_Reactions, analysis_raw$hobbies.factor)
+# sleep disturbances
+fisher.test(analysis_raw$Any_Reactions, analysis_raw$sleep.factor)
+# change method/pump
+fisher.test(analysis_raw$Any_Reactions, analysis_raw$change_sensor_pumps.factor)
+# stop device use
+fisher.test(analysis_raw$Any_Reactions, analysis_raw$stop_use.factor)
+# chisq sanity -- same results
+# # prepare skin
+# chisq.test(analysis_raw$Any_Reactions, analysis_raw$prepare_skin.factor)
+# # removal technique
+# chisq.test(analysis_raw$Any_Reactions, analysis_raw$removal_technique.factor)
+# #skin care
+# chisq.test(analysis_raw$Any_Reactions, analysis_raw$skin_care.factor)
+# #adhesionproblem
+# chisq.test(analysis_raw$Any_Reactions, analysis_raw$adhesion_problem.factor)
+# # sensor pump activities
+# chisq.test(analysis_raw$Any_Reactions, analysis_raw$sensor_pump_activities.factor)
+# # overlay tapes
+# chisq.test(analysis_raw$Any_Reactions, analysis_raw$overlay_tapes.factor)
+# # self conscious ***
+# chisq.test(analysis_raw$Any_Reactions, analysis_raw$feelings_skin_reactions___1.factor)
+# # upset ***
+# chisq.test(analysis_raw$Any_Reactions, analysis_raw$feelings_skin_reactions___2.factor)
+# # embarrassed
+# chisq.test(analysis_raw$Any_Reactions, analysis_raw$feelings_skin_reactions___3.factor)
+# # uncomfortable ***
+# chisq.test(analysis_raw$Any_Reactions, analysis_raw$feelings_skin_reactions___4.factor)
+# # anger***
+# chisq.test(analysis_raw$Any_Reactions, analysis_raw$feelings_skin_reactions___5.factor)
+# # none of the above***
+# chisq.test(analysis_raw$Any_Reactions, analysis_raw$feelings_skin_reactions___6.factor)
+# # other
+# chisq.test(analysis_raw$Any_Reactions, analysis_raw$feelings_skin_reactions___7.factor)
+# # miss school
+# chisq.test(analysis_raw$Any_Reactions, analysis_raw$school.factor)
+# # stop hobbies 
+# chisq.test(analysis_raw$Any_Reactions, analysis_raw$hobbies.factor)
+# # sleep disturbances
+# chisq.test(analysis_raw$Any_Reactions, analysis_raw$sleep.factor)
+# # change method/pump
+# chisq.test(analysis_raw$Any_Reactions, analysis_raw$change_sensor_pumps.factor)
+# # stop device use
+# chisq.test(analysis_raw$Any_Reactions, analysis_raw$stop_use.factor)
+```

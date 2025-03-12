@@ -1,0 +1,813 @@
+---
+title: "Insulin Cost Analysis"
+author: "Casey Sakamoto"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 5
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(arsenal)
+library(tidyverse)
+library(performance)
+library(knitr)
+library(MASS)
+library(table1)
+library(readxl)
+library(quantreg)
+library(emmeans)
+# data import
+Insulin_cost_whole_sample <- read_excel("S:/Laura/BDC/Projects/Lauren Waterman/Insulin cost analysis/Insulin_cost_whole sample.xlsx", 
+    sheet = "Insulin_whole sample")
+
+```
+
+```{r dc, include = F}
+
+Insulin_cost_whole_sample$friends_family =  Insulin_cost_whole_sample$`Friends/Family (binary: 0=0, 1=any)`
+analysis = Insulin_cost_whole_sample %>% replace(.=="NULL", NA)%>%mutate(insulin_cost = case_when(`Cost per month` == "NULL" ~ NA_real_,
+                                                                         TRUE ~ as.numeric(`Cost per month`)),
+                                                insurance = case_when(`insurance_type (3=private, 2=public, 1=tricare, 4=other, 5=none, 6=unsure)` == 3 ~ "Private",
+                                                                      `insurance_type (3=private, 2=public, 1=tricare, 4=other, 5=none, 6=unsure)` == 2 ~ "Public",
+                                                                      `insurance_type (3=private, 2=public, 1=tricare, 4=other, 5=none, 6=unsure)` == 1 ~ "Tricare",
+                                                                      `insurance_type (3=private, 2=public, 1=tricare, 4=other, 5=none, 6=unsure)` == 4 ~ "Other",
+                                                                      `insurance_type (3=private, 2=public, 1=tricare, 4=other, 5=none, 6=unsure)` == 6 ~ "Unsure"),
+                                                race = case_when(`race (0=w, 1=b, 2=Asian, 3=native hawaiian, 4=american indian, 5=multiple, 6=?)` == 0 ~"White",
+                                                                 `race (0=w, 1=b, 2=Asian, 3=native hawaiian, 4=american indian, 5=multiple, 6=?)` == 1 ~"Black",
+                                                                 `race (0=w, 1=b, 2=Asian, 3=native hawaiian, 4=american indian, 5=multiple, 6=?)` == 2 ~"Asian",
+                                                                 `race (0=w, 1=b, 2=Asian, 3=native hawaiian, 4=american indian, 5=multiple, 6=?)` == 3 ~"Native Hawaiian",
+                                                                 `race (0=w, 1=b, 2=Asian, 3=native hawaiian, 4=american indian, 5=multiple, 6=?)` == 4 ~"American Indian",
+                                                                 `race (0=w, 1=b, 2=Asian, 3=native hawaiian, 4=american indian, 5=multiple, 6=?)` == 5 ~"Multiple",
+                                                                 `race (0=w, 1=b, 2=Asian, 3=native hawaiian, 4=american indian, 5=multiple, 6=?)` == 6 ~"Unknown"),
+                                                sex = case_when(`gender (1=m, 2=f, 3=o)` == 1 ~ "Male",
+                                                                `gender (1=m, 2=f, 3=o)` == 2 ~ "Female",
+                                                                `gender (1=m, 2=f, 3=o)` == 3 ~ "Other"),
+                                                ethnicity = case_when(`ethnicity (0=H, 1=NH)`== 0 ~ "Hispanic",
+                                                                      `ethnicity (0=H, 1=NH)` == 1 ~ "Nonhispanic"),
+                                                diabetes_duration = `Diabetes duration`,
+                                                emerging_adult = `Emerging Adult`,
+                                                instate = `instate (1=yes)`,
+                                                ration1 = `Run out (binary: 0=0, 1=any)`,
+                                                ration2 = friends_family,
+                                                ration3 = `Not filled Rx: cost (binary: 0=0, 1=any)`,
+                                                ration4 = `Running out (binary: 0=0, 1=any)`, 
+                                                ration5 = `Paid case (binary: 0=0, 1=any)`,
+                                                ration6 = `Black market insulin (binary: 0=0, 1=any)`,
+                                                ration7 = `Ration due to cost (binary: 0=0, 1=any)`) %>%  filter(!is.na(record_id))
+analysis[99:105] = lapply(analysis[99:105], as.numeric)
+analysis = analysis %>% mutate(rationsum = rowSums(across(ration1:ration7), na.rm = T)* NA ^ (rowSums(!is.na(across(ration1:ration7))) == 0),
+                               rationing = case_when(rationsum == 0 ~ "Non Rationer",
+                                                     rationsum > 0 ~ "Rationer"))
+analysis$TIR = as.numeric(analysis$TIR)
+
+# likerts 
+
+# aim 6
+analysis$walmart = 1 - (as.numeric(analysis$`did you know about walmart? (1=y, 2=n)`) -1)
+table(analysis$walmart)
+
+
+# dichotomize the other variables
+analysis = analysis %>% mutate(walmart_lr = case_when(`did you know about walmart? (1=y, 2=n)` == 2 ~ 0,
+                                                      `did you know about walmart? (1=y, 2=n)` == 1 ~ 1),
+                               know_insulin = case_when(`what company makes your insulin (1=lily, 2=Novo, 5=?` == 5 ~ 0,
+                                                        `what company makes your insulin (1=lily, 2=Novo, 5=?` %in% c(1,2) ~ 1),
+                               know_programs = case_when(`tried applying for programs (1=n, didn't know, 2= no but don't need, 3=y but not qualify, 4=received)` %in% c(1,2) ~ 0,
+                                                         `tried applying for programs (1=n, didn't know, 2= no but don't need, 3=y but not qualify, 4=received)` %in% c(3,4) ~ 1))
+
+
+analysis = analysis %>% mutate(a1c_l7 = ifelse(HbA1c < 7,"Less than 7%", "Greater than 7%"),
+                               monthlycost_g100 = ifelse(insulin_cost > 100, "Greater than $100", "Less than $100"))
+
+```
+
+
+
+```{r function, include = F}
+# fit model fun
+fit_mod = function(outcome,compgroup,df,age=FALSE){
+
+  if(age==FALSE){
+    # Fit model
+    
+    f = as.formula(paste0(outcome,"~",compgroup,"+ sex + diabetes_duration + race + ethnicity + insurance"))
+    mod = lm(f, data = df, na.action = na.omit)
+    summary(mod)
+  }
+    else{
+    # Fit model
+    
+    f = as.formula(paste0(outcome,"~",compgroup,"+ sex + diabetes_duration + race + ethnicity + insurance + age"))
+    mod = lm(f, data = df, na.action = na.omit)
+    summary(mod)
+  }
+}
+
+fit_qmod = function(outcome,compgroup,df,age=FALSE){
+
+  if(age==FALSE){
+    # Fit model
+    
+    f = as.formula(paste0(outcome,"~",compgroup,"+ sex + diabetes_duration + race + ethnicity + insurance"))
+    mod = rq(f, data = df, na.action = na.omit)
+    summary(mod, se = "iid")
+  }
+    else{
+    # Fit model
+    
+    f = as.formula(paste0(outcome,"~",compgroup,"+ sex + diabetes_duration + race + ethnicity + insurance + age"))
+    mod = rq(f, data = df, na.action = na.omit)
+    summary(mod, se = "iid")
+  }
+}
+
+fit_lr_mod = function(outcome,compgroup,df){
+  print(outcome)
+    f = as.formula(paste0(outcome,"~",compgroup,"+ sex + diabetes_duration + race + ethnicity + insurance"))
+    mod = glm(f, data = df, na.action = na.omit, family = binomial(link='logit'))
+    print(summary(mod))
+    print("Model Coefficient Odds Ratios")
+    print(exp(coef(mod)))
+}
+
+fit_lik_lr_mod = function(outcome,compgroup,df){
+  df = df %>% filter(paste0(outcome) != "2") %>% mutate(newoutcome = as.numeric(paste0(outcome)) - 1)
+  
+    f = as.formula(paste0("newoutcome","~",compgroup,"+ sex + diabetes_duration + race + ethnicity + insurance"))
+    mod = glm(f, data = df, na.action = na.omit, family = binomial(link='logit'))
+    summary(mod)
+}
+
+
+change_likert = function(x){as.factor(as.numeric(x) - 1)}
+nm1 <- grep("(binary 1=D, 2=A, 3=NS)", names(analysis), value = TRUE)
+analysis[nm1] <- lapply(analysis[nm1], change_likert)
+
+
+#
+mod = rq(insulin_cost ~ rationing + sex + diabetes_duration + race + ethnicity + insurance, data = analysis, na.action = na.omit)
+summary.rq(mod)
+analysis_2a = analysis %>% mutate(pred_IC = predict.rq(mod, newdata = analysis))
+testpred = predict.rq(mod, newdata = analysis)
+table1(~ pred_IC + insulin_cost | rationing, analysis_2a %>% filter(!is.na(rationing))%>% filter(!is.na(pred_IC)) )
+#
+
+emmeans(mod, insulin_cost)
+```
+
+```{r, include=FALSE}
+## Appended analysis
+analysis_ins1 = analysis %>% filter(insurance %in% c("Public", "Private"))
+analysis_ins2 = analysis %>% filter(insurance %in% c("Public", "Private", "Tricare")) %>% mutate(insurance2 = case_when(insurance %in% c("Tricare", "Private") ~ "Private/Tri",
+                                                                                                                        insurance == "Public" ~ "Public"))
+
+```
+# Outstanding Data Remarks
+
+- Record ID 12 has out of pocket costs and some other columns as "NULL" --> set to NA
+- Wasn't sure how to name the rationing columns so i went with the first few words of the column name in the frequency tables
+
+# Methods
+
+For all models, adjusting for sex, diabetes duration, race/eth, insurance, when applicable add in age
+
+"is there a difference in out of pocket costs between groups?"
+
+aim 1 and 2: linear models with above covariates
+
+aim 4,5,6: logistic regression with above covariates
+
+
+# Analysis
+
+# appended sept 2024: insulin costs median analysis
+
+50th quantile (median) regression was performed on insulin costs, adjusting for the same covariates as the insulin cost OLS linear models. For p-value calculations, assumes errors are independent and identically distributed.
+
+### Insulin cost and insurance (public/private)
+
+There is a significant difference in median insulin costs between insurance groups (p = 0.01). Median public insurance users are predicted to pay 16.67 (se = 6.6) less than median private insurance users.
+
+```{r}
+fit_qmod("insulin_cost", "insurance", df = analysis_ins1, age=FALSE )
+```
+
+### Insulin cost and insurance (public/private+tricare)
+
+Singularity (collinearity issues) -- Model doesn't converge.
+
+```{r}
+# fit_qmod("insulin_cost", "insurance2", df = analysis_ins2, age=FALSE )
+# Error in rq.fit.br(x, y, tau = tau, ...) : Singular design matrix
+```
+
+### Insulin cost and emerging adults, instate, rationing
+
+There is not a significant difference in the emerging adult group for median insulin cost (p = 0.48)
+
+There is a significant difference between median insulin costs between in and out of state subjects (p = 0.02). Median insulin costs are 12.14 (se = 5.34) lower in the instate group than the out of state group.
+
+There is a significant difference between median insulin costs between rationer and non rationer subjects (p = 0.03). Median insulin costs are 10.00 (se = 4.45) higher in the rationer group than the nonrationing group.
+
+```{r}
+fit_qmod("insulin_cost", "emerging_adult", df = analysis, age=FALSE )
+fit_qmod("insulin_cost", "instate", df = analysis, age=FALSE )
+fit_qmod("insulin_cost", "rationing", df = analysis, age=FALSE )
+
+```
+
+# APPENDED AUGUST 2024
+
+## Compare Private/Public
+excluded tricare, missing, unsure
+
+### Insulin cost
+
+There is no significant difference in out of pocket costs between Public and Private (p = 0.40)
+
+
+```{r}
+fit_mod("insulin_cost", "insurance", df = analysis_ins1, age=FALSE )
+```
+
+### HBA1c and TIR
+
+There is not a significant difference in TIR between public and private (p = 0.93).
+There is not a significant difference in a1c between public and private (p = 0.762).
+
+```{r}
+fit_mod("TIR", "insurance", df = analysis_ins1, age=TRUE )
+```
+
+```{r}
+fit_mod("HbA1c", "insurance", df = analysis_ins1, age=TRUE )
+```
+
+### rationing frequency
+
+Running out: insurance group is associated with Running out p = 0.04** public insurance subjects are more likely than private insurance subjects to experience Running out by a factor of 4.2 times.
+
+Other rationing variables not significantly different for insurance group(see results below)
+
+```{r}
+ppi_t = analysis_ins1 %>% group_by(insurance) %>% summarise(n = n(),
+                                                    run_out = sum(ration1, na.rm = T),
+                                                    friends_family = sum(ration2, na.rm = T),
+                                                    not_filled_rx = sum(ration3, na.rm = T),
+                                                    running_out = sum(ration4, na.rm = T),
+                                                    paid_case = sum(ration5, na.rm = T),
+                                                    black_market = sum(ration6, na.rm = T),
+                                                    ration_cost = sum(ration7, na.rm = T))
+kable(ppi_t)
+
+print("Run Out")
+fit_lr_mod("ration1", "insurance", df = analysis_ins1)
+
+print("Friends/Family")
+fit_lr_mod("ration2", "insurance", df = analysis_ins1)
+
+print("Not Filled Rx")
+fit_lr_mod("ration3", "insurance", df = analysis_ins1)
+
+print("Running Out")
+fit_lr_mod("ration4", "insurance", df = analysis_ins1)
+
+print("Paid Case")
+fit_lr_mod("ration5", "insurance", df = analysis_ins1)
+
+print("Black Market")
+fit_lr_mod("ration6", "insurance", df = analysis_ins1)
+
+print("Ration due to Cost")
+fit_lr_mod("ration7", "insurance", df = analysis_ins1)
+```
+
+### likerts
+
+No Significant associations (see results below)
+
+```{r}
+with(analysis_ins1, table(insurance, `Too expensive (binary 1=D, 2=A, 3=NS)`))
+with(analysis_ins1, table(insurance,`Insulin unaffordable next 3 months (binary 1=D, 2=A, 3=NS)`))
+with(analysis_ins1, table(insurance,`Insulin cap effective (binary 1=D, 2=A, 3=NS)`))
+with(analysis_ins1, table(insurance,`PA issues (binary 1=D, 2=A, 3=NS)`))
+with(analysis_ins1, table(insurance,`Skipped bills (binary 1=D, 2=A, 3=NS)`))
+with(analysis_ins1, table(insurance,`Plan if price more than expected (binary 1=D, 2=A, 3=NS)`))
+with(analysis_ins1, table(insurance,`Know who to contact (binary 1=D, 2=A, 3=NS)`))
+with(analysis_ins1, table(insurance,`Comfortable with BDC team (binary 1=D, 2=A, 3=NS)`))
+with(analysis_ins1, table(insurance,`Avoided appts due to cost (binary 1=D, 2=A, 3=NS)`))
+
+
+fit_lr_mod("`Too expensive (binary 1=D, 2=A, 3=NS)`", "insurance", df = analysis_ins1 %>% filter(`Too expensive (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Insulin unaffordable next 3 months (binary 1=D, 2=A, 3=NS)`", "insurance", df = analysis_ins1 %>% filter(`Insulin unaffordable next 3 months (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Insulin cap effective (binary 1=D, 2=A, 3=NS)`", "insurance", df = analysis_ins1 %>% filter(`Insulin cap effective (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`PA issues (binary 1=D, 2=A, 3=NS)`", "insurance", df = analysis_ins1 %>% filter(`PA issues (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Skipped bills (binary 1=D, 2=A, 3=NS)`", "insurance", df = analysis_ins1 %>% filter(`Skipped bills (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Plan if price more than expected (binary 1=D, 2=A, 3=NS)`", "insurance", df = analysis_ins1 %>% filter(`Plan if price more than expected (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Know who to contact (binary 1=D, 2=A, 3=NS)`", "insurance", df = analysis_ins1 %>% filter(`Know who to contact (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Comfortable with BDC team (binary 1=D, 2=A, 3=NS)`", "insurance", df = analysis_ins1 %>% filter(`Comfortable with BDC team (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Avoided appts due to cost (binary 1=D, 2=A, 3=NS)`", "insurance", df = analysis_ins1 %>% filter(`Avoided appts due to cost (binary 1=D, 2=A, 3=NS)` != "2"))
+```
+
+### Insulin access
+
+no significant associations; insufficient model convergence on lily subpopulation
+
+```{r}
+table1(~factor(`did you know about walmart? (1=y, 2=n)`) +
+         factor(`what company makes your insulin (1=lily, 2=Novo, 5=?`) +
+         factor(`tried applying for programs (1=n, didn't know, 2= no but don't need, 3=y but not qualify, 4=received)`)|insurance, data = analysis_ins1, overall = F )
+
+table1(~factor(`Know about lily (0=n)`)|insurance, data = analysis_ins1 %>% filter(`what company makes your insulin (1=lily, 2=Novo, 5=?` ==1) )
+table1(~factor(`Know about novo (0=n)`)|insurance, data = analysis_ins1 %>% filter(`what company makes your insulin (1=lily, 2=Novo, 5=?` ==2) )
+
+fit_lr_mod("walmart_lr", "insurance", df = analysis_ins1)
+fit_lr_mod("know_insulin", "insurance", df = analysis_ins1)
+fit_lr_mod("know_programs", "insurance", df = analysis_ins1)
+
+# fit_lr_mod("`Know about lily (0=n)`", "insurance", df = analysis_ins1 %>% filter(`what company makes your insulin (1=lily, 2=Novo, 5=?` ==1))
+fit_lr_mod("`Know about novo (0=n)`", "insurance", df = analysis_ins1%>% filter(`what company makes your insulin (1=lily, 2=Novo, 5=?` ==2))
+
+```
+
+
+## Compare Private+Tricare/public
+excluded missing, unsure
+
+### Insulin cost
+
+There is no significant difference in out of pocket costs between Public and Private (p = 0.41)
+
+
+```{r}
+fit_mod("insulin_cost", "insurance2", df = analysis_ins2, age=FALSE )
+```
+
+### HBA1c and TIR
+
+There is not a significant difference in TIR between public and private (p = 0.81).
+There is not a significant difference in a1c between public and private (p = 0.72).
+
+```{r}
+fit_mod("TIR", "insurance2", df = analysis_ins2, age=TRUE )
+```
+
+```{r}
+fit_mod("HbA1c", "insurance2", df = analysis_ins2, age=TRUE )
+```
+
+### rationing frequency
+
+Running out: insurance group is associated with Running out p = 0.04** public insurance subjects are more likely than private/tricare insurance subjects to experience Running out by a factor of 4.2 times.
+
+Other rationing variables not significantly different for insurance (see results below)
+
+```{r}
+ppi_t2 = analysis_ins2 %>% group_by(insurance2) %>% summarise(n = n(),
+                                                    run_out = sum(ration1, na.rm = T),
+                                                    friends_family = sum(ration2, na.rm = T),
+                                                    not_filled_rx = sum(ration3, na.rm = T),
+                                                    running_out = sum(ration4, na.rm = T),
+                                                    paid_case = sum(ration5, na.rm = T),
+                                                    black_market = sum(ration6, na.rm = T),
+                                                    ration_cost = sum(ration7, na.rm = T))
+kable(ppi_t2)
+
+print("Run Out")
+fit_lr_mod("ration1", "insurance2", df = analysis_ins2)
+
+print("Friends/Family")
+fit_lr_mod("ration2", "insurance2", df = analysis_ins2)
+
+print("Not Filled Rx")
+fit_lr_mod("ration3", "insurance2", df = analysis_ins2)
+
+print("Running Out")
+fit_lr_mod("ration4", "insurance2", df = analysis_ins2)
+
+print("Paid Case")
+fit_lr_mod("ration5", "insurance2", df = analysis_ins2)
+
+print("Black Market")
+fit_lr_mod("ration6", "insurance2", df = analysis_ins2)
+
+print("Ration due to Cost")
+fit_lr_mod("ration7", "insurance2", df = analysis_ins2)
+```
+
+### likerts
+
+No Significant associations (see results below)
+
+```{r}
+with(analysis_ins2, table(insurance2, `Too expensive (binary 1=D, 2=A, 3=NS)`))
+with(analysis_ins2, table(insurance2,`Insulin unaffordable next 3 months (binary 1=D, 2=A, 3=NS)`))
+with(analysis_ins2, table(insurance2,`Insulin cap effective (binary 1=D, 2=A, 3=NS)`))
+with(analysis_ins2, table(insurance2,`PA issues (binary 1=D, 2=A, 3=NS)`))
+with(analysis_ins2, table(insurance2,`Skipped bills (binary 1=D, 2=A, 3=NS)`))
+with(analysis_ins2, table(insurance2,`Plan if price more than expected (binary 1=D, 2=A, 3=NS)`))
+with(analysis_ins2, table(insurance2,`Know who to contact (binary 1=D, 2=A, 3=NS)`))
+with(analysis_ins2, table(insurance2,`Comfortable with BDC team (binary 1=D, 2=A, 3=NS)`))
+with(analysis_ins2, table(insurance2,`Avoided appts due to cost (binary 1=D, 2=A, 3=NS)`))
+
+
+fit_lr_mod("`Too expensive (binary 1=D, 2=A, 3=NS)`", "insurance2", df = analysis_ins2 %>% filter(`Too expensive (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Insulin unaffordable next 3 months (binary 1=D, 2=A, 3=NS)`", "insurance2", df = analysis_ins2 %>% filter(`Insulin unaffordable next 3 months (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Insulin cap effective (binary 1=D, 2=A, 3=NS)`", "insurance2", df = analysis_ins2 %>% filter(`Insulin cap effective (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`PA issues (binary 1=D, 2=A, 3=NS)`", "insurance2", df = analysis_ins2 %>% filter(`PA issues (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Skipped bills (binary 1=D, 2=A, 3=NS)`", "insurance2", df = analysis_ins2 %>% filter(`Skipped bills (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Plan if price more than expected (binary 1=D, 2=A, 3=NS)`", "insurance2", df = analysis_ins2 %>% filter(`Plan if price more than expected (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Know who to contact (binary 1=D, 2=A, 3=NS)`", "insurance2", df = analysis_ins2 %>% filter(`Know who to contact (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Comfortable with BDC team (binary 1=D, 2=A, 3=NS)`", "insurance2", df = analysis_ins2 %>% filter(`Comfortable with BDC team (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Avoided appts due to cost (binary 1=D, 2=A, 3=NS)`", "insurance2", df = analysis_ins2 %>% filter(`Avoided appts due to cost (binary 1=D, 2=A, 3=NS)` != "2"))
+```
+
+### Insulin access
+
+no significant associations; insufficient model convergence on lily subpopulation
+
+```{r}
+table1(~factor(`did you know about walmart? (1=y, 2=n)`) +
+         factor(`what company makes your insulin (1=lily, 2=Novo, 5=?`) +
+         factor(`tried applying for programs (1=n, didn't know, 2= no but don't need, 3=y but not qualify, 4=received)`)|insurance2, data = analysis_ins2, overall = F )
+
+table1(~factor(`Know about lily (0=n)`)|insurance2, data = analysis_ins2 %>% filter(`what company makes your insulin (1=lily, 2=Novo, 5=?` ==1) )
+table1(~factor(`Know about novo (0=n)`)|insurance2, data = analysis_ins2 %>% filter(`what company makes your insulin (1=lily, 2=Novo, 5=?` ==2) )
+
+fit_lr_mod("walmart_lr", "insurance2", df = analysis_ins2)
+fit_lr_mod("know_insulin", "insurance2", df = analysis_ins2)
+fit_lr_mod("know_programs", "insurance2", df = analysis_ins2)
+
+# fit_lr_mod("`Know about lily (0=n)`", "insurance2", df = analysis_ins2 %>% filter(`what company makes your insulin (1=lily, 2=Novo, 5=?` ==1))
+fit_lr_mod("`Know about novo (0=n)`", "insurance2", df = analysis_ins2%>% filter(`what company makes your insulin (1=lily, 2=Novo, 5=?` ==2))
+
+```
+
+## Mean insulin cost, TIR  for emergini adults, parents, insurance categories
+
+Mean ins cost added to below demog tables. for overall mean tir reference overall column in section 4.4.3 (uses all data points in analysis dataset)
+
+## Demographics by subgrouping
+
+### Public/Private
+
+```{r}
+table1(~sex + race + ethnicity + diabetes_duration + insurance + pump_user+ age + HbA1c + TIR + insulin_cost + a1c_l7 + monthlycost_g100|insurance, data = analysis_ins1)
+```
+
+### Public/Private+Tricare
+
+```{r}
+table1(~sex + race + ethnicity + diabetes_duration + insurance + pump_user+ age + HbA1c + TIR + insulin_cost+ a1c_l7 + monthlycost_g100|insurance2, data = analysis_ins2)
+```
+
+### Emerging Adults
+
+```{r}
+table1(~sex + race + ethnicity + diabetes_duration + insurance + pump_user+ age + HbA1c+ TIR + insulin_cost+ a1c_l7 + monthlycost_g100|emerging_adult, data = analysis)
+```
+
+### Instate
+
+```{r}
+table1(~sex + race + ethnicity + diabetes_duration + insurance + pump_user+ age + HbA1c+ TIR + insulin_cost+ a1c_l7 + monthlycost_g100|instate, data = analysis %>% filter(!is.na(instate)))
+
+```
+
+
+### Rationing
+
+```{r}
+table1(~sex + race + ethnicity + diabetes_duration + insurance + pump_user + age + HbA1c+ TIR + insulin_cost+ a1c_l7 + monthlycost_g100|rationing, data = analysis %>% filter(!is.na(rationing)))
+
+```
+
+## Aim 1: Comparisons of out of pocket costs (col e)
+
+### Emerging adults vs parents/guardians (col d)
+
+There is no significant difference in out of pocket costs between Emerging adults and Parents/Guardians (p = 0.98)
+
+```{r}
+fit_mod("insulin_cost", "emerging_adult", df = analysis, age=FALSE )
+```
+
+### instate v out of state (col i)
+
+There is no significant difference in out of pocket costs between instate and out of state (p = 0.135)
+
+
+```{r}
+fit_mod("insulin_cost", "instate", df = analysis, age=FALSE )
+```
+
+### rationers
+
+There is a significant difference in oop costs between rationers and non rationers (p = 0.004). On average, Rationers spend 52.96 (SE = 17.37) higher than nonrationers. 
+
+```{r}
+fit_mod("insulin_cost", "rationing", df = analysis, age=FALSE )
+
+table1(~insulin_cost|rationing, data = analysis %>% filter(!is.na(rationing)))
+(19.1 -	77.8) 
+```
+
+## Aim 2: hba1c and TIR
+
+### Emerging adults vs parents/guardians (col d)
+
+There is a significant difference in TIR between emerging adults and parents/guardians (p = 0.01). On average, Emerging adults have 14.4 (SE = 5.7) higher TIR than parents/guardians. 
+There is a significant difference in a1c between emerging adults and parents/guardians (p = 0.004). On average, Emerging adults have .95(SE = .32) lower a1c than parents/guardians. 
+
+```{r}
+fit_mod("TIR", "emerging_adult", df = analysis, age=TRUE )
+```
+
+```{r}
+fit_mod("HbA1c", "emerging_adult", df = analysis, age=TRUE )
+```
+
+### instate v out of state (col i)
+
+There is no significant difference in TIR between instate and out of state subjects (p = 0.39).
+There is no significant difference in a1c between instate and out of state subjects (p = 0.37).
+
+```{r}
+fit_mod("TIR", "instate", df = analysis, age=TRUE )
+```
+
+```{r}
+fit_mod("HbA1c", "instate", df = analysis, age=TRUE )
+```
+
+### rationers
+
+There is a significant difference in TIR between rationers and nonrationers (p = 0.02). On average, rationers have 9.49 (SE = 3.92) lower TIR than nonrationers. 
+
+There is a significant difference in a1c between rationers and nonrationers (p = 0.003). On average, rationers have 0.74 (SE =.23) higher TIR than nonrationers. 
+
+
+```{r}
+fit_mod("TIR", "rationing", df = analysis, age=TRUE )
+```
+
+```{r}
+fit_mod("HbA1c", "rationing", df = analysis, age=TRUE )
+```
+
+## Aim 4: comparing rationing response among subgroups
+
+### emerging adult
+
+Running out: emerging adult is associated with Running out p = 0.03** Emerging adults are more likely than parents/guardians to experience Running out by a factor of 4.1 times.
+
+Other rationing variables not significantly different for emerging adults (see results below)
+
+```{r}
+ea_t = analysis %>% group_by(emerging_adult) %>% summarise(n = n(),
+                                                    run_out = sum(ration1, na.rm = T),
+                                                    friends_family = sum(ration2, na.rm = T),
+                                                    not_filled_rx = sum(ration3, na.rm = T),
+                                                    running_out = sum(ration4, na.rm = T),
+                                                    paid_case = sum(ration5, na.rm = T),
+                                                    black_market = sum(ration6, na.rm = T),
+                                                    ration_cost = sum(ration7, na.rm = T))
+kable(ea_t)
+
+print("Run Out")
+fit_lr_mod("ration1", "emerging_adult", df = analysis)
+
+print("Friends/Family")
+fit_lr_mod("ration2", "emerging_adult", df = analysis)
+
+print("Not Filled Rx")
+fit_lr_mod("ration3", "emerging_adult", df = analysis)
+
+print("Running Out")
+fit_lr_mod("ration4", "emerging_adult", df = analysis)
+
+print("Paid Case")
+fit_lr_mod("ration5", "emerging_adult", df = analysis)
+
+print("Black Market")
+fit_lr_mod("ration6", "emerging_adult", df = analysis)
+
+print("Ration due to Cost")
+fit_lr_mod("ration7", "emerging_adult", df = analysis)
+
+```
+
+### instate
+
+Not filled Rx: instate/outstate is associated with not filling rx (p = 0.01) 
+Running out:instate/outstate is associated with running out (p = 0.048)
+Paid Case: instate/outstate is associated with paid case (p = 0.006)
+ration due to cost: instate/outstate is associated with ration due to cost (p = 0.047)
+
+```{r}
+analysis %>% group_by(instate) %>% summarise(n = n(),
+                                                    run_out = sum(ration1, na.rm = T),
+                                                    friends_family = sum(ration2, na.rm = T),
+                                                    not_filled_rx = sum(ration3, na.rm = T),
+                                                    running_out = sum(ration4, na.rm = T),
+                                                    paid_case = sum(ration5, na.rm = T),
+                                                    black_market = sum(ration6, na.rm = T),
+                                                    ration_cost = sum(ration7, na.rm = T))
+
+print("Run Out")
+fit_lr_mod("ration1", "instate", df = analysis)
+
+print("Friends/Family")
+fit_lr_mod("ration2", "instate", df = analysis)
+
+print("Not Filled Rx")
+fit_lr_mod("ration3", "instate", df = analysis)
+
+print("Running Out")
+fit_lr_mod("ration4", "instate", df = analysis)
+
+print("Paid Case")
+fit_lr_mod("ration5", "instate", df = analysis)
+
+print("Black Market")
+fit_lr_mod("ration6", "instate", df = analysis)
+
+print("Ration due to Cost")
+fit_lr_mod("ration7", "instate", df = analysis)
+```
+
+## likerts
+
+For this section, to run the logistic regressions I subtracted 1 from the value to get a 0 and 1 value for D and A (filtering out Not sure answers)
+
+### emerging adult frequencies
+
+Significant associations:
+
+Plan if price more than expected (p = 0.04)
+
+
+```{r}
+with(analysis, table(emerging_adult, `Too expensive (binary 1=D, 2=A, 3=NS)`))
+with(analysis, table(emerging_adult,`Insulin unaffordable next 3 months (binary 1=D, 2=A, 3=NS)`))
+with(analysis, table(emerging_adult,`Insulin cap effective (binary 1=D, 2=A, 3=NS)`))
+with(analysis, table(emerging_adult,`PA issues (binary 1=D, 2=A, 3=NS)`))
+with(analysis, table(emerging_adult,`Skipped bills (binary 1=D, 2=A, 3=NS)`))
+with(analysis, table(emerging_adult,`Plan if price more than expected (binary 1=D, 2=A, 3=NS)`))
+with(analysis, table(emerging_adult,`Know who to contact (binary 1=D, 2=A, 3=NS)`))
+with(analysis, table(emerging_adult,`Comfortable with BDC team (binary 1=D, 2=A, 3=NS)`))
+with(analysis, table(emerging_adult,`Avoided appts due to cost (binary 1=D, 2=A, 3=NS)`))
+
+
+fit_lr_mod("`Too expensive (binary 1=D, 2=A, 3=NS)`", "emerging_adult", df = analysis %>% filter(`Too expensive (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Insulin unaffordable next 3 months (binary 1=D, 2=A, 3=NS)`", "emerging_adult", df = analysis %>% filter(`Insulin unaffordable next 3 months (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Insulin cap effective (binary 1=D, 2=A, 3=NS)`", "emerging_adult", df = analysis %>% filter(`Insulin cap effective (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`PA issues (binary 1=D, 2=A, 3=NS)`", "emerging_adult", df = analysis %>% filter(`PA issues (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Skipped bills (binary 1=D, 2=A, 3=NS)`", "emerging_adult", df = analysis %>% filter(`Skipped bills (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Plan if price more than expected (binary 1=D, 2=A, 3=NS)`", "emerging_adult", df = analysis %>% filter(`Plan if price more than expected (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Know who to contact (binary 1=D, 2=A, 3=NS)`", "emerging_adult", df = analysis %>% filter(`Know who to contact (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Comfortable with BDC team (binary 1=D, 2=A, 3=NS)`", "emerging_adult", df = analysis %>% filter(`Comfortable with BDC team (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Avoided appts due to cost (binary 1=D, 2=A, 3=NS)`", "emerging_adult", df = analysis %>% filter(`Avoided appts due to cost (binary 1=D, 2=A, 3=NS)` != "2"))
+```
+
+
+### instate
+
+Significant associations:
+
+Too Expensive (p = 0.012)
+Skipped Bills (p = 0.001)
+Avoided appts due to cost (p = 0.0003)
+
+
+```{r}
+with(analysis, table(instate, `Too expensive (binary 1=D, 2=A, 3=NS)`))
+with(analysis, table(instate,`Insulin unaffordable next 3 months (binary 1=D, 2=A, 3=NS)`))
+with(analysis, table(instate,`Insulin cap effective (binary 1=D, 2=A, 3=NS)`))
+with(analysis, table(instate,`PA issues (binary 1=D, 2=A, 3=NS)`))
+with(analysis, table(instate,`Skipped bills (binary 1=D, 2=A, 3=NS)`))
+with(analysis, table(instate,`Plan if price more than expected (binary 1=D, 2=A, 3=NS)`))
+with(analysis, table(instate,`Know who to contact (binary 1=D, 2=A, 3=NS)`))
+with(analysis, table(instate,`Comfortable with BDC team (binary 1=D, 2=A, 3=NS)`))
+with(analysis, table(instate,`Avoided appts due to cost (binary 1=D, 2=A, 3=NS)`))
+
+
+fit_lr_mod("`Too expensive (binary 1=D, 2=A, 3=NS)`", "instate", df = analysis %>% filter(`Too expensive (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Insulin unaffordable next 3 months (binary 1=D, 2=A, 3=NS)`", "instate", df = analysis %>% filter(`Insulin unaffordable next 3 months (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Insulin cap effective (binary 1=D, 2=A, 3=NS)`", "instate", df = analysis %>% filter(`Insulin cap effective (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`PA issues (binary 1=D, 2=A, 3=NS)`", "instate", df = analysis %>% filter(`PA issues (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Skipped bills (binary 1=D, 2=A, 3=NS)`", "instate", df = analysis %>% filter(`Skipped bills (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Plan if price more than expected (binary 1=D, 2=A, 3=NS)`", "instate", df = analysis %>% filter(`Plan if price more than expected (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Know who to contact (binary 1=D, 2=A, 3=NS)`", "instate", df = analysis %>% filter(`Know who to contact (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Comfortable with BDC team (binary 1=D, 2=A, 3=NS)`", "instate", df = analysis %>% filter(`Comfortable with BDC team (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Avoided appts due to cost (binary 1=D, 2=A, 3=NS)`", "instate", df = analysis %>% filter(`Avoided appts due to cost (binary 1=D, 2=A, 3=NS)` != "2"))
+
+
+```
+
+### rationers
+
+Significant associations:
+
+Too Expensive (p < 0.0001)
+Insulin Unaffordable next 3 Months ( p < 0.0001)
+Skipped Bills (p = 0.002)
+Plan if Price more than expected (p = 0.003)
+Avoided appts due to cost (p = 0.011)
+
+```{r}
+with(analysis, table(rationing, `Too expensive (binary 1=D, 2=A, 3=NS)`))
+with(analysis, table(rationing,`Insulin unaffordable next 3 months (binary 1=D, 2=A, 3=NS)`))
+with(analysis, table(rationing,`Insulin cap effective (binary 1=D, 2=A, 3=NS)`))
+with(analysis, table(rationing,`PA issues (binary 1=D, 2=A, 3=NS)`))
+with(analysis, table(rationing,`Skipped bills (binary 1=D, 2=A, 3=NS)`))
+with(analysis, table(rationing,`Plan if price more than expected (binary 1=D, 2=A, 3=NS)`))
+with(analysis, table(rationing,`Know who to contact (binary 1=D, 2=A, 3=NS)`))
+with(analysis, table(rationing,`Comfortable with BDC team (binary 1=D, 2=A, 3=NS)`))
+with(analysis, table(rationing,`Avoided appts due to cost (binary 1=D, 2=A, 3=NS)`))
+
+
+
+fit_lr_mod("`Too expensive (binary 1=D, 2=A, 3=NS)`", "rationing", df = analysis %>% filter(`Too expensive (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Insulin unaffordable next 3 months (binary 1=D, 2=A, 3=NS)`", "rationing", df = analysis %>% filter(`Insulin unaffordable next 3 months (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Insulin cap effective (binary 1=D, 2=A, 3=NS)`", "rationing", df = analysis %>% filter(`Insulin cap effective (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`PA issues (binary 1=D, 2=A, 3=NS)`", "rationing", df = analysis %>% filter(`PA issues (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Skipped bills (binary 1=D, 2=A, 3=NS)`", "rationing", df = analysis %>% filter(`Skipped bills (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Plan if price more than expected (binary 1=D, 2=A, 3=NS)`", "rationing", df = analysis %>% filter(`Plan if price more than expected (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Know who to contact (binary 1=D, 2=A, 3=NS)`", "rationing", df = analysis %>% filter(`Know who to contact (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Comfortable with BDC team (binary 1=D, 2=A, 3=NS)`", "rationing", df = analysis %>% filter(`Comfortable with BDC team (binary 1=D, 2=A, 3=NS)` != "2"))
+fit_lr_mod("`Avoided appts due to cost (binary 1=D, 2=A, 3=NS)`", "rationing", df = analysis %>% filter(`Avoided appts due to cost (binary 1=D, 2=A, 3=NS)` != "2"))
+```
+## Insulin Access
+
+### Emerging Adults
+
+*insufficient model convergence for knowing programs (combining 1,2 and 3,4) ~ not a ton in the 3,4 group, similar for lily/novo sub popns
+
+```{r}
+table1(~factor(`did you know about walmart? (1=y, 2=n)`) +
+         factor(`what company makes your insulin (1=lily, 2=Novo, 5=?`) +
+         factor(`tried applying for programs (1=n, didn't know, 2= no but don't need, 3=y but not qualify, 4=received)`)|emerging_adult, data = analysis, overall = F )
+
+table1(~factor(`Know about lily (0=n)`)|emerging_adult, data = analysis %>% filter(`what company makes your insulin (1=lily, 2=Novo, 5=?` ==1) )
+table1(~factor(`Know about novo (0=n)`)|emerging_adult, data = analysis %>% filter(`what company makes your insulin (1=lily, 2=Novo, 5=?` ==2) )
+
+fit_lr_mod("walmart_lr", "emerging_adult", df = analysis)
+fit_lr_mod("know_insulin", "emerging_adult", df = analysis)
+#fit_lr_mod("know_programs", "emerging_adult", df = analysis)
+
+# 
+# fit_lr_mod("`Know about lily (0=n)`", "emerging_adult", df = analysis %>% filter(`what company makes your insulin (1=lily, 2=Novo, 5=?` ==1))
+# fit_lr_mod("`Know about novo (0=n)`", "emerging_adult", df = analysis%>% filter(`what company makes your insulin (1=lily, 2=Novo, 5=?` ==2))
+
+```
+
+
+
+### In State
+
+*insufficient model convergence for knowing programs (combining 1,2 and 3,4) ~ not a ton in the 3,4 group, similar for lily/novo sub popns
+
+
+```{r}
+table1(~factor(`did you know about walmart? (1=y, 2=n)`) +
+         factor(`what company makes your insulin (1=lily, 2=Novo, 5=?`) +
+         factor(`tried applying for programs (1=n, didn't know, 2= no but don't need, 3=y but not qualify, 4=received)`)|instate, data = analysis %>% filter(!is.na(instate)), overall = F )
+
+table1(~factor(`Know about lily (0=n)`)|instate, data = analysis %>% filter(`what company makes your insulin (1=lily, 2=Novo, 5=?` ==1)%>% filter(!is.na(instate)) )
+table1(~factor(`Know about novo (0=n)`)|instate, data = analysis %>% filter(`what company makes your insulin (1=lily, 2=Novo, 5=?` ==2)%>% filter(!is.na(instate)) )
+
+fit_lr_mod("walmart_lr", "instate", df = analysis)
+fit_lr_mod("know_insulin", "instate", df = analysis)
+# fit_lr_mod("know_programs", "instate", df = analysis)
+# 
+# 
+# fit_lr_mod("`Know about lily (0=n)`", "instate", df = analysis %>% filter(`what company makes your insulin (1=lily, 2=Novo, 5=?` ==1))
+# fit_lr_mod("`Know about novo (0=n)`", "instate", df = analysis%>% filter(`what company makes your insulin (1=lily, 2=Novo, 5=?` ==2))
+```
+
+### Rationers
+
+*insufficient model convergence for knowing programs (combining 1,2 and 3,4) ~ not a ton in the 3,4 group, similar for lily sub popns
+
+
+```{r}
+table1(~factor(`did you know about walmart? (1=y, 2=n)`) +
+         factor(`what company makes your insulin (1=lily, 2=Novo, 5=?`) +
+         factor(`tried applying for programs (1=n, didn't know, 2= no but don't need, 3=y but not qualify, 4=received)`)|rationing, data = analysis%>% filter(!is.na(rationing)), overall = F )
+
+table1(~factor(`Know about lily (0=n)`)|rationing, data = analysis %>% filter(`what company makes your insulin (1=lily, 2=Novo, 5=?` ==1)%>% filter(!is.na(rationing)) )
+table1(~factor(`Know about novo (0=n)`)|rationing, data = analysis %>% filter(`what company makes your insulin (1=lily, 2=Novo, 5=?` ==2) %>% filter(!is.na(rationing)))
+
+fit_lr_mod("walmart_lr", "rationing", df = analysis)
+fit_lr_mod("know_insulin", "rationing", df = analysis)
+# fit_lr_mod("know_programs", "rationing", df = analysis)
+# 
+# 
+# fit_lr_mod("`Know about lily (0=n)`", "rationing", df = analysis %>% filter(`what company makes your insulin (1=lily, 2=Novo, 5=?` ==1))
+fit_lr_mod("`Know about novo (0=n)`", "rationing", df = analysis%>% filter(`what company makes your insulin (1=lily, 2=Novo, 5=?` ==2))
+```

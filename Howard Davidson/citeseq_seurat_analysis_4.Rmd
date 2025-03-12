@@ -1,3 +1,7 @@
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> origin/master
 ---
 title: ""
 author: "Tim Vigers & Laura Pyle"
@@ -11,6 +15,7 @@ output:
 ---
 
 ```{r setup, include=FALSE}
+<<<<<<< HEAD
 # library(arsenal)
 library(tidyverse)
 # library(readxl)
@@ -97,3 +102,347 @@ perc_exp_clust <- cells %>%
 
 ```
 
+=======
+library(tidyverse)
+library(Seurat) # need these for Differential expression testing
+library(SeuratObject)
+library(data.table)
+library(broom)
+library(pROC)
+library(caTools)
+
+library(caret)
+library(tidymodels)
+library(doParallel)
+library(DataExplorer)
+library(knitr)
+library(ranger)
+# update the dfs as change (changes in first chunk of version 3 on the Lambda)
+perc_express_cluster <- read.csv("S:/Laura/BDC/Projects/Howard Davidson/perc_express_cluster_TEST.csv")
+
+# check donor cluster level
+perc_express_donorcluster  <- read.csv("S:/Laura/BDC/Projects/Howard Davidson/perc_express_donorcluster_TEST.csv")
+#rownames(df2) = colnames(perc_express_donorcluster)
+
+# data
+home_dir = "S:/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/"
+knitr::opts_knit$set(root.dir = home_dir)
+#setwd("S:/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/")
+df = readRDS(paste0(home_dir, "OneDrive_1_6-28-2023/normalized.rds"))
+df2 = df
+```
+
+
+```{r fun, include = FALSE}
+gene_list = function(df, cutoff){
+  # df is one cluster w/ all donors at perc_expr level
+  dft = as.data.frame(t(df)[-1,])
+  donors  = colnames(dft)
+  donorgenes = list()
+  for(i in donors){
+    nam = dft %>% select(i)
+    donor_vec = nam %>% filter(.[[1]] > cutoff)  %>% rownames()
+    donorgenes[[i]] = donor_vec
+  }
+  return(donorgenes)
+}
+
+
+# test code for function above
+# c_0 = perc_express_donorcluster %>% filter(cluster == 0) %>% select(-cluster)
+# # start fn
+# c_0_t = as.data.frame(t(c_0)[-1,])
+# donor1_0 = c_0_t %>% select(V1) %>% filter(V1 > 20) %>% rownames() %>% c()# ~ 1400 genes at 20% cutoff for d1c0
+# genes_1_0 = rownames(donor1_0)
+# donor2_0 = c_0_t %>% select(V2) %>% filter(V2 > 20) # ~ 1400 genes at 20% cutoff for d1c0
+# genes_2_0 = rownames(donor2_0)
+# gene_list_0_test = intersect(genes_1_0, genes_2_0)
+
+
+# Tims elnet
+source("D:/Repositories/shared-resources/Machine Learning/Tim - ElasticNet CV/easy_elasticnet.R")
+```
+Calculate gene frequencies for each donor in cluster 0 and remove genes that have a freq < X eg 0.2
+
+Add cluster tag to gene name to create unique ID eg B2M  becomes “0-B2M” etc
+
+Bind rows for each donor
+
+Determine number of occurrences for each gene and remove those with values less than 23.
+
+Repeat for other clusters.
+
+
+Clarify: 
+
+For each Cluster,
+
+get percent expressions by donor to get a list of genes expressing above a minimum % cutoff
+remove the genes not expressed by all donors within the cluster (only take the intersection of these gene lists)
+
+```{r col clusters, include = F}
+# Cluster 0
+c_0 = perc_express_donorcluster %>% filter(cluster == 0) %>% select(-cluster)
+a = gene_list(c_0, 22.3) 
+cluster0_genes = Reduce(intersect, a) # 22.3 for 505 
+
+# Cluster 1
+c_1 = perc_express_donorcluster %>% filter(cluster == 1) %>% select(-cluster)
+a = gene_list(c_1, 28) # 28 for 502
+cluster1_genes = Reduce(intersect, a)
+
+# Cluster 2
+c_2 = perc_express_donorcluster %>% filter(cluster == 2) %>% select(-cluster)
+a = gene_list(c_2, 26)
+cluster2_genes = Reduce(intersect, a) #26% for 500 exactly hot dog
+
+# Cluster 3
+c_3 = perc_express_donorcluster %>% filter(cluster == 3) %>% select(-cluster)
+a = gene_list(c_3, 28)
+cluster3_genes = Reduce(intersect, a)
+# Cluster 4
+c_4 = perc_express_donorcluster %>% filter(cluster == 4) %>% select(-cluster)
+a = gene_list(c_4, 31.6)
+cluster4_genes = Reduce(intersect, a)
+# Cluster 5
+c_5 = perc_express_donorcluster %>% filter(cluster == 5) %>% select(-cluster)
+a = gene_list(c_5, 29.4)
+cluster5_genes = Reduce(intersect, a)
+# Cluster 6
+c_6 = perc_express_donorcluster %>% filter(cluster == 6) %>% select(-cluster)
+a = gene_list(c_6, 21)
+cluster6_genes = Reduce(intersect, a)
+# Cluster 7
+c_7 = perc_express_donorcluster %>% filter(cluster == 7) %>% select(-cluster)
+a = gene_list(c_7,26)
+cluster7_genes = Reduce(intersect, a)
+# Cluster 8
+c_8 = perc_express_donorcluster %>% filter(cluster == 8) %>% select(-cluster)
+a = gene_list(c_8, 26.3)
+cluster8_genes = Reduce(intersect, a)
+# Cluster 9
+c_9 = perc_express_donorcluster %>% filter(cluster == 9) %>% select(-cluster)
+a = gene_list(c_9,19.3)
+cluster9_genes = Reduce(intersect, a)
+# Cluster 10
+c_10 = perc_express_donorcluster %>% filter(cluster == 10) %>% select(-cluster)
+a = gene_list(c_10,6.5)
+cluster10_genes = Reduce(intersect, a)
+# Cluster 11
+c_11 = perc_express_donorcluster %>% filter(cluster == 11) %>% select(-cluster)
+a = gene_list(c_11,0)
+cluster11_genes = Reduce(intersect, a) # only 400 shared genes between these
+# Cluster 12
+c_12 = perc_express_donorcluster %>% filter(cluster == 12) %>% select(-cluster)
+a = gene_list(c_12,0)
+cluster12_genes = Reduce(intersect, a) # only 275 shared genes between donors
+
+```
+
+```{r previous output}
+# outcomes data
+read_excel_allsheets <- function(filename, tibble = FALSE) {
+    # I prefer straight data.frames
+    # but if you like tidyverse tibbles (the default with read_excel)
+    # then just pass tibble = TRUE
+    sheets <- readxl::excel_sheets(filename)
+    x <- lapply(sheets, function(X) readxl::read_excel(filename, sheet = X))
+    if(!tibble) x <- lapply(x, as.data.frame)
+    names(x) <- sheets
+    x
+}
+
+
+a1ccpep = read_excel_allsheets("S:/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/IDDA1C_Cpep.xlsx")
+# remove all df as it looks incomplete
+a1ccpep = a1ccpep[-1]
+
+# change to numeric
+a1c_df <- Reduce(function(x, y) merge(x, y, all = TRUE), a1ccpep)
+a1c_df = a1c_df %>% filter(!is.na(`HWD ID`)) %>% mutate(a1c = as.numeric( case_when(A1c_Value == "NULL" ~ NA,
+                                                                        TRUE ~ A1c_Value))) ; rm(a1ccpep)
+# add in outcome vars
+a1c_df = a1c_df %>% arrange(`HWD ID`, as.Date(VisitDate)) %>% group_by(`HWD ID`) %>% mutate(visit = row_number(),
+                                                                                            a1c_g7 = ifelse(a1c > 7, "G7","L7")) # visit num
+a1c_df = data.table(a1c_df, key = '`HWD ID`')
+a1c_df = a1c_df[, days_from_v1 :=  cumsum(c(0, diff(as.Date(VisitDate)))), by=`HWD ID`]# days from baseline
+a1c_df = a1c_df %>% mutate(y1_elig = ifelse(abs(days_from_v1- 365) < 90, 1, 0),
+                           abs_y1_days = ifelse(abs(days_from_v1- 365) < 90, abs(days_from_v1- 365), NA))
+
+a1c_y1 = a1c_df %>% group_by(`HWD ID`) %>% summarise(min_y1_days = min(abs_y1_days, na.rm = T))
+a1c_y1 = a1c_df %>% group_by(`HWD ID`) %>% summarise(min_y1_days = min(abs_y1_days, na.rm = T))
+a1c_y1$min_y1_days[is.infinite(a1c_y1$min_y1_days)] = NA
+a1c_df = full_join(a1c_df, a1c_y1); rm(a1c_y1)
+a1c_df = a1c_df %>% mutate(yr1a1c = ifelse(abs_y1_days == min_y1_days, a1c, NA))
+a1c_df = a1c_df %>% group_by(`HWD ID`) %>% fill(yr1a1c)
+
+
+avg_a1c = a1c_df %>% group_by(`HWD ID`) %>% summarise(meana1c = mean(a1c, na.rm = T),
+                                                      firsta1c = first(a1c, na_rm = T),
+                                                      maxa1c = max(a1c, na.rm=T),
+                                                      yr1a1c = mean(yr1a1c, na.rm = T)) %>% mutate(id = `HWD ID`)
+# add in slopes and auc
+a1c_slopes = a1c_df %>% group_by(`HWD ID`) %>% do(tidy(lm(a1c ~ days_from_v1, data = .))) %>% filter(term == "days_from_v1") %>% select(`HWD ID`, estimate) %>% rename(a1c_slope = estimate)
+avg_a1c = left_join(avg_a1c, a1c_slopes) ; rm(a1c_slopes)
+
+avg_a1c$a1c_auc = sapply(split(a1c_df,a1c_df$`HWD ID`),function(df) trapz(df$days_from_v1,df$a1c))
+
+# dichotomize
+avg_a1c = avg_a1c %>% mutate(avg_a1c_g_med = ifelse(meana1c > median(meana1c,na.rm = T), "G_med", " L_med"),
+                             first_a1c_g_med = ifelse(firsta1c > median(firsta1c,na.rm = T), "G_med", " L_med"),
+                             y1_a1c_g_med = ifelse(yr1a1c > median(yr1a1c,na.rm = T), "G_med", " L_med"),
+                             max_a1c_g_med = ifelse(maxa1c > median(maxa1c,na.rm = T), "G_med", " L_med"),
+                             slope_a1c_g_med = ifelse(a1c_slope > median(a1c_slope,na.rm = T), "G_med", " L_med"),
+                             auc_a1c_g_med = ifelse(a1c_auc > median(a1c_auc,na.rm = T), "G_med", " L_med"))
+
+
+df2@meta.data = left_join(df2@meta.data, avg_a1c,  by=c('donor_number'='id'))
+# View(df2@meta.data)
+
+# add in other outcomes
+# IDDA1c
+avg_idda1c = a1c_df %>% group_by(`HWD ID`) %>% summarise(mean_idda1c = mean(IDDA1C, na.rm = T)) %>% mutate(id = `HWD ID`)
+# add in slopes and auc
+idda1c_slopes = a1c_df %>% group_by(`HWD ID`) %>% do(tidy(lm(IDDA1C ~ days_from_v1, data = .))) %>% filter(term == "days_from_v1") %>% 
+  select(`HWD ID`, estimate) %>% rename(idda1c_slope = estimate)
+avg_idda1c = left_join(avg_idda1c, idda1c_slopes) ; rm(idda1c_slopes)
+
+avg_idda1c$idda1c_auc = sapply(split(a1c_df,a1c_df$`HWD ID`),function(df) trapz(df$days_from_v1,df$IDDA1C))
+
+# dichotomize
+avg_idda1c = avg_idda1c %>% mutate(avg_idda1c_g_med = ifelse(mean_idda1c > median(mean_idda1c,na.rm = T), "G_med", " L_med"),
+                             slope_idda1c_g_med = ifelse(idda1c_slope > median(idda1c_slope,na.rm = T), "G_med", " L_med"),
+                             auc_idda1c_g_med = ifelse(idda1c_auc > median(idda1c_auc,na.rm = T), "G_med", " L_med"))
+
+df2@meta.data = left_join(df2@meta.data, avg_idda1c,  by=c('donor_number'='id'))
+
+
+# total daily insulin dose
+a1c_df$dose_udk = a1c_df$`U/day/kg`
+avg_dose_udk = a1c_df %>% group_by(`HWD ID`) %>% summarise(mean_dose_udk = mean(dose_udk, na.rm = T)) %>% mutate(id = `HWD ID`)
+# add in slopes and auc
+dose_udk_slopes = a1c_df %>% group_by(`HWD ID`) %>% do(tidy(lm(dose_udk ~ days_from_v1, data = .))) %>% filter(term == "days_from_v1") %>% 
+  select(`HWD ID`, estimate) %>% rename(dose_udk_slope = estimate)
+avg_dose_udk = left_join(avg_dose_udk, dose_udk_slopes) ; rm(dose_udk_slopes)
+
+avg_dose_udk$dose_udk_auc = sapply(split(a1c_df,a1c_df$`HWD ID`),function(df) trapz(df$days_from_v1,df$dose_udk))
+
+# dichotomize
+avg_dose_udk = avg_dose_udk %>% mutate(avg_dose_udk_g_med = ifelse(mean_dose_udk > median(mean_dose_udk,na.rm = T), "G_med", " L_med"),
+                             slope_dose_udk_g_med = ifelse(dose_udk_slope > median(dose_udk_slope,na.rm = T), "G_med", " L_med"),
+                             auc_dose_udk_g_med = ifelse(dose_udk_auc > median(dose_udk_auc,na.rm = T), "G_med", " L_med"))
+
+df2@meta.data = left_join(df2@meta.data, avg_dose_udk,  by=c('donor_number'='id'))
+
+# cpep
+a1c_df = a1c_df %>% mutate(est_cpep = ifelse(`Est C-pep` > 0, `Est C-pep`, 0))
+avg_est_cpep = a1c_df %>% group_by(`HWD ID`) %>% summarise(mean_est_cpep = mean(est_cpep, na.rm = T)) %>% mutate(id = `HWD ID`)
+# add in slopes and auc
+est_cpep_slopes = a1c_df %>% group_by(`HWD ID`) %>% do(tidy(lm(est_cpep ~ days_from_v1, data = .))) %>% filter(term == "days_from_v1") %>% 
+  select(`HWD ID`, estimate) %>% rename(est_cpep_slope = estimate)
+avg_est_cpep = left_join(avg_est_cpep, est_cpep_slopes) ; rm(est_cpep_slopes)
+
+avg_est_cpep$est_cpep_auc = sapply(split(a1c_df,a1c_df$`HWD ID`),function(df) trapz(df$days_from_v1,df$est_cpep))
+
+# dichotomize
+avg_est_cpep = avg_est_cpep %>% mutate(avg_est_cpep_g_med = ifelse(mean_est_cpep > median(mean_est_cpep,na.rm = T), "G_med", " L_med"),
+                             slope_est_cpep_g_med = ifelse(est_cpep_slope > median(est_cpep_slope,na.rm = T), "G_med", " L_med"),
+                             auc_est_cpep_g_med = ifelse(est_cpep_auc > median(est_cpep_auc,na.rm = T), "G_med", " L_med"))
+
+df2@meta.data = left_join(df2@meta.data, avg_est_cpep,  by=c('donor_number'='id'))
+test = df2@meta.data
+```
+QUESTIONS:
+
+- Understanding of avg by donor cells then by cluster; is this still in percent expressed, or have we gone into mean express territory?
+-- for percent expressed when aggregated first into donor-cluster cells then back into cluster over a quarter have 100% expressed for c0;
+--------for AL627309 (first col in un transposed donor-cluster ) in  we have 11/23 subjects in cluster 0 with very small % express -- into the cluster form we have 47.8% is this the correct % we are looking for?
+
+
+UPDATE: next steps similar to difacto study (emailed from kristen);
+1) identify features corr w outcome -- delta, auc (coded in previous citeseq seurat analysis)
+-- average by donor cells then by cluster (intersect the cluster with the donors cells -- 20% or x% perc expression)
+
+2) elasticnet
+```{r variable selection pre elnet, include = FALSE}
+# donor and hwd id match
+ids = df2@meta.data %>% select(donor, `HWD ID.y`) %>% unique()
+colnames(ids) = c("donor", "HWD ID")
+avg_a1c = full_join(avg_a1c, ids)
+
+# cluster 0
+c_0$donor = factor(c_0$donor)
+analysis_c0 = full_join(avg_a1c, c_0)
+analysis_c0_a1c_slope = analysis_c0 %>%  filter(!is.na(donor)) %>% select(a1c_slope, cluster0_genes)
+
+models_simple_c0 = list()
+# with apply:
+coefs_mat_0 = expand.grid(c("a1c_slope"), cluster0_genes)
+
+mods = apply(coefs_mat_0, 1, function(row) {
+  lm(as.formula(paste(row[1], "~", row[2])), data = analysis_c0_a1c_slope)
+})
+names(mods) = with(coefs_mat_0, paste(Var1, "vs", Var2))
+coefs = lapply(mods, tidy, simplify = F)
+# combine
+test0_res = dplyr::bind_rows(coefs, .id = "mod")
+test0_res = test0_res %>% filter(p.value < 0.1 & term != "(Intercept)")
+new_genes_0 = test0_res$term
+new_genes_0 =  make.names(new_genes_0 , unique = T, allow_ = F)
+# elnet
+cluster0_en = easy_elasticnet(data = analysis_c0, outcome = "a1c_slope",cv_method = "loo",
+                              predictors = new_genes_0, model_type = "gaussian", out="1se.error")
+```
+
+to do: rank genes by corr to outcome and choose n (50-100 maybe) highest corrs
+
+
+## elasticnet
+Unfortunately, ElasticNet fails to produce a particularly helpful model in this case. This may be due to small sample size combined with a high dimension data set. Models returned are null; the models which minimize cvm coefficient were those that selected none of the features.
+
+
+## forest
+
+```{r forest, include = FALSE}
+# cluster 0
+# run with the p <0.1 variables
+analysis_c0_a1c_slope = analysis_c0_a1c_slope %>% select(a1c_slope, all_of(new_genes_0))
+
+# create recipe
+set.seed(1017)
+recipe_c0 = recipe(analysis_c0_a1c_slope) %>% update_role(everything()) %>% update_role(a1c_slope, new_role = "outcome")
+recipe_c0 = recipe_c0 %>%
+  step_zv(all_predictors()) %>%
+  step_nzv(all_predictors()) %>%
+  step_YeoJohnson(all_predictors()) %>%
+  step_normalize(all_predictors()) %>%
+  prep()
+transformed_c0 <- bake(recipe_c0,analysis_c0_a1c_slope)
+
+
+transformed_c0_recipe = recipe(transformed_c0)%>%  update_role(everything()) %>% update_role(a1c_slope, new_role = "outcome")
+transformed_c0_recipe = transformed_c0_recipe %>% step_nzv(all_predictors())
+
+cv <- trainControl(method = "LOOCV",allowParallel = T)
+
+cl <- makePSOCKcluster(detectCores()*0.5)
+registerDoParallel(cl)
+rf_c0 <- train(
+  transformed_c0_recipe,
+  data = transformed_c0,
+  method = "ranger",
+  trControl = cv,
+  tuneLength = 25,
+  allowParallel = T
+)
+stopCluster(cl)
+# Get the best models
+res_c0 = rf_c0$results
+kable(head(res_c0[order(res_c0$Rsquared,decreasing = T),],5),row.names = F)
+rf_c0_fin = rf_c0$finalModel
+rf_c0_fin
+
+
+
+```
+>>>>>>> origin/master

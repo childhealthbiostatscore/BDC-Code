@@ -1,0 +1,179 @@
+---
+title: "Lyumjev_auc_dataclean"
+author: "Casey Sakamoto"
+date: "2024-05-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(cgmanalysis)
+library(lubridate)
+library(readxl)
+library(readr)
+```
+
+
+
+```{r data clean, include = F}
+# 
+# setwd("S:/Laura/BDC/Projects/Erin Cobry/Lyumjuv/auc_csvs")
+# d <- getwd()
+# files <-list.files(d, full.names = T)
+# 
+# 
+# for (f in 1:length(files)) {
+#   df <- read.csv(paste0(files[f],"/cgm_data.csv"), na.strings = "", header = F)
+#   df <- df[3:nrow(df),]
+#   names(df) <- c("timestamp","sensorglucose","system")
+#   df$sensorglucose <- as.numeric(df$sensorglucose)
+#   df <- df %>% filter(!is.na(df$sensorglucose))
+#   df$timestamp <- ymd_hm(df$timestamp)
+#   # # get subject ID from file name
+#   df$subjectid <- str_sub(basename(files[f]),12)
+#   path=str_sub(basename(files[f]),12)
+#   df <- df %>% select(subjectid,timestamp,sensorglucose)
+#   write_csv2(df, file = paste0(d,"/",path,".csv"))
+# }
+# 
+# 
+# cleandata(inputdirectory = "S:/Laura/BDC/Projects/Erin Cobry/Lyumjuv/test_cgm",
+#              outputdirectory = "S:/Laura/BDC/Projects/Erin Cobry/Lyumjuv",
+#              id_filename = TRUE)
+# 
+# cgmvariables(inputdirectory = "S:/Laura/BDC/Projects/Erin Cobry/Lyumjuv/test_cleaned_cgm",
+#              outputdirectory = "S:/Laura/BDC/Projects/Erin Cobry/Lyumjuv",
+#              id_filename = TRUE)
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# for (f in 1:length(files)) {
+#   print(files[f])
+#   df <- read.csv(files[f], na.strings = "", header = F)
+#   df <- df[8:nrow(df),]
+#   df <- as.data.frame(cbind(df[,2],df[,3],df[,32]))
+#   names(df) <- c("date","time","sensorglucose")
+#   df$sensorglucose <- as.numeric(df$sensorglucose)
+#   df$date <- parse_date_time(df$date, orders = c('ymd','mdy', 'dmy'))
+#   df <- df %>% filter(!is.na(df$sensorglucose))
+#   df <- df %>% filter(!is.na(df$date))
+#   df$dt <- paste(df$date,df$time)
+#   df$timestamp <- ymd_hms(df$dt)
+#   # get subject ID from file name
+#   df$subjectid <- str_sub(basename(files[f]),1,4)
+#   df <- df %>% select(subjectid,timestamp,dt,sensorglucose)
+#   alldata <- rbind(alldata,df)
+#   # all the data are combined, now need to merge in trimester dates by subject ID 
+#   # then output records based on dates into separate files in cleaned directory
+# }
+# alldata2 <- merge(alldata,dates,by="subjectid",all.x = T, all.y = F)
+# alldata2 <- merge(alldata2,ppdates,by="subjectid",all.x = T, all.y = F)
+# alldata2$sensorglucose <- as.numeric(alldata2$sensorglucose)
+
+
+```
+
+```{r data clean, include = F}
+setwd(file.path("S:", "Laura", "BDC", "Projects", "Erin Cobry", "op5_ur_ins", "AUC_csv"))
+#setwd("S:/Laura/BDC/Projects/Erin Cobry/op5_ur_ins/AUC_csvs/")
+d <- getwd()
+files <-list.files(d, full.names = T)[grep("CSV", files)]
+
+# change hours(n) to desired hours post bolus
+
+for (f in 1:length(files)) {
+  subjectid =  sapply(strsplit(basename(files[f]), "_"), function(x) x[2])
+  timepoint = sapply(strsplit(basename(files[f]), "_"), function(x) x[3])
+  print(files[f])
+  if(file.exists(paste0(files[f],"/","cgm_data.csv"))){
+    
+    df = read.csv(paste0(files[f],"/cgm_data.csv"), na.strings = "", header = F)
+    bdf = read.csv(paste0(files[f],"/Insulin data/bolus_data.csv"), na.strings = "", header = F)
+    bdf = bdf[3:nrow(bdf),] %>% select(V1)%>% mutate(timeframe = interval(ymd_hm(V1),ymd_hm(V1) + hours(4)))
+
+
+
+  }else{
+    df <- read.csv(paste0(files[f],"/cgm_",subjectid,"_",tolower(timepoint), ".csv"), na.strings = "", header = F)
+    bdf <- read.csv(paste0(files[f],"/bolus_",subjectid,"_",tolower(timepoint), ".csv"), na.strings = "", header = F)
+    bdf = bdf[3:nrow(bdf),] %>% select(V1)%>% mutate(timeframe = interval(ymd_hm(V1),ymd_hm(V1) + hours(4)))
+  
+  }
+
+
+  
+  df <- df[3:nrow(df),]
+  names(df) <- c("timestamp","sensorglucose","system")
+  df$sensorglucose <- as.numeric(df$sensorglucose)
+  df <- df %>% filter(!is.na(df$sensorglucose))
+  df$timestamp <- ymd_hm(df$timestamp)
+  
+  df = df %>% mutate(WITHIN = timestamp %within% as.list(bdf$timeframe)) # crux of program
+  df = df %>% filter(WITHIN == T) %>% select(-WITHIN)
+
+  
+  # # get subject ID from file name
+  df$subjectid <- sapply(strsplit(basename(files[f]), "_"), function(x) x[2])
+  path=paste0(sapply(strsplit(basename(files[f]), "_"), function(x) x[2]), "_",sapply(strsplit(basename(files[f]), "_"), function(x) x[3]) )
+  df <- df %>% select(subjectid,timestamp,sensorglucose)
+ write_excel_csv2(df, file = paste0(d,"/",path,".csv"))
+}
+
+
+cleandata(inputdirectory = "S:/Laura/BDC/Projects/Erin Cobry/op5_ur_ins/AUC_csv/2hr post bolus",
+             outputdirectory = "S:/Laura/BDC/Projects/Erin Cobry/op5_ur_ins/2hr clean", id_filename = T)
+
+cgmvariables(inputdirectory = "S:/Laura/BDC/Projects/Erin Cobry/op5_ur_ins/2hr clean",
+             outputdirectory = "S:/Laura/BDC/Projects/Erin Cobry/op5_ur_ins",
+             id_filename = T)
+
+
+  write.csv2(as.data.frame(df), file = paste0(d,"/",path,".csv"))
+
+# library(readr)
+# bolus_data <- read.csv("S:/Laura/BDC/Projects/Erin Cobry/op5_ur_ins/AUC_csv/CSV_pt10_Post/Insulin data/bolus_data.csv", header=FALSE)
+# bolus_data = bolus_data[3:nrow(bolus_data),] %>% select(V1)%>% mutate(timeframe = interval(ymd_hm(V1),ymd_hm(V1) + hours(2)))
+# 
+
+# 
+# cgm_data = read_csv("S:/Laura/BDC/Projects/Erin Cobry/op5_ur_ins/AUC_csv/CSV_pt33_Post/cgm_data.csv")
+# cgmdatatest = cgm_data
+# cgmdatatest <- cgmdatatest[3:nrow(cgmdatatest),]
+# names(cgmdatatest) <- c("timestamp","sensorglucose","system")
+
+cgmdatatest = cgmdatatest %>% mutate(WITHIN = ymd_hm(timestamp) %within% as.list(bolus_data$timeframe))
+cgmdatatest2 = cgmdatatest %>% filter(WITHIN == T)
+
+
+
+
+for (f in 1:length(files)) {
+  print(files[f])
+  df <- read.csv(files[f], na.strings = "", header = F)
+  df <- df[8:nrow(df),]
+  df <- as.data.frame(cbind(df[,2],df[,3],df[,32]))
+  names(df) <- c("date","time","sensorglucose")
+  df$sensorglucose <- as.numeric(df$sensorglucose)
+  df$date <- parse_date_time(df$date, orders = c('ymd','mdy', 'dmy'))
+  df <- df %>% filter(!is.na(df$sensorglucose))
+  df <- df %>% filter(!is.na(df$date))
+  df$dt <- paste(df$date,df$time)
+  df$timestamp <- ymd_hms(df$dt)
+  # get subject ID from file name
+  df$subjectid <- str_sub(basename(files[f]),1,4)
+  df <- df %>% select(subjectid,timestamp,dt,sensorglucose)
+  alldata <- rbind(alldata,df)
+  # all the data are combined, now need to merge in trimester dates by subject ID 
+  # then output records based on dates into separate files in cleaned directory
+}
+alldata2 <- merge(alldata,dates,by="subjectid",all.x = T, all.y = F)
+alldata2 <- merge(alldata2,ppdates,by="subjectid",all.x = T, all.y = F)
+alldata2$sensorglucose <- as.numeric(alldata2$sensorglucose)
+
+
+```

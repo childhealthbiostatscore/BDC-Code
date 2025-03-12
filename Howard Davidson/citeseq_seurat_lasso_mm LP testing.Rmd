@@ -1,0 +1,370 @@
+---
+title: ""
+author: "Tim Vigers & Laura Pyle"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 5
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(Seurat) # need these for Differential expression testing
+library(SeuratObject)
+library(data.table)
+library(broom.mixed)
+library(pROC)
+library(caTools)
+library(lubridate)
+library(caret)
+library(tidymodels)
+library(doParallel)
+library(DataExplorer)
+library(knitr)
+library(ranger)
+library(nlme)
+library(lme4)
+library(lmerTest)
+# update the dfs as change (changes in first chunk of version 3 on the Lambda)
+#perc_express_cluster <- read.csv("S:/Laura/BDC/Projects/Howard Davidson/perc_express_cluster_TEST.csv")
+
+# check donor cluster level
+#perc_express_donorcluster  <- read.csv("S:/Laura/BDC/Projects/Howard Davidson/perc_express_donorcluster_TEST.csv")
+perc_express_donorcluster  <- read.csv("/Volumes/PEDS/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/perc_express_donorcluster_TEST.csv")
+#rownames(df2) = colnames(perc_express_donorcluster)
+
+# data
+#home_dir = "S:/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/"
+home_dir = "/Volumes/PEDS/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/"
+
+knitr::opts_knit$set(root.dir = home_dir)
+#setwd("S:/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/")
+df2 = readRDS(paste0(home_dir, "OneDrive_1_6-28-2023/normalized.rds"))
+
+```
+
+```{r col clusters, include = FALSE}
+gene_list = function(df, cutoff){
+  # df is one cluster w/ all donors at perc_expr level
+  dft = as.data.frame(t(df)[-1,])
+  donors  = colnames(dft)
+  donorgenes = list()
+  for(i in donors){
+    nam = dft %>% select(i)
+    donor_vec = nam %>% filter(.[[1]] > cutoff)  %>% rownames()
+    donorgenes[[i]] = donor_vec
+  }
+  return(donorgenes)
+}
+
+
+# 22.3 for 505 
+# Cluster 0
+c_0 = perc_express_donorcluster %>% filter(cluster == 0) %>% select(-cluster)
+a = gene_list(c_0, 22.3) 
+cluster0_genes = Reduce(intersect, a) 
+
+
+# Cluster 1
+c_1 = perc_express_donorcluster %>% filter(cluster == 1) %>% select(-cluster)
+a = gene_list(c_1, 28) # 28 for 502
+cluster1_genes = Reduce(intersect, a)
+
+# Cluster 2
+c_2 = perc_express_donorcluster %>% filter(cluster == 2) %>% select(-cluster)
+a = gene_list(c_2, 26)
+cluster2_genes = Reduce(intersect, a) #26% for 500 exactly hot dog
+
+# Cluster 3
+c_3 = perc_express_donorcluster %>% filter(cluster == 3) %>% select(-cluster)
+a = gene_list(c_3, 28)
+cluster3_genes = Reduce(intersect, a)
+# Cluster 4
+c_4 = perc_express_donorcluster %>% filter(cluster == 4) %>% select(-cluster)
+a = gene_list(c_4, 31.6)
+cluster4_genes = Reduce(intersect, a)
+# Cluster 5
+c_5 = perc_express_donorcluster %>% filter(cluster == 5) %>% select(-cluster)
+a = gene_list(c_5, 29.4)
+cluster5_genes = Reduce(intersect, a)
+# Cluster 6
+c_6 = perc_express_donorcluster %>% filter(cluster == 6) %>% select(-cluster)
+a = gene_list(c_6, 21)
+cluster6_genes = Reduce(intersect, a)
+# Cluster 7
+c_7 = perc_express_donorcluster %>% filter(cluster == 7) %>% select(-cluster)
+a = gene_list(c_7,26)
+cluster7_genes = Reduce(intersect, a)
+# Cluster 8
+c_8 = perc_express_donorcluster %>% filter(cluster == 8) %>% select(-cluster)
+a = gene_list(c_8, 26.3)
+cluster8_genes = Reduce(intersect, a)
+# Cluster 9
+c_9 = perc_express_donorcluster %>% filter(cluster == 9) %>% select(-cluster)
+a = gene_list(c_9,19.3)
+cluster9_genes = Reduce(intersect, a)
+# Cluster 10
+c_10 = perc_express_donorcluster %>% filter(cluster == 10) %>% select(-cluster)
+a = gene_list(c_10,6.5)
+cluster10_genes = Reduce(intersect, a)
+# Cluster 11
+c_11 = perc_express_donorcluster %>% filter(cluster == 11) %>% select(-cluster)
+a = gene_list(c_11,0)
+cluster11_genes = Reduce(intersect, a) # only 400 shared genes between these
+# Cluster 12
+c_12 = perc_express_donorcluster %>% filter(cluster == 12) %>% select(-cluster)
+a = gene_list(c_12,0)
+cluster12_genes = Reduce(intersect, a) # only 275 shared genes between donors
+rm(a)
+
+# create one dataframe with all clusters genes, renaming to each cluster
+
+df_list = list(c_0=c_0,c_1=c_1,c_2=c_2,c_3=c_3,c_4=c_4,c_5=c_5,c_6=c_6,c_7=c_7,c_8=c_8,c_9=c_9,c_10=c_10,c_11=c_11,c_12=c_12)
+genes_list = list(c_0=cluster0_genes,c_1=cluster1_genes,c_2=cluster2_genes,c_3=cluster3_genes,c_4=cluster4_genes,c_5=cluster5_genes,c_6=cluster6_genes,
+                  c_7=cluster7_genes,c_8=cluster8_genes,c_9=cluster9_genes,c_10=cluster10_genes,c_11=cluster11_genes,c_12=cluster12_genes)
+
+for(df_name in names(df_list)) {
+  df_list[[df_name]] = df_list[[df_name]] %>% select(donor, genes_list[[df_name]])
+  df_list[[df_name]] = df_list[[df_name]] %>%
+    rename_with(.fn = ~paste(., df_name, sep = "_"), .cols = c(genes_list[[df_name]]))
+}
+
+rm(c_0,c_1,c_2,c_3,c_4,c_5,c_6,c_7,c_8,c_9,c_10,c_11,c_12)
+
+expressions_df = as.data.frame(df_list %>% reduce(left_join, by = "donor"))
+```
+
+```{r outcomes derive, include = FALSE}
+#hwd id to donor convert
+ids = df2@meta.data %>% select(donor,donor_number) %>% unique()
+colnames(ids) = c("donor", "HWD ID")
+
+# outcomes data
+read_excel_allsheets <- function(filename, tibble = FALSE) {
+    # I prefer straight data.frames
+    # but if you like tidyverse tibbles (the default with read_excel)
+    # then just pass tibble = TRUE
+    sheets <- readxl::excel_sheets(filename)
+    x <- lapply(sheets, function(X) readxl::read_excel(filename, sheet = X))
+    if(!tibble) x <- lapply(x, as.data.frame)
+    names(x) <- sheets
+    x
+}
+
+
+#a1ccpep = read_excel_allsheets("S:/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/IDDA1C_Cpep.xlsx")
+a1ccpep = read_excel_allsheets("/Volumes/PEDS/PEDS/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Howard Davidson/R01/Data_Raw/Davidson pilot data/IDDA1C_Cpep.xlsx")
+# remove all df as it looks incomplete
+a1ccpep = a1ccpep[-1]
+
+# change to numeric
+outcomes_df <- Reduce(function(x, y) merge(x, y, all = TRUE), a1ccpep)
+outcomes_df = outcomes_df %>% filter(!is.na(`HWD ID`)) %>% mutate(a1c = as.numeric( case_when(A1c_Value == "NULL" ~ NA,
+                                                                        TRUE ~ A1c_Value)),
+                                                        bmi = as.numeric( case_when(BMI == "NULL" ~ NA,
+                                                                        TRUE ~ BMI))); rm(a1ccpep)
+# add in visit num and baseline values
+outcomes_df = outcomes_df %>% arrange(`HWD ID`, as.Date(VisitDate)) %>% group_by(`HWD ID`) %>% mutate(visit = row_number(),
+                                                                                                      ecpep = case_when(`Est C-pep` >= 0 ~ `Est C-pep` ,
+                                                                                                                        `Est C-pep` < 0 ~ 0 ),
+                                                                                                      hwdid=`HWD ID`)
+
+# IDDA1c
+idda1c_df = outcomes_df %>% select(`HWD ID`, IDDA1C, VisitDate, visit, bmi, Gender, `Age at visit`)
+idda1c_df = idda1c_df %>% group_by(`HWD ID`) %>% mutate(first_visit = case_when(visit== 1 ~ VisitDate),
+                                                            idda1c_bl = case_when(visit==1~IDDA1C)) %>% fill(first_visit,idda1c_bl) %>% ungroup() 
+# group into 6month bins
+idda1c_df = idda1c_df %>% mutate(month_from_bl = as.duration(first_visit %--% VisitDate)/dmonths(1))
+idda1c_df = idda1c_df %>% mutate(visit_binned = floor(month_from_bl/6))
+
+analysis_idda1c = idda1c_df %>% group_by(`HWD ID`, visit_binned) %>% mutate(IDDA1C_binned = mean(IDDA1C, na.rm=T),
+                                                                 bmi_binned = mean(bmi, na.rm=T),
+                                                                 age_binned = mean(`Age at visit`, na.rm=T)) %>%
+  select(`HWD ID`, IDDA1C_binned, bmi_binned, age_binned, Gender, idda1c_bl, visit_binned) %>% unique()
+
+# est_cpep
+ecpep_df = outcomes_df %>% select(`HWD ID`, ecpep, VisitDate, visit, bmi, Gender, `Age at visit`)
+ecpep_df = ecpep_df %>% group_by(`HWD ID`) %>% mutate(first_visit = case_when(visit== 1 ~ VisitDate),
+                                                            ecpep_bl = case_when(visit==1~ecpep)) %>% fill(first_visit,ecpep_bl) %>% ungroup() 
+# group into 3month bins
+ecpep_df = ecpep_df %>% mutate(month_from_bl = as.duration(first_visit %--% VisitDate)/dmonths(1))
+ecpep_df = ecpep_df %>% mutate(visit_binned = floor(month_from_bl/3))
+
+analysis_ecpep = ecpep_df %>% group_by(`HWD ID`, visit_binned) %>% mutate(ecpep_binned = mean(ecpep, na.rm=T),
+                                                                 bmi_binned = mean(bmi, na.rm=T),
+                                                                 age_binned = mean(`Age at visit`, na.rm=T)) %>%
+  select(`HWD ID`, ecpep_binned, bmi_binned, age_binned, Gender, ecpep_bl, visit_binned) %>% unique()
+
+```
+
+```{r uni testing, include = FALSE}
+#change to factor
+expressions_df$donor = as.factor(expressions_df$donor)
+# idda1c
+analysis_idda1c = left_join(analysis_idda1c, ids)%>% ungroup() %>% select(-`HWD ID`)
+expressions_df_idda1c = left_join(analysis_idda1c, expressions_df)
+#table(expressions_df_idda1c$visit_binned)
+
+#expressions_df_idda1c_2y = expressions_df_idda1c %>% filter(visit_binned < 12)
+#pare the list of 6000 genes down with univariate regression, p <.1
+# models_simple = list()
+# with apply:
+idda1c_coefs_mat = expand.grid(c("IDDA1C_binned"), colnames(expressions_df_idda1c)[-c(1:7)])
+
+idda1c_mods = apply(idda1c_coefs_mat, 1, function(row) {
+  lmer(as.formula(paste(row[1], "~", row[2], "+ Gender + age_binned + bmi_binned + visit_binned + idda1c_bl + (1|donor)")),
+      data = expressions_df_idda1c)
+})
+names(idda1c_mods) = with(idda1c_coefs_mat, paste(Var1, "vs", Var2))
+idda1c_coefs = lapply(idda1c_mods, tidy, simplify = F)
+
+# combine
+idda1c_uni_res = dplyr::bind_rows(idda1c_coefs, .id = "mod")
+idda1c_uni_res = idda1c_uni_res %>% filter(p.value < 0.1 & grepl("_c_", term))
+idda1c_new_genes = idda1c_uni_res$term
+```
+
+```{r elastic net, include = FALSE}
+library(glmmLasso)
+library(str2str)
+library(MASS)
+# # loocv method
+# loocv_tc = trainControl(method = "LOOCV", allowParallel = TRUE)
+# # Parallel training
+# cl <- makePSOCKcluster(detectCores()*0.5)
+# registerDoParallel(cl)
+
+# IDDa1c
+expressions_df_idda1c = expressions_df_idda1c %>% dplyr::select(IDDA1C_binned:donor, all_of(idda1c_new_genes))
+expressions_df_idda1c = expressions_df_idda1c %>% filter(!is.na(donor))
+
+
+#expressions_df_idda1c_2y = expressions_df_idda1c_2y %>% mutate_all(~ifelse(is.nan(.), NA, .))
+
+
+# scale and center the data
+set.seed(1017)
+# predictors to be scaled and centered
+recipe_idda1c = recipe(expressions_df_idda1c) %>% update_role(everything()) %>% update_role(IDDA1C_binned, new_role = "outcome")
+recipe_idda1c = recipe_idda1c %>%
+  step_zv(all_predictors(),-c(Gender, visit_binned, donor)) %>%
+  step_nzv(all_predictors(),-c(Gender, visit_binned, donor)) %>%
+  step_YeoJohnson(all_predictors(),-c(Gender, visit_binned, donor)) %>%
+  step_normalize(all_predictors(),-c(Gender, visit_binned, donor)) %>%
+  prep()
+transformed_analysis_idda1c <- bake(recipe_idda1c,expressions_df_idda1c)
+
+# find optimal lambda
+# format donor visit and gender as factors
+# formula
+idda1c_coefs_lasso = colnames(transformed_analysis_idda1c %>% dplyr::select(-donor)) 
+testform = as.formula(v2frm(idda1c_coefs_lasso, y = 1L))
+
+# maybe only include the first 6 slots?
+#test_df = transformed_analysis_idda1c %>% filter(visit_binned < 7)
+
+#testfit = glmmLasso(fix = testform,
+#                    rnd = list(donor = ~1),
+#                    data = na.omit(test_df),
+#                    lambda = 59,final.re = T)
+#a = summary(testfit)
+#aa = as.data.frame(a$coefficients) %>% filter(!(is.na(p.value)))
+
+
+
+## Using LOOCV to determine the optimal tuning parameter lambda
+expressions_df_idda1c = na.omit(expressions_df_idda1c)
+### set seed
+set.seed(1017)
+N<-dim(expressions_df_idda1c)[1]
+ind<-sample(N,N)
+lambda <- seq(500,0,by=-50)
+
+
+## set number of folds
+kk<-5
+nk <- floor(N/kk)
+
+Devianz_ma<-matrix(Inf,ncol=kk,nrow=length(lambda))
+
+## first fit good starting model
+PQL<-glmmPQL(IDDA1C_binned~1,random = ~1|donor,family="gaussian",data=expressions_df_idda1c)
+Delta.start<-c(as.numeric(PQL$coef$fixed),rep(0,6),as.numeric(t(PQL$coef$random$donor)))
+Q.start<-as.numeric(VarCorr(PQL)[1,1])
+
+
+for(j in 1:length(lambda))
+{
+print(paste("Iteration ", j,sep=""))
+  
+  for (i in 1:kk)
+  {
+    if (i < kk)
+    {
+    indi <- ind[(i-1)*nk+(1:nk)]
+    }else{
+    indi <- ind[((i-1)*nk+1):N]
+    }
+  
+idda1c.train<-expressions_df_idda1c[-indi,]
+idda1c.test<-expressions_df_idda1c[indi,]
+  
+glm2 <- try(glmmLasso(fix = testform,
+                      rnd = list(donor=~1),
+                      data = idda1c.train, lambda=lambda[j],switch.NR=FALSE,final.re=FALSE,
+        control=list(start=Delta.start,q_start=Q.start))
+        ,silent=TRUE) 
+        
+    if(!inherits(glm2, "try-error"))
+    {  
+    y.hat<-predict(glm2,idda1c.test)    
+
+    Devianz_ma[j,i]<-sum(family$dev.resids(idda1c.test$points,y.hat,wt=rep(1,length(y.hat))))
+    }
+}
+print(sum(Devianz_ma[j,]))
+}
+    
+Devianz_vec<-apply(Devianz_ma,1,sum)
+opt2<-which.min(Devianz_vec)
+       
+       
+glm2_final <- glmmLasso(fix = testform, 
+                        rnd = list(donor=~1),  
+                        data = expressions_df_idda1c, lambda=lambda[opt2],switch.NR=FALSE,final.re=FALSE,
+                        control=list(start=Delta.start,q_start=Q.start), 
+                        final.re=TRUE)
+
+
+
+summary(glm2_final)
+
+```
+
+```{r LP testing, include = FALSE}
+lm1 <- glmmLasso(testform, rnd = list(donor=~1),data = expressions_df_idda1c, lambda=500, final.re=TRUE)
+
+library(lmmen)
+
+```
+
+```{r test mixed models pckg, include = FALSE}
+# test that mixed models work
+analysis_idda1c$hwdid = analysis_idda1c$`HWD ID`
+analysis_ecpep$hwdid = analysis_ecpep$`HWD ID`
+idda1c_mod_nogenes = lme(IDDA1C_binned ~ Gender + age_binned + bmi_binned + visit_binned + idda1c_bl,
+            random = ~1|hwdid,
+            data = analysis_idda1c,
+            na.action = na.omit)
+
+ecpep_mod_nogenes = lme(ecpep_binned ~ Gender + age_binned + bmi_binned + visit_binned + ecpep_bl,
+            random = ~1|hwdid,
+            data = analysis_ecpep,
+            na.action = na.omit)
+
+summary(idda1c_mod_nogenes)
+summary(ecpep_mod_nogenes)
+```

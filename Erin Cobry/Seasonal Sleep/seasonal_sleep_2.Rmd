@@ -26,6 +26,7 @@ library(table1)
 
 # data and subj list upload
 HCL_Study_Subjects = read_excel("S:/Laura/BDC/Projects/Erin Cobry/Summer vs. School Sleep/Data_Clean/HCL_Study_Subjects1.xlsx") %>% filter(!is.na(DOB))
+
 # hcl and sleep dataset
 token = read.table("S:/Laura/BDC/Projects/Erin Cobry/ADA 2022/HCL and Sleep/api_token.txt")[1,1]
 rcon <- redcapConnection(url = "https://redcap.ucdenver.edu/api/",token = token)
@@ -43,6 +44,8 @@ exclude = c(101,201,102,202,103,203,110,210,119,219,121,221,131,231,141,241)
 ## subject list from nikita
 visitdates <- read_excel("S:/Laura/BDC/Projects/Erin Cobry/Summer vs. School Sleep/Sleep Diabetes Data 9.10.23.xlsx")
 include = unique(visitdates$record_id)
+
+HCL_Study_Subjects = HCL_Study_Subjects %>% filter(Subject %in% include)
 
 m3_visit = visitdates %>% select(record_id, M3, season) %>% filter(!is.na(M3))
 m6_visit = visitdates %>% select(record_id, M6, season) %>% filter(!is.na(M6))
@@ -91,9 +94,16 @@ analysis = analysis %>%  mutate(totalsleep_avg_min = hour(totalsleep_avg)* 60 + 
                                                                          sensor_g180 = sensor_181_250 + sensor_g251
                                                                          )
 
+analysis = analysis %>% filter(record_id %in% include)
+analysis[analysis$record_id == 209, "Age"] = 13.0001
+analysis[analysis$record_id == 209, "visit_type"] = "School"
 analysis = analysis %>% filter(!is.na(visit_type))
-analysis = analysis %>% filter(!(record_id %in% exclude))
-# number of visits per subject; need to try and get to 2?
+# figure out 227 and 230 6 mo
+# analysis = analysis %>% filter(!(record_id %in% exclude))
+# # number of visits per subject; need to try and get to 2?
+# 
+# # only school age kids
+# analysis2 = analysis %>% filter(record_id %in% include)
 #table(analysis$record_id)
 
 # fit model fun
@@ -127,14 +137,22 @@ fit_mod = function(outcome,df){
   cat("\n")
 }
 
+# test = study_subjects %>% filter(!is.na(visit_date))
+# test = test %>% mutate(age_grp = case_when(Age > 6 & Age < 13 ~ "6-12", Age > 13 & Age < 18 ~ "13-18"))
+# test_b = test %>% filter(visit == "Baseline (before HCL)")
+# #test_b %>% group_by(age_grp) %>% summarise(n())
 ```
 
 # 1: Table for sleep duration by age group and summer/school
 ```{r table, include = FALSE}
 #m6_list = c(200,202,205,206,207,208,243,244,245,246)
 analysis_table = analysis %>% mutate(age_grp = case_when(Age > 6 & Age < 13 ~ "6-12", Age > 13 & Age < 18 ~ "13-18")) #%>% filter(!(record_id %in% m6_list & timepoint_cs == "6 Months"))
+analysis = analysis %>% mutate(age_grp = case_when(Age > 6 & Age < 13 ~ "6-12", Age > 13 & Age < 18 ~ "13-18")) #%>% filter(!(record_id %in% m6_list & timepoint_cs == "6 Months"))
+
 analysis_table$age_grp = factor(analysis_table$age_grp, levels = c("6-12", "13-18"))
 
+#analysis_table %>% filter(timepoint_cs == "Baseline (before HCL)") %>% group_by(age_grp) %>% summarise(n())
+#length(unique(analysis_table$record_id))
 
 sleep_table = table1( ~ totalsleep_avg_min|visit_type*age_grp,
                       data = analysis_table,
@@ -144,6 +162,14 @@ sleep_table = table1( ~ totalsleep_avg_min|visit_type*age_grp,
 
 ```{r t1}
 sleep_table
+
+# baseline counts
+analysis_table %>% filter(timepoint_cs == "Baseline (before HCL)") %>% group_by(age_grp) %>% summarise(n())
+
+analysis  %>% group_by(age_grp, timepoint_cs) %>% summarise(n())
+
+analysis  %>% group_by(visit_type, timepoint_cs) %>% summarise(n())
+
 ```
 
 # 2: Differences in Sleep measures for summer/school 
@@ -226,7 +252,6 @@ kable(res_w[,2:ncol(res_w)],digits = 3)
 
 # 3: Just Summer visits baseline vs hcl
 
-note: only 3 Baseline visits (subj 200, 202, 205) , 11 3mo, 10 6mo
 
 ```{r summerdata, include= FALSE}
 analysis_summer = analysis %>% filter(visit_type == "Summer")
@@ -298,8 +323,6 @@ fit_mod("sensor_mean", df = analysis_summer)
 ```
 
 # 4: Just School visits baseline vs hcl
-
-note:n =  36 bl, 24 m3, 19 m6
 
 ```{r schooldata, include= FALSE}
 analysis_school = analysis %>% filter(visit_type == "School")
@@ -376,4 +399,218 @@ There is not a significant difference in smg from Baseline to Month 3 (p = 0.660
 fit_mod("sensor_mean", df = analysis_school)
 ```
  
+# Appended Analysis
 
+```{r appended, include = FALSE}
+# 612
+# Total Sleep Time
+mod_ts612 = lme(totalsleep_avg_min ~ visit_type, random = ~1|record_id, data = analysis %>% filter(Age < 13 & Age > 5), na.action = na.omit)
+res_ts612 = tidy(mod_ts612, "fixed")
+res_ts612$term = sub("Period","",res_ts612$term)
+
+# Sleep Efficiency
+mod_se612 = lme(sleepefficency_avg ~ visit_type, random = ~1|record_id, data = analysis %>% filter(Age < 13 & Age > 5), na.action = na.omit)
+res_se612 = tidy(mod_se612, "fixed")
+res_se612$term = sub("Period","",res_se612$term)
+
+# WASO
+mod_w612 = lme(waso_avg ~ visit_type, random = ~1|record_id, data = analysis %>% filter(Age < 13 & Age > 5), na.action = na.omit)
+res_w612 = tidy(mod_w612, "fixed")
+res_w612$term = sub("Period","",res_w612$term)
+
+# 13-17
+# Total Sleep Time
+mod_ts1317 = lme(totalsleep_avg_min ~ visit_type, random = ~1|record_id, data = analysis %>% filter(Age < 18 & Age > 13), na.action = na.omit)
+res_ts1317 = tidy(mod_ts1317, "fixed")
+res_ts1317$term = sub("Period","",res_ts1317$term)
+
+# Sleep Efficiency
+mod_se1317 = lme(sleepefficency_avg ~ visit_type, random = ~1|record_id, data = analysis %>% filter(Age < 18 & Age > 13), na.action = na.omit)
+res_se1317 = tidy(mod_se1317, "fixed")
+res_se1317$term = sub("Period","",res_se1317$term)
+
+# WASO
+mod_w1317 = lme(waso_avg ~ visit_type, random = ~1|record_id, data = analysis %>% filter(Age < 18 & Age > 13), na.action = na.omit)
+res_w1317 = tidy(mod_w1317, "fixed")
+res_w1317$term = sub("Period","",res_w1317$term)
+
+# overall school summer glycemic
+# TIR
+mod_tir = lme(sensor_70_180 ~ visit_type, random = ~1|record_id, data = analysis, na.action = na.omit)
+res_tir = tidy(mod_tir, "fixed")
+res_tir$term = sub("Period","",res_tir$term)
+# tar
+# TIR
+mod_tar = lme(sensor_g180 ~ visit_type, random = ~1|record_id, data = analysis, na.action = na.omit)
+res_tar = tidy(mod_tar, "fixed")
+res_tar$term = sub("Period","",res_tar$term)
+# tbr
+# TIR
+mod_tbr = lme(sensor_u70 ~ visit_type, random = ~1|record_id, data = analysis, na.action = na.omit)
+res_tbr = tidy(mod_tbr, "fixed")
+res_tbr$term = sub("Period","",res_tbr$term)
+# smg
+mod_smg = lme(sensor_mean ~ visit_type, random = ~1|record_id, data = analysis, na.action = na.omit)
+res_smg = tidy(mod_smg, "fixed")
+res_smg$term = sub("Period","",res_smg$term)
+
+```
+
+## Updated Demog
+
+
+```{r newt1,echo=FALSE, results='asis'}
+# Basic demographics
+child_demographics = exportRecords(rcon,forms = "child_demographics_chart_review")
+child_demographics$record_id = ids
+# Get Hba1c
+hba1c = exportRecords(rcon,forms = "glycemic_data")
+hba1c$record_id = ids
+hba1c = hba1c %>% filter(record_id >= 200,gyl_timepoint == "Baseline") %>%
+  select(record_id,hba1c)
+# Format
+child_demographics$t1d_duration = 
+  as.numeric(difftime(child_demographics$consent_date,
+                      child_demographics$t1d_diagnosis,units = "days"))/365.25
+child_demographics = child_demographics %>% 
+  select(record_id,cons_age,childgender,t1d_duration) %>%
+  filter(!record_id %in% exclude)
+child_demographics = 
+  child_demographics[rowSums(is.na(child_demographics)) < (ncol(child_demographics)-1),]
+# Add Hba1c
+child_demographics = left_join(child_demographics,hba1c,by = "record_id")
+# Table
+f = as.formula(paste("~",paste0(colnames(child_demographics)[-1],collapse = "+")))
+t1a = tableby(f,data = child_demographics%>%filter(record_id %in% include))
+summary(t1a,digits = 3,labelTranslations = list(t1d_duration = "T1D Duration (years)"))
+
+# Get data
+glyc = exportRecords(rcon,forms = "glycemic_data")
+glyc$record_id = ids
+glyc = glyc %>% filter(record_id %in% include) %>% select(record_id, gyl_timepoint, sensor_g251:sensor_sd, night_sensor_low,night_sensor_below, night_sensor_target, night_sensor_above, night_sensor_high, night_sensor_mean, night_sensor_sd, time_am,sensor_wear) %>% filter(record_id > 199) %>% filter(!is.na(gyl_timepoint))
+
+# Table
+f_2 = as.formula(paste("gyl_timepoint ~",paste0(colnames(glyc)[-(1:2)],collapse = "+")))
+t_glyc = tableby(f_2,data = glyc)
+summary(t_glyc,digits = 3, labelTranslations = list(night_sensor_low = "Night < 54",
+                                                    night_sensor_below = "Night 55-69",
+                                                    night_sensor_target = "Night 70-180",
+                                                    night_sensor_above = "Night 181-250",
+                                                    night_sensor_high = "Night >251",
+                                                    night_sensor_mean = "Night Sensor Mean",
+                                                    night_sensor_sd = "Night Sensor SD"))
+
+# Basic demographics
+parent_demographics = exportRecords(rcon,forms = "parent_demographics")
+parent_demographics$record_id = ids
+parent_demographics$age = 
+  as.numeric(difftime(parent_demographics$parent_demographics_timestamp,
+                      parent_demographics$parent_bday,units = "days"))/365.25
+parent_demographics = parent_demographics %>% 
+  select(record_id,age,parent_gender,race,parent_check_night,child_check_glucose,
+         insulinmethod,previous_cgm_use,currenthcltech) %>% 
+  filter(!record_id %in% exclude)
+parent_demographics = 
+  parent_demographics[rowSums(is.na(parent_demographics)) < (ncol(parent_demographics)-1),]
+parent_demographics$record_id2 = as.character(as.numeric(parent_demographics$record_id) + 100)
+parent_demographics = parent_demographics %>% filter(record_id2 %in% include) %>% select(-record_id2)
+# Table
+f = as.formula(paste("~",paste0(colnames(parent_demographics)[-1],collapse = "+")))
+t1a = tableby(f,data = parent_demographics)
+summary(t1a,digits = 2,labelTranslations = list(age = "Age (years)",
+                                                currenthcltech = "currenthcltech"))
+
+```
+
+## Glycemic overall analyses
+
+### TIR
+There is not a significant difference in TIR between the school and summer groups (p = 0.624)
+
+
+```{r}
+kable(res_tir[,2:ncol(res_tir)],digits = 3)
+```
+
+### TAR
+There is not a significant difference in TAR 180 between the school and summer groups (p = 0.693)
+
+
+```{r}
+kable(res_tar[,2:ncol(res_tar)],digits = 3)
+```
+
+### TBR
+There is not a significant difference in TBR 70 between the school and summer groups (p = 0.257)
+
+
+```{r}
+kable(res_tbr[,2:ncol(res_tbr)],digits = 3)
+```
+### Mean Glucose
+There is not a significant difference in sensor mean glucose between the school and summer groups (p = 0.559)
+
+
+```{r}
+kable(res_smg[,2:ncol(res_smg)],digits = 3)
+```
+
+## Age Specific Analyses
+
+### 6-12
+
+There is not a significant difference in WASO between the school and summer groups (p = 0.637)
+There is not a significant difference in total sleep between the school and summer groups (p = 0.158)
+There is not a significant difference in sleep efficiency between the school and summer groups (p = 0.826)
+
+#### WASO
+```{r}
+kable(res_w612[,2:ncol(res_ts612)],digits = 3)
+```
+#### Sleep Duration
+```{r}
+kable(res_ts612[,2:ncol(res_ts612)],digits = 3)
+```
+#### Sleep Efficiency
+```{r}
+kable(res_se612[,2:ncol(res_ts612)],digits = 3)
+```
+
+
+#### Just Summer visits baseline vs hcl
+
+note: n = 16 visits
+
+```{r summer data, include= FALSE}
+analysis_summer612 = analysis %>% filter(visit_type == "Summer") %>% filter(Age < 13 & Age > 5)
+```
+
+There is not a significant difference in avg total sleep time from Baseline to Month 3 (p = 0.985), or from Baseline to Month 6 (p= 0.645)
+```{r sum612, include = FALSE}
+print("total sleep avg")
+fit_mod("totalsleep_avg_min", df = analysis_summer612)
+print("sleep efficiency")
+fit_mod("sleepefficency_avg", df = analysis_summer612)
+
+analysis %>% group_by(record_id) %>% summarise(n = n())
+```
+
+
+### 13-18
+
+There is not a significant difference in WASO between the school and summer groups (p = 0.22)
+There is not a significant difference in total sleep between the school and summer groups (p = 0.06)
+There is not a significant difference in sleep efficiency between the school and summer groups (p = 0.231)
+
+#### WASO
+```{r}
+kable(res_w1317[,2:ncol(res_ts1317)],digits = 3)
+```
+#### Sleep Duration
+```{r}
+kable(res_ts1317[,2:ncol(res_ts1317)],digits = 3)
+```
+#### Sleep Efficiency
+```{r}
+kable(res_se1317[,2:ncol(res_ts1317)],digits = 3)
+```

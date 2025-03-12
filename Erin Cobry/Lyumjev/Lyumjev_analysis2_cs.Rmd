@@ -1,0 +1,188 @@
+---
+title: ""
+author: "Casey Sakamoto"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 5
+    toc_float: yes
+---
+
+
+
+```{r setup, include=FALSE}
+library(arsenal)
+library(tidyverse)
+library(performance)
+library(knitr)
+library(readxl)
+library(table1)
+library(nlme)
+library(emmeans)
+library(readr)
+
+# data upload
+# first sheet demog
+lyumjev_demog <- read_excel("S:/Laura/BDC/Projects/Erin Cobry/Lyumjuv/Clean excel_lyumjev.xlsx", 
+    sheet = "Demographics")
+
+# seondsheet the pre post data
+lyumjev_data <- read_excel("S:/Laura/BDC/Projects/Erin Cobry/Lyumjuv/Clean excel_lyumjev.xlsx", 
+    sheet = "Data")
+
+# new data "S:\Laura\BDC\Projects\Erin Cobry\op5_ur_ins\mm_r2_OP5_URinsulin.xlsx"
+
+# add group into demogs
+groups = lyumjev_data %>% select(1,`Insulin Type` )
+names(groups) = c("MRN", "Group")
+label(lyumjev_demog$Age_09212023) = "Age"
+label(lyumjev_demog$DiabetesDuration_09212023) = "Diabetes Duration"
+lyumjev_demog = left_join(groups, lyumjev_demog)
+
+# auc 2 4 hr
+hr2_cgm_vars <- read_csv("S:/Laura/BDC/Projects/Erin Cobry/op5_ur_ins/2hr_cgm_vars.csv")
+hr4_cgm_vars <- read_csv("S:/Laura/BDC/Projects/Erin Cobry/op5_ur_ins/4hr_cgm_vars.csv")
+
+
+groups_refs <- read_excel("S:/Laura/BDC/Projects/Erin Cobry/Lyumjuv/mm_r2_OP5_URinsulin.xlsx",sheet = "Complete List")
+groups_refs$subject_id = as.character(groups_refs$...1)
+```
+
+```{r dc, include = F}
+# hr 2 pt id
+hr2_cgm_vars = hr2_cgm_vars %>% mutate(patient_id = (sapply(strsplit(subject_id,"_"), `[`, 1)),
+                                       visit = sapply(strsplit(subject_id,"_"), `[`, 2) )
+
+hr2_cgm_vars = hr2_cgm_vars %>% mutate(subject_id = substr(patient_id, 3,nchar(patient_id)))
+
+analysis_hr2 = left_join(hr2_cgm_vars,groups_refs, by = "subject_id") %>% filter(!is.na(subject_id))
+analysis_hr2$visit = factor(analysis_hr2$visit, levels = c("Pre", "Post"))
+analysis_hr2$insulin_type = tolower(analysis_hr2$`insulin type`)
+
+analysis_hr2 = analysis_hr2 %>% filter(!is.na(`insulin type`))%>% filter(!is.na(visit))
+
+# hr4 pt id
+hr4_cgm_vars = hr4_cgm_vars %>% mutate(patient_id = (sapply(strsplit(subject_id,"_"), `[`, 1)),
+                                       visit = sapply(strsplit(subject_id,"_"), `[`, 2) )
+
+hr4_cgm_vars = hr4_cgm_vars %>% mutate(subject_id = substr(patient_id, 3,nchar(patient_id)))
+
+analysis_hr4 = left_join(hr4_cgm_vars,groups_refs, by = "subject_id") %>% filter(!is.na(subject_id))
+analysis_hr4$visit = factor(analysis_hr4$visit, levels = c("Pre", "Post"))
+
+analysis_hr4$insulin_type = tolower(analysis_hr4$`insulin type`)
+analysis_hr4 = analysis_hr4 %>% filter(!is.na(`insulin type`)) %>% filter(!is.na(visit))
+```
+
+```{r data prep, include = FALSE}
+demog_df = groups_refs %>% select(Age, `Diabetes Duration`, `insulin type`,Gender) %>% mutate(insulin_type = tolower(`insulin type`)) %>% select(-`insulin type`)
+```
+
+```{r mods, include = FALSE}
+fit_mod = function(outcome, df){
+
+    # Fit model
+  f = as.formula(paste0(outcome,"~","visit"))
+  mod = lme(f,
+            random = ~1|subject_id,
+            data = df,
+            na.action = na.omit)
+  
+  cat("\n")
+  print(outcome)
+  cat("\n")
+  print(summary(mod))
+
+}
+
+fit_mod2 = function(outcome, df){
+
+    # Fit model
+  f = as.formula(paste0(outcome,"~","visit + insulin_type"))
+  mod = lme(f,
+            random = ~1|subject_id,
+            data = df,
+            na.action = na.omit)
+  
+  cat("\n")
+  print(outcome)
+  cat("\n")
+  print(summary(mod))
+
+}
+```
+
+
+Analysis plan: 
+                Background: Lyumjev and Fiasp are new ultra-rapid acting insulins now on the market, currently labelled for use in Medtronic and Tandem. These insulins are designed to work-faster in the hopes of reducing post-prandial excursions. OP5 is an AID that is commonly used, but there is no published real-world data on the use of these insulins with this specific pump model. We are comparing glycemic and behavioral measures before and after switching to either lyumjev or aspart. We anticipate we will likely see no difference in glycemic measures but potentially in behavioral measure (ie overrides, and bolus/day). Would like 3 subgroup analysis: pre vs post as a whole, pre vs post lyumjev only, pre vs post fiasp only. We are not doing head-to-head of lyumjev to fiasp. We are aware n will be small for the single-type insulin analysis. 
+                
+Demographics we would like to include: 
+Age
+Sex
+Diabetes duration
+% lyumjev
+% Fiasp
+
+outcomes
+
+2hr auc
+4hr auc
+
+# Methods
+
+Demographics by group and overall were produced in a table.
+
+Linear mixed models with random intercept for MRN and time period (Pre/Post) as a covariate were fit for the entire cohort, lyumjev only, and fiasp only. 
+
+
+# Analysis
+
+## Updated Demographics Table
+
+```{r t1, echo=FALSE}
+t1_full = table1(~.|insulin_type, data = demog_df)
+t1_full
+```
+
+## Original Demogs table
+
+```{r}
+t1 = table1(~ Age_09212023 + Gender + DiabetesDuration_09212023| Group, data = lyumjev_demog)
+t1
+```
+
+## Auc tables
+
+
+```{r}
+hr2 = table1(~ total_auc |insulin_type*visit, data = analysis_hr2)
+hr2
+
+
+hr4 = table1(~ total_auc |insulin_type*visit, data = analysis_hr4)
+hr4
+```
+
+## Models
+
+### 2hr AUC
+
+There were no significant Pre/Post differences in 2hr auc for the whole cohort (p = 0.51), Fiasp (p = 0.55), or Lyumjev groups (p = 0.79)
+
+```{r}
+fit_mod("total_auc", analysis_hr2)
+fit_mod("total_auc", analysis_hr2%>% filter(insulin_type == "fiasp"))
+fit_mod("total_auc", analysis_hr2%>% filter(insulin_type == "lyumjev"))
+```
+
+### 4hr AUC
+
+There were no significant Pre/Post differences in 4hr auc for the whole cohort (p = 0.57), Fiasp (p = 0.48), or Lyumjev groups (p = 0.91)
+
+```{r}
+fit_mod("total_auc", analysis_hr4)
+fit_mod("total_auc", analysis_hr4%>% filter(insulin_type == "fiasp"))
+fit_mod("total_auc", analysis_hr4%>% filter(insulin_type == "lyumjev"))
+```
