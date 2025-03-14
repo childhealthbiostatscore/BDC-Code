@@ -1,0 +1,157 @@
+---
+title: "citeseq mofa analysis"
+author: "Casey Sakamoto"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# Install and load necessary packages
+library(MOFA2)
+library(ggplot2)
+library(gridExtra)
+library(tidyverse)
+library(caret)
+
+###################### LAMBDA #############################################
+# raw scores
+all_score1_r  <- readRDS("~/R/mofa/all_scPS_score1_raw.rds")
+
+#all_score2_r <- readRDS("S:/Laura/BDC/Projects/Howard Davidson/R01/MOFA/all_scPS_score2_raw.rds")
+
+# rest of files
+# clusters
+clusters <- readRDS("~/R/mofa/clusters_RCA.rds")
+# IDDA1c auc normalized (3 tp)
+auc_ida <- read.table("~/R/mofa/AUC_IDA.txt", header = TRUE)
+# covariates
+covariates <- read.table("~/R/mofa/Covariates.txt", header = TRUE, sep = "\t")
+
+analysis = left_join(covariates, auc_ida); rm(auc_ida, covariates)
+# Categorize into thirds
+analysis <- analysis %>%
+  mutate(AUC_group = cut(AUC_raw, 
+                         breaks = quantile(AUC_raw, probs = c(0, 1/3, 2/3, 1), na.rm = TRUE), 
+                         labels = c("Bottom", "Middle", "Top"), 
+                         include.lowest = TRUE))
+```
+
+# Data processing steps
+
+# MOFA
+
+```{r, include=FALSE}
+# transpose so rows is samples
+#all_score2 = t(all_score2)
+all_score2 = t(all_score1_r)
+rm(all_score1_r)
+
+
+# Check the dimensions of the matrix (rows = samples, columns = features) # Check for missing values (NAs) in the matrix
+dim(all_score2);sum(is.na(all_score2))
+
+# normalize and scale
+# scale the matrix (optional but commonly done) -- centered and scaled
+as2_s_t <- preProcess(all_score2, 
+                     method = c("center", "scale", "YeoJohnson"))
+
+as2_s<- stats::predict(as2_s_t, newdata = all_score2)
+# library(MASS)
+# write.matrix(as2_s,'scaled_mat.txt',sep = "\t")
+# as2_s <- scale(all_score2)
+rm(all_score2);rm(as2_s_t)
+
+# not sure if necessary but making rownames its own column in cluster df
+clusters$sample = rownames(clusters)
+clusters = clusters %>% filter(sample %in% rownames(as2_s))
+
+# all(rownames(as2_s) %in% clusters$sample)  # Should return TRUE
+
+# Convert wide expression matrix to long format
+expr_long <- as.data.frame(as2_s) %>%
+  tibble::rownames_to_column("sample") %>%
+  pivot_longer(cols = -sample, names_to = "feature", values_to = "value") %>%
+  mutate(view = "RNA")  # Assign a view name bb(RNA expression)
+
+
+# Select relevant columns from clusters (modify as needed)
+metadata_selected <- clusters %>%dplyr::select(sample, donor,group = ID)  # Adjust 'group' column if needed for our clusters -- lets start with named clusters
+
+metadata_selected = left_join(metadata_selected,analysis, by = c("donor" = "Donor"))
+rm(as2_s)
+# Merge expression data with metadata
+final_long_df <- expr_long %>%
+  left_join(metadata_selected, by = "sample")
+
+###### for model using the clusters as views
+final_long_df$view = final_long_df$group
+final_long_df = final_long_df %>% dplyr::select(-group)
+##########
+rm(analysis);rm(clusters);rm(expr_long);rm(metadata_selected)
+# using preferred data structure in the vignette
+mofaobject = create_mofa(final_long_df)
+rm(final_long_df)
+# settings
+data_opts <- get_default_data_options(mofaobject)
+model_opts <- get_default_model_options(mofaobject)
+
+train_opts <- get_default_training_options(mofaobject)
+
+# for first meeting with howard we will limit the factors
+# lower the iterations to factors within 5% var explained -- lets do this a posteriori to decrease computational load
+# train_opts$drop_factor_threshold = 5
+train_opts$maxiter = 200
+# and set convergence to fast (default, change when we decide on subset etc)
+
+# build and train the mofa object
+mofaobject <- prepare_mofa(
+  object = mofaobject,
+  data_options = data_opts,
+  model_options = model_opts,
+  training_options = train_opts
+)
+
+# train model
+outfile = file.path(getwd(),"model")
+mofaobject.trained <- run_mofa(mofaobject, outfile,use_basilisk = TRUE)
+```
+
+```{r}
+#load model
+model <- load_model(outfile)
+
+
+# # Generate plots for factors 1 to 12
+# plots <- lapply(1:12, function(f) {
+#   plot_top_weights(model, factor = f, nfeatures = 20) + ggtitle(paste("Factor", f))
+# })
+# 
+# # Arrange all plots in a grid (adjust 'ncol' as needed)
+# grid.arrange(grobs = plots, ncol = 3)
+
+pdf("MOFA_top_weights_factors_1-5.pdf", width = 10, height = 12)
+
+for (f in 1:5) {
+  print(plot_top_weights(model, factor = f, nfeatures = 15) + ggtitle(paste("Cluster", f)))
+}
+
+dev.off()# 3 columns, adjust as needed
+```
+
+```{r play}
+# Variance explained for every factor in per view and group
+head(model@cache$variance_explained$r2_per_factor[[1]])
+plot_factor(model, 
+  factor = 1,
+  color_by = "AUC_raw"
+)
+
+
+plot_weights(model,
+             group = 1,
+  factor = 1,
+  nfeatures = 100,     # Number of features to highlight
+  scale = FALSE,          # Scale weights from -1 to 1
+  abs = FALSE             # Take the absolute value?
+)
+```
