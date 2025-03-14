@@ -23,11 +23,23 @@ editor: source
 library(tidyverse)
 library(haven)
 library(hms)
+library(knitr)
+library(gtsummary)
 library(traj)
-knitr::opts_knit$set(root.dir = "/Users/timvigers/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT")
+home_dir <- switch(Sys.info()["sysname"],
+  "Darwin" = "/Users/timvigers/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT",
+  "Linux" = "/home/timvigers/OneDrive/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT"
+)
+github_dir <- switch(Sys.info()["sysname"],
+  "Darwin" = "/Users/timvigers/Documents/GitHub",
+  "Linux" = "/home/timvigers/Documents/GitHub"
+)
+knitr::opts_knit$set(root.dir = home_dir)
 ```
 
 ```{r}
+# Set a seed for trajectory analyses
+set.seed(1017)
 # Import CGM data from Fran
 cgm <- read_sas("./Data_Raw/rawcgmdata_clean.sas7bdat")
 # Convert from numeric time to datetime, round to nearest 5 minutes
@@ -50,29 +62,26 @@ df <- read.csv("./Data_Clean/Longitudinal CGM data for 165 subjects.csv",
 )
 # Remove unhelpful rows
 df <- df %>% filter(!is.na(ID))
-# Figure out each person's start date
+# Determine group
+df$Group <- factor(is.na(df$Date.of.T1D.dx),
+  levels = c(T, F),
+  labels = c("Non-Progressor", "Progressor")
+)
+# Convert columns
+df$age.at.clinic <- as.numeric(df$age.at.clinic)
+df$DOVISIT <- mdy(df$DOVISIT)
+# Calculate final visit date (or T1D progression)
+df$final_visit <- df$DOVISIT - round(df$yearsfromT1D * 365.25)
+# Select only necessary columns
 df <- df %>%
-  select(ID, DOB, Date.of.T1D.dx) %>%
-  mutate(
-    Group = factor(is.na(Date.of.T1D.dx),
-      levels = c(T, F),
-      labels = c("Non-Progressor", "Progressor")
-    )
-  ) %>%
-  select(ID, Group) %>%
-  distinct()
+  select(
+    ID, DOVISIT, A1C, age.at.clinic, SEX, FDR.status, Race_Ethn2, HLAGRP, Group,
+    final_visit
+  )
 # Put together
-cgm <- full_join(df, cgm, by = join_by(ID))
-cgm <- cgm %>% select(ID, Group, DOVISIT, Date, Time, SensorValue)
-# Drop NAs
-cgm <- cgm %>% drop_na()
-# Average by time of day
-mean_cgm <- cgm %>%
-  group_by(ID, Group, Time) %>%
-  summarise(Glucose = mean(SensorValue), .groups = "drop")
-# Convert to wide
-wide_cgm <- mean_cgm %>%
-  pivot_wider(names_from = Time, values_from = Glucose)
+cgm <- left_join(cgm, df, by = join_by(ID, DOVISIT))
+# Sort
+cgm <- cgm %>% arrange(ID, Date, Time)
 # Measure labels
 m_labels <- list(
   "m1" = "Maximum", "m2" = "Range", "m3" = "Mean value",
@@ -94,11 +103,46 @@ m_labels <- list(
 )
 ```
 
-# Non-progressors vs. progressors
-
-## Averaged across all CGMs
+# CGM wear Gantt chart (all)
 
 ```{r}
+#| fig-width: 12
+#| fig-height: 9
+cgm %>%
+  group_by(ID, DOVISIT) %>%
+  slice(1, n()) %>%
+  mutate(time_from_final = as.numeric(Date - final_visit)) %>%
+  group_by(ID) %>%
+  mutate(wear = as.numeric(factor(DOVISIT))) %>%
+  select(ID, DOVISIT, time_from_final, wear, Group) %>%
+  filter(time_from_final >= -1100) %>%
+  ggplot(aes(
+    x = time_from_final, y = reorder(ID, desc(as.numeric(Group))),
+    group = interaction(ID, wear), colour = Group
+  )) +
+  geom_line() +
+  xlab("Days From T1D or Last Visit") +
+  scale_color_manual(values = c("#0c457d", "#e8702a")) +
+  theme_bw() +
+  theme(
+    axis.title.y = element_blank(), axis.text.y = element_blank(),
+    axis.ticks.y = element_blank()
+  )
+```
+
+# Average non-progressors vs. progressors
+
+First, we took each person's CGM tracings and averaged the sensor values at each time of day (in 5 minute increments from 00:00:00 to 23:55:00) across all tracings. This ignores temporal changes in CGM tracings as progressors get closer to developing T1D, and likely washes out some nuances that will be explored later.
+
+```{r}
+# Average by time of day
+mean_cgm <- cgm %>%
+  group_by(ID, Group, Time) %>%
+  summarise(Glucose = mean(SensorValue, na.rm = T), .groups = "drop")
+# Convert to wide
+wide_cgm <- mean_cgm %>%
+  pivot_wider(names_from = Time, values_from = Glucose)
+# Plot
 ggplot(mean_cgm, aes(
   x = Time, y = Glucose,
   group = ID, colour = Group
@@ -109,64 +153,488 @@ ggplot(mean_cgm, aes(
 ```
 
 ```{r}
-set.seed(1017)
-step1 <- Step1Measures(subset(wide_cgm, select = -c(ID, Group)),
-  measures = 1:19
-)
-summary(step1)
-step2 <- Step2Selection(trajMeasures = step1)
-summary(step2)
-print(step2)
-step3 <- Step3Clusters(trajSelection = step2)
-plot(step3, spline = T)
-critplot(step3)
-wide_cgm$Cluster <- step3$partition$Cluster
-xtabs(~ Cluster + Group, data = wide_cgm)
+df %>%
+  group_by(ID) %>%
+  slice(1) %>%
+  ungroup() %>%
+  filter(ID %in% mean_cgm$ID) %>%
+  select(-ID, -DOVISIT, -final_visit) %>%
+  tbl_summary(by = Group, missing_text = "Missing")
 ```
 
-## Averaged across CGM tracing
+## 3 clusters
+
+```{r}
+#| message: false
+step1 <- Step1Measures(subset(wide_cgm, select = -c(ID, Group)))
+step2 <- Step2Selection(trajMeasures = step1)
+step3 <- Step3Clusters(trajSelection = step2, nclusters = 3)
+plot(step3, spline = T, which.plots = 1:2, ask = F)
+```
+
+```{r}
+wide_cgm$Cluster <- step3$partition$Cluster
+left_join(df, wide_cgm %>% select(ID, Cluster), by = join_by(ID)) %>%
+  group_by(ID) %>%
+  slice(1) %>%
+  ungroup() %>%
+  select(Group, Cluster) %>%
+  tbl_summary(by = Cluster, missing_text = "Missing") %>%
+  add_p()
+wide_cgm$Cluster <- NULL
+```
+
+## 2 clusters
+
+```{r}
+step1 <- Step1Measures(subset(wide_cgm, select = -c(ID, Group)))
+step2 <- Step2Selection(trajMeasures = step1)
+step3 <- Step3Clusters(trajSelection = step2, nclusters = 2)
+plot(step3, spline = T, which.plots = 1:2, ask = F)
+```
+
+```{r}
+wide_cgm$Cluster <- step3$partition$Cluster
+left_join(df, wide_cgm %>% select(ID, Cluster), by = join_by(ID)) %>%
+  group_by(ID) %>%
+  slice(1) %>%
+  ungroup() %>%
+  select(Group, Cluster) %>%
+  tbl_summary(by = Cluster, missing_text = "Missing") %>%
+  add_p()
+wide_cgm$Cluster <- NULL
+```
+
+# Non-progressors (-12 months) vs. progressors (-12 months)
+
+Next, rather than averaging across multiple CGM tracings, we selected each non-progressor's CGM closest to 12 months prior to final visit and averaged that CGM tracing at each time of day. We did the same for progressors in order to see if there are differences in trajectory as early as 12 months from T1D progression. When selecting visits, we excluded CGM wears more than 3 months away from the target, so the closest to 360 days prior to last visit within a range of 450 - 270 days.
+
+```{r}
+date_pick <- df %>%
+  mutate(time_from_final = as.numeric(DOVISIT - final_visit)) %>%
+  filter(time_from_final >= -450 & time_from_final <= -270) %>%
+  group_by(ID) %>%
+  slice(which.min(abs(time_from_final - 12 * 30))) %>%
+  ungroup() %>%
+  mutate(pick = paste0(ID, DOVISIT))
+```
+
+## CGM Gantt chart
+
+```{r}
+#| fig-width: 12
+#| fig-height: 9
+cgm %>%
+  filter(paste0(ID, DOVISIT) %in% date_pick$pick) %>%
+  group_by(ID, DOVISIT) %>%
+  slice(1, n()) %>%
+  mutate(time_from_final = as.numeric(Date - final_visit)) %>%
+  group_by(ID) %>%
+  mutate(wear = as.numeric(factor(DOVISIT))) %>%
+  select(ID, DOVISIT, time_from_final, wear, Group) %>%
+  filter(time_from_final >= -1100) %>%
+  ggplot(aes(
+    x = time_from_final, y = reorder(ID, desc(as.numeric(Group))),
+    group = interaction(ID, wear), colour = Group
+  )) +
+  geom_line() +
+  xlab("Days From T1D or Last Visit") +
+  scale_color_manual(values = c("#0c457d", "#e8702a")) +
+  theme_bw() +
+  theme(axis.title.y = element_blank())
+```
+
+## Mean sensor glucose
 
 ```{r}
 # Average by time of day
 mean_cgm <- cgm %>%
-  group_by(ID, Group, DOVISIT, Time) %>%
-  summarise(Glucose = mean(SensorValue), .groups = "drop")
+  filter(paste0(ID, DOVISIT) %in% date_pick$pick) %>%
+  group_by(ID, Group, Time) %>%
+  summarise(Glucose = mean(SensorValue, na.rm = T), .groups = "drop")
 # Convert to wide
 wide_cgm <- mean_cgm %>%
   pivot_wider(names_from = Time, values_from = Glucose)
-```
-
-```{r}
+# Plot
 ggplot(mean_cgm, aes(
   x = Time, y = Glucose,
-  group = interaction(ID, DOVISIT), colour = Group
+  group = ID, colour = Group
 )) +
   geom_line(alpha = 0.5) +
   theme_bw() +
   scale_color_manual(values = c("#0c457d", "#e8702a"))
 ```
 
+## Participant characteristics
+
 ```{r}
-step1 <- Step1Measures(subset(wide_cgm, select = -c(ID, Group, DOVISIT)),
-  measures = 1:19
-)
-summary(step1)
-step2 <- Step2Selection(trajMeasures = step1)
-summary(step2)
-print(step2)
-step3 <- Step3Clusters(trajSelection = step2)
-plot(step3, spline = T)
-critplot(step3)
-wide_cgm$Cluster <- step3$partition$Cluster
-xtabs(~ Cluster + Group, data = wide_cgm)
+date_pick %>%
+  select(-ID, -DOVISIT, -final_visit, -pick) %>%
+  tbl_summary(by = Group, missing_text = "Missing")
 ```
 
-# Non-progressors vs. 12 to 9 months prior to progression
+## Trajectories
 
-# Non-progressors vs. 9 to 6 months prior to progression
+### 3 clusters
 
-# Non-progressors vs. 6 to 3 months prior to progression
+```{r}
+#| message: false
+step1 <- Step1Measures(subset(wide_cgm, select = -c(ID, Group)))
+step2 <- Step2Selection(trajMeasures = step1)
+step3 <- Step3Clusters(trajSelection = step2, nclusters = 3)
+plot(step3, spline = T, which.plots = 1:2, ask = F)
+```
 
-# Non-progressors vs. 3 to 0 months prior to progression
+```{r}
+date_pick$Cluster <- step3$partition$Cluster
+date_pick %>%
+  select(Group, Cluster) %>%
+  tbl_summary(by = Cluster, missing_text = "Missing") %>%
+  add_p()
+```
 
-# Non-progressors vs. post-progression
+### 2 clusters
+
+```{r}
+step1 <- Step1Measures(subset(wide_cgm, select = -c(ID, Group)))
+step2 <- Step2Selection(trajMeasures = step1)
+step3 <- Step3Clusters(trajSelection = step2, nclusters = 2)
+plot(step3, spline = T, which.plots = 1:2, ask = F)
+```
+
+```{r}
+date_pick$Cluster <- step3$partition$Cluster
+date_pick %>%
+  select(Group, Cluster) %>%
+  tbl_summary(by = Cluster, missing_text = "Missing") %>%
+  add_p()
+```
+
+# Non-progressors (-12 months) vs. progressors (-9 months)
+
+Next, we compared non-progressors 12 months from last visit to progressors 9 months from progression. When selecting visits, we excluded CGM wears more than 3 months away from the target, so the closest to 360 days prior to last visit within a range of 450 - 270 days for non-progressors and the closest to 270 days prior to last visit within a range of 360 - 180 days for progressors.
+
+```{r}
+date_pick_np <- df %>%
+  mutate(time_from_final = as.numeric(DOVISIT - final_visit)) %>%
+  filter(Group == "Non-Progressor" &
+    (time_from_final >= -450 & time_from_final <= -270)) %>%
+  group_by(ID) %>%
+  slice(which.min(abs(time_from_final - 12 * 30))) %>%
+  ungroup() %>%
+  mutate(pick = paste0(ID, DOVISIT))
+date_pick_p <- df %>%
+  mutate(time_from_final = as.numeric(DOVISIT - final_visit)) %>%
+  filter(Group == "Progressor" &
+    (time_from_final >= -360 & time_from_final <= -180)) %>%
+  group_by(ID) %>%
+  slice(which.min(abs(time_from_final - 9 * 30))) %>%
+  ungroup() %>%
+  mutate(pick = paste0(ID, DOVISIT))
+date_pick <- rbind(date_pick_np, date_pick_p)
+```
+
+## CGM Gantt chart
+
+```{r}
+#| fig-width: 12
+#| fig-height: 9
+cgm %>%
+  filter(paste0(ID, DOVISIT) %in% date_pick$pick) %>%
+  group_by(ID, DOVISIT) %>%
+  slice(1, n()) %>%
+  mutate(time_from_final = as.numeric(Date - final_visit)) %>%
+  group_by(ID) %>%
+  mutate(wear = as.numeric(factor(DOVISIT))) %>%
+  select(ID, DOVISIT, time_from_final, wear, Group) %>%
+  filter(time_from_final >= -1100) %>%
+  ggplot(aes(
+    x = time_from_final, y = reorder(ID, desc(as.numeric(Group))),
+    group = interaction(ID, wear), colour = Group
+  )) +
+  geom_line() +
+  xlab("Days From T1D or Last Visit") +
+  scale_color_manual(values = c("#0c457d", "#e8702a")) +
+  theme_bw() +
+  theme(axis.title.y = element_blank())
+```
+
+## Mean sensor glucose
+
+```{r}
+# Average by time of day
+mean_cgm <- cgm %>%
+  filter(paste0(ID, DOVISIT) %in% date_pick$pick) %>%
+  group_by(ID, Group, Time) %>%
+  summarise(Glucose = mean(SensorValue, na.rm = T), .groups = "drop")
+# Convert to wide
+wide_cgm <- mean_cgm %>%
+  pivot_wider(names_from = Time, values_from = Glucose)
+# Plot
+ggplot(mean_cgm, aes(
+  x = Time, y = Glucose,
+  group = ID, colour = Group
+)) +
+  geom_line(alpha = 0.5) +
+  theme_bw() +
+  scale_color_manual(values = c("#0c457d", "#e8702a"))
+```
+
+## Participant characteristics
+
+```{r}
+date_pick %>%
+  select(-ID, -DOVISIT, -final_visit, -pick) %>%
+  tbl_summary(by = Group, missing_text = "Missing")
+```
+
+## Trajectories
+
+### 3 clusters
+
+```{r}
+#| message: false
+step1 <- Step1Measures(subset(wide_cgm, select = -c(ID, Group)))
+step2 <- Step2Selection(trajMeasures = step1)
+step3 <- Step3Clusters(trajSelection = step2, nclusters = 3)
+plot(step3, spline = T, which.plots = 1:2, ask = F)
+```
+
+```{r}
+date_pick$Cluster <- step3$partition$Cluster
+date_pick %>%
+  select(Group, Cluster) %>%
+  tbl_summary(by = Cluster, missing_text = "Missing") %>%
+  add_p()
+```
+
+### 2 clusters
+
+```{r}
+step1 <- Step1Measures(subset(wide_cgm, select = -c(ID, Group)))
+step2 <- Step2Selection(trajMeasures = step1)
+step3 <- Step3Clusters(trajSelection = step2, nclusters = 2)
+plot(step3, spline = T, which.plots = 1:2, ask = F)
+```
+
+```{r}
+date_pick$Cluster <- step3$partition$Cluster
+date_pick %>%
+  select(Group, Cluster) %>%
+  tbl_summary(by = Cluster, missing_text = "Missing") %>%
+  add_p()
+```
+
+# Non-progressors (-12 months) vs. progressors (-6 months)
+
+Next, we compared non-progressors 12 months from last visit to progressors 6 months from progression. When selecting visits, we excluded CGM wears more than 3 months away from the target, so the closest to 360 days prior to last visit within a range of 450 - 270 days for non-progressors and the closest to 180 days prior to last visit within a range of 270 - 90 days for progressors.
+
+```{r}
+date_pick_p <- df %>%
+  mutate(time_from_final = as.numeric(DOVISIT - final_visit)) %>%
+  filter(Group == "Progressor" &
+    (time_from_final >= -270 & time_from_final <= -90)) %>%
+  group_by(ID) %>%
+  slice(which.min(abs(time_from_final - 6 * 30))) %>%
+  ungroup() %>%
+  mutate(pick = paste0(ID, DOVISIT))
+date_pick <- rbind(date_pick_np, date_pick_p)
+```
+
+## CGM Gantt chart
+
+```{r}
+#| fig-width: 12
+#| fig-height: 9
+cgm %>%
+  filter(paste0(ID, DOVISIT) %in% date_pick$pick) %>%
+  group_by(ID, DOVISIT) %>%
+  slice(1, n()) %>%
+  mutate(time_from_final = as.numeric(Date - final_visit)) %>%
+  group_by(ID) %>%
+  mutate(wear = as.numeric(factor(DOVISIT))) %>%
+  select(ID, DOVISIT, time_from_final, wear, Group) %>%
+  filter(time_from_final >= -1100) %>%
+  ggplot(aes(
+    x = time_from_final, y = reorder(ID, desc(as.numeric(Group))),
+    group = interaction(ID, wear), colour = Group
+  )) +
+  geom_line() +
+  xlab("Days From T1D or Last Visit") +
+  scale_color_manual(values = c("#0c457d", "#e8702a")) +
+  theme_bw() +
+  theme(axis.title.y = element_blank())
+```
+
+## Mean sensor glucose
+
+```{r}
+# Average by time of day
+mean_cgm <- cgm %>%
+  filter(paste0(ID, DOVISIT) %in% date_pick$pick) %>%
+  group_by(ID, Group, Time) %>%
+  summarise(Glucose = mean(SensorValue, na.rm = T), .groups = "drop")
+# Convert to wide
+wide_cgm <- mean_cgm %>%
+  pivot_wider(names_from = Time, values_from = Glucose)
+# Plot
+ggplot(mean_cgm, aes(
+  x = Time, y = Glucose,
+  group = ID, colour = Group
+)) +
+  geom_line(alpha = 0.5) +
+  theme_bw() +
+  scale_color_manual(values = c("#0c457d", "#e8702a"))
+```
+
+## Participant characteristics
+
+```{r}
+date_pick %>%
+  select(-ID, -DOVISIT, -final_visit, -pick) %>%
+  tbl_summary(by = Group, missing_text = "Missing")
+```
+
+## Trajectories
+
+### 3 clusters
+
+```{r}
+#| message: false
+step1 <- Step1Measures(subset(wide_cgm, select = -c(ID, Group)))
+step2 <- Step2Selection(trajMeasures = step1)
+step3 <- Step3Clusters(trajSelection = step2, nclusters = 3)
+plot(step3, spline = T, which.plots = 1:2, ask = F)
+```
+
+```{r}
+date_pick$Cluster <- step3$partition$Cluster
+date_pick %>%
+  select(Group, Cluster) %>%
+  tbl_summary(by = Cluster, missing_text = "Missing") %>%
+  add_p()
+```
+
+### 2 clusters
+
+```{r}
+step1 <- Step1Measures(subset(wide_cgm, select = -c(ID, Group)))
+step2 <- Step2Selection(trajMeasures = step1)
+step3 <- Step3Clusters(trajSelection = step2, nclusters = 2)
+plot(step3, spline = T, which.plots = 1:2, ask = F)
+```
+
+```{r}
+date_pick$Cluster <- step3$partition$Cluster
+date_pick %>%
+  select(Group, Cluster) %>%
+  tbl_summary(by = Cluster, missing_text = "Missing") %>%
+  add_p()
+```
+
+# Non-progressors (-12 months) vs. progressors (-3 months)
+
+Next, we compared non-progressors 12 months from last visit to progressors 6 months from progression. When selecting visits, we excluded CGM wears more than 3 months away from the target, so the closest to 360 days prior to last visit within a range of 450 - 270 days for non-progressors and the closest to 90 days prior to last visit within a range of 180 - 0 days for progressors.
+
+```{r}
+date_pick_p <- df %>%
+  mutate(time_from_final = as.numeric(DOVISIT - final_visit)) %>%
+  filter(Group == "Progressor" &
+    (time_from_final >= -180 & time_from_final <= 0)) %>%
+  group_by(ID) %>%
+  slice(which.min(abs(time_from_final - 3 * 30))) %>%
+  ungroup() %>%
+  mutate(pick = paste0(ID, DOVISIT))
+date_pick <- rbind(date_pick_np, date_pick_p)
+```
+
+## CGM Gantt chart
+
+```{r}
+#| fig-width: 12
+#| fig-height: 9
+cgm %>%
+  filter(paste0(ID, DOVISIT) %in% date_pick$pick) %>%
+  group_by(ID, DOVISIT) %>%
+  slice(1, n()) %>%
+  mutate(time_from_final = as.numeric(Date - final_visit)) %>%
+  group_by(ID) %>%
+  mutate(wear = as.numeric(factor(DOVISIT))) %>%
+  select(ID, DOVISIT, time_from_final, wear, Group) %>%
+  filter(time_from_final >= -1100) %>%
+  ggplot(aes(
+    x = time_from_final, y = reorder(ID, desc(as.numeric(Group))),
+    group = interaction(ID, wear), colour = Group
+  )) +
+  geom_line() +
+  xlab("Days From T1D or Last Visit") +
+  scale_color_manual(values = c("#0c457d", "#e8702a")) +
+  theme_bw() +
+  theme(axis.title.y = element_blank())
+```
+
+## Mean sensor glucose
+
+```{r}
+# Average by time of day
+mean_cgm <- cgm %>%
+  filter(paste0(ID, DOVISIT) %in% date_pick$pick) %>%
+  group_by(ID, Group, Time) %>%
+  summarise(Glucose = mean(SensorValue, na.rm = T), .groups = "drop")
+# Convert to wide
+wide_cgm <- mean_cgm %>%
+  pivot_wider(names_from = Time, values_from = Glucose)
+# Plot
+ggplot(mean_cgm, aes(
+  x = Time, y = Glucose,
+  group = ID, colour = Group
+)) +
+  geom_line(alpha = 0.5) +
+  theme_bw() +
+  scale_color_manual(values = c("#0c457d", "#e8702a"))
+```
+
+## Participant characteristics
+
+```{r}
+date_pick %>%
+  select(-ID, -DOVISIT, -final_visit, -pick) %>%
+  tbl_summary(by = Group, missing_text = "Missing")
+```
+
+## Trajectories
+
+### 3 clusters
+
+```{r}
+#| message: false
+step1 <- Step1Measures(subset(wide_cgm, select = -c(ID, Group)))
+step2 <- Step2Selection(trajMeasures = step1)
+step3 <- Step3Clusters(trajSelection = step2, nclusters = 3)
+plot(step3, spline = T, which.plots = 1:2, ask = F)
+```
+
+```{r}
+date_pick$Cluster <- step3$partition$Cluster
+date_pick %>%
+  select(Group, Cluster) %>%
+  tbl_summary(by = Cluster, missing_text = "Missing") %>%
+  add_p()
+```
+
+### 2 clusters
+
+```{r}
+step1 <- Step1Measures(subset(wide_cgm, select = -c(ID, Group)))
+step2 <- Step2Selection(trajMeasures = step1)
+step3 <- Step3Clusters(trajSelection = step2, nclusters = 2)
+plot(step3, spline = T, which.plots = 1:2, ask = F)
+```
+
+```{r}
+date_pick$Cluster <- step3$partition$Cluster
+date_pick %>%
+  select(Group, Cluster) %>%
+  tbl_summary(by = Cluster, missing_text = "Missing") %>%
+  add_p()
+```
