@@ -97,7 +97,7 @@ convert_to_tscore <- function(raw_score, scale_name, lookup_table = NULL) {
   }
   
   # Match raw scores to T-scores using lookup table
-  t_scores <- lookup_table[as.character(`T-score`)]
+  t_scores <- lookup_table[as.character(raw_score)]
   names(t_scores) <- names(raw_score)
   
   return(t_scores)
