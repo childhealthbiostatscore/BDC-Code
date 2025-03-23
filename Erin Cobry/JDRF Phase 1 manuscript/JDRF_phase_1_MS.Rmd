@@ -18,10 +18,13 @@ library(tidyverse)
 library(emmeans)
 library(performance)
 library(knitr)
-library(table1)
+#library(table1)
+library(arsenal)
 library(readr)
 library(readxl)
 library(lme4)
+
+knitr::opts_chunk$set(echo = FALSE, comment = "")
 
 # promis tables
 Depression_T <- read_excel("/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/JDRF Career Development Grant/Phase 1 Manuscript/Data_raw/Depression T-tables.xlsx", 
@@ -137,41 +140,19 @@ sd_df <- cbind(sd_df, child_scores)
 parent_scores <- score_all_promis_scales(sd_df, respondent = "parent")
 parent_scores <- dplyr::select_all(parent_scores, .funs = funs(paste0("p_", .)))
 sd_df <- cbind(sd_df, parent_scores)
-# not sure these scaled scores are being calculated correctly
 # add scaled scores
-#source("/Users/pylell/Documents/GitHub/BDC-Code/Erin Cobry/JDRF Phase 1 manuscript/promis scaled scores v3.r")
+source("/Users/pylell/Documents/GitHub/BDC-Code/Erin Cobry/JDRF Phase 1 manuscript/promis scaled scores v3.r")
 # Create lookup tables
-#lookup_tables <- create_promis_lookup_tables()
-#all_scores <- convert_all_to_tscores(scores = sd_df, lookup_tables = lookup_tables)
+lookup_tables <- create_promis_lookup_tables()
+all_scores <- convert_all_to_tscores(scores = sd_df, lookup_tables = lookup_tables)
 
-# write data for checking
-#source("/Users/pylell/Documents/GitHub/BDC-Code/Erin Cobry/JDRF Phase 1 manuscript/write promis for checking.r")
-#check <- extract_promis_values(sd_df)
-#check <- check %>% filter(redcap_event_name %in% c("surveys_arm_1", "surveys_arm_2"))
-#write.csv(check, "/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/JDRF Career Development Grant/Phase 1 Manuscript/Data_clean/promis_data.csv", row.names = FALSE)
+# now read in the parent version of family relationships
+p_fam <- read.csv('/Volumes/RI Biostatistics Core/Shared/Shared Projects/Laura/BDC/Projects/Erin Cobry/JDRF Career Development Grant/Phase 1 Manuscript/Data_raw/SleepDisruptorsInAdo-PROMISParentFamRelat_DATA_2025-03-18_0745.csv')
+p_fam <- p_fam %>% select(record_id, redcap_event_name, promis_parent_proxy_sf_v10_fam_relationships_8a_tscore)
+all_scores <- left_join(all_scores, p_fam, by = c("record_id", "redcap_event_name"))
 
-# merge in scaled scores
-sd_df <- left_join(sd_df, Depression_T, by = c("c_depressive_raw" = "Raw Score"))
-sd_df <- left_join(sd_df, pp_dep_short, by = c("p_depressive_raw" = "Raw Score"))
-sd_df <- left_join(sd_df, Anxiety_T, by = c("c_anxiety_raw" = "Raw Summed Score"))
-sd_df <- left_join(sd_df, pp_anx_short, by = c("p_anxiety_raw" = "Raw Score"))
-sd_df <- left_join(sd_df, Psychological_Stress_T, by = c("c_psychological_stress_raw" = "Raw Score"))
-sd_df <- left_join(sd_df, pp_pse_short, by = c("p_psychological_stress_raw" = "Raw Score"))
-sd_df <- left_join(sd_df, Sleep_Disturbance_T, by = c("c_sleep_disturbance_raw" = "Raw Summed Score"))
-sd_df <- left_join(sd_df, Impairment_T, by = c("c_sleep_impairment_raw" = "Raw Summed Score"))
-sd_df <- left_join(sd_df, peds_lifesatisfaction_short, by = c("c_life_satisfaction_raw" = "Raw Summed Score"))
-sd_df <- left_join(sd_df, peds_physact_short, by = c("c_physical_raw" = "Raw Score"))
-sd_df <- left_join(sd_df, pp_physact_short, by = c("p_physical_raw" = "Raw Score"))
-sd_df <- left_join(sd_df, peds_posaff_short, by = c("c_positive_affect_raw" =  "Raw Score"))
-sd_df <- left_join(sd_df, pp_posaff_short, by = c("p_positive_affect_raw" = "Raw Scored"))
-sd_df <- left_join(sd_df, peds_anger_short, by = c("c_anger_raw" = "Raw Summed Score"))
-sd_df <- left_join(sd_df, pp_anger_short, by = c("p_anger_raw" = "Raw Summed Score"))
-sd_df <- left_join(sd_df, peds_fr_short, by = c("c_family_raw" = "Raw Score"))
-sd_df <- left_join(sd_df, peds_pr_short, by = c("c_peer_raw" = "Raw Score"))
-# this one doesn't look right
-
-# NEED TO FIX THIS
-sd_df <- left_join(sd_df, pp_fr_short, by = c("p_family_raw" = "Raw Score"))
+# overwrite sd_df with df that contains t-scores
+sd_df <- all_scores
 
 # demog covariates
 demog_df = sd_df %>% select(record_id, redcap_event_name, season, gender_m_fo, age, age_cat, stateresidence, rurality, race, 
@@ -185,7 +166,16 @@ demog_df = left_join(demog_df, a1c_col, by = "record_id") %>% select(-redcap_eve
 tanner_df <- sd_df %>% select(record_id, redcap_event_name, mstage2, fstage2, drstage) %>% 
   filter(redcap_event_name == "enrollment_arm_1")
 tanner_df <- tanner_df %>% rowwise() %>% mutate(self_stage = max(mstage2, fstage2, na.rm = T))
+tanner_df$self_stage <- ifelse(is.infinite(tanner_df$self_stage), NA, tanner_df$self_stage)
 demog_df <- left_join(demog_df, tanner_df, by = "record_id")
+
+# parent scores are in survey arm 2
+pscores <- sd_df %>% filter(redcap_event_name == "surveys_arm_2") %>%
+  select(record_id, p_physical_tscore, p_positive_affect_tscore, p_psychological_stress_tscore,
+                            p_anger_tscore, p_anxiety_tscore, p_depressive_tscore, p_family_tscore, p_peer_tscore,
+                            promis_parent_proxy_sf_v10_fam_relationships_8a_tscore)
+# need to make IDs match
+pscores$record_id <- str_replace(pscores$record_id, "2", "1")
 
 analysis = sd_df %>% select(record_id,redcap_event_name,
                             time_am, time_mm, sensor_wear, eve_sensor_low, eve_sensor_below,
@@ -195,8 +185,13 @@ analysis = sd_df %>% select(record_id,redcap_event_name,
                             sensor_181_250, sensor_70_180, sensor_55_69, sensor_u54, sensor_mean, sensor_sd,
                             gmi, tdd, tdd_basal, tdd_bolus, dailybolus, dailymealbolus, sleepmode, exercisemode,
                             avg_bedtime, getup_avg, timeinbed_avg, totalsleep_avg, onsetlatency_avg, sleepefficency_avg, 
-                            waso_avg, awake_avg  
-) %>% filter(redcap_event_name == "surveys_arm_1") %>% select(-redcap_event_name)
+                            waso_avg, awake_avg, c_life_satisfaction_tscore, c_physical_tscore, 
+                            c_positive_affect_tscore,  c_psychological_stress_tscore, 
+                             c_anger_tscore,  c_anxiety_tscore,
+                            c_depressive_tscore,  c_family_tscore,
+                             c_peer_tscore,  c_sleep_disturbance_tscore,
+                            c_sleep_impairment_tscore) %>% filter(redcap_event_name == "surveys_arm_1") %>% select(-redcap_event_name)
+analysis = left_join(analysis, pscores, by = "record_id")
 
 analysis = left_join(demog_df, analysis) 
 analysis = analysis %>% mutate(sensor_hypoglycemic = sensor_u54 + sensor_55_69,
@@ -207,21 +202,21 @@ survey_df = sd_df %>% mutate(mesc_total = (6 - me_oob) + me_getup + (5 - me_gym)
                              + (5 - me_besttime) + (6 - me_p_bedtime) + me_malert + (6-me_b_bedtime)
                              + me_6am + (5 - me_time2alert),# Morningness/Eveningness Questionnaire
                              across(snore_ht:interrupts, ~ .x - 1)) 
-
-mesc = survey_df %>% select(record_id, redcap_event_name, mesc_total)
+mesc = survey_df %>% select(record_id, mesc_total)
+mesc = mesc %>% filter(!is.na(mesc_total))
   
 srdb = survey_df %>% filter(redcap_event_name %in% c("surveys_arm_1", "surveys_arm_2")) %>% mutate(SRDB_score = rowMeans(across(snore_ht:interrupts), na.rm = T)) %>%
-  select(record_id, redcap_event_name, SRDB_score) # SRDB Scale
-
+  select(record_id, SRDB_score) # SRDB Scale
 srdb$record_id = sub("^.", "1", srdb$record_id)
+srdb <- srdb %>% filter(!is.na(SRDB_score))
 
 hfs = survey_df %>% filter(redcap_event_name == "surveys_arm_1") %>% mutate(across(bedtime_snacks:having_low_sugar, ~ .x - 1),
-                           hfs_total = rowSums(across(bedtime_snacks:having_low_sugar), na.rm=F)) %>% select(record_id, redcap_event_name, hfs_total)# Hypoglycemia Fear Survey child/Teen
+                           hfs_total = rowSums(across(bedtime_snacks:having_low_sugar), na.rm=F)) %>% select(record_id, hfs_total)# Hypoglycemia Fear Survey child/Teen
 
-surveys = full_join(srdb, hfs, by = c("record_id", "redcap_event_name")) %>% unique()
+surveys = full_join(srdb, hfs, by = c("record_id")) %>% unique()
 surveys = full_join(surveys, mesc) %>% unique()
-
-analysis = left_join(analysis,surveys, by = c("record_id", "redcap_event_name")) %>% unique()
+surveys = surveys %>% filter(!is.na(mesc_total) | !is.na(SRDB_score) | !is.na(hfs_total))
+analysis = left_join(analysis,surveys, by = c("record_id")) %>% unique()
 
 analysis$hoursc = vapply(strsplit(as.character(analysis$totalsleep_avg),":"), `[`, 1, FUN.VALUE=character(1))
 analysis$minsc = vapply(strsplit(as.character(analysis$totalsleep_avg),":"), `[`, 2, FUN.VALUE=character(1))
@@ -231,13 +226,16 @@ analysis$sleeptotal_avg = as.numeric(analysis$hoursc)*60 + as.numeric(analysis$m
 
 
 ```{r functions, include = F}
-fit_mod = function(outcome,df){
+fit_mod = function(pred,df){
 
   # Fit random intercept model
-  f = as.formula(paste0(outcome,"~ gender_m_fo"))
+  #f = as.formula(paste0(outcome,"~ gender_m_fo"))
+  f = as.formula(paste0("sleeptotal_avg ~", pred))
+  
+  
   mod = lm(f,data = df)
   
-  f2 = as.formula(paste0(outcome,"~ gender_m_fo + factor(age_cat)"))
+  f2 = as.formula(paste0("sleeptotal_avg ~", pred, "+ factor(age_cat)"))
   mod2 = lm(f2,data = df)
 
   print("Base Model")
@@ -270,44 +268,47 @@ pvalue <- function(x, ...) {
 
 - ID 1032AH-2 removed
 
-
-# Data remarks
-For the age categories of 6-12/13-18 there was a pretty uneven split; I included the model results in case they were of interest, but especially with the categorical outcomes where we essentially stratify age and then gender group theres very few subjects in each category.
-
 # Methods
 
 Demographics stratified by gender group were produced. 
 
-For numeric outcomes t-tests (adjusting for age and not adjusting) were performed. 
-
-For categorical outcomes a chi square test of independence performed.
+Linear regressions with total sleep time as the outcome were performed, both unadjusted and adjusted for age category.
 
 # Demographics
 
-```{r demog table}
-t1 = table1(~ . |gender_m_fo, data = demog_df, overall=F, extra.col=list(`P-value`=pvalue) )
-t2 = table1(~ . |age_cat, data = demog_df )
-t3 = table1(~ . |age_cat*gender_m_fo, data = demog_df )
+## By gender group
 
-t1;t2;t3
+```{r create_t1, include=FALSE}
+t1 <- tableby(gender_m_fo ~ as.factor(season) + gender_m_fo + age + age_cat + as.factor(stateresidence) + rurality + race + as.factor(childsgradeinschool) + as.factor(school_format) + 
+diabetesduration + insulinmethod + as.factor(pump_brand) + current_cgm_use + as.factor(cgm_type) + 
+currenthcltech + as.factor(dka) + as.factor(severe_hypo_episode) + 
+parenteducation + as.factor(child_sleep_condition) + as.factor(child_nightime_awakening) + nightime_awakening_2 + parent_sleep_concerns + concern_sleep_disorder + intvent_benefit + as.factor(hba1c) + as.factor(mstage2) + 
+as.factor(fstage2) + as.factor(drstage) + as.factor(self_stage), data = demog_df)
 ```
 
+```{r t1, results='asis'}
+summary(t1)
+```
+
+## By age group
+
+```{r, include=FALSE}
+t2 <- tableby(age_cat ~ as.factor(season) + gender_m_fo + age + age_cat + as.factor(stateresidence) + rurality + race + as.factor(childsgradeinschool) + as.factor(school_format) + 
+diabetesduration + insulinmethod + as.factor(pump_brand) + current_cgm_use + as.factor(cgm_type) + 
+currenthcltech + as.factor(dka) + as.factor(severe_hypo_episode) + 
+parenteducation + as.factor(child_sleep_condition) + as.factor(child_nightime_awakening) + nightime_awakening_2 + parent_sleep_concerns + concern_sleep_disorder + intvent_benefit + hba1c + as.factor(mstage2) + 
+as.factor(fstage2) + as.factor(drstage) + as.factor(self_stage), data = demog_df)
+```
+
+```{r , results='asis'}
+summary(t2)
+```
 
 # Model Output
 
 ## Sleep Measures
 
-### Total sleep
-
-Gender was not significantly associated with avg total sleep (min) in either the base or age adjusted models (p = .86, 0.42)
-
-```{r tsm}
-fit_mod('sleeptotal_avg', analysis)
-```
-
 ### Sleep latency
-
-Gender was not significantly associated with sleep latency in either the base or age adjusted models (p = .74, .99)
 
 ```{r slm}
 fit_mod('onsetlatency_avg', analysis)
@@ -315,15 +316,11 @@ fit_mod('onsetlatency_avg', analysis)
 
 ### Sleep efficiency
 
-Gender was not significantly associated with sleep efficiency in either the base or age adjusted models (p = .65, .70)
-
 ```{r sem}
 fit_mod('sleepefficency_avg', analysis)
 ```
 
 ### waso
-
-Gender was not significantly associated with WASO avgs in either the base or age adjusted models (p = .32, .57)
 
 ```{r wasom}
 fit_mod('waso_avg', analysis)
@@ -334,15 +331,11 @@ fit_mod('waso_avg', analysis)
 
 ### Time in range (70-180)
 
-Gender was not significantly associated with TIR in either the base or age adjusted models (p = .83, .89)
-
 ```{r tirmm}
 fit_mod('sensor_70_180', analysis)
 ```
 
 ### Time hypoglycemic (<70 – combine <54 and 55-69)
-
-Gender was not significantly associated with TBR in either the base or age adjusted models (p = .06, .06)
 
 ```{r tbrmm}
 fit_mod('sensor_hypoglycemic', analysis)
@@ -350,34 +343,11 @@ fit_mod('sensor_hypoglycemic', analysis)
 
 ### Time hyperglycemic (>180 – combine 181-250 and >250)
 
-Gender was not significantly associated with TBR in either the base or age adjusted models (p = .10, .10)
-
 ```{r tarmm}
 fit_mod('sensor_hyperglycemic', analysis)
 ```
 
-### HCL use (for those on HCL, if RedCap value blank do not include) 
-
-Gender was not significantly associated with HCL use p = 1
-
-```{r hclmm}
-#table(analysis$gender_m_fo, analysis$currenthcltech)
-chisq.test(analysis$gender_m_fo, analysis$currenthcltech)$p.value
-```
-
-
-### Sensor use (for those on sensor, if RedCap value blank do not include) -- log reg?
-
-Gender was not significantly associated with sensor use p = 1
-
-```{r summ}
-#table(analysis$gender_m_fo, analysis$current_cgm_use)
-chisq.test(analysis$gender_m_fo, analysis$current_cgm_use)$p.value
-```
-
 ### Sensor Glucose Mean
-
-Gender was not significantly associated with mean sensor glucose (p= 0.6), or in the age adjusted model (p = 0.65)
 
 ```{r msgs}
 fit_mod("sensor_mean", analysis)
@@ -387,15 +357,11 @@ fit_mod("sensor_mean", analysis)
 
 ### Morningness/Eveningness Questionnaire 
 
-Gender is not associated with mesc scores (p = 0.61) in the unadjusted model, and the age adjusted (p = 0.85).
-
 ```{r mescn}
 fit_mod("mesc_total", analysis)
 ```
 
 ### SRDB Scale
-
-Gender is associated with SRDB scores (p = 0.03) in the unadjusted model, but not the age adjusted (p = 0.07). Male subjects on average had 0.07 (SE = 0.033)lower score than female/other group.
 
 ```{r srdbn}
 fit_mod("SRDB_score", analysis)
@@ -403,50 +369,121 @@ fit_mod("SRDB_score", analysis)
 
 ### Hypoglycemia Fear Survey child/Teen
 
-Gender was not significantly associated with HFS total scores in both unadjusted and age adjusted models (p = 0.6, 0.5)
-
 ```{r hfsm}
 fit_mod("hfs_total", analysis)
 ```
 
-### Child_PROMIS_Sleep Disturbance
+### Child Life Satisfaction
 
-Gender was not significantly associated with promis sleep disturbance t scores scores in both unadjusted and age adjusted models (p = 0.18, 0.28)
-
-```{r pdismsd}
-fit_mod("sleep_disturbance_t", analysis)
+```{r }
+fit_mod("c_life_satisfaction_tscore", analysis)
 ``` 
 
-### Child_PROMIS_Sleep Related Impairment 
+### Child Physical Activity
 
-Gender is associated with Sleep related impairment promis t scores  (p = 0.03) in the unadjusted model, but not the age adjusted (p = 0.10). Male subjects on average had 4.7 (SE = 2.1)lower score than the female/other group.
-
-```{r promsd}
-fit_mod("sleep_impairment_t", analysis)
+```{r }
+fit_mod("c_physical_tscore", analysis)
 ``` 
 
+### Parent Physical Activity
 
-### Child_PROMIS_Psychological stress
-
-Gender is associated with psychological stress promis t scores  (p = 0.01) in the unadjusted model, and the age adjusted (p = 0.02). Male subjects on average had 5.1 (SE = 1.8)lower scores than the female/other group in the unadjusted model and 4.8 (se = 1.9) in the age adjusted model.
-
-```{r pssmsd}
-fit_mod("psych_stress_t", analysis)
+```{r }
+fit_mod("p_physical_tscore", analysis)
 ``` 
 
-### Child_PROMIS_Anxiety
+### Child Positve Affect
 
-Gender is associated with anxiety promis t scores  (p = 0.03) in the unadjusted model, but not the age adjusted (p = 0.07). Male subjects on average had 5.4 (SE = 2.4)lower scores than the female/other group.
-
-```{r pand}
-fit_mod("anxiety_t", analysis)
+```{r }
+fit_mod("c_positive_affect_tscore", analysis)
 ``` 
 
+### Parent Positive Affect
 
-### Child_PROMIS_Depressive Symptoms 
-
-Gender is associated with depresion promis t scores  (p = 0.005) in the unadjusted model, and the age adjusted (p = 0.01). Male subjects on average had 6.8 (SE = 2.3)lower scores than the female/other group in the unadjusted model and 6.5(se 2.5) in the adjusted.
-
-```{r desd}
-fit_mod("depression_t", analysis)
+```{r }
+fit_mod("p_positive_affect_tscore", analysis)
 ``` 
+
+### Child Psychological Stress
+
+```{r }
+fit_mod("c_psychological_stress_tscore", analysis)
+``` 
+
+### Parent Psychological Stress
+
+```{r }
+fit_mod("p_psychological_stress_tscore", analysis)
+``` 
+
+### Child Anger
+
+```{r }
+fit_mod("c_anger_tscore", analysis)
+``` 
+
+### Parent Anger
+
+```{r }
+fit_mod("p_anger_tscore", analysis)
+``` 
+
+### Child Anxiety
+
+```{r }
+fit_mod("c_anxiety_tscore", analysis)
+``` 
+
+### Parent Anxiety
+
+```{r }
+fit_mod("p_anxiety_tscore", analysis)
+``` 
+
+### Child Depression
+
+```{r }
+fit_mod("c_depressive_tscore", analysis)
+``` 
+
+### Parent Depression
+
+```{r}
+fit_mod("p_depressive_tscore", analysis)
+``` 
+
+### Child Family Relationships
+
+```{r}
+fit_mod("c_family_tscore", analysis)
+``` 
+
+### Parent Family Relationships
+
+```{r}
+fit_mod("promis_parent_proxy_sf_v10_fam_relationships_8a_tscore", analysis)
+``` 
+
+### Child Peer Relationships
+
+```{r}
+fit_mod("c_peer_tscore", analysis)
+``` 
+
+### Parent Peer Relationships
+
+```{r}
+#fit_mod("p_peer_tscore", analysis)
+``` 
+
+### Child Sleep Disturbance
+
+```{r}
+fit_mod("c_sleep_disturbance_tscore", analysis)
+``` 
+
+### Child Sleep Impairment
+
+```{r}
+fit_mod("c_sleep_impairment_tscore", analysis)
+``` 
+
