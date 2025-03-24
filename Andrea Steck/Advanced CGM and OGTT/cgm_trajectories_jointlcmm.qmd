@@ -1,0 +1,86 @@
+---
+title: "CGM Trajectory Analysis"
+author: "Laura Pyle & Tim Vigers"
+date: "today"
+date-format: long
+format:
+  html:
+    toc: true
+    toc-depth: 5
+    toc-float: true
+    code-fold: true
+    self-contained: true
+    fig-cap-location: top
+    page-layout: full
+    theme:
+      light: flatly
+      dark: darkly
+editor: source
+---
+
+```{r setup}
+#| include: false
+library(tidyverse)
+library(haven)
+library(hms)
+library(knitr)
+library(gtsummary)
+home_dir <- switch(Sys.info()["sysname"],
+  "Darwin" = "/Users/timvigers/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT",
+  "Linux" = "/home/timvigers/OneDrive/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT"
+)
+home_dir <- '/Users/pylell/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT'
+github_dir <- switch(Sys.info()["sysname"],
+  "Darwin" = "/Users/timvigers/Documents/GitHub",
+  "Linux" = "/home/timvigers/Documents/GitHub"
+)
+knitr::opts_knit$set(root.dir = home_dir)
+```
+
+```{r}
+# Set a seed for trajectory analyses
+set.seed(1017)
+# Import CGM data from Fran
+cgm <- read_sas("./Data_Raw/rawcgmdata_clean.sas7bdat")
+# Convert from numeric time to datetime, round to nearest 5 minutes
+cgm$sensordisplaytime <-
+  as.POSIXct(cgm$sensordisplaytime, origin = "1960-01-01")
+cgm$sensordisplaytime <- round_date(cgm$sensordisplaytime, "5 minutes")
+# Separate date and time columns, format
+cgm$Date <- as_date(cgm$sensordisplaytime)
+cgm$Time <- as_hms(cgm$sensordisplaytime)
+cgm <- cgm %>%
+  arrange(ID, sensordisplaytime) %>%
+  select(ID, Date, Time, DOVISIT, SensorValue)
+# For now, if people have duplicated sensor values, take the mean
+cgm <- cgm %>%
+  group_by(ID, Date, Time, DOVISIT) %>%
+  summarise(SensorValue = mean(SensorValue, na.rm = T), .groups = "drop")
+# Import demographic, etc. data
+df <- read.csv("./Data_Clean/Longitudinal CGM data for 165 subjects.csv",
+  na.strings = c("", ".")
+)
+# Remove unhelpful rows
+df <- df %>% filter(!is.na(ID))
+# Determine group
+df$Group <- factor(is.na(df$Date.of.T1D.dx),
+  levels = c(T, F),
+  labels = c("Non-Progressor", "Progressor")
+)
+# Convert columns
+df$age.at.clinic <- as.numeric(df$age.at.clinic)
+df$DOVISIT <- mdy(df$DOVISIT)
+# Calculate final visit date (or T1D progression)
+df$final_visit <- df$DOVISIT - round(df$yearsfromT1D * 365.25)
+# Select only necessary columns
+df <- df %>%
+  select(
+    ID, DOVISIT, A1C, age.at.clinic, SEX, FDR.status, Race_Ethn2, HLAGRP, Group,
+    final_visit
+  )
+# Put together
+cgm <- left_join(cgm, df, by = join_by(ID, DOVISIT))
+# Sort
+cgm <- cgm %>% arrange(ID, Date, Time)
+
+```
