@@ -25,6 +25,8 @@ library(haven)
 library(hms)
 library(knitr)
 library(gtsummary)
+library(lcmm)
+library(stringr)
 home_dir <- switch(Sys.info()["sysname"],
   "Darwin" = "/Users/timvigers/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT",
   "Linux" = "/home/timvigers/OneDrive/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT"
@@ -70,17 +72,54 @@ df$Group <- factor(is.na(df$Date.of.T1D.dx),
 # Convert columns
 df$age.at.clinic <- as.numeric(df$age.at.clinic)
 df$DOVISIT <- mdy(df$DOVISIT)
+df$DOB <- mdy(df$DOB)
+df$Date.of.T1D.dx <- mdy(df$Date.of.T1D.dx)
 # Calculate final visit date (or T1D progression)
 df$final_visit <- df$DOVISIT - round(df$yearsfromT1D * 365.25)
 # Select only necessary columns
 df <- df %>%
   select(
     ID, DOVISIT, A1C, age.at.clinic, SEX, FDR.status, Race_Ethn2, HLAGRP, Group,
-    final_visit
+    final_visit, DOB, Date.of.T1D.dx
   )
 # Put together
 cgm <- left_join(cgm, df, by = join_by(ID, DOVISIT))
 # Sort
 cgm <- cgm %>% arrange(ID, Date, Time)
 
+# calculate time for time to event
+cgm$survtime <- ifelse(cgm$Group == "Progressor", cgm$Date.of.T1D.dx - cgm$DOB, cgm$final_visit - cgm$DOB)
+
+# lcmm seems to want numeric ID?
+cgm$numID <- str_remove_all(cgm$ID, "-")
+cgm$numID <- as.numeric(cgm$numID)
+```
+
+# Average all CGM days
+
+```{r}
+# take average trajectory
+mean_cgm <- cgm %>%
+  group_by(numID, Group, Time) %>%
+  summarise(Glucose = mean(SensorValue, na.rm = T), .groups = "drop")
+# merge back in covariates
+c <- cgm %>% select(numID, DOVISIT, A1C, age.at.clinic, SEX, FDR.status, Race_Ethn2, HLAGRP, Group, final_visit, DOB, Date.of.T1D.dx, survtime) %>% 
+  arrange(numID, age.at.clinic)
+c <-   c %>% group_by(numID) %>% filter(row_number() == 1)
+mean_cgm <- left_join(mean_cgm, c, by = "numID")
+# create a numeric variable for time of day
+# minutes after midnight
+mean_cgm$numtime <- as.numeric(mean_cgm$Time) / 60
+mean_cgm_tib <- as_tibble(mean_cgm)
+```
+
+```{r}
+# fit LMM for glucose
+lmm <- hlme(Glucose ~ numtime, random =~ numtime , 
+             subject = 'numID', data = mean_cgm)
+summary(lmm)
+
+lmm <- hlme(Glucose ~ numtime + I(numtime^2), random =~ numtime + I(numtime^2), 
+             subject = 'numID', data = mean_cgm)
+summary(lmm)
 ```
