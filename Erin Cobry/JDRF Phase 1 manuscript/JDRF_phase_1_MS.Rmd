@@ -159,7 +159,7 @@ sd_df <- all_scores
 # demog covariates
 demog_df = sd_df %>% select(record_id, redcap_event_name, season, gender_m_fo, age, age_cat, stateresidence, rurality, race, 
                             childsgradeinschool, school_format, diabetesduration, insulinmethod, pump_brand, current_cgm_use,
-                            cgm_type, currenthcltech, dka, recent_dka, severe_hypo_episode, recent_severe_hypo,
+                            cgm_type, currenthcltech, dka, recent_dka, severe_hypo_episode, recent_severe_hypo,  
                             parenteducation, child_sleep_condition, child_nightime_awakening, nightime_awakening_2,
                             parent_sleep_concerns, concern_sleep_disorder, intvent_benefit) %>% 
   filter(redcap_event_name == "enrollment_arm_1")
@@ -186,8 +186,8 @@ analysis = sd_df %>% select(record_id,redcap_event_name,
                             night_sensor_high, night_sensor_mean, night_sensor_sd, sensor_g251,
                             sensor_181_250, sensor_70_180, sensor_55_69, sensor_u54, sensor_mean, sensor_sd,
                             gmi, tdd, tdd_basal, tdd_bolus, dailybolus, dailymealbolus, sleepmode, exercisemode,
-                            avg_bedtime, getup_avg, timeinbed_avg, onsetlatency_avg, sleepefficency_avg, 
-                            waso_avg, awake_avg, c_life_satisfaction_tscore, c_physical_tscore, 
+                            avg_bedtime, getup_avg, timeinbed_avg, totalsleep_avg, onsetlatency_avg, sleepefficency_avg, 
+                            waso_avg, awake_avg, c_life_satisfaction_tscore, c_physical_tscore,  
                             c_positive_affect_tscore,  c_psychological_stress_tscore, 
                              c_anger_tscore,  c_anxiety_tscore,
                             c_depressive_tscore,  c_family_tscore,
@@ -220,15 +220,22 @@ surveys = full_join(surveys, mesc) %>% unique()
 surveys = surveys %>% filter(!is.na(mesc_total) | !is.na(SRDB_score) | !is.na(hfs_total))
 analysis = left_join(analysis,surveys, by = c("record_id")) %>% unique()
 
-analysis$hoursc = vapply(strsplit(as.character(analysis$sleeptotal_avg),":"), `[`, 1, FUN.VALUE=character(1))
-analysis$minsc = vapply(strsplit(as.character(analysis$sleeptotal_avg),":"), `[`, 2, FUN.VALUE=character(1))
-analysis$sleeptotal_avg = as.numeric(analysis$hoursc)*60 + as.numeric(analysis$minsc)
-analysis$sleeptotal_avg <- as.numeric(analysis$sleeptotal_avg) / 60
+# LP: I don't think this code is correct for calculating total sleep
+# should be using variable totalsleep_avg from wrist actigraphy
+#analysis$hoursc = vapply(strsplit(as.character(analysis$sleeptotal_avg),":"), `[`, 1, FUN.VALUE=character(1))
+#analysis$minsc = vapply(strsplit(as.character(analysis$sleeptotal_avg),":"), `[`, 2, FUN.VALUE=character(1))
+#analysis$sleeptotal_avg = as.numeric(analysis$hoursc)*60 + as.numeric(analysis$minsc)
+#analysis$sleeptotal_avg <- as.numeric(analysis$sleeptotal_avg) / 60
+
+analysis$hoursc = vapply(strsplit(as.character(analysis$totalsleep_avg),":"), `[`, 1, FUN.VALUE=character(1))
+analysis$minsc = vapply(strsplit(as.character(analysis$totalsleep_avg),":"), `[`, 2, FUN.VALUE=character(1))
+analysis$totalsleep_avg_analysis = as.numeric(analysis$hoursc)*60 + as.numeric(analysis$minsc)
+analysis$totalsleep_avg_analysis <- as.numeric(analysis$totalsleep_avg_analysis) / 60
 
 # create variable for sufficient sleep, using 7 hours for 13 and older, 8 hours for younger than 13
-analysis$sufficient_sleep <- ifelse(analysis$age < 13 & analysis$sleeptotal_avg >= 8, 1, 
-                                    ifelse(analysis$age < 13 & analysis$sleeptotal_avg < 8, 0,
-                                           ifelse(analysis$age >= 13 & analysis$sleeptotal_avg >= 7, 1, 0)))
+analysis$sufficient_sleep <- ifelse(analysis$age < 13 & analysis$totalsleep_avg_analysis >= 8, 1, 
+                                    ifelse(analysis$age < 13 & analysis$totalsleep_avg_analysis < 8, 0,
+                                           ifelse(analysis$age >= 13 & analysis$totalsleep_avg_analysis >= 7, 1, 0)))
 ```
 
 ```{r functions, include = F}
@@ -236,12 +243,12 @@ fit_mod = function(pred,df){
 
   # Fit random intercept model
   #f = as.formula(paste0(outcome,"~ gender_m_fo"))
-  f = as.formula(paste0("sleeptotal_avg ~", pred))
+  f = as.formula(paste0("totalsleep_avg_analysis ~", pred))
   
   
   mod = lm(f,data = df)
   
-  f2 = as.formula(paste0("sleeptotal_avg ~", pred, "+ factor(age_cat)"))
+  f2 = as.formula(paste0("totalsleep_avg_analysis ~", pred, "+ factor(age_cat)"))
   mod2 = lm(f2,data = df)
 
   print("Base Model")
@@ -317,7 +324,7 @@ pvalue <- function(x, ...) {
 
 Demographics stratified by gender group were produced. 
 
-Linear regressions with total sleep time as the outcome were performed, both unadjusted and adjusted for age category.
+Linear regressions with total sleep time as the outcome were performed, both unadjusted and adjusted for age category. Logistic regression was used to examine associations with sufficient sleep and gender.
 
 # Demographics
 
@@ -326,8 +333,8 @@ Linear regressions with total sleep time as the outcome were performed, both una
 ```{r create_t1, include=FALSE}
 t1 <- tableby(gender_m_fo ~ as.factor(season) + gender_m_fo + age + age_cat + as.factor(stateresidence) + rurality + race + as.factor(childsgradeinschool) + as.factor(school_format) + 
 diabetesduration + insulinmethod + as.factor(pump_brand) + current_cgm_use + as.factor(cgm_type) + 
-currenthcltech + as.factor(dka) + as.factor(severe_hypo_episode) + 
-parenteducation + as.factor(child_sleep_condition) + as.factor(child_nightime_awakening) + nightime_awakening_2 + parent_sleep_concerns + concern_sleep_disorder + intvent_benefit + as.factor(hba1c) + as.factor(mstage2) + 
+currenthcltech + as.factor(dka) + as.factor(severe_hypo_episode) +  
+parenteducation + as.factor(child_sleep_condition) + as.factor(child_nightime_awakening) + nightime_awakening_2 + parent_sleep_concerns + concern_sleep_disorder + intvent_benefit + hba1c + as.factor(mstage2) + 
 as.factor(fstage2) + as.factor(drstage) + as.factor(self_stage), data = demog_df)
 ```
 
@@ -340,7 +347,7 @@ summary(t1)
 ```{r, include=FALSE}
 t2 <- tableby(age_cat ~ as.factor(season) + gender_m_fo + age + age_cat + as.factor(stateresidence) + rurality + race + as.factor(childsgradeinschool) + as.factor(school_format) + 
 diabetesduration + insulinmethod + as.factor(pump_brand) + current_cgm_use + as.factor(cgm_type) + 
-currenthcltech + as.factor(dka) + as.factor(severe_hypo_episode) + 
+currenthcltech + as.factor(dka) + as.factor(severe_hypo_episode) +  
 parenteducation + as.factor(child_sleep_condition) + as.factor(child_nightime_awakening) + nightime_awakening_2 + parent_sleep_concerns + concern_sleep_disorder + intvent_benefit + hba1c + as.factor(mstage2) + 
 as.factor(fstage2) + as.factor(drstage) + as.factor(self_stage), data = demog_df)
 ```
@@ -531,7 +538,19 @@ fit_mod("c_sleep_disturbance_tscore", analysis)
 fit_mod("c_sleep_impairment_tscore", analysis)
 ``` 
 
-#######
+## Demographics
+
+### T1D Duration
+
+```{r}
+fit_mod("diabetesduration", analysis)
+``` 
+
+### Sex
+
+```{r}
+fit_mod("gender_m_fo", analysis)
+``` 
 
 # Model Output - Sufficient sleep
 
@@ -715,6 +734,20 @@ fit_mod_log("c_sleep_disturbance_tscore", analysis)
 fit_mod_log("c_sleep_impairment_tscore", analysis)
 ``` 
 
+## Demographics
+
+### T1D Duration
+
+```{r}
+fit_mod_log("diabetesduration", analysis)
+``` 
+
+### Sex
+
+```{r}
+fit_mod_log("gender_m_fo", analysis)
+``` 
+
 # Model Output - Gender
 
 ## Sleep Measures
@@ -896,3 +929,14 @@ fit_mod_gender("c_sleep_disturbance_tscore", analysis)
 ```{r}
 fit_mod_gender("c_sleep_impairment_tscore", analysis)
 ``` 
+
+## Demographics
+
+### T1D Duration
+
+```{r}
+fit_mod_gender("diabetesduration", analysis)
+``` 
+
+
+ 
