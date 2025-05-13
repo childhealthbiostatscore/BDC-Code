@@ -43,7 +43,7 @@ knitr::opts_knit$set(root.dir = home_dir)
 # Set a seed for trajectory analyses
 set.seed(1017)
 # Import CGM data from Fran
-cgm <- read_sas("./Data_Raw/rawcgmdata_clean.sas7bdat")
+cgm <- read_sas('/Users/pylell/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT/Data_Raw/Final data for CGM analyses 09012023/rawcgmdata_clean.sas7bdat')
 # Convert from numeric time to datetime, round to nearest 5 minutes
 cgm$sensordisplaytime <-
   as.POSIXct(cgm$sensordisplaytime, origin = "1960-01-01")
@@ -53,11 +53,11 @@ cgm$Date <- as_date(cgm$sensordisplaytime)
 cgm$Time <- as_hms(cgm$sensordisplaytime)
 cgm <- cgm %>%
   arrange(ID, sensordisplaytime) %>%
-  select(ID, Date, Time, DOVISIT, SensorValue)
+  select(ID, Date, Time, DOVISIT, sensorvalue)
 # For now, if people have duplicated sensor values, take the mean
 cgm <- cgm %>%
   group_by(ID, Date, Time, DOVISIT) %>%
-  summarise(SensorValue = mean(SensorValue, na.rm = T), .groups = "drop")
+  summarise(sensorvalue = mean(sensorvalue, na.rm = T), .groups = "drop")
 # Import demographic, etc. data
 df <- read.csv("./Data_Clean/Longitudinal CGM data for 165 subjects.csv",
   na.strings = c("", ".")
@@ -101,7 +101,7 @@ cgm$numID <- as.numeric(cgm$numID)
 # take average trajectory
 mean_cgm <- cgm %>%
   group_by(numID, Group, Time) %>%
-  summarise(Glucose = mean(SensorValue, na.rm = T), .groups = "drop")
+  summarise(Glucose = mean(sensorvalue, na.rm = T), .groups = "drop")
 # merge back in covariates
 c <- cgm %>% select(numID, DOVISIT, A1C, age.at.clinic, SEX, FDR.status, Race_Ethn2, HLAGRP, Group, final_visit, DOB, Date.of.T1D.dx, survtime) %>% 
   arrange(numID, age.at.clinic)
@@ -119,7 +119,17 @@ lmm <- hlme(Glucose ~ numtime, random =~ numtime ,
              subject = 'numID', data = mean_cgm)
 summary(lmm)
 
-lmm <- hlme(Glucose ~ numtime + I(numtime^2), random =~ numtime + I(numtime^2), 
-             subject = 'numID', data = mean_cgm)
-summary(lmm)
+#lmm_quad <- hlme(Glucose ~ numtime + I(numtime^2), random =~ numtime, 
+#             subject = 'numID', data = mean_cgm)
+#summary(lmm_quad)
+
+#lmm_quad <- hlme(Glucose ~ numtime + I(numtime^2), random =~ numtime + I(numtime^2), 
+#             subject = 'numID', data = mean_cgm)
+#summary(lmm_quad)
+
+# joint model
+m1 <- Jointlcmm(fixed= Glucose ~ numtime,mixture = ~numtime, random=~numtime,subject='numID',
+survival = Surv(survtime,Group.x)~ mixture(Glucose) ,hazard="3-quant-splines",
+hazardtype="PH",ng=2,data=as.data.frame(mean_cgm), B = rep(1, 17))
+summary(m1)
 ```
