@@ -28,12 +28,12 @@ library(gtsummary)
 library(lcmm)
 library(stringr)
 home_dir <- switch(Sys.info()["sysname"],
-  "Darwin" = "/Users/timvigers/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT",
+  "Darwin" = "/Users/tim/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT",
   "Linux" = "/home/timvigers/OneDrive/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT"
 )
-home_dir <- '/Users/pylell/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT'
+# home_dir <- '/Users/pylell/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT'
 github_dir <- switch(Sys.info()["sysname"],
-  "Darwin" = "/Users/timvigers/Documents/GitHub",
+  "Darwin" = "/Users/tim/Documents/GitHub",
   "Linux" = "/home/timvigers/Documents/GitHub"
 )
 knitr::opts_knit$set(root.dir = home_dir)
@@ -43,7 +43,7 @@ knitr::opts_knit$set(root.dir = home_dir)
 # Set a seed for trajectory analyses
 set.seed(1017)
 # Import CGM data from Fran
-cgm <- read_sas('/Users/pylell/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT/Data_Raw/Final data for CGM analyses 09012023/rawcgmdata_clean.sas7bdat')
+cgm <- read_sas("./Data_Raw/Final data for CGM analyses 09012023/rawcgmdata_clean.sas7bdat")
 # Convert from numeric time to datetime, round to nearest 5 minutes
 cgm$sensordisplaytime <-
   as.POSIXct(cgm$sensordisplaytime, origin = "1960-01-01")
@@ -103,9 +103,12 @@ mean_cgm <- cgm %>%
   group_by(numID, Group, Time) %>%
   summarise(Glucose = mean(sensorvalue, na.rm = T), .groups = "drop")
 # merge back in covariates
-c <- cgm %>% select(numID, DOVISIT, A1C, age.at.clinic, SEX, FDR.status, Race_Ethn2, HLAGRP,  final_visit, DOB, Date.of.T1D.dx, survtime) %>% 
+c <- cgm %>%
+  select(numID, DOVISIT, A1C, age.at.clinic, SEX, FDR.status, Race_Ethn2, HLAGRP, final_visit, DOB, Date.of.T1D.dx, survtime) %>%
   arrange(numID, age.at.clinic)
-c <-   c %>% group_by(numID) %>% filter(row_number() == 1)
+c <- c %>%
+  group_by(numID) %>%
+  filter(row_number() == 1)
 mean_cgm <- left_join(mean_cgm, c, by = "numID")
 # create a numeric variable for time of day
 # minutes after midnight
@@ -115,30 +118,34 @@ mean_cgm_tib <- as_tibble(mean_cgm)
 
 ```{r}
 # fit LMM for glucose
-lmm <- hlme(Glucose ~ numtime, random =~ numtime , 
-             subject = 'numID', data = mean_cgm)
+lmm <- hlme(Glucose ~ numtime,
+  random = ~numtime,
+  subject = "numID", data = mean_cgm
+)
 summary(lmm)
 
-#lmm_quad <- hlme(Glucose ~ numtime + I(numtime^2), random =~ numtime, 
+# lmm_quad <- hlme(Glucose ~ numtime + I(numtime^2), random =~ numtime,
 #             subject = 'numID', data = mean_cgm)
-#summary(lmm_quad)
+# summary(lmm_quad)
 
-#lmm_quad <- hlme(Glucose ~ numtime + I(numtime^2), random =~ numtime + I(numtime^2), 
+# lmm_quad <- hlme(Glucose ~ numtime + I(numtime^2), random =~ numtime + I(numtime^2),
 #             subject = 'numID', data = mean_cgm)
-#summary(lmm_quad)
+# summary(lmm_quad)
 
 # joint model, 1 group
-m1 <- Jointlcmm(fixed= Glucose ~ numtime,random=~numtime,subject='numID',
-survival = Surv(survtime,Group)~ 1, hazard="Weibull",
-hazardtype="PH",ng=1,data=as.data.frame(mean_cgm))
+m1 <- Jointlcmm(
+  fixed = Glucose ~ numtime, random = ~numtime, subject = "numID",
+  survival = Surv(survtime, Group) ~ 1, hazard = "Weibull",
+  hazardtype = "PH", ng = 1, data = as.data.frame(mean_cgm)
+)
 summary(m1)
 m1$scoretest
 
 # joint model - 2 groups, doesn't work
-m1 <- Jointlcmm(fixed= Glucose ~ numtime,mixture = ~numtime, random=~numtime,subject='numID',
-survival = Surv(survtime,Group)~ 1, hazard="Weibull",
-hazardtype="PH",ng=2,data=as.data.frame(mean_cgm), B = rep(1, 12))
+m1 <- Jointlcmm(
+  fixed = Glucose ~ numtime, mixture = ~numtime, random = ~numtime, subject = "numID",
+  survival = Surv(survtime, Group) ~ 1, hazard = "Weibull",
+  hazardtype = "PH", ng = 2, data = as.data.frame(mean_cgm), B = rep(1, 12)
+)
 summary(m1)
-
-
 ```
