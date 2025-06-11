@@ -22,6 +22,9 @@ library(gtsummary)
 library(gt)
 library(patchwork)
 library(hms)
+library(pracma)
+library(refund)
+library(boot)
 home_dir <- switch(Sys.info()["sysname"],
   "Darwin" = "/Users/tim/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT",
   "Windows" = "C:/Users/Tim/OneDrive - The University of Colorado Denver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT",
@@ -68,9 +71,10 @@ cgm$TimePeriod <- factor(cgm$TimePeriod,
 )
 ```
 
-# Data cleaning
+# Data cleaning and methods
 
 - "True controls" were defined as the CGM tracings at least one year prior to the last clinic visit for a non-progressor. In other words, we are removing CGM tracings from people who are currently marked as non-progressors who we aren't 100% sure about.
+- Differences in AUC were compared using the bootstrap with 500 replicates.
 
 ```{r}
 cgm %>%
@@ -90,38 +94,6 @@ cgm %>%
   add_p()
 ```
 
-```{r}
-#| eval: false
-#| include: false
-# Example code
-MS <- subset(DTI, case == 1)
-index.na <- which(is.na(MS$cca))
-Y <- MS$cca
-Y[index.na] <- fpca.sc(Y)$Yhat[index.na]
-id <- MS$ID
-visit.index <- MS$visit
-visit.time <- MS$visit.time / max(MS$visit.time)
-fit.tfpca <- fpca.lfda(
-  Y = Y, subject.index = id, visit.index = visit.index,
-  obsT = visit.time, LongiModel.method = "lme"
-)
-# plot_shiny(fit.tfpca)
-# Format for longitudinal FDA
-Y <- cgm_wide %>%
-  select(`00:00:00`:`23:55:00`) %>%
-  as.matrix()
-# Interpolate missing using fpca.sc
-index.na <- which(is.na(Y))
-Y[index.na] <- fpca.sc(Y)$Yhat[index.na]
-id <- cgm_wide$ID
-visit.index <- cgm_wide$CGMDay
-visit.time <- 1 - cgm_wide$Days / min(cgm_wide$Days)
-fit.tfpca <- fpca.lfda(
-  Y = Y, subject.index = id, visit.index = visit.index,
-  obsT = visit.time, LongiModel.method = "lme"
-)
-```
-
 # Simple GAM smooths
 
 ## All day
@@ -137,7 +109,7 @@ cgm %>%
     date_minor_breaks = "1 hour", date_breaks = "2 hours",
     date_labels = "%H:%M"
   ) +
-  scale_color_manual(values = c("#0c457d", "#e8702a"))
+  scale_color_manual(values = c("#66C2A5", "#FC8D62"))
 ```
 
 ## By time of day
@@ -158,7 +130,7 @@ p1 <- cgm %>%
     breaks = seq(0, 21600, by = 3600),
     labels = c("23:00", "00:00", "01:00", "02:00", "03:00", "04:00", "05:00")
   ) +
-  scale_color_manual(values = c("#0c457d", "#e8702a"))
+  scale_color_manual(values = c("#66C2A5", "#FC8D62"))
 p2 <- cgm %>%
   filter(TimePeriod == "5am - 11am") %>%
   ggplot(aes(x = as.POSIXct(Time), y = SensorValue, colour = Group)) +
@@ -169,7 +141,7 @@ p2 <- cgm %>%
   xlab("Time of Day") +
   ggtitle("5am - 11am") +
   scale_x_datetime(date_breaks = "1 hour", date_labels = "%H:%M") +
-  scale_color_manual(values = c("#0c457d", "#e8702a"))
+  scale_color_manual(values = c("#66C2A5", "#FC8D62"))
 p3 <- cgm %>%
   filter(TimePeriod == "11am - 5pm") %>%
   ggplot(aes(x = as.POSIXct(Time), y = SensorValue, colour = Group)) +
@@ -180,7 +152,7 @@ p3 <- cgm %>%
   xlab("Time of Day") +
   ggtitle("11am - 5pm") +
   scale_x_datetime(date_breaks = "1 hour", date_labels = "%H:%M") +
-  scale_color_manual(values = c("#0c457d", "#e8702a"))
+  scale_color_manual(values = c("#66C2A5", "#FC8D62"))
 p4 <- cgm %>%
   filter(TimePeriod == "5pm - 11pm") %>%
   ggplot(aes(x = as.POSIXct(Time), y = SensorValue, colour = Group)) +
@@ -191,62 +163,39 @@ p4 <- cgm %>%
   xlab("Time of Day") +
   ggtitle("5pm - 11pm") +
   scale_x_datetime(date_breaks = "1 hour", date_labels = "%H:%M") +
-  scale_color_manual(values = c("#0c457d", "#e8702a"))
+  scale_color_manual(values = c("#66C2A5", "#FC8D62"))
 (p1 + p2) / (p3 + p4) + plot_layout(guides = "collect")
 ```
 
-# ADA abstract analysis
+# Functional PCA
 
-## Simple GAM smooth
+## All CGM tracings
 
-```{r}
-#| warning: false
-cgm %>%
-  ggplot(aes(x = Time, y = SensorValue, colour = Group)) +
-  geom_smooth() +
-  theme_classic() +
-  ylab("Glucose") +
-  ylim(c(90, 180)) +
-  scale_x_discrete(breaks = c("00:00:00")) +
-  facet_wrap(~MonthsFromVisit)
-cgm %>%
-  filter(Days >= -270) %>%
-  ggplot(aes(x = Time, y = SensorValue, colour = Group)) +
-  geom_smooth() +
-  theme_classic() +
-  ylab("Glucose") +
-  ylim(c(90, 180)) +
-  facet_wrap(~MonthsFromVisit)
-```
-
-## Functional PCA
-
-- For each participant, we calculated the average sensor value at each time of day during the various time periods.
-- I have been trying to get the mixed model version to work, but so far no luck.
+- For each participant, we calculated the average sensor value at each time of day during the various periods of the day.
 
 ```{r}
 #| include: false
-ps <- lapply(split.data.frame(cgm, cgm$MonthsFromVisit), function(d) {
+ps <- lapply(split.data.frame(cgm, cgm$TimePeriod), function(d) {
   # Time period
-  tp <- as.character(d$MonthsFromVisit[1])
+  tp <- as.character(d$TimePeriod[1])
+  print(tp)
   # Format data for analysis (why are these FDA packages so irritating)
   d <- d %>%
-    group_by(ID, Group, Time) %>%
+    group_by(ID, Group, nTime) %>%
     summarise(SensorValue = mean(SensorValue, na.rm = T), .groups = "drop") %>%
-    arrange(Time) %>%
+    arrange(nTime) %>%
     pivot_wider(
-      id_cols = c(ID, Group), names_from = Time,
+      id_cols = c(ID, Group), names_from = nTime,
       values_from = SensorValue
     )
   glucose <- d %>%
-    select(`00:00:00`:`23:55:00`) %>%
+    select(-ID, -Group) %>%
     as.matrix()
-  index.na <- which(is.na(glucose))
-  glucose[index.na] <- fpca.sc(glucose)$Yhat[index.na]
   d <- d %>%
     select(ID, Group) %>%
     as.data.frame()
   d$Glucose <- glucose
+  d <- d[complete.cases(d), ]
   # FoSR
   fit_fosr <- bayes_fosr(Glucose ~ Group, data = d)
   # Plot
@@ -254,31 +203,52 @@ ps <- lapply(split.data.frame(cgm, cgm$MonthsFromVisit), function(d) {
   colnames(pred) <- colnames(glucose)
   pred$Group <- d$Group
   pred <- pred %>%
-    pivot_longer(`00:00:00`:`23:55:00`,
+    distinct() %>%
+    pivot_longer(-Group,
       names_to = "Time",
       values_to = "Glucose"
-    ) %>%
-    distinct()
+    )
+  pred$Time <- as.numeric(pred$Time)
   p <- ggplot(pred, aes(x = Time, y = Glucose, group = Group, colour = Group)) +
     geom_line() +
     ggtitle(tp) +
     theme_classic() +
     ylim(c(90, 190)) +
-    scale_x_discrete(
-      breaks = c("00:00:00", "06:00:00", "12:00:00", "18:00:00", "23:55:00")
-    ) +
+    ylab("Sensor Glucose (mg/dL)") +
+    xlab("Time of Day") +
     scale_color_manual(values = c("#66C2A5", "#FC8D62")) +
     theme(
       plot.title = element_text(hjust = 0.5),
       axis.text.x = element_text(angle = 45, vjust = 0.5)
     )
+  if (tp == "11pm - 5am") {
+    p <- p + scale_x_continuous(
+      breaks = seq(0, 21600, by = 3600),
+      labels = c("23:00", "00:00", "01:00", "02:00", "03:00", "04:00", "05:00")
+    )
+  } else if (tp == "5am - 11am") {
+    p <- p + scale_x_continuous(
+      breaks = seq(21600, 21600 + 21600, by = 3600),
+      labels = c("05:00", "06:00", "07:00", "08:00", "09:00", "10:00", "11:00")
+    )
+  } else if (tp == "11am - 5pm") {
+    p <- p + scale_x_continuous(
+      breaks = seq(43200, 43200 + 21600, by = 3600),
+      labels = c("11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00")
+    )
+  } else if (tp == "5pm - 11pm") {
+    p <- p + scale_x_continuous(
+      breaks = seq(64800, 64800 + 21600, by = 3600),
+      labels = c("17:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00")
+    )
+  }
   # AUC
   auc_prog <- trapz(
-    as.numeric(as_hms(pred$Time[pred$Group == "Progressor"])) / 60,
+    pred$Time[pred$Group == "Progressor"] / 60,
     pred$Glucose[pred$Group == "Progressor"]
   )
   auc_non_prog <- trapz(
-    as.numeric(as_hms(pred$Time[pred$Group == "Non-Progressor"])) / 60,
+    pred$Time[pred$Group == "Non-Progressor"] / 60,
     pred$Glucose[pred$Group == "Non-Progressor"]
   )
   auc_diff <- auc_prog - auc_non_prog
@@ -289,36 +259,33 @@ ps <- lapply(split.data.frame(cgm, cgm$MonthsFromVisit), function(d) {
     colnames(pred) <- colnames(glucose)
     pred$Group <- d$Group
     pred <- pred %>%
-      pivot_longer(`00:00:00`:`23:55:00`,
+      distinct() %>%
+      pivot_longer(-Group,
         names_to = "Time",
         values_to = "Glucose"
-      ) %>%
-      distinct()
+      )
     auc_prog <- trapz(
-      as.numeric(as_hms(pred$Time[pred$Group == "Progressor"])) / 60,
+      as.numeric(pred$Time[pred$Group == "Progressor"]) / 60,
       pred$Glucose[pred$Group == "Progressor"]
     )
     auc_non_prog <- trapz(
-      as.numeric(as_hms(pred$Time[pred$Group == "Non-Progressor"])) / 60,
+      as.numeric(pred$Time[pred$Group == "Non-Progressor"]) / 60,
       pred$Glucose[pred$Group == "Non-Progressor"]
     )
     auc_diff <- auc_prog - auc_non_prog
     return(auc_diff)
   }
   # Toot it and boot it
-  reps <- boot(
-    data = d, statistic = auc_diff_func, R = 3000, strata = d$Group,
-    parallel = "multicore", ncpus = 4
-  )
+  reps <- boot(data = d, statistic = auc_diff_func, R = 500, strata = d$Group)
   ci <- boot.ci(reps, type = "bca")
   # Add to plot
   p <- p +
     annotate("text",
-      x = "08:00:00", y = 190,
+      x = min(pred$Time) + (diff(range(pred$Time)) / 2), y = 190,
       label = paste0("AUC Difference: ", round(auc_diff))
     ) +
     annotate("text",
-      x = "08:00:00", y = 180,
+      x = min(pred$Time) + (diff(range(pred$Time)) / 2), y = 180,
       label = paste0("(95% CI: ", round(ci$bca[4]), ", ", round(ci$bca[5]), ")")
     ) +
     geom_hline(yintercept = 140, linetype = "dashed")
@@ -334,24 +301,7 @@ invisible(lapply(ps, function(p) {
 
 ```{r}
 #| message: false
-ptl <- ps[[11]] +
-  theme(
-    axis.text.x = element_blank(), axis.title.x = element_blank(),
-    axis.ticks.x = element_blank()
-  )
-ptr <- ps[[12]] +
-  theme(
-    axis.text.x = element_blank(), axis.title.x = element_blank(),
-    axis.ticks.x = element_blank(), axis.text.y = element_blank(),
-    axis.title.y = element_blank(), axis.ticks.y = element_blank()
-  )
-pbl <- ps[[13]]
-pbr <- ps[[14]] +
-  theme(
-    axis.text.y = element_blank(),
-    axis.title.y = element_blank(), axis.ticks.y = element_blank()
-  )
-p_collected <- (ptl + ptr) / (pbl + pbr) +
+p_collected <- (ps[[1]] + ps[[2]]) / (ps[[3]] + ps[[4]]) +
   plot_layout(guides = "collect", axis_titles = "collect") +
   plot_annotation(
     title = "Function on Scalar Regression of CGM Data",
@@ -364,16 +314,670 @@ ggsave(
 )
 ```
 
-# By time of day
+## 6-9 Months Prior to Progression
+
+- CGM data was limited to the CGM tracings at least 12 months away from last visit for non-progressors, and CGM tracings 6-9 months (180 to 270 days) prior to development of T1D for progressors.
+- For each participant, we calculated the average sensor value at each time of day during the various periods of the day.
 
 ```{r}
-cgm$MonthsFromVisit <- cut(cgm$Days,
-  breaks = c(-Inf, seq(-1080, 0, by = 90), Inf), ,
-  labels = c(
-    "[-Inf,-36)", "[-36,-33)", "[-33,-30)", "[-30,-27)", "[-27,-24)",
-    "[-24,-21)", "[-21,-18)", "[-18,-15)", "[-15,-12)", "[-12,-9)", "[-9,-6)",
-    "[-6,-3)", "[-3,0)", "[0, Inf)"
-  ),
-  dig.lab = 4, right = F
+cgm_filtered <- cgm %>%
+  filter(Group == "Non-Progressor" |
+    (Group == "Progressor" & Days >= -270 & Days <= -180))
+cgm_filtered %>%
+  group_by(ID) %>%
+  mutate(
+    nClinicVisits = length(unique(DOVISIT)),
+    nCGMValues = length(SensorValue)
+  ) %>%
+  slice_min(row_number()) %>%
+  ungroup() %>%
+  select(
+    nClinicVisits, nCGMValues, `FDR status`, HLAGRP, SEX, Race_Ethn2,
+    Group
+  ) %>%
+  tbl_summary(Group) %>%
+  add_overall() %>%
+  add_p()
+```
+
+```{r}
+#| include: false
+ps <-
+  lapply(split.data.frame(cgm_filtered, cgm_filtered$TimePeriod), function(d) {
+    # Time period
+    tp <- as.character(d$TimePeriod[1])
+    # Format data for analysis (why are these FDA packages so irritating)
+    d <- d %>%
+      group_by(ID, Group, nTime) %>%
+      summarise(SensorValue = mean(SensorValue, na.rm = T), .groups = "drop") %>%
+      arrange(nTime) %>%
+      pivot_wider(
+        id_cols = c(ID, Group), names_from = nTime,
+        values_from = SensorValue
+      )
+    glucose <- d %>%
+      select(-ID, -Group) %>%
+      as.matrix()
+    d <- d %>%
+      select(ID, Group) %>%
+      as.data.frame()
+    d$Glucose <- glucose
+    d <- d[complete.cases(d), ]
+    # FoSR
+    fit_fosr <- bayes_fosr(Glucose ~ Group, data = d)
+    # Plot
+    pred <- data.frame(predict(fit_fosr))
+    colnames(pred) <- colnames(glucose)
+    pred$Group <- d$Group
+    pred <- pred %>%
+      distinct() %>%
+      pivot_longer(-Group,
+        names_to = "Time",
+        values_to = "Glucose"
+      )
+    pred$Time <- as.numeric(pred$Time)
+    p <- ggplot(pred, aes(x = Time, y = Glucose, group = Group, colour = Group)) +
+      geom_line() +
+      ggtitle(tp) +
+      theme_classic() +
+      ylim(c(90, 190)) +
+      ylab("Sensor Glucose (mg/dL)") +
+      xlab("Time of Day") +
+      scale_color_manual(values = c("#66C2A5", "#FC8D62")) +
+      theme(
+        plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(angle = 45, vjust = 0.5)
+      )
+    if (tp == "11pm - 5am") {
+      p <- p + scale_x_continuous(
+        breaks = seq(0, 21600, by = 3600),
+        labels = c("23:00", "00:00", "01:00", "02:00", "03:00", "04:00", "05:00")
+      )
+    } else if (tp == "5am - 11am") {
+      p <- p + scale_x_continuous(
+        breaks = seq(21600, 21600 + 21600, by = 3600),
+        labels = c("05:00", "06:00", "07:00", "08:00", "09:00", "10:00", "11:00")
+      )
+    } else if (tp == "11am - 5pm") {
+      p <- p + scale_x_continuous(
+        breaks = seq(43200, 43200 + 21600, by = 3600),
+        labels = c("11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00")
+      )
+    } else if (tp == "5pm - 11pm") {
+      p <- p + scale_x_continuous(
+        breaks = seq(64800, 64800 + 21600, by = 3600),
+        labels = c("17:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00")
+      )
+    }
+    # AUC
+    auc_prog <- trapz(
+      pred$Time[pred$Group == "Progressor"] / 60,
+      pred$Glucose[pred$Group == "Progressor"]
+    )
+    auc_non_prog <- trapz(
+      pred$Time[pred$Group == "Non-Progressor"] / 60,
+      pred$Glucose[pred$Group == "Non-Progressor"]
+    )
+    auc_diff <- auc_prog - auc_non_prog
+    # Create a function for bootstrapping
+    auc_diff_func <- function(d, indices) {
+      fit_fosr <- bayes_fosr(Glucose ~ Group, d[indices, ])
+      pred <- data.frame(predict(fit_fosr))
+      colnames(pred) <- colnames(glucose)
+      pred$Group <- d$Group
+      pred <- pred %>%
+        distinct() %>%
+        pivot_longer(-Group,
+          names_to = "Time",
+          values_to = "Glucose"
+        )
+      auc_prog <- trapz(
+        as.numeric(pred$Time[pred$Group == "Progressor"]) / 60,
+        pred$Glucose[pred$Group == "Progressor"]
+      )
+      auc_non_prog <- trapz(
+        as.numeric(pred$Time[pred$Group == "Non-Progressor"]) / 60,
+        pred$Glucose[pred$Group == "Non-Progressor"]
+      )
+      auc_diff <- auc_prog - auc_non_prog
+      return(auc_diff)
+    }
+    # Toot it and boot it
+    reps <- boot(data = d, statistic = auc_diff_func, R = 500, strata = d$Group)
+    ci <- boot.ci(reps, type = "bca")
+    # Add to plot
+    p <- p +
+      annotate("text",
+        x = min(pred$Time) + (diff(range(pred$Time)) / 2), y = 190,
+        label = paste0("AUC Difference: ", round(auc_diff))
+      ) +
+      annotate("text",
+        x = min(pred$Time) + (diff(range(pred$Time)) / 2), y = 180,
+        label = paste0("(95% CI: ", round(ci$bca[4]), ", ", round(ci$bca[5]), ")")
+      ) +
+      geom_hline(yintercept = 140, linetype = "dashed")
+    return(p)
+  })
+```
+
+```{r}
+invisible(lapply(ps, function(p) {
+  print(p)
+}))
+```
+
+```{r}
+#| message: false
+p_collected <- (ps[[1]] + ps[[2]]) / (ps[[3]] + ps[[4]]) +
+  plot_layout(guides = "collect", axis_titles = "collect") +
+  plot_annotation(
+    title = "Function on Scalar Regression of CGM Data",
+    theme = theme(plot.title = element_text(hjust = 0.5))
+  )
+p_collected
+ggsave(
+  filename = "./Dissemination/ada_fig1.png", plot = p_collected, device = "png",
+  units = "in", width = 9, height = 6
+)
+```
+
+## 3-6 Months Prior to Progression
+
+- CGM data was limited to the CGM tracings at least 12 months away from last visit for non-progressors, and CGM tracings 3-6 months (90 to 180 days) prior to development of T1D for progressors.
+- For each participant, we calculated the average sensor value at each time of day during the various periods of the day.
+
+```{r}
+cgm_filtered <- cgm %>%
+  filter(Group == "Non-Progressor" |
+    (Group == "Progressor" & Days >= -180 & Days <= -90))
+cgm_filtered %>%
+  group_by(ID) %>%
+  mutate(
+    nClinicVisits = length(unique(DOVISIT)),
+    nCGMValues = length(SensorValue)
+  ) %>%
+  slice_min(row_number()) %>%
+  ungroup() %>%
+  select(
+    nClinicVisits, nCGMValues, `FDR status`, HLAGRP, SEX, Race_Ethn2,
+    Group
+  ) %>%
+  tbl_summary(Group) %>%
+  add_overall() %>%
+  add_p()
+```
+
+```{r}
+#| include: false
+ps <-
+  lapply(split.data.frame(cgm_filtered, cgm_filtered$TimePeriod), function(d) {
+    # Time period
+    tp <- as.character(d$TimePeriod[1])
+    # Format data for analysis (why are these FDA packages so irritating)
+    d <- d %>%
+      group_by(ID, Group, nTime) %>%
+      summarise(SensorValue = mean(SensorValue, na.rm = T), .groups = "drop") %>%
+      arrange(nTime) %>%
+      pivot_wider(
+        id_cols = c(ID, Group), names_from = nTime,
+        values_from = SensorValue
+      )
+    glucose <- d %>%
+      select(-ID, -Group) %>%
+      as.matrix()
+    d <- d %>%
+      select(ID, Group) %>%
+      as.data.frame()
+    d$Glucose <- glucose
+    d <- d[complete.cases(d), ]
+    # FoSR
+    fit_fosr <- bayes_fosr(Glucose ~ Group, data = d)
+    # Plot
+    pred <- data.frame(predict(fit_fosr))
+    colnames(pred) <- colnames(glucose)
+    pred$Group <- d$Group
+    pred <- pred %>%
+      distinct() %>%
+      pivot_longer(-Group,
+        names_to = "Time",
+        values_to = "Glucose"
+      )
+    pred$Time <- as.numeric(pred$Time)
+    p <- ggplot(pred, aes(x = Time, y = Glucose, group = Group, colour = Group)) +
+      geom_line() +
+      ggtitle(tp) +
+      theme_classic() +
+      ylim(c(90, 190)) +
+      ylab("Sensor Glucose (mg/dL)") +
+      xlab("Time of Day") +
+      scale_color_manual(values = c("#66C2A5", "#FC8D62")) +
+      theme(
+        plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(angle = 45, vjust = 0.5)
+      )
+    if (tp == "11pm - 5am") {
+      p <- p + scale_x_continuous(
+        breaks = seq(0, 21600, by = 3600),
+        labels = c("23:00", "00:00", "01:00", "02:00", "03:00", "04:00", "05:00")
+      )
+    } else if (tp == "5am - 11am") {
+      p <- p + scale_x_continuous(
+        breaks = seq(21600, 21600 + 21600, by = 3600),
+        labels = c("05:00", "06:00", "07:00", "08:00", "09:00", "10:00", "11:00")
+      )
+    } else if (tp == "11am - 5pm") {
+      p <- p + scale_x_continuous(
+        breaks = seq(43200, 43200 + 21600, by = 3600),
+        labels = c("11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00")
+      )
+    } else if (tp == "5pm - 11pm") {
+      p <- p + scale_x_continuous(
+        breaks = seq(64800, 64800 + 21600, by = 3600),
+        labels = c("17:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00")
+      )
+    }
+    # AUC
+    auc_prog <- trapz(
+      pred$Time[pred$Group == "Progressor"] / 60,
+      pred$Glucose[pred$Group == "Progressor"]
+    )
+    auc_non_prog <- trapz(
+      pred$Time[pred$Group == "Non-Progressor"] / 60,
+      pred$Glucose[pred$Group == "Non-Progressor"]
+    )
+    auc_diff <- auc_prog - auc_non_prog
+    # Create a function for bootstrapping
+    auc_diff_func <- function(d, indices) {
+      fit_fosr <- bayes_fosr(Glucose ~ Group, d[indices, ])
+      pred <- data.frame(predict(fit_fosr))
+      colnames(pred) <- colnames(glucose)
+      pred$Group <- d$Group
+      pred <- pred %>%
+        distinct() %>%
+        pivot_longer(-Group,
+          names_to = "Time",
+          values_to = "Glucose"
+        )
+      auc_prog <- trapz(
+        as.numeric(pred$Time[pred$Group == "Progressor"]) / 60,
+        pred$Glucose[pred$Group == "Progressor"]
+      )
+      auc_non_prog <- trapz(
+        as.numeric(pred$Time[pred$Group == "Non-Progressor"]) / 60,
+        pred$Glucose[pred$Group == "Non-Progressor"]
+      )
+      auc_diff <- auc_prog - auc_non_prog
+      return(auc_diff)
+    }
+    # Toot it and boot it
+    reps <- boot(data = d, statistic = auc_diff_func, R = 500, strata = d$Group)
+    ci <- boot.ci(reps, type = "bca")
+    # Add to plot
+    p <- p +
+      annotate("text",
+        x = min(pred$Time) + (diff(range(pred$Time)) / 2), y = 190,
+        label = paste0("AUC Difference: ", round(auc_diff))
+      ) +
+      annotate("text",
+        x = min(pred$Time) + (diff(range(pred$Time)) / 2), y = 180,
+        label = paste0("(95% CI: ", round(ci$bca[4]), ", ", round(ci$bca[5]), ")")
+      ) +
+      geom_hline(yintercept = 140, linetype = "dashed")
+    return(p)
+  })
+```
+
+```{r}
+invisible(lapply(ps, function(p) {
+  print(p)
+}))
+```
+
+```{r}
+#| message: false
+p_collected <- (ps[[1]] + ps[[2]]) / (ps[[3]] + ps[[4]]) +
+  plot_layout(guides = "collect", axis_titles = "collect") +
+  plot_annotation(
+    title = "Function on Scalar Regression of CGM Data",
+    theme = theme(plot.title = element_text(hjust = 0.5))
+  )
+p_collected
+ggsave(
+  filename = "./Dissemination/ada_fig1.png", plot = p_collected, device = "png",
+  units = "in", width = 9, height = 6
+)
+```
+
+## 3 Months Prior to Progression
+
+- CGM data was limited to the CGM tracings at least 12 months away from last visit for non-progressors, and CGM tracings 3 months (90 days) prior to and at the time of development of T1D for progressors.
+- For each participant, we calculated the average sensor value at each time of day during the various periods of the day.
+
+```{r}
+cgm_filtered <- cgm %>%
+  filter(Group == "Non-Progressor" |
+    (Group == "Progressor" & Days >= -90 & Days <= 0))
+cgm_filtered %>%
+  group_by(ID) %>%
+  mutate(
+    nClinicVisits = length(unique(DOVISIT)),
+    nCGMValues = length(SensorValue)
+  ) %>%
+  slice_min(row_number()) %>%
+  ungroup() %>%
+  select(
+    nClinicVisits, nCGMValues, `FDR status`, HLAGRP, SEX, Race_Ethn2,
+    Group
+  ) %>%
+  tbl_summary(Group) %>%
+  add_overall() %>%
+  add_p()
+```
+
+```{r}
+#| include: false
+ps <-
+  lapply(split.data.frame(cgm_filtered, cgm_filtered$TimePeriod), function(d) {
+    # Time period
+    tp <- as.character(d$TimePeriod[1])
+    # Format data for analysis (why are these FDA packages so irritating)
+    d <- d %>%
+      group_by(ID, Group, nTime) %>%
+      summarise(SensorValue = mean(SensorValue, na.rm = T), .groups = "drop") %>%
+      arrange(nTime) %>%
+      pivot_wider(
+        id_cols = c(ID, Group), names_from = nTime,
+        values_from = SensorValue
+      )
+    glucose <- d %>%
+      select(-ID, -Group) %>%
+      as.matrix()
+    d <- d %>%
+      select(ID, Group) %>%
+      as.data.frame()
+    d$Glucose <- glucose
+    d <- d[complete.cases(d), ]
+    # FoSR
+    fit_fosr <- bayes_fosr(Glucose ~ Group, data = d)
+    # Plot
+    pred <- data.frame(predict(fit_fosr))
+    colnames(pred) <- colnames(glucose)
+    pred$Group <- d$Group
+    pred <- pred %>%
+      distinct() %>%
+      pivot_longer(-Group,
+        names_to = "Time",
+        values_to = "Glucose"
+      )
+    pred$Time <- as.numeric(pred$Time)
+    p <- ggplot(pred, aes(x = Time, y = Glucose, group = Group, colour = Group)) +
+      geom_line() +
+      ggtitle(tp) +
+      theme_classic() +
+      ylim(c(90, 190)) +
+      ylab("Sensor Glucose (mg/dL)") +
+      xlab("Time of Day") +
+      scale_color_manual(values = c("#66C2A5", "#FC8D62")) +
+      theme(
+        plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(angle = 45, vjust = 0.5)
+      )
+    if (tp == "11pm - 5am") {
+      p <- p + scale_x_continuous(
+        breaks = seq(0, 21600, by = 3600),
+        labels = c("23:00", "00:00", "01:00", "02:00", "03:00", "04:00", "05:00")
+      )
+    } else if (tp == "5am - 11am") {
+      p <- p + scale_x_continuous(
+        breaks = seq(21600, 21600 + 21600, by = 3600),
+        labels = c("05:00", "06:00", "07:00", "08:00", "09:00", "10:00", "11:00")
+      )
+    } else if (tp == "11am - 5pm") {
+      p <- p + scale_x_continuous(
+        breaks = seq(43200, 43200 + 21600, by = 3600),
+        labels = c("11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00")
+      )
+    } else if (tp == "5pm - 11pm") {
+      p <- p + scale_x_continuous(
+        breaks = seq(64800, 64800 + 21600, by = 3600),
+        labels = c("17:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00")
+      )
+    }
+    # AUC
+    auc_prog <- trapz(
+      pred$Time[pred$Group == "Progressor"] / 60,
+      pred$Glucose[pred$Group == "Progressor"]
+    )
+    auc_non_prog <- trapz(
+      pred$Time[pred$Group == "Non-Progressor"] / 60,
+      pred$Glucose[pred$Group == "Non-Progressor"]
+    )
+    auc_diff <- auc_prog - auc_non_prog
+    # Create a function for bootstrapping
+    auc_diff_func <- function(d, indices) {
+      fit_fosr <- bayes_fosr(Glucose ~ Group, d[indices, ])
+      pred <- data.frame(predict(fit_fosr))
+      colnames(pred) <- colnames(glucose)
+      pred$Group <- d$Group
+      pred <- pred %>%
+        distinct() %>%
+        pivot_longer(-Group,
+          names_to = "Time",
+          values_to = "Glucose"
+        )
+      auc_prog <- trapz(
+        as.numeric(pred$Time[pred$Group == "Progressor"]) / 60,
+        pred$Glucose[pred$Group == "Progressor"]
+      )
+      auc_non_prog <- trapz(
+        as.numeric(pred$Time[pred$Group == "Non-Progressor"]) / 60,
+        pred$Glucose[pred$Group == "Non-Progressor"]
+      )
+      auc_diff <- auc_prog - auc_non_prog
+      return(auc_diff)
+    }
+    # Toot it and boot it
+    reps <- boot(data = d, statistic = auc_diff_func, R = 500, strata = d$Group)
+    ci <- boot.ci(reps, type = "bca")
+    # Add to plot
+    p <- p +
+      annotate("text",
+        x = min(pred$Time) + (diff(range(pred$Time)) / 2), y = 190,
+        label = paste0("AUC Difference: ", round(auc_diff))
+      ) +
+      annotate("text",
+        x = min(pred$Time) + (diff(range(pred$Time)) / 2), y = 180,
+        label = paste0("(95% CI: ", round(ci$bca[4]), ", ", round(ci$bca[5]), ")")
+      ) +
+      geom_hline(yintercept = 140, linetype = "dashed")
+    return(p)
+  })
+```
+
+```{r}
+invisible(lapply(ps, function(p) {
+  print(p)
+}))
+```
+
+```{r}
+#| message: false
+p_collected <- (ps[[1]] + ps[[2]]) / (ps[[3]] + ps[[4]]) +
+  plot_layout(guides = "collect", axis_titles = "collect") +
+  plot_annotation(
+    title = "Function on Scalar Regression of CGM Data",
+    theme = theme(plot.title = element_text(hjust = 0.5))
+  )
+p_collected
+ggsave(
+  filename = "./Dissemination/ada_fig1.png", plot = p_collected, device = "png",
+  units = "in", width = 9, height = 6
+)
+```
+
+## Post-Progression
+
+- CGM data was limited to the CGM tracings at least 12 months away from last visit for non-progressors, and CGM tracings 3 months (90 days) after and at the time of development of T1D for progressors.
+- For each participant, we calculated the average sensor value at each time of day during the various periods of the day.
+
+```{r}
+cgm_filtered <- cgm %>%
+  filter(Group == "Non-Progressor" |
+    (Group == "Progressor" & Days >= 0 & Days <= 90))
+cgm_filtered %>%
+  group_by(ID) %>%
+  mutate(
+    nClinicVisits = length(unique(DOVISIT)),
+    nCGMValues = length(SensorValue)
+  ) %>%
+  slice_min(row_number()) %>%
+  ungroup() %>%
+  select(
+    nClinicVisits, nCGMValues, `FDR status`, HLAGRP, SEX, Race_Ethn2,
+    Group
+  ) %>%
+  tbl_summary(Group) %>%
+  add_overall() %>%
+  add_p()
+```
+
+```{r}
+#| include: false
+ps <-
+  lapply(split.data.frame(cgm_filtered, cgm_filtered$TimePeriod), function(d) {
+    # Time period
+    tp <- as.character(d$TimePeriod[1])
+    # Format data for analysis (why are these FDA packages so irritating)
+    d <- d %>%
+      group_by(ID, Group, nTime) %>%
+      summarise(SensorValue = mean(SensorValue, na.rm = T), .groups = "drop") %>%
+      arrange(nTime) %>%
+      pivot_wider(
+        id_cols = c(ID, Group), names_from = nTime,
+        values_from = SensorValue
+      )
+    glucose <- d %>%
+      select(-ID, -Group) %>%
+      as.matrix()
+    d <- d %>%
+      select(ID, Group) %>%
+      as.data.frame()
+    d$Glucose <- glucose
+    d <- d[complete.cases(d), ]
+    # FoSR
+    fit_fosr <- bayes_fosr(Glucose ~ Group, data = d)
+    # Plot
+    pred <- data.frame(predict(fit_fosr))
+    colnames(pred) <- colnames(glucose)
+    pred$Group <- d$Group
+    pred <- pred %>%
+      distinct() %>%
+      pivot_longer(-Group,
+        names_to = "Time",
+        values_to = "Glucose"
+      )
+    pred$Time <- as.numeric(pred$Time)
+    p <- ggplot(pred, aes(x = Time, y = Glucose, group = Group, colour = Group)) +
+      geom_line() +
+      ggtitle(tp) +
+      theme_classic() +
+      ylim(c(90, 190)) +
+      ylab("Sensor Glucose (mg/dL)") +
+      xlab("Time of Day") +
+      scale_color_manual(values = c("#66C2A5", "#FC8D62")) +
+      theme(
+        plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_text(angle = 45, vjust = 0.5)
+      )
+    if (tp == "11pm - 5am") {
+      p <- p + scale_x_continuous(
+        breaks = seq(0, 21600, by = 3600),
+        labels = c("23:00", "00:00", "01:00", "02:00", "03:00", "04:00", "05:00")
+      )
+    } else if (tp == "5am - 11am") {
+      p <- p + scale_x_continuous(
+        breaks = seq(21600, 21600 + 21600, by = 3600),
+        labels = c("05:00", "06:00", "07:00", "08:00", "09:00", "10:00", "11:00")
+      )
+    } else if (tp == "11am - 5pm") {
+      p <- p + scale_x_continuous(
+        breaks = seq(43200, 43200 + 21600, by = 3600),
+        labels = c("11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00")
+      )
+    } else if (tp == "5pm - 11pm") {
+      p <- p + scale_x_continuous(
+        breaks = seq(64800, 64800 + 21600, by = 3600),
+        labels = c("17:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00")
+      )
+    }
+    # AUC
+    auc_prog <- trapz(
+      pred$Time[pred$Group == "Progressor"] / 60,
+      pred$Glucose[pred$Group == "Progressor"]
+    )
+    auc_non_prog <- trapz(
+      pred$Time[pred$Group == "Non-Progressor"] / 60,
+      pred$Glucose[pred$Group == "Non-Progressor"]
+    )
+    auc_diff <- auc_prog - auc_non_prog
+    # Create a function for bootstrapping
+    auc_diff_func <- function(d, indices) {
+      fit_fosr <- bayes_fosr(Glucose ~ Group, d[indices, ])
+      pred <- data.frame(predict(fit_fosr))
+      colnames(pred) <- colnames(glucose)
+      pred$Group <- d$Group
+      pred <- pred %>%
+        distinct() %>%
+        pivot_longer(-Group,
+          names_to = "Time",
+          values_to = "Glucose"
+        )
+      auc_prog <- trapz(
+        as.numeric(pred$Time[pred$Group == "Progressor"]) / 60,
+        pred$Glucose[pred$Group == "Progressor"]
+      )
+      auc_non_prog <- trapz(
+        as.numeric(pred$Time[pred$Group == "Non-Progressor"]) / 60,
+        pred$Glucose[pred$Group == "Non-Progressor"]
+      )
+      auc_diff <- auc_prog - auc_non_prog
+      return(auc_diff)
+    }
+    # Toot it and boot it
+    reps <- boot(data = d, statistic = auc_diff_func, R = 500, strata = d$Group)
+    ci <- boot.ci(reps, type = "bca")
+    # Add to plot
+    p <- p +
+      annotate("text",
+        x = min(pred$Time) + (diff(range(pred$Time)) / 2), y = 190,
+        label = paste0("AUC Difference: ", round(auc_diff))
+      ) +
+      annotate("text",
+        x = min(pred$Time) + (diff(range(pred$Time)) / 2), y = 180,
+        label = paste0("(95% CI: ", round(ci$bca[4]), ", ", round(ci$bca[5]), ")")
+      ) +
+      geom_hline(yintercept = 140, linetype = "dashed")
+    return(p)
+  })
+```
+
+```{r}
+invisible(lapply(ps, function(p) {
+  print(p)
+}))
+```
+
+```{r}
+#| message: false
+p_collected <- (ps[[1]] + ps[[2]]) / (ps[[3]] + ps[[4]]) +
+  plot_layout(guides = "collect", axis_titles = "collect") +
+  plot_annotation(
+    title = "Function on Scalar Regression of CGM Data",
+    theme = theme(plot.title = element_text(hjust = 0.5))
+  )
+p_collected
+ggsave(
+  filename = "./Dissemination/ada_fig1.png", plot = p_collected, device = "png",
+  units = "in", width = 9, height = 6
 )
 ```
