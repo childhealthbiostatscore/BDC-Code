@@ -43,7 +43,7 @@ df$final_visit <- df$DOVISIT - round(df$yearsfromT1D * 365.25)
 # Select only necessary columns
 df <- df %>%
   select(
-    ID, DOVISIT, A1C, `age at clinic`, SEX, `FDR status`, Race_Ethn2, HLAGRP, Group,
+    ID, DOVISIT, A1C, `age at clinic`,`BMI-for-age Z` ,... = b ,SEX, `FDR status`, Race_Ethn2, HLAGRP, Group,
     final_visit
   )
 # Put together
