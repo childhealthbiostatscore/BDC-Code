@@ -1,5 +1,4 @@
 library(tidyverse)
-library(tidyfun)
 library(readxl)
 library(haven)
 library(hms)
@@ -38,13 +37,15 @@ df$Group <- factor(is.na(df$`Date of T1D dx`),
 # Convert columns
 df$`age at clinic` <- as.numeric(df$`age at clinic`)
 df$DOVISIT <- ymd(df$DOVISIT)
+df$`calculated body` = as.numeric(df$`calculated body`)
+df$`BMI-for-age Z`=as.numeric(df$`BMI-for-age Z`)
 # Calculate final visit date (or T1D progression)
 df$final_visit <- df$DOVISIT - round(df$yearsfromT1D * 365.25)
 # Select only necessary columns
 df <- df %>%
   select(
-    ID, DOVISIT, A1C, `age at clinic`,`BMI-for-age Z` ,... = b ,SEX, `FDR status`, Race_Ethn2, HLAGRP, Group,
-    final_visit
+    ID, DOVISIT, A1C, `calculated body`, `BMI-for-age Z`, `age at clinic`, SEX,
+    `FDR status`, Race_Ethn2, HLAGRP, Group, final_visit
   )
 # Put together
 cgm <- left_join(cgm, df, by = join_by(ID, DOVISIT))
@@ -55,7 +56,8 @@ cgm <- cgm %>%
   mutate(Days = as.numeric(difftime(Date, final_visit, units = "days"))) %>%
   select(
     ID, Group, SEX, `FDR status`, HLAGRP, Race_Ethn2, final_visit, DOVISIT,
-    `age at clinic`, A1C, Days, Date, Time, SensorValue
+    `age at clinic`, A1C, `calculated body`, `BMI-for-age Z`, Days, Date, Time,
+    SensorValue
   ) %>%
   drop_na(SensorValue)
 # Save
