@@ -1,0 +1,349 @@
+---
+title: "CGM FDA"
+author: "Laura Pyle & Tim Vigers"
+date: "today"
+date-format: long
+format:
+  html:
+    toc: true
+    toc-depth: 5
+    toc-float: true
+    code-fold: true
+    self-contained: true
+    fig-cap-location: top
+    page-layout: full
+    theme:
+      light: flatly
+      dark: darkly
+editor: source
+---
+
+```{r setup}
+#| include: false
+library(Rfast)
+library(tidyverse)
+library(gt)
+library(patchwork)
+library(pracma)
+library(boot)
+library(tidyfun)
+library(haven)
+library(hms)
+library(refund)
+library(refund.shiny)
+set.seed(1017)
+knitr::opts_knit$set(root.dir = "/Users/tim/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT")
+```
+
+```{r}
+# Import CGM data from Fran
+cgm <- read_sas("./Data_Raw/rawcgmdata_clean.sas7bdat")
+# Convert from numeric time to datetime, round to nearest 5 minutes
+cgm$sensordisplaytime <-
+  as.POSIXct(cgm$sensordisplaytime, origin = "1960-01-01")
+cgm$sensordisplaytime <- round_date(cgm$sensordisplaytime, "5 minutes")
+# Separate date and time columns, format
+cgm$Date <- as_date(cgm$sensordisplaytime)
+cgm$Time <- as_hms(cgm$sensordisplaytime)
+cgm <- cgm %>%
+  rename(SensorValue = sensorvalue) %>%
+  select(ID, Date, Time, SensorValue)
+# For now, if people have duplicated sensor values, take the mean
+cgm <- cgm %>%
+  group_by(ID, Date, Time) %>%
+  summarise(SensorValue = mean(SensorValue, na.rm = T), .groups = "drop")
+# Import demographic, etc. data
+df <- read.csv("./Data_Clean/Longitudinal CGM data for 165 subjects.csv",
+  na.strings = c("", ".")
+)
+# Remove unhelpful rows
+df <- df %>% filter(!is.na(ID))
+# Figure out each person's start date
+df <- df %>%
+  select(ID, DOB, age.at.the.last, Date.of.T1D.dx) %>%
+  mutate(
+    DOB = mdy(DOB),
+    StartDate = DOB + (as.numeric(age.at.the.last) * 365.25),
+    Group = factor(is.na(Date.of.T1D.dx),
+      levels = c(T, F),
+      labels = c("Non-Progressor", "Progressor")
+    )
+  ) %>%
+  select(ID, Group, StartDate) %>%
+  distinct()
+# Put together
+cgm <- full_join(df, cgm, by = join_by(ID))
+cgm$Days <-
+  as.numeric(difftime(cgm$Date, ymd(cgm$StartDate),
+    units = "days"
+  ))
+cgm <- cgm %>% select(ID, Group, Days, Time, SensorValue)
+# Add TrialNet data
+# trialnet_cgm <-
+#   read.csv("./Data_Raw/TNMP20240710 - Steck/2024-12-06/csv/cgm.csv")
+# trialnet_cgm <- trialnet_cgm %>% select(-IMAGE_ID)
+# trialnet_cgm$GLUCOSEINTERNALTIME <- dmy_hms(trialnet_cgm$GLUCOSEINTERNALTIME)
+# trialnet_cgm$GLUCOSEINTERNALTIME <-
+#   round_date(trialnet_cgm$GLUCOSEINTERNALTIME, "5 minutes")
+# trialnet_cgm$Date <- as_date(trialnet_cgm$GLUCOSEINTERNALTIME)
+# trialnet_cgm$Time <- as_hms(trialnet_cgm$GLUCOSEINTERNALTIME)
+# trialnet <-
+#   read.csv("./Data_Raw/TNMP20240710 - Steck/2024-12-06/csv/all.csv",
+#     na.strings = c("", ".")
+#   )
+# trialnet <- trialnet %>%
+#   group_by(MASKID) %>%
+#   slice_min(row_number()) %>%
+#   select(MASKID, T1DDATE, LASTFOLLOW) %>%
+#   mutate(Group = factor(is.na(T1DDATE),
+#     levels = c(T, F),
+#     labels = c("Non-Progressor", "Progressor")
+#   ))
+# trialnet$LASTFOLLOW[!is.na(trialnet$T1DDATE)] <-
+#   trialnet$T1DDATE[!is.na(trialnet$T1DDATE)]
+# trialnet$T1DDATE <- NULL
+# trialnet_cgm <- left_join(trialnet, trialnet_cgm, by = join_by(MASKID))
+# trialnet_cgm$Days <-
+#   as.numeric(difftime(trialnet_cgm$Date, mdy(trialnet_cgm$LASTFOLLOW),
+#     units = "days"
+#   ))
+# trialnet_cgm <- trialnet_cgm %>%
+#   rename(ID = "MASKID", SensorValue = "GLUCOSEVALUE_NUM") %>%
+#   select(ID, Group, Days, Time, SensorValue)
+# Bind trialnet and ASK/DAISY
+# cgm <- rbind(cgm, trialnet_cgm)
+# Drop NAs
+cgm <- cgm %>% drop_na()
+# Split time into about 3 years prior, then 90 day chunks after that
+cgm$MonthsFromVisit <- cut(cgm$Days,
+  breaks = c(-Inf, seq(-1080, 0, by = 90), Inf), ,
+  labels = c(
+    "[-Inf,-36)", "[-36,-33)", "[-33,-30)", "[-30,-27)", "[-27,-24)",
+    "[-24,-21)", "[-21,-18)", "[-18,-15)", "[-15,-12)", "[-12,-9)", "[-9,-6)",
+    "[-6,-3)", "[-3,0)", "[0, Inf)"
+  ),
+  dig.lab = 4, right = F
+)
+```
+
+```{r}
+#| eval: false
+#| include: false
+# Example code
+MS <- subset(DTI, case == 1)
+index.na <- which(is.na(MS$cca))
+Y <- MS$cca
+Y[index.na] <- fpca.sc(Y)$Yhat[index.na]
+id <- MS$ID
+visit.index <- MS$visit
+visit.time <- MS$visit.time / max(MS$visit.time)
+fit.tfpca <- fpca.lfda(
+  Y = Y, subject.index = id, visit.index = visit.index,
+  obsT = visit.time, LongiModel.method = "lme"
+)
+# plot_shiny(fit.tfpca)
+# Format for longitudinal FDA
+Y <- cgm_wide %>%
+  select(`00:00:00`:`23:55:00`) %>%
+  as.matrix()
+# Interpolate missing using fpca.sc
+index.na <- which(is.na(Y))
+Y[index.na] <- fpca.sc(Y)$Yhat[index.na]
+id <- cgm_wide$ID
+visit.index <- cgm_wide$CGMDay
+visit.time <- 1 - cgm_wide$Days / min(cgm_wide$Days)
+fit.tfpca <- fpca.lfda(
+  Y = Y, subject.index = id, visit.index = visit.index,
+  obsT = visit.time, LongiModel.method = "lme"
+)
+```
+
+# Data cleaning
+
+- Sensor display times were rounded to the nearest 5 minutes.
+- Time was calculated as the number of days from T1D progression or last follow up.
+
+# ADA abstract analysis
+
+- For this abstract, we split CGM data into time periods > 1,080 days, 90 day time periods up to day 0, and days after 0.
+
+## Number of observations by time period
+
+```{r}
+cgm %>%
+  group_by(MonthsFromVisit) %>%
+  summarise(
+    nParticipants = length(unique(ID)),
+    nProgressors = length(unique(ID[Group == "Progressor"])),
+    nNonProgressors = length(unique(ID[Group == "Non-Progressor"])),
+    nCGMValues = length(SensorValue)
+  ) %>%
+  gt()
+```
+
+## Simple GAM smooth
+
+```{r}
+#| warning: false
+cgm %>%
+  ggplot(aes(x = Time, y = SensorValue, colour = Group)) +
+  geom_smooth() +
+  theme_classic() +
+  ylab("Glucose") +
+  ylim(c(90, 180)) +
+  scale_x_discrete(breaks = c("00:00:00")) +
+  facet_wrap(~MonthsFromVisit)
+cgm %>%
+  filter(Days >= -270) %>%
+  ggplot(aes(x = Time, y = SensorValue, colour = Group)) +
+  geom_smooth() +
+  theme_classic() +
+  ylab("Glucose") +
+  ylim(c(90, 180)) +
+  facet_wrap(~MonthsFromVisit)
+```
+
+## Functional PCA
+
+- For each participant, we calculated the average sensor value at each time of day during the various time periods.
+- I have been trying to get the mixed model version to work, but so far no luck.
+
+```{r}
+#| include: false
+ps <- lapply(split.data.frame(cgm, cgm$MonthsFromVisit), function(d) {
+  # Time period
+  tp <- as.character(d$MonthsFromVisit[1])
+  # Format data for analysis (why are these FDA packages so irritating)
+  d <- d %>%
+    group_by(ID, Group, Time) %>%
+    summarise(SensorValue = mean(SensorValue, na.rm = T), .groups = "drop") %>%
+    arrange(Time) %>%
+    pivot_wider(
+      id_cols = c(ID, Group), names_from = Time,
+      values_from = SensorValue
+    )
+  glucose <- d %>%
+    select(`00:00:00`:`23:55:00`) %>%
+    as.matrix()
+  index.na <- which(is.na(glucose))
+  glucose[index.na] <- fpca.sc(glucose)$Yhat[index.na]
+  d <- d %>%
+    select(ID, Group) %>%
+    as.data.frame()
+  d$Glucose <- glucose
+  # FoSR
+  fit_fosr <- bayes_fosr(Glucose ~ Group, data = d)
+  # Plot
+  pred <- data.frame(predict(fit_fosr))
+  colnames(pred) <- colnames(glucose)
+  pred$Group <- d$Group
+  pred <- pred %>%
+    pivot_longer(`00:00:00`:`23:55:00`,
+      names_to = "Time",
+      values_to = "Glucose"
+    ) %>%
+    distinct()
+  p <- ggplot(pred, aes(x = Time, y = Glucose, group = Group, colour = Group)) +
+    geom_line() +
+    ggtitle(tp) +
+    theme_classic() +
+    ylim(c(90, 190)) +
+    scale_x_discrete(
+      breaks = c("00:00:00", "06:00:00", "12:00:00", "18:00:00", "23:55:00")
+    ) +
+    scale_color_manual(values = c("#66C2A5", "#FC8D62")) +
+    theme(
+      plot.title = element_text(hjust = 0.5),
+      axis.text.x = element_text(angle = 45, vjust = 0.5)
+    )
+  # AUC
+  auc_prog <- trapz(
+    as.numeric(as_hms(pred$Time[pred$Group == "Progressor"])) / 60,
+    pred$Glucose[pred$Group == "Progressor"]
+  )
+  auc_non_prog <- trapz(
+    as.numeric(as_hms(pred$Time[pred$Group == "Non-Progressor"])) / 60,
+    pred$Glucose[pred$Group == "Non-Progressor"]
+  )
+  auc_diff <- auc_prog - auc_non_prog
+  # Create a function for bootstrapping
+  auc_diff_func <- function(d, indices) {
+    fit_fosr <- bayes_fosr(Glucose ~ Group, d[indices, ])
+    pred <- data.frame(predict(fit_fosr))
+    colnames(pred) <- colnames(glucose)
+    pred$Group <- d$Group
+    pred <- pred %>%
+      pivot_longer(`00:00:00`:`23:55:00`,
+        names_to = "Time",
+        values_to = "Glucose"
+      ) %>%
+      distinct()
+    auc_prog <- trapz(
+      as.numeric(as_hms(pred$Time[pred$Group == "Progressor"])) / 60,
+      pred$Glucose[pred$Group == "Progressor"]
+    )
+    auc_non_prog <- trapz(
+      as.numeric(as_hms(pred$Time[pred$Group == "Non-Progressor"])) / 60,
+      pred$Glucose[pred$Group == "Non-Progressor"]
+    )
+    auc_diff <- auc_prog - auc_non_prog
+    return(auc_diff)
+  }
+  # Toot it and boot it
+  reps <- boot(
+    data = d, statistic = auc_diff_func, R = 3000, strata = d$Group,
+    parallel = "multicore", ncpus = 4
+  )
+  ci <- boot.ci(reps, type = "bca")
+  # Add to plot
+  p <- p +
+    annotate("text",
+      x = "08:00:00", y = 190,
+      label = paste0("AUC Difference: ", round(auc_diff))
+    ) +
+    annotate("text",
+      x = "08:00:00", y = 180,
+      label = paste0("(95% CI: ", round(ci$bca[4]), ", ", round(ci$bca[5]), ")")
+    ) +
+    geom_hline(yintercept = 140, linetype = "dashed")
+  return(p)
+})
+```
+
+```{r}
+invisible(lapply(ps, function(p) {
+  print(p)
+}))
+```
+
+```{r}
+#| message: false
+ptl <- ps[[11]] +
+  theme(
+    axis.text.x = element_blank(), axis.title.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+ptr <- ps[[12]] +
+  theme(
+    axis.text.x = element_blank(), axis.title.x = element_blank(),
+    axis.ticks.x = element_blank(), axis.text.y = element_blank(),
+    axis.title.y = element_blank(), axis.ticks.y = element_blank()
+  )
+pbl <- ps[[13]]
+pbr <- ps[[14]] +
+  theme(
+    axis.text.y = element_blank(),
+    axis.title.y = element_blank(), axis.ticks.y = element_blank()
+  )
+p_collected <- (ptl + ptr) / (pbl + pbr) +
+  plot_layout(guides = "collect", axis_titles = "collect") +
+  plot_annotation(
+    title = "Function on Scalar Regression of CGM Data",
+    theme = theme(plot.title = element_text(hjust = 0.5))
+  )
+p_collected
+ggsave(
+  filename = "./Dissemination/ada_fig1.png", plot = p_collected, device = "png",
+  units = "in", width = 9, height = 6
+)
+```

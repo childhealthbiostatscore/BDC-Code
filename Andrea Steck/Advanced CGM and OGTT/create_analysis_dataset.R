@@ -1,41 +1,64 @@
 library(tidyverse)
-library(tidyfun)
+library(readxl)
 library(haven)
 library(hms)
-# Import CGM data
-cgm <- read_sas("/Users/timvigers/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT/Data_Raw/rawcgmdata.sas7bdat")
-# Round time to nearest minute
-cgm$sensordisplaytime <- parse_date_time(cgm$sensordisplaytime,
-  orders = c("Ymd HMS", "Ymd")
+home_dir <- switch(Sys.info()["sysname"],
+  "Darwin" = "/Users/tim/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT",
+  "Windows" = "C:/Users/Tim/OneDrive - The University of Colorado Denver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT",
+  "Linux" = "/home/tim/OneDrive/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT"
 )
-cgm$sensordisplaytime <- round_date(cgm$sensordisplaytime, unit = "5 minutes")
-# Separate date and time columns
+setwd(home_dir)
+# Import CGM data from Fran
+cgm <- read_sas("./Data_Raw/Final data for CGM analyses 09012023/rawcgmdata_clean.sas7bdat")
+# Convert from numeric time to datetime, round to nearest 5 minutes
+cgm$sensordisplaytime <-
+  as.POSIXct(cgm$sensordisplaytime, origin = "1960-01-01")
+cgm$sensordisplaytime <- round_date(cgm$sensordisplaytime, "5 minutes")
+# Separate date and time columns, format
 cgm$Date <- as_date(cgm$sensordisplaytime)
 cgm$Time <- as_hms(cgm$sensordisplaytime)
-# Convert to a wide format where each row is a participant-date
-fda_df <- cgm %>%
-  mutate(Time = as.numeric(Time)) %>%
-  arrange(Time) %>%
-  pivot_wider(
-    names_from = Time,
-    values_from = SensorValue,
-    id_cols = c(ID, Date),
-    values_fn = ~ mean(.x, na.rm = TRUE)
-  ) %>%
-  arrange(ID, Date) %>%
-  tf_gather(`0`:`86100`, key = "Glucose", evaluator = tf_approx_none)
-# Import longitudinal data
-df <- read.csv("/Users/timvigers/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT/Data_Clean/Longitudinal CGM data for 165 subjects.csv", na.strings = c("", "."))
-# Participant info
-df <- df %>%
-  select(ID, Date.of.T1D.dx) %>%
-  filter(rowSums(!is.na(.)) > 0) %>%
-  distinct() %>%
-  rename(`Date of Diagnosis` = Date.of.T1D.dx)
-df$`Date of Diagnosis` <- mdy(df$`Date of Diagnosis`)
-df$Group <- factor(!is.na(df$`Date of Diagnosis`),
-  levels = c(F, T), labels = c("No T1D", "T1D")
+cgm <- cgm %>%
+  rename(SensorValue = sensorvalue) %>%
+  arrange(ID, sensordisplaytime) %>%
+  select(ID, Date, Time, DOVISIT, SensorValue)
+# For now, if people have duplicated sensor values, take the mean
+cgm <- cgm %>%
+  group_by(ID, Date, Time, DOVISIT) %>%
+  summarise(SensorValue = mean(SensorValue, na.rm = T), .groups = "drop")
+# Import demographic, etc. data
+df <- read_excel("./Data_Raw/Final data for CGM analyses 09012023/final data including TESS.xls", na = ".")
+# Remove unhelpful rows
+df <- df %>% filter(!is.na(ID))
+# Determine group
+df$Group <- factor(is.na(df$`Date of T1D dx`),
+  levels = c(T, F),
+  labels = c("Non-Progressor", "Progressor")
 )
-fda_df <- left_join(fda_df, df, by = join_by(ID))
+# Convert columns
+df$`age at clinic` <- as.numeric(df$`age at clinic`)
+df$DOVISIT <- ymd(df$DOVISIT)
+df$`calculated body` = as.numeric(df$`calculated body`)
+df$`BMI-for-age Z`=as.numeric(df$`BMI-for-age Z`)
+# Calculate final visit date (or T1D progression)
+df$final_visit <- df$DOVISIT - round(df$yearsfromT1D * 365.25)
+# Select only necessary columns
+df <- df %>%
+  select(
+    ID, DOVISIT, A1C, `calculated body`, `BMI-for-age Z`, `age at clinic`, SEX,
+    `FDR status`, Race_Ethn2, HLAGRP, Group, final_visit
+  )
+# Put together
+cgm <- left_join(cgm, df, by = join_by(ID, DOVISIT))
+# Sort
+cgm <- cgm %>% arrange(ID, Date, Time)
+# Calculate time from last visit, order columns, remove rows missing CGM value
+cgm <- cgm %>%
+  mutate(Days = as.numeric(difftime(Date, final_visit, units = "days"))) %>%
+  select(
+    ID, Group, SEX, `FDR status`, HLAGRP, Race_Ethn2, final_visit, DOVISIT,
+    `age at clinic`, A1C, `calculated body`, `BMI-for-age Z`, Days, Date, Time,
+    SensorValue
+  ) %>%
+  drop_na(SensorValue)
 # Save
-save(fda_df, file = "/Users/timvigers/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT/Data_Clean/fda_dataset.RData")
+save(cgm, file = "./Data_Clean/analysis_dataset.RData")
