@@ -48,15 +48,15 @@ setwd(home_dir)
 # Set a seed for trajectory analyses
 set.seed(1017)
 # Import CGM data from Fran
-cgm <- read_sas("./Data_Raw/Final data for CGM analyses 09012023/rawcgmdata_clean.sas7bdat")
+cgm <- read_sas("./Data_Raw/Final data20250801/tim_allcgmclean_gt4days.sas7bdat")
 # Convert from numeric time to datetime, round to nearest 5 minutes
 cgm$sensordisplaytime <-
-  as.POSIXct(cgm$sensordisplaytime, origin = "1960-01-01")
+  as.POSIXct(cgm$newsensortime, origin = "1960-01-01")
 cgm$sensordisplaytime <- round_date(cgm$sensordisplaytime, "5 minutes")
 # Separate date and time columns, format
 cgm$Date <- as_date(cgm$sensordisplaytime)
 cgm$Time <- as_hms(cgm$sensordisplaytime)
-cgm <- cgm %>%
+cgm <- cgm %>% rename(sensorvalue = sensor_glucose, DOVISIT = dov_CGM) %>%
   arrange(ID, sensordisplaytime) %>%
   select(ID, Date, Time, DOVISIT, sensorvalue)
 # For now, if people have duplicated sensor values, take the mean
@@ -64,31 +64,40 @@ cgm <- cgm %>%
   group_by(ID, Date, Time, DOVISIT) %>%
   summarise(sensorvalue = mean(sensorvalue, na.rm = T), .groups = "drop")
 # Import demographic, etc. data
-df <- read.csv("./Data_Clean/Longitudinal CGM data for 165 subjects.csv",
-  na.strings = c("", ".")
-)
+df <- read_sas("./Data_Raw/Final data20250801/demo270.sas7bdat")
 # Remove unhelpful rows
 df <- df %>% filter(!is.na(ID))
 # Determine group
-df$Group <- factor(is.na(df$Date.of.T1D.dx),
+df$Group <- factor(is.na(df$`EventVisDt_t1d`),
   levels = c(T, F),
   labels = c("Non-Progressor", "Progressor")
 )
 # Convert columns
-df$age.at.clinic <- as.numeric(df$age.at.clinic)
-df$DOVISIT <- mdy(df$DOVISIT)
+df$`age at clinic` <- as.numeric(df$lastage)
+df$DOVISIT <- ymd(df$lastVisDt)
 df$DOB <- mdy(df$DOB)
-df$Date.of.T1D.dx <- mdy(df$Date.of.T1D.dx)
+df$Date.of.T1D.dx <- mdy(df$EventVisDt_t1d)
+
+# Stopped here
+# Missing the following variables
+# date of final visit, DOB
+# Other questions
+# T1Dage is either equal to last age or missing. Is T1Dage the age at diagnosis?
+
 # Calculate final visit date (or T1D progression)
 df$final_visit <- df$DOVISIT - round(df$yearsfromT1D * 365.25)
 # Select only necessary columns
-df <- df %>%
-  select(
-    ID, DOVISIT, A1C, age.at.clinic, SEX, FDR.status, Race_Ethn2, HLAGRP, Group,
-    final_visit, DOB, Date.of.T1D.dx
-  )
+# commenting this out for now because we don't have all the covariates
+#df <- df %>%
+#  select(
+#    ID, DOVISIT, A1C, age.at.clinic, SEX, FDR.status, Race_Ethn2, HLAGRP, Group,
+#    final_visit, DOB, Date.of.T1D.dx
+#  )
+df <- df %>% select(ID, Group)
 # Put together
-cgm <- left_join(cgm, df, by = join_by(ID, DOVISIT))
+# also commenting out because I am not joining by DOVISIT
+#cgm <- left_join(cgm, df, by = join_by(ID, DOVISIT))
+cgm <- left_join(cgm, df, by = join_by(ID))
 # Sort
 cgm <- cgm %>% arrange(ID, Date, Time)
 
@@ -108,17 +117,22 @@ mean_cgm <- cgm %>%
   group_by(numID, Group, Time) %>%
   summarise(Glucose = mean(sensorvalue, na.rm = T), .groups = "drop")
 # merge back in covariates
-c <- cgm %>%
-  select(numID, DOVISIT, A1C, age.at.clinic, SEX, FDR.status, Race_Ethn2, HLAGRP, final_visit, DOB, Date.of.T1D.dx, survtime) %>%
-  arrange(numID, age.at.clinic)
-c <- c %>%
-  group_by(numID) %>%
-  filter(row_number() == 1)
-mean_cgm <- left_join(mean_cgm, c, by = "numID")
+# c <- cgm %>%
+#   select(numID, DOVISIT, A1C, age.at.clinic, SEX, FDR.status, Race_Ethn2, HLAGRP, final_visit, DOB, Date.of.T1D.dx, survtime) %>%
+#   arrange(numID, age.at.clinic)
+# c <- c %>%
+#   group_by(numID) %>%
+#   filter(row_number() == 1)
+# mean_cgm <- left_join(mean_cgm, c, by = "numID")
 # create a numeric variable for time of day
 # minutes after midnight
 mean_cgm$numtime <- as.numeric(mean_cgm$Time) / 60
 mean_cgm_tib <- as_tibble(mean_cgm)
+
+# how many people are missing CGM data?
+cgm_no_NaN <- cgm %>% filter(!is.nan(sensorvalue))
+ids_no_cgm <- !(df$ID %in% cgm_no_NaN$ID)
+df$ID[ids_no_cgm]
 ```
 
 ```{r}
@@ -137,19 +151,17 @@ summary(lmm)
 #             subject = 'numID', data = mean_cgm)
 # summary(lmm_quad)
 
-<<<<<<< Updated upstream
 # joint model, 1 group
 m1 <- Jointlcmm(
   fixed = Glucose ~ numtime, random = ~numtime, subject = "numID",
   survival = Surv(survtime, Group) ~ 1, hazard = "Weibull",
   hazardtype = "PH", ng = 1, data = as.data.frame(mean_cgm)
 )
-=======
+
 # joint model, 1 group, random effect of time
 m1 <- Jointlcmm(fixed= Glucose ~ numtime,random=~numtime,subject='numID',
 survival = Surv(survtime,Group)~ 1, hazard="Weibull",
 hazardtype="PH",ng=1,data=as.data.frame(mean_cgm))
->>>>>>> Stashed changes
 summary(m1)
 m1$scoretest
 
@@ -160,10 +172,9 @@ m1 <- Jointlcmm(
   hazardtype = "PH", ng = 2, data = as.data.frame(mean_cgm), B = rep(1, 12)
 )
 summary(m1)
-<<<<<<< Updated upstream
 ```
-=======
 
+```{r}
 # try 1 group model with random intercept
 m1 <- Jointlcmm(fixed= Glucose ~ numtime,random=~1,subject='numID',
 survival = Surv(survtime,Group)~ 1, hazard="Weibull",
@@ -176,7 +187,4 @@ survival = Surv(survtime,Group)~ Glucose, hazard="Weibull",
 hazardtype="PH",ng=1,data=as.data.frame(mean_cgm))
 summary(m1)
 m1$scoretest
-
-
 ```
->>>>>>> Stashed changes
