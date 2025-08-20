@@ -45,8 +45,16 @@ cgm$lastVisDt <- ymd(cgm$lastVisDt)
 cgm <- cgm %>%
   mutate(
     DaysFromEndpoint = case_when(
-      Group == "Progressor" ~ difftime(Date, EventVisDt_t1d, units = "days"),
-      Group == "Non-Progressor" ~ difftime(Date, lastVisDt, units = "days")
+      Group == "Progressor" ~
+        as.numeric(difftime(Date, EventVisDt_t1d, units = "days")),
+      Group == "Non-Progressor" ~
+        as.numeric(difftime(Date, lastVisDt, units = "days"))
+    ),
+    TimeFromEndpoint = case_when(
+      Group == "Progressor" ~
+        as.numeric(difftime(Date, EventVisDt_t1d, units = "mins")),
+      Group == "Non-Progressor" ~
+        as.numeric(difftime(Date, lastVisDt, units = "mins"))
     )
   )
 # Order and select columns
@@ -64,6 +72,7 @@ cgm <- cgm %>%
     EventVisDt_t1d,
     lastVisDt,
     DaysFromEndpoint,
+    TimeFromEndpoint,
     A1C,
     bmi,
     bmiz,
