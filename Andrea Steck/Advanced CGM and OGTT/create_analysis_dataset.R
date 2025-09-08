@@ -52,9 +52,17 @@ cgm <- cgm %>%
     ),
     TimeFromEndpoint = case_when(
       Group == "Progressor" ~
-        as.numeric(difftime(Date, EventVisDt_t1d, units = "mins")),
+        as.numeric(difftime(
+          ymd_hms(paste(Date, Time)),
+          EventVisDt_t1d,
+          units = "mins"
+        )),
       Group == "Non-Progressor" ~
-        as.numeric(difftime(Date, lastVisDt, units = "mins"))
+        as.numeric(difftime(
+          ymd_hms(paste(Date, Time)),
+          lastVisDt,
+          units = "mins"
+        ))
     )
   )
 # Order and select columns
@@ -69,6 +77,7 @@ cgm <- cgm %>%
     HLAGRP,
     DOB,
     Date,
+    Time,
     EventVisDt_t1d,
     lastVisDt,
     DaysFromEndpoint,
@@ -78,9 +87,8 @@ cgm <- cgm %>%
     bmiz,
     DOVISIT,
     dov_CGM,
-    Date,
-    Time,
     SensorValue
   )
 # Save
+write.csv(cgm, file = "~/cgm.csv", na = "", row.names = FALSE)
 save(cgm, file = "./Data_Clean/analysis_dataset.RData")
