@@ -90,5 +90,4 @@ cgm <- cgm %>%
     SensorValue
   )
 # Save
-write.csv(cgm, file = "~/cgm.csv", na = "", row.names = FALSE)
 save(cgm, file = "./Data_Clean/analysis_dataset.RData")
