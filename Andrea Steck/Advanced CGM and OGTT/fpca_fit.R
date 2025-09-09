@@ -13,11 +13,10 @@ setwd(home_dir)
 load(file = "./Data_Clean/analysis_dataset.RData")
 # We want to use sparse/irregular FPCA for these data. For now, we'll set the
 # domain as time to last visit
-ids <- unique(cgm$ID)[1:5]
 sparse_cgm <- cgm %>%
     select(ID, TimeFromEndpoint, SensorValue) %>%
     filter(ID %in% ids) %>%
     rename(argvals = TimeFromEndpoint, subj = ID, y = SensorValue) %>%
     drop_na()
 face_fit <- face.sparse(sparse_cgm, calculate.scores = TRUE, pve = 0.95)
-save(face_fit, "./Data_Clean/face_fit.RData")
+save(face_fit,file= "./Data_Clean/face_fit.RData")
