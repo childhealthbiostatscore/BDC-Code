@@ -18,46 +18,64 @@ editor: source
 ```{r setup}
 #| include: false
 library(tidyverse)
-library(patchwork)
-library(gtsummary)
-library(refund)
-library(face)
-library(pracma)
-library(boot)
-library(scales)
-home_dir <- switch(
-    Sys.info()["sysname"],
+home_dir <- switch(Sys.info()["sysname"],
     "Darwin" = "/Users/tim/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT",
     "Windows" = "C:/Users/Tim/OneDrive - The University of Colorado Denver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT",
     "Linux" = "/home/tim/OneDrive/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT"
 )
-github_dir <- switch(
-    Sys.info()["sysname"],
+github_dir <- switch(Sys.info()["sysname"],
     "Darwin" = "/Users/tim/Documents/GitHub",
     "Windows" = "C:/Users/Tim/Documents/GitHub",
     "Linux" = "/home/tim/Documents/GitHub"
 )
-setwd(home_dir)
 knitr::opts_knit$set(root.dir = home_dir)
 ```
 
 ```{r}
-# Import dataset created by /BDC-Code/Andrea Steck/Advanced CGM and OGTT/create_analysis_dataset.R
-load(file = "./Data_Clean/analysis_dataset.RData")
+# It takes forever to do this sparse FDA on this big a dataset, so this was done
+# on Hyak using fpca_fit.R and fpca_fit.slurm. See those files for details.
+# Just import the FPCA object here.
+setwd(home_dir)
+load(file = "./Data_Clean/face_fit_sparse_cgm.RData")
+# Plot the raw data and mean function
+m <- data.frame(cbind(
+    argvals.new = face_fit$argvals.new,
+    mu.new = face_fit$mu.new,
+    sigma.new = sqrt(diag(face_fit$Chat.new))
+))
+m$ll <- m$mu.new + 1.96 * m$sigma.new
+m$ul <- m$mu.new - 1.96 * m$sigma.new
+ggplot(sparse_cgm, aes(x = argvals, y = y, group = subj)) +
+    geom_line(alpha = 0.5) +
+    geom_line(
+        data = m,
+        aes(x = argvals.new, y = mu.new),
+        inherit.aes = F,
+        color = "red",
+        size = 2
+    ) +
+    geom_ribbon(
+        data = m,
+        aes(x = argvals.new, y = mu.new, ymax = ul, ymin = ll),
+        inherit.aes = F,
+        alpha = 0.2
+    )
+# Plot the covariance estimator
+ggplot(m, aes(x = argvals.new, y = sigma.new)) +
+    geom_line()
+# Heatmap of the smoothed estimator of the correlation function
+plot_ly(x = m$argvals.new, y = m$argvals.new, z = ~ face_fit$Cor.new) %>%
+    add_surface(
+        contours = list(
+            z = list(
+                show = TRUE,
+                usecolormap = TRUE,
+                highlightcolor = "#ff0000",
+                project = list(z = TRUE)
+            )
+        )
+    )
 ```
-
-```{r}
-# We want to use sparse/irregular FPCA for these data. For now, we'll set the
-# domain as time to last visit
-ids <- unique(cgm$ID)[1:5]
-sparse_cgm <- cgm %>%
-    select(ID, TimeFromEndpoint, SensorValue) %>%
-    filter(ID %in% ids) %>%
-    rename(argvals = TimeFromEndpoint, subj = ID, y = SensorValue) %>%
-    drop_na()
-face_fit <- face.sparse(sparse_cgm, calculate.scores = TRUE, pve = 0.95)
-```
-
 
 ```{r}
 # Set a seed

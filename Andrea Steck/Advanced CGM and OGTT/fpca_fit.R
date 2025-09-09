@@ -15,8 +15,7 @@ load(file = "./Data_Clean/analysis_dataset.RData")
 # domain as time to last visit
 sparse_cgm <- cgm %>%
     select(ID, TimeFromEndpoint, SensorValue) %>%
-    filter(ID %in% ids) %>%
     rename(argvals = TimeFromEndpoint, subj = ID, y = SensorValue) %>%
     drop_na()
 face_fit <- face.sparse(sparse_cgm, calculate.scores = TRUE, pve = 0.95)
-save(face_fit,file= "./Data_Clean/face_fit.RData")
+save(face_fit, sparse_cgm, file = "./Data_Clean/face_fit_sparse_cgm.RData")
