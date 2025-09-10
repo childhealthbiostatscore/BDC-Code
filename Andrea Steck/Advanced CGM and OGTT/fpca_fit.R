@@ -24,13 +24,13 @@ cgm <- cgm %>%
 # Create sparse datasets
 sparse_cgm_prog <- cgm %>%
     filter(Group == "Progressor") %>%
-    select(ID, TimeFromEndpoint, SensorValue) %>%
-    rename(argvals = TimeFromEndpoint, subj = ID, y = SensorValue) %>%
+    select(ID, argvals, SensorValue) %>%
+    rename(subj = ID, y = SensorValue) %>%
     drop_na()
 sparse_cgm_non_prog <- cgm %>%
     filter(Group == "Non-Progressor") %>%
-    select(ID, TimeFromEndpoint, SensorValue) %>%
-    rename(argvals = TimeFromEndpoint, subj = ID, y = SensorValue) %>%
+    select(ID, argvals, SensorValue) %>%
+    rename(subj = ID, y = SensorValue) %>%
     drop_na()
 face_fit_prog <- face.sparse(
     sparse_cgm_prog,
