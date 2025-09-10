@@ -11,8 +11,17 @@ home_dir <- switch(
 setwd(home_dir)
 # Import
 load(file = "./Data_Clean/analysis_dataset.RData")
-# We want to use sparse/irregular FPCA for these data. For now, we'll set the
-# domain as time to last visit
+# We want to use sparse/irregular FPCA for these data. Unfortunately the
+# face.sparse function can't handle large dataset, so for now we'll average by
+# time of day across each CGM wear
+cgm <- cgm %>%
+    group_by(ID, Group, CGMDaysFromEndpoint, Time) %>%
+    summarise(
+        SensorValue = mean(SensorValue, na.rm = TRUE),
+        .groups = "drop"
+    ) %>%
+    mutate(argvals = (CGMDaysFromEndpoint + 1) * (24 * 60) + as.numeric(Time))
+# Create sparse datasets
 sparse_cgm_prog <- cgm %>%
     filter(Group == "Progressor") %>%
     select(ID, TimeFromEndpoint, SensorValue) %>%

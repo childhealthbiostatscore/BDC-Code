@@ -50,6 +50,12 @@ cgm <- cgm %>%
       Group == "Non-Progressor" ~
         as.numeric(difftime(Date, lastVisDt, units = "days"))
     ),
+    CGMDaysFromEndpoint = case_when(
+      Group == "Progressor" ~
+        as.numeric(difftime(dov_CGM, EventVisDt_t1d, units = "days")),
+      Group == "Non-Progressor" ~
+        as.numeric(difftime(dov_CGM, lastVisDt, units = "days"))
+    ),
     TimeFromEndpoint = case_when(
       Group == "Progressor" ~
         as.numeric(difftime(
@@ -76,10 +82,12 @@ cgm <- cgm %>%
     screen_FDR_GP,
     HLAGRP,
     DOB,
+    dov_CGM,
     Date,
     Time,
     EventVisDt_t1d,
     lastVisDt,
+    CGMDaysFromEndpoint,
     DaysFromEndpoint,
     TimeFromEndpoint,
     A1C,
