@@ -17,7 +17,8 @@ load(file = "./Data_Clean/analysis_dataset.RData")
 sparse_cgm <- cgm %>%
     select(ID, TimeFromEndpoint, SensorValue) %>%
     rename(argvals = TimeFromEndpoint, subj = ID, y = SensorValue) %>%
-    drop_na() %>%
-    as.ffdf()
+    drop_na()
+sparse_cgm$subj <- as.factor(sparse_cgm$subj)
+sparse_cgm <- as.ffdf(sparse_cgm)
 face_fit <- face.sparse(sparse_cgm, calculate.scores = TRUE, pve = 0.95)
 save(face_fit, sparse_cgm, file = "./Data_Clean/face_fit_sparse_cgm.RData")
