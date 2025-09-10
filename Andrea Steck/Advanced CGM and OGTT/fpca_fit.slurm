@@ -1,14 +1,14 @@
 #!/bin/bash
 
-#SBATCH --job-name="Tim Hyak Test"
+#SBATCH --job-name="sFPCA"
 #SBATCH --mail-type=END
 #SBATCH --mail-user=tvigers@uw.edu
 #SBATCH --account=togo
 #SBATCH --partition=cpu-g2
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=4
-#SBATCH --mem=100G
-#SBATCH --time=00-03:30:00 # Max runtime in DD-HH:MM:SS format.
+#SBATCH --mem=1000G
+#SBATCH --time=02-00:00:00 # Max runtime in DD-HH:MM:SS format.
 #SBATCH --export=all
 
 # Your programs to run.
