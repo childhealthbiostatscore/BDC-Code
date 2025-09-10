@@ -1,7 +1,6 @@
 # Setup
 library(tidyverse)
 library(face)
-library(ff)
 home_dir <- switch(
     Sys.info()[["user"]],
     "laurapyle" = "/Users/laurapyle/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT",
@@ -16,9 +15,9 @@ load(file = "./Data_Clean/analysis_dataset.RData")
 # domain as time to last visit
 sparse_cgm <- cgm %>%
     select(ID, TimeFromEndpoint, SensorValue) %>%
+    filter(TimeFromEndpoint < 0) %>%
+    mutate(TimeFromEndpoint = -1 * TimeFromEndpoint) %>%
     rename(argvals = TimeFromEndpoint, subj = ID, y = SensorValue) %>%
     drop_na()
-sparse_cgm$subj <- as.factor(sparse_cgm$subj)
-sparse_cgm <- as.ffdf(sparse_cgm)
 face_fit <- face.sparse(sparse_cgm, calculate.scores = TRUE, pve = 0.95)
 save(face_fit, sparse_cgm, file = "./Data_Clean/face_fit_sparse_cgm.RData")
