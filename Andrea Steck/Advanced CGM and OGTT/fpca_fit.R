@@ -13,7 +13,8 @@ setwd(home_dir)
 load(file = "./Data_Clean/analysis_dataset.RData")
 # We want to use sparse/irregular FPCA for these data. Unfortunately the
 # face.sparse function can't handle large dataset, so for now we'll average by
-# time of day across each CGM wear
+# time of day across 1 week periods.
+cgm$TimePeriod <- cut(cgm$WeeksFromEndpoint, )
 cgm <- cgm %>%
     group_by(ID, Group, CGMDaysFromEndpoint, Time) %>%
     summarise(

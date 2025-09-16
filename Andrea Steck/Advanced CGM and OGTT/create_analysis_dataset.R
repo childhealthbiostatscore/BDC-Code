@@ -16,6 +16,8 @@ cgm <- read_sas(
 # Import demographics
 demo <- read_sas("./Data_Raw/Final data20250801/demo270.sas7bdat")
 add_demo <- read_sas("./Data_Raw/Final data20250801/adddata.sas7bdat")
+# Find date of last visit
+demo$LastVisitDate <- demo$lastage * 365.25 + ymd(demo$DOB)
 # Convert from numeric time to datetime, round to nearest 5 minutes
 cgm$sensordisplaytime <- as.POSIXct(cgm$newsensortime, origin = "1960-01-01")
 cgm$sensordisplaytime <- round_date(cgm$sensordisplaytime, "5 minutes")
@@ -44,32 +46,21 @@ cgm$lastVisDt <- ymd(cgm$lastVisDt)
 # Calculate days from progression or last visit
 cgm <- cgm %>%
   mutate(
-    DaysFromEndpoint = case_when(
-      Group == "Progressor" ~
-        as.numeric(difftime(Date, EventVisDt_t1d, units = "days")),
-      Group == "Non-Progressor" ~
-        as.numeric(difftime(Date, lastVisDt, units = "days"))
-    ),
-    CGMDaysFromEndpoint = case_when(
-      Group == "Progressor" ~
-        as.numeric(difftime(dov_CGM, EventVisDt_t1d, units = "days")),
-      Group == "Non-Progressor" ~
-        as.numeric(difftime(dov_CGM, lastVisDt, units = "days"))
-    ),
-    TimeFromEndpoint = case_when(
-      Group == "Progressor" ~
-        as.numeric(difftime(
-          ymd_hms(paste(Date, Time)),
-          EventVisDt_t1d,
-          units = "mins"
-        )),
-      Group == "Non-Progressor" ~
-        as.numeric(difftime(
-          ymd_hms(paste(Date, Time)),
-          lastVisDt,
-          units = "mins"
-        ))
-    )
+    CGMDaysFromEndpoint = as.numeric(difftime(
+      dov_CGM,
+      LastVisitDate,
+      units = "days"
+    )),
+    DaysFromEndpoint = as.numeric(difftime(
+      Date,
+      LastVisitDate,
+      units = "days"
+    )),
+    WeeksFromEndpoint = as.numeric(difftime(
+      Date,
+      LastVisitDate,
+      units = "weeks"
+    ))
   )
 # Order and select columns
 cgm <- cgm %>%
@@ -83,13 +74,12 @@ cgm <- cgm %>%
     HLAGRP,
     DOB,
     dov_CGM,
+    LastVisitDate,
     Date,
     Time,
-    EventVisDt_t1d,
-    lastVisDt,
     CGMDaysFromEndpoint,
     DaysFromEndpoint,
-    TimeFromEndpoint,
+    WeeksFromEndpoint,
     A1C,
     bmi,
     bmiz,
@@ -98,4 +88,5 @@ cgm <- cgm %>%
     SensorValue
   )
 # Save
+write.csv(cgm, file = "./Data_Clean/cgm.csv", row.names = F, na = "")
 save(cgm, file = "./Data_Clean/analysis_dataset.RData")
