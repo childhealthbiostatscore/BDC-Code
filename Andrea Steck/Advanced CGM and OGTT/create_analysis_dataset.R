@@ -43,25 +43,6 @@ cgm$Group <- factor(
 cgm$DOVISIT <- ymd(cgm$DOVISIT)
 cgm$EventVisDt_t1d <- ymd(cgm$EventVisDt_t1d)
 cgm$lastVisDt <- ymd(cgm$lastVisDt)
-# Calculate days from progression or last visit
-cgm <- cgm %>%
-  mutate(
-    CGMDaysFromEndpoint = as.numeric(difftime(
-      dov_CGM,
-      LastVisitDate,
-      units = "days"
-    )),
-    DaysFromEndpoint = as.numeric(difftime(
-      Date,
-      LastVisitDate,
-      units = "days"
-    )),
-    WeeksFromEndpoint = as.numeric(difftime(
-      Date,
-      LastVisitDate,
-      units = "weeks"
-    ))
-  )
 # Order and select columns
 cgm <- cgm %>%
   select(
@@ -77,9 +58,6 @@ cgm <- cgm %>%
     LastVisitDate,
     Date,
     Time,
-    CGMDaysFromEndpoint,
-    DaysFromEndpoint,
-    WeeksFromEndpoint,
     A1C,
     bmi,
     bmiz,

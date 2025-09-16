@@ -14,24 +14,42 @@ load(file = "./Data_Clean/analysis_dataset.RData")
 # We want to use sparse/irregular FPCA for these data. Unfortunately the
 # face.sparse function can't handle large dataset, so for now we'll average by
 # time of day across 1 week periods.
-cgm$TimePeriod <- cut(cgm$WeeksFromEndpoint, )
+# Calculate days from progression or last visit
 cgm <- cgm %>%
-    group_by(ID, Group, CGMDaysFromEndpoint, Time) %>%
+    mutate(
+        CGMDaysFromEndpoint = as.numeric(difftime(
+            dov_CGM,
+            LastVisitDate,
+            units = "days"
+        )),
+        DaysFromEndpoint = as.numeric(difftime(
+            Date,
+            LastVisitDate,
+            units = "days"
+        )),
+        WeeksFromEndpoint = as.numeric(difftime(
+            Date,
+            LastVisitDate,
+            units = "weeks"
+        ))
+    )
+cgm$TimePeriod <- ceiling(cgm$WeeksFromEndpoint)
+cgm <- cgm %>%
+    group_by(ID, Group, TimePeriod, Time) %>%
     summarise(
         SensorValue = mean(SensorValue, na.rm = TRUE),
         .groups = "drop"
-    ) %>%
-    mutate(argvals = (CGMDaysFromEndpoint + 1) * (24 * 60) + as.numeric(Time))
+    )
 # Create sparse datasets
 sparse_cgm_prog <- cgm %>%
     filter(Group == "Progressor") %>%
-    select(ID, argvals, SensorValue) %>%
-    rename(subj = ID, y = SensorValue) %>%
+    select(ID, TimePeriod, SensorValue) %>%
+    rename(subj = ID, argvals = TimePeriod, y = SensorValue) %>%
     drop_na()
 sparse_cgm_non_prog <- cgm %>%
     filter(Group == "Non-Progressor") %>%
-    select(ID, argvals, SensorValue) %>%
-    rename(subj = ID, y = SensorValue) %>%
+    select(ID, TimePeriod, SensorValue) %>%
+    rename(subj = ID, argvals = TimePeriod, y = SensorValue) %>%
     drop_na()
 face_fit_prog <- face.sparse(
     sparse_cgm_prog,
