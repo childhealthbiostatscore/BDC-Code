@@ -1,5 +1,6 @@
 # Setup
 library(tidyverse)
+library(refund)
 library(face)
 home_dir <- switch(
     Sys.info()[["user"]],
@@ -22,40 +23,34 @@ cgm <- cgm %>%
             LastVisitDate,
             units = "days"
         )),
-        DaysFromEndpoint = as.numeric(difftime(
-            Date,
-            LastVisitDate,
-            units = "days"
-        )),
-        WeeksFromEndpoint = as.numeric(difftime(
-            Date,
-            LastVisitDate,
-            units = "weeks"
-        ))
     )
-cgm$TimePeriod <- ceiling(cgm$WeeksFromEndpoint)
-cgm <- cgm %>%
-    group_by(ID, Group, TimePeriod, Time) %>%
-    summarise(
-        SensorValue = mean(SensorValue, na.rm = TRUE),
-        .groups = "drop"
-    )
+# Average by hour of day for each CGM wear
+cgm_wear <- cgm %>%
+    group_by(ID, CGMDaysFromEndpoint, Time) %>%
+    summarise(SensorValue = mean(SensorValue, na.rm = TRUE), .groups = "drop")
+# None of this is working and I think that we may have too much/too spare data
+# for the FDA packages. Hang on to the code for now, but don't bother running
+# it.
 # Create sparse datasets
-sparse_cgm_prog <- cgm %>%
-    filter(Group == "Progressor") %>%
-    select(ID, TimePeriod, SensorValue) %>%
-    rename(subj = ID, argvals = TimePeriod, y = SensorValue) %>%
+sparse_cgm_prog1 <- cgm %>%
+    filter(ID %in% c("00174-0", "00376-0")) %>%
+    select(ID, TimeFromEndpoint, SensorValue) %>%
+    rename(subj = ID, argvals = TimeFromEndpoint, y = SensorValue) %>%
     drop_na()
+sparse_cgm_prog2 <- cgm %>%
+    filter(ID %in% c("00174-0", "00376-0", "00670-0")) %>%
+    select(ID, TimeFromEndpoint, SensorValue) %>%
+    rename(subj = ID, argvals = TimeFromEndpoint, y = SensorValue) %>%
+    drop_na()
+face_fit_non_prog1 <- face.sparse(sparse_cgm_prog1)
+face_fit_non_prog2 <- face.sparse(sparse_cgm_prog2)
+
 sparse_cgm_non_prog <- cgm %>%
     filter(Group == "Non-Progressor") %>%
-    select(ID, TimePeriod, SensorValue) %>%
-    rename(subj = ID, argvals = TimePeriod, y = SensorValue) %>%
+    select(ID, TimeFromEndpoint, SensorValue) %>%
+    rename(.id = ID, .index = TimeFromEndpoint, .value = SensorValue) %>%
     drop_na()
-face_fit_prog <- face.sparse(
-    sparse_cgm_prog,
-    calculate.scores = TRUE,
-    two_step = TRUE
-)
+face_fit_prog <- fpca.sc(ydata = sparse_cgm_prog)
 face_fit_non_prog <- face.sparse(
     sparse_cgm_non_prog,
     calculate.scores = TRUE,
