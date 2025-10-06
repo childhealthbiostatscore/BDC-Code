@@ -2,26 +2,35 @@ library(redcapAPI)
 library(tidyverse)
 library(lubridate)
 library(readxl)
+library(keyring)
 # Download from REDCap
-unlockREDCap(c(rcon = "MERIT Study"),
-  keyring = "API_KEYs",
-  envir = 1,
-  url = "https://redcap.ucdenver.edu/api/"
-)
-df <- exportRecordsTyped(rcon)
+api_key <- key_get("MERIT Study")
+df <- exportRecordsTyped(redcapConnection(
+  url = "https://redcap.ucdenver.edu/api/",
+  token = api_key
+))
 # Subset tracking data
 tracking <- df %>%
   select(
-    participant_id, contains("screening_exercise_order"), contains("track_bc"),
-    track_period_start, track_date_postitive,
-    track_period_start_mo2, track_date_positive_ovu_2,
-    track_period_start_mo3, track_date_positive_ovu_3,
-    contains("mo1_ex"), contains("mo2_ex"), contains("mo3_ex")
+    participant_id,
+    contains("screening_exercise_order"),
+    contains("track_bc"),
+    track_period_start,
+    track_date_postitive,
+    track_period_start_mo2,
+    track_date_positive_ovu_2,
+    track_period_start_mo3,
+    track_date_positive_ovu_3,
+    contains("mo1_ex"),
+    contains("mo2_ex"),
+    contains("mo3_ex")
   ) %>%
   group_by(participant_id) %>%
   summarise(across(everything(), ~ first(.x, na_rm = T)))
 # Working directory
-setwd("/Users/timvigers/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Janet Snell-Bergeon/MERIT")
+setwd(
+  "/Users/tim/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Janet Snell-Bergeon/MERIT"
+)
 # Pull in everyone's CGM data
 cgm <- list.files("./Data_Raw/Dexcom Data", full.names = T, recursive = T)
 cgm <- cgm[grep("CSV/\\d", cgm)]
@@ -51,7 +60,9 @@ cgm <- do.call(rbind, cgm)
 cgm$sensorglucose <- as.numeric(cgm$sensorglucose)
 cgm <- cgm[!is.na(cgm$sensorglucose), ]
 # Activity
-activity <- read.csv("./Data_Raw/Actigraph/Data Transfer - 1_30_2025 5_19 PM UTC_638738544641160848/epochsummarydata.csv")
+activity <- read.csv(
+  "./Data_Raw/Actigraph/Data Transfer - 1_30_2025 5_19 PM UTC_638738544641160848/epochsummarydata.csv"
+)
 # Format dates
 activity$Timestamp <- ymd_hms(sub("T", " ", activity$Timestamp))
 # Remove rows with Wear == "False"
@@ -68,7 +79,8 @@ activity <- activity %>% filter(!id_time %in% dupes)
 dupes_df <- dupes_df %>%
   group_by(Subject, Timestamp) %>%
   summarise(across(
-    c(Steps, AxisYCounts, Calories), ~ mean(.x, na.rm = TRUE)
+    c(Steps, AxisYCounts, Calories),
+    ~ mean(.x, na.rm = TRUE)
   ))
 # Merge back in
 activity <- full_join(activity, dupes_df)
@@ -79,7 +91,8 @@ activity <- activity %>%
 cgm$timestamp <- round_date(cgm$timestamp, "1 minute")
 cgm <- full_join(cgm, activity, by = join_by(participant_id, timestamp))
 # List insulin files
-insulin_files <- list.files("./Data_Clean/Insulin",
+insulin_files <- list.files(
+  "./Data_Clean/Insulin",
   recursive = T,
   full.names = T
 )
@@ -94,25 +107,34 @@ insulin <- lapply(insulin_files, function(f) {
     # Round times to nearest minute.
     basal$`Local Time` <- round_date(basal$`Local Time`, "1 minute")
     bolus$`Local Time` <- round_date(bolus$`Local Time`, "1 minute")
+    # If there's an autmoated and a temp at the same timepoint, use the temp row
+
     # For bolus, assume that column "normal" indicates insulin units. Only need
     # timestamp and insulin right now.
     basal <- basal %>%
       select(`Local Time`, `Duration (mins)`, Rate) %>%
       rename(
-        timestamp = "Local Time", basal_duration = "Duration (mins)",
+        timestamp = "Local Time",
+        basal_duration = "Duration (mins)",
         basal_rate = Rate
       )
+
     bolus <- bolus %>%
       select(`Local Time`, Normal) %>%
       rename(bolus = "Normal", timestamp = "Local Time")
-    insulin <- full_join(basal, bolus,
+    insulin <- full_join(
+      basal,
+      bolus,
       by = join_by(timestamp),
       relationship = "many-to-many"
     )
   } else {
-    insulin <- read_csv(f,
-      locale = locale(encoding = "latin1"), show_col_types = F,
-      name_repair = "unique_quiet", col_types = cols(.default = col_character())
+    insulin <- read_csv(
+      f,
+      locale = locale(encoding = "latin1"),
+      show_col_types = F,
+      name_repair = "unique_quiet",
+      col_types = cols(.default = col_character())
     )
     if (ncol(insulin) == 14) {
       insulin <- insulin %>%
@@ -122,7 +144,8 @@ insulin <- lapply(insulin_files, function(f) {
           bolus = "Insulin Value (u)"
         )
       insulin$timestamp <- round_date(
-        ymd_hms(sub("T", " ", insulin$timestamp)), "1 minute"
+        ymd_hms(sub("T", " ", insulin$timestamp)),
+        "1 minute"
       )
       insulin$basal_rate <- NA
       insulin$basal_duration <- NA
@@ -138,15 +161,20 @@ insulin <- lapply(insulin_files, function(f) {
           bolus = "Bolus Volume Delivered (U)"
         )
       insulin$basal_rate <- suppressWarnings(as.numeric(insulin$basal_rate))
-      insulin$basal_duration <- suppressWarnings(as.numeric(insulin$basal_duration))
+      insulin$basal_duration <- suppressWarnings(as.numeric(
+        insulin$basal_duration
+      ))
       insulin$bolus <- suppressWarnings(as.numeric(insulin$bolus))
     } else if (ncol(insulin) == 20) {
       colnames(insulin) <- insulin[which(insulin[, 2] == "BolusType")[1], ]
-      insulin <- insulin[which(insulin[, 2] == "BolusType")[1] + 1:nrow(insulin), ]
+      insulin <- insulin[
+        which(insulin[, 2] == "BolusType")[1] + 1:nrow(insulin),
+      ]
       insulin <- insulin %>%
         rename(timestamp = CompletionDateTime, bolus = InsulinDelivered)
       insulin$timestamp <- round_date(
-        ymd_hms(sub("T", " ", insulin$timestamp)), "1 minute"
+        ymd_hms(sub("T", " ", insulin$timestamp)),
+        "1 minute"
       )
       insulin$basal_rate <- NA
       insulin$basal_duration <- NA
@@ -156,7 +184,8 @@ insulin <- lapply(insulin_files, function(f) {
       insulin <- insulin[-1, ]
       insulin <- insulin %>%
         rename(
-          timestamp = Timestamp, basal_rate = Rate,
+          timestamp = Timestamp,
+          basal_rate = Rate,
           basal_duration = "Duration (minutes)"
         )
       insulin$timestamp <- round_date(mdy_hm(insulin$timestamp), "1 minute")
@@ -168,7 +197,8 @@ insulin <- lapply(insulin_files, function(f) {
       insulin <- insulin[-1, ]
       insulin <- insulin %>%
         rename(
-          timestamp = Timestamp, bolus = "Insulin Delivered (U)"
+          timestamp = Timestamp,
+          bolus = "Insulin Delivered (U)"
         )
       insulin$timestamp <- round_date(mdy_hm(insulin$timestamp), "1 minute")
       insulin$basal_rate <- NA
@@ -176,25 +206,47 @@ insulin <- lapply(insulin_files, function(f) {
       insulin$bolus <- as.numeric(insulin$bolus)
     }
   }
-  insulin <- insulin %>% select(timestamp, basal_rate, basal_duration, bolus)
   # Add ID and return
   insulin$participant_id <- id
-  return(insulin)
+  insulin <- insulin %>%
+    select(participant_id, timestamp, basal_rate, basal_duration, bolus)
+  insulin
 })
 # Combine
 insulin <- do.call(rbind, insulin)
 # If there are duplicate timestamps, add them together
 insulin <- insulin %>%
-  group_by(timestamp) %>%
+  group_by(participant_id, timestamp) %>%
   summarise(
-    basal_rate = sum(basal_rate, na.rm = T),
-    basal_duration = sum(basal_duration, na.rm = T),
-    bolus = sum(bolus, na.rm = T)
+    basal_rate = sum(basal_rate, na.rm = TRUE),
+    basal_duration = sum(basal_duration, na.rm = TRUE),
+    bolus = sum(bolus, na.rm = TRUE)
   )
-# Convert 0s to missing since these are the result of adding together two NAs
-insulin$basal_rate[insulin$basal_rate == 0] <- NA
-insulin$basal_duration[insulin$basal_duration == 0] <- NA
-insulin$bolus[insulin$bolus == 0] <- NA
+# Insulin testing
+id <- "101_EX"
+start <- mdy("08.10.2024")
+end <- mdy("08.23.2024") + 1
+ins_test <- insulin %>%
+  filter(participant_id == id, timestamp >= start & timestamp <= end) %>%
+  rowwise() %>%
+  mutate(total = (basal_rate * (basal_duration / 60)) + bolus) %>%
+  group_by(as.Date(timestamp)) %>%
+  summarise(tdd = sum(total)) %>%
+  ungroup() %>%
+  summarise(avg_dd = mean(tdd))
+
+id <- "101_EX"
+start <- mdy("10.05.2024")
+end <- mdy("10.18.2024") + 1
+ins_test <- insulin %>%
+  filter(participant_id == id, timestamp >= start & timestamp <= end) %>%
+  rowwise() %>%
+  mutate(total = (basal_rate * (basal_duration / 60)) + bolus) %>%
+  group_by(as.Date(timestamp)) %>%
+  summarise(tdd = sum(total)) %>%
+  ungroup() %>%
+  summarise(avg_dd = mean(tdd))
+
 # Add to CGM data
 cgm <- full_join(cgm, insulin)
 # Add study phase
@@ -205,9 +257,14 @@ cgm$study_phase[cgm$timestamp >= cgm$track_period_start_mo3] <- "Month 3"
 # Now add the insulin doses for those in REDCap
 redcap_insulin <- df %>%
   select(
-    participant_id, redcap_event_name, insulin_follic_tdd,
-    insulin_follic_basal, insulin_follic_bolus, insulin_luteal_tdd,
-    insulin_luteal_basal, insulin_luteal_bolus
+    participant_id,
+    redcap_event_name,
+    insulin_follic_tdd,
+    insulin_follic_basal,
+    insulin_follic_bolus,
+    insulin_luteal_tdd,
+    insulin_luteal_basal,
+    insulin_luteal_bolus
   ) %>%
   mutate(redcap_event_name = sub(" \\(.*", "", redcap_event_name)) %>%
   rename(study_phase = redcap_event_name) %>%
@@ -216,41 +273,71 @@ redcap_insulin <- df %>%
 cgm <- left_join(cgm, redcap_insulin)
 # Add menstrual cycle phase
 cgm$menstrual_phase <- "Follicular"
-cgm$menstrual_phase[cgm$study_phase == "Month 1" &
-  cgm$timestamp >= cgm$track_date_postitive + days(1)] <- "Luteal"
-cgm$menstrual_phase[cgm$study_phase == "Month 2" &
-  cgm$timestamp >= cgm$track_date_positive_ovu_2 + days(1)] <- "Luteal"
-cgm$menstrual_phase[cgm$study_phase == "Month 3" &
-  cgm$timestamp >= cgm$track_date_positive_ovu_3 + days(1)] <- "Luteal"
+cgm$menstrual_phase[
+  cgm$study_phase == "Month 1" &
+    cgm$timestamp >= cgm$track_date_postitive + days(1)
+] <- "Luteal"
+cgm$menstrual_phase[
+  cgm$study_phase == "Month 2" &
+    cgm$timestamp >= cgm$track_date_positive_ovu_2 + days(1)
+] <- "Luteal"
+cgm$menstrual_phase[
+  cgm$study_phase == "Month 3" &
+    cgm$timestamp >= cgm$track_date_positive_ovu_3 + days(1)
+] <- "Luteal"
 cgm$menstrual_phase[cgm$track_bc == "Yes"] <- "On Birth Control"
 # Add exercise timing info
 cgm$exercising <- "No"
-cgm$exercising[cgm$timestamp >= cgm$mo1_ex1_time &
-  cgm$timestamp < cgm$mo1_ex1_time_stop] <- "Yes"
-cgm$exercising[cgm$timestamp >= cgm$mo1_ex2_time &
-  cgm$timestamp < cgm$mo1_ex2_time_stop] <- "Yes"
-cgm$exercising[cgm$timestamp >= cgm$mo2_ex1_time &
-  cgm$timestamp < cgm$mo2_ex1_time_stop] <- "Yes"
-cgm$exercising[cgm$timestamp >= cgm$mo2_ex2_time &
-  cgm$timestamp < cgm$mo2_ex2_time_stop] <- "Yes"
-cgm$exercising[cgm$timestamp >= cgm$mo3_ex1_time &
-  cgm$timestamp < cgm$mo3_ex1_time_stop] <- "Yes"
-cgm$exercising[cgm$timestamp >= cgm$mo3_ex2_time &
-  cgm$timestamp < cgm$mo3_ex2_time_stop] <- "Yes"
+cgm$exercising[
+  cgm$timestamp >= cgm$mo1_ex1_time &
+    cgm$timestamp < cgm$mo1_ex1_time_stop
+] <- "Yes"
+cgm$exercising[
+  cgm$timestamp >= cgm$mo1_ex2_time &
+    cgm$timestamp < cgm$mo1_ex2_time_stop
+] <- "Yes"
+cgm$exercising[
+  cgm$timestamp >= cgm$mo2_ex1_time &
+    cgm$timestamp < cgm$mo2_ex1_time_stop
+] <- "Yes"
+cgm$exercising[
+  cgm$timestamp >= cgm$mo2_ex2_time &
+    cgm$timestamp < cgm$mo2_ex2_time_stop
+] <- "Yes"
+cgm$exercising[
+  cgm$timestamp >= cgm$mo3_ex1_time &
+    cgm$timestamp < cgm$mo3_ex1_time_stop
+] <- "Yes"
+cgm$exercising[
+  cgm$timestamp >= cgm$mo3_ex2_time &
+    cgm$timestamp < cgm$mo3_ex2_time_stop
+] <- "Yes"
 # 24 hours post-exercise
 cgm$exercise_24_hr_window <- "No"
-cgm$exercise_24_hr_window[cgm$timestamp >= cgm$mo1_ex1_time_stop &
-  cgm$timestamp < (cgm$mo1_ex1_time_stop + hours(24))] <- "Yes"
-cgm$exercise_24_hr_window[cgm$timestamp >= cgm$mo1_ex2_time_stop &
-  cgm$timestamp < (cgm$mo1_ex2_time_stop + hours(24))] <- "Yes"
-cgm$exercise_24_hr_window[cgm$timestamp >= cgm$mo2_ex1_time_stop &
-  cgm$timestamp < (cgm$mo2_ex1_time_stop + hours(24))] <- "Yes"
-cgm$exercise_24_hr_window[cgm$timestamp >= cgm$mo2_ex2_time_stop &
-  cgm$timestamp < (cgm$mo2_ex2_time_stop + hours(24))] <- "Yes"
-cgm$exercise_24_hr_window[cgm$timestamp >= cgm$mo3_ex1_time_stop &
-  cgm$timestamp < (cgm$mo3_ex1_time_stop + hours(24))] <- "Yes"
-cgm$exercise_24_hr_window[cgm$timestamp >= cgm$mo3_ex2_time_stop &
-  cgm$timestamp < (cgm$mo3_ex2_time_stop + hours(24))] <- "Yes"
+cgm$exercise_24_hr_window[
+  cgm$timestamp >= cgm$mo1_ex1_time_stop &
+    cgm$timestamp < (cgm$mo1_ex1_time_stop + hours(24))
+] <- "Yes"
+cgm$exercise_24_hr_window[
+  cgm$timestamp >= cgm$mo1_ex2_time_stop &
+    cgm$timestamp < (cgm$mo1_ex2_time_stop + hours(24))
+] <- "Yes"
+cgm$exercise_24_hr_window[
+  cgm$timestamp >= cgm$mo2_ex1_time_stop &
+    cgm$timestamp < (cgm$mo2_ex1_time_stop + hours(24))
+] <- "Yes"
+cgm$exercise_24_hr_window[
+  cgm$timestamp >= cgm$mo2_ex2_time_stop &
+    cgm$timestamp < (cgm$mo2_ex2_time_stop + hours(24))
+] <- "Yes"
+cgm$exercise_24_hr_window[
+  cgm$timestamp >= cgm$mo3_ex1_time_stop &
+    cgm$timestamp < (cgm$mo3_ex1_time_stop + hours(24))
+] <- "Yes"
+cgm$exercise_24_hr_window[
+  cgm$timestamp >= cgm$mo3_ex2_time_stop &
+    cgm$timestamp < (cgm$mo3_ex2_time_stop + hours(24))
+] <- "Yes"
 # Exercise type
 cgm$exercise_type <- cgm$screening_exercise_order_mo1
 cgm$exercise_type[cgm$study_phase == "Month 2"] <-
@@ -263,8 +350,13 @@ cgm$time_of_day[hour(cgm$timestamp) < 6 | hour(cgm$timestamp) > 23] <- "Night"
 # Remove unnecessary columns
 cgm <- cgm %>%
   select(
-    participant_id:bolus, insulin_follic_tdd:insulin_luteal_bolus, time_of_day,
-    study_phase, menstrual_phase, exercise_type, exercising,
+    participant_id:bolus,
+    insulin_follic_tdd:insulin_luteal_bolus,
+    time_of_day,
+    study_phase,
+    menstrual_phase,
+    exercise_type,
+    exercising,
     exercise_24_hr_window
   )
 cgm$id_time <- NULL
