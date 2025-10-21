@@ -1,0 +1,190 @@
+---
+title: "Advanced CGM and OGTT: Joint Models"
+author: "Tim Vigers"
+date: "now"
+date-format: "MMMM D, YYYY [at] hh:mm a"
+format:
+  html:
+    toc: true
+    toc-depth: 5
+    toc-float: true
+    code-fold: true
+    self-contained: true
+    fig-cap-location: top
+    page-layout: full
+editor: source
+---
+
+```{r setup}
+#| include: false
+library(tidyverse)
+library(plotly)
+library(nlme)
+library(JM)
+library(JMbayes)
+library(ggsurvfit)
+home_dir <- "/Users/tim/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT"
+knitr::opts_knit$set(root.dir = home_dir)
+```
+
+```{r data cleaning}
+# See BDC-Code/Andrea Steck/Advanced CGM and OGTT/create_analysis_dataset.R
+load("./Data_Clean/analysis_dataset.RData")
+# Calculate age and days from progression or last visit
+cgm <- cgm %>%
+    mutate(
+        Age = as.numeric(difftime(dov_CGM, DOB, units = "days")),
+        AgeEndpoint = as.numeric(difftime(LastVisitDate, DOB, units = "days")),
+        CGMDaysFromEndpoint = as.numeric(difftime(
+            dov_CGM,
+            LastVisitDate,
+            units = "days"
+        ))
+    )
+# Time periods per Andrea and Brigs
+cgm <- cgm %>%
+    mutate(
+        nTime = as.numeric(Time),
+        TimePeriod = case_when(
+            nTime >= 82800 | nTime < 18000 ~ "11pm - 5am",
+            nTime >= 18000 & nTime < 39600 ~ "5am - 11am",
+            nTime >= 39600 & nTime < 61200 ~ "11am - 5pm",
+            nTime >= 61200 & nTime < 82800 ~ "5pm - 11pm",
+            .default = "other"
+        ),
+        # Shift numeric time so that 11pm is our 0
+        nTime = ifelse(nTime >= 82800, nTime - 82800, nTime + 3600)
+    )
+cgm$TimePeriod <- factor(
+    cgm$TimePeriod,
+    levels = c("11pm - 5am", "5am - 11am", "11am - 5pm", "5pm - 11pm")
+)
+# For each CGM wear, calculate summary metrics by time period for LMMs
+cgm_lmm <- cgm %>%
+    filter(CGMDaysFromEndpoint <= 0) %>%
+    group_by(
+        ID,
+        Group,
+        sex,
+        Race_Ethn2,
+        screen_FDR_GP,
+        HLAGRP,
+        Age
+    ) %>%
+    summarise(
+        mean_glucose = mean(SensorValue, na.rm = TRUE),
+        sd_glucose = sd(SensorValue, na.rm = TRUE)
+    )
+# Create survival dataset
+cgm_surv <- cgm %>%
+    group_by(
+        ID,
+        Group,
+        sex,
+        Race_Ethn2,
+        screen_FDR_GP,
+        HLAGRP
+    ) %>%
+    summarise(AgeEndpoint = unique(AgeEndpoint)) %>%
+    rename(Age = AgeEndpoint) %>%
+    filter(ID %in% cgm_lmm$ID)
+```
+
+# Plots
+
+## Mean glucose over time
+
+```{r}
+#| label: fig-mean
+#| fig-cap: Mean glucose over time
+mean_plot <- ggplot(
+    cgm_lmm,
+    aes(x = Age, y = mean_glucose, color = ID)
+) +
+    geom_point(alpha = 0.1) +
+    geom_line(alpha = 0.5) +
+    theme_bw() +
+    theme(legend.position = "none")
+ggplotly(mean_plot)
+```
+
+## Glucose SD over time
+
+```{r}
+#| label: fig-sd
+#| fig-cap: Glucose SD over time
+sd_plot <- ggplot(
+    cgm_lmm,
+    aes(x = Age, y = sd_glucose, color = ID)
+) +
+    geom_point(alpha = 0.1) +
+    geom_line(alpha = 0.5) +
+    theme_bw() +
+    theme(legend.position = "none")
+ggplotly(sd_plot)
+```
+
+## Survival
+
+```{r}
+survfit2(
+    Surv(Age / 365.25, as.numeric(Group == "Progressor")) ~ 1,
+    data = cgm_surv
+) |>
+    ggsurvfit() +
+    labs(
+        x = "Age (years)",
+        y = "Overall survival probability"
+    ) +
+    add_confidence_interval()
+```
+
+# Joint models
+
+## Mean glucose
+
+```{r}
+lme_fit_mean <- lme(
+    mean_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
+    random = ~ 1 | ID,
+    data = cgm_lmm
+)
+cox_fit_mean <- coxph(
+    Surv(Age, as.numeric(Group == "Progressor")) ~
+        sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
+    x = T,
+    model = T,
+    data = cgm_surv
+)
+cox.zph(cox_fit_mean)
+joint_fit_mean <- jointModel(lme_fit_mean, cox_fit_mean, timeVar = "Age")
+joint_fit_bayes_mean <- jointModelBayes(
+    lme_fit_mean,
+    cox_fit_mean,
+    timeVar = "Age"
+)
+```
+
+## SD
+
+```{r}
+lme_fit_sd <- lme(
+    sd_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
+    random = ~ 1 | ID,
+    data = cgm_lmm
+)
+cox_fit_sd <- coxph(
+    Surv(Age, as.numeric(Group == "Progressor")) ~
+        sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
+    x = T,
+    model = T,
+    data = cgm_surv
+)
+cox.zph(cox_fit_sd)
+joint_fit_sd <- jointModel(lme_fit_sd, cox_fit_sd, timeVar = "Age")
+joint_fit_bayes_sd <- jointModelBayes(
+    lme_fit_sd,
+    cox_fit_sd,
+    timeVar = "Age"
+)
+```
