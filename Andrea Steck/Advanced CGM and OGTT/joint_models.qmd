@@ -32,66 +32,66 @@ knitr::opts_knit$set(root.dir = home_dir)
 load("./Data_Clean/analysis_dataset.RData")
 # Calculate age and days from progression or last visit
 cgm <- cgm %>%
-    mutate(
-        Age = as.numeric(difftime(dov_CGM, DOB, units = "days")) / 365.25,
-        AgeEndpoint = as.numeric(difftime(LastVisitDate, DOB, units = "days")),
-        CGMDaysFromEndpoint = as.numeric(difftime(
-            dov_CGM,
-            LastVisitDate,
-            units = "days"
-        ))
-    )
+  mutate(
+    Age = as.numeric(difftime(dov_CGM, DOB, units = "days")) / 365.25,
+    AgeEndpoint = as.numeric(difftime(LastVisitDate, DOB, units = "days")),
+    CGMDaysFromEndpoint = as.numeric(difftime(
+      dov_CGM,
+      LastVisitDate,
+      units = "days"
+    ))
+  )
 # Exclude 05-01813's weird 2019-12-17 CGM per Brigs
 cgm <- cgm %>% filter(!(ID == "05-01813" & dov_CGM == "2019-12-17"))
 # Time periods per Andrea and Brigs
 cgm <- cgm %>%
-    mutate(
-        nTime = as.numeric(Time),
-        TimePeriod = case_when(
-            nTime >= 82800 | nTime < 18000 ~ "11pm - 5am",
-            nTime >= 18000 & nTime < 39600 ~ "5am - 11am",
-            nTime >= 39600 & nTime < 61200 ~ "11am - 5pm",
-            nTime >= 61200 & nTime < 82800 ~ "5pm - 11pm",
-            .default = "other"
-        ),
-        # Shift numeric time so that 11pm is our 0
-        nTime = ifelse(nTime >= 82800, nTime - 82800, nTime + 3600)
-    )
+  mutate(
+    nTime = as.numeric(Time),
+    TimePeriod = case_when(
+      nTime >= 82800 | nTime < 18000 ~ "11pm - 5am",
+      nTime >= 18000 & nTime < 39600 ~ "5am - 11am",
+      nTime >= 39600 & nTime < 61200 ~ "11am - 5pm",
+      nTime >= 61200 & nTime < 82800 ~ "5pm - 11pm",
+      .default = "other"
+    ),
+    # Shift numeric time so that 11pm is our 0
+    nTime = ifelse(nTime >= 82800, nTime - 82800, nTime + 3600)
+  )
 cgm$TimePeriod <- factor(
-    cgm$TimePeriod,
-    levels = c("11pm - 5am", "5am - 11am", "11am - 5pm", "5pm - 11pm")
+  cgm$TimePeriod,
+  levels = c("11pm - 5am", "5am - 11am", "11am - 5pm", "5pm - 11pm")
 )
 # For each CGM wear, calculate summary metrics for LMMs
 cgm_lmm <- cgm %>%
-    filter(CGMDaysFromEndpoint <= 0) %>%
-    group_by(
-        ID,
-        Group,
-        sex,
-        Race_Ethn2,
-        screen_FDR_GP,
-        HLAGRP,
-        Age
-    ) %>%
-    summarise(
-        mean_glucose = mean(SensorValue, na.rm = TRUE),
-        eA1c = (mean_glucose + 46.7) / 28.7,
-        sd_glucose = sd(SensorValue, na.rm = TRUE),
-        .groups = "drop"
-    )
+  filter(CGMDaysFromEndpoint <= 0) %>%
+  group_by(
+    ID,
+    Group,
+    sex,
+    Race_Ethn2,
+    screen_FDR_GP,
+    HLAGRP,
+    Age
+  ) %>%
+  summarise(
+    mean_glucose = mean(SensorValue, na.rm = TRUE),
+    eA1c = (mean_glucose + 46.7) / 28.7,
+    sd_glucose = sd(SensorValue, na.rm = TRUE),
+    .groups = "drop"
+  )
 # Create survival dataset
 cgm_surv <- cgm %>%
-    group_by(
-        ID,
-        Group,
-        sex,
-        Race_Ethn2,
-        screen_FDR_GP,
-        HLAGRP
-    ) %>%
-    summarise(AgeEndpoint = unique(AgeEndpoint) / 365.25, .groups = "drop") %>%
-    rename(Age = AgeEndpoint) %>%
-    filter(ID %in% cgm_lmm$ID)
+  group_by(
+    ID,
+    Group,
+    sex,
+    Race_Ethn2,
+    screen_FDR_GP,
+    HLAGRP
+  ) %>%
+  summarise(AgeEndpoint = unique(AgeEndpoint) / 365.25, .groups = "drop") %>%
+  rename(Age = AgeEndpoint) %>%
+  filter(ID %in% cgm_lmm$ID)
 ```
 
 # Across the whole day
@@ -100,13 +100,13 @@ cgm_surv <- cgm %>%
 #| label: fig-mean
 #| fig-cap: Mean glucose over time
 mean_plot <- ggplot(
-    cgm_lmm,
-    aes(x = Age, y = mean_glucose, color = ID)
+  cgm_lmm,
+  aes(x = Age, y = mean_glucose, color = ID)
 ) +
-    geom_point(alpha = 0.1) +
-    geom_line(alpha = 0.5) +
-    theme_bw() +
-    theme(legend.position = "none")
+  geom_point(alpha = 0.1) +
+  geom_line(alpha = 0.5) +
+  theme_bw() +
+  theme(legend.position = "none")
 ggplotly(mean_plot)
 ```
 
@@ -114,43 +114,43 @@ ggplotly(mean_plot)
 #| label: fig-sd
 #| fig-cap: Glucose SD over time
 sd_plot <- ggplot(
-    cgm_lmm,
-    aes(x = Age, y = sd_glucose, color = ID)
+  cgm_lmm,
+  aes(x = Age, y = sd_glucose, color = ID)
 ) +
-    geom_point(alpha = 0.1) +
-    geom_line(alpha = 0.5) +
-    theme_bw() +
-    theme(legend.position = "none")
+  geom_point(alpha = 0.1) +
+  geom_line(alpha = 0.5) +
+  theme_bw() +
+  theme(legend.position = "none")
 ggplotly(sd_plot)
 ```
 
 ```{r}
 survfit2(
-    Surv(Age, as.numeric(Group == "Progressor")) ~ 1,
-    data = cgm_surv
+  Surv(Age, as.numeric(Group == "Progressor")) ~ 1,
+  data = cgm_surv
 ) |>
-    ggsurvfit() +
-    labs(
-        x = "Age (years)",
-        y = "Overall survival probability"
-    ) +
-    add_confidence_interval()
+  ggsurvfit() +
+  labs(
+    x = "Age (years)",
+    y = "Overall survival probability"
+  ) +
+  add_confidence_interval()
 ```
 
 ## Mean glucose
 
 ```{r}
 lme_fit_mean <- lme(
-    mean_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
-    random = ~ 1 | ID,
-    data = cgm_lmm
+  mean_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
+  random = ~ 1 | ID,
+  data = cgm_lmm
 )
 cox_fit <- coxph(
-    Surv(Age, as.numeric(Group == "Progressor")) ~
-        sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
-    x = T,
-    model = T,
-    data = cgm_surv
+  Surv(Age, as.numeric(Group == "Progressor")) ~
+    sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
+  x = T,
+  model = T,
+  data = cgm_surv
 )
 joint_fit_mean <- jointModel(lme_fit_mean, cox_fit, timeVar = "Age")
 s <- summary(joint_fit_mean)
@@ -162,9 +162,9 @@ kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
 
 ```{r}
 lme_fit_sd <- lme(
-    sd_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
-    random = ~ 1 | ID,
-    data = cgm_lmm
+  sd_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
+  random = ~ 1 | ID,
+  data = cgm_lmm
 )
 joint_fit_sd <- jointModel(lme_fit_sd, cox_fit, timeVar = "Age")
 s <- summary(joint_fit_sd)
@@ -177,37 +177,37 @@ kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
 ```{r}
 # For each CGM wear, calculate summary metrics by time period for LMMs
 cgm_lmm <- cgm %>%
-    filter(CGMDaysFromEndpoint <= 0) %>%
-    group_by(
-        ID,
-        Group,
-        sex,
-        Race_Ethn2,
-        screen_FDR_GP,
-        HLAGRP,
-        Age,
-        TimePeriod
-    ) %>%
-    summarise(
-        mean_glucose = mean(SensorValue, na.rm = TRUE),
-        eA1c = (mean_glucose + 46.7) / 28.7,
-        sd_glucose = sd(SensorValue, na.rm = TRUE),
-        .groups = "drop"
-    )
+  filter(CGMDaysFromEndpoint <= 0) %>%
+  group_by(
+    ID,
+    Group,
+    sex,
+    Race_Ethn2,
+    screen_FDR_GP,
+    HLAGRP,
+    Age,
+    TimePeriod
+  ) %>%
+  summarise(
+    mean_glucose = mean(SensorValue, na.rm = TRUE),
+    eA1c = (mean_glucose + 46.7) / 28.7,
+    sd_glucose = sd(SensorValue, na.rm = TRUE),
+    .groups = "drop"
+  )
 ```
 
 ```{r}
 #| label: fig-mean-period
 #| fig-cap: Mean glucose over time by period
 mean_plot <- ggplot(
-    cgm_lmm,
-    aes(x = Age, y = mean_glucose, color = ID)
+  cgm_lmm,
+  aes(x = Age, y = mean_glucose, color = ID)
 ) +
-    geom_point(alpha = 0.1) +
-    geom_line(alpha = 0.5) +
-    theme_bw() +
-    theme(legend.position = "none") +
-    facet_wrap(~TimePeriod)
+  geom_point(alpha = 0.1) +
+  geom_line(alpha = 0.5) +
+  theme_bw() +
+  theme(legend.position = "none") +
+  facet_wrap(~TimePeriod)
 ggplotly(mean_plot)
 ```
 
@@ -215,14 +215,14 @@ ggplotly(mean_plot)
 #| label: fig-sd-period
 #| fig-cap: Glucose SD over time by period
 sd_plot <- ggplot(
-    cgm_lmm,
-    aes(x = Age, y = sd_glucose, color = ID)
+  cgm_lmm,
+  aes(x = Age, y = sd_glucose, color = ID)
 ) +
-    geom_point(alpha = 0.1) +
-    geom_line(alpha = 0.5) +
-    theme_bw() +
-    theme(legend.position = "none") +
-    facet_wrap(~TimePeriod)
+  geom_point(alpha = 0.1) +
+  geom_line(alpha = 0.5) +
+  theme_bw() +
+  theme(legend.position = "none") +
+  facet_wrap(~TimePeriod)
 ggplotly(sd_plot)
 ```
 
@@ -232,9 +232,9 @@ ggplotly(sd_plot)
 
 ```{r}
 lme_fit_mean <- lme(
-    mean_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
-    random = ~ 1 | ID,
-    data = cgm_lmm[cgm_lmm$TimePeriod == "11pm - 5am", ]
+  mean_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
+  random = ~ 1 | ID,
+  data = cgm_lmm[cgm_lmm$TimePeriod == "11pm - 5am", ]
 )
 joint_fit_mean <- jointModel(lme_fit_mean, cox_fit, timeVar = "Age")
 s <- summary(joint_fit_mean)
@@ -246,9 +246,9 @@ kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
 
 ```{r}
 lme_fit_sd <- lme(
-    sd_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
-    random = ~ 1 | ID,
-    data = cgm_lmm[cgm_lmm$TimePeriod == "11pm - 5am", ]
+  sd_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
+  random = ~ 1 | ID,
+  data = cgm_lmm[cgm_lmm$TimePeriod == "11pm - 5am", ]
 )
 joint_fit_sd <- jointModel(lme_fit_sd, cox_fit, timeVar = "Age")
 s <- summary(joint_fit_sd)
@@ -262,9 +262,9 @@ kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
 
 ```{r}
 lme_fit_mean <- lme(
-    mean_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
-    random = ~ 1 | ID,
-    data = cgm_lmm[cgm_lmm$TimePeriod == "5am - 11am", ]
+  mean_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
+  random = ~ 1 | ID,
+  data = cgm_lmm[cgm_lmm$TimePeriod == "5am - 11am", ]
 )
 joint_fit_mean <- jointModel(lme_fit_mean, cox_fit, timeVar = "Age")
 s <- summary(joint_fit_mean)
@@ -276,9 +276,9 @@ kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
 
 ```{r}
 lme_fit_sd <- lme(
-    sd_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
-    random = ~ 1 | ID,
-    data = cgm_lmm[cgm_lmm$TimePeriod == "5am - 11am", ]
+  sd_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
+  random = ~ 1 | ID,
+  data = cgm_lmm[cgm_lmm$TimePeriod == "5am - 11am", ]
 )
 joint_fit_sd <- jointModel(lme_fit_sd, cox_fit, timeVar = "Age")
 s <- summary(joint_fit_sd)
@@ -293,9 +293,9 @@ kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
 
 ```{r}
 lme_fit_mean <- lme(
-    mean_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
-    random = ~ 1 | ID,
-    data = cgm_lmm[cgm_lmm$TimePeriod == "11am - 5pm", ]
+  mean_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
+  random = ~ 1 | ID,
+  data = cgm_lmm[cgm_lmm$TimePeriod == "11am - 5pm", ]
 )
 joint_fit_mean <- jointModel(lme_fit_mean, cox_fit, timeVar = "Age")
 s <- summary(joint_fit_mean)
@@ -307,9 +307,9 @@ kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
 
 ```{r}
 lme_fit_sd <- lme(
-    sd_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
-    random = ~ 1 | ID,
-    data = cgm_lmm[cgm_lmm$TimePeriod == "11am - 5pm", ]
+  sd_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
+  random = ~ 1 | ID,
+  data = cgm_lmm[cgm_lmm$TimePeriod == "11am - 5pm", ]
 )
 joint_fit_sd <- jointModel(lme_fit_sd, cox_fit, timeVar = "Age")
 s <- summary(joint_fit_sd)
@@ -323,9 +323,9 @@ kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
 
 ```{r}
 lme_fit_mean <- lme(
-    mean_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
-    random = ~ 1 | ID,
-    data = cgm_lmm[cgm_lmm$TimePeriod == "5pm - 11pm", ]
+  mean_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
+  random = ~ 1 | ID,
+  data = cgm_lmm[cgm_lmm$TimePeriod == "5pm - 11pm", ]
 )
 joint_fit_mean <- jointModel(lme_fit_mean, cox_fit, timeVar = "Age")
 s <- summary(joint_fit_mean)
@@ -337,9 +337,9 @@ kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
 
 ```{r}
 lme_fit_sd <- lme(
-    sd_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
-    random = ~ 1 | ID,
-    data = cgm_lmm[cgm_lmm$TimePeriod == "5pm - 11pm", ]
+  sd_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + HLAGRP,
+  random = ~ 1 | ID,
+  data = cgm_lmm[cgm_lmm$TimePeriod == "5pm - 11pm", ]
 )
 joint_fit_sd <- jointModel(lme_fit_sd, cox_fit, timeVar = "Age")
 s <- summary(joint_fit_sd)
