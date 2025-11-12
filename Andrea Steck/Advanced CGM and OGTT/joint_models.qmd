@@ -24,7 +24,7 @@ library(JM)
 library(JMbayes2)
 library(ggsurvfit)
 library(knitr)
-home_dir <- "/Users/tim/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT"
+home_dir <- "/Users/tim/Library/CloudStorage/OneDrive-UW/UWMDI/Andrea Steck/Advanced CGM and OGTT"
 knitr::opts_knit$set(root.dir = home_dir)
 ```
 
@@ -93,7 +93,7 @@ cgm_lmm <- cgm |>
     Age
   ) |>
   summarise(
-    mean_glucose = mean(SensorValue, na.rm = TRUE),
+    mean_glucose = median(SensorValue, na.rm = TRUE),
     eA1c = (mean_glucose + 46.7) / 28.7,
     sd_glucose = sd(SensorValue, na.rm = TRUE),
     .groups = "drop"
@@ -121,7 +121,6 @@ cgm_surv$maxAB_group <- droplevels(cgm_surv$maxAB_group)
 ## Across the whole day
 
 ```{r}
-#| label: fig-mean
 #| fig-cap: Mean glucose over time
 mean_plot <- ggplot(
   cgm_lmm,
@@ -135,7 +134,6 @@ ggplotly(mean_plot)
 ```
 
 ```{r}
-#| label: fig-sd
 #| fig-cap: Glucose SD over time
 sd_plot <- ggplot(
   cgm_lmm,
@@ -205,11 +203,13 @@ jointFit <- jm(
   cox_fit,
   list(lme_fit_mean, lme_fit_sd),
   time_var = "Age",
-  n_iter = 12000L,
-  n_burnin = 2000L,
-  n_thin = 5L
+  id_var = "ID",
+  n_iter = 1e6,
+  n_burnin = 1e4
 )
 summary(jointFit)
+ggtraceplot(jointFit, "alphas")
+ggtraceplot(jointFit, "betas")
 ```
 
 ```{r}
@@ -256,7 +256,6 @@ cgm_lmm$maxAB_group <- droplevels(cgm_lmm$maxAB_group)
 ```
 
 ```{r}
-#| label: fig-mean-period
 #| fig-cap: Mean glucose over time by period
 mean_plot <- ggplot(
   cgm_lmm,
@@ -271,7 +270,6 @@ ggplotly(mean_plot)
 ```
 
 ```{r}
-#| label: fig-sd-period
 #| fig-cap: Glucose SD over time by period
 sd_plot <- ggplot(
   cgm_lmm,
@@ -445,6 +443,7 @@ cgm_surv <- cgm |>
   rename(TimeFromFirstCGM = TimeOfEndpoint) |>
   filter(ID %in% cgm_lmm$ID, TimeFromFirstCGM != 0)
 cgm_surv$event = as.numeric(cgm_surv$Group == "Progressor")
+cgm_lmm <- cgm_lmm |> filter(ID %in% cgm_surv$ID)
 # Drop unused levels
 cgm_lmm$maxAB_group <- droplevels(cgm_lmm$maxAB_group)
 cgm_surv$maxAB_group <- droplevels(cgm_surv$maxAB_group)
@@ -453,7 +452,6 @@ cgm_surv$maxAB_group <- droplevels(cgm_surv$maxAB_group)
 ## Across the whole day
 
 ```{r}
-#| label: fig-mean
 #| fig-cap: Mean glucose over time
 mean_plot <- ggplot(
   cgm_lmm,
@@ -468,7 +466,6 @@ ggplotly(mean_plot)
 ```
 
 ```{r}
-#| label: fig-sd
 #| fig-cap: Glucose SD over time
 sd_plot <- ggplot(
   cgm_lmm,
@@ -499,11 +496,7 @@ survfit2(
 
 ```{r}
 lme_fit_mean <- lme(
-  mean_glucose ~ TimeFromFirstCGM +
-    sex +
-    Race_Ethn2 +
-    screen_FDR_GP +
-    maxAB_group,
+  mean_glucose ~ TimeFromFirstCGM,
   random = ~ 1 | ID,
   data = cgm_lmm
 )
@@ -530,14 +523,46 @@ kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
 
 ```{r}
 lme_fit_sd <- lme(
-  sd_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + maxAB_group,
+  sd_glucose ~ TimeFromFirstCGM,
   random = ~ 1 | ID,
   data = cgm_lmm
 )
-joint_fit_sd <- jointModel(lme_fit_sd, cox_fit, timeVar = "Age")
+joint_fit_sd <- jointModel(lme_fit_sd, cox_fit, timeVar = "TimeFromFirstCGM")
 s <- summary(joint_fit_sd)
 kable(s$`CoefTable-Long`, caption = "Longitudinal Process", digits = 3)
 kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
+```
+
+### Mean and SD together
+
+```{r}
+jointFit <- jm(
+  cox_fit,
+  list(lme_fit_mean, lme_fit_sd),
+  time_var = "TimeFromFirstCGM",
+  id_var = "ID",
+  n_iter = 1e4,
+  n_burnin = 1e2
+)
+summary(jointFit)
+```
+
+```{r}
+#| eval: false
+ND <- cgm_lmm |> filter(ID %in% c("00799-0"), Age < 16)
+ND$event <- 0
+ND$Ages <- 16
+
+predLong1 <- predict(jointFit, newdata = ND, return_newdata = TRUE)
+plot(predLong1)
+predSurv <- predict(
+  jointFit,
+  newdata = ND,
+  process = "event",
+  times = seq(16, 20, length.out = 51),
+  return_newdata = TRUE
+)
+plot(predLong1, predSurv)
 ```
 
 ## By time period
@@ -553,7 +578,7 @@ cgm_lmm <- cgm |>
     Race_Ethn2,
     screen_FDR_GP,
     maxAB_group,
-    Age,
+    TimeFromFirstCGM,
     TimePeriod
   ) |>
   summarise(
@@ -562,19 +587,20 @@ cgm_lmm <- cgm |>
     sd_glucose = sd(SensorValue, na.rm = TRUE),
     .groups = "drop"
   ) |>
+  filter(ID %in% cgm_surv$ID) |>
   drop_na()
 cgm_lmm$maxAB_group <- droplevels(cgm_lmm$maxAB_group)
 ```
 
 ```{r}
-#| label: fig-mean-period
 #| fig-cap: Mean glucose over time by period
 mean_plot <- ggplot(
   cgm_lmm,
-  aes(x = Age, y = mean_glucose, color = ID)
+  aes(x = TimeFromFirstCGM, y = mean_glucose, color = ID)
 ) +
   geom_point(alpha = 0.1) +
   geom_line(alpha = 0.5) +
+  xlab("Days from First CGM Wear") +
   theme_bw() +
   theme(legend.position = "none") +
   facet_wrap(~TimePeriod)
@@ -582,14 +608,14 @@ ggplotly(mean_plot)
 ```
 
 ```{r}
-#| label: fig-sd-period
 #| fig-cap: Glucose SD over time by period
 sd_plot <- ggplot(
   cgm_lmm,
-  aes(x = Age, y = sd_glucose, color = ID)
+  aes(x = TimeFromFirstCGM, y = sd_glucose, color = ID)
 ) +
   geom_point(alpha = 0.1) +
   geom_line(alpha = 0.5) +
+  xlab("Days from First CGM Wear") +
   theme_bw() +
   theme(legend.position = "none") +
   facet_wrap(~TimePeriod)
@@ -602,11 +628,15 @@ ggplotly(sd_plot)
 
 ```{r}
 lme_fit_mean <- lme(
-  mean_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + maxAB_group,
+  mean_glucose ~ TimeFromFirstCGM,
   random = ~ 1 | ID,
   data = cgm_lmm[cgm_lmm$TimePeriod == "11pm - 5am", ]
 )
-joint_fit_mean <- jointModel(lme_fit_mean, cox_fit, timeVar = "Age")
+joint_fit_mean <- jointModel(
+  lme_fit_mean,
+  cox_fit,
+  timeVar = "TimeFromFirstCGM"
+)
 s <- summary(joint_fit_mean)
 kable(s$`CoefTable-Long`, caption = "Longitudinal Process", digits = 3)
 kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
@@ -615,12 +645,13 @@ kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
 #### SD
 
 ```{r}
+#| eval: false
 lme_fit_sd <- lme(
-  sd_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + maxAB_group,
+  sd_glucose ~ TimeFromFirstCGM,
   random = ~ 1 | ID,
   data = cgm_lmm[cgm_lmm$TimePeriod == "11pm - 5am", ]
 )
-joint_fit_sd <- jointModel(lme_fit_sd, cox_fit, timeVar = "Age")
+joint_fit_sd <- jointModel(lme_fit_sd, cox_fit, timeVar = "TimeFromFirstCGM")
 s <- summary(joint_fit_sd)
 kable(s$`CoefTable-Long`, caption = "Longitudinal Process", digits = 3)
 kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
@@ -632,11 +663,15 @@ kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
 
 ```{r}
 lme_fit_mean <- lme(
-  mean_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + maxAB_group,
+  mean_glucose ~ TimeFromFirstCGM,
   random = ~ 1 | ID,
   data = cgm_lmm[cgm_lmm$TimePeriod == "5am - 11am", ]
 )
-joint_fit_mean <- jointModel(lme_fit_mean, cox_fit, timeVar = "Age")
+joint_fit_mean <- jointModel(
+  lme_fit_mean,
+  cox_fit,
+  timeVar = "TimeFromFirstCGM"
+)
 s <- summary(joint_fit_mean)
 kable(s$`CoefTable-Long`, caption = "Longitudinal Process", digits = 3)
 kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
@@ -646,11 +681,11 @@ kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
 
 ```{r}
 lme_fit_sd <- lme(
-  sd_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + maxAB_group,
+  sd_glucose ~ TimeFromFirstCGM,
   random = ~ 1 | ID,
   data = cgm_lmm[cgm_lmm$TimePeriod == "5am - 11am", ]
 )
-joint_fit_sd <- jointModel(lme_fit_sd, cox_fit, timeVar = "Age")
+joint_fit_sd <- jointModel(lme_fit_sd, cox_fit, timeVar = "TimeFromFirstCGM")
 s <- summary(joint_fit_sd)
 kable(s$`CoefTable-Long`, caption = "Longitudinal Process", digits = 3)
 kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
@@ -663,11 +698,15 @@ kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
 
 ```{r}
 lme_fit_mean <- lme(
-  mean_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + maxAB_group,
+  mean_glucose ~ TimeFromFirstCGM,
   random = ~ 1 | ID,
   data = cgm_lmm[cgm_lmm$TimePeriod == "11am - 5pm", ]
 )
-joint_fit_mean <- jointModel(lme_fit_mean, cox_fit, timeVar = "Age")
+joint_fit_mean <- jointModel(
+  lme_fit_mean,
+  cox_fit,
+  timeVar = "TimeFromFirstCGM"
+)
 s <- summary(joint_fit_mean)
 kable(s$`CoefTable-Long`, caption = "Longitudinal Process", digits = 3)
 kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
@@ -677,11 +716,11 @@ kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
 
 ```{r}
 lme_fit_sd <- lme(
-  sd_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + maxAB_group,
+  sd_glucose ~ TimeFromFirstCGM,
   random = ~ 1 | ID,
   data = cgm_lmm[cgm_lmm$TimePeriod == "11am - 5pm", ]
 )
-joint_fit_sd <- jointModel(lme_fit_sd, cox_fit, timeVar = "Age")
+joint_fit_sd <- jointModel(lme_fit_sd, cox_fit, timeVar = "TimeFromFirstCGM")
 s <- summary(joint_fit_sd)
 kable(s$`CoefTable-Long`, caption = "Longitudinal Process", digits = 3)
 kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
@@ -693,11 +732,15 @@ kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
 
 ```{r}
 lme_fit_mean <- lme(
-  mean_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + maxAB_group,
+  mean_glucose ~ TimeFromFirstCGM,
   random = ~ 1 | ID,
   data = cgm_lmm[cgm_lmm$TimePeriod == "5pm - 11pm", ]
 )
-joint_fit_mean <- jointModel(lme_fit_mean, cox_fit, timeVar = "Age")
+joint_fit_mean <- jointModel(
+  lme_fit_mean,
+  cox_fit,
+  timeVar = "TimeFromFirstCGM"
+)
 s <- summary(joint_fit_mean)
 kable(s$`CoefTable-Long`, caption = "Longitudinal Process", digits = 3)
 kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
@@ -707,11 +750,11 @@ kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
 
 ```{r}
 lme_fit_sd <- lme(
-  sd_glucose ~ Age + sex + Race_Ethn2 + screen_FDR_GP + maxAB_group,
+  sd_glucose ~ TimeFromFirstCGM,
   random = ~ 1 | ID,
   data = cgm_lmm[cgm_lmm$TimePeriod == "5pm - 11pm", ]
 )
-joint_fit_sd <- jointModel(lme_fit_sd, cox_fit, timeVar = "Age")
+joint_fit_sd <- jointModel(lme_fit_sd, cox_fit, timeVar = "TimeFromFirstCGM")
 s <- summary(joint_fit_sd)
 kable(s$`CoefTable-Long`, caption = "Longitudinal Process", digits = 3)
 kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
