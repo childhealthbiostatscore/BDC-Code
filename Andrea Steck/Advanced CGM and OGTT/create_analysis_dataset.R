@@ -16,6 +16,21 @@ cgm <- read_sas(
 # Import demographics
 demo <- read_sas("./Data_Raw/Final data20250801/demo270.sas7bdat")
 add_demo <- read_sas("./Data_Raw/Final data20250801/adddata.sas7bdat")
+maxab <- read_sas("./Data_Raw/Final data20250801/maxab.sas7bdat")
+# Format demographics columns
+demo$Race_Ethn2 <- factor(
+  demo$Race_Ethn2,
+  levels = c("AA", "HISP", "NHW", "Other"),
+  labels = c("Other", "Other", "NHW", "Other")
+)
+# Get max AB group (the file from Fran isn't actually the maximum, it's the AB)
+# status at each visit
+maxab <- maxab |>
+  group_by(ID, study) |>
+  summarise(maxAB_group = max(maxAB_group), .groups = "drop")
+maxab$maxAB_group <- factor(maxab$maxAB_group)
+# Add max AB to demographics
+demo <- left_join(demo, maxab, by = join_by(study, ID))
 # Find date of last visit
 demo$LastVisitDate <- demo$lastage * 365.25 + ymd(demo$DOB)
 # Convert from numeric time to datetime, round to nearest 5 minutes
@@ -52,7 +67,7 @@ cgm <- cgm %>%
     sex,
     Race_Ethn2,
     screen_FDR_GP,
-    HLAGRP,
+    maxAB_group,
     DOB,
     dov_CGM,
     LastVisitDate,
@@ -65,6 +80,10 @@ cgm <- cgm %>%
     dov_CGM,
     SensorValue
   )
+# Some more formatting
+cgm$sex <- factor(cgm$sex)
+cgm$screen_FDR_GP <- factor(cgm$screen_FDR_GP)
+cgm$study <- factor(cgm$study)
 # Save
 write.csv(cgm, file = "./Data_Clean/cgm.csv", row.names = F, na = "")
 save(cgm, file = "./Data_Clean/analysis_dataset.RData")
