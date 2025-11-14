@@ -162,6 +162,9 @@ joint_fit_mean_sd <- jm(
 )
 # Save everything
 save(
+  cgm,
+  cgm_lmm,
+  cgm_surv,
   cox_fit,
   lme_fit_mean_ri,
   lme_fit_mean_rs,
