@@ -12,4 +12,4 @@
 #SBATCH --export=all
 
 # Your programs to run.
-apptainer exec --bind /gscratch debian.sif Rscript /gscratch/togo/tvigers/GitHub/BDC-Code/Andrea Steck/Advanced CGM and OGTT/joint_models.r
+apptainer exec --bind /gscratch debian.sif Rscript /gscratch/togo/tvigers/GitHub/BDC-Code/Andrea\ Steck/Advanced\ CGM\ and\ OGTT/joint_models.r
