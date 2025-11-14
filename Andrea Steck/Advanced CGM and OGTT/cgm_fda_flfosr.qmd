@@ -1,0 +1,112 @@
+---
+title: "CGM FDA"
+author: "Laura Pyle & Tim Vigers"
+date: "today"
+date-format: long
+format:
+  html:
+    toc: true
+    toc-depth: 5
+    toc-float: true
+    code-fold: true
+    self-contained: true
+    fig-cap-location: top
+    page-layout: full
+editor: source
+---
+
+```{r setup}
+#| include: false
+library(tidyverse)
+library(plotly)
+library(FLFOSR)
+library(dplyr)
+library(tidyr)
+
+user <- Sys.info()[["user"]]
+if (user == "laurapyle") {
+  home_dir <- "/Users/pylell/Library/CloudStorage/OneDrive-SharedLibraries-UW(2)/Tim Vigers - UWMDI/Andrea Steck/Advanced CGM and OGTT"
+  github_dir <- "/Users/pylell/Documents/GitHub"
+} else if (user == "lpyle") {
+  home_dir <- '/Users/pylell/Library/CloudStorage/OneDrive-SharedLibraries-UW(2)/Tim Vigers - UWMDI/Andrea Steck/Advanced CGM and OGTT'
+  github_dir <- "/Users/pylell/Documents/GitHub"
+} else if (user == "pylell") {
+  home_dir <- '/Users/pylell/Library/CloudStorage/OneDrive-SharedLibraries-UW(2)/Tim Vigers - UWMDI/Andrea Steck/Advanced CGM and OGTT'
+  github_dir <- "/Users/pylell/Documents/GitHub"
+} else {
+  home_dir <- switch(Sys.info()["sysname"],
+    "Darwin" = "/Users/tim/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT",
+    "Windows" = "C:/Users/Tim/OneDrive - The University of Colorado Denver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT",
+    "Linux" = "/home/tim/OneDrive/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT"
+  )
+  github_dir <- switch(Sys.info()["sysname"],
+    "Darwin" = "/Users/tim/Documents/GitHub",
+    "Windows" = "C:/Users/Tim/Documents/GitHub",
+    "Linux" = "/home/tim/Documents/GitHub"
+  )
+}
+
+knitr::opts_knit$set(root.dir = home_dir)
+```
+
+
+```{r}
+setwd(home_dir)
+load(file = "./Data_Clean/analysis_dataset.RData")
+
+# we have days within wears
+# either need to take the average across days within wears (wear is the unit of analysis)
+# or use day as the unit of analysis with uneven spacing
+
+# first try treating every available sensor glucose measure separately
+# per the FLFOSR documentation:
+# j = 1, ..., m days
+# i = 1, ..., n subjects
+# l = 1, ...., L scalar covariates
+
+# Y needs to have a column for each curve with a row for each measure on a common grid
+# X is the design matrix of fixed effects with a column of 1s for intercept
+# z is a vector specifying group memberships
+cgm_keep <- cgm %>% select(ID, dov_CGM, Date, Time, SensorValue, Group)
+cgm_keep$num_Group <- ifelse(cgm_keep$Group == "Progressor", 1, 2)
+wear_numbers <- cgm_keep %>% select(ID, dov_CGM) %>% unique()
+wear_numbers <- wear_numbers %>% group_by(ID) %>% mutate(wear_number = row_number()) %>% ungroup()
+cgm_keep <- full_join(cgm_keep, wear_numbers, by = c("ID", "dov_CGM"))
+df_wide <- cgm_keep %>%
+  mutate(ID_Date = paste(ID, dov_CGM, sep = "_")) %>%
+  # Select only the columns we need
+  select(Time, ID_Date, SensorValue) %>%
+  # Handle duplicate Time values within each ID_Date by taking the mean
+  # (or you could use first(), last(), etc. depending on your needs)
+  group_by(Time, ID_Date) %>%
+  summarise(SensorValue = mean(SensorValue, na.rm = TRUE), .groups = "drop") %>%
+  # Pivot to wide format
+  pivot_wider(
+    names_from = ID_Date,
+    values_from = SensorValue
+  )
+df_wide$Time <- NULL
+# make sure z has repeat values to match number of curves per person
+create_group_vector <- function(df) {
+  # Get unique ID-Date combinations with their group information
+  id_date_groups <- df %>%
+    select(ID, dov_CGM, num_Group) %>%
+    distinct() %>%
+    arrange(ID, dov_CGM)
+  # Create the vector by repeating num_group for each ID-Date combination
+  group_vector <- id_date_groups$num_Group
+  return(group_vector)
+}
+
+# Usage
+z <- create_group_vector(cgm_keep)
+z <- as.data.frame(z)
+X <- model.matrix(~1, data = df_wide)
+
+mod <- flfosr(Y = as.matrix(df_wide), X = as.matrix(X), z = as.matrix(z))
+
+# above is not working, try simulating data and fitting the model
+simdata <- sim_lfosr_data(N = 20, Mi = 5, L = 3, Tn = 100)
+
+m1 <- flfosr(simdata$Y, simdata$X, simdata$z)
+```
