@@ -29,7 +29,8 @@ home_dir <- switch(
   "laurapyle" = "/Users/laurapyle/Library/CloudStorage/OneDrive-SharedLibraries-UW(2)/Tim Vigers - UWMDI/Andrea Steck/Advanced CGM and OGTT",
   "lpyle" = "/Users/lpyle/Library/CloudStorage/OneDrive-SharedLibraries-UW(2)/Tim Vigers - UWMDI/Andrea Steck/Advanced CGM and OGTT",
   "pylell" = "/Users/pylell/Library/CloudStorage/OneDrive-SharedLibraries-UW(2)/Tim Vigers - UWMDI/Andrea Steck/Advanced CGM and OGTT",
-  "tvigers" = "/gscratch/togo/tvigers/UWMDI/Nanhee Kim/CKD Metabolomics",
+  "tvigers" = "/gscratch/togo/tvigers/Data/BDC/Andrea Steck/Advanced CGM and OGTT",
+  "root" = "/gscratch/togo/tvigers/Data/BDC/Andrea Steck/Advanced CGM and OGTT",
   "tim" = "/Users/tim/Library/CloudStorage/OneDrive-UW/UWMDI/Andrea Steck/Advanced CGM and OGTT"
 )
 knitr::opts_knit$set(root.dir = home_dir)
@@ -174,6 +175,10 @@ lme_fit_mean <- lme(
   random = ~ Age | ID,
   data = cgm_lmm
 )
+cgm_lmm$pred = predict(lme_fit_mean)
+ggplot(cgm_lmm, aes(x = Age, y = pred, color = ID)) +
+  geom_line() +
+  theme(legend.position = "none")
 cox_fit <- coxph(
   Surv(Ages, event) ~ sex +
     Race_Ethn2 +
@@ -192,9 +197,11 @@ joint_fit_mean <- jm(
   n_burnin = 1e4,
   control = list(n_chains = 4, cores = 4)
 )
+ggtraceplot(joint_fit_mean, "alphas")
+ggtraceplot(joint_fit_mean, "betas")
 s <- summary(joint_fit_mean)
-kable(s$`CoefTable-Long`, caption = "Longitudinal Process", digits = 3)
-kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
+kable(s$Outcome1, caption = "Longitudinal Process", digits = 3)
+kable(s$Survival, caption = "Event Process", digits = 3)
 ```
 
 ### SD
@@ -202,13 +209,24 @@ kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
 ```{r}
 lme_fit_sd <- lme(
   sd_glucose ~ Age,
-  random = ~ 1 | ID,
-  data = cgm_lmm
+  random = ~ Age | ID,
+  data = cgm_lmm,
+  control = list(opt = "optim")
 )
-joint_fit_sd <- jointModel(lme_fit_sd, cox_fit, timeVar = "Age")
+joint_fit_sd <- jm(
+  cox_fit,
+  lme_fit_sd,
+  time_var = "Age",
+  id_var = "ID",
+  n_iter = 1e5,
+  n_burnin = 1e3,
+  control = list(n_chains = 4, cores = 4)
+)
+ggtraceplot(joint_fit_sd, "alphas")
+ggtraceplot(joint_fit_sd, "betas")
 s <- summary(joint_fit_sd)
-kable(s$`CoefTable-Long`, caption = "Longitudinal Process", digits = 3)
-kable(s$`CoefTable-Event`, caption = "Event Process", digits = 3)
+kable(s$Outcome1, caption = "Longitudinal Process", digits = 3)
+kable(s$Survival, caption = "Event Process", digits = 3)
 ```
 
 ### Mean and SD together
@@ -221,7 +239,8 @@ jointFit <- jm(
   time_var = "Age",
   id_var = "ID",
   n_iter = 1e6,
-  n_burnin = 1e4
+  n_burnin = 1e4,
+  control = list(n_chains = 4, cores = 4)
 )
 summary(jointFit)
 ggtraceplot(jointFit, "alphas")
