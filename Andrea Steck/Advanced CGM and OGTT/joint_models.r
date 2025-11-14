@@ -100,7 +100,12 @@ cgm_surv$event = as.numeric(cgm_surv$Group == "Progressor")
 cgm_lmm$maxAB_group <- droplevels(cgm_lmm$maxAB_group)
 cgm_surv$maxAB_group <- droplevels(cgm_surv$maxAB_group)
 # Mean glucose
-lme_fit_mean <- lme(
+lme_fit_mean_ri <- lme(
+  mean_glucose ~ Age,
+  random = ~ 1 | ID,
+  data = cgm_lmm
+)
+lme_fit_mean_rs <- lme(
   mean_glucose ~ Age,
   random = ~ Age | ID,
   data = cgm_lmm
@@ -116,7 +121,7 @@ cox_fit <- coxph(
 )
 joint_fit_mean <- jm(
   cox_fit,
-  lme_fit_mean,
+  lme_fit_mean_rs,
   time_var = "Age",
   id_var = "ID",
   n_iter = 1e6,
@@ -124,7 +129,13 @@ joint_fit_mean <- jm(
   control = list(n_chains = 4, cores = 4)
 )
 # SD
-lme_fit_sd <- lme(
+lme_fit_sd_ri <- lme(
+  sd_glucose ~ Age,
+  random = ~ 1 | ID,
+  data = cgm_lmm,
+  control = list(opt = "optim")
+)
+lme_fit_sd_rs <- lme(
   sd_glucose ~ Age,
   random = ~ Age | ID,
   data = cgm_lmm,
@@ -132,7 +143,7 @@ lme_fit_sd <- lme(
 )
 joint_fit_sd <- jm(
   cox_fit,
-  lme_fit_sd,
+  lme_fit_sd_rs,
   time_var = "Age",
   id_var = "ID",
   n_iter = 1e5,
@@ -142,7 +153,7 @@ joint_fit_sd <- jm(
 # Both
 joint_fit_mean_sd <- jm(
   cox_fit,
-  list(lme_fit_mean, lme_fit_sd),
+  list(lme_fit_mean_rs, lme_fit_sd_rs),
   time_var = "Age",
   id_var = "ID",
   n_iter = 1e6,
@@ -152,9 +163,11 @@ joint_fit_mean_sd <- jm(
 # Save everything
 save(
   cox_fit,
-  lme_fit_mean,
+  lme_fit_mean_ri,
+  lme_fit_mean_rs,
   joint_fit_mean,
-  lme_fit_sd,
+  lme_fit_sd_ri,
+  lme_fit_sd_rs,
   joint_fit_sd,
   joint_fit_mean_sd,
   "./Data_Clean/joint_model_results.RData"
