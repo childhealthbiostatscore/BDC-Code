@@ -1,0 +1,245 @@
+---
+title: "Advanced CGM and OGTT: Joint Models"
+author: "Tim Vigers"
+date: "now"
+date-format: "MMMM D, YYYY [at] hh:mm a"
+format:
+  html:
+    toc: true
+    toc-depth: 5
+    toc-float: true
+    code-fold: true
+    self-contained: true
+    fig-cap-location: top
+    page-layout: full
+editor: source
+---
+
+```{r setup}
+#| include: false
+library(tidyverse)
+library(plotly)
+library(nlme)
+library(JM)
+library(JMbayes2)
+library(ggsurvfit)
+library(knitr)
+library(dplyr)
+library(ggplot2)
+home_dir <- "/Users/tim/Library/CloudStorage/OneDrive-UW/UWMDI/Andrea Steck/Advanced CGM and OGTT"
+
+user <- Sys.info()[["user"]]
+if (user == "laurapyle") {
+  home_dir <- "/Users/laurapyle/Library/CloudStorage/OneDrive-SharedLibraries-UW(2)/Tim Vigers - UWMDI/Andrea Steck/Advanced CGM and OGTT"
+} else if (user == "lpyle") {
+  home_dir <- '/Users/lpyle/Library/CloudStorage/OneDrive-SharedLibraries-UW/Tim Vigers - UWMDI/Andrea Steck/Advanced CGM and OGTT'
+} else if (user == "pylell") {
+  home_dir <- '/Users/pylell/Library/CloudStorage/OneDrive-SharedLibraries-UW(2)/Tim Vigers - UWMDI/Andrea Steck/Advanced CGM and OGTT'
+} else {
+  home_dir <- "/Users/tim/Library/CloudStorage/OneDrive-UW/UWMDI/Andrea Steck/Advanced CGM and OGTT"
+}
+
+knitr::opts_knit$set(root.dir = home_dir)
+```
+
+# Age as time variable
+
+```{r data cleaning}
+setwd(home_dir)
+# See BDC-Code/Andrea Steck/Advanced CGM and OGTT/create_analysis_dataset.R
+load("./Data_Clean/analysis_dataset.RData")
+# Calculate age and days from progression or last visit, and time from first CGM
+cgm <- cgm |>
+  mutate(
+    Age = as.numeric(difftime(dov_CGM, DOB, units = "days")) / 365.25,
+    AgeEndpoint = as.numeric(difftime(LastVisitDate, DOB, units = "days")),
+    CGMDaysFromEndpoint = as.numeric(difftime(
+      dov_CGM,
+      LastVisitDate,
+      units = "days"
+    ))
+  ) |>
+  group_by(ID, study) |>
+  mutate(
+    FirstCGMDate = first(dov_CGM),
+    TimeFromFirstCGM = as.numeric(difftime(
+      dov_CGM,
+      FirstCGMDate,
+      units = "days"
+    )),
+    TimeOfEndpoint = as.numeric(difftime(
+      LastVisitDate,
+      FirstCGMDate,
+      units = "days"
+    ))
+  ) |>
+  ungroup()
+# Exclude 05-01813's weird 2019-12-17 CGM per Brigs
+cgm <- cgm |> filter(!(ID == "05-01813" & dov_CGM == "2019-12-17"))
+# Time periods per Andrea and Brigs
+cgm <- cgm |>
+  mutate(
+    nTime = as.numeric(Time),
+    TimePeriod = case_when(
+      nTime >= 82800 | nTime < 18000 ~ "11pm - 5am",
+      nTime >= 18000 & nTime < 39600 ~ "5am - 11am",
+      nTime >= 39600 & nTime < 61200 ~ "11am - 5pm",
+      nTime >= 61200 & nTime < 82800 ~ "5pm - 11pm",
+      .default = "other"
+    ),
+    # Shift numeric time so that 11pm is our 0
+    nTime = ifelse(nTime >= 82800, nTime - 82800, nTime + 3600)
+  )
+cgm$TimePeriod <- factor(
+  cgm$TimePeriod,
+  levels = c("11pm - 5am", "5am - 11am", "11am - 5pm", "5pm - 11pm")
+)
+# For each CGM wear, calculate summary metrics for LMMs
+cgm_lmm <- cgm |>
+  filter(CGMDaysFromEndpoint <= 0) |>
+  group_by(
+    ID,
+    Group,
+    sex,
+    Race_Ethn2,
+    screen_FDR_GP,
+    maxAB_group,
+    Age
+  ) |>
+  summarise(
+    mean_glucose = median(SensorValue, na.rm = TRUE),
+    eA1c = (mean_glucose + 46.7) / 28.7,
+    sd_glucose = sd(SensorValue, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  drop_na()
+# Create survival dataset
+cgm_surv <- cgm |>
+  group_by(
+    ID,
+    Group,
+    sex,
+    Race_Ethn2,
+    screen_FDR_GP,
+    maxAB_group
+  ) |>
+  summarise(AgeEndpoint = unique(AgeEndpoint) / 365.25, .groups = "drop") |>
+  rename(Ages = AgeEndpoint) |>
+  filter(ID %in% cgm_lmm$ID)
+cgm_surv$event = as.numeric(cgm_surv$Group == "Progressor")
+# Drop unused levels
+cgm_lmm$maxAB_group <- droplevels(cgm_lmm$maxAB_group)
+cgm_surv$maxAB_group <- droplevels(cgm_surv$maxAB_group)
+
+# further simplify CGM metrics so there is one overall mean/median
+cgm_lmm_summary <- cgm |>
+  group_by(ID) |>
+   summarise(
+    mean_glucose = median(SensorValue, na.rm = TRUE),
+    eA1c = (mean_glucose + 46.7) / 28.7,
+    sd_glucose = sd(SensorValue, na.rm = TRUE),
+    .groups = "drop"
+  )
+cgm_surv <- left_join(cgm_surv, cgm_lmm_summary, by = "ID")
+
+cox_fit <- coxph(
+  Surv(Ages, event) ~ mean_glucose + sd_glucose,
+  x = T,
+  model = T,
+  data = cgm_surv
+)
+
+cox_fit <- coxph(
+  Surv(Ages, event) ~ mean_glucose ,
+  x = T,
+  model = T,
+  data = cgm_surv
+)
+
+```
+
+# Days from first CGM as time variable
+
+```{r}
+# For each CGM wear, calculate summary metrics for LMMs
+cgm_lmm <- cgm |>
+  filter(CGMDaysFromEndpoint <= 0) |>
+  group_by(
+    ID,
+    Group,
+    sex,
+    Race_Ethn2,
+    screen_FDR_GP,
+    maxAB_group,
+    TimeFromFirstCGM
+  ) |>
+  summarise(
+    mean_glucose = mean(SensorValue, na.rm = TRUE),
+    eA1c = (mean_glucose + 46.7) / 28.7,
+    sd_glucose = sd(SensorValue, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  drop_na()
+# Create survival dataset
+cgm_surv <- cgm |>
+  group_by(
+    ID,
+    Group,
+    sex,
+    Race_Ethn2,
+    screen_FDR_GP,
+    maxAB_group
+  ) |>
+  summarise(
+    TimeOfEndpoint = unique(TimeOfEndpoint),
+    .groups = "drop"
+  ) |>
+  rename(TimeFromFirstCGM = TimeOfEndpoint) |>
+  filter(ID %in% cgm_lmm$ID, TimeFromFirstCGM != 0)
+cgm_surv$event = as.numeric(cgm_surv$Group == "Progressor")
+cgm_lmm <- cgm_lmm |> filter(ID %in% cgm_surv$ID)
+# Drop unused levels
+cgm_lmm$maxAB_group <- droplevels(cgm_lmm$maxAB_group)
+cgm_surv$maxAB_group <- droplevels(cgm_surv$maxAB_group)
+
+# further simplify CGM metrics so there is one overall mean/median
+cgm_lmm_summary <- cgm |>
+  group_by(ID) |>
+   summarise(
+    mean_glucose = median(SensorValue, na.rm = TRUE),
+    eA1c = (mean_glucose + 46.7) / 28.7,
+    sd_glucose = sd(SensorValue, na.rm = TRUE),
+    .groups = "drop"
+  )
+cgm_surv <- left_join(cgm_surv, cgm_lmm_summary, by = "ID")
+# add in age at first wear
+age <- cgm %>% dplyr::select(ID, Age) %>% group_by(ID) %>% arrange(ID, Age) %>% slice(1) 
+cgm_surv <- left_join(cgm_surv, age, by = "ID")
+
+cox_fit <- coxph(
+  Surv(TimeFromFirstCGM, event) ~ mean_glucose + sd_glucose,
+  x = T,
+  model = T,
+  data = cgm_surv
+)
+
+cox_fit <- coxph(
+  Surv(TimeFromFirstCGM, event) ~ mean_glucose + sd_glucose + Age,
+  x = T,
+  model = T,
+  data = cgm_surv
+)
+
+cox_fit <- coxph(
+  Surv(TimeFromFirstCGM, event) ~ mean_glucose ,
+  x = T,
+  model = T,
+  data = cgm_surv
+)
+
+p <- ggplot(cgm_surv, aes(x = mean_glucose, y = Age)) + geom_point()
+l <- lm(mean_glucose ~ Age, data = cgm_surv)
+
+
+```
+
