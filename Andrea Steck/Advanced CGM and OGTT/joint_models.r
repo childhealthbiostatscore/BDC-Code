@@ -124,8 +124,8 @@ joint_fit_mean <- jm(
   lme_fit_mean_rs,
   time_var = "Age",
   id_var = "ID",
-  n_iter = 1e6,
-  n_burnin = 1e4,
+  n_iter = 1e5,
+  n_burnin = 1e3,
   control = list(n_chains = 4, cores = 4)
 )
 # SD
