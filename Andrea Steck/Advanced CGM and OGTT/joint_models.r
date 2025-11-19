@@ -124,9 +124,9 @@ joint_fit_mean <- jm(
   lme_fit_mean_rs,
   time_var = "Age",
   id_var = "ID",
-  n_iter = 1e5,
-  n_burnin = 1e3,
-  control = list(n_chains = 4, cores = 4)
+  n_iter = 1e6,
+  n_burnin = 1e4,
+  control = list(n_chains = 4, cores = 1)
 )
 # SD
 lme_fit_sd_ri <- lme(
@@ -146,9 +146,9 @@ joint_fit_sd <- jm(
   lme_fit_sd_rs,
   time_var = "Age",
   id_var = "ID",
-  n_iter = 1e5,
-  n_burnin = 1e3,
-  control = list(n_chains = 4, cores = 4)
+  n_iter = 1e6,
+  n_burnin = 1e4,
+  control = list(n_chains = 4, cores = 1)
 )
 # Both
 joint_fit_mean_sd <- jm(
@@ -156,9 +156,9 @@ joint_fit_mean_sd <- jm(
   list(lme_fit_mean_rs, lme_fit_sd_rs),
   time_var = "Age",
   id_var = "ID",
-  n_iter = 1e5,
-  n_burnin = 1e3,
-  control = list(n_chains = 4, cores = 4)
+  n_iter = 1e6,
+  n_burnin = 1e4,
+  control = list(n_chains = 4, cores = 1)
 )
 # Save everything
 save(
