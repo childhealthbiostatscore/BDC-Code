@@ -173,5 +173,5 @@ save(
   lme_fit_sd_rs,
   joint_fit_sd,
   joint_fit_mean_sd,
-  "./Data_Clean/joint_model_results.RData"
+  file = "./Data_Clean/joint_model_results.RData"
 )
