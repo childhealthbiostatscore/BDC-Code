@@ -126,7 +126,11 @@ joint_fit_mean <- jm(
   id_var = "ID",
   n_iter = 1e6,
   n_burnin = 1e4,
-  control = list(n_chains = 4, cores = 1)
+  # For some reason, the snow package doesn't seem to work on the Hyak. Not
+  # entirely clear why, but the function just hangs and doesn't throw any
+  # errors.
+  parallel = "multicore",
+  control = list(n_chains = 4, cores = 4)
 )
 # SD
 lme_fit_sd_ri <- lme(
@@ -148,7 +152,8 @@ joint_fit_sd <- jm(
   id_var = "ID",
   n_iter = 1e6,
   n_burnin = 1e4,
-  control = list(n_chains = 4, cores = 1)
+  parallel = "multicore",
+  control = list(n_chains = 4, cores = 4)
 )
 # Both
 joint_fit_mean_sd <- jm(
@@ -158,7 +163,8 @@ joint_fit_mean_sd <- jm(
   id_var = "ID",
   n_iter = 1e6,
   n_burnin = 1e4,
-  control = list(n_chains = 4, cores = 1)
+  parallel = "multicore",
+  control = list(n_chains = 4, cores = 4)
 )
 # Save everything
 save(
