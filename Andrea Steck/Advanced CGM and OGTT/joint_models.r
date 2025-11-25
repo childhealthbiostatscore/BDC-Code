@@ -3,6 +3,7 @@ library(plotly)
 library(nlme)
 library(JM)
 library(JMbayes2)
+library(GLMMadaptive)
 library(ggsurvfit)
 library(knitr)
 home_dir <- switch(
@@ -76,9 +77,11 @@ cgm_lmm <- cgm |>
     Age
   ) |>
   summarise(
-    mean_glucose = median(SensorValue, na.rm = TRUE),
-    eA1c = (mean_glucose + 46.7) / 28.7,
+    mean_glucose = mean(SensorValue, na.rm = TRUE),
     sd_glucose = sd(SensorValue, na.rm = TRUE),
+    cv_glucose = sd_glucose / mean_glucose,
+    perc_time_over_140 = round(mean(SensorValue > 140, na.rm = T) * 100),
+    hba1c = unique(A1C),
     .groups = "drop"
   ) |>
   drop_na()
@@ -99,17 +102,7 @@ cgm_surv$event = as.numeric(cgm_surv$Group == "Progressor")
 # Drop unused levels
 cgm_lmm$maxAB_group <- droplevels(cgm_lmm$maxAB_group)
 cgm_surv$maxAB_group <- droplevels(cgm_surv$maxAB_group)
-# Mean glucose
-lme_fit_mean_ri <- lme(
-  mean_glucose ~ Age,
-  random = ~ 1 | ID,
-  data = cgm_lmm
-)
-lme_fit_mean_rs <- lme(
-  mean_glucose ~ Age,
-  random = ~ Age | ID,
-  data = cgm_lmm
-)
+# Cox model
 cox_fit <- coxph(
   Surv(Ages, event) ~ sex +
     Race_Ethn2 +
@@ -119,25 +112,22 @@ cox_fit <- coxph(
   model = T,
   data = cgm_surv
 )
+# Mean glucose
+lme_fit_mean_rs <- lme(
+  mean_glucose ~ Age,
+  random = ~ Age | ID,
+  data = cgm_lmm
+)
 joint_fit_mean <- jm(
   cox_fit,
   lme_fit_mean_rs,
   time_var = "Age",
   id_var = "ID",
-  n_iter = 1e6,
-  n_burnin = 1e4,
-  # For some reason, the snow package doesn't seem to work on the Hyak. Not
-  # entirely clear why, but the function just hangs and doesn't throw any
-  # errors.
+  n_iter = 1e4,
+  n_burnin = 1e2,
   control = list(n_chains = 4, cores = 1)
 )
 # SD
-lme_fit_sd_ri <- lme(
-  sd_glucose ~ Age,
-  random = ~ 1 | ID,
-  data = cgm_lmm,
-  control = list(opt = "optim")
-)
 lme_fit_sd_rs <- lme(
   sd_glucose ~ Age,
   random = ~ Age | ID,
@@ -149,8 +139,8 @@ joint_fit_sd <- jm(
   lme_fit_sd_rs,
   time_var = "Age",
   id_var = "ID",
-  n_iter = 1e6,
-  n_burnin = 1e4,
+  n_iter = 1e4,
+  n_burnin = 1e2,
   control = list(n_chains = 4, cores = 1)
 )
 # Both
@@ -159,8 +149,54 @@ joint_fit_mean_sd <- jm(
   list(lme_fit_mean_rs, lme_fit_sd_rs),
   time_var = "Age",
   id_var = "ID",
-  n_iter = 1e6,
-  n_burnin = 1e4,
+  n_iter = 1e4,
+  n_burnin = 1e2,
+  control = list(n_chains = 4, cores = 1)
+)
+# CV
+lme_fit_cv_rs <- lme(
+  cv_glucose ~ Age,
+  random = ~ Age | ID,
+  data = cgm_lmm
+)
+joint_fit_cv <- jm(
+  cox_fit,
+  lme_fit_cv_rs,
+  time_var = "Age",
+  id_var = "ID",
+  n_iter = 1e4,
+  n_burnin = 1e2,
+  control = list(n_chains = 4, cores = 1)
+)
+# TAR
+lme_fit_tar_rs = mixed_model(
+  perc_time_over_140 ~ Age,
+  random = ~ Age | ID,
+  data = cgm_lmm,
+  family = "negative.binomial"
+)
+joint_fit_tar <- jm(
+  cox_fit,
+  lme_fit_tar_rs,
+  time_var = "Age",
+  id_var = "ID",
+  n_iter = 1e4,
+  n_burnin = 1e2,
+  control = list(n_chains = 4, cores = 1)
+)
+# HbA1c
+lme_fit_hba1c_rs <- lme(
+  hba1c ~ Age,
+  random = ~ Age | ID,
+  data = cgm_lmm
+)
+joint_fit_hba1c <- jm(
+  cox_fit,
+  lme_fit_hba1c_rs,
+  time_var = "Age",
+  id_var = "ID",
+  n_iter = 1e4,
+  n_burnin = 1e2,
   control = list(n_chains = 4, cores = 1)
 )
 # Save everything
@@ -169,12 +205,16 @@ save(
   cgm_lmm,
   cgm_surv,
   cox_fit,
-  lme_fit_mean_ri,
   lme_fit_mean_rs,
-  joint_fit_mean,
-  lme_fit_sd_ri,
   lme_fit_sd_rs,
+  lme_fit_cv_rs,
+  lme_fit_tar_rs,
+  lme_fit_hba1c_rs,
+  joint_fit_mean,
   joint_fit_sd,
   joint_fit_mean_sd,
+  joint_fit_cv,
+  joint_fit_tar,
+  joint_fit_hba1c,
   file = "./Data_Clean/joint_model_results.RData"
 )
