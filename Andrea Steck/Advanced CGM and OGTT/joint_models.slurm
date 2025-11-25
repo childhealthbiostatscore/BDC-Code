@@ -13,3 +13,4 @@
 
 # Your programs to run.
 apptainer exec --bind /gscratch debian.sif Rscript /gscratch/togo/tvigers/GitHub/BDC-Code/Andrea\ Steck/Advanced\ CGM\ and\ OGTT/joint_models.r
+apptainer exec --bind /gscratch debian.sif quarto render /gscratch/togo/tvigers/GitHub/BDC-Code/Andrea\ Steck/Advanced\ CGM\ and\ OGTT/joint_models.qmd

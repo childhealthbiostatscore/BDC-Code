@@ -123,8 +123,8 @@ joint_fit_mean <- jm(
   lme_fit_mean_rs,
   time_var = "Age",
   id_var = "ID",
-  n_iter = 1e4,
-  n_burnin = 1e2,
+  n_iter = 1e6,
+  n_burnin = 1e4,
   control = list(n_chains = 4, cores = 1)
 )
 # SD
@@ -139,8 +139,8 @@ joint_fit_sd <- jm(
   lme_fit_sd_rs,
   time_var = "Age",
   id_var = "ID",
-  n_iter = 1e4,
-  n_burnin = 1e2,
+  n_iter = 1e6,
+  n_burnin = 1e4,
   control = list(n_chains = 4, cores = 1)
 )
 # Both
@@ -149,8 +149,8 @@ joint_fit_mean_sd <- jm(
   list(lme_fit_mean_rs, lme_fit_sd_rs),
   time_var = "Age",
   id_var = "ID",
-  n_iter = 1e4,
-  n_burnin = 1e2,
+  n_iter = 1e6,
+  n_burnin = 1e4,
   control = list(n_chains = 4, cores = 1)
 )
 # CV
@@ -164,8 +164,8 @@ joint_fit_cv <- jm(
   lme_fit_cv_rs,
   time_var = "Age",
   id_var = "ID",
-  n_iter = 1e4,
-  n_burnin = 1e2,
+  n_iter = 1e6,
+  n_burnin = 1e4,
   control = list(n_chains = 4, cores = 1)
 )
 # TAR
@@ -180,8 +180,8 @@ joint_fit_tar <- jm(
   lme_fit_tar_rs,
   time_var = "Age",
   id_var = "ID",
-  n_iter = 1e4,
-  n_burnin = 1e2,
+  n_iter = 1e6,
+  n_burnin = 1e4,
   control = list(n_chains = 4, cores = 1)
 )
 # HbA1c
@@ -195,8 +195,8 @@ joint_fit_hba1c <- jm(
   lme_fit_hba1c_rs,
   time_var = "Age",
   id_var = "ID",
-  n_iter = 1e4,
-  n_burnin = 1e2,
+  n_iter = 1e6,
+  n_burnin = 1e4,
   control = list(n_chains = 4, cores = 1)
 )
 # Save everything
