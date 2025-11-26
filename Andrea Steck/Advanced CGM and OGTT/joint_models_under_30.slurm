@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name="Joint Models (Age < 30)"
+#SBATCH --job-name="JM30"
 #SBATCH --mail-type=END
 #SBATCH --mail-user=tvigers@uw.edu
 #SBATCH --account=togo
