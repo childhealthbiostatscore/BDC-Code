@@ -45,7 +45,7 @@ joint_fit_mean <- jm(
   id_var = "ID",
   n_iter = 1e6,
   n_burnin = 1e3,
-  control = list(n_chains = 4, cores = 4)
+  control = list(n_chains = 4, cores = 1)
 )
 # SD
 lme_fit_sd_rs <- lme(
@@ -61,7 +61,7 @@ joint_fit_sd <- jm(
   id_var = "ID",
   n_iter = 1e6,
   n_burnin = 1e3,
-  control = list(n_chains = 4, cores = 4)
+  control = list(n_chains = 4, cores = 1)
 )
 # Both
 joint_fit_mean_sd <- jm(
@@ -71,7 +71,7 @@ joint_fit_mean_sd <- jm(
   id_var = "ID",
   n_iter = 1e6,
   n_burnin = 1e3,
-  control = list(n_chains = 4, cores = 4)
+  control = list(n_chains = 4, cores = 1)
 )
 # CV
 lme_fit_cv_rs <- lme(
@@ -86,7 +86,7 @@ joint_fit_cv <- jm(
   id_var = "ID",
   n_iter = 1e6,
   n_burnin = 1e3,
-  control = list(n_chains = 4, cores = 4)
+  control = list(n_chains = 4, cores = 1)
 )
 # TAR
 lme_fit_tar_rs = mixed_model(
@@ -102,7 +102,7 @@ joint_fit_tar <- jm(
   id_var = "ID",
   n_iter = 1e6,
   n_burnin = 1e3,
-  control = list(n_chains = 4, cores = 4)
+  control = list(n_chains = 4, cores = 1)
 )
 # HbA1c
 lme_fit_hba1c_rs <- lme(
@@ -117,7 +117,7 @@ joint_fit_hba1c <- jm(
   id_var = "ID",
   n_iter = 1e6,
   n_burnin = 1e3,
-  control = list(n_chains = 4, cores = 4)
+  control = list(n_chains = 4, cores = 1)
 )
 # Save everything
 save(
