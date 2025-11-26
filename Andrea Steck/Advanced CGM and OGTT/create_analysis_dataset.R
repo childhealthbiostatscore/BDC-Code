@@ -2,13 +2,17 @@ library(tidyverse)
 library(readxl)
 library(haven)
 library(hms)
-home_dir <- switch(
-  Sys.info()[["user"]],
-  "laurapyle" = "/Users/laurapyle/Library/CloudStorage/OneDrive-TheUniversityofColoradoDenver/Vigers/BDC/Andrea Steck/Advanced CGM and OGTT",
-  "lpyle" = "/Users/lpyle/Library/CloudStorage/OneDrive-UW/Bjornstad/Biostatistics Core Shared Drive/TODAY subaward",
-  "tim" = "/Users/tim/Library/CloudStorage/OneDrive-UW/UWMDI/Andrea Steck/Advanced CGM and OGTT"
+base_dir <- switch(
+  Sys.info()["nodename"],
+  "togo" = "/home/tvigers/Documents/Data",
+  "Tims-MacBook-Air.local" = "/Users/tim/Library/CloudStorage/OneDrive-UW",
 )
-setwd(home_dir)
+data_dir <- switch(
+  Sys.info()["nodename"],
+  "togo" = "/BDC/Andrea Steck/Advanced CGM and OGTT",
+  "Tims-MacBook-Air.local" = "/UWMDI/Andrea Steck/Advanced CGM and OGTT",
+)
+setwd(paste0(base_dir, data_dir))
 # Import CGM data from Fran
 cgm <- read_sas(
   "./Data_Raw/Final data20250801/tim_allcgmclean_gt4days.sas7bdat"
