@@ -1,5 +1,4 @@
 library(tidyverse)
-library(plotly)
 library(nlme)
 library(JM)
 library(JMbayes2)
