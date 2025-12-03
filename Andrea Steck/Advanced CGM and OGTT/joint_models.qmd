@@ -42,15 +42,16 @@ home_dir <- paste0(base_dir, data_dir)
 knitr::opts_knit$set(root.dir = home_dir)
 ```
 
-# Age as time variable
-
 ```{r data cleaning}
 setwd(home_dir)
-# Load results
-load("./Data_Clean/joint_model_results_all.RData")
+# Load data
+# See BDC-Code/Andrea Steck/Advanced CGM and OGTT/create_analysis_dataset.R
+load("./Data_Clean/analysis_dataset.RData")
+# JM options
+jm_control = list(n_thin = 2, n_chains = 4, cores = 4)
 ```
 
-## Across the whole day
+# Across the whole day
 
 ```{r}
 #| fig-cap: Mean glucose over time
@@ -91,15 +92,28 @@ survfit2(
   add_confidence_interval()
 ```
 
-### Cox model
+## Cox model
 
-#### Results
+```{r}
+# Cox model
+cox_fit <- coxph(
+  Surv(Ages, event) ~ sex +
+    Race_Ethn2 +
+    screen_FDR_GP +
+    maxAB_group,
+  x = T,
+  model = T,
+  data = cgm_surv
+)
+```
+
+### Results
 
 ```{r}
 summary(cox_fit)
 ```
 
-#### Diagnostics
+### Diagnostics
 
 ```{r}
 performance::check_model(cox_fit, residual_type = "normal")
@@ -107,144 +121,294 @@ cox.zph(cox_fit)
 plot(cox.zph(cox_fit))
 ```
 
-### Mean glucose
+## Mean glucose
 
-#### Linear model results
+### Linear model results
 
 ```{r}
+lme_fit_mean_rs <- lme(
+  mean_glucose ~ Age,
+  random = ~ Age | ID,
+  data = cgm_lmm
+)
 summary(lme_fit_mean_rs)
 ```
 
-#### Linear model diagnostics
+### Linear model diagnostics
 
 ```{r}
 performance::check_model(lme_fit_mean_rs)
 ```
 
-#### Joint model results
+### Joint model results
 
 ```{r}
-traceplot(joint_fit_mean, "betas")
+#| cache: true
+# Fit
+joint_fit_mean <- jm(
+  cox_fit,
+  lme_fit_mean_rs,
+  time_var = "Age",
+  id_var = "ID",
+  n_iter = 1e5,
+  n_burnin = 1e3,
+  control = jm_control
+)
+```
+
+```{r}
+# Results
+traceplot(joint_fit_mean)
 s <- summary(joint_fit_mean)
 kable(s$Outcome1, caption = "Longitudinal Process", digits = 3)
 kable(s$Survival, caption = "Event Process", digits = 3)
 ```
 
-### SD
+## SD
 
-#### Linear model results
+### Linear model results
 
 ```{r}
+lme_fit_sd_rs <- lme(
+  sd_glucose ~ Age,
+  random = ~ Age | ID,
+  data = cgm_lmm,
+  control = list(opt = "optim")
+)
 summary(lme_fit_sd_rs)
 ```
 
-#### Linear model diagnostics
+### Linear model diagnostics
 
 ```{r}
 performance::check_model(lme_fit_sd_rs)
 ```
 
-#### Joint model results
+### Joint model results
 
 ```{r}
-traceplot(joint_fit_sd, "betas")
+#| cache: true
+# Fit
+joint_fit_sd <- jm(
+  cox_fit,
+  lme_fit_sd_rs,
+  time_var = "Age",
+  id_var = "ID",
+  n_iter = 1e5,
+  n_burnin = 1e3,
+  control = jm_control
+)
+```
+
+```{r}
+# Results
+traceplot(joint_fit_sd)
 s <- summary(joint_fit_sd)
 kable(s$Outcome1, caption = "Longitudinal Process", digits = 3)
 kable(s$Survival, caption = "Event Process", digits = 3)
 ```
 
-### Mean and SD together
+## Mean and SD together
 
-#### Joint model results
+### Joint model results
 
 ```{r}
-traceplot(joint_fit_mean_sd, "betas")
+#| cache: true
+# Fit
+joint_fit_mean_sd <- jm(
+  cox_fit,
+  list(lme_fit_mean_rs, lme_fit_sd_rs),
+  time_var = "Age",
+  id_var = "ID",
+  n_iter = 1e5,
+  n_burnin = 1e3,
+  control = jm_control
+)
+```
+
+```{r}
+# Results
+traceplot(joint_fit_mean_sd)
 s <- summary(joint_fit_mean_sd)
-kable(s$Outcome1, caption = "Longitudinal Process", digits = 3)
+kable(s$Outcome1, caption = "Longitudinal Process 1", digits = 3)
+kable(s$Outcome2, caption = "Longitudinal Process 2", digits = 3)
 kable(s$Survival, caption = "Event Process", digits = 3)
 ```
 
-### CV
+## CV
 
-#### Linear model results
+### Linear model results
 
 ```{r}
+lme_fit_cv_rs <- lme(
+  cv_glucose ~ Age,
+  random = ~ Age | ID,
+  data = cgm_lmm
+)
 summary(lme_fit_cv_rs)
 ```
 
-#### Linear model diagnostics
+### Linear model diagnostics
 
 ```{r}
 performance::check_model(lme_fit_cv_rs)
 ```
 
-#### Joint model results
+### Joint model results
 
 ```{r}
-traceplot(joint_fit_cv, "betas")
+#| cache: true
+# Fit
+joint_fit_cv <- jm(
+  cox_fit,
+  lme_fit_cv_rs,
+  time_var = "Age",
+  id_var = "ID",
+  n_iter = 1e5,
+  n_burnin = 1e3,
+  control = jm_control
+)
+```
+
+```{r}
+# Results
+traceplot(joint_fit_cv)
 s <- summary(joint_fit_cv)
 kable(s$Outcome1, caption = "Longitudinal Process", digits = 3)
 kable(s$Survival, caption = "Event Process", digits = 3)
 ```
 
-### TAR
+## TAR
 
 In order to fit a negative binomial model, percent time over 140 was rounded to the nearest integer.
 
-#### Linear model results
+### Linear model results
 
 ```{r}
+lme_fit_tar_rs = mixed_model(
+  perc_time_over_140 ~ Age,
+  random = ~ Age | ID,
+  data = cgm_lmm,
+  family = "negative.binomial"
+)
 summary(lme_fit_tar_rs)
 ```
 
-#### Joint model results
+### Joint model results
 
 ```{r}
-traceplot(joint_fit_tar, "betas")
+#| cache: true
+# Fit
+joint_fit_tar <- jm(
+  cox_fit,
+  lme_fit_tar_rs,
+  time_var = "Age",
+  id_var = "ID",
+  n_iter = 1e5,
+  n_burnin = 1e3,
+  control = jm_control
+)
+```
+
+```{r}
+# Results
+traceplot(joint_fit_tar)
 s <- summary(joint_fit_tar)
 kable(s$Outcome1, caption = "Longitudinal Process", digits = 3)
 kable(s$Survival, caption = "Event Process", digits = 3)
 ```
 
-### HbA1c
+## HbA1c
 
-#### Linear model results
+### Linear model results
 
 ```{r}
+lme_fit_hba1c_rs <- lme(
+  hba1c ~ Age,
+  random = ~ Age | ID,
+  data = cgm_lmm
+)
 summary(lme_fit_hba1c_rs)
 ```
 
-#### Linear model diagnostics
+### Linear model diagnostics
 
 ```{r}
 performance::check_model(lme_fit_hba1c_rs)
 ```
 
-#### Joint model results
+### Joint model results
 
 ```{r}
-traceplot(joint_fit_hba1c, "betas")
+#| cache: true
+# Fit
+joint_fit_hba1c <- jm(
+  cox_fit,
+  lme_fit_hba1c_rs,
+  time_var = "Age",
+  id_var = "ID",
+  n_iter = 1e5,
+  n_burnin = 1e3,
+  control = jm_control
+)
+```
+
+```{r}
+# Results
+traceplot(joint_fit_hba1c)
 s <- summary(joint_fit_hba1c)
 kable(s$Outcome1, caption = "Longitudinal Process", digits = 3)
 kable(s$Survival, caption = "Event Process", digits = 3)
 ```
 
-# Dynamic prediction
+# Model comparisons
 
 ```{r}
-#| eval: false
-ND <- cgm_lmm |> filter(ID %in% c("00799-0"), Age < 16)
-ND$event <- 0
-ND$Ages <- 16
-predLong1 <- predict(jointFit, newdata = ND, return_newdata = TRUE)
-plot(predLong1)
-predSurv <- predict(
-  jointFit,
-  newdata = ND,
-  process = "event",
-  times = seq(16, 20, length.out = 51),
-  return_newdata = TRUE
+# Create dataset to test on
+newdat = full_join(
+  cgm_surv,
+  cgm_lmm,
+  by = join_by(ID, Group, sex, Race_Ethn2, screen_FDR_GP, maxAB_group)
 )
-plot(predLong1, predSurv)
+# Function for plotting AUC
+calculate_aucs = function(jm_object, data = newdat, dt = 1, cls = 4) {
+  mi = floor(min(newdat$Age))
+  mx = ceiling(max(newdat$Ages))
+  aucs = sapply(seq(mi, mx, by = 1), function(y) {
+    roc <- tryCatch(
+      tvROC(
+        jm_object,
+        Tstart = y,
+        Dt = dt,
+        cores = cls,
+        newdata = newdat
+      ),
+      error = function(err) NA
+    )
+    if (length(roc) > 1) {
+      return(tvAUC(roc)$auc)
+    } else {
+      return(NA)
+    }
+  })
+  return(aucs)
+}
 ```
 
+## Predicting progression within 1 year
+
+### tvROC AUC by years of data
+
+```{r}
+#| cache: true
+mg = calculate_aucs(joint_fit_mean)
+sd = calculate_aucs(joint_fit_sd)
+msd = calculate_aucs(joint_fit_mean_sd)
+cv = calculate_aucs(joint_fit_cv)
+tar = calculate_aucs(joint_fit_tar)
+a1c = calculate_aucs(joint_fit_hba1c)
+```
+
+```{r}
+plot_df = data.frame(list(mg, sd, msd, cv, tar, a1c))
+```

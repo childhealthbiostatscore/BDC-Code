@@ -1,32 +1,31 @@
 library(shiny)
-
+library(JMbayes2)
+library(tidyverse)
+load(
+  "/Users/tim/Library/CloudStorage/OneDrive-UW/UWMDI/Andrea Steck/Advanced CGM and OGTT/Data_Clean/Joint Model Results/All/joint_fit_mean.RData"
+)
 ui <- fluidPage(
   titlePanel("Patient Data Entry"),
 
   sidebarLayout(
     sidebarPanel(
-      selectInput("sex", "Sex:", choices = c("", "Male", "Female", "Other")),
+      selectInput("sex", "Sex:", choices = c("Male", "Female")),
 
       selectInput(
         "race",
         "Race:",
         choices = c(
-          "",
-          "White",
-          "Black or African American",
-          "Asian",
-          "Hispanic or Latino",
-          "Native American",
+          "Non-Hispanic White",
           "Other"
         )
       ),
 
-      selectInput("fdr_status", "FDR Status:", choices = c("", "Yes", "No")),
+      selectInput("fdr_status", "FDR Status:", choices = c("FDR", "GP")),
 
       selectInput(
         "ab_status",
         "AB Status:",
-        choices = c("", "Positive", "Negative")
+        choices = c("Single", "Multiple")
       ),
 
       numericInput("age", "Age:", value = NULL, min = 0, max = 120),
@@ -51,7 +50,13 @@ ui <- fluidPage(
       h3("Stored Data"),
       tableOutput("data_table"),
       br(),
-      textOutput("row_count")
+      textOutput("row_count"),
+      br(),
+      h3("Age vs Mean Glucose"),
+      plotOutput("scatter_plot"),
+      br(),
+      h3("Dynamic Prediction"),
+      plotOutput("dynamic_pred")
     )
   )
 )
@@ -145,6 +150,78 @@ server <- function(input, output, session) {
   # Display row count
   output$row_count <- renderText({
     paste("Total entries:", nrow(data_store()))
+  })
+
+  # Scatter plot
+  output$scatter_plot <- renderPlot({
+    data <- data_store()
+
+    if (nrow(data) == 0) {
+      plot(
+        1,
+        type = "n",
+        xlab = "Age",
+        ylab = "Mean Glucose (mg/dL)",
+        main = "No data available",
+        xlim = c(0, 100),
+        ylim = c(0, 300)
+      )
+      text(50, 150, "Add entries to see the plot", cex = 1.2, col = "gray")
+    } else {
+      plot(
+        data$Age,
+        data$Mean_Glucose,
+        xlab = "Age",
+        ylab = "Mean Glucose (mg/dL)",
+        main = "Age vs Mean Glucose",
+        pch = 19,
+        col = "steelblue",
+        cex = 1.5
+      )
+      grid()
+    }
+  })
+
+  # Dynamic predictions
+  output$dynamic_pred <- renderPlot({
+    data <- data_store()
+    data = data |>
+      rename(
+        sex = Sex,
+        Race_Ethn2 = Race,
+        screen_FDR_GP = FDR_Status,
+        maxAB_group = AB_Status,
+        mean_glucose = Mean_Glucose
+      ) |>
+      mutate(
+        sex = factor(sex, levels = c("Female", "Male")),
+        Race_Ethn2 = factor(Race_Ethn2, levels = c("Other", "NHW")),
+        maxAB_group = factor(
+          maxAB_group,
+          levels = c("Single", "Multiple"),
+          labels = c("2", "3")
+        )
+      )
+    data$event <- 0
+    data$Ages <- ceiling(max(data$Age))
+    predLong1 <- predict(joint_fit_mean, newdata = data, return_newdata = TRUE)
+    predSurv <- predict(
+      joint_fit_mean,
+      newdata = data,
+      process = "event",
+      times = seq(16, 20, length.out = 51),
+      return_newdata = TRUE
+    )
+
+    if (nrow(data) == 0) {
+      plot(
+        1,
+        main = "No data available"
+      )
+      text(50, 150, "Add entries to see the plot", cex = 1.2, col = "gray")
+    } else {
+      plot(predLong1, predSurv)
+    }
   })
 
   # Download data
