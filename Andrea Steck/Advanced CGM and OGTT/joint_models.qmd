@@ -20,9 +20,9 @@ editor: source
 library(tidyverse)
 library(plotly)
 library(nlme)
-library(JM)
 library(JMbayes2)
 library(ggsurvfit)
+library(survminer)
 library(knitr)
 base_dir <- switch(
   Sys.info()["nodename"],
@@ -61,6 +61,18 @@ mean_plot <- ggplot(
 ) +
   geom_point(alpha = 0.1) +
   geom_line(alpha = 0.5) +
+  ylab("Mean Glucose (mg/dL)") +
+  theme_bw() +
+  theme(legend.position = "none")
+ggplotly(mean_plot)
+mean_plot <- ggplot(
+  cgm_lmm,
+  aes(x = TimeFromFirstCGM, y = mean_glucose, color = ID)
+) +
+  geom_point(alpha = 0.1) +
+  geom_line(alpha = 0.5) +
+  ylab("Mean Glucose (mg/dL)") +
+  xlab("Years From First CGM") +
   theme_bw() +
   theme(legend.position = "none")
 ggplotly(mean_plot)
@@ -74,6 +86,18 @@ sd_plot <- ggplot(
 ) +
   geom_point(alpha = 0.1) +
   geom_line(alpha = 0.5) +
+  ylab("Glucose SD (mg/dL)") +
+  theme_bw() +
+  theme(legend.position = "none")
+ggplotly(sd_plot)
+sd_plot <- ggplot(
+  cgm_lmm,
+  aes(x = TimeFromFirstCGM, y = sd_glucose, color = ID)
+) +
+  geom_point(alpha = 0.1) +
+  geom_line(alpha = 0.5) +
+  ylab("Glucose SD (mg/dL)") +
+  xlab("Years From First CGM") +
   theme_bw() +
   theme(legend.position = "none")
 ggplotly(sd_plot)
@@ -81,7 +105,7 @@ ggplotly(sd_plot)
 
 ```{r}
 survfit2(
-  Surv(Ages, event) ~ 1,
+  Surv(AgeEndpoint, event) ~ 1,
   data = cgm_surv
 ) |>
   ggsurvfit() +
@@ -90,14 +114,26 @@ survfit2(
     y = "Overall survival probability"
   ) +
   add_confidence_interval()
+survfit2(
+  Surv(EndTime, event) ~ 1,
+  data = cgm_surv
+) |>
+  ggsurvfit() +
+  labs(
+    x = "Years From First CGM",
+    y = "Overall survival probability"
+  ) +
+  add_confidence_interval()
 ```
 
 ## Cox model
 
+For the survival submodel, AIC was compared between a Cox proportional hazards model and Weibull, exponential, gaussian, logistic,lognormal and log logistic models. The Cox PH model had the lowest AIC and visual inspection of model residuals suggested good model fit. AIC and concordance was also better for the Cox model with age as the time variable compared to the Cox model with time from first CGM as the time variable.
+
 ```{r}
 # Cox model
-cox_fit <- coxph(
-  Surv(Ages, event) ~ sex +
+cox_fit_age <- coxph(
+  Surv(AgeEndpoint, event) ~ sex +
     Race_Ethn2 +
     screen_FDR_GP +
     maxAB_group,
@@ -105,310 +141,127 @@ cox_fit <- coxph(
   model = T,
   data = cgm_surv
 )
+cox_fit_time <- coxph(
+  Surv(EndTime, event) ~ sex +
+    Race_Ethn2 +
+    screen_FDR_GP +
+    maxAB_group,
+  x = T,
+  model = T,
+  data = cgm_surv
+)
+AIC(cox_fit_age, cox_fit_time)
 ```
 
 ### Results
 
 ```{r}
-summary(cox_fit)
+summary(cox_fit_age)
+summary(cox_fit_time)
 ```
 
 ### Diagnostics
 
+#### Age as time variable
+
 ```{r}
-performance::check_model(cox_fit, residual_type = "normal")
-cox.zph(cox_fit)
-plot(cox.zph(cox_fit))
+ggcoxdiagnostics(cox_fit_age, type = "martingale", linear.predictions = F)
+ggcoxdiagnostics(cox_fit_age, type = "deviance", linear.predictions = F)
+ggcoxdiagnostics(cox_fit_age, type = "score", linear.predictions = F)
+ggcoxdiagnostics(cox_fit_age, type = "schoenfeld", linear.predictions = F)
+ggcoxdiagnostics(cox_fit_age, type = "partial", linear.predictions = F)
+```
+
+#### Years from first CGM as time variable
+
+```{r}
+ggcoxdiagnostics(cox_fit_time, type = "martingale", linear.predictions = F)
+ggcoxdiagnostics(cox_fit_time, type = "deviance", linear.predictions = F)
+ggcoxdiagnostics(cox_fit_time, type = "score", linear.predictions = F)
+ggcoxdiagnostics(cox_fit_time, type = "schoenfeld", linear.predictions = F)
+ggcoxdiagnostics(cox_fit_time, type = "partial", linear.predictions = F)
 ```
 
 ## Mean glucose
 
 ### Linear model results
 
+Models with random slope and random intercept for participant were better than those with just a random intercept by AIC. The linear model using years from first CGM as the time variable was better than the model using age as the time variable by AIC.
+
 ```{r}
-lme_fit_mean_rs <- lme(
+lme_fit_mean_rs_age <- lme(
   mean_glucose ~ Age,
   random = ~ Age | ID,
   data = cgm_lmm
 )
-summary(lme_fit_mean_rs)
-```
-
-### Linear model diagnostics
-
-```{r}
-performance::check_model(lme_fit_mean_rs)
-```
-
-### Joint model results
-
-```{r}
-#| cache: true
-# Fit
-joint_fit_mean <- jm(
-  cox_fit,
-  lme_fit_mean_rs,
-  time_var = "Age",
-  id_var = "ID",
-  n_iter = 1e5,
-  n_burnin = 1e3,
-  control = jm_control
-)
-```
-
-```{r}
-# Results
-traceplot(joint_fit_mean)
-s <- summary(joint_fit_mean)
-kable(s$Outcome1, caption = "Longitudinal Process", digits = 3)
-kable(s$Survival, caption = "Event Process", digits = 3)
-```
-
-## SD
-
-### Linear model results
-
-```{r}
-lme_fit_sd_rs <- lme(
-  sd_glucose ~ Age,
-  random = ~ Age | ID,
-  data = cgm_lmm,
-  control = list(opt = "optim")
-)
-summary(lme_fit_sd_rs)
-```
-
-### Linear model diagnostics
-
-```{r}
-performance::check_model(lme_fit_sd_rs)
-```
-
-### Joint model results
-
-```{r}
-#| cache: true
-# Fit
-joint_fit_sd <- jm(
-  cox_fit,
-  lme_fit_sd_rs,
-  time_var = "Age",
-  id_var = "ID",
-  n_iter = 1e5,
-  n_burnin = 1e3,
-  control = jm_control
-)
-```
-
-```{r}
-# Results
-traceplot(joint_fit_sd)
-s <- summary(joint_fit_sd)
-kable(s$Outcome1, caption = "Longitudinal Process", digits = 3)
-kable(s$Survival, caption = "Event Process", digits = 3)
-```
-
-## Mean and SD together
-
-### Joint model results
-
-```{r}
-#| cache: true
-# Fit
-joint_fit_mean_sd <- jm(
-  cox_fit,
-  list(lme_fit_mean_rs, lme_fit_sd_rs),
-  time_var = "Age",
-  id_var = "ID",
-  n_iter = 1e5,
-  n_burnin = 1e3,
-  control = jm_control
-)
-```
-
-```{r}
-# Results
-traceplot(joint_fit_mean_sd)
-s <- summary(joint_fit_mean_sd)
-kable(s$Outcome1, caption = "Longitudinal Process 1", digits = 3)
-kable(s$Outcome2, caption = "Longitudinal Process 2", digits = 3)
-kable(s$Survival, caption = "Event Process", digits = 3)
-```
-
-## CV
-
-### Linear model results
-
-```{r}
-lme_fit_cv_rs <- lme(
-  cv_glucose ~ Age,
-  random = ~ Age | ID,
+lme_fit_mean_rs_time <- lme(
+  mean_glucose ~ TimeFromFirstCGM,
+  random = ~ TimeFromFirstCGM | ID,
   data = cgm_lmm
 )
-summary(lme_fit_cv_rs)
+plot_df = lme_fit_mean_rs_age$data
+plot_df$pred = predict(lme_fit_mean_rs_age)
+ggplot(plot_df, aes(x = Age, color = ID)) +
+  geom_point(aes(y = mean_glucose), alpha = 0.2) +
+  theme(legend.position = "none") +
+  geom_line(aes(y = pred))
+plot_df = lme_fit_mean_rs_time$data
+plot_df$pred = predict(lme_fit_mean_rs_time)
+ggplot(plot_df, aes(x = TimeFromFirstCGM, color = ID)) +
+  geom_point(aes(y = mean_glucose), alpha = 0.2) +
+  theme(legend.position = "none") +
+  geom_line(aes(y = pred))
 ```
 
 ### Linear model diagnostics
 
+#### Age as time variable
+
 ```{r}
-performance::check_model(lme_fit_cv_rs)
+performance::check_model(lme_fit_mean_rs_age)
+```
+
+#### Years from first CGM as time variable
+
+```{r}
+performance::check_model(lme_fit_mean_rs_time)
 ```
 
 ### Joint model results
 
+#### Age as time variable
+
 ```{r}
-#| cache: true
 # Fit
-joint_fit_cv <- jm(
-  cox_fit,
-  lme_fit_cv_rs,
+joint_fit_mean_age <- jm(
+  cox_fit_age,
+  lme_fit_mean_rs_age,
   time_var = "Age",
   id_var = "ID",
   n_iter = 1e5,
   n_burnin = 1e3,
   control = jm_control
 )
+traceplot(joint_fit_mean_age)
+summary(joint_fit_mean_age)
 ```
 
-```{r}
-# Results
-traceplot(joint_fit_cv)
-s <- summary(joint_fit_cv)
-kable(s$Outcome1, caption = "Longitudinal Process", digits = 3)
-kable(s$Survival, caption = "Event Process", digits = 3)
-```
-
-## TAR
-
-In order to fit a negative binomial model, percent time over 140 was rounded to the nearest integer.
-
-### Linear model results
+#### Years from first CGM as time variable
 
 ```{r}
-lme_fit_tar_rs = mixed_model(
-  perc_time_over_140 ~ Age,
-  random = ~ Age | ID,
-  data = cgm_lmm,
-  family = "negative.binomial"
-)
-summary(lme_fit_tar_rs)
-```
-
-### Joint model results
-
-```{r}
-#| cache: true
-# Fit
-joint_fit_tar <- jm(
-  cox_fit,
-  lme_fit_tar_rs,
-  time_var = "Age",
+joint_fit_mean_time <- jm(
+  cox_fit_time,
+  lme_fit_mean_rs_time,
+  time_var = "TimeFromFirstCGM",
   id_var = "ID",
   n_iter = 1e5,
   n_burnin = 1e3,
   control = jm_control
 )
+traceplot(joint_fit_mean_time)
+summary(joint_fit_mean_time)
 ```
 
 ```{r}
-# Results
-traceplot(joint_fit_tar)
-s <- summary(joint_fit_tar)
-kable(s$Outcome1, caption = "Longitudinal Process", digits = 3)
-kable(s$Survival, caption = "Event Process", digits = 3)
-```
-
-## HbA1c
-
-### Linear model results
-
-```{r}
-lme_fit_hba1c_rs <- lme(
-  hba1c ~ Age,
-  random = ~ Age | ID,
-  data = cgm_lmm
-)
-summary(lme_fit_hba1c_rs)
-```
-
-### Linear model diagnostics
-
-```{r}
-performance::check_model(lme_fit_hba1c_rs)
-```
-
-### Joint model results
-
-```{r}
-#| cache: true
-# Fit
-joint_fit_hba1c <- jm(
-  cox_fit,
-  lme_fit_hba1c_rs,
-  time_var = "Age",
-  id_var = "ID",
-  n_iter = 1e5,
-  n_burnin = 1e3,
-  control = jm_control
-)
-```
-
-```{r}
-# Results
-traceplot(joint_fit_hba1c)
-s <- summary(joint_fit_hba1c)
-kable(s$Outcome1, caption = "Longitudinal Process", digits = 3)
-kable(s$Survival, caption = "Event Process", digits = 3)
-```
-
-# Model comparisons
-
-```{r}
-# Create dataset to test on
-newdat = full_join(
-  cgm_surv,
-  cgm_lmm,
-  by = join_by(ID, Group, sex, Race_Ethn2, screen_FDR_GP, maxAB_group)
-)
-# Function for plotting AUC
-calculate_aucs = function(jm_object, data = newdat, dt = 1, cls = 4) {
-  mi = floor(min(newdat$Age))
-  mx = ceiling(max(newdat$Ages))
-  aucs = sapply(seq(mi, mx, by = 1), function(y) {
-    roc <- tryCatch(
-      tvROC(
-        jm_object,
-        Tstart = y,
-        Dt = dt,
-        cores = cls,
-        newdata = newdat
-      ),
-      error = function(err) NA
-    )
-    if (length(roc) > 1) {
-      return(tvAUC(roc)$auc)
-    } else {
-      return(NA)
-    }
-  })
-  return(aucs)
-}
-```
-
-## Predicting progression within 1 year
-
-### tvROC AUC by years of data
-
-```{r}
-#| cache: true
-mg = calculate_aucs(joint_fit_mean)
-sd = calculate_aucs(joint_fit_sd)
-msd = calculate_aucs(joint_fit_mean_sd)
-cv = calculate_aucs(joint_fit_cv)
-tar = calculate_aucs(joint_fit_tar)
-a1c = calculate_aucs(joint_fit_hba1c)
-```
-
-```{r}
-plot_df = data.frame(list(mg, sd, msd, cv, tar, a1c))
+compare_jm(joint_fit_mean_age, joint_fit_mean_time)
 ```

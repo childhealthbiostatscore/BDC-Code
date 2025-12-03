@@ -107,12 +107,14 @@ cgm <- cgm |>
       dov_CGM,
       FirstCGMDate,
       units = "days"
-    )),
+    )) /
+      365.25,
     TimeOfEndpoint = as.numeric(difftime(
       LastVisitDate,
       FirstCGMDate,
       units = "days"
-    ))
+    )) /
+      365.25
   ) |>
   ungroup()
 # Exclude 05-01813's weird 2019-12-17 CGM per Brigs
@@ -145,7 +147,8 @@ cgm_lmm <- cgm |>
     Race_Ethn2,
     screen_FDR_GP,
     maxAB_group,
-    Age
+    Age,
+    TimeFromFirstCGM
   ) |>
   summarise(
     mean_glucose = mean(SensorValue, na.rm = TRUE),
@@ -166,8 +169,11 @@ cgm_surv <- cgm |>
     screen_FDR_GP,
     maxAB_group
   ) |>
-  summarise(AgeEndpoint = unique(AgeEndpoint) / 365.25, .groups = "drop") |>
-  rename(Ages = AgeEndpoint) |>
+  summarise(
+    AgeEndpoint = unique(AgeEndpoint),
+    EndTime = unique(TimeOfEndpoint),
+    .groups = "drop"
+  ) |>
   filter(ID %in% cgm_lmm$ID)
 cgm_surv$event = as.numeric(cgm_surv$Group == "Progressor")
 # Drop unused levels
