@@ -93,7 +93,8 @@ cgm$study <- factor(cgm$study)
 cgm <- cgm |>
   mutate(
     Age = as.numeric(difftime(dov_CGM, DOB, units = "days")) / 365.25,
-    AgeEndpoint = as.numeric(difftime(LastVisitDate, DOB, units = "days")),
+    AgeEndpoint = as.numeric(difftime(LastVisitDate, DOB, units = "days")) /
+      365.25,
     CGMDaysFromEndpoint = as.numeric(difftime(
       dov_CGM,
       LastVisitDate,
