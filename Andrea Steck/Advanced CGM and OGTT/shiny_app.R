@@ -2,7 +2,7 @@ library(shiny)
 library(JMbayes2)
 library(tidyverse)
 load(
-  "/Users/tim/Library/CloudStorage/OneDrive-UW/UWMDI/Andrea Steck/Advanced CGM and OGTT/Data_Clean/Joint Model Results/All/joint_fit_mean.RData"
+  "/Users/tim/Library/CloudStorage/OneDrive-UW/UWMDI/Andrea Steck/Advanced CGM and OGTT/Data_Clean/final_model.RData"
 )
 ui <- fluidPage(
   titlePanel("Patient Data Entry"),
@@ -185,34 +185,6 @@ server <- function(input, output, session) {
   # Dynamic predictions
   output$dynamic_pred <- renderPlot({
     data <- data_store()
-    data = data |>
-      rename(
-        sex = Sex,
-        Race_Ethn2 = Race,
-        screen_FDR_GP = FDR_Status,
-        maxAB_group = AB_Status,
-        mean_glucose = Mean_Glucose
-      ) |>
-      mutate(
-        sex = factor(sex, levels = c("Female", "Male")),
-        Race_Ethn2 = factor(Race_Ethn2, levels = c("Other", "NHW")),
-        maxAB_group = factor(
-          maxAB_group,
-          levels = c("Single", "Multiple"),
-          labels = c("2", "3")
-        )
-      )
-    data$event <- 0
-    data$Ages <- ceiling(max(data$Age))
-    predLong1 <- predict(joint_fit_mean, newdata = data, return_newdata = TRUE)
-    predSurv <- predict(
-      joint_fit_mean,
-      newdata = data,
-      process = "event",
-      times = seq(16, 20, length.out = 51),
-      return_newdata = TRUE
-    )
-
     if (nrow(data) == 0) {
       plot(
         1,
@@ -220,6 +192,47 @@ server <- function(input, output, session) {
       )
       text(50, 150, "Add entries to see the plot", cex = 1.2, col = "gray")
     } else {
+      data = data |>
+        rename(
+          sex = Sex,
+          Race_Ethn2 = Race,
+          screen_FDR_GP = FDR_Status,
+          maxAB_group = AB_Status,
+          mean_glucose = Mean_Glucose
+        ) |>
+        mutate(
+          sex = factor(sex, levels = c("Female", "Male")),
+          Race_Ethn2 = factor(
+            Race_Ethn2,
+            levels = c("Other", "Non-Hispanic White"),
+            labels = c("Other", "NHW")
+          ),
+          maxAB_group = factor(
+            maxAB_group,
+            levels = c("Single", "Multiple"),
+            labels = c("2", "3")
+          ),
+          screen_FDR_GP = factor(screen_FDR_GP, levels = c("FDR", "GP"))
+        )
+      data$event <- 0
+      data$AgeEndpoint <- ceiling(max(data$Age))
+      data$ID = "A"
+
+      predLong1 <- predict(
+        best_model,
+        newdata = data,
+        return_newdata = TRUE,
+        process = "longitudinal",
+        type = "mean_subject"
+      )
+      predSurv <- predict(
+        best_model,
+        newdata = data,
+        process = "event",
+        type = "mean_subject",
+        times = seq(16, 20, length.out = 51),
+        return_newdata = TRUE
+      )
       plot(predLong1, predSurv)
     }
   })
