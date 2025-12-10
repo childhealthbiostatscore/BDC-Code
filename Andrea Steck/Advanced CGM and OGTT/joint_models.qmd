@@ -9,7 +9,7 @@ format:
     toc-depth: 5
     toc-float: true
     code-fold: true
-    self-contained: true
+    embed-resources: true
     fig-cap-location: top
     page-layout: full
 editor: source
@@ -288,33 +288,272 @@ tvAUC(roc_time)
 
 Because there was no winner in terms of DIC and the tvROCAUC favors the age as time model when using 75% of the data, we have chosen to proceed with the age as time model for now. However, clinical intent/relevance should really be the tiebreaker between the two time variables (i.e., what are we hoping to achieve with these models?).
 
-## Mean glucose
+## Age as time model results
+
+### Mean glucose
 
 ```{r}
-lme_fit_mean_rs_age <- lme(
-  mean_glucose ~ Age,
-  random = ~ Age | ID,
-  data = cgm_lmm,
-  control = lmeControl(opt = 'optim')
-)
 plot_df = lme_fit_mean_rs_age$data
 plot_df$pred = predict(lme_fit_mean_rs_age)
 ggplot(plot_df, aes(x = Age, color = ID)) +
   geom_point(aes(y = mean_glucose), alpha = 0.2) +
   theme(legend.position = "none") +
   geom_line(aes(y = pred))
-lme_fit_mean_rs_age2 <- lme(
-  mean_glucose ~ poly(Age, 2),
-  random = ~ poly(Age, 2) | ID,
+summary(joint_fit_mean_age)
+```
+
+### Glucose SD
+
+```{r}
+lme_fit_sd_rs_age <- lme(
+  sd_glucose ~ Age,
+  random = ~ Age | ID,
   data = cgm_lmm,
-  control = lmeControl(opt = 'optim')
+  control = list(opt = "optim")
 )
-plot_df = lme_fit_mean_rs_age2$data
-plot_df$pred = predict(lme_fit_mean_rs_age2)
+plot_df = lme_fit_sd_rs_age$data
+plot_df$pred = predict(lme_fit_sd_rs_age)
 ggplot(plot_df, aes(x = Age, color = ID)) +
-  geom_point(aes(y = mean_glucose), alpha = 0.2) +
+  geom_point(aes(y = sd_glucose), alpha = 0.2) +
   theme(legend.position = "none") +
   geom_line(aes(y = pred))
+joint_fit_sd_age <- jm(
+  cox_fit_age,
+  lme_fit_sd_rs_age,
+  time_var = "Age",
+  id_var = "ID",
+  n_iter = 1e5,
+  n_burnin = 1e3,
+  control = jm_control
+)
+traceplot(joint_fit_sd_age)
+summary(joint_fit_sd_age)
+```
+
+### Glucose mean and SD together
+
+```{r}
+joint_fit_mean_sd_age <- jm(
+  cox_fit_age,
+  list(lme_fit_mean_rs_age, lme_fit_sd_rs_age),
+  time_var = "Age",
+  id_var = "ID",
+  n_iter = 1e5,
+  n_burnin = 1e3,
+  control = jm_control
+)
+traceplot(joint_fit_sd_age)
+summary(joint_fit_sd_age)
+```
+
+### Glucose CV
+
+```{r}
+lme_fit_cv_rs_age <- lme(
+  cv_glucose ~ Age,
+  random = ~ Age | ID,
+  data = cgm_lmm
+)
+plot_df = lme_fit_cv_rs_age$data
+plot_df$pred = predict(lme_fit_cv_rs_age)
+ggplot(plot_df, aes(x = Age, color = ID)) +
+  geom_point(aes(y = cv_glucose), alpha = 0.2) +
+  theme(legend.position = "none") +
+  geom_line(aes(y = pred))
+joint_fit_cv_age <- jm(
+  cox_fit_age,
+  lme_fit_cv_rs_age,
+  time_var = "Age",
+  id_var = "ID",
+  n_iter = 1e5,
+  n_burnin = 1e3,
+  control = jm_control
+)
+traceplot(joint_fit_cv_age)
+summary(joint_fit_cv_age)
+```
+
+### TAR140
+
+```{r}
+lme_fit_perc_time_over_140_rs_age <- lme(
+  perc_time_over_140 ~ Age,
+  random = ~ Age | ID,
+  data = cgm_lmm
+)
+plot_df = lme_fit_perc_time_over_140_rs_age$data
+plot_df$pred = predict(lme_fit_perc_time_over_140_rs_age)
+ggplot(plot_df, aes(x = Age, color = ID)) +
+  geom_point(aes(y = perc_time_over_140), alpha = 0.2) +
+  theme(legend.position = "none") +
+  geom_line(aes(y = pred))
+joint_fit_perc_time_over_140_age <- jm(
+  cox_fit_age,
+  lme_fit_perc_time_over_140_rs_age,
+  time_var = "Age",
+  id_var = "ID",
+  n_iter = 1e5,
+  n_burnin = 1e3,
+  control = jm_control
+)
+traceplot(joint_fit_perc_time_over_140_age)
+summary(joint_fit_perc_time_over_140_age)
+```
+
+### HbA1c
+
+```{r}
+lme_fit_hba1c_rs_age <- lme(
+  hba1c ~ Age,
+  random = ~ Age | ID,
+  data = cgm_lmm
+)
+plot_df = lme_fit_hba1c_rs_age$data
+plot_df$pred = predict(lme_fit_hba1c_rs_age)
+ggplot(plot_df, aes(x = Age, color = ID)) +
+  geom_point(aes(y = hba1c), alpha = 0.2) +
+  theme(legend.position = "none") +
+  geom_line(aes(y = pred))
+joint_fit_hba1c_age <- jm(
+  cox_fit_age,
+  lme_fit_hba1c_rs_age,
+  time_var = "Age",
+  id_var = "ID",
+  n_iter = 1e5,
+  n_burnin = 1e3,
+  control = jm_control
+)
+traceplot(joint_fit_hba1c_age)
+summary(joint_fit_hba1c_age)
+```
+
+## Combined predictions via super-learning
+
+```{r}
+#| eval: false
+cv_dats <- create_folds(cgm_lmm, V = 5, id_var = "ID")
+# A function that will fit all the above models on the CV data.
+fit_models <- function(fold) {
+  # Cox model
+  cox_fit <- coxph(
+    Surv(AgeEndpoint, event) ~ sex +
+      Race_Ethn2 +
+      screen_FDR_GP +
+      maxAB_group,
+    x = T,
+    model = T,
+    data = cgm_surv[cgm_surv$ID %in% fold$ID, ]
+  )
+  # Mixed models
+  lme_fit_mean <- lme(
+    mean_glucose ~ Age,
+    random = ~ Age | ID,
+    data = fold
+  )
+  lme_fit_sd <- lme(
+    sd_glucose ~ Age,
+    random = ~ Age | ID,
+    data = fold,
+    control = list(opt = "optim", msMaxIter = 100)
+  )
+  lme_fit_cv <- lme(
+    cv_glucose ~ Age,
+    random = ~ Age | ID,
+    data = fold
+  )
+  lme_fit_tar <- lme(
+    perc_time_over_140 ~ Age,
+    random = ~ Age | ID,
+    data = fold
+  )
+  lme_fit_hba1c <- lme(
+    hba1c ~ Age,
+    random = ~ Age | ID,
+    data = fold,
+    control = list(opt = "optim", msMaxIter = 100)
+  )
+  # Joint models
+  joint_fit_mean <- jm(
+    cox_fit,
+    lme_fit_mean,
+    time_var = "Age",
+    id_var = "ID",
+    n_iter = 1e5,
+    n_burnin = 1e3,
+    control = jm_control
+  )
+  joint_fit_sd <- jm(
+    cox_fit,
+    lme_fit_sd,
+    time_var = "Age",
+    id_var = "ID",
+    n_iter = 1e5,
+    n_burnin = 1e3,
+    control = jm_control
+  )
+  joint_fit_mean_sd <- jm(
+    cox_fit,
+    list(lme_fit_mean, lme_fit_sd),
+    time_var = "Age",
+    id_var = "ID",
+    n_iter = 1e5,
+    n_burnin = 1e3,
+    control = jm_control
+  )
+  joint_fit_cv <- jm(
+    cox_fit,
+    lme_fit_cv,
+    time_var = "Age",
+    id_var = "ID",
+    n_iter = 1e5,
+    n_burnin = 1e3,
+    control = jm_control
+  )
+  joint_fit_tar <- jm(
+    cox_fit,
+    lme_fit_tar,
+    time_var = "Age",
+    id_var = "ID",
+    n_iter = 1e5,
+    n_burnin = 1e3,
+    control = jm_control
+  )
+  joint_fit_hba1c <- jm(
+    cox_fit,
+    lme_fit_hba1c,
+    time_var = "Age",
+    id_var = "ID",
+    n_iter = 1e5,
+    n_burnin = 1e3,
+    control = jm_control
+  )
+  # Format output
+  out <- list(
+    Mean = joint_fit_mean,
+    SD = joint_fit_sd,
+    Mean_SD = joint_fit_mean_sd,
+    CV = joint_fit_cv,
+    TAR = joint_fit_tar,
+    HbA1c = joint_fit_hba1c
+  )
+  class(out) <- "jmList"
+  return(out)
+}
+models_folds <- lapply(cv_dats$training, fit_models)
+```
+
+```{r}
+#| eval: false
+tstr <- 6
+thor <- 8
+Brier_weights <- tvBrier(
+  models_folds,
+  newdata = cv_dats$testing,
+  integrated = TRUE,
+  Tstart = tstr,
+  Thoriz = thor
+)
+Brier_weights
 ```
 
 ```{r}
@@ -323,30 +562,3 @@ best_model = joint_fit_mean_age
 save(best_model, file = "./Data_Clean/final_model.RData")
 ```
 
-
-```{r}
-load("./Data_Clean/final_model.RData")
-newdat = full_join(cgm_surv, cgm_lmm)
-# Dynamic predictions
-t0 <- 15
-ND <- newdat[newdat$ID == "00783-0", ]
-ND <- ND[ND$Age < t0, ]
-ND$event <- 0
-ND$AgeEndpoint <- t0
-predLong1 <- predict(
-  best_model,
-  newdata = ND,
-  return_newdata = TRUE,
-  process = "longitudinal",
-  type = "mean_subject"
-)
-predSurv <- predict(
-  best_model,
-  newdata = ND,
-  process = "event",
-  type = "mean_subject",
-  times = seq(16, 20, length.out = 51),
-  return_newdata = TRUE
-)
-plot(predLong1, predSurv)
-```

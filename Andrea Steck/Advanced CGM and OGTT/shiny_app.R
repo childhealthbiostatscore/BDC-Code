@@ -9,23 +9,24 @@ ui <- fluidPage(
 
   sidebarLayout(
     sidebarPanel(
-      selectInput("sex", "Sex:", choices = c("Male", "Female")),
+      selectInput("sex", "Sex:", choices = c("", "Male", "Female")),
 
       selectInput(
         "race",
         "Race:",
         choices = c(
+          "",
           "Non-Hispanic White",
           "Other"
         )
       ),
 
-      selectInput("fdr_status", "FDR Status:", choices = c("FDR", "GP")),
+      selectInput("fdr_status", "FDR Status:", choices = c("", "FDR", "GP")),
 
       selectInput(
         "ab_status",
         "AB Status:",
-        choices = c("Single", "Multiple")
+        choices = c("", "Single", "Multiple")
       ),
 
       numericInput("age", "Age:", value = NULL, min = 0, max = 120),
@@ -36,6 +37,14 @@ ui <- fluidPage(
         value = NULL,
         min = 0,
         max = 500
+      ),
+
+      sliderInput(
+        "dt",
+        "Prediction window:",
+        min = 0,
+        max = 5,
+        value = 1
       ),
 
       br(),
@@ -82,7 +91,9 @@ server <- function(input, output, session) {
         input$fdr_status == "" ||
         input$ab_status == "" ||
         is.null(input$age) ||
-        is.null(input$mean_glucose)
+        is.na(input$age) ||
+        is.null(input$mean_glucose) ||
+        is.na(input$mean_glucose)
     ) {
       showModal(modalDialog(
         title = "Missing Data",
@@ -109,10 +120,6 @@ server <- function(input, output, session) {
     data_store(updated_data)
 
     # Reset inputs
-    updateSelectInput(session, "sex", selected = "")
-    updateSelectInput(session, "race", selected = "")
-    updateSelectInput(session, "fdr_status", selected = "")
-    updateSelectInput(session, "ab_status", selected = "")
     updateNumericInput(session, "age", value = NA)
     updateNumericInput(session, "mean_glucose", value = NA)
   })
@@ -155,7 +162,6 @@ server <- function(input, output, session) {
   # Scatter plot
   output$scatter_plot <- renderPlot({
     data <- data_store()
-
     if (nrow(data) == 0) {
       plot(
         1,
@@ -192,7 +198,9 @@ server <- function(input, output, session) {
       )
       text(50, 150, "Add entries to see the plot", cex = 1.2, col = "gray")
     } else {
+      dt <- as.numeric(input$dt)
       data = data |>
+        arrange(Age) |>
         rename(
           sex = Sex,
           Race_Ethn2 = Race,
@@ -230,7 +238,11 @@ server <- function(input, output, session) {
         newdata = data,
         process = "event",
         type = "mean_subject",
-        times = seq(16, 20, length.out = 51),
+        times = seq(
+          ceiling(max(data$Age)),
+          ceiling(max(data$Age)) + dt,
+          length.out = 20
+        ),
         return_newdata = TRUE
       )
       plot(predLong1, predSurv)
