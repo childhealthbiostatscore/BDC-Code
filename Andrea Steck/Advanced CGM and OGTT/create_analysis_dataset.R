@@ -143,6 +143,7 @@ cgm_lmm <- cgm |>
   filter(CGMDaysFromEndpoint <= 0) |>
   group_by(
     ID,
+    study,
     Group,
     sex,
     Race_Ethn2,
@@ -164,6 +165,7 @@ cgm_lmm <- cgm |>
 cgm_surv <- cgm |>
   group_by(
     ID,
+    study,
     Group,
     sex,
     Race_Ethn2,

@@ -24,6 +24,7 @@ library(JMbayes2)
 library(ggsurvfit)
 library(survminer)
 library(knitr)
+library(gtsummary)
 base_dir <- switch(
   Sys.info()["nodename"],
   "togo" = "/home/tvigers/Documents/Data",
@@ -47,8 +48,33 @@ setwd(home_dir)
 # Load data
 # See BDC-Code/Andrea Steck/Advanced CGM and OGTT/create_analysis_dataset.R
 load("./Data_Clean/analysis_dataset.RData")
+# Filter TrialNet for ADA abstract
+cgm_lmm = cgm_lmm |> filter(study != "TRIALNET")
+cgm_surv = cgm_surv |> filter(study != "TRIALNET")
+# Scale and center the variables of interest
+cgm_lmm$mean_glucose_scaled = scale(cgm_lmm$mean_glucose)
+cgm_lmm$sd_glucose_scaled = scale(cgm_lmm$sd_glucose)
+cgm_lmm$cv_glucose_scaled = scale(cgm_lmm$cv_glucose)
+cgm_lmm$perc_time_over_140_scaled = scale(cgm_lmm$perc_time_over_140)
+cgm_lmm$hba1c_scaled = scale(cgm_lmm$hba1c)
 # JM options
-jm_control = list(n_thin = 2, n_chains = 4, cores = 4)
+jm_control = list(
+  n_iter = 1e5,
+  n_burnin = 1e3,
+  n_thin = 2,
+  n_chains = 4,
+  cores = 4
+)
+```
+
+# Participant characteristics
+
+```{r}
+cgm_surv |>
+  select(-ID, -event) |>
+  tbl_summary(by = Group) |>
+  add_p() |>
+  separate_p_footnotes()
 ```
 
 # Across the whole day
@@ -190,25 +216,25 @@ Models with random slope and random intercept for participant were better than t
 
 ```{r}
 lme_fit_mean_rs_age <- lme(
-  mean_glucose ~ Age,
+  mean_glucose_scaled ~ Age,
   random = ~ Age | ID,
   data = cgm_lmm
 )
 lme_fit_mean_rs_time <- lme(
-  mean_glucose ~ TimeFromFirstCGM,
+  mean_glucose_scaled ~ TimeFromFirstCGM,
   random = ~ TimeFromFirstCGM | ID,
   data = cgm_lmm
 )
 plot_df = lme_fit_mean_rs_age$data
 plot_df$pred = predict(lme_fit_mean_rs_age)
 ggplot(plot_df, aes(x = Age, color = ID)) +
-  geom_point(aes(y = mean_glucose), alpha = 0.2) +
+  geom_point(aes(y = mean_glucose_scaled), alpha = 0.2) +
   theme(legend.position = "none") +
   geom_line(aes(y = pred))
 plot_df = lme_fit_mean_rs_time$data
 plot_df$pred = predict(lme_fit_mean_rs_time)
 ggplot(plot_df, aes(x = TimeFromFirstCGM, color = ID)) +
-  geom_point(aes(y = mean_glucose), alpha = 0.2) +
+  geom_point(aes(y = mean_glucose_scaled), alpha = 0.2) +
   theme(legend.position = "none") +
   geom_line(aes(y = pred))
 ```
@@ -238,11 +264,9 @@ joint_fit_mean_age <- jm(
   lme_fit_mean_rs_age,
   time_var = "Age",
   id_var = "ID",
-  n_iter = 1e5,
-  n_burnin = 1e3,
   control = jm_control
 )
-traceplot(joint_fit_mean_age)
+traceplot(joint_fit_mean_age, "alphas")
 summary(joint_fit_mean_age)
 ```
 
@@ -254,11 +278,9 @@ joint_fit_mean_time <- jm(
   lme_fit_mean_rs_time,
   time_var = "TimeFromFirstCGM",
   id_var = "ID",
-  n_iter = 1e5,
-  n_burnin = 1e3,
   control = jm_control
 )
-traceplot(joint_fit_mean_time)
+traceplot(joint_fit_mean_time, "alphas")
 summary(joint_fit_mean_time)
 ```
 
@@ -266,7 +288,9 @@ summary(joint_fit_mean_time)
 compare_jm(joint_fit_mean_age, joint_fit_mean_time)
 ```
 
-The marginal DIC favors the joint model with time from first CGM as the time variable, but the conditional DIC favors the model with age as time. Because there is some debate about which DIC to use in joint model selection, but generally speaking marginal would be more generalizable for a prediction question  whereas conditional is more relevant to the sample included in the model. 
+Without TrialNet data, the joint model for mean glucose using time from first CGM does not converge. After z-scaling mean glucose, one chain still appears to be different from the others and raises some concerns about the model despite eventually returning to the same sample space as the other chains. Also, the $\hat{R}$ estimates are all way too high (mc-stan.org recommends "running at least four chains by default and only using the sample if R-hat is less than 1.05").
+
+With TrialNet data included, the marginal DIC favors the joint model with time from first CGM as the time variable, but the conditional DIC favors the model with age as time. Because there is some debate about which DIC to use in joint model selection, but generally speaking marginal would be more generalizable for a prediction question  whereas conditional is more relevant to the sample included in the model. 
 
 ```{r}
 newdat = full_join(cgm_lmm, cgm_surv)
@@ -296,7 +320,7 @@ Because there was no winner in terms of DIC and the tvROCAUC favors the age as t
 plot_df = lme_fit_mean_rs_age$data
 plot_df$pred = predict(lme_fit_mean_rs_age)
 ggplot(plot_df, aes(x = Age, color = ID)) +
-  geom_point(aes(y = mean_glucose), alpha = 0.2) +
+  geom_point(aes(y = mean_glucose_scaled), alpha = 0.2) +
   theme(legend.position = "none") +
   geom_line(aes(y = pred))
 summary(joint_fit_mean_age)
@@ -306,7 +330,7 @@ summary(joint_fit_mean_age)
 
 ```{r}
 lme_fit_sd_rs_age <- lme(
-  sd_glucose ~ Age,
+  sd_glucose_scaled ~ Age,
   random = ~ Age | ID,
   data = cgm_lmm,
   control = list(opt = "optim")
@@ -314,7 +338,7 @@ lme_fit_sd_rs_age <- lme(
 plot_df = lme_fit_sd_rs_age$data
 plot_df$pred = predict(lme_fit_sd_rs_age)
 ggplot(plot_df, aes(x = Age, color = ID)) +
-  geom_point(aes(y = sd_glucose), alpha = 0.2) +
+  geom_point(aes(y = sd_glucose_scaled), alpha = 0.2) +
   theme(legend.position = "none") +
   geom_line(aes(y = pred))
 joint_fit_sd_age <- jm(
@@ -322,27 +346,9 @@ joint_fit_sd_age <- jm(
   lme_fit_sd_rs_age,
   time_var = "Age",
   id_var = "ID",
-  n_iter = 1e5,
-  n_burnin = 1e3,
   control = jm_control
 )
-traceplot(joint_fit_sd_age)
-summary(joint_fit_sd_age)
-```
-
-### Glucose mean and SD together
-
-```{r}
-joint_fit_mean_sd_age <- jm(
-  cox_fit_age,
-  list(lme_fit_mean_rs_age, lme_fit_sd_rs_age),
-  time_var = "Age",
-  id_var = "ID",
-  n_iter = 1e5,
-  n_burnin = 1e3,
-  control = jm_control
-)
-traceplot(joint_fit_sd_age)
+traceplot(joint_fit_sd_age, "alphas")
 summary(joint_fit_sd_age)
 ```
 
@@ -350,14 +356,14 @@ summary(joint_fit_sd_age)
 
 ```{r}
 lme_fit_cv_rs_age <- lme(
-  cv_glucose ~ Age,
+  cv_glucose_scaled ~ Age,
   random = ~ Age | ID,
   data = cgm_lmm
 )
 plot_df = lme_fit_cv_rs_age$data
 plot_df$pred = predict(lme_fit_cv_rs_age)
 ggplot(plot_df, aes(x = Age, color = ID)) +
-  geom_point(aes(y = cv_glucose), alpha = 0.2) +
+  geom_point(aes(y = cv_glucose_scaled), alpha = 0.2) +
   theme(legend.position = "none") +
   geom_line(aes(y = pred))
 joint_fit_cv_age <- jm(
@@ -365,11 +371,9 @@ joint_fit_cv_age <- jm(
   lme_fit_cv_rs_age,
   time_var = "Age",
   id_var = "ID",
-  n_iter = 1e5,
-  n_burnin = 1e3,
   control = jm_control
 )
-traceplot(joint_fit_cv_age)
+traceplot(joint_fit_cv_age, "alphas")
 summary(joint_fit_cv_age)
 ```
 
@@ -377,14 +381,14 @@ summary(joint_fit_cv_age)
 
 ```{r}
 lme_fit_perc_time_over_140_rs_age <- lme(
-  perc_time_over_140 ~ Age,
+  perc_time_over_140_scaled ~ Age,
   random = ~ Age | ID,
   data = cgm_lmm
 )
 plot_df = lme_fit_perc_time_over_140_rs_age$data
 plot_df$pred = predict(lme_fit_perc_time_over_140_rs_age)
 ggplot(plot_df, aes(x = Age, color = ID)) +
-  geom_point(aes(y = perc_time_over_140), alpha = 0.2) +
+  geom_point(aes(y = perc_time_over_140_scaled), alpha = 0.2) +
   theme(legend.position = "none") +
   geom_line(aes(y = pred))
 joint_fit_perc_time_over_140_age <- jm(
@@ -392,11 +396,9 @@ joint_fit_perc_time_over_140_age <- jm(
   lme_fit_perc_time_over_140_rs_age,
   time_var = "Age",
   id_var = "ID",
-  n_iter = 1e5,
-  n_burnin = 1e3,
   control = jm_control
 )
-traceplot(joint_fit_perc_time_over_140_age)
+traceplot(joint_fit_perc_time_over_140_age, "alphas")
 summary(joint_fit_perc_time_over_140_age)
 ```
 
@@ -404,14 +406,14 @@ summary(joint_fit_perc_time_over_140_age)
 
 ```{r}
 lme_fit_hba1c_rs_age <- lme(
-  hba1c ~ Age,
+  hba1c_scaled ~ Age,
   random = ~ Age | ID,
   data = cgm_lmm
 )
 plot_df = lme_fit_hba1c_rs_age$data
 plot_df$pred = predict(lme_fit_hba1c_rs_age)
 ggplot(plot_df, aes(x = Age, color = ID)) +
-  geom_point(aes(y = hba1c), alpha = 0.2) +
+  geom_point(aes(y = hba1c_scaled), alpha = 0.2) +
   theme(legend.position = "none") +
   geom_line(aes(y = pred))
 joint_fit_hba1c_age <- jm(
@@ -419,11 +421,9 @@ joint_fit_hba1c_age <- jm(
   lme_fit_hba1c_rs_age,
   time_var = "Age",
   id_var = "ID",
-  n_iter = 1e5,
-  n_burnin = 1e3,
   control = jm_control
 )
-traceplot(joint_fit_hba1c_age)
+traceplot(joint_fit_hba1c_age, "alphas")
 summary(joint_fit_hba1c_age)
 ```
 
@@ -445,32 +445,40 @@ fit_models <- function(fold) {
     data = cgm_surv[cgm_surv$ID %in% fold$ID, ]
   )
   # Mixed models
+  print("Mean")
   lme_fit_mean <- lme(
     mean_glucose ~ Age,
     random = ~ Age | ID,
-    data = fold
+    data = fold,
+    control = list(opt = "optim", msMaxIter = 1000)
   )
+  print("SD")
   lme_fit_sd <- lme(
     sd_glucose ~ Age,
     random = ~ Age | ID,
     data = fold,
-    control = list(opt = "optim", msMaxIter = 100)
+    control = list(opt = "optim", msMaxIter = 1000)
   )
+  print("CV")
   lme_fit_cv <- lme(
     cv_glucose ~ Age,
     random = ~ Age | ID,
-    data = fold
+    data = fold,
+    control = list(opt = "optim", msMaxIter = 1000)
   )
+  print("TAR")
   lme_fit_tar <- lme(
     perc_time_over_140 ~ Age,
     random = ~ Age | ID,
-    data = fold
+    data = fold,
+    control = list(opt = "optim", msMaxIter = 1000)
   )
+  print("HbA1c")
   lme_fit_hba1c <- lme(
     hba1c ~ Age,
     random = ~ Age | ID,
     data = fold,
-    control = list(opt = "optim", msMaxIter = 100)
+    control = list(opt = "optim", msMaxIter = 1000)
   )
   # Joint models
   joint_fit_mean <- jm(
@@ -478,8 +486,6 @@ fit_models <- function(fold) {
     lme_fit_mean,
     time_var = "Age",
     id_var = "ID",
-    n_iter = 1e5,
-    n_burnin = 1e3,
     control = jm_control
   )
   joint_fit_sd <- jm(
@@ -487,8 +493,6 @@ fit_models <- function(fold) {
     lme_fit_sd,
     time_var = "Age",
     id_var = "ID",
-    n_iter = 1e5,
-    n_burnin = 1e3,
     control = jm_control
   )
   joint_fit_mean_sd <- jm(
@@ -496,8 +500,6 @@ fit_models <- function(fold) {
     list(lme_fit_mean, lme_fit_sd),
     time_var = "Age",
     id_var = "ID",
-    n_iter = 1e5,
-    n_burnin = 1e3,
     control = jm_control
   )
   joint_fit_cv <- jm(
@@ -505,8 +507,6 @@ fit_models <- function(fold) {
     lme_fit_cv,
     time_var = "Age",
     id_var = "ID",
-    n_iter = 1e5,
-    n_burnin = 1e3,
     control = jm_control
   )
   joint_fit_tar <- jm(
@@ -514,8 +514,6 @@ fit_models <- function(fold) {
     lme_fit_tar,
     time_var = "Age",
     id_var = "ID",
-    n_iter = 1e5,
-    n_burnin = 1e3,
     control = jm_control
   )
   joint_fit_hba1c <- jm(
@@ -523,8 +521,6 @@ fit_models <- function(fold) {
     lme_fit_hba1c,
     time_var = "Age",
     id_var = "ID",
-    n_iter = 1e5,
-    n_burnin = 1e3,
     control = jm_control
   )
   # Format output
@@ -542,21 +538,26 @@ fit_models <- function(fold) {
 models_folds <- lapply(cv_dats$training, fit_models)
 ```
 
+## Predicting progression in 1-5 years
+
+### From age 15
+
 ```{r}
 #| eval: false
-tstr <- 6
-thor <- 8
+tstr <- 15
+dt <- 1
 Brier_weights <- tvBrier(
   models_folds,
   newdata = cv_dats$testing,
   integrated = TRUE,
   Tstart = tstr,
-  Thoriz = thor
+  Dt = dt
 )
 Brier_weights
 ```
 
 ```{r}
+# eval: false
 # Write the best model for use in the Shiny app
 best_model = joint_fit_mean_age
 save(best_model, file = "./Data_Clean/final_model.RData")
