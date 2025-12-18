@@ -448,8 +448,8 @@ summary(joint_fit_hba1c_cv_age)
 
 ```{r}
 forms <- list(
-  "hba1c_scaled" = ~ value(hba1c_scaled) + 
-                     value(hba1c_scaled):value(cv_glucose_scaled),
+  "hba1c_scaled" = ~ value(hba1c_scaled) +
+    value(hba1c_scaled):value(cv_glucose_scaled),
   "cv_glucose_scaled" = ~ value(cv_glucose_scaled)
 )
 joint_fit_hba1c_cv_age_int <- jm(
@@ -462,6 +462,50 @@ joint_fit_hba1c_cv_age_int <- jm(
 )
 traceplot(joint_fit_hba1c_cv_age_int, "alphas")
 summary(joint_fit_hba1c_cv_age_int)
+```
+
+### Dynamic predictions
+
+```{r}
+newdat = full_join(cgm_lmm, cgm_surv)
+newdat = newdat |> filter(ID == "00783-0")
+predLongHbA1c <- predict(
+  joint_fit_hba1c_cv_age,
+  newdata = newdat,
+  return_newdata = TRUE,
+  process = "longitudinal",
+  type = "mean_subject"
+)
+predSurvHbA1c <- predict(
+  joint_fit_hba1c_cv_age,
+  newdata = newdat,
+  process = "event",
+  type = "mean_subject",
+  times = seq(18, 23, length.out = 20),
+  return_newdata = TRUE
+)
+plot(
+  predLongHbA1c,
+  predSurvHbA1c,
+  outcomes = 1:2,
+  ylab_event = "Progression Probability",
+  ylab_long = c("Normalized HbA1c", "Normalized CV"),
+  xlab = "Age"
+)
+
+newdat = full_join(cgm_lmm, cgm_surv)
+roc_hba1c_age = tvROC(
+  joint_fit_hba1c_age,
+  newdata = newdat,
+  Tstart = quantile(cgm_surv$AgeEndpoint, 0.75),
+  Dt = 3
+)
+roc_hba1c_cv_age = tvROC(
+  joint_fit_hba1c_cv_age,
+  newdata = newdat,
+  Tstart = quantile(cgm_surv$AgeEndpoint, 0.75),
+  Dt = 3
+)
 ```
 
 ## Combined predictions via super-learning
