@@ -30,6 +30,7 @@ base_dir <- switch(
   "togo" = "/home/tvigers/Documents/Data",
   "Tims-MacBook-Air.local" = "/Users/tim/Library/CloudStorage/OneDrive-UW",
   "Tims-Mac-mini.local" = "/Users/tim/Library/CloudStorage/OneDrive-UW",
+  "Tims-Mac-Studio.local" = "/Users/tim/Library/CloudStorage/OneDrive-UW",
   "Mac" = "/Users/tim/Library/CloudStorage/OneDrive-UW",
   "Mac-Studio" = "/Users/lpyle/Library/CloudStorage/OneDrive-SharedLibraries-UW",
   "MacBook-Pro-51.local" = "/Users/pylell/Library/CloudStorage/OneDrive-SharedLibraries-UW(2)"
@@ -39,6 +40,7 @@ data_dir <- switch(
   "togo" = "/BDC/Andrea Steck/Advanced CGM and OGTT",
   "Tims-MacBook-Air.local" = "/UWMDI/Andrea Steck/Advanced CGM and OGTT",
   "Tims-Mac-mini.local" = "/UWMDI/Andrea Steck/Advanced CGM and OGTT",
+  "Tims-Mac-Studio.local" = "/UWMDI/Andrea Steck/Advanced CGM and OGTT",
   "Mac" = "/UWMDI/Andrea Steck/Advanced CGM and OGTT",
   "Mac-Studio" = "/Tim Vigers - UWMDI/Andrea Steck/Advanced CGM and OGTT",
   "MacBook-Pro-51.local" = "/Tim Vigers - UWMDI/Andrea Steck/Advanced CGM and OGTT"
@@ -277,7 +279,6 @@ joint_fit_mean_age <- jm(
   id_var = "ID",
   control = jm_control
 )
-traceplot(joint_fit_mean_age, "alphas")
 summary(joint_fit_mean_age)
 ```
 
@@ -291,7 +292,6 @@ joint_fit_mean_time <- jm(
   id_var = "ID",
   control = jm_control
 )
-traceplot(joint_fit_mean_time, "alphas")
 summary(joint_fit_mean_time)
 ```
 
@@ -359,7 +359,6 @@ joint_fit_sd_age <- jm(
   id_var = "ID",
   control = jm_control
 )
-traceplot(joint_fit_sd_age, "alphas")
 summary(joint_fit_sd_age)
 ```
 
@@ -384,7 +383,6 @@ joint_fit_cv_age <- jm(
   id_var = "ID",
   control = jm_control
 )
-traceplot(joint_fit_cv_age, "alphas")
 summary(joint_fit_cv_age)
 ```
 
@@ -409,7 +407,6 @@ joint_fit_perc_time_over_140_age <- jm(
   id_var = "ID",
   control = jm_control
 )
-traceplot(joint_fit_perc_time_over_140_age, "alphas")
 summary(joint_fit_perc_time_over_140_age)
 ```
 
@@ -434,8 +431,33 @@ joint_fit_hba1c_age <- jm(
   id_var = "ID",
   control = jm_control
 )
-traceplot(joint_fit_hba1c_age, "alphas")
 summary(joint_fit_hba1c_age)
+```
+
+### HbA1c and Mean
+
+```{r}
+joint_fit_hba1c_mean_age <- jm(
+  cox_fit_age,
+  list(lme_fit_hba1c_rs_age, lme_fit_mean_rs_age),
+  time_var = "Age",
+  id_var = "ID",
+  control = jm_control
+)
+summary(joint_fit_hba1c_mean_age)
+```
+
+### HbA1c and SD
+
+```{r}
+joint_fit_hba1c_sd_age <- jm(
+  cox_fit_age,
+  list(lme_fit_hba1c_rs_age, lme_fit_sd_rs_age),
+  time_var = "Age",
+  id_var = "ID",
+  control = jm_control
+)
+summary(joint_fit_hba1c_sd_age)
 ```
 
 ### HbA1c and CV
@@ -448,7 +470,6 @@ joint_fit_hba1c_cv_age <- jm(
   id_var = "ID",
   control = jm_control
 )
-traceplot(joint_fit_hba1c_cv_age, "alphas")
 summary(joint_fit_hba1c_cv_age)
 ```
 
@@ -462,87 +483,78 @@ joint_fit_hba1c_tar140_age <- jm(
   id_var = "ID",
   control = jm_control
 )
-traceplot(joint_fit_hba1c_cv_age, "alphas")
-summary(joint_fit_hba1c_cv_age)
+summary(joint_fit_hba1c_tar140_age)
 ```
 
-### HbA1c and CV with interaction
+### AUC table
 
 ```{r}
-forms <- list(
-  "hba1c_scaled" = ~ value(hba1c_scaled) +
-    value(hba1c_scaled):value(cv_glucose_scaled),
-  "cv_glucose_scaled" = ~ value(cv_glucose_scaled)
-)
-joint_fit_hba1c_cv_age_int <- jm(
-  cox_fit_age,
-  list(lme_fit_hba1c_rs_age, lme_fit_cv_rs_age),
-  time_var = "Age",
-  id_var = "ID",
-  functional_forms = forms,
-  control = jm_control
-)
-traceplot(joint_fit_hba1c_cv_age_int, "alphas")
-summary(joint_fit_hba1c_cv_age_int)
-```
-
-### Dynamic predictions
-
-```{r}
-newdat = full_join(cgm_lmm, cgm_surv)
-newdat = newdat |> filter(ID == "00783-0")
-newdat$AgeEndpoint = 18
-predLongHbA1c <- predict(
-  joint_fit_hba1c_cv_age,
-  newdata = newdat,
-  return_newdata = TRUE,
-  process = "longitudinal",
-  type = "mean_subject"
-)
-predSurvHbA1c <- predict(
-  joint_fit_hba1c_cv_age,
-  newdata = newdat,
-  process = "event",
-  times = seq(18, 23, length.out = 100),
-  return_newdata = TRUE
-)
-png(
-  filename = "./Dissemination/ADA 2026/figure.png",
-  width = 8,
-  height = 6,
-  units = "in",
-  res = 800
-)
-par(oma = c(5, 0, 0, 0))
-plot(
-  predLongHbA1c,
-  predSurvHbA1c,
-  outcomes = 1:2,
-  ylab_event = "Progression Probability",
-  ylab_long = c("Normalized HbA1c", "Normalized CV"),
-  xlab = "Age"
-)
-dev.off()
-
-newdat = full_join(cgm_lmm, cgm_surv)
-roc_hba1c_age = tvROC(
+# Make a list of all the models we've looked at
+models = list(
+  joint_fit_mean_age,
+  joint_fit_sd_age,
+  joint_fit_cv_age,
+  joint_fit_perc_time_over_140_age,
   joint_fit_hba1c_age,
-  newdata = newdat,
-  Tstart = quantile(cgm_surv$AgeEndpoint, 0.75),
-  Dt = 3
-)
-roc_hba1c_cv_age = tvROC(
+  joint_fit_hba1c_mean_age,
+  joint_fit_hba1c_sd_age,
   joint_fit_hba1c_cv_age,
-  newdata = newdat,
-  Tstart = quantile(cgm_surv$AgeEndpoint, 0.75),
-  Dt = 3
+  joint_fit_hba1c_tar140_age
 )
-roc_hba1c_tar140_age = tvROC(
-  joint_fit_hba1c_tar140_age,
-  newdata = newdat,
-  Tstart = quantile(cgm_surv$AgeEndpoint, 0.75),
-  Dt = 3
+names(models) = c(
+  "Mean",
+  "SD",
+  "CV",
+  "TA140",
+  "HbA1c",
+  "HbA1c + Mean",
+  "HbA1c + SD",
+  "HbA1c + CV",
+  "HbA1c + TA140"
 )
+# Make a grid for AUC testing
+auc_grid = expand.grid(
+  start = seq(5, 20, by = 5),
+  dt = c(2, 3)
+)
+# Get AUC at various time ranges for each model
+newdat = full_join(cgm_lmm, cgm_surv)
+auc_grid_results = apply(auc_grid, 1, function(r) {
+  start = as.numeric(r["start"])
+  dt = as.numeric(r["dt"])
+  auc_results = sapply(names(models), function(n) {
+    tv = tvROC(
+      models[[n]],
+      newdata = newdat,
+      Tstart = start,
+      Dt = dt
+    )
+    return(tvAUC(tv)$auc)
+  })
+  res = data.frame(auc_results) |>
+    rownames_to_column(var = "Model") |>
+    rename(AUC = auc_results) |>
+    mutate(up_to = start, window = paste(dt, "Year ROC"))
+  return(res)
+})
+auc_grid_results = do.call(rbind, auc_grid_results)
+auc_grid_results = auc_grid_results |>
+  pivot_wider(
+    values_from = AUC,
+    names_from = window
+  ) |>
+  group_split(up_to, .keep = F)
+names(auc_grid_results) = unique(auc_grid$start)
+invisible(lapply(names(auc_grid_results), function(n) {
+  cat("\n")
+  cat("\n")
+  cat("#### Using data up to", n, "years")
+  cat("\n")
+  cat("\n")
+  print(kable(auc_grid_results[[n]]))
+  cat("\n")
+  cat("\n")
+}))
 ```
 
 ## Combined predictions via super-learning
@@ -613,13 +625,6 @@ fit_models <- function(fold) {
     id_var = "ID",
     control = jm_control
   )
-  joint_fit_mean_sd <- jm(
-    cox_fit,
-    list(lme_fit_mean, lme_fit_sd),
-    time_var = "Age",
-    id_var = "ID",
-    control = jm_control
-  )
   joint_fit_cv <- jm(
     cox_fit,
     lme_fit_cv,
@@ -641,43 +646,49 @@ fit_models <- function(fold) {
     id_var = "ID",
     control = jm_control
   )
+  joint_fit_hba1c_mean <- jm(
+    cox_fit_age,
+    list(lme_fit_hba1c, lme_fit_mean),
+    time_var = "Age",
+    id_var = "ID",
+    control = jm_control
+  )
+  joint_fit_hba1c_sd <- jm(
+    cox_fit_age,
+    list(lme_fit_hba1c, lme_fit_sd),
+    time_var = "Age",
+    id_var = "ID",
+    control = jm_control
+  )
+  joint_fit_hba1c_cv <- jm(
+    cox_fit_age,
+    list(lme_fit_hba1c, lme_fit_cv),
+    time_var = "Age",
+    id_var = "ID",
+    control = jm_control
+  )
+  joint_fit_hba1c_tar <- jm(
+    cox_fit_age,
+    list(lme_fit_hba1c, lme_fit_tar),
+    time_var = "Age",
+    id_var = "ID",
+    control = jm_control
+  )
   # Format output
   out <- list(
     Mean = joint_fit_mean,
     SD = joint_fit_sd,
-    Mean_SD = joint_fit_mean_sd,
     CV = joint_fit_cv,
     TAR = joint_fit_tar,
-    HbA1c = joint_fit_hba1c
+    HbA1c = joint_fit_hba1c,
+    HbA1c_Mean = joint_fit_hba1c_mean,
+    HbA1c_SD = joint_fit_hba1c_sd,
+    HbA1c_CV = joint_fit_hba1c_cv,
+    HbA1c_TAR = joint_fit_hba1c_tar
   )
   class(out) <- "jmList"
   return(out)
 }
 models_folds <- lapply(cv_dats$training, fit_models)
-```
-
-## Predicting progression in 1-5 years
-
-### From age 15
-
-```{r}
-#| eval: false
-tstr <- 15
-dt <- 1
-Brier_weights <- tvBrier(
-  models_folds,
-  newdata = cv_dats$testing,
-  integrated = TRUE,
-  Tstart = tstr,
-  Dt = dt
-)
-Brier_weights
-```
-
-```{r}
-# eval: false
-# Write the best model for use in the Shiny app
-best_model = joint_fit_mean_age
-save(best_model, file = "./Data_Clean/final_model.RData")
 ```
 
