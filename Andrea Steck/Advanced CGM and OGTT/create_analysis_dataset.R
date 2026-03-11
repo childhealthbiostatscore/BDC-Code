@@ -4,14 +4,21 @@ library(haven)
 library(hms)
 base_dir <- switch(
   Sys.info()["nodename"],
-  "togo" = "/home/tvigers/Documents/Data",
-  "Tims-MacBook-Air.local" = "/Users/tim/Library/CloudStorage/OneDrive-UW",
+  "Tims-MacBook-Air.local" = "/Users/tim/Library/CloudStorage/OneDrive-UW/",
+  "Tims-Mac-mini.local" = "/Users/tim/Library/CloudStorage/OneDrive-UW/",
+  "Tims-Mac-Studio.local" = "/Users/tim/Library/CloudStorage/OneDrive-UW/",
+  "Mac" = "/Users/tim/Library/CloudStorage/OneDrive-UW/",
+  "Mac-Studio" = "/Users/lpyle/Library/CloudStorage/OneDrive-SharedLibraries-UW/"
 )
 data_dir <- switch(
   Sys.info()["nodename"],
-  "togo" = "/BDC/Andrea Steck/Advanced CGM and OGTT",
-  "Tims-MacBook-Air.local" = "/UWMDI/Andrea Steck/Advanced CGM and OGTT",
+  "Tims-MacBook-Air.local" = "UWMDI/Andrea Steck/Advanced CGM and OGTT",
+  "Tims-Mac-mini.local" = "UWMDI/Andrea Steck/Advanced CGM and OGTT",
+  "Tims-Mac-Studio.local" = "UWMDI/Andrea Steck/Advanced CGM and OGTT",
+  "Mac" = "UWMDI/Andrea Steck/Advanced CGM and OGTT",
+  "Mac-Studio" = "/Tim Vigers - UWMDI/Andrea Steck/Advanced CGM and OGTT"
 )
+home_dir <- paste0(base_dir, data_dir)
 setwd(paste0(base_dir, data_dir))
 # Import CGM data from Fran
 cgm <- read_sas(
