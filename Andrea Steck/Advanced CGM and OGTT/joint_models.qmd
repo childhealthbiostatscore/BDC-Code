@@ -57,18 +57,18 @@ setwd(home_dir)
 # Load data
 # See BDC-Code/Andrea Steck/Advanced CGM and OGTT/create_analysis_dataset.R
 load("./Data_Clean/analysis_dataset.RData")
-# Filter TrialNet for ADA abstract
-cgm_lmm = cgm_lmm |> filter(study != "TRIALNET")
-cgm_surv = cgm_surv |> filter(study != "TRIALNET")
-old = cgm_lmm$ID[cgm_lmm$Age >= 30]
+# Filter people >= age 30
+cgm_lmm = cgm_lmm |> filter(Age < 30)
 # Scale and center the variables of interest
-cgm_lmm$mean_glucose_scaled = scale(cgm_lmm$mean_glucose)
-cgm_lmm$sd_glucose_scaled = scale(cgm_lmm$sd_glucose)
-cgm_lmm$cv_glucose_scaled = scale(cgm_lmm$cv_glucose)
-cgm_lmm$perc_time_over_140_scaled = scale(cgm_lmm$perc_time_over_140)
-cgm_lmm$hba1c_scaled = scale(cgm_lmm$hba1c)
+# cgm_lmm$mean_glucose <- scale(cgm_lmm$mean_glucose)
+# cgm_lmm$sd_glucose <- scale(cgm_lmm$sd_glucose)
+# cgm_lmm$cv_glucose <- scale(cgm_lmm$cv_glucose)
+# cgm_lmm$perc_time_over_140 <- scale(cgm_lmm$perc_time_over_140)
+# cgm_lmm$hba1c <- scale(cgm_lmm$hba1c)
+# Limit survival group to those included in mixed model DF
+cgm_surv = cgm_surv |> filter(ID %in% cgm_lmm$ID)
 # JM options
-jm_control = list(
+jm_control <- list(
   n_iter = 1e5,
   n_burnin = 1e3,
   n_thin = 2,
@@ -76,8 +76,8 @@ jm_control = list(
   cores = 4
 )
 # Make a simplified dataset for Andrea to pick participants for examples
-newdat = full_join(cgm_lmm, cgm_surv)
-newdat = newdat |>
+newdat <- full_join(cgm_lmm, cgm_surv)
+newdat <- newdat |>
   group_by(ID) |>
   select(ID, Group, Age, AgeEndpoint) |>
   summarise(
@@ -123,7 +123,7 @@ cgm_surv |>
   separate_p_footnotes()
 ```
 
-# Across the whole day
+# CGM metrics summarized across the whole day
 
 ```{r}
 #| fig-cap: Mean glucose over time
@@ -134,17 +134,6 @@ mean_plot <- ggplot(
   geom_point(alpha = 0.1) +
   geom_line(alpha = 0.5) +
   ylab("Mean Glucose (mg/dL)") +
-  theme_bw() +
-  theme(legend.position = "none")
-ggplotly(mean_plot)
-mean_plot <- ggplot(
-  cgm_lmm,
-  aes(x = TimeFromFirstCGM, y = mean_glucose, color = ID)
-) +
-  geom_point(alpha = 0.1) +
-  geom_line(alpha = 0.5) +
-  ylab("Mean Glucose (mg/dL)") +
-  xlab("Years From First CGM") +
   theme_bw() +
   theme(legend.position = "none")
 ggplotly(mean_plot)
@@ -162,17 +151,6 @@ sd_plot <- ggplot(
   theme_bw() +
   theme(legend.position = "none")
 ggplotly(sd_plot)
-sd_plot <- ggplot(
-  cgm_lmm,
-  aes(x = TimeFromFirstCGM, y = sd_glucose, color = ID)
-) +
-  geom_point(alpha = 0.1) +
-  geom_line(alpha = 0.5) +
-  ylab("Glucose SD (mg/dL)") +
-  xlab("Years From First CGM") +
-  theme_bw() +
-  theme(legend.position = "none")
-ggplotly(sd_plot)
 ```
 
 ```{r}
@@ -186,361 +164,293 @@ survfit2(
     y = "Overall survival probability"
   ) +
   add_confidence_interval()
-survfit2(
-  Surv(EndTime, event) ~ 1,
-  data = cgm_surv
-) |>
-  ggsurvfit() +
-  labs(
-    x = "Years From First CGM",
-    y = "Overall survival probability"
-  ) +
-  add_confidence_interval()
 ```
 
-## Model selection (based on mean glucose)
-
-### Cox model
+## Cox model
 
 For the survival submodel, AIC was compared between a Cox proportional hazards model and Weibull, exponential, gaussian, logistic,lognormal and log logistic models. The Cox PH model had the lowest AIC and visual inspection of model residuals suggested good model fit. AIC and concordance was also better for the Cox model with age as the time variable compared to the Cox model with time from first CGM as the time variable.
 
 We also compared the Cox model adjusted for sex, race/ethnicity, FDR status, and maximum AB group to a simplified model adjusted for sex only. Model performance was very similar, but the simplified model was better by BIC (479.2 vs. 488.0).
 
+When debating whether to use age or time from first CGM as the time variable, AIC for the Cox model was better when using age but AIC was better for the linear model using time from first CGM. We decided that clinical usefulness should be the tiebreaker and therefore continued with age as the time variable in all models.
+
 ```{r}
 # Cox model
-# cox_fit_age <- coxph(
-#   Surv(AgeEndpoint, event) ~ sex +
-#     Race_Ethn2 +
-#     screen_FDR_GP +
-#     maxAB_group,
-#   x = T,
-#   model = T,
-#   data = cgm_surv
-# )
-cox_fit_age <- coxph(
+cox_fit <- coxph(
+  Surv(AgeEndpoint, event) ~ sex +
+    Race_Ethn2 +
+    screen_FDR_GP +
+    maxAB_group,
+  x = T,
+  model = T,
+  data = cgm_surv
+)
+cox_fit_simple <- coxph(
   Surv(AgeEndpoint, event) ~ sex,
   x = T,
   model = T,
   data = cgm_surv
 )
-cox_fit_time <- coxph(
-  Surv(EndTime, event) ~ sex,
+BIC(cox_fit, cox_fit_simple)
+cox_fit <- coxph(
+  Surv(AgeEndpoint, event) ~ sex,
   x = T,
   model = T,
   data = cgm_surv
 )
-AIC(cox_fit_age, cox_fit_time)
 ```
 
-#### Results
+### Results
 
 ```{r}
-summary(cox_fit_age)
-summary(cox_fit_time)
+summary(cox_fit)
 ```
 
-#### Diagnostics
-
-##### Age as time variable
+### Diagnostics
 
 ```{r}
-ggcoxdiagnostics(cox_fit_age, type = "martingale", linear.predictions = F)
-ggcoxdiagnostics(cox_fit_age, type = "deviance", linear.predictions = F)
-ggcoxdiagnostics(cox_fit_age, type = "score", linear.predictions = F)
-ggcoxdiagnostics(cox_fit_age, type = "schoenfeld", linear.predictions = F)
-ggcoxdiagnostics(cox_fit_age, type = "partial", linear.predictions = F)
+ggcoxdiagnostics(cox_fit, type = "martingale", linear.predictions = F)
+ggcoxdiagnostics(cox_fit, type = "deviance", linear.predictions = F)
+ggcoxdiagnostics(cox_fit, type = "score", linear.predictions = F)
+ggcoxdiagnostics(cox_fit, type = "schoenfeld", linear.predictions = F)
+ggcoxdiagnostics(cox_fit, type = "partial", linear.predictions = F)
 ```
 
-##### Years from first CGM as time variable
-
-```{r}
-ggcoxdiagnostics(cox_fit_time, type = "martingale", linear.predictions = F)
-ggcoxdiagnostics(cox_fit_time, type = "deviance", linear.predictions = F)
-ggcoxdiagnostics(cox_fit_time, type = "score", linear.predictions = F)
-ggcoxdiagnostics(cox_fit_time, type = "schoenfeld", linear.predictions = F)
-ggcoxdiagnostics(cox_fit_time, type = "partial", linear.predictions = F)
-```
-
-### Linear model results
+## Linear model results
 
 Models with random slope and random intercept for participant were better than those with just a random intercept by AIC. The linear model using years from first CGM as the time variable was better than the model using age as the time variable by AIC.
 
 ```{r}
-lme_fit_mean_rs_age <- lme(
-  mean_glucose_scaled ~ Age,
+lme_fit_mean_ri <- lme(
+  mean_glucose ~ Age,
+  random = ~ 1 | ID,
+  data = cgm_lmm
+)
+lme_fit_mean_rs <- lme(
+  mean_glucose ~ Age,
   random = ~ Age | ID,
   data = cgm_lmm
 )
-lme_fit_mean_rs_time <- lme(
-  mean_glucose_scaled ~ TimeFromFirstCGM,
-  random = ~ TimeFromFirstCGM | ID,
-  data = cgm_lmm
-)
-plot_df = lme_fit_mean_rs_age$data
-plot_df$pred = predict(lme_fit_mean_rs_age)
+AIC(lme_fit_mean_ri, lme_fit_mean_rs)
+plot_df <- lme_fit_mean_rs$data
+plot_df$pred <- predict(lme_fit_mean_rs)
 ggplot(plot_df, aes(x = Age, color = ID)) +
-  geom_point(aes(y = mean_glucose_scaled), alpha = 0.2) +
+  geom_point(aes(y = mean_glucose), alpha = 0.2) +
   theme(legend.position = "none") +
   geom_line(aes(y = pred))
-plot_df = lme_fit_mean_rs_time$data
-plot_df$pred = predict(lme_fit_mean_rs_time)
-ggplot(plot_df, aes(x = TimeFromFirstCGM, color = ID)) +
-  geom_point(aes(y = mean_glucose_scaled), alpha = 0.2) +
-  theme(legend.position = "none") +
-  geom_line(aes(y = pred))
-```
-
-### Linear model diagnostics
-
-#### Age as time variable
-
-```{r}
-performance::check_model(lme_fit_mean_rs_age)
-```
-
-#### Years from first CGM as time variable
-
-```{r}
-performance::check_model(lme_fit_mean_rs_time)
-```
-
-### Joint model results
-
-#### Age as time variable
-
-```{r}
-# Fit
-joint_fit_mean_age <- jm(
-  cox_fit_age,
-  lme_fit_mean_rs_age,
-  time_var = "Age",
-  id_var = "ID",
-  control = jm_control
-)
-summary(joint_fit_mean_age)
-```
-
-#### Years from first CGM as time variable
-
-```{r}
-joint_fit_mean_time <- jm(
-  cox_fit_time,
-  lme_fit_mean_rs_time,
-  time_var = "TimeFromFirstCGM",
-  id_var = "ID",
-  control = jm_control
-)
-summary(joint_fit_mean_time)
-```
-
-```{r}
-compare_jm(joint_fit_mean_age, joint_fit_mean_time)
-```
-
-Without TrialNet data, the joint model for mean glucose using time from first CGM does not converge. After z-scaling mean glucose, one chain still appears to be different from the others and raises some concerns about the model despite eventually returning to the same sample space as the other chains. Also, the $\hat{R}$ estimates are all way too high (mc-stan.org recommends "running at least four chains by default and only using the sample if R-hat is less than 1.05").
-
-With TrialNet data included, the marginal DIC favors the joint model with time from first CGM as the time variable, but the conditional DIC favors the model with age as time. Because there is some debate about which DIC to use in joint model selection, but generally speaking marginal would be more generalizable for a prediction question  whereas conditional is more relevant to the sample included in the model. 
-
-```{r}
-newdat = full_join(cgm_lmm, cgm_surv)
-roc_age = tvROC(
-  joint_fit_mean_age,
-  newdata = newdat,
-  Tstart = quantile(cgm_surv$AgeEndpoint, 0.75),
-  Dt = 1
-)
-tvAUC(roc_age)
-roc_time = tvROC(
-  joint_fit_mean_time,
-  newdata = newdat,
-  Tstart = quantile(cgm_surv$EndTime, 0.75),
-  Dt = 1
-)
-tvAUC(roc_time)
-```
-
-Because there was no winner in terms of DIC and the tvROCAUC favors the age as time model when using 75% of the data, we have chosen to proceed with the age as time model for now. However, clinical intent/relevance should really be the tiebreaker between the two time variables (i.e., what are we hoping to achieve with these models?).
-
-## Age as time model results
-
-### Mean glucose
-
-```{r}
-plot_df = lme_fit_mean_rs_age$data
-plot_df$pred = predict(lme_fit_mean_rs_age)
-ggplot(plot_df, aes(x = Age, color = ID)) +
-  geom_point(aes(y = mean_glucose_scaled), alpha = 0.2) +
-  theme(legend.position = "none") +
-  geom_line(aes(y = pred))
-summary(joint_fit_mean_age)
-```
-
-### Glucose SD
-
-```{r}
-lme_fit_sd_rs_age <- lme(
-  sd_glucose_scaled ~ Age,
-  random = ~ Age | ID,
-  data = cgm_lmm,
-  control = list(opt = "optim")
-)
-plot_df = lme_fit_sd_rs_age$data
-plot_df$pred = predict(lme_fit_sd_rs_age)
-ggplot(plot_df, aes(x = Age, color = ID)) +
-  geom_point(aes(y = sd_glucose_scaled), alpha = 0.2) +
-  theme(legend.position = "none") +
-  geom_line(aes(y = pred))
-joint_fit_sd_age <- jm(
-  cox_fit_age,
-  lme_fit_sd_rs_age,
-  time_var = "Age",
-  id_var = "ID",
-  control = jm_control
-)
-summary(joint_fit_sd_age)
-```
-
-### Glucose CV
-
-```{r}
-lme_fit_cv_rs_age <- lme(
-  cv_glucose_scaled ~ Age,
+# Final model
+lme_fit_mean <- lme(
+  mean_glucose ~ Age,
   random = ~ Age | ID,
   data = cgm_lmm
 )
-plot_df = lme_fit_cv_rs_age$data
-plot_df$pred = predict(lme_fit_cv_rs_age)
-ggplot(plot_df, aes(x = Age, color = ID)) +
-  geom_point(aes(y = cv_glucose_scaled), alpha = 0.2) +
-  theme(legend.position = "none") +
-  geom_line(aes(y = pred))
-joint_fit_cv_age <- jm(
-  cox_fit_age,
-  lme_fit_cv_rs_age,
-  time_var = "Age",
-  id_var = "ID",
-  control = jm_control
-)
-summary(joint_fit_cv_age)
 ```
 
-### TAR140
+# Joint model results
+
+## Mean glucose
 
 ```{r}
-lme_fit_perc_time_over_140_rs_age <- lme(
-  perc_time_over_140_scaled ~ Age,
+lme_fit_mean <- lme(
+  mean_glucose ~ Age,
   random = ~ Age | ID,
   data = cgm_lmm
 )
-plot_df = lme_fit_perc_time_over_140_rs_age$data
-plot_df$pred = predict(lme_fit_perc_time_over_140_rs_age)
+performance::check_model(lme_fit_mean)
+plot_df <- lme_fit_mean$data
+plot_df$pred <- predict(lme_fit_mean)
 ggplot(plot_df, aes(x = Age, color = ID)) +
-  geom_point(aes(y = perc_time_over_140_scaled), alpha = 0.2) +
+  geom_point(aes(y = mean_glucose), alpha = 0.2) +
   theme(legend.position = "none") +
   geom_line(aes(y = pred))
-joint_fit_perc_time_over_140_age <- jm(
-  cox_fit_age,
-  lme_fit_perc_time_over_140_rs_age,
+joint_fit_mean <- jm(
+  cox_fit,
+  lme_fit_mean,
   time_var = "Age",
   id_var = "ID",
   control = jm_control
 )
-summary(joint_fit_perc_time_over_140_age)
+summary(joint_fit_mean)
+ggtraceplot(joint_fit_mean, parm = "betas")
 ```
 
-### HbA1c
+## Glucose SD
 
 ```{r}
-lme_fit_hba1c_rs_age <- lme(
-  hba1c_scaled ~ Age,
+lme_fit_sd <- lme(
+  sd_glucose ~ Age,
   random = ~ Age | ID,
   data = cgm_lmm
 )
-plot_df = lme_fit_hba1c_rs_age$data
-plot_df$pred = predict(lme_fit_hba1c_rs_age)
+performance::check_model(lme_fit_sd)
+plot_df <- lme_fit_sd$data
+plot_df$pred <- predict(lme_fit_sd)
 ggplot(plot_df, aes(x = Age, color = ID)) +
-  geom_point(aes(y = hba1c_scaled), alpha = 0.2) +
+  geom_point(aes(y = sd_glucose), alpha = 0.2) +
   theme(legend.position = "none") +
   geom_line(aes(y = pred))
-joint_fit_hba1c_age <- jm(
-  cox_fit_age,
-  lme_fit_hba1c_rs_age,
+joint_fit_sd <- jm(
+  cox_fit,
+  lme_fit_sd,
   time_var = "Age",
   id_var = "ID",
   control = jm_control
 )
-summary(joint_fit_hba1c_age)
+summary(joint_fit_sd)
+ggtraceplot(joint_fit_sd, parm = "betas")
 ```
 
-### HbA1c and Mean
+## Glucose CV
 
 ```{r}
-joint_fit_hba1c_mean_age <- jm(
-  cox_fit_age,
-  list(lme_fit_hba1c_rs_age, lme_fit_mean_rs_age),
+lme_fit_cv <- lme(
+  cv_glucose ~ Age,
+  random = ~ Age | ID,
+  data = cgm_lmm
+)
+performance::check_model(lme_fit_cv)
+plot_df <- lme_fit_cv$data
+plot_df$pred <- predict(lme_fit_cv)
+ggplot(plot_df, aes(x = Age, color = ID)) +
+  geom_point(aes(y = cv_glucose), alpha = 0.2) +
+  theme(legend.position = "none") +
+  geom_line(aes(y = pred))
+joint_fit_cv <- jm(
+  cox_fit,
+  lme_fit_cv,
   time_var = "Age",
   id_var = "ID",
   control = jm_control
 )
-summary(joint_fit_hba1c_mean_age)
+summary(joint_fit_cv)
+ggtraceplot(joint_fit_cv, parm = "betas")
 ```
 
-### HbA1c and SD
+## TAR140
 
 ```{r}
-joint_fit_hba1c_sd_age <- jm(
-  cox_fit_age,
-  list(lme_fit_hba1c_rs_age, lme_fit_sd_rs_age),
+lme_fit_tar <- lme(
+  perc_time_over_140 ~ Age,
+  random = ~ Age | ID,
+  data = cgm_lmm
+)
+performance::check_model(lme_fit_tar)
+plot_df <- lme_fit_tar$data
+plot_df$pred <- predict(lme_fit_tar)
+ggplot(plot_df, aes(x = Age, color = ID)) +
+  geom_point(aes(y = perc_time_over_140), alpha = 0.2) +
+  theme(legend.position = "none") +
+  geom_line(aes(y = pred))
+joint_fit_tar <- jm(
+  cox_fit,
+  lme_fit_tar,
   time_var = "Age",
   id_var = "ID",
   control = jm_control
 )
-summary(joint_fit_hba1c_sd_age)
+summary(joint_fit_tar)
+ggtraceplot(joint_fit_tar, parm = "betas")
 ```
 
-### HbA1c and CV
+## HbA1c
 
 ```{r}
-joint_fit_hba1c_cv_age <- jm(
-  cox_fit_age,
-  list(lme_fit_hba1c_rs_age, lme_fit_cv_rs_age),
+lme_fit_hba1c <- lme(
+  hba1c ~ Age,
+  random = ~ Age | ID,
+  data = cgm_lmm
+)
+performance::check_model(lme_fit_hba1c)
+plot_df <- lme_fit_hba1c$data
+plot_df$pred <- predict(lme_fit_hba1c)
+ggplot(plot_df, aes(x = Age, color = ID)) +
+  geom_point(aes(y = hba1c), alpha = 0.2) +
+  theme(legend.position = "none") +
+  geom_line(aes(y = pred))
+joint_fit_hba1c <- jm(
+  cox_fit,
+  lme_fit_hba1c,
   time_var = "Age",
   id_var = "ID",
   control = jm_control
 )
-summary(joint_fit_hba1c_cv_age)
+summary(joint_fit_hba1c)
+ggtraceplot(joint_fit_hba1c, parm = "betas")
 ```
 
-### HbA1c and TAR140
+## HbA1c and Mean
 
 ```{r}
-joint_fit_hba1c_tar140_age <- jm(
-  cox_fit_age,
-  list(lme_fit_hba1c_rs_age, lme_fit_perc_time_over_140_rs_age),
+joint_fit_hba1c_mean <- jm(
+  cox_fit,
+  list(lme_fit_hba1c, lme_fit_mean),
   time_var = "Age",
   id_var = "ID",
   control = jm_control
 )
-summary(joint_fit_hba1c_tar140_age)
+summary(joint_fit_hba1c_mean)
+ggtraceplot(joint_fit_hba1c_mean, parm = "betas")
 ```
 
-### Dynamic predictions
+## HbA1c and SD
 
-#### HbA1c and CV
+```{r}
+joint_fit_hba1c_sd <- jm(
+  cox_fit,
+  list(lme_fit_hba1c, lme_fit_sd),
+  time_var = "Age",
+  id_var = "ID",
+  control = jm_control
+)
+summary(joint_fit_hba1c_sd)
+ggtraceplot(joint_fit_hba1c_sd, parm = "betas")
+```
+
+## HbA1c and CV
+
+```{r}
+joint_fit_hba1c_cv <- jm(
+  cox_fit,
+  list(lme_fit_hba1c, lme_fit_cv),
+  time_var = "Age",
+  id_var = "ID",
+  control = jm_control
+)
+summary(joint_fit_hba1c_cv)
+ggtraceplot(joint_fit_hba1c_cv, parm = "betas")
+```
+
+## HbA1c and TAR140
+
+```{r}
+joint_fit_hba1c_tar <- jm(
+  cox_fit,
+  list(lme_fit_hba1c, lme_fit_tar),
+  time_var = "Age",
+  id_var = "ID",
+  control = jm_control
+)
+summary(joint_fit_hba1c_tar)
+ggtraceplot(joint_fit_hba1c_tar, parm = "betas")
+```
+
+# Dynamic predictions
+
+## HbA1c and CV
 
 ```{r}
 # Progressors
-newdat = full_join(cgm_lmm, cgm_surv)
-newdat = newdat |> filter(ID == "01-00375")
+newdat <- full_join(cgm_lmm, cgm_surv)
+newdat <- newdat |> filter(ID == "01-00375")
 predLongHbA1c <- predict(
-  joint_fit_hba1c_cv_age,
+  joint_fit_hba1c_cv,
   newdata = newdat,
   return_newdata = TRUE,
   process = "longitudinal",
   type = "mean_subject"
 )
 predSurvHbA1c <- predict(
-  joint_fit_hba1c_cv_age,
+  joint_fit_hba1c_cv,
   newdata = newdat,
   process = "event",
   times = seq(15, 18, length.out = 100),
@@ -556,17 +466,17 @@ plot(
   main = "01-00375 (Progressed at Age 15.7)"
 )
 
-newdat = full_join(cgm_lmm, cgm_surv)
-newdat = newdat |> filter(ID == "04-02273")
+newdat <- full_join(cgm_lmm, cgm_surv)
+newdat <- newdat |> filter(ID == "04-02273")
 predLongHbA1c <- predict(
-  joint_fit_hba1c_cv_age,
+  joint_fit_hba1c_cv,
   newdata = newdat,
   return_newdata = TRUE,
   process = "longitudinal",
   type = "mean_subject"
 )
 predSurvHbA1c <- predict(
-  joint_fit_hba1c_cv_age,
+  joint_fit_hba1c_cv,
   newdata = newdat,
   process = "event",
   times = seq(10, 13, length.out = 100),
@@ -582,17 +492,17 @@ plot(
   main = "04-02273 (Progressed at Age 10.4)"
 )
 
-newdat = full_join(cgm_lmm, cgm_surv)
-newdat = newdat |> filter(ID == "39390-3")
+newdat <- full_join(cgm_lmm, cgm_surv)
+newdat <- newdat |> filter(ID == "39390-3")
 predLongHbA1c <- predict(
-  joint_fit_hba1c_cv_age,
+  joint_fit_hba1c_cv,
   newdata = newdat,
   return_newdata = TRUE,
   process = "longitudinal",
   type = "mean_subject"
 )
 predSurvHbA1c <- predict(
-  joint_fit_hba1c_cv_age,
+  joint_fit_hba1c_cv,
   newdata = newdat,
   process = "event",
   times = seq(21.5, 24.5, length.out = 100),
@@ -608,17 +518,17 @@ plot(
   main = "39390-3 (Progressed at Age 21.7)"
 )
 # Non-Progressors
-newdat = full_join(cgm_lmm, cgm_surv)
-newdat = newdat |> filter(ID == "01-00149")
+newdat <- full_join(cgm_lmm, cgm_surv)
+newdat <- newdat |> filter(ID == "01-00149")
 predLongHbA1c <- predict(
-  joint_fit_hba1c_cv_age,
+  joint_fit_hba1c_cv,
   newdata = newdat,
   return_newdata = TRUE,
   process = "longitudinal",
   type = "mean_subject"
 )
 predSurvHbA1c <- predict(
-  joint_fit_hba1c_cv_age,
+  joint_fit_hba1c_cv,
   newdata = newdat,
   process = "event",
   times = seq(19, 22, length.out = 100),
@@ -634,17 +544,17 @@ plot(
   main = "01-00149 (Did Not Progress)"
 )
 
-newdat = full_join(cgm_lmm, cgm_surv)
-newdat = newdat |> filter(ID == "03-00456")
+newdat <- full_join(cgm_lmm, cgm_surv)
+newdat <- newdat |> filter(ID == "03-00456")
 predLongHbA1c <- predict(
-  joint_fit_hba1c_cv_age,
+  joint_fit_hba1c_cv,
   newdata = newdat,
   return_newdata = TRUE,
   process = "longitudinal",
   type = "mean_subject"
 )
 predSurvHbA1c <- predict(
-  joint_fit_hba1c_cv_age,
+  joint_fit_hba1c_cv,
   newdata = newdat,
   process = "event",
   times = seq(21, 24, length.out = 100),
@@ -661,17 +571,17 @@ plot(
 )
 
 
-newdat = full_join(cgm_lmm, cgm_surv)
-newdat = newdat |> filter(ID == "98-00003")
+newdat <- full_join(cgm_lmm, cgm_surv)
+newdat <- newdat |> filter(ID == "98-00003")
 predLongHbA1c <- predict(
-  joint_fit_hba1c_cv_age,
+  joint_fit_hba1c_cv,
   newdata = newdat,
   return_newdata = TRUE,
   process = "longitudinal",
   type = "mean_subject"
 )
 predSurvHbA1c <- predict(
-  joint_fit_hba1c_cv_age,
+  joint_fit_hba1c_cv,
   newdata = newdat,
   process = "event",
   times = seq(19.5, 22.5, length.out = 100),
@@ -688,20 +598,20 @@ plot(
 )
 ```
 
-#### HbA1c and TA140
+## HbA1c and TA140
 
 ```{r}
-newdat = full_join(cgm_lmm, cgm_surv)
-newdat = newdat |> filter(ID == "01-00375")
+newdat <- full_join(cgm_lmm, cgm_surv)
+newdat <- newdat |> filter(ID == "01-00375")
 predLongHbA1c <- predict(
-  joint_fit_hba1c_tar140_age,
+  joint_fit_hba1c_tar,
   newdata = newdat,
   return_newdata = TRUE,
   process = "longitudinal",
   type = "mean_subject"
 )
 predSurvHbA1c <- predict(
-  joint_fit_hba1c_tar140_age,
+  joint_fit_hba1c_tar,
   newdata = newdat,
   process = "event",
   times = seq(15, 18, length.out = 100),
@@ -718,17 +628,17 @@ plot(
 )
 
 
-newdat = full_join(cgm_lmm, cgm_surv)
-newdat = newdat |> filter(ID == "04-02273")
+newdat <- full_join(cgm_lmm, cgm_surv)
+newdat <- newdat |> filter(ID == "04-02273")
 predLongHbA1c <- predict(
-  joint_fit_hba1c_tar140_age,
+  joint_fit_hba1c_tar,
   newdata = newdat,
   return_newdata = TRUE,
   process = "longitudinal",
   type = "mean_subject"
 )
 predSurvHbA1c <- predict(
-  joint_fit_hba1c_tar140_age,
+  joint_fit_hba1c_tar,
   newdata = newdat,
   process = "event",
   times = seq(10, 13, length.out = 100),
@@ -745,17 +655,17 @@ plot(
 )
 
 
-newdat = full_join(cgm_lmm, cgm_surv)
-newdat = newdat |> filter(ID == "39390-3")
+newdat <- full_join(cgm_lmm, cgm_surv)
+newdat <- newdat |> filter(ID == "39390-3")
 predLongHbA1c <- predict(
-  joint_fit_hba1c_tar140_age,
+  joint_fit_hba1c_tar,
   newdata = newdat,
   return_newdata = TRUE,
   process = "longitudinal",
   type = "mean_subject"
 )
 predSurvHbA1c <- predict(
-  joint_fit_hba1c_tar140_age,
+  joint_fit_hba1c_tar,
   newdata = newdat,
   process = "event",
   times = seq(21.5, 24.5, length.out = 100),
@@ -771,17 +681,17 @@ plot(
   main = "39390-3 (Progressed at Age 21.7)"
 )
 # Non-Progressors
-newdat = full_join(cgm_lmm, cgm_surv)
-newdat = newdat |> filter(ID == "01-00149")
+newdat <- full_join(cgm_lmm, cgm_surv)
+newdat <- newdat |> filter(ID == "01-00149")
 predLongHbA1c <- predict(
-  joint_fit_hba1c_tar140_age,
+  joint_fit_hba1c_tar,
   newdata = newdat,
   return_newdata = TRUE,
   process = "longitudinal",
   type = "mean_subject"
 )
 predSurvHbA1c <- predict(
-  joint_fit_hba1c_tar140_age,
+  joint_fit_hba1c_tar,
   newdata = newdat,
   process = "event",
   times = seq(19, 22, length.out = 100),
@@ -798,17 +708,17 @@ plot(
 )
 
 
-newdat = full_join(cgm_lmm, cgm_surv)
-newdat = newdat |> filter(ID == "03-00456")
+newdat <- full_join(cgm_lmm, cgm_surv)
+newdat <- newdat |> filter(ID == "03-00456")
 predLongHbA1c <- predict(
-  joint_fit_hba1c_tar140_age,
+  joint_fit_hba1c_tar,
   newdata = newdat,
   return_newdata = TRUE,
   process = "longitudinal",
   type = "mean_subject"
 )
 predSurvHbA1c <- predict(
-  joint_fit_hba1c_tar140_age,
+  joint_fit_hba1c_tar,
   newdata = newdat,
   process = "event",
   times = seq(21, 24, length.out = 100),
@@ -825,17 +735,17 @@ plot(
 )
 
 
-newdat = full_join(cgm_lmm, cgm_surv)
-newdat = newdat |> filter(ID == "98-00003")
+newdat <- full_join(cgm_lmm, cgm_surv)
+newdat <- newdat |> filter(ID == "98-00003")
 predLongHbA1c <- predict(
-  joint_fit_hba1c_tar140_age,
+  joint_fit_hba1c_tar,
   newdata = newdat,
   return_newdata = TRUE,
   process = "longitudinal",
   type = "mean_subject"
 )
 predSurvHbA1c <- predict(
-  joint_fit_hba1c_tar140_age,
+  joint_fit_hba1c_tar,
   newdata = newdat,
   process = "event",
   times = seq(19.5, 22.5, length.out = 100),
@@ -856,18 +766,18 @@ plot(
 
 ```{r}
 # Make a list of all the models we've looked at
-models = list(
-  joint_fit_mean_age,
-  joint_fit_sd_age,
-  joint_fit_cv_age,
-  joint_fit_perc_time_over_140_age,
-  joint_fit_hba1c_age,
-  joint_fit_hba1c_mean_age,
-  joint_fit_hba1c_sd_age,
-  joint_fit_hba1c_cv_age,
-  joint_fit_hba1c_tar140_age
+models <- list(
+  joint_fit_mean,
+  joint_fit_sd,
+  joint_fit_cv,
+  joint_fit_tar,
+  joint_fit_hba1c,
+  joint_fit_hba1c_mean,
+  joint_fit_hba1c_sd,
+  joint_fit_hba1c_cv,
+  joint_fit_hba1c_tar
 )
-names(models) = c(
+names(models) <- c(
   "Mean",
   "SD",
   "CV",
@@ -879,24 +789,26 @@ names(models) = c(
   "HbA1c + TA140"
 )
 # Make a grid for AUC testing
-auc_grid = expand.grid(
+auc_grid <- expand.grid(
   start = seq(6, 20, by = 1),
   dt = 1:3
 )
 # Get AUC at various time ranges for each model
-newdat = full_join(cgm_lmm, cgm_surv)
-auc_grid_results = apply(auc_grid, 1, function(r) {
-  start = as.numeric(r["start"])
-  dt = as.numeric(r["dt"])
-  auc_results = sapply(names(models), function(n) {
-    tv = tryCatch(
+newdat <- full_join(cgm_lmm, cgm_surv)
+auc_grid_results <- apply(auc_grid, 1, function(r) {
+  start <- as.numeric(r["start"])
+  dt <- as.numeric(r["dt"])
+  auc_results <- sapply(names(models), function(n) {
+    tv <- tryCatch(
       tvROC(
         models[[n]],
         newdata = newdat,
         Tstart = start,
         Dt = dt
       ),
-      error = function(e) return(NA)
+      error = function(e) {
+        return(NA)
+      }
     )
     if (length(tv) == 1) {
       return(NA)
@@ -904,23 +816,23 @@ auc_grid_results = apply(auc_grid, 1, function(r) {
       return(tvAUC(tv)$auc)
     }
   })
-  res = data.frame(auc_results) |>
+  res <- data.frame(auc_results) |>
     rownames_to_column(var = "Model") |>
     rename(AUC = auc_results) |>
     mutate(up_to = start, window = dt)
   return(res)
 })
 
-t = do.call(rbind, auc_grid_results)
+t <- do.call(rbind, auc_grid_results)
 
 
-auc_grid_results = auc_grid_results |>
+auc_grid_results <- auc_grid_results |>
   pivot_wider(
     values_from = AUC,
     names_from = window
   ) |>
   group_split(up_to, .keep = F)
-names(auc_grid_results) = unique(auc_grid$start)
+names(auc_grid_results) <- unique(auc_grid$start)
 invisible(lapply(names(auc_grid_results), function(n) {
   cat("\n")
   cat("\n")
@@ -933,7 +845,7 @@ invisible(lapply(names(auc_grid_results), function(n) {
 }))
 ```
 
-## Combined predictions via super-learning
+# Combined predictions via super-learning
 
 ```{r}
 #| eval: false
@@ -1023,28 +935,28 @@ fit_models <- function(fold) {
     control = jm_control
   )
   joint_fit_hba1c_mean <- jm(
-    cox_fit_age,
+    cox_fit,
     list(lme_fit_hba1c, lme_fit_mean),
     time_var = "Age",
     id_var = "ID",
     control = jm_control
   )
   joint_fit_hba1c_sd <- jm(
-    cox_fit_age,
+    cox_fit,
     list(lme_fit_hba1c, lme_fit_sd),
     time_var = "Age",
     id_var = "ID",
     control = jm_control
   )
   joint_fit_hba1c_cv <- jm(
-    cox_fit_age,
+    cox_fit,
     list(lme_fit_hba1c, lme_fit_cv),
     time_var = "Age",
     id_var = "ID",
     control = jm_control
   )
   joint_fit_hba1c_tar <- jm(
-    cox_fit_age,
+    cox_fit,
     list(lme_fit_hba1c, lme_fit_tar),
     time_var = "Age",
     id_var = "ID",
