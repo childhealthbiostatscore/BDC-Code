@@ -54,19 +54,25 @@ knitr::opts_knit$set(root.dir = home_dir)
 
 ```{r data cleaning}
 setwd(home_dir)
+set.seed(1017)
 # Load data
 # See BDC-Code/Andrea Steck/Advanced CGM and OGTT/create_analysis_dataset.R
 load("./Data_Clean/analysis_dataset.RData")
-# Filter people >= age 30
-cgm_lmm = cgm_lmm |> filter(Age < 30)
+# Filter people >= age 30 and those who progressed at their first CGM visit.
+# We don't know for sure that the CGM wear happened prior to progression, so
+# these people may not be in the risk set.
+no_risk = cgm_surv$ID[which(cgm_surv$EndTime == 0 & cgm_surv$event == 1)]
+cgm_lmm = cgm_lmm |> filter(Age < 30, !ID %in% no_risk)
+# Remove TRIALNET
+cgm_lmm <- cgm_lmm |> filter(study != "TRIALNET")
 # Scale and center the variables of interest
-# cgm_lmm$mean_glucose <- scale(cgm_lmm$mean_glucose)
-# cgm_lmm$sd_glucose <- scale(cgm_lmm$sd_glucose)
-# cgm_lmm$cv_glucose <- scale(cgm_lmm$cv_glucose)
-# cgm_lmm$perc_time_over_140 <- scale(cgm_lmm$perc_time_over_140)
-# cgm_lmm$hba1c <- scale(cgm_lmm$hba1c)
+cgm_lmm$mean_glucose <- scale(cgm_lmm$mean_glucose)
+cgm_lmm$sd_glucose <- scale(cgm_lmm$sd_glucose)
+cgm_lmm$cv_glucose <- scale(cgm_lmm$cv_glucose)
+cgm_lmm$perc_time_over_140 <- scale(cgm_lmm$perc_time_over_140)
+cgm_lmm$hba1c <- scale(cgm_lmm$hba1c)
 # Limit survival group to those included in mixed model DF
-cgm_surv = cgm_surv |> filter(ID %in% cgm_lmm$ID)
+cgm_surv <- cgm_surv |> filter(ID %in% cgm_lmm$ID)
 # JM options
 jm_control <- list(
   n_iter = 1e5,
@@ -790,7 +796,7 @@ names(models) <- c(
 )
 # Make a grid for AUC testing
 auc_grid <- expand.grid(
-  start = seq(6, 20, by = 1),
+  start = seq(6, 29, by = 1),
   dt = 1:3
 )
 # Get AUC at various time ranges for each model
