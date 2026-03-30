@@ -64,23 +64,15 @@ load("./Data_Clean/analysis_dataset.RData")
 no_risk = cgm_surv$ID[which(cgm_surv$EndTime == 0 & cgm_surv$event == 1)]
 cgm_lmm = cgm_lmm |> filter(Age < 30, !ID %in% no_risk)
 # Remove TRIALNET
-cgm_lmm <- cgm_lmm |> filter(study != "TRIALNET")
+# cgm_lmm <- cgm_lmm |> filter(study != "TRIALNET")
 # Scale and center the variables of interest
-cgm_lmm$mean_glucose <- scale(cgm_lmm$mean_glucose)
-cgm_lmm$sd_glucose <- scale(cgm_lmm$sd_glucose)
-cgm_lmm$cv_glucose <- scale(cgm_lmm$cv_glucose)
-cgm_lmm$perc_time_over_140 <- scale(cgm_lmm$perc_time_over_140)
-cgm_lmm$hba1c <- scale(cgm_lmm$hba1c)
+# cgm_lmm$mean_glucose <- scale(cgm_lmm$mean_glucose)
+# cgm_lmm$sd_glucose <- scale(cgm_lmm$sd_glucose)
+# cgm_lmm$cv_glucose <- scale(cgm_lmm$cv_glucose)
+# cgm_lmm$perc_time_over_140 <- scale(cgm_lmm$perc_time_over_140)
+# cgm_lmm$hba1c <- scale(cgm_lmm$hba1c)
 # Limit survival group to those included in mixed model DF
 cgm_surv <- cgm_surv |> filter(ID %in% cgm_lmm$ID)
-# JM options
-jm_control <- list(
-  n_iter = 1e5,
-  n_burnin = 1e3,
-  n_thin = 2,
-  n_chains = 4,
-  cores = 4
-)
 # Make a simplified dataset for Andrea to pick participants for examples
 newdat <- full_join(cgm_lmm, cgm_surv)
 newdat <- newdat |>
@@ -224,7 +216,7 @@ ggcoxdiagnostics(cox_fit, type = "partial", linear.predictions = F)
 
 ## Linear model results
 
-Models with random slope and random intercept for participant were better than those with just a random intercept by AIC. The linear model using years from first CGM as the time variable was better than the model using age as the time variable by AIC.
+Models with random slope and random intercept for participant were better than those with just a random intercept by BIC. The linear model using years from first CGM as the time variable was better than the model using age as the time variable by BIC.
 
 ```{r}
 lme_fit_mean_ri <- lme(
@@ -237,7 +229,7 @@ lme_fit_mean_rs <- lme(
   random = ~ Age | ID,
   data = cgm_lmm
 )
-AIC(lme_fit_mean_ri, lme_fit_mean_rs)
+BIC(lme_fit_mean_ri, lme_fit_mean_rs)
 plot_df <- lme_fit_mean_rs$data
 plot_df$pred <- predict(lme_fit_mean_rs)
 ggplot(plot_df, aes(x = Age, color = ID)) +
@@ -254,193 +246,468 @@ lme_fit_mean <- lme(
 
 # Joint model results
 
+```{r}
+# There are too many models, so create a function to make sure each outcome is
+# treated the same. For now this function only handles two longitudinal
+# outcomes.
+joint_fits = function(
+  outcomes,
+  time = "Age",
+  cox_adjust = c("sex"),
+  lmm_adjust = NULL,
+  cox_df = cgm_surv,
+  lmm_df = cgm_lmm,
+  jm_control = list(
+    n_iter = 1e5,
+    n_burnin = 1e3,
+    n_thin = 2,
+    n_chains = 4,
+    cores = 4
+  )
+) {
+  # Right now it may be unnecessary to re-fit the Cox model each time, but
+  # put it in the function just in case.
+  cox_f = as.formula(paste0(
+    "Surv(",
+    time,
+    "Endpoint, event)",
+    "~",
+    paste(cox_adjust, collapse = "+")
+  ))
+  cox_fit <- coxph(
+    cox_f,
+    x = T,
+    model = T,
+    data = cox_df
+  )
+  # Fit a random intercept and slope model for each outcome
+  re_f = as.formula(paste0("~", time, "|", "ID"))
+  lme_mods = lapply(outcomes, function(outcome) {
+    lme_f = as.formula(paste0(
+      outcome,
+      "~",
+      paste0(c(time, lmm_adjust), collapse = "+")
+    ))
+    lme_fit <- lme(
+      lme_f,
+      random = re_f,
+      data = cgm_lmm
+    )
+    return(lme_fit)
+  })
+  names(lme_mods) = outcomes
+  # For each outcome, fit the three different functional forms
+  joint_mods = lapply(outcomes, function(outcome) {
+    joint_fit_value = jm(
+      cox_fit,
+      lme_mods[[outcome]],
+      time_var = time,
+      id_var = "ID",
+      control = jm_control
+    )
+    slope_ff = list(as.formula(paste0("~", "slope(", outcome, ")")))
+    names(slope_ff) = outcome
+    joint_fit_slope = jm(
+      cox_fit,
+      lme_mods[[outcome]],
+      time_var = time,
+      id_var = "ID",
+      control = jm_control,
+      functional_forms = slope_ff
+    )
+    area_ff = list(as.formula(paste0("~", "area(", outcome, ")")))
+    names(area_ff) = outcome
+    joint_fit_area = jm(
+      cox_fit,
+      lme_mods[[outcome]],
+      time_var = time,
+      id_var = "ID",
+      control = jm_control,
+      functional_forms = area_ff
+    )
+    return(list(
+      "value" = joint_fit_value,
+      "slope" = joint_fit_slope,
+      "area" = joint_fit_area
+    ))
+  })
+  names(joint_mods) = outcomes
+  # If only one outcome, just return all three
+  if (length(outcomes) == 1) {
+    names(joint_mods) = c("value", "slope", "area")
+    return(joint_mods)
+  } else if (length(outcomes) > 1) {
+    # If multiple outcomes, do a lil' model selection.
+    # Marginal DIC/WAIC is better because it evaluates the overall model fit
+    # for the population by integrating out the random effects
+    optimal_mods = sapply(outcomes, function(outcome) {
+      # I'm sure there's a more elegant way to do this but it works
+      c("value", "slope", "area")[which.min(c(
+        joint_mods[[outcome]][["value"]][["fit_stats"]][["marginal"]][["DIC"]],
+        joint_mods[[outcome]][["slope"]][["fit_stats"]][["marginal"]][["DIC"]],
+        joint_mods[[outcome]][["area"]][["fit_stats"]][["marginal"]][["DIC"]]
+      ))]
+    })
+    # Compare models with the same functional forms for all outcomes to a model
+    # with the optimal form for each outcome separately. This is pretty
+    # inefficient because it fits all 3 funcitional form models for all outcomes
+    # but I'd rather be consistent than efficient at this point.
+    # First a model with value for both.
+    joint_fit_value = jm(
+      cox_fit,
+      lme_mods,
+      time_var = time,
+      id_var = "ID",
+      control = jm_control
+    )
+    # Slope for both
+    slope_ff = sapply(outcomes, function(outcome) {
+      as.formula(paste0("~", "slope(", outcome, ")"))
+    })
+    names(slope_ff) = outcomes
+    joint_fit_slope = jm(
+      cox_fit,
+      lme_mods,
+      time_var = time,
+      id_var = "ID",
+      control = jm_control,
+      functional_forms = slope_ff
+    )
+    # Area for both
+    area_ff = sapply(outcomes, function(outcome) {
+      as.formula(paste0("~", "area(", outcome, ")"))
+    })
+    names(area_ff) = outcomes
+    joint_fit_area = jm(
+      cox_fit,
+      lme_mods,
+      time_var = time,
+      id_var = "ID",
+      control = jm_control,
+      functional_forms = area_ff
+    )
+    # With the optimal forms from above
+    optimal_ff = sapply(outcomes, function(outcome) {
+      as.formula(paste0("~", optimal_mods[outcome], "(", outcome, ")"))
+    })
+    names(optimal_ff) = outcomes
+    joint_fit_optimal = jm(
+      cox_fit,
+      lme_mods,
+      time_var = time,
+      id_var = "ID",
+      control = jm_control,
+      functional_forms = optimal_ff
+    )
+    # Return them all
+    return(list(
+      "value" = joint_fit_value,
+      "slope" = joint_fit_slope,
+      "area" = joint_fit_area,
+      "optimal" = joint_fit_optimal
+    ))
+  }
+}
+```
+
 ## Mean glucose
 
 ```{r}
-lme_fit_mean <- lme(
-  mean_glucose ~ Age,
-  random = ~ Age | ID,
-  data = cgm_lmm
-)
-performance::check_model(lme_fit_mean)
-plot_df <- lme_fit_mean$data
-plot_df$pred <- predict(lme_fit_mean)
-ggplot(plot_df, aes(x = Age, color = ID)) +
-  geom_point(aes(y = mean_glucose), alpha = 0.2) +
-  theme(legend.position = "none") +
-  geom_line(aes(y = pred))
-joint_fit_mean <- jm(
-  cox_fit,
-  lme_fit_mean,
-  time_var = "Age",
-  id_var = "ID",
-  control = jm_control
-)
-summary(joint_fit_mean)
-ggtraceplot(joint_fit_mean, parm = "betas")
+joint_models = joint_fits(outcomes = "mean_glucose")
+```
+
+### Functional form: value
+
+```{r}
+summary(joint_models$value)
+ggtraceplot(joint_models$value, parm = "betas")
+```
+
+### Functional form: slope
+
+```{r}
+summary(joint_models$slope)
+ggtraceplot(joint_models$slope, parm = "betas")
+```
+
+### Functional form: area
+
+```{r}
+summary(joint_models$area)
+ggtraceplot(joint_models$area, parm = "betas")
+```
+
+### Functional form comparisons
+
+```{r}
+compare_jm(joint_models$value, joint_models$slope, joint_models$area)
 ```
 
 ## Glucose SD
 
 ```{r}
-lme_fit_sd <- lme(
-  sd_glucose ~ Age,
-  random = ~ Age | ID,
-  data = cgm_lmm
-)
-performance::check_model(lme_fit_sd)
-plot_df <- lme_fit_sd$data
-plot_df$pred <- predict(lme_fit_sd)
-ggplot(plot_df, aes(x = Age, color = ID)) +
-  geom_point(aes(y = sd_glucose), alpha = 0.2) +
-  theme(legend.position = "none") +
-  geom_line(aes(y = pred))
-joint_fit_sd <- jm(
-  cox_fit,
-  lme_fit_sd,
-  time_var = "Age",
-  id_var = "ID",
-  control = jm_control
-)
-summary(joint_fit_sd)
-ggtraceplot(joint_fit_sd, parm = "betas")
+joint_models = joint_fits(outcomes = "sd_glucose")
+```
+
+### Functional form: value
+
+```{r}
+summary(joint_models$value)
+ggtraceplot(joint_models$value, parm = "betas")
+```
+
+### Functional form: slope
+
+```{r}
+summary(joint_models$slope)
+ggtraceplot(joint_models$slope, parm = "betas")
+```
+
+### Functional form: area
+
+```{r}
+summary(joint_models$area)
+ggtraceplot(joint_models$area, parm = "betas")
+```
+
+### Functional form comparisons
+
+```{r}
+compare_jm(joint_models$value, joint_models$slope, joint_models$area)
 ```
 
 ## Glucose CV
 
 ```{r}
-lme_fit_cv <- lme(
-  cv_glucose ~ Age,
-  random = ~ Age | ID,
-  data = cgm_lmm
-)
-performance::check_model(lme_fit_cv)
-plot_df <- lme_fit_cv$data
-plot_df$pred <- predict(lme_fit_cv)
-ggplot(plot_df, aes(x = Age, color = ID)) +
-  geom_point(aes(y = cv_glucose), alpha = 0.2) +
-  theme(legend.position = "none") +
-  geom_line(aes(y = pred))
-joint_fit_cv <- jm(
-  cox_fit,
-  lme_fit_cv,
-  time_var = "Age",
-  id_var = "ID",
-  control = jm_control
-)
-summary(joint_fit_cv)
-ggtraceplot(joint_fit_cv, parm = "betas")
+joint_models = joint_fits(outcomes = "cv_glucose")
+```
+
+### Functional form: value
+
+```{r}
+summary(joint_models$value)
+ggtraceplot(joint_models$value, parm = "betas")
+```
+
+### Functional form: slope
+
+```{r}
+summary(joint_models$slope)
+ggtraceplot(joint_models$slope, parm = "betas")
+```
+
+### Functional form: area
+
+```{r}
+summary(joint_models$area)
+ggtraceplot(joint_models$area, parm = "betas")
+```
+
+### Functional form comparisons
+
+```{r}
+compare_jm(joint_models$value, joint_models$slope, joint_models$area)
 ```
 
 ## TAR140
 
 ```{r}
-lme_fit_tar <- lme(
-  perc_time_over_140 ~ Age,
-  random = ~ Age | ID,
-  data = cgm_lmm
-)
-performance::check_model(lme_fit_tar)
-plot_df <- lme_fit_tar$data
-plot_df$pred <- predict(lme_fit_tar)
-ggplot(plot_df, aes(x = Age, color = ID)) +
-  geom_point(aes(y = perc_time_over_140), alpha = 0.2) +
-  theme(legend.position = "none") +
-  geom_line(aes(y = pred))
-joint_fit_tar <- jm(
-  cox_fit,
-  lme_fit_tar,
-  time_var = "Age",
-  id_var = "ID",
-  control = jm_control
-)
-summary(joint_fit_tar)
-ggtraceplot(joint_fit_tar, parm = "betas")
+joint_models = joint_fits(outcomes = "perc_time_over_140")
+```
+
+### Functional form: value
+
+```{r}
+summary(joint_models$value)
+ggtraceplot(joint_models$value, parm = "betas")
+```
+
+### Functional form: slope
+
+```{r}
+summary(joint_models$slope)
+ggtraceplot(joint_models$slope, parm = "betas")
+```
+
+### Functional form: area
+
+```{r}
+summary(joint_models$area)
+ggtraceplot(joint_models$area, parm = "betas")
+```
+
+### Functional form comparisons
+
+```{r}
+compare_jm(joint_models$value, joint_models$slope, joint_models$area)
 ```
 
 ## HbA1c
 
 ```{r}
-lme_fit_hba1c <- lme(
-  hba1c ~ Age,
-  random = ~ Age | ID,
-  data = cgm_lmm
-)
-performance::check_model(lme_fit_hba1c)
-plot_df <- lme_fit_hba1c$data
-plot_df$pred <- predict(lme_fit_hba1c)
-ggplot(plot_df, aes(x = Age, color = ID)) +
-  geom_point(aes(y = hba1c), alpha = 0.2) +
-  theme(legend.position = "none") +
-  geom_line(aes(y = pred))
-joint_fit_hba1c <- jm(
-  cox_fit,
-  lme_fit_hba1c,
-  time_var = "Age",
-  id_var = "ID",
-  control = jm_control
-)
-summary(joint_fit_hba1c)
-ggtraceplot(joint_fit_hba1c, parm = "betas")
+joint_models = joint_fits(outcomes = "hba1c")
+```
+
+### Functional form: value
+
+```{r}
+summary(joint_models$value)
+ggtraceplot(joint_models$value, parm = "betas")
+```
+
+### Functional form: slope
+
+```{r}
+summary(joint_models$slope)
+ggtraceplot(joint_models$slope, parm = "betas")
+```
+
+### Functional form: area
+
+```{r}
+summary(joint_models$area)
+ggtraceplot(joint_models$area, parm = "betas")
+```
+
+### Functional form comparisons
+
+```{r}
+compare_jm(joint_models$value, joint_models$slope, joint_models$area)
 ```
 
 ## HbA1c and Mean
 
 ```{r}
-joint_fit_hba1c_mean <- jm(
-  cox_fit,
-  list(lme_fit_hba1c, lme_fit_mean),
-  time_var = "Age",
-  id_var = "ID",
-  control = jm_control
-)
-summary(joint_fit_hba1c_mean)
-ggtraceplot(joint_fit_hba1c_mean, parm = "betas")
+joint_models = joint_fits(outcomes = c("hba1c", "mean_glucose"))
+```
+
+### Functional form: value
+
+```{r}
+summary(joint_models$value)
+ggtraceplot(joint_models$value, parm = "betas")
+```
+
+### Functional form: slope
+
+```{r}
+summary(joint_models$slope)
+ggtraceplot(joint_models$slope, parm = "betas")
+```
+
+### Functional form: area
+
+```{r}
+summary(joint_models$area)
+ggtraceplot(joint_models$area, parm = "betas")
+```
+
+### Functional form comparisons
+
+```{r}
+compare_jm(joint_models$value, joint_models$slope, joint_models$area)
 ```
 
 ## HbA1c and SD
 
 ```{r}
-joint_fit_hba1c_sd <- jm(
-  cox_fit,
-  list(lme_fit_hba1c, lme_fit_sd),
-  time_var = "Age",
-  id_var = "ID",
-  control = jm_control
-)
-summary(joint_fit_hba1c_sd)
-ggtraceplot(joint_fit_hba1c_sd, parm = "betas")
+joint_models = joint_fits(outcomes = c("hba1c", "sd_glucose"))
+```
+
+### Functional form: value
+
+```{r}
+summary(joint_models$value)
+ggtraceplot(joint_models$value, parm = "betas")
+```
+
+### Functional form: slope
+
+```{r}
+summary(joint_models$slope)
+ggtraceplot(joint_models$slope, parm = "betas")
+```
+
+### Functional form: area
+
+```{r}
+summary(joint_models$area)
+ggtraceplot(joint_models$area, parm = "betas")
+```
+
+### Functional form comparisons
+
+```{r}
+compare_jm(joint_models$value, joint_models$slope, joint_models$area)
 ```
 
 ## HbA1c and CV
 
 ```{r}
-joint_fit_hba1c_cv <- jm(
-  cox_fit,
-  list(lme_fit_hba1c, lme_fit_cv),
-  time_var = "Age",
-  id_var = "ID",
-  control = jm_control
-)
-summary(joint_fit_hba1c_cv)
-ggtraceplot(joint_fit_hba1c_cv, parm = "betas")
+joint_models = joint_fits(outcomes = c("hba1c", "cv_glucose"))
+```
+
+### Functional form: value
+
+```{r}
+summary(joint_models$value)
+ggtraceplot(joint_models$value, parm = "betas")
+```
+
+### Functional form: slope
+
+```{r}
+summary(joint_models$slope)
+ggtraceplot(joint_models$slope, parm = "betas")
+```
+
+### Functional form: area
+
+```{r}
+summary(joint_models$area)
+ggtraceplot(joint_models$area, parm = "betas")
+```
+
+### Functional form comparisons
+
+```{r}
+compare_jm(joint_models$value, joint_models$slope, joint_models$area)
 ```
 
 ## HbA1c and TAR140
 
 ```{r}
-joint_fit_hba1c_tar <- jm(
-  cox_fit,
-  list(lme_fit_hba1c, lme_fit_tar),
-  time_var = "Age",
-  id_var = "ID",
-  control = jm_control
-)
-summary(joint_fit_hba1c_tar)
-ggtraceplot(joint_fit_hba1c_tar, parm = "betas")
+joint_models = joint_fits(outcomes = c("hba1c", "perc_time_over_140"))
 ```
 
-# Dynamic predictions
+### Functional form: value
+
+```{r}
+summary(joint_models$value)
+ggtraceplot(joint_models$value, parm = "betas")
+```
+
+### Functional form: slope
+
+```{r}
+summary(joint_models$slope)
+ggtraceplot(joint_models$slope, parm = "betas")
+```
+
+### Functional form: area
+
+```{r}
+summary(joint_models$area)
+ggtraceplot(joint_models$area, parm = "betas")
+```
+
+### Functional form comparisons
+
+```{r}
+compare_jm(joint_models$value, joint_models$slope, joint_models$area)
+```
+
+<!-- # Dynamic predictions
 
 ## HbA1c and CV
 
@@ -984,4 +1251,4 @@ fit_models <- function(fold) {
   return(out)
 }
 models_folds <- lapply(cv_dats$training, fit_models)
-```
+``` -->
