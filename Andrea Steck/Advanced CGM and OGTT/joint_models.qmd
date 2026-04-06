@@ -26,8 +26,7 @@ library(survminer)
 library(knitr)
 library(gtsummary)
 library(parallel)
-base_dir <- switch(
-  Sys.info()["nodename"],
+base_dir <- switch(Sys.info()["nodename"],
   "togo" = "/home/tvigers/Documents/Data",
   "Tims-MacBook-Air.local" = "/Users/tim/Library/CloudStorage/OneDrive-UW",
   "Tims-Mac-mini.local" = "/Users/tim/Library/CloudStorage/OneDrive-UW",
@@ -38,8 +37,7 @@ base_dir <- switch(
   "Kristens-MacBook-Pro.local" = "/Users/kristenmiller/Library/CloudStorage/OneDrive-UW",
   "twigs" = "/home/tim/Documents/Data"
 )
-data_dir <- switch(
-  Sys.info()["nodename"],
+data_dir <- switch(Sys.info()["nodename"],
   "togo" = "/BDC/Andrea Steck/Advanced CGM and OGTT",
   "Tims-MacBook-Air.local" = "/UWMDI/Andrea Steck/Advanced CGM and OGTT",
   "Tims-Mac-mini.local" = "/UWMDI/Andrea Steck/Advanced CGM and OGTT",
@@ -63,8 +61,8 @@ load("./Data_Clean/analysis_dataset.RData")
 # Filter people >= age 30 and those who progressed at their first CGM visit.
 # We don't know for sure that the CGM wear happened prior to progression, so
 # these people may not be in the risk set.
-no_risk = cgm_surv$ID[which(cgm_surv$EndTime == 0 & cgm_surv$event == 1)]
-cgm_lmm = cgm_lmm |> filter(Age < 30, !ID %in% no_risk)
+no_risk <- cgm_surv$ID[which(cgm_surv$EndTime == 0 & cgm_surv$event == 1)]
+cgm_lmm <- cgm_lmm |> filter(Age < 30, !ID %in% no_risk)
 # Remove TRIALNET
 # cgm_lmm <- cgm_lmm |> filter(study != "TRIALNET")
 # Scale and center the variables of interest
@@ -105,6 +103,62 @@ write.csv(
   row.names = FALSE,
   na = ""
 )
+# Test peak finding on first CGM
+cgm_test <- split.data.frame(cgm, f = ~ ID + dov_CGM, drop = TRUE)
+cgm_test <- cgm_test[[1]]
+# Calculate minutes from first glucose
+cgm_test$mins <- ymd_hms(paste(cgm_test$Date, cgm_test$Time))
+cgm_test$mins <- as.numeric(cgm_test$mins - cgm_test$mins[1]) / 60
+```
+
+```{python}
+import numpy as np
+import pandas as pd
+from scipy.signal import find_peaks
+from scipy.signal import peak_widths
+
+# Import cgm data from R
+df = r.cgm_test
+# Get glucose and time columns
+glucose = df["SensorValue"].values
+time = df["mins"].values
+# Sampling interval (assumes uniform spacing)
+dt = np.median(np.diff(time))  # minutes per sample
+samples_per_2h = int(2 * 60 / dt)  # minimum distance between peaks
+# Find peaks
+peaks, props = find_peaks(
+    glucose,
+    height=60,  # peak height <= 60 mg/dL
+    distance=samples_per_2h,  # ≥ 2 h between peaks
+)
+peaks, props
+# Filter for duration >= 30 min
+# Measure width at the level of peak 50 (i.e., where glucose is 50 mg/dL below peak)
+# rel_height=1.0 means at the base (prominence reference level)
+# Adjust rel_height to control where width is measured
+widths, width_heights, left_ips, right_ips = peak_widths(glucose, peaks, rel_height=1)
+left_ips, right_ips
+# Convert width to hours
+widths_mins = widths * dt
+# Keep only peaks where elevated duration >= 30
+duration_mask = widths_mins >= 30
+peaks_filtered = peaks[duration_mask]
+widths_filtered = widths_mins[duration_mask]
+props_filtered = {k: v[duration_mask] for k, v in props.items()}
+# Assemble results
+peak_df = pd.DataFrame(
+    {
+        "peak_time_min": time[peaks_filtered],
+        "peak_glucose": glucose[peaks_filtered],
+        "duration_min": widths_filtered,
+        "peak_idx": peaks_filtered,
+    }
+)
+```
+
+```{r}
+peak_df <- py$peak_df
+
 ```
 
 # Participant characteristics
@@ -252,7 +306,7 @@ lme_fit_mean <- lme(
 # There are too many models, so create a function to make sure each outcome is
 # treated the same. For now this function only handles two longitudinal
 # outcomes.
-joint_fits = function(
+joint_fits <- function(
   outcomes,
   time = "Age",
   cox_adjust = c("sex"),
@@ -269,7 +323,7 @@ joint_fits = function(
 ) {
   # Right now it may be unnecessary to re-fit the Cox model each time, but
   # put it in the function just in case.
-  cox_f = as.formula(paste0(
+  cox_f <- as.formula(paste0(
     "Surv(",
     time,
     "Endpoint, event)",
@@ -283,9 +337,9 @@ joint_fits = function(
     data = cox_df
   )
   # Fit a random intercept and slope model for each outcome
-  re_f = as.formula(paste0("~", time, "|", "ID"))
-  lme_mods = lapply(outcomes, function(outcome) {
-    lme_f = as.formula(paste0(
+  re_f <- as.formula(paste0("~", time, "|", "ID"))
+  lme_mods <- lapply(outcomes, function(outcome) {
+    lme_f <- as.formula(paste0(
       outcome,
       "~",
       paste0(c(time, lmm_adjust), collapse = "+")
@@ -297,19 +351,19 @@ joint_fits = function(
     )
     return(lme_fit)
   })
-  names(lme_mods) = outcomes
+  names(lme_mods) <- outcomes
   # For each outcome, fit the three different functional forms
-  joint_mods = lapply(outcomes, function(outcome) {
-    joint_fit_value = jm(
+  joint_mods <- lapply(outcomes, function(outcome) {
+    joint_fit_value <- jm(
       cox_fit,
       lme_mods[[outcome]],
       time_var = time,
       id_var = "ID",
       control = jm_control
     )
-    slope_ff = list(as.formula(paste0("~", "slope(", outcome, ")")))
-    names(slope_ff) = outcome
-    joint_fit_slope = jm(
+    slope_ff <- list(as.formula(paste0("~", "slope(", outcome, ")")))
+    names(slope_ff) <- outcome
+    joint_fit_slope <- jm(
       cox_fit,
       lme_mods[[outcome]],
       time_var = time,
@@ -317,9 +371,9 @@ joint_fits = function(
       control = jm_control,
       functional_forms = slope_ff
     )
-    area_ff = list(as.formula(paste0("~", "area(", outcome, ")")))
-    names(area_ff) = outcome
-    joint_fit_area = jm(
+    area_ff <- list(as.formula(paste0("~", "area(", outcome, ")")))
+    names(area_ff) <- outcome
+    joint_fit_area <- jm(
       cox_fit,
       lme_mods[[outcome]],
       time_var = time,
@@ -333,17 +387,17 @@ joint_fits = function(
       "area" = joint_fit_area
     ))
   })
-  names(joint_mods) = outcomes
+  names(joint_mods) <- outcomes
   # If only one outcome, just return all three
   if (length(outcomes) == 1) {
-    joint_mods = joint_mods[[1]]
-    names(joint_mods) = c("value", "slope", "area")
+    joint_mods <- joint_mods[[1]]
+    names(joint_mods) <- c("value", "slope", "area")
     return(joint_mods)
   } else if (length(outcomes) > 1) {
     # If multiple outcomes, do a lil' model selection.
     # Marginal DIC/WAIC is better because it evaluates the overall model fit
     # for the population by integrating out the random effects
-    optimal_mods = sapply(outcomes, function(outcome) {
+    optimal_mods <- sapply(outcomes, function(outcome) {
       # I'm sure there's a more elegant way to do this but it works
       c("value", "slope", "area")[which.min(c(
         joint_mods[[outcome]][["value"]][["fit_stats"]][["marginal"]][["DIC"]],
@@ -356,7 +410,7 @@ joint_fits = function(
     # inefficient because it fits all 3 funcitional form models for all outcomes
     # but I'd rather be consistent than efficient at this point.
     # First a model with value for both.
-    joint_fit_value = jm(
+    joint_fit_value <- jm(
       cox_fit,
       lme_mods,
       time_var = time,
@@ -364,11 +418,11 @@ joint_fits = function(
       control = jm_control
     )
     # Slope for both
-    slope_ff = sapply(outcomes, function(outcome) {
+    slope_ff <- sapply(outcomes, function(outcome) {
       as.formula(paste0("~", "slope(", outcome, ")"))
     })
-    names(slope_ff) = outcomes
-    joint_fit_slope = jm(
+    names(slope_ff) <- outcomes
+    joint_fit_slope <- jm(
       cox_fit,
       lme_mods,
       time_var = time,
@@ -377,11 +431,11 @@ joint_fits = function(
       functional_forms = slope_ff
     )
     # Area for both
-    area_ff = sapply(outcomes, function(outcome) {
+    area_ff <- sapply(outcomes, function(outcome) {
       as.formula(paste0("~", "area(", outcome, ")"))
     })
-    names(area_ff) = outcomes
-    joint_fit_area = jm(
+    names(area_ff) <- outcomes
+    joint_fit_area <- jm(
       cox_fit,
       lme_mods,
       time_var = time,
@@ -390,11 +444,11 @@ joint_fits = function(
       functional_forms = area_ff
     )
     # With the optimal forms from above
-    optimal_ff = sapply(outcomes, function(outcome) {
+    optimal_ff <- sapply(outcomes, function(outcome) {
       as.formula(paste0("~", optimal_mods[outcome], "(", outcome, ")"))
     })
-    names(optimal_ff) = outcomes
-    joint_fit_optimal = jm(
+    names(optimal_ff) <- outcomes
+    joint_fit_optimal <- jm(
       cox_fit,
       lme_mods,
       time_var = time,
@@ -416,7 +470,7 @@ joint_fits = function(
 ## Mean glucose
 
 ```{r}
-joint_models = joint_fits(outcomes = "mean_glucose")
+joint_models <- joint_fits(outcomes = "mean_glucose")
 ```
 
 ### Functional form: value
@@ -451,13 +505,13 @@ compare_jm(joint_models$value, joint_models$slope, joint_models$area)
 
 ```{r}
 # Final model
-mean_jm = joint_models$value
+mean_jm <- joint_models$value
 ```
 
 ## Glucose SD
 
 ```{r}
-joint_models = joint_fits(outcomes = "sd_glucose")
+joint_models <- joint_fits(outcomes = "sd_glucose")
 ```
 
 ### Functional form: value
@@ -493,7 +547,7 @@ compare_jm(joint_models$value, joint_models$slope, joint_models$area)
 ## Glucose CV
 
 ```{r}
-joint_models = joint_fits(outcomes = "cv_glucose")
+joint_models <- joint_fits(outcomes = "cv_glucose")
 ```
 
 ### Functional form: value
@@ -528,13 +582,13 @@ compare_jm(joint_models$value, joint_models$slope, joint_models$area)
 
 ```{r}
 # Final model
-cv_jm = joint_models$value
+cv_jm <- joint_models$value
 ```
 
 ## TAR140
 
 ```{r}
-joint_models = joint_fits(outcomes = "perc_time_over_140")
+joint_models <- joint_fits(outcomes = "perc_time_over_140")
 ```
 
 ### Functional form: value
@@ -569,13 +623,13 @@ compare_jm(joint_models$value, joint_models$slope, joint_models$area)
 
 ```{r}
 # Final model
-tar_jm = joint_models$value
+tar_jm <- joint_models$value
 ```
 
 ## HbA1c
 
 ```{r}
-joint_models = joint_fits(outcomes = "hba1c")
+joint_models <- joint_fits(outcomes = "hba1c")
 ```
 
 ### Functional form: value
@@ -610,13 +664,13 @@ compare_jm(joint_models$value, joint_models$slope, joint_models$area)
 
 ```{r}
 # Final model
-a1c_jm = joint_models$value
+a1c_jm <- joint_models$value
 ```
 
 ## HbA1c and Mean
 
 ```{r}
-joint_models = joint_fits(outcomes = c("hba1c", "mean_glucose"))
+joint_models <- joint_fits(outcomes = c("hba1c", "mean_glucose"))
 ```
 
 ### Functional form: value
@@ -664,13 +718,13 @@ compare_jm(
 
 ```{r}
 # Final model
-mean_a1c_jm = joint_models$optimal
+mean_a1c_jm <- joint_models$optimal
 ```
 
 ## HbA1c and SD
 
 ```{r}
-joint_models = joint_fits(outcomes = c("hba1c", "sd_glucose"))
+joint_models <- joint_fits(outcomes = c("hba1c", "sd_glucose"))
 ```
 
 ### Functional form: value
@@ -718,13 +772,13 @@ compare_jm(
 
 ```{r}
 # Final model
-sd_a1c_jm = joint_models$optimal
+sd_a1c_jm <- joint_models$optimal
 ```
 
 ## HbA1c and CV
 
 ```{r}
-joint_models = joint_fits(outcomes = c("hba1c", "cv_glucose"))
+joint_models <- joint_fits(outcomes = c("hba1c", "cv_glucose"))
 ```
 
 ### Functional form: value
@@ -772,13 +826,13 @@ compare_jm(
 
 ```{r}
 # Final model
-cv_a1c_jm = joint_models$optimal
+cv_a1c_jm <- joint_models$optimal
 ```
 
 ## HbA1c and TAR140
 
 ```{r}
-joint_models = joint_fits(outcomes = c("hba1c", "perc_time_over_140"))
+joint_models <- joint_fits(outcomes = c("hba1c", "perc_time_over_140"))
 ```
 
 ### Functional form: value
@@ -826,7 +880,7 @@ compare_jm(
 
 ```{r}
 # Final model
-tar_a1c_jm = joint_models$optimal
+tar_a1c_jm <- joint_models$optimal
 ```
 
 # Dynamic predictions
