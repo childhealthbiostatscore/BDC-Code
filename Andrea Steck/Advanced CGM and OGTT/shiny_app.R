@@ -1,36 +1,40 @@
 library(shiny)
 library(JMbayes2)
 library(tidyverse)
-load(
-  "/Users/tim/Library/CloudStorage/OneDrive-UW/UWMDI/Andrea Steck/Advanced CGM and OGTT/Data_Clean/final_model.RData"
+base_dir <- switch(
+  Sys.info()["nodename"],
+  "togo" = "/home/tvigers/Documents/Data",
+  "Tims-MacBook-Air.local" = "/Users/tim/Library/CloudStorage/OneDrive-UW",
+  "Tims-Mac-mini.local" = "/Users/tim/Library/CloudStorage/OneDrive-UW",
+  "Tims-Mac-Studio.local" = "/Users/tim/Library/CloudStorage/OneDrive-UW",
+  "Mac" = "/Users/tim/Library/CloudStorage/OneDrive-UW",
+  "Mac-Studio" = "/Users/lpyle/Library/CloudStorage/OneDrive-SharedLibraries-UW",
+  "MacBook-Pro-51.local" = "/Users/pylell/Library/CloudStorage/OneDrive-SharedLibraries-UW(2)",
+  "Kristens-MacBook-Pro.local" = "/Users/kristenmiller/Library/CloudStorage/OneDrive-UW",
+  "twigs" = "/home/tim/Documents/Data"
 )
+data_dir <- switch(
+  Sys.info()["nodename"],
+  "togo" = "/BDC/Andrea Steck/Advanced CGM and OGTT",
+  "Tims-MacBook-Air.local" = "/UWMDI/Andrea Steck/Advanced CGM and OGTT",
+  "Tims-Mac-mini.local" = "/UWMDI/Andrea Steck/Advanced CGM and OGTT",
+  "Tims-Mac-Studio.local" = "/UWMDI/Andrea Steck/Advanced CGM and OGTT",
+  "Mac" = "/UWMDI/Andrea Steck/Advanced CGM and OGTT",
+  "Mac-Studio" = "/Tim Vigers - UWMDI/Andrea Steck/Advanced CGM and OGTT",
+  "MacBook-Pro-51.local" = "/Tim Vigers - UWMDI/Andrea Steck/Advanced CGM and OGTT",
+  "Kristens-MacBook-Pro.local" = "/Tim Vigers's files - UWMDI/Andrea Steck",
+  "twigs" = "/UWMDI/Andrea Steck/Advanced CGM and OGTT"
+)
+home_dir <- paste0(base_dir, data_dir)
+setwd(home_dir)
+load("./Data_Clean/mean_jm.RData")
+best_model = mean_jm
 ui <- fluidPage(
   titlePanel("Patient Data Entry"),
-
   sidebarLayout(
     sidebarPanel(
       selectInput("sex", "Sex:", choices = c("", "Male", "Female")),
-
-      selectInput(
-        "race",
-        "Race:",
-        choices = c(
-          "",
-          "Non-Hispanic White",
-          "Other"
-        )
-      ),
-
-      selectInput("fdr_status", "FDR Status:", choices = c("", "FDR", "GP")),
-
-      selectInput(
-        "ab_status",
-        "AB Status:",
-        choices = c("", "Single", "Multiple")
-      ),
-
       numericInput("age", "Age:", value = NULL, min = 0, max = 120),
-
       numericInput(
         "mean_glucose",
         "Mean Glucose (mg/dL):",
@@ -38,7 +42,6 @@ ui <- fluidPage(
         min = 0,
         max = 500
       ),
-
       sliderInput(
         "dt",
         "Prediction window:",
@@ -46,7 +49,6 @@ ui <- fluidPage(
         max = 5,
         value = 1
       ),
-
       br(),
       actionButton("add_data", "Add Entry", class = "btn-primary"),
       actionButton("clear_data", "Clear All Data", class = "btn-warning"),
@@ -54,7 +56,6 @@ ui <- fluidPage(
       br(),
       downloadButton("download_data", "Download Data")
     ),
-
     mainPanel(
       h3("Stored Data"),
       tableOutput("data_table"),
@@ -81,15 +82,11 @@ server <- function(input, output, session) {
     Mean_Glucose = numeric(),
     stringsAsFactors = FALSE
   ))
-
   # Add data to dataframe
   observeEvent(input$add_data, {
     # Validation
     if (
       input$sex == "" ||
-        input$race == "" ||
-        input$fdr_status == "" ||
-        input$ab_status == "" ||
         is.null(input$age) ||
         is.na(input$age) ||
         is.null(input$mean_glucose) ||
@@ -102,23 +99,17 @@ server <- function(input, output, session) {
       ))
       return()
     }
-
     # Create new row
     new_row <- data.frame(
       Sex = input$sex,
-      Race = input$race,
-      FDR_Status = input$fdr_status,
-      AB_Status = input$ab_status,
       Age = input$age,
       Mean_Glucose = input$mean_glucose,
       stringsAsFactors = FALSE
     )
-
     # Add to existing data
     current_data <- data_store()
     updated_data <- rbind(current_data, new_row)
     data_store(updated_data)
-
     # Reset inputs
     updateNumericInput(session, "age", value = NA)
     updateNumericInput(session, "mean_glucose", value = NA)
@@ -148,17 +139,14 @@ server <- function(input, output, session) {
     ))
     removeModal()
   })
-
   # Display data table
   output$data_table <- renderTable({
     data_store()
   })
-
   # Display row count
   output$row_count <- renderText({
     paste("Total entries:", nrow(data_store()))
   })
-
   # Scatter plot
   output$scatter_plot <- renderPlot({
     data <- data_store()
@@ -187,7 +175,6 @@ server <- function(input, output, session) {
       grid()
     }
   })
-
   # Dynamic predictions
   output$dynamic_pred <- renderPlot({
     data <- data_store()
@@ -203,29 +190,12 @@ server <- function(input, output, session) {
         arrange(Age) |>
         rename(
           sex = Sex,
-          Race_Ethn2 = Race,
-          screen_FDR_GP = FDR_Status,
-          maxAB_group = AB_Status,
           mean_glucose = Mean_Glucose
         ) |>
-        mutate(
-          sex = factor(sex, levels = c("Female", "Male")),
-          Race_Ethn2 = factor(
-            Race_Ethn2,
-            levels = c("Other", "Non-Hispanic White"),
-            labels = c("Other", "NHW")
-          ),
-          maxAB_group = factor(
-            maxAB_group,
-            levels = c("Single", "Multiple"),
-            labels = c("2", "3")
-          ),
-          screen_FDR_GP = factor(screen_FDR_GP, levels = c("FDR", "GP"))
-        )
+        mutate(sex = factor(sex, levels = c("Female", "Male")))
       data$event <- 0
       data$AgeEndpoint <- ceiling(max(data$Age))
       data$ID = "A"
-
       predLong1 <- predict(
         best_model,
         newdata = data,
@@ -248,7 +218,6 @@ server <- function(input, output, session) {
       plot(predLong1, predSurv)
     }
   })
-
   # Download data
   output$download_data <- downloadHandler(
     filename = function() {
