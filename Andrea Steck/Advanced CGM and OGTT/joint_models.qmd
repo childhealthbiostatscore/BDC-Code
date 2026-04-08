@@ -13,6 +13,7 @@ format:
     fig-cap-location: top
     page-layout: full
 editor: source
+engine: knitr
 ---
 
 ```{r setup}
@@ -26,6 +27,7 @@ library(survminer)
 library(knitr)
 library(gtsummary)
 library(parallel)
+library(reticulate)
 base_dir <- switch(Sys.info()["nodename"],
   "togo" = "/home/tvigers/Documents/Data",
   "Tims-MacBook-Air.local" = "/Users/tim/Library/CloudStorage/OneDrive-UW",
@@ -158,7 +160,6 @@ peak_df = pd.DataFrame(
 
 ```{r}
 peak_df <- py$peak_df
-
 ```
 
 # Participant characteristics
@@ -544,6 +545,11 @@ ggtraceplot(joint_models$area, parm = "betas")
 compare_jm(joint_models$value, joint_models$slope, joint_models$area)
 ```
 
+```{r}
+# Final model
+sd_jm <- joint_models$value
+```
+
 ## Glucose CV
 
 ```{r}
@@ -582,7 +588,7 @@ compare_jm(joint_models$value, joint_models$slope, joint_models$area)
 
 ```{r}
 # Final model
-cv_jm <- joint_models$value
+cv_jm <- joint_models$area
 ```
 
 ## TAR140
@@ -664,7 +670,7 @@ compare_jm(joint_models$value, joint_models$slope, joint_models$area)
 
 ```{r}
 # Final model
-a1c_jm <- joint_models$value
+a1c_jm <- joint_models$area
 ```
 
 ## HbA1c and Mean
@@ -885,329 +891,150 @@ tar_a1c_jm <- joint_models$optimal
 
 # Dynamic predictions
 
+```{r}
+new_dat <- full_join(cgm_lmm, cgm_surv)
+# Make predictions a function as well
+dynamic_prediction <- function(df = new_dat, jm, id, dt = 1, ylabs, pos_ylab) {
+  # Just one subject for now
+  pred_dat <- df |> filter(ID == id)
+  # Check group
+  prog <- as.character(unique(pred_dat$Group)) == "Progressor"
+  # Make a plot title
+  if (prog) {
+    plot_title <- paste(c(id, " (Progressed at Age ", round(unique(pred_dat$AgeEndpoint), 1), ")"), collapse = "")
+  } else if (!prog) {
+    plot_title <- paste(c(id, " (Did Not Progress)"), collapse = "")
+  }
+  # Set up times
+  t0 <- unique(pred_dat$AgeEndpoint) - dt
+  # Remove everything after t0, pretend we don't know if they progressed
+  pred_dat <- pred_dat |>
+    filter(Age <= t0) |>
+    mutate(AgeEndpoint = max(Age), event = 0)
+  # Predict!
+  pred_long <- predict(
+    jm,
+    newdata = pred_dat,
+    return_newdata = TRUE,
+    process = "longitudinal",
+    type = "mean_subject"
+  )
+  pred_surv <- predict(
+    jm,
+    newdata = pred_dat,
+    process = "event",
+    times = seq(t0, t0 + 1, length.out = 100),
+    type_pred = "response",
+    return_newdata = TRUE
+  )
+  plot(
+    pred_long,
+    pred_surv,
+    outcomes = 1:2,
+    xlab = "Age",
+    ylab_long = ylabs,
+    pos_ylab_long = pos_ylab,
+    main = plot_title
+  )
+}
+```
+
 ## HbA1c and CV
+
+### Model results
+
+```{r}
+summary(cv_a1c_jm)
+```
+
+### Plots
 
 ```{r}
 # Progressors
-newdat <- full_join(cgm_lmm, cgm_surv)
-newdat <- newdat |> filter(ID == "01-00375")
-predLongHbA1c <- predict(
-  cv_a1c_jm,
-  newdata = newdat,
-  return_newdata = TRUE,
-  process = "longitudinal",
-  type = "mean_subject"
-)
-predSurvHbA1c <- predict(
-  cv_a1c_jm,
-  newdata = newdat,
-  process = "event",
-  times = seq(15, 18, length.out = 100),
-  return_newdata = TRUE
-)
-plot(
-  predLongHbA1c,
-  predSurvHbA1c,
-  outcomes = 1:2,
-  ylab_event = "Progression Probability",
-  xlab = "Age",
-  main = "01-00375 (Progressed at Age 15.7)"
-)
+id <- "01-00375"
+dynamic_prediction(id = id, jm = cv_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), pos_ylab = c(5.5, 0.3))
+png(paste0(c("./Figures/HbA1c and CV/", id, ".png"), collapse = ""), width = 2400, height = 1800, res = 300)
+dynamic_prediction(id = id, jm = cv_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), pos_ylab = c(5.5, 0.3))
+dev.off()
 
-newdat <- full_join(cgm_lmm, cgm_surv)
-newdat <- newdat |> filter(ID == "04-02273")
-predLongHbA1c <- predict(
-  cv_a1c_jm,
-  newdata = newdat,
-  return_newdata = TRUE,
-  process = "longitudinal",
-  type = "mean_subject"
-)
-predSurvHbA1c <- predict(
-  cv_a1c_jm,
-  newdata = newdat,
-  process = "event",
-  times = seq(10, 13, length.out = 100),
-  return_newdata = TRUE
-)
-plot(
-  predLongHbA1c,
-  predSurvHbA1c,
-  outcomes = 1:2,
-  ylab_event = "Progression Probability",
-  ylab_long = c("Normalized HbA1c", "Normalized CV"),
-  xlab = "Age",
-  main = "04-02273 (Progressed at Age 10.4)"
-)
+id <- "04-02273"
+dynamic_prediction(id = id, jm = cv_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), pos_ylab = c(5.5, 0.3))
+png(paste0(c("./Figures/HbA1c and CV/", id, ".png"), collapse = ""), width = 2400, height = 1800, res = 300)
+dynamic_prediction(id = id, jm = cv_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), pos_ylab = c(5.5, 0.3))
+dev.off()
 
-newdat <- full_join(cgm_lmm, cgm_surv)
-newdat <- newdat |> filter(ID == "39390-3")
-predLongHbA1c <- predict(
-  cv_a1c_jm,
-  newdata = newdat,
-  return_newdata = TRUE,
-  process = "longitudinal",
-  type = "mean_subject"
-)
-predSurvHbA1c <- predict(
-  cv_a1c_jm,
-  newdata = newdat,
-  process = "event",
-  times = seq(21.5, 24.5, length.out = 100),
-  return_newdata = TRUE
-)
-plot(
-  predLongHbA1c,
-  predSurvHbA1c,
-  outcomes = 1:2,
-  ylab_event = "Progression Probability",
-  ylab_long = c("Normalized HbA1c", "Normalized CV"),
-  xlab = "Age",
-  main = "39390-3 (Progressed at Age 21.7)"
-)
+id <- "39390-3"
+dynamic_prediction(id = id, jm = cv_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), pos_ylab = c(5.5, 0.3))
+png(paste0(c("./Figures/HbA1c and CV/", id, ".png"), collapse = ""), width = 2400, height = 1800, res = 300)
+dynamic_prediction(id = id, jm = cv_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), pos_ylab = c(5.5, 0.3))
+dev.off()
 # Non-Progressors
-newdat <- full_join(cgm_lmm, cgm_surv)
-newdat <- newdat |> filter(ID == "01-00149")
-predLongHbA1c <- predict(
-  cv_a1c_jm,
-  newdata = newdat,
-  return_newdata = TRUE,
-  process = "longitudinal",
-  type = "mean_subject"
-)
-predSurvHbA1c <- predict(
-  cv_a1c_jm,
-  newdata = newdat,
-  process = "event",
-  times = seq(19, 22, length.out = 100),
-  return_newdata = TRUE
-)
-plot(
-  predLongHbA1c,
-  predSurvHbA1c,
-  outcomes = 1:2,
-  ylab_event = "Progression Probability",
-  ylab_long = c("Normalized HbA1c", "Normalized CV"),
-  xlab = "Age",
-  main = "01-00149 (Did Not Progress)"
-)
+id <- "01-00149"
+dynamic_prediction(id = id, jm = cv_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), pos_ylab = c(5.5, 0.3))
+png(paste0(c("./Figures/HbA1c and CV/", id, ".png"), collapse = ""), width = 2400, height = 1800, res = 300)
+dynamic_prediction(id = id, jm = cv_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), pos_ylab = c(5.5, 0.3))
+dev.off()
 
-newdat <- full_join(cgm_lmm, cgm_surv)
-newdat <- newdat |> filter(ID == "03-00456")
-predLongHbA1c <- predict(
-  cv_a1c_jm,
-  newdata = newdat,
-  return_newdata = TRUE,
-  process = "longitudinal",
-  type = "mean_subject"
-)
-predSurvHbA1c <- predict(
-  cv_a1c_jm,
-  newdata = newdat,
-  process = "event",
-  times = seq(21, 24, length.out = 100),
-  return_newdata = TRUE
-)
-plot(
-  predLongHbA1c,
-  predSurvHbA1c,
-  outcomes = 1:2,
-  ylab_event = "Progression Probability",
-  ylab_long = c("Normalized HbA1c", "Normalized CV"),
-  xlab = "Age",
-  main = "03-00456 (Did Not Progress)"
-)
+id <- "03-00456"
+dynamic_prediction(id = id, jm = cv_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), pos_ylab = c(5.5, 0.3))
+png(paste0(c("./Figures/HbA1c and CV/", id, ".png"), collapse = ""), width = 2400, height = 1800, res = 300)
+dynamic_prediction(id = id, jm = cv_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), pos_ylab = c(5.5, 0.3))
+dev.off()
 
-
-newdat <- full_join(cgm_lmm, cgm_surv)
-newdat <- newdat |> filter(ID == "98-00003")
-predLongHbA1c <- predict(
-  cv_a1c_jm,
-  newdata = newdat,
-  return_newdata = TRUE,
-  process = "longitudinal",
-  type = "mean_subject"
-)
-predSurvHbA1c <- predict(
-  cv_a1c_jm,
-  newdata = newdat,
-  process = "event",
-  times = seq(19.5, 22.5, length.out = 100),
-  return_newdata = TRUE
-)
-plot(
-  predLongHbA1c,
-  predSurvHbA1c,
-  outcomes = 1:2,
-  ylab_event = "Progression Probability",
-  ylab_long = c("Normalized HbA1c", "Normalized CV"),
-  xlab = "Age",
-  main = "98-00003 (Did Not Progress)"
-)
+id <- "98-00003"
+dynamic_prediction(id = id, jm = cv_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), pos_ylab = c(5.5, 0.3))
+png(paste0(c("./Figures/HbA1c and CV/", id, ".png"), collapse = ""), width = 2400, height = 1800, res = 300)
+dynamic_prediction(id = id, jm = cv_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), pos_ylab = c(5.5, 0.3))
+dev.off()
 ```
 
 ## HbA1c and TA140
 
+### Model results
+
 ```{r}
-newdat <- full_join(cgm_lmm, cgm_surv)
-newdat <- newdat |> filter(ID == "01-00375")
-predLongHbA1c <- predict(
-  tar_a1c_jm,
-  newdata = newdat,
-  return_newdata = TRUE,
-  process = "longitudinal",
-  type = "mean_subject"
-)
-predSurvHbA1c <- predict(
-  tar_a1c_jm,
-  newdata = newdat,
-  process = "event",
-  times = seq(15, 18, length.out = 100),
-  return_newdata = TRUE
-)
-plot(
-  predLongHbA1c,
-  predSurvHbA1c,
-  outcomes = 1:2,
-  ylab_event = "Progression Probability",
-  ylab_long = c("Normalized HbA1c", "Normalized TA140"),
-  xlab = "Age",
-  main = "01-00375 (Progressed at Age 15.7)"
-)
+summary(tar_a1c_jm)
+```
 
+### Plots
 
-newdat <- full_join(cgm_lmm, cgm_surv)
-newdat <- newdat |> filter(ID == "04-02273")
-predLongHbA1c <- predict(
-  tar_a1c_jm,
-  newdata = newdat,
-  return_newdata = TRUE,
-  process = "longitudinal",
-  type = "mean_subject"
-)
-predSurvHbA1c <- predict(
-  tar_a1c_jm,
-  newdata = newdat,
-  process = "event",
-  times = seq(10, 13, length.out = 100),
-  return_newdata = TRUE
-)
-plot(
-  predLongHbA1c,
-  predSurvHbA1c,
-  outcomes = 1:2,
-  ylab_event = "Progression Probability",
-  ylab_long = c("Normalized HbA1c", "Normalized TA140"),
-  xlab = "Age",
-  main = "04-02273 (Progressed at Age 10.4)"
-)
+```{r}
+# Progressors
+id <- "01-00375"
+dynamic_prediction(id = id, jm = tar_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), pos_ylab = c(5.5, 0.3))
+png(paste0(c("./Figures/HbA1c and TA140/", id, ".png"), collapse = ""), width = 2400, height = 1800, res = 300)
+dynamic_prediction(id = id, jm = tar_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), pos_ylab = c(5.5, 0.3))
+dev.off()
 
+id <- "04-02273"
+dynamic_prediction(id = id, jm = tar_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), pos_ylab = c(5.5, 0.3))
+png(paste0(c("./Figures/HbA1c and TA140/", id, ".png"), collapse = ""), width = 2400, height = 1800, res = 300)
+dynamic_prediction(id = id, jm = tar_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), pos_ylab = c(5.5, 0.3))
+dev.off()
 
-newdat <- full_join(cgm_lmm, cgm_surv)
-newdat <- newdat |> filter(ID == "39390-3")
-predLongHbA1c <- predict(
-  tar_a1c_jm,
-  newdata = newdat,
-  return_newdata = TRUE,
-  process = "longitudinal",
-  type = "mean_subject"
-)
-predSurvHbA1c <- predict(
-  tar_a1c_jm,
-  newdata = newdat,
-  process = "event",
-  times = seq(21.5, 24.5, length.out = 100),
-  return_newdata = TRUE
-)
-plot(
-  predLongHbA1c,
-  predSurvHbA1c,
-  outcomes = 1:2,
-  ylab_event = "Progression Probability",
-  ylab_long = c("Normalized HbA1c", "Normalized TA140"),
-  xlab = "Age",
-  main = "39390-3 (Progressed at Age 21.7)"
-)
+id <- "39390-3"
+dynamic_prediction(id = id, jm = tar_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), pos_ylab = c(5.5, 0.3))
+png(paste0(c("./Figures/HbA1c and TA140/", id, ".png"), collapse = ""), width = 2400, height = 1800, res = 300)
+dynamic_prediction(id = id, jm = tar_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), pos_ylab = c(5.5, 0.3))
+dev.off()
 # Non-Progressors
-newdat <- full_join(cgm_lmm, cgm_surv)
-newdat <- newdat |> filter(ID == "01-00149")
-predLongHbA1c <- predict(
-  tar_a1c_jm,
-  newdata = newdat,
-  return_newdata = TRUE,
-  process = "longitudinal",
-  type = "mean_subject"
-)
-predSurvHbA1c <- predict(
-  tar_a1c_jm,
-  newdata = newdat,
-  process = "event",
-  times = seq(19, 22, length.out = 100),
-  return_newdata = TRUE
-)
-plot(
-  predLongHbA1c,
-  predSurvHbA1c,
-  outcomes = 1:2,
-  ylab_event = "Progression Probability",
-  ylab_long = c("Normalized HbA1c", "Normalized TA140"),
-  xlab = "Age",
-  main = "01-00149 (Did Not Progress)"
-)
+id <- "01-00149"
+dynamic_prediction(id = id, jm = tar_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), pos_ylab = c(5.5, 0.3))
+png(paste0(c("./Figures/HbA1c and TA140/", id, ".png"), collapse = ""), width = 2400, height = 1800, res = 300)
+dynamic_prediction(id = id, jm = tar_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), pos_ylab = c(5.5, 0.3))
+dev.off()
 
+id <- "03-00456"
+dynamic_prediction(id = id, jm = tar_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), pos_ylab = c(5.5, 0.3))
+png(paste0(c("./Figures/HbA1c and TA140/", id, ".png"), collapse = ""), width = 2400, height = 1800, res = 300)
+dynamic_prediction(id = id, jm = tar_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), pos_ylab = c(5.5, 0.3))
+dev.off()
 
-newdat <- full_join(cgm_lmm, cgm_surv)
-newdat <- newdat |> filter(ID == "03-00456")
-predLongHbA1c <- predict(
-  tar_a1c_jm,
-  newdata = newdat,
-  return_newdata = TRUE,
-  process = "longitudinal",
-  type = "mean_subject"
-)
-predSurvHbA1c <- predict(
-  tar_a1c_jm,
-  newdata = newdat,
-  process = "event",
-  times = seq(21, 24, length.out = 100),
-  return_newdata = TRUE
-)
-plot(
-  predLongHbA1c,
-  predSurvHbA1c,
-  outcomes = 1:2,
-  ylab_event = "Progression Probability",
-  ylab_long = c("Normalized HbA1c", "Normalized TA140"),
-  xlab = "Age",
-  main = "03-00456 (Did Not Progress)"
-)
-
-
-newdat <- full_join(cgm_lmm, cgm_surv)
-newdat <- newdat |> filter(ID == "98-00003")
-predLongHbA1c <- predict(
-  tar_a1c_jm,
-  newdata = newdat,
-  return_newdata = TRUE,
-  process = "longitudinal",
-  type = "mean_subject"
-)
-predSurvHbA1c <- predict(
-  tar_a1c_jm,
-  newdata = newdat,
-  process = "event",
-  times = seq(19.5, 22.5, length.out = 100),
-  return_newdata = TRUE
-)
-plot(
-  predLongHbA1c,
-  predSurvHbA1c,
-  outcomes = 1:2,
-  ylab_event = "Progression Probability",
-  ylab_long = c("Normalized HbA1c", "Normalized TA140"),
-  xlab = "Age",
-  main = "98-00003 (Did Not Progress)"
-)
+id <- "98-00003"
+dynamic_prediction(id = id, jm = tar_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), pos_ylab = c(5.5, 0.3))
+png(paste0(c("./Figures/HbA1c and TA140/", id, ".png"), collapse = ""), width = 2400, height = 1800, res = 300)
+dynamic_prediction(id = id, jm = tar_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), pos_ylab = c(5.5, 0.3))
+dev.off()
 ```
 
 ### AUC table
@@ -1242,7 +1069,6 @@ auc_grid <- expand.grid(
   dt = 1:3
 )
 # Get AUC at various time ranges for each model
-newdat <- full_join(cgm_lmm, cgm_surv)
 auc_grid_results <- apply(auc_grid, 1, function(r) {
   start <- as.numeric(r["start"])
   dt <- as.numeric(r["dt"])
