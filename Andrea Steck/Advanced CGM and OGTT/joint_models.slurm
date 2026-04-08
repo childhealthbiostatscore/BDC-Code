@@ -18,5 +18,5 @@ data_dir="/gscratch/togo/tvigers/Data/BDC/andrea_steck/advanced_cgm"
 mkdir -p $data_dir
 s3cmd sync "s3://uwmdi/Andrea Steck/Advanced CGM and OGTT/Data_Clean" $data_dir -v
 # Run the code
-apptainer exec --bind /gscratch/togo --fakeroot $sif_file \
+apptainer exec --bind /gscratch/togo --fakeroot $sif_file bash -c \
     "quarto render '/gscratch/togo/tvigers/GitHub/BDC-Code/Andrea Steck/Advanced CGM and OGTT/joint_models.qmd' --to html"
