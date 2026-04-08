@@ -889,6 +889,88 @@ compare_jm(
 tar_a1c_jm <- joint_models$optimal
 ```
 
+## AUC table
+
+```{r}
+# Make a list of all the models we've looked at
+models <- list(
+  mean_jm,
+  sd_jm,
+  cv_jm,
+  tar_jm,
+  a1c_jm,
+  mean_a1c_jm,
+  sd_a1c_jm,
+  cv_a1c_jm,
+  tar_a1c_jm
+)
+names(models) <- c(
+  "Mean",
+  "SD",
+  "CV",
+  "TA140",
+  "HbA1c",
+  "HbA1c + Mean",
+  "HbA1c + SD",
+  "HbA1c + CV",
+  "HbA1c + TA140"
+)
+# Make a grid for AUC testing
+auc_grid <- expand.grid(
+  start = seq(6, 29, by = 1),
+  dt = 1:3
+)
+# Get AUC at various time ranges for each model
+auc_grid_results <- apply(auc_grid, 1, function(r) {
+  start <- as.numeric(r["start"])
+  dt <- as.numeric(r["dt"])
+  auc_results <- sapply(names(models), function(n) {
+    tv <- tryCatch(
+      tvROC(
+        models[[n]],
+        newdata = newdat,
+        Tstart = start,
+        Dt = dt
+      ),
+      error = function(e) {
+        return(NA)
+      }
+    )
+    if (length(tv) == 1) {
+      return(NA)
+    } else {
+      return(tvAUC(tv)$auc)
+    }
+  })
+  res <- data.frame(auc_results) |>
+    rownames_to_column(var = "Model") |>
+    rename(AUC = auc_results) |>
+    mutate(up_to = start, window = dt)
+  return(res)
+})
+
+t <- do.call(rbind, auc_grid_results)
+
+
+auc_grid_results <- auc_grid_results |>
+  pivot_wider(
+    values_from = AUC,
+    names_from = window
+  ) |>
+  group_split(up_to, .keep = F)
+names(auc_grid_results) <- unique(auc_grid$start)
+invisible(lapply(names(auc_grid_results), function(n) {
+  cat("\n")
+  cat("\n")
+  cat("#### Using data up to", n, "years")
+  cat("\n")
+  cat("\n")
+  print(kable(auc_grid_results[[n]]))
+  cat("\n")
+  cat("\n")
+}))
+```
+
 # Dynamic predictions
 
 ```{r}
@@ -1035,86 +1117,4 @@ dynamic_prediction(id = id, jm = tar_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), p
 png(paste0(c("./Figures/HbA1c and TA140/", id, ".png"), collapse = ""), width = 2400, height = 1800, res = 300)
 dynamic_prediction(id = id, jm = tar_a1c_jm, ylabs = c("HbA1c", "Glucose CV"), pos_ylab = c(5.5, 0.3))
 dev.off()
-```
-
-### AUC table
-
-```{r}
-# Make a list of all the models we've looked at
-models <- list(
-  mean_jm,
-  sd_jm,
-  cv_jm,
-  tar_jm,
-  a1c_jm,
-  mean_a1c_jm,
-  sd_a1c_jm,
-  cv_a1c_jm,
-  tar_a1c_jm
-)
-names(models) <- c(
-  "Mean",
-  "SD",
-  "CV",
-  "TA140",
-  "HbA1c",
-  "HbA1c + Mean",
-  "HbA1c + SD",
-  "HbA1c + CV",
-  "HbA1c + TA140"
-)
-# Make a grid for AUC testing
-auc_grid <- expand.grid(
-  start = seq(6, 29, by = 1),
-  dt = 1:3
-)
-# Get AUC at various time ranges for each model
-auc_grid_results <- apply(auc_grid, 1, function(r) {
-  start <- as.numeric(r["start"])
-  dt <- as.numeric(r["dt"])
-  auc_results <- sapply(names(models), function(n) {
-    tv <- tryCatch(
-      tvROC(
-        models[[n]],
-        newdata = newdat,
-        Tstart = start,
-        Dt = dt
-      ),
-      error = function(e) {
-        return(NA)
-      }
-    )
-    if (length(tv) == 1) {
-      return(NA)
-    } else {
-      return(tvAUC(tv)$auc)
-    }
-  })
-  res <- data.frame(auc_results) |>
-    rownames_to_column(var = "Model") |>
-    rename(AUC = auc_results) |>
-    mutate(up_to = start, window = dt)
-  return(res)
-})
-
-t <- do.call(rbind, auc_grid_results)
-
-
-auc_grid_results <- auc_grid_results |>
-  pivot_wider(
-    values_from = AUC,
-    names_from = window
-  ) |>
-  group_split(up_to, .keep = F)
-names(auc_grid_results) <- unique(auc_grid$start)
-invisible(lapply(names(auc_grid_results), function(n) {
-  cat("\n")
-  cat("\n")
-  cat("#### Using data up to", n, "years")
-  cat("\n")
-  cat("\n")
-  print(kable(auc_grid_results[[n]]))
-  cat("\n")
-  cat("\n")
-}))
 ```
