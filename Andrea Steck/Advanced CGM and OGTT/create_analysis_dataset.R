@@ -157,7 +157,9 @@ cgm_lmm <- cgm |>
     screen_FDR_GP,
     maxAB_group,
     Age,
-    TimeFromFirstCGM
+    TimeFromFirstCGM,
+    dov_CGM,
+    DOB
   ) |>
   summarise(
     mean_glucose = mean(SensorValue, na.rm = TRUE),
