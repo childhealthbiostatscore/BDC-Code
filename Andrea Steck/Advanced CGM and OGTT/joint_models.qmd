@@ -28,7 +28,8 @@ library(knitr)
 library(gtsummary)
 library(parallel)
 library(reticulate)
-base_dir <- switch(Sys.info()["nodename"],
+base_dir <- switch(
+  Sys.info()["nodename"],
   "togo" = "/home/tvigers/Documents/Data",
   "Tims-MacBook-Air.local" = "/Users/tim/Library/CloudStorage/OneDrive-UW",
   "Tims-Mac-mini.local" = "/Users/tim/Library/CloudStorage/OneDrive-UW",
@@ -39,7 +40,8 @@ base_dir <- switch(Sys.info()["nodename"],
   "Kristens-MacBook-Pro.local" = "/Users/kristenmiller/Library/CloudStorage/OneDrive-UW",
   "twigs" = "/home/tim/Documents/Data"
 )
-data_dir <- switch(Sys.info()["nodename"],
+data_dir <- switch(
+  Sys.info()["nodename"],
   "togo" = "/BDC/Andrea Steck/Advanced CGM and OGTT",
   "Tims-MacBook-Air.local" = "/UWMDI/Andrea Steck/Advanced CGM and OGTT",
   "Tims-Mac-mini.local" = "/UWMDI/Andrea Steck/Advanced CGM and OGTT",
@@ -69,7 +71,7 @@ load("./Data_Clean/analysis_dataset.RData")
 # We don't know for sure that the CGM wear happened prior to progression, so
 # these people may not be in the risk set.
 no_risk <- cgm_surv$ID[which(cgm_surv$EndTime == 0 & cgm_surv$event == 1)]
-cgm_lmm <- cgm_lmm |> filter(Age < 30, !ID %in% no_risk)
+# cgm_lmm <- cgm_lmm |> filter(Age < 30, !ID %in% no_risk)
 # Remove TRIALNET
 # cgm_lmm <- cgm_lmm |> filter(study != "TRIALNET")
 # Scale and center the variables of interest
@@ -116,55 +118,6 @@ cgm_test <- cgm_test[[1]]
 # Calculate minutes from first glucose
 cgm_test$mins <- ymd_hms(paste(cgm_test$Date, cgm_test$Time))
 cgm_test$mins <- as.numeric(cgm_test$mins - cgm_test$mins[1]) / 60
-```
-
-```{python}
-import numpy as np
-import pandas as pd
-from scipy.signal import find_peaks
-from scipy.signal import peak_widths
-
-# Import cgm data from R
-df = r.cgm_test
-# Get glucose and time columns
-glucose = df["SensorValue"].values
-time = df["mins"].values
-# Sampling interval (assumes uniform spacing)
-dt = np.median(np.diff(time))  # minutes per sample
-samples_per_2h = int(2 * 60 / dt)  # minimum distance between peaks
-# Find peaks
-peaks, props = find_peaks(
-    glucose,
-    height=60,  # peak height <= 60 mg/dL
-    distance=samples_per_2h,  # ≥ 2 h between peaks
-)
-peaks, props
-# Filter for duration >= 30 min
-# Measure width at the level of peak 50 (i.e., where glucose is 50 mg/dL below peak)
-# rel_height=1.0 means at the base (prominence reference level)
-# Adjust rel_height to control where width is measured
-widths, width_heights, left_ips, right_ips = peak_widths(glucose, peaks, rel_height=1)
-left_ips, right_ips
-# Convert width to hours
-widths_mins = widths * dt
-# Keep only peaks where elevated duration >= 30
-duration_mask = widths_mins >= 30
-peaks_filtered = peaks[duration_mask]
-widths_filtered = widths_mins[duration_mask]
-props_filtered = {k: v[duration_mask] for k, v in props.items()}
-# Assemble results
-peak_df = pd.DataFrame(
-    {
-        "peak_time_min": time[peaks_filtered],
-        "peak_glucose": glucose[peaks_filtered],
-        "duration_min": widths_filtered,
-        "peak_idx": peaks_filtered,
-    }
-)
-```
-
-```{r}
-peak_df <- py$peak_df
 ```
 
 # Participant characteristics
