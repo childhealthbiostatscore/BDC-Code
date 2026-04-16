@@ -26,8 +26,6 @@ library(ggsurvfit)
 library(survminer)
 library(knitr)
 library(gtsummary)
-library(parallel)
-library(reticulate)
 base_dir <- switch(
   Sys.info()["nodename"],
   "togo" = "/home/tvigers/Documents/Data",
@@ -52,11 +50,6 @@ data_dir <- switch(
   "Kristens-MacBook-Pro.local" = "/Tim Vigers's files - UWMDI/Andrea Steck/Advanced CGM and OGTT",
   "twigs" = "/UWMDI/Andrea Steck/Advanced CGM and OGTT"
 )
-# If on Hyak
-if (nchar(Sys.getenv("SLURM_JOB_ID")) > 0) {
-  base_dir <- "/gscratch/togo/tvigers/Data"
-  data_dir <- "/BDC/andrea_steck/advanced_cgm"
-}
 home_dir <- paste0(base_dir, data_dir)
 knitr::opts_knit$set(root.dir = home_dir)
 ```
@@ -71,7 +64,7 @@ load("./Data_Clean/analysis_dataset.RData")
 # We don't know for sure that the CGM wear happened prior to progression, so
 # these people may not be in the risk set.
 no_risk <- cgm_surv$ID[which(cgm_surv$EndTime == 0 & cgm_surv$event == 1)]
-# cgm_lmm <- cgm_lmm |> filter(Age < 30, !ID %in% no_risk)
+cgm_lmm <- cgm_lmm |> filter(Age < 45, !ID %in% no_risk)
 # Remove TRIALNET
 # cgm_lmm <- cgm_lmm |> filter(study != "TRIALNET")
 # Scale and center the variables of interest
@@ -112,12 +105,8 @@ write.csv(
   row.names = FALSE,
   na = ""
 )
-# Test peak finding on first CGM
-cgm_test <- split.data.frame(cgm, f = ~ ID + dov_CGM, drop = TRUE)
-cgm_test <- cgm_test[[1]]
-# Calculate minutes from first glucose
-cgm_test$mins <- ymd_hms(paste(cgm_test$Date, cgm_test$Time))
-cgm_test$mins <- as.numeric(cgm_test$mins - cgm_test$mins[1]) / 60
+# Create dataset for testing model AUC, etc.
+new_dat = full_join(cgm_lmm, cgm_surv)
 ```
 
 # Participant characteristics
@@ -424,6 +413,69 @@ joint_fits <- function(
     ))
   }
 }
+calculate_aucs = function(
+  model_list = joint_models,
+  model_names = NULL,
+  ages = seq(6, 10, by = 1),
+  pred_windows = 1:2,
+  pred_data = new_dat
+) {
+  # Name the models for nicer plotting (optional)
+  if (!is.null(model_names)) {
+    names(model_list) <- model_names
+  }
+  # Make a grid for AUC testing
+  auc_grid <- expand.grid(start = ages, dt = pred_windows)
+  # Get AUC at various time ranges for each model
+  auc_grid_results <- apply(auc_grid, 1, function(r) {
+    start <- as.numeric(r["start"])
+    dt <- as.numeric(r["dt"])
+    auc_results <- sapply(names(model_list), function(n) {
+      tv <- tryCatch(
+        tvROC(
+          model_list[[n]],
+          newdata = pred_data,
+          Tstart = start,
+          Dt = dt
+        ),
+        error = function(e) {
+          return(NA)
+        }
+      )
+      if (length(tv) == 1) {
+        return(NA)
+      } else {
+        return(tvAUC(tv)$auc)
+      }
+    })
+    res <- data.frame(auc_results) |>
+      rownames_to_column(var = "Model") |>
+      rename(AUC = auc_results) |>
+      mutate(up_to = start, window = dt)
+    return(res)
+  })
+  auc_grid_results <- do.call(rbind, auc_grid_results)
+  auc_grid_results = auc_grid_results |> drop_na()
+  auc_grid_results$window = paste(
+    "Prediction Window:",
+    auc_grid_results$window,
+    "Years"
+  )
+  auc_grid_results$AUC = round(auc_grid_results$AUC, 3)
+  # Plot
+  auc_plot = ggplot(
+    auc_grid_results,
+    aes(x = up_to, y = AUC, color = Model, group = Model)
+  ) +
+    geom_point() +
+    geom_smooth() +
+    theme_bw() +
+    ylim(0, 1) +
+    facet_wrap(~window, ncol = 2) +
+    xlab("Using Data Up to Age:")
+  # Return both plots
+  return(list("plot" = auc_plot, "table" = auc_grid_results))
+}
 ```
 
 ## Mean glucose
@@ -460,11 +512,13 @@ ggtraceplot(joint_models$area, parm = "betas")
 
 ```{r}
 compare_jm(joint_models$value, joint_models$slope, joint_models$area)
+aucs = calculate_aucs(joint_models, model_names = c("Value", "Slope", "Area"))
+ggplotly(aucs$plot, tooltip = c("y", "color", "x"))
 ```
 
 ```{r}
 # Final model
-mean_jm <- joint_models$value
+mean_jm <- joint_models$area
 save(mean_jm, file = "./Data_Clean/mean_jm.RData")
 ```
 
@@ -502,6 +556,8 @@ ggtraceplot(joint_models$area, parm = "betas")
 
 ```{r}
 compare_jm(joint_models$value, joint_models$slope, joint_models$area)
+aucs = calculate_aucs(joint_models, model_names = c("Value", "Slope", "Area"))
+ggplotly(aucs$plot, tooltip = c("y", "color", "x"))
 ```
 
 ```{r}
@@ -543,6 +599,8 @@ ggtraceplot(joint_models$area, parm = "betas")
 
 ```{r}
 compare_jm(joint_models$value, joint_models$slope, joint_models$area)
+aucs = calculate_aucs(joint_models, model_names = c("Value", "Slope", "Area"))
+ggplotly(aucs$plot, tooltip = c("y", "color", "x"))
 ```
 
 ```{r}
@@ -584,6 +642,8 @@ ggtraceplot(joint_models$area, parm = "betas")
 
 ```{r}
 compare_jm(joint_models$value, joint_models$slope, joint_models$area)
+aucs = calculate_aucs(joint_models, model_names = c("Value", "Slope", "Area"))
+ggplotly(aucs$plot, tooltip = c("y", "color", "x"))
 ```
 
 ```{r}
@@ -625,6 +685,8 @@ ggtraceplot(joint_models$area, parm = "betas")
 
 ```{r}
 compare_jm(joint_models$value, joint_models$slope, joint_models$area)
+aucs = calculate_aucs(joint_models, model_names = c("Value", "Slope", "Area"))
+ggplotly(aucs$plot, tooltip = c("y", "color", "x"))
 ```
 
 ```{r}
@@ -679,6 +741,11 @@ compare_jm(
   joint_models$area,
   joint_models$optimal
 )
+aucs = calculate_aucs(
+  joint_models,
+  model_names = c("Value", "Slope", "Area", "Optimal")
+)
+ggplotly(aucs$plot, tooltip = c("y", "color", "x"))
 ```
 
 ```{r}
@@ -733,6 +800,11 @@ compare_jm(
   joint_models$area,
   joint_models$optimal
 )
+aucs = calculate_aucs(
+  joint_models,
+  model_names = c("Value", "Slope", "Area", "Optimal")
+)
+ggplotly(aucs$plot, tooltip = c("y", "color", "x"))
 ```
 
 ```{r}
@@ -787,6 +859,11 @@ compare_jm(
   joint_models$area,
   joint_models$optimal
 )
+aucs = calculate_aucs(
+  joint_models,
+  model_names = c("Value", "Slope", "Area", "Optimal")
+)
+ggplotly(aucs$plot, tooltip = c("y", "color", "x"))
 ```
 
 ```{r}
@@ -841,6 +918,11 @@ compare_jm(
   joint_models$area,
   joint_models$optimal
 )
+aucs = calculate_aucs(
+  joint_models,
+  model_names = c("Value", "Slope", "Area", "Optimal")
+)
+ggplotly(aucs$plot, tooltip = c("y", "color", "x"))
 ```
 
 ```{r}
@@ -848,89 +930,9 @@ compare_jm(
 tar_a1c_jm <- joint_models$optimal
 ```
 
-## AUC table
-
-```{r}
-# Make a list of all the models we've looked at
-models <- list(
-  mean_jm,
-  sd_jm,
-  cv_jm,
-  tar_jm,
-  a1c_jm,
-  mean_a1c_jm,
-  sd_a1c_jm,
-  cv_a1c_jm,
-  tar_a1c_jm
-)
-names(models) <- c(
-  "Mean",
-  "SD",
-  "CV",
-  "TA140",
-  "HbA1c",
-  "HbA1c + Mean",
-  "HbA1c + SD",
-  "HbA1c + CV",
-  "HbA1c + TA140"
-)
-# Make a grid for AUC testing
-auc_grid <- expand.grid(
-  start = seq(6, 29, by = 1),
-  dt = 1:3
-)
-# Get AUC at various time ranges for each model
-auc_grid_results <- apply(auc_grid, 1, function(r) {
-  start <- as.numeric(r["start"])
-  dt <- as.numeric(r["dt"])
-  auc_results <- sapply(names(models), function(n) {
-    tv <- tryCatch(
-      tvROC(
-        models[[n]],
-        newdata = newdat,
-        Tstart = start,
-        Dt = dt
-      ),
-      error = function(e) {
-        return(NA)
-      }
-    )
-    if (length(tv) == 1) {
-      return(NA)
-    } else {
-      return(tvAUC(tv)$auc)
-    }
-  })
-  res <- data.frame(auc_results) |>
-    rownames_to_column(var = "Model") |>
-    rename(AUC = auc_results) |>
-    mutate(up_to = start, window = dt)
-  return(res)
-})
-auc_grid_results <- do.call(rbind, auc_grid_results)
-auc_grid_results <- auc_grid_results |>
-  pivot_wider(
-    values_from = AUC,
-    names_from = window
-  ) |>
-  group_split(up_to, .keep = F)
-names(auc_grid_results) <- unique(auc_grid$start)
-invisible(lapply(names(auc_grid_results), function(n) {
-  cat("\n")
-  cat("\n")
-  cat("#### Using data up to", n, "years")
-  cat("\n")
-  cat("\n")
-  print(kable(auc_grid_results[[n]]))
-  cat("\n")
-  cat("\n")
-}))
-```
-
 # Dynamic predictions
 
 ```{r}
-new_dat <- full_join(cgm_lmm, cgm_surv)
 # Make predictions a function as well
 dynamic_prediction <- function(df = new_dat, jm, id, dt = 1, ylabs, pos_ylab) {
   # Just one subject for now
