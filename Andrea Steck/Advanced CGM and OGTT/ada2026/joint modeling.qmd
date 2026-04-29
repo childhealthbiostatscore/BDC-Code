@@ -34,9 +34,77 @@ execute:
 ---
 
 ```{r setup, include=FALSE}
-library(ggplot2)
-library(dplyr)
+library(tidyverse)
+library(plotly)
+library(nlme)
+library(JMbayes2)
+library(ggsurvfit)
+library(survminer)
+library(knitr)
+library(gtsummary)
+base_dir <- switch(
+  Sys.info()["nodename"],
+  "togo" = "/home/tvigers/Documents/Data",
+  "Tims-MacBook-Air.local" = "/Users/tim/Library/CloudStorage/OneDrive-UW",
+  "Tims-Mac-mini.local" = "/Users/tim/Library/CloudStorage/OneDrive-UW",
+  "Tims-Mac-Studio.local" = "/Users/tim/Library/CloudStorage/OneDrive-UW",
+  "Mac" = "/Users/tim/Library/CloudStorage/OneDrive-UW",
+  "Mac-Studio" = "/Users/lpyle/Library/CloudStorage/OneDrive-SharedLibraries-UW",
+  "MacBook-Pro-51.local" = "/Users/pylell/Library/CloudStorage/OneDrive-SharedLibraries-UW(2)",
+  "Kristens-MacBook-Pro.local" = "/Users/kristenmiller/Library/CloudStorage/OneDrive-UW",
+  "twigs" = "/home/tim/Documents/Data"
+)
+data_dir <- switch(
+  Sys.info()["nodename"],
+  "togo" = "/BDC/Andrea Steck/Advanced CGM and OGTT",
+  "Tims-MacBook-Air.local" = "/UWMDI/Andrea Steck/Advanced CGM and OGTT",
+  "Tims-Mac-mini.local" = "/UWMDI/Andrea Steck/Advanced CGM and OGTT",
+  "Tims-Mac-Studio.local" = "/UWMDI/Andrea Steck/Advanced CGM and OGTT",
+  "Mac" = "/UWMDI/Andrea Steck/Advanced CGM and OGTT",
+  "Mac-Studio" = "/Tim Vigers - UWMDI/Andrea Steck/Advanced CGM and OGTT",
+  "MacBook-Pro-51.local" = "/Tim Vigers - UWMDI/Andrea Steck/Advanced CGM and OGTT",
+  "Kristens-MacBook-Pro.local" = "/Tim Vigers's files - UWMDI/Andrea Steck/Advanced CGM and OGTT",
+  "twigs" = "/UWMDI/Andrea Steck/Advanced CGM and OGTT"
+)
+home_dir <- paste0(base_dir, data_dir)
+knitr::opts_knit$set(root.dir = home_dir)
 set.seed(42)
+```
+
+```{r data cleaning}
+setwd(home_dir)
+set.seed(1017)
+# Load data
+# See BDC-Code/Andrea Steck/Advanced CGM and OGTT/create_analysis_dataset.R
+load("./Data_Clean/analysis_dataset.RData")
+# Filter people >= age 30 and those who progressed at their first CGM visit.
+# We don't know for sure that the CGM wear happened prior to progression, so
+# these people may not be in the risk set.
+no_risk <- cgm_surv$ID[which(cgm_surv$EndTime == 0 & cgm_surv$event == 1)]
+cgm_lmm <- cgm_lmm |> filter(Age < 45, !ID %in% no_risk)
+# Remove TRIALNET
+# cgm_lmm <- cgm_lmm |> filter(study != "TRIALNET")
+# Scale and center the variables of interest
+# cgm_lmm$mean_glucose <- scale(cgm_lmm$mean_glucose)
+# cgm_lmm$sd_glucose <- scale(cgm_lmm$sd_glucose)
+# cgm_lmm$cv_glucose <- scale(cgm_lmm$cv_glucose)
+# cgm_lmm$perc_time_over_140 <- scale(cgm_lmm$perc_time_over_140)
+# cgm_lmm$hba1c <- scale(cgm_lmm$hba1c)
+# Limit survival group to those included in mixed model DF
+cgm_surv <- cgm_surv |> filter(ID %in% cgm_lmm$ID)
+# Make a simplified dataset for Andrea to pick participants for examples
+newdat <- full_join(cgm_lmm, cgm_surv)
+newdat <- newdat |>
+  group_by(ID) |>
+  select(ID, Group, Age, AgeEndpoint) |>
+  summarise(
+    BaselineAge = round(first(Age), 1),
+    AgeEndpoint = round(unique(AgeEndpoint), 1),
+    Group = unique(Group),
+    VisitsWithCGM = n()
+  )
+# Create dataset for testing model AUC, etc.
+new_dat = full_join(cgm_lmm, cgm_surv)
 ```
 
 # Part I: Foundations {background-color="#028090"}
@@ -207,3 +275,126 @@ Can daily glucose measures predict preterm birth in women with T1D? (https://doi
 
 :::
 
+# Part II: Our Data {background-color="#028090"}
+
+## Studies
+
+- **ASK**: <u>A</u>utoimmunity <u>S</u>creening for <u>K</u>ids
+- **DAISY**: The <u>D</u>iabetes <u>A</u>uto <u>I</u>mmunity <u>S</u>tudy in the <u>Y</u>oung
+- **TrialNet** Pathway to Prevention of T1D
+
+## Participant characteristics {.scrollable}
+
+```{r}
+#| echo: false
+cgm_surv |>
+  select(-ID, -event) |>
+  mutate(
+    Race_Ethn2 = factor(Race_Ethn2, levels = c("NHW", "Other")),
+    maxAB_group = factor(
+      maxAB_group,
+      levels = 2:3,
+      labels = c("Single", "Multiple")
+    )
+  ) |>
+  tbl_summary(
+    by = Group,
+    label = list(
+      study = "Study",
+      sex = "Sex",
+      Race_Ethn2 = "Race/Ethnicity",
+      screen_FDR_GP = "FDR Status",
+      maxAB_group = "Max. Antibody Status",
+      AgeEndpoint = "Age at Progression or Censoring",
+      EndTime = "Time to Progression or Censoring"
+    )
+  ) |>
+  add_p() |>
+  add_overall() |>
+  separate_p_footnotes() |>
+  add_stat_label()
+```
+
+## Progression by age
+
+- Our time-to-event model was a simple Cox proportional hazards model with age as time and adjusted for sex (p = 0.04).
+
+:::{.fragment}
+
+```{r}
+#| echo: false
+survfit2(
+  Surv(AgeEndpoint, event) ~ sex,
+  data = cgm_surv
+) |>
+  ggsurvfit(type = "risk") +
+  labs(
+    x = "Age (years)",
+    y = "Progression risk"
+  ) +
+  add_confidence_interval()
+```
+
+:::
+
+## Longitudinal model
+
+:::{.fragment}
+- We calculated standard summary metrics for each CGM wear (mean sensor glucose, glucose SD, etc.).
+:::
+
+:::{.fragment}
+- Summary metrics were modeled using a linear mixed effect model with random intercept for participant and random slope.
+:::
+
+:::{.fragment}
+- CGM wears with age >= 45 were excluded.
+:::
+
+::: {.columns}
+::: {.column width="50%"}
+:::{.fragment}
+
+```{r}
+#| echo: false
+lme_fit_mean_rs <- lme(
+  mean_glucose ~ Age,
+  random = ~ Age | ID,
+  data = cgm_lmm
+)
+plot_df <- lme_fit_mean_rs$data
+plot_df$pred <- predict(lme_fit_mean_rs)
+ggplot(plot_df, aes(x = Age, color = ID)) +
+  geom_point(aes(y = mean_glucose), alpha = 0.2) +
+  geom_line(aes(y = pred)) +
+  ylab("Mean Glucose (mg/dL)") +
+  theme_bw() +
+  theme(legend.position = "none")
+```
+
+:::
+:::
+
+::: {.column width="50%"}
+:::{.fragment}
+
+```{r}
+#| echo: false
+lme_fit_sd_rs <- lme(
+  sd_glucose ~ Age,
+  random = ~ Age | ID,
+  data = cgm_lmm
+)
+plot_df <- lme_fit_sd_rs$data
+plot_df$pred <- predict(lme_fit_sd_rs)
+ggplot(plot_df, aes(x = Age, color = ID)) +
+  geom_point(aes(y = sd_glucose), alpha = 0.2) +
+  geom_line(aes(y = pred)) +
+  ylab("SD Glucose (mg/dL)") +
+  theme_bw() +
+  theme(legend.position = "none")
+```
+
+:::
+:::
+:::
