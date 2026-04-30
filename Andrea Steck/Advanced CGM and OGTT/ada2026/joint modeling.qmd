@@ -70,7 +70,6 @@ data_dir <- switch(
 )
 home_dir <- paste0(base_dir, data_dir)
 knitr::opts_knit$set(root.dir = home_dir)
-set.seed(42)
 ```
 
 ```{r data cleaning}
@@ -107,6 +106,124 @@ newdat <- newdat |>
   )
 # Create dataset for testing model AUC, etc.
 new_dat = full_join(cgm_lmm, cgm_surv)
+# AUC plot
+calculate_aucs = function(
+  model_list = joint_models,
+  model_names = NULL,
+  ages = seq(6, 44, by = 1),
+  pred_windows = 1:3,
+  pred_data = new_dat
+) {
+  # Name the models for nicer plotting (optional)
+  if (!is.null(model_names)) {
+    names(model_list) <- model_names
+  }
+  # Make a grid for AUC testing
+  auc_grid <- expand.grid(start = ages, dt = pred_windows)
+  # Get AUC at various time ranges for each model
+  auc_grid_results <- apply(auc_grid, 1, function(r) {
+    start <- as.numeric(r["start"])
+    dt <- as.numeric(r["dt"])
+    auc_results <- sapply(names(model_list), function(n) {
+      tv <- tryCatch(
+        tvROC(
+          model_list[[n]],
+          newdata = pred_data,
+          Tstart = start,
+          Dt = dt
+        ),
+        error = function(e) {
+          return(NA)
+        }
+      )
+      if (length(tv) == 1) {
+        return(NA)
+      } else {
+        return(tvAUC(tv)$auc)
+      }
+    })
+    res <- data.frame(auc_results) |>
+      rownames_to_column(var = "Model") |>
+      rename(AUC = auc_results) |>
+      mutate(up_to = start, window = dt)
+    return(res)
+  })
+  auc_grid_results <- do.call(rbind, auc_grid_results)
+  auc_grid_results = auc_grid_results |> drop_na()
+  auc_grid_results$window = paste(
+    "Prediction Window:",
+    auc_grid_results$window,
+    "Years"
+  )
+  auc_grid_results$AUC = round(auc_grid_results$AUC, 3)
+  # Plot
+  auc_plot = ggplot(
+    auc_grid_results,
+    aes(x = up_to, y = AUC, color = Model, group = Model)
+  ) +
+    geom_point(alpha = 0.5) +
+    geom_line(alpha = 0.5) +
+    theme_bw() +
+    ylim(0, 1) +
+    facet_wrap(~window, ncol = 2) +
+    xlab("Using Data Up to Age:")
+  # Return both plots
+  return(list("plot" = auc_plot, "table" = auc_grid_results))
+}
+# Make predictions a function as well
+dynamic_prediction <- function(df = new_dat, jm, id, dt = 1, ylabs, pos_ylab) {
+  # Just one subject for now
+  pred_dat <- df |> filter(ID == id)
+  # Check group
+  prog <- as.character(unique(pred_dat$Group)) == "Progressor"
+  # Make a plot title
+  if (prog) {
+    plot_title <- paste(
+      c(
+        id,
+        " (Progressed at Age ",
+        round(unique(pred_dat$AgeEndpoint), 1),
+        ")"
+      ),
+      collapse = ""
+    )
+  } else if (!prog) {
+    plot_title <- paste(c(id, " (Did Not Progress)"), collapse = "")
+  }
+  # Set up times
+  t0 <- unique(pred_dat$AgeEndpoint) - dt
+  # Remove everything after t0, pretend we don't know if they progressed
+  pred_dat <- pred_dat |>
+    filter(Age <= t0) |>
+    mutate(AgeEndpoint = max(Age), event = 0)
+  # Predict!
+  pred_long <- predict(
+    jm,
+    newdata = pred_dat,
+    return_newdata = TRUE,
+    process = "longitudinal",
+    type = "mean_subject"
+  )
+  pred_surv <- predict(
+    jm,
+    newdata = pred_dat,
+    process = "event",
+    times = seq(t0, t0 + 1, length.out = 100),
+    type_pred = "response",
+    return_newdata = TRUE
+  )
+  plot(
+    pred_long,
+    pred_surv,
+    outcomes = 1:2,
+    xlab = "Age",
+    ylab_long = ylabs,
+    pos_ylab_long = pos_ylab,
+    main = plot_title
+  )
+}
+# Load models
+load("./Data_Clean/final_joint_models.RData")
 ```
 
 # Part I: Foundations {background-color="#028090"}
@@ -404,3 +521,61 @@ ggplot(plot_df, aes(x = Age, color = ID)) +
 :::
 :::
 :::
+
+## Model performance
+
+```{r}
+#| cache: true
+#| eval: false
+#| echo: false
+# Make the AUC plots
+aucs = calculate_aucs(
+  final_joint_models,
+  model_names = c(
+    "Mean",
+    "SD",
+    "CV",
+    "TAR140",
+    "HbA1c",
+    "Mean and HbA1c",
+    "SD and HbA1c",
+    "CV and HbA1c",
+    "TAR140 and HbA1c"
+  ),
+  ages = seq(6, 10, by = 1),
+  pred_windows = 1:3,
+)
+aucs$plot
+```
+
+## Dynamic prediction
+
+```{r}
+#| eval: false
+#| echo: false
+id <- "39390-3"
+dynamic_prediction(
+  id = id,
+  jm = final_joint_models[[8]],
+  ylabs = c("HbA1c", "Glucose CV"),
+  pos_ylab = c(5.5, 0.3)
+)
+```
+
+![](39390-3.png)
+
+## Dynamic prediction
+
+```{r}
+#| eval: false
+#| echo: false
+id <- "98-00003"
+dynamic_prediction(
+  id = id,
+  jm = final_joint_models[[8]],
+  ylabs = c("HbA1c", "Glucose CV"),
+  pos_ylab = c(5.5, 0.3)
+)
+```
+
+![](98-00003.png)
